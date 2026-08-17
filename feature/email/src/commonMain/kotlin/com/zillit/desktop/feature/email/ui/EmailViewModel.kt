@@ -23,6 +23,13 @@ import com.zillit.desktop.feature.email.domain.toSummary
 
 data class EmailUiState(
     val folders: List<EmailFolder> = emptyList(),
+    /**
+     * The badge service's unread per folder (`email_label` grouped by unit,
+     * where the unit is the folder name) — the number the phones badge each
+     * folder with. Distinct from the folder list's IMAP `unread`, which is
+     * the mail server's own count and can disagree with the badge ledger.
+     */
+    val folderBadges: Map<String, Int> = emptyMap(),
     val selectedFolderName: String? = null,
     val messages: List<EmailSummary> = emptyList(),
     val selectedMessageId: String? = null,
@@ -199,6 +206,24 @@ sealed interface EmailEffect {
  * visited before renders immediately. Composing lives in [ComposeViewModel] —
  * this class is already the busiest thing in the module.
  */
+/**
+ * The badge ledger's two hooks for mail, gathered because they travel
+ * together and neither belongs to the mailbox: the mailbox's own markRead is
+ * IMAP state, not the badge ledger, and the two clear independently.
+ */
+class MailBadges(
+    /**
+     * Told when a message is opened for reading. Hosts hang the badge-service
+     * read here (`notification:read`, segment `email_label`, reference id).
+     */
+    val onMessageRead: suspend (String) -> Unit = {},
+    /**
+     * Unread per folder from the badge service (`?section=email_label&group=unit`).
+     * Null answers a failed ask; empty leaves the folder list on its IMAP counts.
+     */
+    val folderBadges: suspend () -> Map<String, Int>? = { emptyMap() },
+)
+
 class EmailViewModel(
     private val mailbox: Mailbox,
     private val repository: EmailRepository,
@@ -212,13 +237,8 @@ class EmailViewModel(
      * server for drafts saved before the epoch and gets nothing back.
      */
     private val nowMillis: () -> Long,
-    /**
-     * Told when a message is opened for reading. Hosts hang the badge-service
-     * read here (`notification:read`, segment `email_label`) — the mailbox's
-     * own markRead is IMAP state, not the badge ledger, and the two clear
-     * independently.
-     */
-    private val onMessageRead: suspend (String) -> Unit = {},
+    /** The badge ledger's two hooks for mail — see [MailBadges]. */
+    private val badges: MailBadges = MailBadges(),
     /** Attachment downloads, which keep their own state — see [AttachmentDownloader]. */
     val downloader: AttachmentDownloader = AttachmentDownloader(repository, store = null),
     /** The composers standing on the mailbox's bottom edge — see [ComposerDeck]. */
@@ -290,6 +310,7 @@ class EmailViewModel(
         // mail this machine already has.
         currentState.selectedFolder?.let { selectFolder(it.name) }
 
+        launch { badges.folderBadges()?.let { split -> setState { copy(folderBadges = split) } } }
         launchResult(
             block = { mailbox.syncFolders() },
             onSuccess = { folders ->
@@ -648,6 +669,9 @@ class EmailViewModel(
     }
 
     private fun refreshFolders() {
+        // Null is a failed ask; the last split stands rather than dropping the
+        // folder list back onto IMAP counts mid-session.
+        launch { badges.folderBadges()?.let { split -> setState { copy(folderBadges = split) } } }
         launchResult(
             block = { mailbox.syncFolders() },
             onSuccess = { folders -> setState { copy(folders = folders) } },
@@ -694,7 +718,12 @@ class EmailViewModel(
         mailbox.markRead(folder.name, messageId)
         // Only mail that was unread has a badge record to clear — an emit per
         // click on already-read mail cost a settle wait and three requests.
-        if (wasUnread) launch { onMessageRead(messageId) }
+        if (wasUnread) {
+            launch {
+                badges.onMessageRead(messageId)
+                badges.folderBadges()?.let { split -> setState { copy(folderBadges = split) } }
+            }
+        }
 
         setState {
             copy(

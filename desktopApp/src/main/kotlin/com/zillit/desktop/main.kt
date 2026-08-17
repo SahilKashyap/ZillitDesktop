@@ -93,7 +93,6 @@ import com.zillit.desktop.feature.email.ui.Composing
 import com.zillit.desktop.feature.email.ui.EmailEvent
 import com.zillit.desktop.feature.email.ui.FolderEditor
 import com.zillit.desktop.feature.email.ui.MailSearch
-import com.zillit.desktop.feature.email.ui.SIGNATURES_PATH
 import com.zillit.desktop.feature.email.ui.SignatureToolProvider
 import com.zillit.desktop.feature.settings.account.AccountViewModel
 import com.zillit.desktop.feature.settings.account.ProfileSeed
@@ -190,6 +189,11 @@ import com.zillit.desktop.feature.boxschedule.ui.BoxScheduleViewModel
 import com.zillit.desktop.feature.boxschedule.ui.PRE_PRODUCTION_PATH
 import com.zillit.desktop.feature.maps.data.MapRepositoryImpl
 import com.zillit.desktop.feature.maps.ui.MapToolProvider
+import com.zillit.desktop.feature.pagedistribution.domain.DistributionTool
+import com.zillit.desktop.feature.pagedistribution.ui.DistributionToolProvider
+import com.zillit.desktop.feature.pagedistribution.ui.DistributionViewModel
+import com.zillit.desktop.feature.recce.ui.RecceToolProvider
+import com.zillit.desktop.feature.recce.ui.RecceViewModel
 import com.zillit.desktop.feature.maps.ui.MapViewModel
 import com.zillit.desktop.feature.sides.data.SidesRepositoryImpl
 import com.zillit.desktop.feature.sides.domain.SidesViewer
@@ -458,6 +462,12 @@ private fun ApplicationScope.ZillitWindows(
         onEvent = viewModel::onEvent,
         darkTheme = isDark,
     )
+
+    // The popped-out video call: its own always-on-top OS window, for the
+    // same reason — it must outlive being behind the main frame.
+    (graph as? AppGraph.Ready)?.let { ready ->
+        CallPipWindow(ready = ready, calls = viewModels.calls, darkTheme = isDark)
+    }
 }
 
 /**
@@ -986,9 +996,13 @@ private fun buildMailbox(ready: AppGraph.Ready): EmailViewModel {
         nowMillis = System::currentTimeMillis,
         // The badge ledger's read, alongside the mailbox's own — one email,
         // one record, referenced by id.
-        onMessageRead = { messageId ->
-            emitSegmentRead(ready, segment = "email_label", module = "email_label", referenceId = messageId)
-        },
+        badges = com.zillit.desktop.feature.email.ui.MailBadges(
+            onMessageRead = { messageId ->
+                emitSegmentRead(ready, segment = "email_label", module = "email_label", referenceId = messageId)
+            },
+            // Per-folder unread from the badge ledger — the unit is the folder.
+            folderBadges = { sectionSplit(ready, "email_label", "unit") },
+        ),
         downloader = AttachmentDownloader(ready.emailRepository, DownloadsAttachmentStore()),
     )
 }
@@ -1164,6 +1178,23 @@ private fun buildAuth(ready: AppGraph.Ready) = AuthViewModel(
     nowMillis = System::currentTimeMillis,
     projectUnread = { fetchProjectUnread(ready) },
 )
+
+/**
+ * One area's unread, split one level down — `?section=<area>&group=<by>`.
+ *
+ * The same drill-down the store's standing queries use, asked per screen:
+ * chat's tabs by tool, mail's folders by unit. Failure answers null and the
+ * screen keeps its last split — a badge that is late beats one that is gone.
+ */
+private suspend fun sectionSplit(ready: AppGraph.Ready, section: String, groupBy: String): Map<String, Int>? =
+    when (
+        val got = ready.badgeDrilldown.unread(
+            com.zillit.desktop.core.badges.BadgeDrilldownQuery(groupBy = groupBy, section = section),
+        )
+    ) {
+        is ZillitResult.Success -> got.data
+        is ZillitResult.Failure -> null
+    }
 
 /**
  * `GET device/unread` — unread per production, before any is open.
@@ -1510,10 +1541,18 @@ internal class AppViewModels(
     val info: HomeFeedViewModel?,
     /** The Confidential Info board — same engine, `confidentialinfo` segment. */
     val confidentialInfo: HomeFeedViewModel?,
+    /** Camera & Sound Report — the same engine on the script-notes host, one tab per report unit. */
+    val reports: HomeFeedViewModel?,
     /** The production diary: typed date blocks plus events and notes. */
     val boxSchedule: BoxScheduleViewModel?,
     /** Cities, typed pins and studio zones — the map tool without tiles. */
     val maps: MapViewModel?,
+    /** Recce: scout-day plans — date, rendezvous, stops, personnel. */
+    val recce: RecceViewModel?,
+    /** The three PDF distribution tools — one engine, three [DistributionTool]s. */
+    val scheduleDistribution: DistributionViewModel?,
+    val scriptDistribution: DistributionViewModel?,
+    val scheduleDod: DistributionViewModel?,
     /** The two library tools: what the production issues, and what it keeps. */
     val docDist: DocDistViewModel?,
     val drive: DriveViewModel?,
@@ -1566,6 +1605,14 @@ private fun rememberAppViewModels(
                     onThreadRead = { _ ->
                         delay(READ_BADGE_SETTLE_MILLIS)
                         it.badgeStore.refresh()
+                    },
+                    // The area's split by tool: chat_label / call_label —
+                    // what the Chats and Calls tabs wear.
+                    sectionBadges = { sectionSplit(it, "cnc_label", "tool") },
+                    // Looking at the log reads the missed calls (iOS
+                    // `readCNCMessage(.misscall)`: notification:read on call_label).
+                    onCallsViewed = {
+                        emitSegmentRead(it, segment = "call_label", module = "cnc_label")
                     },
                 )
             },
@@ -1764,6 +1811,7 @@ private fun rememberAppViewModels(
                 toolIdentifier = "confidential_info_tool",
                 permissions = permissions,
             ),
+            reports = ready?.reportsFeed(permissions),
             boxSchedule = ready?.let { graph ->
                 BoxScheduleViewModel(
                     repository = BoxScheduleRepositoryImpl(graph.apiClient, graph.config),
@@ -1778,6 +1826,10 @@ private fun rememberAppViewModels(
                     resolveViewer = { graph.mapViewer(permissions()) },
                 )
             },
+            recce = ready?.buildRecce(permissions),
+            scheduleDistribution = ready?.buildDistribution(DistributionTool.ScheduleDistribution, permissions),
+            scriptDistribution = ready?.buildDistribution(DistributionTool.ScriptDistribution, permissions),
+            scheduleDod = ready?.buildDistribution(DistributionTool.ScheduleDod, permissions),
             docDist = ready?.let { graph ->
                 DocDistViewModel(
                     repository = graph.docDistRepository,
@@ -1876,11 +1928,40 @@ private fun buildRegistry(
     val boxSchedule = viewModels.boxSchedule?.let { BoxScheduleToolProvider(it, BOX_SCHEDULE_PATH) }
     val preProduction = viewModels.boxSchedule?.let { BoxScheduleToolProvider(it, PRE_PRODUCTION_PATH) }
     val maps = viewModels.maps?.let { MapToolProvider(it, onOpenUrl = ::openInBrowser) }
+    val recce = viewModels.recce?.let { RecceToolProvider(it, onOpenUrl = ::openInBrowser) }
+    // Schedule Full & One Line, Script & Pages, Schedule D.O.D — the same
+    // PDF-distribution engine at the web's three paths.
+    val ready = graph as? AppGraph.Ready
+    val scheduleDistribution = viewModels.scheduleDistribution?.let { vm ->
+        ready?.distributionProvider(
+            vm, DistributionToolProvider.SCHEDULE_PATH, "Schedule Full & One Line", ZillitToolIcons.Chedule, scope,
+        )
+    }
+    val scriptDistribution = viewModels.scriptDistribution?.let { vm ->
+        ready?.distributionProvider(
+            vm, DistributionToolProvider.SCRIPT_PATH, "Script & Pages Distribution", ZillitToolIcons.Script, scope,
+        )
+    }
+    val scheduleDod = viewModels.scheduleDod?.let { vm ->
+        ready?.distributionProvider(vm, DistributionToolProvider.DOD_PATH, "Schedule D.O.D", ZillitToolIcons.Dod, scope)
+    }
     val confidentialInfo = viewModels.confidentialInfo?.let { feed ->
         BoardToolProvider(
             path = BoardToolProvider.CONFIDENTIAL_INFO_PATH,
             title = "Confidential Info",
             icon = ZillitToolIcons.Info,
+            feedViewModel = feed,
+            board = boardContext,
+            badges = (graph as? AppGraph.Ready)?.badgeStore?.counts,
+        )
+    }
+    // Camera & Sound Report: the same board, its tabs the report units the
+    // script-notes service lists.
+    val reports = viewModels.reports?.let { feed ->
+        BoardToolProvider(
+            path = BoardToolProvider.REPORTS_PATH,
+            title = "Camera & Sound Report",
+            icon = ZillitToolIcons.ProductionReport,
             feedViewModel = feed,
             board = boardContext,
             badges = (graph as? AppGraph.Ready)?.badgeStore?.counts,
@@ -1898,7 +1979,6 @@ private fun buildRegistry(
     // openInBrowser is the guarded launcher — https only, as the auth links use.
     val settings = SettingsToolProvider(
         viewModel = settingsViewModel,
-        signaturesRoute = SIGNATURES_PATH,
         onOpenExternal = ::openInBrowser,
         account = viewModels.account,
         onCopy = ::copyToClipboard,
@@ -1955,8 +2035,9 @@ private fun buildRegistry(
         home, chat, email, signatures, settings, admin,
         cash, cards, orders, timecards, payroll, deals, distribution, drive,
         accountHub, budgetBuilder, formSignature, esignature,
-        callSheet, productionReport, sides, info, confidentialInfo,
-        boxSchedule, preProduction, maps,
+        callSheet, productionReport, sides, info, confidentialInfo, reports,
+        boxSchedule, preProduction, maps, recce,
+        scheduleDistribution, scriptDistribution, scheduleDod,
     )
     val realPaths = real.map { it.path }.toSet()
     return ToolRegistry(real + placeholderTools().filterNot { it.path in realPaths })

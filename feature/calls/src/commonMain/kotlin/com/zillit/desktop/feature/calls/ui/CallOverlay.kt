@@ -73,7 +73,11 @@ fun CallOverlay(
         // parking window mid-call, so minimising moves and resizes this instead
         // of re-creating it. The slot it follows is a real layout child, which
         // is what guarantees nothing Compose draws is ever inside it.
-        if (videoSurface != null && state.videoMounted) {
+        //
+        // Not while the picture is out in its own window: there is one
+        // browser, and the PiP window is holding it — mounting a second host
+        // here would tear it out of there.
+        if (videoSurface != null && state.videoMounted && !state.pipOpen) {
             CallVideoLayer(slot, videoSurface)
         }
 

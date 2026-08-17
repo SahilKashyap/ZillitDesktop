@@ -44,8 +44,20 @@ data class ChatUiState(
      * bytes move; absent once the message is on the wire.
      */
     val uploads: Map<String, Int> = emptyMap(),
+    /**
+     * The badge service's own split of this area — what the mobile clients
+     * draw on the Chats and Calls tabs: `chat_label` (member + group chats)
+     * and `call_label` (missed calls). Keyed by the wire's tool label.
+     */
+    val sectionBadges: Map<String, Int> = emptyMap(),
     val error: String? = null,
 ) {
+    /** Unread across every conversation — the Chats tab. */
+    val chatsBadge: Int get() = sectionBadges["chat_label"] ?: 0
+
+    /** Missed calls — the Calls tab. */
+    val callsBadge: Int get() = sectionBadges["call_label"] ?: 0
+
     val canSend: Boolean get() = draft.isNotBlank() && peer != null
 }
 
@@ -91,6 +103,13 @@ sealed interface ChatEvent {
 
     /** The row's star: keep this conversation in the Favourites filter. */
     data class ToggleFavourite(val id: String) : ChatEvent
+
+    /**
+     * The Calls tab came on screen. Missed calls are read by looking at the
+     * log — iOS's `readCNCMessage(.misscall)`, a `notification:read` on the
+     * `call_label` segment — and the tab's count falls with them.
+     */
+    data object CallsViewed : ChatEvent
 }
 
 /**
@@ -98,7 +117,7 @@ sealed interface ChatEvent {
  * with the bubble flipping to Failed rather than vanishing; arrivals for the
  * open peer append, everything else is ignored until a recents list exists.
  */
-@Suppress("LongParameterList")
+@Suppress("LongParameterList", "TooManyFunctions") // One function per chat event; the set is the surface.
 class ChatViewModel(
     private val repository: ChatRepository,
     private val nowMillis: () -> Long,
@@ -116,6 +135,14 @@ class ChatViewModel(
      * whoever draws counts must ask again themselves.
      */
     private val onThreadRead: suspend (String) -> Unit = {},
+    /**
+     * This area's counts by tool (`chat_label`, `call_label`) — the badge
+     * service's answer to `?section=cnc_label&group=tool`. Hosts wire it;
+     * empty leaves the tabs bare.
+     */
+    private val sectionBadges: suspend () -> Map<String, Int>? = { emptyMap() },
+    /** Reads the missed-call badge — the Calls tab was opened. Hosts wire the emit. */
+    private val onCallsViewed: suspend () -> Unit = {},
 ) : ZillitViewModel<ChatUiState, ChatEvent, Nothing>(ChatUiState()) {
 
     init {
@@ -140,6 +167,7 @@ class ChatViewModel(
                 repository.markThreadRead(conversationId, nowMillis())
                 setState { copy(unread = unread - conversationId) }
                 onThreadRead(conversationId)
+                refreshSectionBadges()
             }
         }
         launch {
@@ -157,7 +185,7 @@ class ChatViewModel(
 
     // Exhaustive dispatch over the sealed event set — branch count is the
     // pattern, not a complexity smell (see HomeFeedViewModel's onEvent).
-    @Suppress("CyclomaticComplexMethod")
+    @Suppress("CyclomaticComplexMethod", "LongMethod")
     override fun onEvent(event: ChatEvent) {
         when (event) {
             is ChatEvent.OpenThread -> openThread(event.contact)
@@ -179,6 +207,12 @@ class ChatViewModel(
             }
             ChatEvent.Send -> send()
             is ChatEvent.ToggleFavourite -> toggleFavourite(event.id)
+            ChatEvent.CallsViewed -> if (currentState.callsBadge > 0) {
+                launch {
+                    onCallsViewed()
+                    applySplit(sectionBadges())
+                }
+            }
             ChatEvent.AttachFile -> launch { sendPickedFile() }
             is ChatEvent.Delete -> deleteMessage(event.messageId)
             is ChatEvent.Deleted -> dropDeleted(event.messageIds)
@@ -195,6 +229,7 @@ class ChatViewModel(
                 }
             ChatEvent.ProjectChanged -> startFreshProject()
             ChatEvent.RefreshRecents -> {
+                refreshSectionBadges()
                 launchResult(
                     block = { repository.rooms() },
                     onSuccess = { rooms -> setState { copy(groups = rooms) } },
@@ -221,6 +256,16 @@ class ChatViewModel(
                 )
             }
         }
+    }
+
+    /** Re-asks the badge service for this area's split — after anything moves. */
+    private fun refreshSectionBadges() {
+        launch { applySplit(sectionBadges()) }
+    }
+
+    /** A null answer is a failed ask — the last split stands, as the rail's does. */
+    private fun applySplit(split: Map<String, Int>?) {
+        split?.let { fresh -> setState { copy(sectionBadges = fresh) } }
     }
 
     private fun openThread(contact: CrewContact, isGroup: Boolean = false) {
@@ -271,7 +316,12 @@ class ChatViewModel(
                     repository.markThreadRead(contact.userId, it)
                 }
                 setState { copy(unread = unread - contact.userId) }
-                launch { onThreadRead(contact.userId) }
+                launch {
+                    onThreadRead(contact.userId)
+                    // The host's refetch waited for the server; the tab split
+                    // asks now for the same reason.
+                    applySplit(sectionBadges())
+                }
             },
             onError = { error ->
                 setState { copy(isLoading = false, error = error.localised()) }
@@ -592,6 +642,7 @@ class ChatViewModel(
             launch {
                 repository.markRead(peer.userId, message.id, isGroup)
                 onThreadRead(peer.userId)
+                applySplit(sectionBadges())
             }
         }
 
@@ -605,6 +656,12 @@ class ChatViewModel(
                 previews = withPreview(previews, other, message),
                 messages = merged(messages, message, isOpen),
             )
+        }
+        // The server's own count moved with this message — ask it again
+        // (a beat later, so a read of the open thread has landed first).
+        launch {
+            kotlinx.coroutines.delay(SECTION_BADGE_SETTLE_MILLIS)
+            applySplit(sectionBadges())
         }
     }
 
@@ -637,6 +694,9 @@ class ChatViewModel(
 
 private const val TAG = "Chat"
 private const val RECORDING_TICK_MILLIS = 1_000L
+
+/** How long the server gets to apply a read before the tab split is re-asked. */
+private const val SECTION_BADGE_SETTLE_MILLIS = 1_800L
 
 /** The file is being prepared (posters, PDF pages) — no bytes moving yet. */
 private const val PREPARING = -1

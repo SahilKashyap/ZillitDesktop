@@ -25,7 +25,9 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.readRawBytes
 import io.ktor.http.isSuccess
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.feature.home.data.HomeFeedRepositoryImpl
+import com.zillit.desktop.feature.home.data.ReportUnitsSource
 import com.zillit.desktop.feature.home.domain.HomeUnit
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
@@ -404,6 +406,57 @@ internal fun AppGraph.Ready.boardFeed(
             )
         }
     }
+    return boardFeed(board, toolIdentifier, units)
+}
+
+/**
+ * The Camera & Sound Report tool — a notice board with SEVERAL units.
+ *
+ * The web's `ReportsMain` fetches its tabs from the reports service itself
+ * (`GET reports/unit/` on the script-notes host — camera reports, sound
+ * reports, whatever the production has), and gates every one of them with
+ * the single `reports_tool` right. The board engine is the same; only the
+ * host and the unit source differ.
+ */
+internal fun AppGraph.Ready.reportsFeed(
+    permissions: () -> ProjectPermissions,
+): HomeFeedViewModel {
+    val source = ReportUnitsSource(apiClient, config)
+    val units: suspend () -> ZillitResult<List<HomeUnit>> = {
+        val access = permissions().access(REPORTS_TOOL)
+        val admin = permissions().isAdmin
+        source.units().map { rows ->
+            rows.map { row ->
+                HomeUnit(
+                    id = row.id,
+                    identifier = row.identifier ?: REPORTS_TOOL,
+                    unitName = row.name,
+                    // One right for every sub-unit — the web spreads
+                    // `reports_tool`'s access over each tab.
+                    canView = access.canView || admin,
+                    canPost = access.canPost || admin,
+                    enabled = access.enabled,
+                )
+            }
+        }
+    }
+    return boardFeed(
+        board = "reports",
+        toolIdentifier = REPORTS_TOOL,
+        units = units,
+        service = ZillitService.ScriptNotes,
+    )
+}
+
+private const val REPORTS_TOOL = "reports_tool"
+
+/** The board engine on any segment of any host, with the tabs handed in. */
+private fun AppGraph.Ready.boardFeed(
+    board: String,
+    toolIdentifier: String,
+    units: suspend () -> ZillitResult<List<HomeUnit>>,
+    service: ZillitService = ZillitService.Units,
+): HomeFeedViewModel {
     val repository = HomeFeedRepositoryImpl(
         apiClient = apiClient,
         config = config,
@@ -412,6 +465,7 @@ internal fun AppGraph.Ready.boardFeed(
         nowMillis = System::currentTimeMillis,
         board = board,
         units = units,
+        service = service,
     )
     return HomeFeedViewModel(
         repository = repository,

@@ -129,7 +129,6 @@ class SettingsViewModel(
 
             is SettingsEvent.UnitChanged -> changeUnit(event.unitId)
 
-            SettingsEvent.OpenSignatures -> sendEffect(SettingsEffect.OpenSignatures)
 
             is SettingsEvent.OpenEntry -> open(event.destination)
 

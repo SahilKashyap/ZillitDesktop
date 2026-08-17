@@ -1,11 +1,13 @@
 package com.zillit.desktop.feature.calls.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -16,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
@@ -23,6 +26,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import kotlin.math.roundToInt
 
 /**
  * The call, out of the way.
@@ -31,6 +35,11 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
  * surface: taking a native browser out of the tree hands it back to the
  * engine's parking window mid-conversation. So the pill reports a smaller slot
  * and the same surface simply shrinks into it.
+ *
+ * Draggable: it floats over the workspace, and a floating thing that cannot
+ * be moved off what you need to see is an obstruction, not a convenience.
+ * The offset is view-model state so it survives the pill's recomposition
+ * and a round-trip through the stage.
  */
 @Composable
 fun CallPill(
@@ -40,15 +49,29 @@ fun CallPill(
     onSlot: (LayoutCoordinates) -> Unit,
 ) {
     val colors = ZillitTheme.colors
-    val showsVideo = state.stage == CallStageKind.Video && videoAvailable
+    val showsVideo = state.stage == CallStageKind.Video && videoAvailable && !state.pipOpen
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
         Row(
             modifier = Modifier
                 .padding(ZillitTheme.spacing.lg)
+                .offset {
+                    androidx.compose.ui.unit.IntOffset(
+                        state.pillOffsetX.roundToInt(),
+                        state.pillOffsetY.roundToInt(),
+                    )
+                }
                 .widthIn(min = PILL_MIN_WIDTH, max = PILL_MAX_WIDTH)
                 .shadow(PILL_ELEVATION, RoundedCornerShape(PILL_CORNER))
                 .clip(RoundedCornerShape(PILL_CORNER))
                 .background(colors.surfaceRaised)
+                // The whole pill is the handle: buttons take their own
+                // presses, and a drag anywhere else moves it.
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        onEvent(CallEvent.DragPill(dragAmount.x, dragAmount.y))
+                    }
+                }
                 .padding(ZillitTheme.spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -82,7 +105,7 @@ fun CallPill(
     }
 }
 
-/** Mute, end, expand — the only three verbs a minimised call needs. */
+/** Mute, end, pop out, expand — the verbs a minimised call needs. */
 @Composable
 private fun PillControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val colors = ZillitTheme.colors
@@ -94,6 +117,18 @@ private fun PillControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
         size = PILL_BUTTON,
         onClick = { onEvent(CallEvent.ToggleMic) },
     )
+    // Only a video call has a picture to pop out; the pill of an audio call
+    // is already as small as the call gets.
+    if (state.stage == CallStageKind.Video) {
+        RoundAction(
+            icon = ZillitIcons.Detach,
+            label = if (state.pipOpen) "Bring video back" else "Pop out video",
+            background = if (state.pipOpen) colors.surfaceSelected else colors.surfaceHover,
+            tint = colors.textPrimary,
+            size = PILL_BUTTON,
+            onClick = { onEvent(CallEvent.TogglePip) },
+        )
+    }
     RoundAction(
         icon = ZillitIcons.PhoneDown,
         label = "End call",

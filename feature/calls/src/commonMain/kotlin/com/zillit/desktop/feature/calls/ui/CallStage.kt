@@ -144,6 +144,19 @@ private fun CallStageHeader(state: CallUiState, onEvent: (CallEvent) -> Unit) {
             size = HEADER_BUTTON,
             onClick = { onEvent(CallEvent.ToggleRoster) },
         )
+        // A video call can leave the window entirely: the picture goes to a
+        // small always-on-top window and the workspace comes back. There is
+        // no picture to pop out of an audio call, so no button on one.
+        if (state.stage == CallStageKind.Video) {
+            RoundAction(
+                icon = ZillitIcons.Detach,
+                label = "Pop out video",
+                background = colors.surfaceHover,
+                tint = colors.textPrimary,
+                size = HEADER_BUTTON,
+                onClick = { onEvent(CallEvent.TogglePip) },
+            )
+        }
         RoundAction(
             icon = ZillitIcons.Minimize,
             label = "Minimise call",
@@ -193,7 +206,7 @@ private fun ConnectionBanner(state: CallUiState, videoAvailable: Boolean) {
 }
 
 /** 1:1 calls are titled by the person; a group by the room. */
-internal val CallUiState.headerTitle: String
+val CallUiState.headerTitle: String
     get() {
         val session = session ?: return "Call"
         return if (session.mode == CallMode.Group) {

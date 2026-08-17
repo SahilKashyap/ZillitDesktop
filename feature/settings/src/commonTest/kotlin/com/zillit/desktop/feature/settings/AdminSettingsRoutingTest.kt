@@ -28,7 +28,7 @@ class AdminSettingsRoutingTest {
 
     private val registry = ToolRegistry(
         listOf(
-            SettingsToolProvider(viewModel, signaturesRoute = "/email/signatures"),
+            SettingsToolProvider(viewModel),
             AdminSettingsToolProvider(viewModel),
         ),
     )

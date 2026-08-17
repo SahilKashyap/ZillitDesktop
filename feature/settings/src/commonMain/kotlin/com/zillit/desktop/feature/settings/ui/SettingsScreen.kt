@@ -92,7 +92,6 @@ fun SettingsScreen(
                 AppearanceSection(state, onEvent)
                 ProductionSection(state, onEvent)
                 NotificationsSection(state, onEvent)
-                EmailSection(onEvent)
             }
         }
 
@@ -350,23 +349,6 @@ private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent
                 checked = state.notifyCalls,
                 onCheckedChange = { onEvent(SettingsEvent.NotifyCallsChanged(it)) },
                 label = if (state.notifyCalls) "On" else "Off",
-            )
-        }
-    }
-}
-
-@Composable
-private fun EmailSection(onEvent: (SettingsEvent) -> Unit) {
-    Section("Email", ZillitIcons.Mail) {
-        SettingRow(
-            title = "Signatures",
-            detail = "Sign-offs appended to messages you send.",
-        ) {
-            ZillitButton(
-                text = "Manage",
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-                onClick = { onEvent(SettingsEvent.OpenSignatures) },
             )
         }
     }

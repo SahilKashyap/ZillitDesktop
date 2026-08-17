@@ -125,6 +125,10 @@ object ToolCatalogue {
             (ZillitToolIcons.Info to WorkspaceRoute.Tool("/film-tools/info")),
         "location_tool" to
             (ZillitToolIcons.Location to WorkspaceRoute.Tool("/film-tools/location")),
+        // The pin map — a different tool from `location_tool` (the scouting
+        // photo library) despite sharing a group and an icon family.
+        "map_tool" to
+            (ZillitToolIcons.Location to WorkspaceRoute.Tool("/film-tools/map")),
         "main_budget_tool" to
             (ZillitToolIcons.Budget to WorkspaceRoute.Tool("/film-tools/main-budget")),
         "payroll_tool" to
@@ -141,6 +145,11 @@ object ToolCatalogue {
             (ZillitToolIcons.PurchaseOrder to WorkspaceRoute.Tool("/film-tools/purchase-order")),
         "recce_tool" to
             (ZillitToolIcons.Location to WorkspaceRoute.Tool("/film-tools/recce")),
+        // Camera & Sound Report — a notice board with one tab per report
+        // unit; the web mounts it at `/film-tools/reports`. Android has no
+        // artwork of its own for it, so it borrows the report family's.
+        "reports_tool" to
+            (ZillitToolIcons.ProductionReport to WorkspaceRoute.Tool("/film-tools/reports")),
         "sa_portal_tool" to
             (ZillitToolIcons.AdDashboard to WorkspaceRoute.Tool("/film-tools/sa-portal")),
         "schedule_distribution_tool" to

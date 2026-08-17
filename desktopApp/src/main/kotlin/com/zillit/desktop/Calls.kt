@@ -63,7 +63,7 @@ internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?) {
  * so this collects it rather than reading it once, and renders nothing until
  * it exists.
  */
-private fun callVideoSurface(ready: AppGraph.Ready): (@Composable () -> Unit)? {
+internal fun callVideoSurface(ready: AppGraph.Ready): (@Composable () -> Unit)? {
     val engine = ready.callEngine as? KcefCallEngine ?: return null
     return {
         val component by engine.surface.collectAsState()

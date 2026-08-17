@@ -108,7 +108,6 @@ class AdminSettingsToolProvider(
                     // Raised by the Settings listing, in the other window. The
                     // view model is shared and its effects are a broadcast, so
                     // they arrive here too — and are not ours to act on.
-                    SettingsEffect.OpenSignatures,
                     is SettingsEffect.OpenExternal,
                     is SettingsEffect.OpenAccountPage,
                     SettingsEffect.AskLeaveProduction,

@@ -38,6 +38,19 @@ data class CallUiState(
     /** The page's copy of the model. Empty when there is nothing to push. */
     val stageJson: String = "",
     val expanded: Boolean = true,
+    /**
+     * The video is out in its own always-on-top window. The main window then
+     * shows the audio pill in its place — one browser component exists, and
+     * it can be parented in one place at a time.
+     */
+    val pipOpen: Boolean = false,
+    /**
+     * Where the minimised pill sits, as an offset from its home corner. The
+     * pill is draggable so it can be pushed off whatever the user needs to
+     * see; zero is its resting place at the bottom right.
+     */
+    val pillOffsetX: Float = 0f,
+    val pillOffsetY: Float = 0f,
     val rosterOpen: Boolean = false,
     /** The add-people picker, with the addable crew snapshotted at open. */
     val addPeopleOpen: Boolean = false,
@@ -104,6 +117,12 @@ sealed interface CallEvent {
 
     /** Expand ⇄ minimise. Presentation only; the coordinator never hears it. */
     data object ToggleStage : CallEvent
+
+    /** Pops the video into a floating always-on-top window, or brings it back. */
+    data object TogglePip : CallEvent
+
+    /** The pill was dragged by this much; accumulated onto its offset. */
+    data class DragPill(val dx: Float, val dy: Float) : CallEvent
     data object ToggleRoster : CallEvent
     data object ToggleAddPeople : CallEvent
     data class AddPerson(
@@ -190,6 +209,9 @@ class CallViewModel(
         val cameraOn: Boolean,
     )
 
+    // Exhaustive dispatch over the sealed event set — the branch count is the
+    // pattern, not a complexity smell (see HomeFeedViewModel's onEvent).
+    @Suppress("CyclomaticComplexMethod")
     override fun onEvent(event: CallEvent) {
         when (event) {
             is CallEvent.Place -> coordinator.placeCall(
@@ -202,6 +224,14 @@ class CallViewModel(
             CallEvent.ToggleCamera -> coordinator.toggleCamera()
             CallEvent.DismissNotice -> setState { copy(endedNotice = null) }
             CallEvent.ToggleStage -> setState { copy(expanded = !expanded) }
+            // Leaving PiP restores the stage: the user asked to see the
+            // video, and the pill is where it was hiding, not where it goes.
+            CallEvent.TogglePip -> setState {
+                if (pipOpen) copy(pipOpen = false, expanded = true) else copy(pipOpen = true, expanded = false)
+            }
+            is CallEvent.DragPill -> setState {
+                copy(pillOffsetX = pillOffsetX + event.dx, pillOffsetY = pillOffsetY + event.dy)
+            }
             CallEvent.ToggleRoster -> setState { copy(rosterOpen = !rosterOpen) }
             CallEvent.ToggleAddPeople -> toggleAddPeople()
             is CallEvent.AddPerson -> {
@@ -219,6 +249,9 @@ class CallViewModel(
         tiles = emptyList(),
         stageJson = "",
         expanded = true,
+        pipOpen = false,
+        pillOffsetX = 0f,
+        pillOffsetY = 0f,
         rosterOpen = false,
         videoSeen = false,
     )

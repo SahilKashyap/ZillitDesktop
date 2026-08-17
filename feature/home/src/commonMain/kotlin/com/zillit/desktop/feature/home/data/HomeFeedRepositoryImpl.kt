@@ -75,9 +75,16 @@ class HomeFeedRepositoryImpl(
      * route; a provider replaces it — Info hands over its one tool unit.
      */
     private val units: (suspend () -> ZillitResult<List<HomeUnit>>)? = null,
+    /**
+     * The host the board lives on. Home, Info and Confidential Info are on
+     * the unit service; the Camera & Sound Report boards are the same routes
+     * on the script-notes service (`reports/chat/...`), which is where the
+     * web's `reportsApi` points them.
+     */
+    private val service: ZillitService = ZillitService.Units,
 ) : HomeFeedRepository {
 
-    private val home get() = "${config.apiV2(ZillitService.Units)}$board/"
+    private val home get() = "${config.apiV2(service)}$board/"
 
     /** Home's `home/unit/...` routes stay on the `home` segment for other boards. */
     private val homeUnits get() = "${config.apiV2(ZillitService.Units)}home/"

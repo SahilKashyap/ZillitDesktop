@@ -37,8 +37,6 @@ import com.zillit.desktop.feature.settings.account.LeaveProductionDialog
  */
 class SettingsToolProvider(
     private val viewModel: SettingsViewModel,
-    /** Where the signature manager lives, so Settings can point at it. */
-    private val signaturesRoute: String,
     /**
      * Hands a documentation link to the browser.
      *
@@ -79,9 +77,6 @@ class SettingsToolProvider(
         LaunchedEffect(viewModel, navigator) {
             viewModel.effects.collect { effect ->
                 when (effect) {
-                    SettingsEffect.OpenSignatures ->
-                        navigator.openInNewWindow(WorkspaceRoute.Tool(signaturesRoute))
-
                     is SettingsEffect.OpenExternal -> onOpenExternal(effect.url)
 
                     // A row on the listing, opened in this same window — these

@@ -5,6 +5,7 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.network.AwsRequest
 import com.zillit.desktop.core.network.AwsV4Signer
+import com.zillit.desktop.core.network.s3KeyPath
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.home.domain.NoticeMediaSource
 import io.ktor.client.HttpClient
@@ -86,11 +87,14 @@ class S3NoticeMediaSource(
         try {
             val host = "${attachment.bucket}.s3.${attachment.region}.amazonaws.com"
             val timestamp = now().format(AMZ_DATE)
+            // Signed and sent as the same encoded path — a key with a space
+            // signs one string and travels as another otherwise (a 403).
+            val path = s3KeyPath(key)
 
             val authorization = AwsV4Signer.authorization(
                 request = AwsRequest(
                     method = "GET",
-                    path = "/$key",
+                    path = path,
                     host = host,
                     payloadSha256 = EMPTY_SHA256,
                     timestamp = timestamp,
@@ -102,7 +106,7 @@ class S3NoticeMediaSource(
                 sha256Hex = ::sha256Hex,
             )
 
-            val response = httpClient.get("https://$host/$key") {
+            val response = httpClient.get("https://$host$path") {
                 header("Authorization", authorization)
                 header("x-amz-date", timestamp)
                 header("x-amz-content-sha256", EMPTY_SHA256)

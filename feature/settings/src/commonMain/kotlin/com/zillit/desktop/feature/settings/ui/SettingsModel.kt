@@ -135,8 +135,6 @@ sealed interface SettingsEvent {
     /** Attaches the user to a different production unit. */
     data class UnitChanged(val unitId: String) : SettingsEvent
 
-    /** Opens the email signature manager, which is its own window. */
-    data object OpenSignatures : SettingsEvent
 
     /** A row on either listing was clicked. */
     data class OpenEntry(val destination: SettingsDestination) : SettingsEvent
@@ -153,7 +151,6 @@ sealed interface SettingsEvent {
 }
 
 sealed interface SettingsEffect {
-    data object OpenSignatures : SettingsEffect
     data object SignedOut : SettingsEffect
 
     /** Moves the administration window to one of the two approval queues. */

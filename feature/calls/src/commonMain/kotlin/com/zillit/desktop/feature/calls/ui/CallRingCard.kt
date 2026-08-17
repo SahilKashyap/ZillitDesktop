@@ -27,7 +27,10 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
@@ -63,13 +66,22 @@ fun CallRingCard(
     ) {
         Column(
             modifier = Modifier
-                // The card floats over a live workspace; without this, a press
-                // that lands on it also reaches whatever tool is underneath.
+                // Draggable, sharing the pill's offset: a ring that lands on
+                // top of the thing you were reading can be pushed aside, and
+                // the pill it becomes stays where you put it.
+                .offset {
+                    androidx.compose.ui.unit.IntOffset(
+                        state.pillOffsetX.roundToInt(),
+                        state.pillOffsetY.roundToInt(),
+                    )
+                }
+                // The card floats over a live workspace; a drag moves it, and
+                // any other press stops here rather than reaching the tool
+                // underneath.
                 .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            awaitPointerEvent().changes.forEach { it.consume() }
-                        }
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        onEvent(CallEvent.DragPill(dragAmount.x, dragAmount.y))
                     }
                 }
                 .width(CARD_WIDTH)

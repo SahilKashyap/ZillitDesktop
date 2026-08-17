@@ -63,6 +63,8 @@ dependencies {
     implementation(project(":feature:productionreport"))
     implementation(project(":feature:documentdistribution"))
     implementation(project(":feature:drive"))
+    implementation(project(":feature:pagedistribution"))
+    implementation(project(":feature:recce"))
 
     // The app module had no tests until the single-instance guard, which is
     // logic rather than wiring and worth pinning — particularly its behaviour

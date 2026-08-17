@@ -104,6 +104,8 @@ fun ChatScreen(
                 // Opening the tab is the retry — the init-time fetch can
                 // predate the socket connecting.
                 if (it == DirectoryTab.Chats.name) viewModel?.onEvent(ChatEvent.RefreshRecents)
+                // Looking at the log is what reads a missed call.
+                if (it == DirectoryTab.Calls.name) viewModel?.onEvent(ChatEvent.CallsViewed)
             },
             onQuery = { query = it },
             onSelect = { selectedId = it },
@@ -217,26 +219,7 @@ private fun DirectoryPane(
     ) {
         ZillitText(text = "Chat & Calls", style = ZillitTheme.typography.titleLarge)
 
-        // Underline tabs, not chips: chips are for filters, and this row picks
-        // which list the pane *is*. The Chats tab wears the total unread, so
-        // the answer to "anything waiting?" does not need the tab opened.
-        ZillitTabStrip(
-            tabs = DirectoryTab.entries
-                .filter { it != DirectoryTab.Calls || callLog != null }
-                .map { entry ->
-                    ZillitTab(
-                        id = entry.name,
-                        label = entry.label,
-                        count = if (entry == DirectoryTab.Chats) {
-                            chatState?.unread?.values?.sum() ?: 0
-                        } else {
-                            0
-                        },
-                    )
-                },
-            activeId = tab,
-            onSelect = onTab,
-        )
+        DirectoryTabs(tab, chatState, callLog != null, onTab)
 
         if (tab == DirectoryTab.Calls.name && callLog != null) {
             callLog()
@@ -508,6 +491,40 @@ private fun RowTrailing(
 }
 
 private val STAR_SIZE = 22.dp
+
+/**
+ * The three underline tabs. Chats and Calls each wear their own count — the
+ * badge service's split, the same numbers the phones show — so "anything
+ * waiting?" is answered without opening either. The local per-row unread
+ * stands in for Chats until the split has answered.
+ */
+@Composable
+private fun DirectoryTabs(
+    tab: String,
+    chatState: ChatUiState?,
+    hasCallLog: Boolean,
+    onTab: (String) -> Unit,
+) {
+    ZillitTabStrip(
+        tabs = DirectoryTab.entries
+            .filter { it != DirectoryTab.Calls || hasCallLog }
+            .map { entry ->
+                ZillitTab(
+                    id = entry.name,
+                    label = entry.label,
+                    count = when (entry) {
+                        DirectoryTab.Chats -> chatState?.let { state ->
+                            if (state.sectionBadges.isEmpty()) state.unread.values.sum() else state.chatsBadge
+                        } ?: 0
+                        DirectoryTab.Calls -> chatState?.callsBadge ?: 0
+                        DirectoryTab.Crew -> 0
+                    },
+                )
+            },
+        activeId = tab,
+        onSelect = onTab,
+    )
+}
 
 /** The listing's five chips, one always lit; they wrap, never crush. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)

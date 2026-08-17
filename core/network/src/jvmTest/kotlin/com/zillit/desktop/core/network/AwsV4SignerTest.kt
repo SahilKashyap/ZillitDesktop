@@ -139,4 +139,12 @@ class AwsV4SignerTest {
         const val EMPTY_SHA256 =
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
+
+    @Test
+    fun `an object key becomes a percent-encoded path, slashes and unreserved bytes kept`() {
+        assertEquals("/a/plain_key-1.pdf", s3KeyPath("a/plain_key-1.pdf"))
+        assertEquals("/recce/Desktop%20recce%20test.pdf", s3KeyPath("recce/Desktop recce test.pdf"))
+        assertEquals("/p/caf%C3%A9%20%26%20co%2Bx.pdf", s3KeyPath("p/café & co+x.pdf"))
+        assertEquals("/~tilde/", s3KeyPath("~tilde/"))
+    }
 }

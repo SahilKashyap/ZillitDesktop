@@ -97,6 +97,9 @@ class EmailToolProvider(
             search = search,
             loadAvatar = loadAvatar,
             loadThumbnail = loadThumbnail,
+            onOpenSignatures = {
+                navigator.openInNewWindow(WorkspaceRoute.Tool(SIGNATURES_PATH))
+            },
         ) {
             ComposerDock(
                 composers = composers,
@@ -118,8 +121,8 @@ class EmailToolProvider(
  *
  * Its own window rather than a dialog over the composer: editing a signature is
  * a task in its own right, and a modal over a half-written message forces one
- * of the two to be abandoned. Opened from the composer's signature menu, and
- * reachable directly by route so Settings can link to it later.
+ * of the two to be abandoned. Opened from the mailbox sidebar and from the
+ * composer's signature menu.
  */
 class SignatureToolProvider(private val repository: SignatureRepository) : ToolProvider {
 

@@ -62,5 +62,8 @@ class BoardToolProvider(
     companion object {
         const val INFO_PATH = "/film-tools/info"
         const val CONFIDENTIAL_INFO_PATH = "/film-tools/confidential-info"
+
+        /** Camera & Sound Report — the web's `/film-tools/reports` mount. */
+        const val REPORTS_PATH = "/film-tools/reports"
     }
 }

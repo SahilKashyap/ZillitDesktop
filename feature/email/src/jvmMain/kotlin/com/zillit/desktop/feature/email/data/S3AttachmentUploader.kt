@@ -5,6 +5,7 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.network.AwsRequest
 import com.zillit.desktop.core.network.AwsV4Signer
+import com.zillit.desktop.core.network.s3KeyPath
 import com.zillit.desktop.core.network.toHex
 import com.zillit.desktop.feature.email.domain.AttachmentUploader
 import com.zillit.desktop.feature.email.domain.StorageTarget
@@ -106,11 +107,12 @@ class S3AttachmentUploader(
         val host = "${target.bucket}.s3.${target.region}.amazonaws.com"
         val timestamp = now().format(AMZ_DATE)
         val payloadHash = MessageDigest.getInstance("SHA-256").digest(bytes).toHex()
+        val path = s3KeyPath(key)
 
         val authorization = AwsV4Signer.authorization(
             request = AwsRequest(
                 method = "PUT",
-                path = "/$key",
+                path = path,
                 host = host,
                 payloadSha256 = payloadHash,
                 timestamp = timestamp,
@@ -125,7 +127,7 @@ class S3AttachmentUploader(
             },
         )
 
-        val response = httpClient.put("https://$host/$key") {
+        val response = httpClient.put("https://$host$path") {
             header("Authorization", authorization)
             header("x-amz-date", timestamp)
             header("x-amz-content-sha256", payloadHash)

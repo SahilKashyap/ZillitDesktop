@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -85,6 +86,11 @@ fun EmailScreen(
     /** An image attachment's bytes, decoded, for the inline preview. */
     loadThumbnail: suspend (EmailAttachment, String) -> ImageBitmap? = { _, _ -> null },
     /**
+     * Opens the signature manager. A callback because it is a window of its
+     * own and windows are the host's business — the sidebar only asks.
+     */
+    onOpenSignatures: () -> Unit = {},
+    /**
      * Anything standing in front of the mailbox — the composers.
      *
      * A slot rather than a parameter of its own, because what stands here owns
@@ -95,7 +101,7 @@ fun EmailScreen(
 ) {
     Box(modifier.fillMaxSize()) {
     Row(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
-        FolderSidebar(state, onEvent)
+        FolderSidebar(state, onEvent, onOpenSignatures)
 
         Column(Modifier.weight(1f).fillMaxHeight()) {
             ListToolbar(state, search, onEvent)
@@ -152,7 +158,11 @@ fun EmailScreen(
 }
 
 @Composable
-private fun FolderSidebar(state: EmailUiState, onEvent: (EmailEvent) -> Unit) {
+private fun FolderSidebar(
+    state: EmailUiState,
+    onEvent: (EmailEvent) -> Unit,
+    onOpenSignatures: () -> Unit,
+) {
     val colors = ZillitTheme.colors
 
     Column(
@@ -189,23 +199,39 @@ private fun FolderSidebar(state: EmailUiState, onEvent: (EmailEvent) -> Unit) {
             FolderRow(
                 folder = folder,
                 isActive = folder.name == state.selectedFolder?.name,
+                // The ledger keys folders by lower-cased name (iOS's
+                // `unreadEmailCountsByFolder`); match the same way.
+                badge = state.folderBadges.takeIf { it.isNotEmpty() }
+                    ?.let { split -> split[folder.name] ?: split[folder.name.lowercase()] ?: 0 },
                 onClick = { onEvent(EmailEvent.SelectFolder(folder.name)) },
                 onRename = { onEvent(EmailEvent.EditFolder(folder)) },
             )
         }
 
-        NewFolderRow { onEvent(EmailEvent.EditFolder()) }
+        SidebarActionRow(icon = ZillitIcons.Add, label = "New folder") {
+            onEvent(EmailEvent.EditFolder())
+        }
+
+        // Signatures belong to mail, not to app settings: the person managing
+        // a sign-off is the person about to send something, and this is where
+        // they are standing.
+        Spacer(Modifier.weight(1f))
+        SidebarActionRow(icon = ZillitIcons.Edit, label = "Signatures", onClick = onOpenSignatures)
     }
 }
 
 /**
- * The last row in the sidebar.
+ * A quiet action row in the sidebar — "New folder", "Signatures".
  *
- * At the bottom rather than in the toolbar: it belongs to the folder list, and
- * every mail client puts it exactly here.
+ * Under the folder list rather than in the toolbar: these belong with the
+ * folders, and every mail client puts them exactly here.
  */
 @Composable
-private fun NewFolderRow(onClick: () -> Unit) {
+private fun SidebarActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -223,13 +249,13 @@ private fun NewFolderRow(onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitIcon(
-            icon = ZillitIcons.Add,
+            icon = icon,
             contentDescription = null,
             tint = colors.textMuted,
             size = FOLDER_ICON,
         )
         ZillitText(
-            text = "New folder",
+            text = label,
             style = ZillitTheme.typography.bodyMedium,
             color = colors.textMuted,
             maxLines = 1,
@@ -243,6 +269,8 @@ private fun FolderRow(
     isActive: Boolean,
     onClick: () -> Unit,
     onRename: () -> Unit,
+    /** The badge ledger's count for this folder; null before it has answered. */
+    badge: Int? = null,
 ) {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -288,12 +316,17 @@ private fun FolderRow(
                 contentDescription = "Rename ${folder.displayName}",
                 onClick = onRename,
             )
-        } else if (folder.unreadCount > 0) {
-            ZillitText(
-                text = folder.unreadCount.toString(),
-                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = if (isActive) colors.accentText else colors.textSecondary,
-            )
+        } else {
+            // The badge ledger's count when it has spoken, the folder's own
+            // IMAP unread until then — the phones draw the former.
+            val shown = badge ?: folder.unreadCount
+            if (shown > 0) {
+                ZillitText(
+                    text = shown.toString(),
+                    style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (isActive) colors.accentText else colors.textSecondary,
+                )
+            }
         }
     }
 }

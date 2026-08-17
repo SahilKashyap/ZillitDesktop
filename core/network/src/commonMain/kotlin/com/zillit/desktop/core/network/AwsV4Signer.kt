@@ -126,6 +126,37 @@ object AwsV4Signer {
     }
 }
 
+/**
+ * An S3 object key as the path SigV4 signs and the URL carries — every
+ * segment percent-encoded per RFC 3986 (unreserved bytes kept, `/` kept),
+ * as the SDK's `GetObjectCommand` does.
+ *
+ * The two MUST agree byte for byte: signing the raw key while the HTTP
+ * client encodes a space to `%20` on the way out is a silent 403 — which is
+ * exactly what a report the server named with spaces did, while every
+ * key this app writes itself (sanitised to `[A-Za-z0-9._-]`) sailed through.
+ */
+fun s3KeyPath(key: String): String =
+    "/" + key.split('/').joinToString("/") { segment -> uriEncodeSegment(segment) }
+
+private fun uriEncodeSegment(segment: String): String = buildString {
+    for (byte in segment.encodeToByteArray()) {
+        val value = byte.toInt() and BYTE_MASK
+        val char = value.toChar()
+        if (char.isUnreserved()) {
+            append(char)
+        } else {
+            append('%')
+            append(HEX[value shr NIBBLE_BITS].uppercaseChar())
+            append(HEX[value and NIBBLE_MASK].uppercaseChar())
+        }
+    }
+}
+
+/** RFC 3986 unreserved: letters, digits, and `-_.~` — everything else is percent-encoded. */
+private fun Char.isUnreserved(): Boolean =
+    this in 'A'..'Z' || this in 'a'..'z' || this in '0'..'9' || this in "-_.~"
+
 /** Lowercase hex, which is what every part of SigV4 expects. */
 fun ByteArray.toHex(): String = joinToString("") { byte ->
     val value = byte.toInt() and BYTE_MASK
