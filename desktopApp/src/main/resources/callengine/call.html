@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<!--
+  The media host page for Zillit Desktop calling.
+
+  Loaded into embedded Chromium (KCEF) from a local file, with the Agora Web
+  SDK bundled beside it — no CDN, no network beyond Agora's own media edge.
+
+  This page draws its own tile chrome — name, mute badge, speaking ring —
+  because a heavyweight browser surface owns every pixel inside its rectangle
+  and anything Compose paints on top of it is simply not shown. Kotlin pushes
+  identity and shape down through `zillitCall.setStage`; who is speaking and
+  who has video the page knows first-hand, a frame earlier than Kotlin could
+  tell it.
+
+  Colours arrive through `setTheme`, so the stage is not a foreign slab in the
+  middle of the window.
+-->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Zillit Call</title>
+    <style>
+        /* Defaults for a page opened outside the app — the demo harness runs
+           in a plain browser, where nothing ever calls setTheme. */
+        :root {
+            --bg: #14161a;
+            --tile: #1e2126;
+            --tile-idle: #191c21;
+            --border: #2a2f37;
+            --text: #e8eaed;
+            --muted: #9aa0a6;
+            --speaking: #34a853;
+            --danger: #ea4335;
+            --gap: 8px;
+            --radius: 16px;
+        }
+
+        html, body {
+            margin: 0;
+            height: 100%;
+            background: var(--bg);
+            overflow: hidden;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            color: var(--text);
+        }
+
+        /* Rows of fixed-ratio tiles, centred — the same rule the Compose grid
+           follows, so the two renderers cannot disagree about shape. */
+        #stage {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: var(--gap);
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+        }
+
+        .row {
+            display: flex;
+            flex-direction: row;
+            gap: var(--gap);
+            justify-content: center;
+        }
+
+        .tile {
+            position: relative;
+            background: var(--tile);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+
+        .tile.idle { background: var(--tile-idle); opacity: .55; }
+
+        .tile video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        /* The initials disc, shown until a video track arrives. */
+        .face {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .disc {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            color: #fff;
+            font-weight: 600;
+        }
+
+        /* Two rings: a solid one meaning "talking", and a slow halo that makes
+           it read as live rather than as a static outline. */
+        .ring {
+            position: absolute;
+            border-radius: 50%;
+            border: 2.5px solid var(--speaking);
+            opacity: 0;
+            transition: opacity .48s ease-out;
+            pointer-events: none;
+        }
+
+        /* Fast in, slow out: speech has gaps between words, and a symmetric
+           fade turns an ordinary sentence into a strobing halo. */
+        .tile.speaking .ring {
+            opacity: 1;
+            transition: opacity .09s ease-in;
+        }
+
+        .tile.speaking .halo { animation: halo 1.4s linear infinite; }
+
+        @keyframes halo {
+            from { transform: scale(1); opacity: .32; }
+            to   { transform: scale(1.12); opacity: 0; }
+        }
+
+        .chip {
+            position: absolute;
+            left: 8px;
+            bottom: 8px;
+            max-width: calc(100% - 16px);
+            padding: 2px 8px;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, .55);
+            font-size: 11px;
+            line-height: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .mute {
+            position: absolute;
+            right: 8px;
+            top: 8px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--danger);
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .tile.muted .mute { display: flex; }
+        .mute svg { width: 12px; height: 12px; fill: #fff; }
+
+        /* Minimised: the pill's thumb is 96 px wide, where a name chip is
+           unreadable and every tile but the first is invisible anyway. */
+        body.compact .chip,
+        body.compact .mute { display: none; }
+        body.compact .row:not(:first-child) { display: none; }
+        body.compact .tile:not(:first-child) { display: none; }
+    </style>
+</head>
+<body>
+<div id="stage"></div>
+<script src="agora-rtc-sdk-ng-4.24.2.js"></script>
+<script src="call.js"></script>
+</body>
+</html>

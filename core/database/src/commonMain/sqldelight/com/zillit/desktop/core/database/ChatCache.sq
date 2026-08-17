@@ -1,0 +1,59 @@
+-- Cached direct messages for the open production.
+--
+-- Bodies are stored as the wire's AES cipher-hex, never plaintext — the DB
+-- file is itself encrypted, and this keeps message text unreadable even with
+-- the file open. Decryption happens in memory on load, with the same key the
+-- wire uses.
+
+CREATE TABLE cachedChatMessage (
+    messageId  TEXT NOT NULL,
+    projectId  TEXT NOT NULL,
+    peerId     TEXT NOT NULL,
+    uniqueId   TEXT NOT NULL,
+    senderId   TEXT NOT NULL,
+    receiverId TEXT NOT NULL,
+    bodyCipher TEXT NOT NULL,
+    createdAt  INTEGER NOT NULL,
+    isMine     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (projectId, peerId, messageId)
+);
+
+CREATE INDEX cachedChatByTime ON cachedChatMessage (projectId, peerId, createdAt);
+
+upsertMessage:
+INSERT OR REPLACE INTO cachedChatMessage
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectThread:
+SELECT * FROM cachedChatMessage
+WHERE projectId = ? AND peerId = ?
+ORDER BY createdAt;
+
+selectLastPerPeer:
+SELECT m.* FROM cachedChatMessage m
+JOIN (
+    SELECT peerId, MAX(createdAt) AS newest
+    FROM cachedChatMessage WHERE projectId = ? GROUP BY peerId
+) latest ON latest.peerId = m.peerId AND latest.newest = m.createdAt
+WHERE m.projectId = ?;
+
+deleteThread:
+DELETE FROM cachedChatMessage WHERE projectId = ? AND peerId = ?;
+
+deleteMessages:
+DELETE FROM cachedChatMessage WHERE projectId = ? AND messageId IN ?;
+
+-- How far each thread has been read here, for unread badges. One row per
+-- thread; missing means never opened, so everything cached counts as unread.
+CREATE TABLE chatThreadRead (
+    projectId       TEXT NOT NULL,
+    peerId          TEXT NOT NULL,
+    readUntilMillis INTEGER NOT NULL,
+    PRIMARY KEY (projectId, peerId)
+);
+
+upsertReadMark:
+INSERT OR REPLACE INTO chatThreadRead VALUES (?, ?, ?);
+
+selectReadMarks:
+SELECT * FROM chatThreadRead WHERE projectId = ?;

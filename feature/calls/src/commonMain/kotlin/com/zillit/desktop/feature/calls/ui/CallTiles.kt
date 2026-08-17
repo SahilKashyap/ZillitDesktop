@@ -1,0 +1,168 @@
+package com.zillit.desktop.feature.calls.ui
+
+import com.zillit.desktop.feature.calls.domain.CallMedia
+import com.zillit.desktop.feature.calls.domain.CallParticipant
+import com.zillit.desktop.feature.calls.domain.CallSession
+import com.zillit.desktop.feature.calls.domain.CallStatus
+import com.zillit.desktop.feature.calls.domain.LinkQuality
+
+/** What a tile knows about someone's media. */
+data class TileMedia(
+    val speaking: Boolean = false,
+    val audioMuted: Boolean = false,
+    val videoOn: Boolean = false,
+    val sharing: Boolean = false,
+    val quality: LinkQuality = LinkQuality.Unknown,
+)
+
+/**
+ * One face on the stage.
+ *
+ * [media] is null when nothing the engine reported can be attributed to this
+ * person — the roster row arrived without an `agora_uid`, which the server
+ * often omits. Such a tile shows who they are and nothing about their
+ * microphone: a mute badge on the wrong face is worse than no badge at all.
+ */
+data class CallTile(
+    val key: String,
+    val name: String,
+    val userId: String = "",
+    val uid: Int = 0,
+    val isSelf: Boolean = false,
+    val presence: CallStatus = CallStatus.InCall,
+    val media: TileMedia? = null,
+)
+
+private val ON_STAGE = setOf(CallStatus.Caller, CallStatus.Ringing, CallStatus.InCall)
+
+/**
+ * The stage's people, from the roster and the media stack together.
+ *
+ * Order is us, then roster order, then unclaimed streams — and it never
+ * changes because somebody spoke. Tiles that re-sort on speech are the single
+ * most disliked thing a call grid can do.
+ */
+fun buildTiles(
+    session: CallSession?,
+    media: CallMedia,
+    selfName: String,
+    micMuted: Boolean,
+    cameraOn: Boolean,
+): List<CallTile> {
+    session ?: return emptyList()
+    val selfUid = media.selfUid.takeIf { it != 0 } ?: session.localUid
+    val roster = session.participants
+        .filter { it.userId != session.selfUserId && it.status in ON_STAGE }
+    val bound = bindUids(roster, media, selfUid)
+    val claimed = bound.values.toSet() + selfUid
+    return buildList {
+        add(selfTile(session, media, selfName, micMuted, cameraOn, selfUid))
+        roster.forEach { add(rosterTile(it, media, bound[it.userId] ?: 0)) }
+        media.peers.keys.filter { it != 0 && it !in claimed }.sorted()
+            .forEach { add(guestTile(it, media)) }
+    }
+}
+
+/**
+ * Roster row → engine uid.
+ *
+ * `agora_uid` is what every platform maps by, and it is often absent from the
+ * invite: the desktop then joins with uid 0 and Agora issues one, so even our
+ * own number is not the number in the payload. Where exactly one row and
+ * exactly one stream are left over they must be each other — beyond that this
+ * refuses to guess, because a wrong binding puts one person's speaking ring on
+ * another person's face.
+ */
+private fun bindUids(
+    roster: List<CallParticipant>,
+    media: CallMedia,
+    selfUid: Int,
+): Map<String, Int> {
+    val known = roster.filter { it.numericUid != 0 }.associate { it.userId to it.numericUid }
+    val unbound = roster.filter { it.status == CallStatus.InCall && it.numericUid == 0 }
+    val orphan = media.peers.keys.filter { it != selfUid && it !in known.values }
+    return if (unbound.size == 1 && orphan.size == 1) {
+        known + (unbound.first().userId to orphan.first())
+    } else {
+        known
+    }
+}
+
+private fun rosterTile(person: CallParticipant, media: CallMedia, uid: Int): CallTile =
+    CallTile(
+        // Keyed by user id, so a late `agora_uid` from the call-dump merge is
+        // ADOPTED by the existing tile instead of appearing as a new arrival.
+        key = person.userId.ifBlank { "uid:$uid" },
+        name = person.name.ifBlank { UNNAMED },
+        userId = person.userId,
+        uid = uid,
+        presence = person.status,
+        // peers never holds uid 0, so an unmapped row falls out as null here.
+        media = media.peers[uid]?.let {
+            TileMedia(uid in media.speaking, it.audioMuted, it.videoOn, it.sharing, it.quality)
+        },
+    )
+
+private fun selfTile(
+    session: CallSession,
+    media: CallMedia,
+    selfName: String,
+    micMuted: Boolean,
+    cameraOn: Boolean,
+    selfUid: Int,
+): CallTile = CallTile(
+    key = SELF_KEY,
+    name = selfName.ifBlank { "You" },
+    userId = session.selfUserId,
+    uid = selfUid,
+    isSelf = true,
+    // Our own mute and camera come from the coordinator, never from media: the
+    // stack reports other people's tracks, and a self badge sourced from it
+    // would lag the button the user just pressed.
+    media = TileMedia(
+        speaking = !micMuted && (selfUid in media.speaking || 0 in media.speaking),
+        audioMuted = micMuted,
+        videoOn = cameraOn,
+        quality = media.selfQuality,
+    ),
+)
+
+/**
+ * A stream nobody in the roster claims.
+ *
+ * Guests join by link and never get a `call_users` row, and a roster snapshot
+ * can simply be older than the channel. Their video is already on the stage,
+ * so leaving them out would be a person on screen who does not exist in the UI.
+ */
+private fun guestTile(uid: Int, media: CallMedia): CallTile {
+    val peer = media.peers.getValue(uid)
+    return CallTile(
+        key = "uid:$uid",
+        name = UNNAMED,
+        uid = uid,
+        media = TileMedia(
+            uid in media.speaking, peer.audioMuted, peer.videoOn, peer.sharing, peer.quality,
+        ),
+    )
+}
+
+/** One shape for both grids: the Compose stage and the page's own. */
+fun columnsFor(count: Int): Int = when {
+    count <= ONE_UP -> ONE_COLUMN
+    count <= TWO_UP -> TWO_COLUMNS
+    count <= THREE_UP -> THREE_COLUMNS
+    else -> FOUR_COLUMNS
+}
+
+const val GRID_CAP = 12
+private const val ONE_COLUMN = 1
+private const val TWO_COLUMNS = 2
+private const val THREE_COLUMNS = 3
+private const val FOUR_COLUMNS = 4
+
+/** The largest crowd each column count still gives a 16:9 cell. */
+private const val ONE_UP = 1
+private const val TWO_UP = 4
+private const val THREE_UP = 9
+private const val SELF_KEY = "self"
+private const val UNNAMED = "Guest"

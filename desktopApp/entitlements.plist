@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened runtime entitlements for the signed macOS build.
+
+  Two rules this file has already broken once each, both fatal to codesign:
+
+    * Nothing may appear above the DOCTYPE. Apple's entitlements parser (AMFI)
+      is stricter than an XML parser, and a leading comment fails the whole
+      file with "AMFIUnserializeXML: syntax error".
+    * A double hyphen may not appear inside an XML comment. Naming a JVM flag
+      such as the add-opens ones in build.gradle.kts ends the comment early and
+      fails the same way, several lines later than the mistake.
+
+  Notarization requires the hardened runtime, and the hardened runtime blocks
+  several things this app genuinely does. Each entry below is here because
+  something breaks without it; none are precautionary.
+
+  The JIT and memory entitlements are for JCEF: the call media engine embeds
+  Chromium, whose V8 writes executable pages at runtime. Without them the app
+  does not merely lose calls, it dies at libjawt load, which is the same
+  SIGABRT the add-opens flags guard against, arriving by another route.
+
+  disable-library-validation is the load-time equivalent: the JCEF framework
+  and the jlink runtime ship dylibs signed by JetBrains, not by us, and library
+  validation refuses a library whose team identifier is not the host binary's.
+
+  Audio and camera are the call feature. These only permit access; macOS still
+  needs the usage-description strings in Info.plist (see infoPlist in
+  build.gradle.kts) before it will prompt, and without them the request is
+  denied in silence.
+-->
+<plist version="1.0">
+<dict>
+    <!-- JCEF / V8 writes and executes pages at runtime. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- Loads dylibs signed by JetBrains (JCEF, the jlink runtime), not by us. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- The JVM sets DYLD_ variables to find its own libraries before main(). -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+
+    <!-- Calls. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.device.camera</key>
+    <true/>
+</dict>
+</plist>

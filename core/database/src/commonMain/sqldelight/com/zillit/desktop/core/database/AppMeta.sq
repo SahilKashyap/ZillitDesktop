@@ -1,0 +1,17 @@
+-- Key/value metadata for the database itself: schema provenance, last-sync
+-- markers, cache-wipe bookkeeping. Feature modules add their own .sq files
+-- alongside this one rather than extending it (plan §11.5).
+
+CREATE TABLE appMeta (
+    key   TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+selectByKey:
+SELECT value FROM appMeta WHERE key = ?;
+
+upsert:
+INSERT OR REPLACE INTO appMeta(key, value) VALUES (?, ?);
+
+deleteAll:
+DELETE FROM appMeta;

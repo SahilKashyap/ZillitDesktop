@@ -1,0 +1,28 @@
+plugins {
+    id("zillit.compose.library")
+    alias(libs.plugins.kotlinSerialization)
+}
+
+kotlin {
+    sourceSets {
+        commonMain.dependencies {
+            implementation(project(":core:common"))
+            implementation(project(":core:config"))
+            implementation(project(":core:designsystem"))
+            implementation(project(":core:localization"))
+            implementation(project(":core:mvvm"))
+            implementation(project(":core:network"))
+            implementation(project(":core:units"))
+            implementation(project(":core:security"))
+            api(project(":core:workspace"))
+        }
+        commonTest.dependencies {
+            implementation(libs.kotlinx.coroutines.test)
+        }
+        jvmTest.dependencies {
+            implementation(libs.ktor.client.mock)
+            implementation(libs.ktor.client.core)
+            implementation(libs.kotlinx.coroutines.test)
+        }
+    }
+}

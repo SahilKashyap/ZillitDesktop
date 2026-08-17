@@ -1,0 +1,214 @@
+package com.zillit.desktop.feature.email
+
+import com.zillit.desktop.feature.email.domain.EmailQuery
+import com.zillit.desktop.feature.email.domain.EmailSummary
+import com.zillit.desktop.feature.email.domain.ReadFilter
+import com.zillit.desktop.feature.email.domain.SearchField
+import com.zillit.desktop.feature.email.domain.search
+import com.zillit.desktop.feature.email.ui.MailSearch
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+/**
+ * Searching mail.
+ *
+ * Local, because there is nothing else on offer: the mail API exposes no search
+ * endpoint, and neither other client has one — Android queries its Realm cache
+ * and the web filters the list it already holds. So the assertions here are
+ * about the *rules*, and about the UI being honest that this covers downloaded
+ * mail rather than the mailbox.
+ */
+class EmailSearchTest {
+
+    private fun mail(
+        id: String,
+        subject: String = "",
+        from: String = "",
+        to: List<String> = emptyList(),
+        snippet: String = "",
+        at: Long = 0,
+    ) = EmailSummary(
+        id = id,
+        threadId = id,
+        subject = subject,
+        from = from,
+        to = to,
+        snippet = snippet,
+        receivedAtMillis = at,
+    )
+
+    /** Where a message sits and what state it is in, kept off the constructor. */
+    private fun EmailSummary.filed(
+        folder: String = "INBOX",
+        read: Boolean = true,
+        attachments: Int = 0,
+    ) = copy(
+        folderName = folder,
+        isRead = read,
+        hasAttachments = attachments > 0,
+        attachmentCount = attachments,
+    )
+
+    private val mailbox = listOf(
+        mail("m1", subject = "Call sheet day 12", from = "Aisha <a@prod.com>", at = 300),
+        mail("m2", subject = "Catering", from = "Ravi <r@prod.com>", snippet = "call sheet attached", at = 200),
+        mail("m3", subject = "Invoice", from = "vendor@x.com", at = 100)
+            .filed(folder = "Archive", read = false),
+        mail("m4", subject = "Sides", to = listOf("crew@prod.com"), at = 400)
+            .filed(folder = "Sent", attachments = 2),
+    )
+
+    private fun find(
+        term: String,
+        fields: Set<SearchField> = EmailQuery.DEFAULT_FIELDS,
+        folders: Set<String> = emptySet(),
+        readFilter: ReadFilter = ReadFilter.Any,
+        attachmentsOnly: Boolean = false,
+    ) = mailbox.search(
+        EmailQuery(term, folders, fields, readFilter, attachmentsOnly),
+    ).map { it.id }
+
+    // -- the basics --------------------------------------------------------
+
+    @Test
+    fun `subject and sender are searched by default`() {
+        assertEquals(listOf("m1"), find("call sheet"))
+        assertEquals(listOf("m2"), find("ravi"))
+    }
+
+    @Test
+    fun `the body is not searched by default`() {
+        // A term in a quoted reply chain matches half the mailbox, and someone
+        // searching "call sheet" wants the message about it.
+        assertFalse(find("call sheet").contains("m2"))
+
+        val withBody = find("call sheet", fields = EmailQuery.DEFAULT_FIELDS + SearchField.Body)
+        assertTrue(withBody.contains("m2"))
+    }
+
+    @Test
+    fun `searching is case-insensitive`() {
+        assertEquals(find("CALL SHEET"), find("call sheet"))
+    }
+
+    @Test
+    fun `a blank term finds nothing, not everything`() {
+        // A box that shows the whole mailbox the moment it is focused is noise.
+        assertTrue(find("").isEmpty())
+        assertTrue(find("   ").isEmpty())
+    }
+
+    @Test
+    fun `results are newest first`() {
+        assertEquals(listOf("m4", "m1", "m2", "m3"), find("", fields = emptySet()).ifEmpty {
+            mailbox.search(EmailQuery("@", fields = setOf(SearchField.From, SearchField.To, SearchField.Subject)))
+                .map { it.id }
+        })
+    }
+
+    // -- crossing folders --------------------------------------------------
+
+    @Test
+    fun `search spans every folder, not the open one`() {
+        // Someone looking for a call sheet does not know which folder it is in.
+        // That is the point of searching.
+        assertEquals(listOf("m3"), find("invoice"))
+        assertEquals(listOf("m4"), find("sides"))
+    }
+
+    @Test
+    fun `folders can be narrowed explicitly`() {
+        assertTrue(find("invoice", folders = setOf("INBOX")).isEmpty())
+        assertEquals(listOf("m3"), find("invoice", folders = setOf("Archive")))
+    }
+
+    // -- filters -----------------------------------------------------------
+
+    @Test
+    fun `unread narrows to unread`() {
+        assertEquals(listOf("m3"), find("invoice", readFilter = ReadFilter.Unread))
+        assertTrue(find("invoice", readFilter = ReadFilter.Read).isEmpty())
+    }
+
+    @Test
+    fun `attachments narrow to messages that have them`() {
+        assertEquals(listOf("m4"), find("sides", attachmentsOnly = true))
+        assertTrue(find("call sheet", attachmentsOnly = true).isEmpty())
+    }
+
+    @Test
+    fun `recipients are searched when the To field is on`() {
+        assertEquals(listOf("m4"), find("crew@", fields = setOf(SearchField.To)))
+        assertTrue(find("crew@").isEmpty(), "To is off by default")
+    }
+
+    @Test
+    fun `filters combine`() {
+        val hits = mailbox.search(
+            EmailQuery(
+                term = "@prod.com",
+                fields = setOf(SearchField.To),
+                withAttachmentsOnly = true,
+            ),
+        )
+
+        assertEquals(listOf("m4"), hits.map { it.id })
+    }
+
+    // -- the state holder --------------------------------------------------
+
+    @Test
+    fun `typing runs the search and clearing ends it`() {
+        val search = MailSearch { mailbox }
+
+        search.term("invoice")
+        assertTrue(search.state.value.isActive)
+        assertEquals(listOf("m3"), search.state.value.results.map { it.id })
+
+        search.term("")
+        assertFalse(search.state.value.isActive)
+        assertTrue(search.state.value.results.isEmpty())
+    }
+
+    @Test
+    fun `opening a folder ends the search`() {
+        val search = MailSearch { mailbox }
+        search.term("invoice")
+
+        search.clear()
+
+        assertFalse(search.state.value.isActive)
+        assertEquals("", search.state.value.query.term)
+    }
+
+    @Test
+    fun `the scope line counts the folders actually searched`() {
+        // Not decoration: with no server-side search, the user has to know the
+        // result set covers downloaded mail rather than the mailbox.
+        val search = MailSearch { mailbox }
+
+        search.term("@")
+
+        assertEquals(3, search.state.value.syncedFolderCount)
+        assertTrue(search.state.value.scope.contains("3 folders"), search.state.value.scope)
+    }
+
+    @Test
+    fun `an empty cache says so rather than saying no results`() {
+        val search = MailSearch { emptyList() }
+
+        search.term("anything")
+
+        assertTrue(search.state.value.scope.contains("No mail"), search.state.value.scope)
+    }
+
+    @Test
+    fun `filters are reported as narrowing`() {
+        assertFalse(EmailQuery("x").hasFilters)
+        assertTrue(EmailQuery("x", readFilter = ReadFilter.Unread).hasFilters)
+        assertTrue(EmailQuery("x", withAttachmentsOnly = true).hasFilters)
+        assertTrue(EmailQuery("x", folders = setOf("INBOX")).hasFilters)
+    }
+}

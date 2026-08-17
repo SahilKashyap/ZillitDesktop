@@ -1,0 +1,180 @@
+package com.zillit.desktop.feature.calls.domain
+
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+
+/**
+ * Something the media stack did.
+ *
+ * Modelled on Android's `CallEngineEvent`, minus the events that only exist
+ * because of Android platform quirks (audio-route re-assertion, foreground
+ * service restarts). What survives is the set the call UI actually reacts to.
+ */
+sealed interface CallEngineEvent {
+
+    /** We are in the channel. Until this arrives, nothing is flowing. */
+    data class Joined(val channel: String, val uid: Int) : CallEngineEvent
+
+    /** We left, or were removed. */
+    data class Left(val channel: String) : CallEngineEvent
+
+    /** A remote participant's media appeared. */
+    data class PeerJoined(val uid: Int, val peerId: String? = null) : CallEngineEvent
+
+    /** A remote participant's media went away. [reason] is the SDK's code. */
+    data class PeerLeft(val uid: Int, val reason: Int = 0) : CallEngineEvent
+
+    /** Someone muted or unmuted their microphone. */
+    data class PeerAudioMuted(val uid: Int, val muted: Boolean) : CallEngineEvent
+
+    /** Someone turned their camera on or off. */
+    data class PeerVideoMuted(val uid: Int, val muted: Boolean) : CallEngineEvent
+
+    /** Who is talking, loudest first. Drives the speaking ring on avatars. */
+    data class ActiveSpeakers(val uids: List<Int>) : CallEngineEvent
+
+    /** Link quality for one participant, on the SDK's 0..6 scale. */
+    data class NetworkQuality(val uid: Int, val tx: Int, val rx: Int) : CallEngineEvent
+
+    /** A remote participant started or stopped sharing their screen. */
+    data class PeerScreenShare(val uid: Int, val sharing: Boolean) : CallEngineEvent
+
+    /** The transport dropped, recovered, or gave up. */
+    data class ConnectionChanged(val state: EngineConnection, val reason: String? = null) :
+        CallEngineEvent
+
+    /**
+     * The engine failed in a way the call cannot continue through.
+     *
+     * Carries a human-readable message because there is nothing the UI can
+     * usefully do with an SDK error code except show it.
+     */
+    data class Failed(val message: String) : CallEngineEvent
+}
+
+/** Transport state, collapsed from each SDK's own enumeration. */
+enum class EngineConnection { Connecting, Connected, Reconnecting, Disconnected, Failed }
+
+/**
+ * The media stack, behind one interface.
+ *
+ * Agora publishes no client SDK that runs on a JVM desktop — their desktop
+ * targets are native Windows and macOS, and the Java SDK they ship is a Linux
+ * server SDK with no capture or rendering. So the media half of calling has to
+ * be hosted by something, and which something is a decision with real
+ * trade-offs (an embedded Chromium running the Web SDK, or hand-written
+ * bindings to the native libraries).
+ *
+ * Everything above this interface — ringing, accepting, the roster, the
+ * timeouts, the state machine — is independent of that choice, so it is
+ * written against this and nothing else. [NoopCallEngine] lets the whole
+ * signalling path run and be tested before a real engine exists.
+ *
+ * Implementations must be safe to call from the main thread and must never
+ * throw; failures arrive on [events] as [CallEngineEvent.Failed].
+ */
+interface CallEngine {
+
+    /** Everything the stack reports. Replayed to nobody — subscribe first. */
+    val events: Flow<CallEngineEvent>
+
+    /** True once [initialize] has succeeded and the engine can join. */
+    val isReady: Boolean
+
+    /** Brings the stack up. Idempotent; safe to call before every call. */
+    suspend fun initialize(): Boolean
+
+    /**
+     * Joins [channel] as [uid], authenticated by [token].
+     *
+     * [hasVideo] must be settled before joining: Agora decides whether to open
+     * the camera at join time, and an audio call that joins with video enabled
+     * lights the user's camera indicator for no reason.
+     */
+    suspend fun join(channel: String, token: String, uid: Int, hasVideo: Boolean)
+
+    /** Leaves the channel. Safe to call when not in one. */
+    suspend fun leave()
+
+    fun setMicrophoneMuted(muted: Boolean)
+
+    fun setCameraEnabled(enabled: Boolean)
+
+    fun setSpeakerEnabled(enabled: Boolean)
+
+    /** Cycles to the next capture device, where the host has more than one. */
+    fun switchCamera()
+
+    /** Starts sharing a screen or window. False when the host cannot. */
+    suspend fun startScreenShare(): Boolean = false
+
+    suspend fun stopScreenShare() {}
+
+    /**
+     * Hands the engine the computed stage model.
+     *
+     * An engine that renders its own surface — embedded Chromium does — needs
+     * to label the tiles it draws, and it cannot be told by drawing on top of
+     * it: a heavyweight surface owns every pixel inside its rectangle.
+     */
+    fun setStage(json: String) {}
+
+    /** Hands the engine the app's colours, so its surface is not a foreign slab. */
+    fun setTheme(json: String) {}
+
+    /** Collapses the engine's surface to one tile, for the minimised pill. */
+    fun setCompact(compact: Boolean) {}
+
+    /** Releases the stack. The engine is unusable afterwards. */
+    suspend fun destroy()
+}
+
+/**
+ * A [CallEngine] that answers every call successfully and carries no media.
+ *
+ * Not a test double — it is what the app runs with until an engine is wired
+ * in, so the call flow is exercised end to end against the live server rather
+ * than sitting unrun until the media work lands. Every seam it stands in for
+ * is one that would otherwise be discovered late.
+ */
+class NoopCallEngine : CallEngine {
+
+    private val _events = MutableSharedFlow<CallEngineEvent>(extraBufferCapacity = 16)
+    override val events: Flow<CallEngineEvent> = _events.asSharedFlow()
+
+    private var ready = false
+    private var joined: String? = null
+
+    override val isReady: Boolean get() = ready
+
+    override suspend fun initialize(): Boolean {
+        ready = true
+        return true
+    }
+
+    override suspend fun join(channel: String, token: String, uid: Int, hasVideo: Boolean) {
+        joined = channel
+        _events.emit(CallEngineEvent.ConnectionChanged(EngineConnection.Connected))
+        _events.emit(CallEngineEvent.Joined(channel, uid))
+    }
+
+    override suspend fun leave() {
+        val channel = joined ?: return
+        joined = null
+        _events.emit(CallEngineEvent.Left(channel))
+    }
+
+    override fun setMicrophoneMuted(muted: Boolean) = Unit
+
+    override fun setCameraEnabled(enabled: Boolean) = Unit
+
+    override fun setSpeakerEnabled(enabled: Boolean) = Unit
+
+    override fun switchCamera() = Unit
+
+    override suspend fun destroy() {
+        leave()
+        ready = false
+    }
+}

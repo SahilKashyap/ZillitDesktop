@@ -1,0 +1,40 @@
+-- The translated label dictionaries, keyed by language.
+--
+-- Deliberately NOT in ProjectCache.sq and deliberately not wiped on project
+-- switch: these are device reference data, not a production's. The sign-in
+-- screen renders before any production exists, and three dictionaries
+-- re-fetched on every switch would pay for nothing — the words do not change
+-- when the production does.
+--
+-- Rows rather than one JSON blob per language: the label table is the single
+-- largest response the app caches (several thousand keys), and a blob means
+-- decoding all of it to answer one lookup. The Android client keeps exactly
+-- this data as a serialised string in `SharedPref` and re-parses it on the
+-- first miss after every process start.
+
+CREATE TABLE cachedLabel (
+    language TEXT NOT NULL,
+    -- Which dictionary this came from: `labels`, `messages` or `identifiers`.
+    -- A plain string, not an enum — `core:database` owns the schema and must
+    -- not depend on `core:localization` to describe its own column (see the
+    -- header of ProjectCache.kt).
+    kind     TEXT NOT NULL,
+    key      TEXT NOT NULL,
+    value    TEXT NOT NULL,
+    cachedAt INTEGER NOT NULL,
+    PRIMARY KEY (language, kind, key)
+);
+
+selectForLanguage:
+SELECT kind, key, value FROM cachedLabel WHERE language = ?;
+
+upsertLabel:
+INSERT OR REPLACE INTO cachedLabel VALUES (?, ?, ?, ?, ?);
+
+-- Per (language, kind), so a failed `messages` fetch cannot empty the `labels`
+-- dictionary that arrived a moment earlier.
+deleteKind:
+DELETE FROM cachedLabel WHERE language = ? AND kind = ?;
+
+deleteAllLabels:
+DELETE FROM cachedLabel;

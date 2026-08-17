@@ -1,0 +1,117 @@
+# Zillit Desktop — server configuration
+#
+# Copy this file to ONE of these locations and fill in the values:
+#   ./zillit.properties                  (next to the executable)
+#   ~/.zillit/zillit.properties          (per user)
+#   any path given via -Dzillit.config=  or  $ZILLIT_CONFIG
+#
+# Choose the environment with -Dzillit.env=develop|qa|prod  or  $ZILLIT_ENV.
+# Unset or unrecognised resolves to prod — a misconfigured launch fails onto
+# the strictest settings rather than silently pointing at QA.
+#
+# Key shape:  <PREFIX>_<SERVICE>   where PREFIX is STG (develop), QA or PROD.
+# This is the SAME shape the Android app's local.properties uses, so you can
+# copy the URL lines straight across.
+#
+# Rules enforced at startup (plan §8.2):
+#   * every service URL must be https://
+#   * every realtime URL must be wss:// or https://
+#   * <PREFIX>_BASE_URL is required; everything else is optional
+#
+# THE HEADER KEY IS THE ONE SECRET THIS FILE CARRIES.
+#
+# <PREFIX>_ENCRYPTION_KEY and <PREFIX>_IV_ENCRYPTION_KEY hold the AES pair for
+# the moduledata/bodyhash headers — the same values, under the same names, as
+# the Android app's local.properties. Leave them blank and the app will ask for
+# them once and store them in the OS keychain instead.
+#
+# This file must never be committed. It is in .gitignore; keep it there, and
+# keep its permissions at 600. The key is shared by every install, so anyone who
+# obtains it can forge request headers for any device (plan §8.3).
+#
+# NO OTHER SECRETS BELONG HERE. Maps, AWS, ChatGPT and Box credentials arrive
+# from GET api/v2/configuration after sign-in.
+
+# ---------------------------------------------------------------------------
+# Production
+# ---------------------------------------------------------------------------
+
+# -- required --
+PROD_BASE_URL=https://api.example.com
+
+# -- header encryption (optional; blank falls back to the OS keychain) --
+# Exactly 32 characters, and exactly 16 for the IV. A different length is
+# ignored with a warning in the log rather than used.
+PROD_ENCRYPTION_KEY=
+PROD_IV_ENCRYPTION_KEY=
+
+# -- per-service hosts --
+PROD_ACCOUNT_HUB_BASE_URL=
+PROD_BUDGET_BASE_URL=
+# Budget Builder: the zillit_budget service API, and the web deployment that
+# serves its page (the app ships with the web client, e.g. https://dev.zillit.com
+# for develop). Both unset = the tool reports itself unconfigured.
+PROD_BUDGET_BUILDER_BASE_URL=
+PROD_BUDGET_BUILDER_WEB_URL=
+PROD_CALENDAR_BASE_URL=
+PROD_CALLING_BASE_URL=
+PROD_CALLSHEET_BASE_URL=
+PROD_CARD_EXPENSES_BASE_URL=
+PROD_CASH_EXPENSES_BASE_URL=
+PROD_CASTING_BASE_URL=
+PROD_CHAT_BASE_URL=
+PROD_CONTINUITY_BASE_URL=
+PROD_DEAL_MEMO_BASE_URL=
+PROD_DOC_DISTRIBUTION_BASE_URL=
+PROD_DRIVE_BASE_URL=
+PROD_EMAIL_BASE_URL=
+PROD_E_SIGNATUTE_BASE_URL=
+PROD_FORMS_BASE_URL=
+PROD_INTEGRATIONS_BASE_URL=
+PROD_INVOICES_BASE_URL=
+PROD_LOCATION_BASE_URL=
+PROD_MAP_BASE_URL=
+PROD_MEDIA_BASE_URL=
+PROD_NOTIFICATION_BASE_URL=
+PROD_PAYROLL_BASE_URL=
+PROD_PRE_AND_PRODUCTION_BASE_URL=
+PROD_PRODUCTION_REPORT_BASE_URL=
+PROD_PURCHASE_ORDER_BASE_URL=
+PROD_RECCE_BASE_URL=
+PROD_SCHEDULE_DIST_BASE_URL=
+PROD_SCRIPT_DIST_BASE_URL=
+PROD_SCRIPT_NOTES_BASE_URL=
+PROD_SIDES_BASE_URL=
+PROD_TRANSPORTATION_BASE_URL=
+PROD_UNITS_BASE_URL=
+PROD_WARDROBE_BASE_URL=
+
+# -- realtime --
+PROD_URL=
+PROD_LIVEKIT_URL=wss://calls.zillit.com/livekit
+PROD_CALL_URL=
+
+# ---------------------------------------------------------------------------
+# Calling (Agora "Line 2")
+#
+# Without AGORA_APP_ID the app still rings, accepts and hangs up — it simply
+# carries no audio or video, and says so once at startup ("media engine off").
+# The two Firebase keys are both-or-neither: they enable the Firestore mirror
+# that dismisses a ring on this device when the same user answers on their
+# phone. Absent, calling degrades to socket-only.
+#
+# Copy the values in from Android's app/src/{develop,qa,prod}/
+# google-services.json and local.properties — file to file, never through a
+# terminal, a log, or a commit.
+# ---------------------------------------------------------------------------
+PROD_AGORA_APP_ID=
+PROD_FIREBASE_PROJECT_ID=
+PROD_FIREBASE_API_KEY=
+
+# ---------------------------------------------------------------------------
+# QA  — same keys with a QA_ prefix
+# Develop — same keys with an STG_ prefix
+# ---------------------------------------------------------------------------
+
+# QA_BASE_URL=https://qa-api.example.com
+# STG_BASE_URL=https://dev-api.example.com

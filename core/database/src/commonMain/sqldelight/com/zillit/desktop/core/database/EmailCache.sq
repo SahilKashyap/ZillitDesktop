@@ -1,0 +1,89 @@
+-- Cached mail for the open production.
+--
+-- Its own file rather than more tables in ProjectCache.sq: mail is the one
+-- cache here that is written continuously rather than once per project open,
+-- and it is the one whose rows a user can delete from another device.
+--
+-- ## Why the summary is cached but the body is not
+--
+-- The list needs sender, subject, snippet and flags for every message in a
+-- folder — thousands of rows, three lines each. Bodies are megabytes and are
+-- read one at a time, so they are fetched on open and not kept. That also keeps
+-- the amount of readable mail on disk to what the list already shows.
+--
+-- `uid` is the IMAP sequence number and the unit of synchronisation: the server
+-- lists uids, and whatever is missing here is what gets fetched.
+
+CREATE TABLE cachedEmail (
+    uid             INTEGER NOT NULL,
+    projectId       TEXT NOT NULL,
+    folderName      TEXT NOT NULL,
+    messageId       TEXT NOT NULL,
+    threadId        TEXT NOT NULL,
+    subject         TEXT NOT NULL,
+    sender          TEXT NOT NULL,
+    recipients      TEXT NOT NULL,
+    snippet         TEXT NOT NULL,
+    receivedAt      INTEGER NOT NULL,
+    isRead          INTEGER NOT NULL DEFAULT 0,
+    attachmentCount INTEGER NOT NULL DEFAULT 0,
+    cachedAt        INTEGER NOT NULL,
+    -- Composite, not messageId: the same message appears in two folders when it
+    -- is copied, and each copy has its own uid and its own read flag.
+    PRIMARY KEY (projectId, folderName, uid)
+);
+
+-- The list query orders by this; without it a large folder sorts on every open.
+CREATE INDEX cachedEmailByDate ON cachedEmail (projectId, folderName, receivedAt DESC);
+
+CREATE TABLE cachedEmailFolder (
+    folderName  TEXT NOT NULL,
+    projectId   TEXT NOT NULL,
+    isSystem    INTEGER NOT NULL DEFAULT 0,
+    unreadCount INTEGER NOT NULL DEFAULT 0,
+    cachedAt    INTEGER NOT NULL,
+    PRIMARY KEY (projectId, folderName)
+);
+
+-- folders --------------------------------------------------------------------
+upsertFolder:
+INSERT OR REPLACE INTO cachedEmailFolder VALUES (?, ?, ?, ?, ?);
+
+selectFolders:
+SELECT * FROM cachedEmailFolder WHERE projectId = ?;
+
+deleteFolders:
+DELETE FROM cachedEmailFolder WHERE projectId = ?;
+
+-- messages -------------------------------------------------------------------
+upsertEmail:
+INSERT OR REPLACE INTO cachedEmail VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectEmails:
+SELECT * FROM cachedEmail
+WHERE projectId = ? AND folderName = ?
+ORDER BY receivedAt DESC;
+
+-- Every folder at once, for search. Ordered here rather than in Kotlin so the
+-- index does the work.
+selectAllEmails:
+SELECT * FROM cachedEmail WHERE projectId = ? ORDER BY receivedAt DESC;
+
+-- Just the uids, for the sync diff. Selecting whole rows to compare integers
+-- would read every cached body-adjacent column on each refresh.
+selectUids:
+SELECT uid FROM cachedEmail WHERE projectId = ? AND folderName = ?;
+
+markRead:
+UPDATE cachedEmail SET isRead = 1
+WHERE projectId = ? AND folderName = ? AND messageId = ?;
+
+deleteEmail:
+DELETE FROM cachedEmail WHERE projectId = ? AND folderName = ? AND uid = ?;
+
+deleteFolderEmails:
+DELETE FROM cachedEmail WHERE projectId = ? AND folderName = ?;
+
+-- wipe -----------------------------------------------------------------------
+deleteEmailData:
+DELETE FROM cachedEmail WHERE projectId = ?;

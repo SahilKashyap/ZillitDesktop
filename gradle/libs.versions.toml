@@ -1,0 +1,120 @@
+[versions]
+# --- toolchain ---
+kotlin = "2.4.10"
+jvmToolchain = "21"
+
+# --- UI ---
+composeMultiplatform = "1.11.1"
+material3 = "1.11.0-alpha07"
+androidx-lifecycle = "2.11.0-beta01"
+
+# --- core libs ---
+kotlinx-coroutines = "1.11.0"
+kotlinx-serialization = "1.11.0"
+kotlinx-datetime = "0.8.0"
+ktor = "3.5.2"
+koin = "4.2.2"
+sqldelight = "2.3.2"
+# Xerial sqlite-jdbc fork with SQLite3MultipleCiphers (SQLCipher-compatible).
+# Verified to ship natives for macOS arm64/x64, Windows x64/arm64 and Linux
+# x64/arm64 — see docs/spikes/sqlcipher.md.
+sqliteJdbcEncrypted = "3.53.4.0"
+napier = "2.7.1"
+# OS keychain bindings: macOS Keychain, Windows Credential Store, Freedesktop
+# Secret Service, KWallet. See docs/spikes/keychain.md for the assessment.
+javaKeyring = "1.0.4"
+# androidx DataStore — KMP, ships a jvm artifact. Same API the Android team
+# already uses in SharedPref.kt, so the mental model transfers.
+datastore = "1.2.1"
+# Pure-Java Socket.IO client — runs unchanged on desktop JVM. Same library and
+# major version the Android app uses, so wire behaviour matches.
+socketIo = "2.1.2"
+# QR encoding, pure Java. Used to render login QR codes LOCALLY — see
+# ZillitQrCode kdoc for why that matters.
+zxing = "3.5.4"
+
+# --- quality ---
+detekt = "1.23.8"
+junit = "4.13.2"
+
+[libraries]
+# Pure-Java H.264/MP4 frame extraction for video thumbnails — no native
+# binaries, FreeBSD-licensed. HEVC is not covered; those videos post without
+# a thumbnail, exactly as before the library existed.
+jcodec = { module = "org.jcodec:jcodec", version = "0.2.5" }
+# Pure-Java PDF rendering for document poster frames — Apache-2.0, no natives.
+pdfbox = { module = "org.apache.pdfbox:pdfbox", version = "3.0.3" }
+jcodec-javase = { module = "org.jcodec:jcodec-javase", version = "0.2.5" }
+# --- gradle plugin artifacts, for build-logic convention plugins only ---
+kotlin-gradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+compose-gradlePlugin = { module = "org.jetbrains.compose:compose-gradle-plugin", version.ref = "composeMultiplatform" }
+composeCompiler-gradlePlugin = { module = "org.jetbrains.kotlin:compose-compiler-gradle-plugin", version.ref = "kotlin" }
+detekt-gradlePlugin = { module = "io.gitlab.arturbosch.detekt:detekt-gradle-plugin", version.ref = "detekt" }
+
+# --- compose ---
+compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
+compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "composeMultiplatform" }
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "material3" }
+compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "composeMultiplatform" }
+compose-components-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "composeMultiplatform" }
+compose-uiToolingPreview = { module = "org.jetbrains.compose.ui:ui-tooling-preview", version.ref = "composeMultiplatform" }
+androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
+androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
+
+# --- coroutines ---
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+
+# --- serialization / time ---
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
+
+# --- ktor (M1: core:network) ---
+ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-contentNegotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-client-logging = { module = "io.ktor:ktor-client-logging", version.ref = "ktor" }
+ktor-serialization-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
+
+# --- DI ---
+koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
+koin-compose = { module = "io.insert-koin:koin-compose", version.ref = "koin" }
+koin-test = { module = "io.insert-koin:koin-test", version.ref = "koin" }
+
+# --- database (M1: core:database) ---
+sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sqldelight" }
+sqldelight-coroutines = { module = "app.cash.sqldelight:coroutines-extensions", version.ref = "sqldelight" }
+sqldelight-jdbcDriver = { module = "app.cash.sqldelight:jdbc-driver", version.ref = "sqldelight" }
+sqldelight-sqliteDriver = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
+sqlite-jdbc-encrypted = { module = "io.github.willena:sqlite-jdbc", version.ref = "sqliteJdbcEncrypted" }
+
+# --- secure storage (M1: core:security) ---
+java-keyring = { module = "com.github.javakeyring:java-keyring", version.ref = "javaKeyring" }
+
+# --- preferences (M1: core:datastore) ---
+datastore-preferences-core = { module = "androidx.datastore:datastore-preferences-core", version.ref = "datastore" }
+
+# --- realtime (M1: core:socket) ---
+socket-io-client = { module = "io.socket:socket.io-client", version.ref = "socketIo" }
+
+# --- QR ---
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
+
+# --- logging ---
+napier = { module = "io.github.aakira:napier", version.ref = "napier" }
+
+# --- test ---
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+kotlin-testJunit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+junit = { module = "junit:junit", version.ref = "junit" }
+
+[plugins]
+kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlinJvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
+composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+sqldelight = { id = "app.cash.sqldelight", version.ref = "sqldelight" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }

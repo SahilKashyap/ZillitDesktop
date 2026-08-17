@@ -1,0 +1,160 @@
+-- Cached server data for the open production.
+--
+-- Typed rows with an explicit `cachedAt`, not JSON blobs in a preference file.
+-- The Android client keeps `countryList`, `crewListResponse`, `projectLabels`
+-- and friends as serialised strings in `SharedPref`, which has no TTL — so they
+-- go stale silently and invalidation means deleting keys by hand.
+--
+-- Everything here is scoped by `projectId` and dropped on project switch. The
+-- file is SQLCipher-encrypted, which is what makes it acceptable to store
+-- decrypted notice bodies: they are already on this disk in the OS keychain's
+-- reach, and the alternative is re-decrypting the whole board on every open.
+
+CREATE TABLE cachedProfile (
+    userId     TEXT NOT NULL PRIMARY KEY,
+    projectId  TEXT NOT NULL,
+    fullName   TEXT NOT NULL,
+    -- Kept apart as well as joined: the profile form edits them separately,
+    -- and splitting fullName back gets a two-word first name wrong.
+    firstName  TEXT,
+    lastName   TEXT,
+    -- Where this person sits on the production. On the profile, not the crew
+    -- list: `project/users` carries neither id, so the settings form had
+    -- nothing to preselect from.
+    departmentId    TEXT,
+    departmentName  TEXT,
+    designationId   TEXT,
+    designationName TEXT,
+    keepNamePrivate INTEGER NOT NULL DEFAULT 0,
+    email      TEXT,
+    phone      TEXT,
+    avatarUrl  TEXT,
+    isAdmin    INTEGER NOT NULL DEFAULT 0,
+    joinUnitId   TEXT,
+    joinUnitName TEXT,
+    cachedAt   INTEGER NOT NULL
+);
+
+CREATE TABLE cachedProject (
+    projectId   TEXT NOT NULL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    code        TEXT NOT NULL,
+    type        TEXT,
+    subType     TEXT,
+    companyName TEXT,
+    -- Where this production's files go. `BOX`, or AWS when absent.
+    storageType TEXT,
+    enterpriseClientId TEXT,
+    -- `name=id;name=id`. Neither part contains either separator.
+    storageFolders TEXT NOT NULL DEFAULT '',
+    cachedAt    INTEGER NOT NULL
+);
+
+CREATE TABLE cachedProjectUser (
+    userId      TEXT NOT NULL,
+    projectId   TEXT NOT NULL,
+    fullName    TEXT NOT NULL,
+    email       TEXT,
+    department  TEXT,
+    designation TEXT,
+    avatarUrl   TEXT,
+    -- The member's primary device — what an Agora 1:1 call is addressed to.
+    deviceId    TEXT,
+    isAdmin     INTEGER NOT NULL DEFAULT 0,
+    -- Set by the crew member at registration. Honoured wherever their name
+    -- would be shown to the rest of the unit.
+    keepNamePrivate INTEGER NOT NULL DEFAULT 0,
+    cachedAt    INTEGER NOT NULL,
+    PRIMARY KEY (projectId, userId)
+);
+
+CREATE TABLE cachedTool (
+    identifier      TEXT NOT NULL,
+    projectId       TEXT NOT NULL,
+    groupIdentifier TEXT,
+    unitId          TEXT,
+    unitName        TEXT,
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    canView         INTEGER NOT NULL DEFAULT 0,
+    canPost         INTEGER NOT NULL DEFAULT 0,
+    canDownload     INTEGER NOT NULL DEFAULT 0,
+    isTool          INTEGER NOT NULL DEFAULT 1,
+    onHome          INTEGER NOT NULL DEFAULT 0,
+    ordinal         INTEGER NOT NULL,
+    cachedAt        INTEGER NOT NULL,
+    PRIMARY KEY (projectId, identifier, unitId)
+);
+
+-- Notices are stored decrypted; see the file header for why that is acceptable.
+CREATE TABLE cachedNotice (
+    noticeId        TEXT NOT NULL PRIMARY KEY,
+    projectId       TEXT NOT NULL,
+    unitId          TEXT NOT NULL,
+    body            TEXT NOT NULL,
+    authorName      TEXT NOT NULL,
+    authorId        TEXT,
+    createdAt       INTEGER NOT NULL,
+    isEdited        INTEGER NOT NULL DEFAULT 0,
+    isPinned        INTEGER NOT NULL DEFAULT 0,
+    attachmentCount INTEGER NOT NULL DEFAULT 0,
+    commentCount    INTEGER NOT NULL DEFAULT 0,
+    cachedAt        INTEGER NOT NULL
+);
+
+CREATE INDEX cachedNotice_unit ON cachedNotice(projectId, unitId, createdAt);
+
+-- profile ------------------------------------------------------------------
+upsertProfile:
+INSERT OR REPLACE INTO cachedProfile VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectProfile:
+SELECT * FROM cachedProfile WHERE projectId = ? LIMIT 1;
+
+-- project ------------------------------------------------------------------
+upsertProject:
+INSERT OR REPLACE INTO cachedProject VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectProject:
+SELECT * FROM cachedProject WHERE projectId = ?;
+
+-- users --------------------------------------------------------------------
+upsertProjectUser:
+INSERT OR REPLACE INTO cachedProjectUser VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectProjectUsers:
+SELECT * FROM cachedProjectUser WHERE projectId = ? ORDER BY fullName COLLATE NOCASE;
+
+deleteProjectUsers:
+DELETE FROM cachedProjectUser WHERE projectId = ?;
+
+-- tools --------------------------------------------------------------------
+upsertTool:
+INSERT OR REPLACE INTO cachedTool VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectTools:
+SELECT * FROM cachedTool WHERE projectId = ? ORDER BY ordinal;
+
+deleteTools:
+DELETE FROM cachedTool WHERE projectId = ?;
+
+-- notices ------------------------------------------------------------------
+upsertNotice:
+INSERT OR REPLACE INTO cachedNotice VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectNotices:
+SELECT * FROM cachedNotice WHERE projectId = ? AND unitId = ? ORDER BY createdAt;
+
+deleteNoticesForUnit:
+DELETE FROM cachedNotice WHERE projectId = ? AND unitId = ?;
+
+-- wipe ---------------------------------------------------------------------
+-- Called on project switch and sign-out. One statement per table rather than a
+-- loop, so a table added later is a compile-time reminder to clear it too.
+deleteProjectData:
+DELETE FROM cachedProject WHERE projectId = ?;
+
+deleteProfileData:
+DELETE FROM cachedProfile WHERE projectId = ?;
+
+deleteNoticeData:
+DELETE FROM cachedNotice WHERE projectId = ?;

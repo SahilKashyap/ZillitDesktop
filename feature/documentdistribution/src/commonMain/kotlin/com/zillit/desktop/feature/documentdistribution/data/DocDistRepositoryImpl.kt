@@ -1,0 +1,506 @@
+package com.zillit.desktop.feature.documentdistribution.data
+
+import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.flatMap
+import com.zillit.desktop.core.common.map
+import com.zillit.desktop.core.common.toEpochMillisOrNull
+import com.zillit.desktop.core.config.AppConfig
+import com.zillit.desktop.core.config.ZillitService
+import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.ApiEnvelope
+import com.zillit.desktop.core.network.HttpVerb
+import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.feature.documentdistribution.domain.Contact
+import com.zillit.desktop.feature.documentdistribution.domain.DeliveryStatus
+import com.zillit.desktop.feature.documentdistribution.domain.Distribution
+import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistRepository
+import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
+import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
+import com.zillit.desktop.feature.documentdistribution.domain.LibraryPage
+import com.zillit.desktop.feature.documentdistribution.domain.LibraryQuery
+import com.zillit.desktop.feature.documentdistribution.domain.NewDistribution
+import com.zillit.desktop.feature.documentdistribution.domain.NewDistributionDefaults
+import com.zillit.desktop.feature.documentdistribution.domain.OpenState
+import com.zillit.desktop.feature.documentdistribution.domain.PublicationCategory
+import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
+import com.zillit.desktop.feature.documentdistribution.domain.Recipient
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+
+/**
+ * Every `/api/v2/document-distribution` route, on the doc-dist service's host.
+ *
+ * ## The `status: 0` envelope
+ *
+ * This service reports business-rule rejections — a duplicate folder name, a
+ * recipient the production has blocked, an unpublishable category — as **HTTP
+ * 200** with `{ status: 0, message }`. The shared [ApiClient] decides success
+ * on the HTTP code, so those would otherwise come back as successes with an
+ * empty payload and the screen would report nothing at all. [checked] is where
+ * that is caught, mirroring the web's `req()` helper.
+ *
+ * ## Why the module header is `ProjectUser`
+ *
+ * Every route here is scoped to one person on one production: the library is
+ * the production's, and what a person may send is theirs. The lighter `Device`
+ * header omits both and the service answers 406 rather than falling back.
+ */
+@Suppress("TooManyFunctions") // Mirrors the server's operation surface; see the interface.
+class DocDistRepositoryImpl(
+    private val apiClient: ApiClient,
+    config: AppConfig,
+) : DocDistRepository {
+
+    private val base = "${config.baseUrl(ZillitService.DocDistribution)}/api/v2/document-distribution"
+
+    /**
+     * Open tracking lives with the mail service that sent the copy.
+     *
+     * Not a mistake in the routing table: doc-dist hands the send to the email
+     * service, which owns the pixel log, so the status of a sent copy is only
+     * ever answerable there.
+     */
+    private val emailBase = "${config.baseUrl(ZillitService.Email)}/api/v2"
+
+    // -- library -----------------------------------------------------------
+
+    override suspend fun folders(): ZillitResult<List<LibraryFolder>> =
+        get("$base/folders", ListSerializer(FolderDto.serializer()))
+            .map { rows -> rows.mapNotNull { it.toDomain() } }
+
+    override suspend fun createFolder(name: String, parentId: String?): ZillitResult<Unit> =
+        post(
+            "$base/folders",
+            buildJsonObject {
+                put("name", JsonPrimitive(name.trim()))
+                // Explicitly null rather than omitted: null is what this
+                // service reads as "at the root", and an absent key files the
+                // folder under whatever it last had.
+                put("parent_id", parentId?.let(::JsonPrimitive) ?: kotlinx.serialization.json.JsonNull)
+            },
+        )
+
+    override suspend fun renameFolder(folderId: String, name: String): ZillitResult<Unit> =
+        put(
+            "$base/folders",
+            buildJsonObject {
+                put("folderId", JsonPrimitive(folderId))
+                put("name", JsonPrimitive(name.trim()))
+            },
+        )
+
+    override suspend fun deleteFolder(folderId: String): ZillitResult<Unit> =
+        delete("$base/folders", buildJsonObject { put("folderId", JsonPrimitive(folderId)) })
+
+    override suspend fun moveFolders(
+        folderIds: List<String>,
+        parentId: String?,
+    ): ZillitResult<Unit> = post(
+        "$base/folders/move",
+        buildJsonObject {
+            put("ids", folderIds.toJsonArray())
+            put("parent_id", parentId?.let(::JsonPrimitive) ?: kotlinx.serialization.json.JsonNull)
+        },
+    )
+
+    override suspend fun documents(query: LibraryQuery): ZillitResult<LibraryPage> = get(
+        "$base/documents",
+        DocumentPageDto.serializer(),
+        buildMap {
+            // The literal string "null", not an omitted key: this service reads
+            // an absent `folder_id` as "any folder" and answers with the whole
+            // library, so browsing the root would list every document on the
+            // production. The web sends the same sentinel.
+            put("folder_id", query.folderId ?: ROOT_SENTINEL)
+            put("page", query.page)
+            put("limit", query.limit)
+            put("sort_by", query.sort.wire)
+            query.search.trim().takeIf { it.isNotEmpty() }?.let { put("q", it) }
+            query.documentDate?.takeIf { it.isNotBlank() }?.let { put("document_date", it) }
+        },
+    ).map { it.toDomain() }
+
+    override suspend fun deleteDocument(documentId: String): ZillitResult<Unit> =
+        delete("$base/documents", buildJsonObject { put("documentId", JsonPrimitive(documentId)) })
+
+    override suspend fun moveDocuments(
+        documentIds: List<String>,
+        folderId: String?,
+    ): ZillitResult<Unit> = post(
+        "$base/documents/move",
+        buildJsonObject {
+            put("ids", documentIds.toJsonArray())
+            put("folder_id", folderId?.let(::JsonPrimitive) ?: kotlinx.serialization.json.JsonNull)
+        },
+    )
+
+    /**
+     * The URL a document's bytes can be read from.
+     *
+     * Two storage backends, one answer: S3 productions get a presigned URL from
+     * the server, LOCAL productions have no such concept and are served the
+     * `/raw` route directly. Deciding here rather than at each call site is
+     * what keeps preview, download and watermark from each carrying their own
+     * copy of the branch — the web has three.
+     */
+    override suspend fun downloadUrl(documentId: String): ZillitResult<String> =
+        apiClient.requestOrNull(
+            verb = HttpVerb.Get,
+            url = "$base/documents/$documentId/download-url",
+            serializer = UrlDto.serializer(),
+            module = RequestModule.ProjectUser,
+        ).map { it?.value ?: "$base/documents/$documentId/raw" }
+
+    // -- distribution lists ------------------------------------------------
+
+    override suspend fun lists(): ZillitResult<List<DistributionList>> =
+        get("$base/presets", ListSerializer(PresetDto.serializer()))
+            .map { rows -> rows.mapNotNull { it.toDomain() } }
+
+    override suspend fun createList(
+        name: String,
+        recipients: List<Recipient>,
+    ): ZillitResult<Unit> = post(
+        "$base/presets",
+        buildJsonObject {
+            put("name", JsonPrimitive(name.trim()))
+            put("recipients", recipients.toJsonArray())
+        },
+    )
+
+    override suspend fun updateList(
+        listId: String,
+        name: String,
+        recipients: List<Recipient>,
+    ): ZillitResult<Unit> = put(
+        "$base/presets",
+        buildJsonObject {
+            put("presetId", JsonPrimitive(listId))
+            put("name", JsonPrimitive(name.trim()))
+            put("recipients", recipients.toJsonArray())
+        },
+    )
+
+    override suspend fun deleteList(listId: String): ZillitResult<Unit> =
+        delete("$base/presets", buildJsonObject { put("presetId", JsonPrimitive(listId)) })
+
+    // -- address book ------------------------------------------------------
+
+    override suspend fun contacts(): ZillitResult<List<Contact>> =
+        get("$base/contacts", ListSerializer(ContactDto.serializer()))
+            .map { rows -> rows.mapNotNull { it.toDomain() } }
+
+    /**
+     * Creates or updates, decided by the server rather than by this client.
+     *
+     * The address book is keyed by email and both routes take the same body, so
+     * a client-side "does this exist" check would only add a round trip and a
+     * race. `POST` upserts; the web's separate `updateContact` exists solely
+     * because its modal already knew which it was doing.
+     */
+    override suspend fun saveContact(contact: Contact): ZillitResult<Unit> = post(
+        "$base/contacts",
+        buildJsonObject {
+            put("email", JsonPrimitive(contact.email.trim()))
+            put("name", JsonPrimitive(contact.name.trim()))
+            put("job", JsonPrimitive(contact.jobTitle.trim()))
+        },
+    )
+
+    override suspend fun deleteContact(email: String): ZillitResult<Unit> =
+        delete("$base/contacts", buildJsonObject { put("email", JsonPrimitive(email)) })
+
+    // -- templates ---------------------------------------------------------
+
+    override suspend fun templates(): ZillitResult<List<EmailTemplate>> =
+        get("$base/email-templates", ListSerializer(TemplateDto.serializer()))
+            .map { rows -> rows.mapNotNull { it.toDomain() } }
+
+    override suspend fun saveTemplate(template: EmailTemplate): ZillitResult<Unit> {
+        val body = buildJsonObject {
+            if (template.id.isNotBlank()) put("templateId", JsonPrimitive(template.id))
+            put("name", JsonPrimitive(template.name.trim()))
+            put("subject", JsonPrimitive(template.subject))
+            put("body", JsonPrimitive(template.bodyHtml))
+        }
+        return if (template.id.isBlank()) {
+            post("$base/email-templates", body)
+        } else {
+            put("$base/email-templates", body)
+        }
+    }
+
+    override suspend fun deleteTemplate(templateId: String): ZillitResult<Unit> =
+        delete(
+            "$base/email-templates",
+            buildJsonObject { put("templateId", JsonPrimitive(templateId)) },
+        )
+
+    // -- sending and history -----------------------------------------------
+
+    override suspend fun send(distribution: NewDistribution): ZillitResult<Unit> = post(
+        "$base/distributions",
+        buildJsonObject {
+            put(
+                "folder_id",
+                distribution.folderId?.let(::JsonPrimitive)
+                    ?: kotlinx.serialization.json.JsonNull,
+            )
+            put(
+                "preset_id",
+                distribution.listId?.let(::JsonPrimitive)
+                    ?: kotlinx.serialization.json.JsonNull,
+            )
+            // The server renders "(no subject)" itself on an empty string, but
+            // sending the placeholder makes History read the same on both
+            // clients — the web sends it explicitly for that reason.
+            put(
+                "subject",
+                JsonPrimitive(
+                    distribution.subject.trim().ifBlank { NewDistributionDefaults.NO_SUBJECT },
+                ),
+            )
+            put("body", JsonPrimitive(distribution.bodyHtml))
+            distribution.replyTo?.takeIf { it.isNotBlank() }
+                ?.let { put("reply_to", JsonPrimitive(it)) }
+            put("recipients", distribution.to.toJsonArray())
+            put("cc", distribution.cc.toJsonArray())
+            put("bcc", distribution.bcc.toJsonArray())
+            put("attachment_ids", distribution.attachmentIds.toJsonArray())
+            put("ephemeral_attachment_ids", distribution.ephemeralAttachmentIds.toJsonArray())
+            // Omitted entirely when empty. An empty object here is read as "no
+            // watermarks", which is the same outcome, but the server logs the
+            // key's presence as an explicit opt-out and the History row then
+            // claims a stamping decision the sender never made.
+            if (distribution.watermarks.isNotEmpty()) {
+                put("watermarks", distribution.watermarks.toJsonObject())
+            }
+        },
+    )
+
+    /**
+     * History, always paged.
+     *
+     * The route answers `{ distributions, total }` when paged and a **bare
+     * array** of the newest 200 when called with no parameters — the same trap
+     * payroll's weekly processing route carries. Paging is always requested so
+     * only the first shape can arrive; the array fallback is kept because a
+     * server that ignores the parameters would otherwise decode to nothing and
+     * show an empty History with no error.
+     */
+    override suspend fun history(page: Int, search: String): ZillitResult<List<Distribution>> {
+        val query = buildMap<String, Any?> {
+            put("page", page)
+            put("limit", HISTORY_PAGE)
+            search.trim().takeIf { it.isNotEmpty() }?.let { put("q", it) }
+        }
+        val paged = get("$base/distributions", DistributionPageDto.serializer(), query)
+        if (paged is ZillitResult.Success) {
+            return ZillitResult.Success(paged.data.distributions.mapNotNull { it.toDomain() })
+        }
+        return get("$base/distributions", ListSerializer(DistributionDto.serializer()), query)
+            .map { rows -> rows.mapNotNull { it.toDomain() } }
+    }
+
+    override suspend fun distribution(id: String): ZillitResult<Distribution> =
+        get("$base/distributions/$id", DistributionDto.serializer()).flatMap { dto ->
+            dto.toDomain()?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Serialization("distribution had no id"))
+        }
+
+    override suspend fun openStatus(
+        uniqueIds: List<String>,
+    ): ZillitResult<Map<String, DeliveryStatus>> {
+        if (uniqueIds.isEmpty()) return ZillitResult.Success(emptyMap())
+        return apiClient.request(
+            verb = HttpVerb.Post,
+            url = "$emailBase/email-sent-log/open-status",
+            serializer = OpenStatusEnvelopeDto.serializer(),
+            module = RequestModule.ProjectUser,
+            body = buildJsonObject { put("unique_ids", uniqueIds.toJsonArray()) },
+        ).map { envelope ->
+            envelope.emails.mapNotNull { row ->
+                val id = row.uniqueId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                // `found == false` means the service has never heard of this
+                // copy — not that it went unread. Reporting that as unopened
+                // would turn a logging gap into an accusation.
+                val state = when {
+                    row.found == false -> OpenState.Unknown
+                    row.opened == true -> OpenState.Opened
+                    row.opened == false -> OpenState.NotOpened
+                    else -> OpenState.Unknown
+                }
+                id to DeliveryStatus(
+                    recipient = Recipient(email = ""),
+                    uniqueId = id,
+                    state = state,
+                    openedAt = row.openedAt.toEpochMillisOrNull(),
+                    openCount = row.openCount ?: 0,
+                )
+            }.toMap()
+        }
+    }
+
+    // -- publishing --------------------------------------------------------
+
+    override suspend fun publicationCategories(): ZillitResult<List<PublicationCategory>> =
+        get("$base/publications/categories", ListSerializer(PublicationCategoryDto.serializer()))
+            .map { rows -> rows.mapNotNull { it.toDomain() } }
+
+    override suspend fun publishedFiles(category: String): ZillitResult<List<PublishedFile>> =
+        get(
+            "$base/publications/published-files",
+            ListSerializer(PublishedFileDto.serializer()),
+            mapOf("category" to category),
+        ).map { rows -> rows.mapNotNull { it.toDomain() } }
+
+    override suspend fun publish(
+        category: String,
+        documentIds: List<String>,
+        replaceChatIds: List<String>,
+    ): ZillitResult<Unit> = post(
+        "$base/publications",
+        buildJsonObject {
+            put("category", JsonPrimitive(category))
+            put("document_ids", documentIds.toJsonArray())
+            // `mode` is omitted on a first publish — there is nothing live to
+            // replace, and the server rejects `replace` with no target.
+            if (replaceChatIds.isNotEmpty()) {
+                put("mode", JsonPrimitive("replace"))
+                put("replace_chat_id", replaceChatIds.toJsonArray())
+            }
+        },
+    )
+
+    // -- plumbing ----------------------------------------------------------
+
+    private suspend fun <T> get(
+        url: String,
+        serializer: kotlinx.serialization.KSerializer<T>,
+        query: Map<String, Any?> = emptyMap(),
+    ): ZillitResult<T> = apiClient.request(
+        verb = HttpVerb.Get,
+        url = url,
+        serializer = serializer,
+        module = RequestModule.ProjectUser,
+        queryParameters = query,
+    )
+
+    private suspend fun post(url: String, body: JsonObject?): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, url, body)
+
+    private suspend fun put(url: String, body: JsonObject?): ZillitResult<Unit> =
+        mutate(HttpVerb.Put, url, body)
+
+    /**
+     * A DELETE that carries a body.
+     *
+     * Unusual, and not this client's choice: every destructive route here takes
+     * its target id in the body rather than the path (`DELETE /folders` with
+     * `{ folderId }`). Putting it in the path instead 404s.
+     */
+    private suspend fun delete(url: String, body: JsonObject?): ZillitResult<Unit> =
+        mutate(HttpVerb.Delete, url, body)
+
+    private suspend fun mutate(
+        verb: HttpVerb,
+        url: String,
+        body: JsonObject?,
+    ): ZillitResult<Unit> = apiClient.envelope(
+        verb = verb,
+        url = url,
+        module = RequestModule.ProjectUser,
+        body = body,
+    ).flatMap { it.checked() }
+
+    /**
+     * Turns this service's soft rejection into a real failure.
+     *
+     * `{ status: 0, message }` on an HTTP 200 is how the doc-dist backend says
+     * no — a folder name already taken, an address the production blocks. The
+     * shared client cannot see it, so a caller that does not check reports a
+     * successful send that never left.
+     */
+    private fun ApiEnvelope.checked(): ZillitResult<Unit> =
+        if (status == REJECTED) {
+            ZillitResult.Failure(
+                ZillitError.Validation(
+                    userMessage = message?.humanised() ?: "That could not be done.",
+                    technical = message,
+                ),
+            )
+        } else {
+            ZillitResult.Success(Unit)
+        }
+
+    private companion object {
+        /** `{ status: 0 }` — a business-rule rejection dressed as a 200. */
+        const val REJECTED = 0
+
+        /** Matches the server's own default and cap behaviour. */
+        const val HISTORY_PAGE = 50
+
+        /** What this service wants in `folder_id` to mean the library root. */
+        const val ROOT_SENTINEL = "null"
+    }
+}
+
+/**
+ * `folder_name_exists` → "Folder name exists".
+ *
+ * These messages are translation keys, and the label dictionaries do not carry
+ * this service's set. Rendering the raw key is worse than a humanised guess at
+ * it, and both are better than swallowing the reason.
+ */
+private fun String.humanised(): String =
+    replace('_', ' ').trim().replaceFirstChar { it.uppercase() }
+
+private fun List<String>.toJsonArray(): JsonArray = buildJsonArray {
+    forEach { add(JsonPrimitive(it)) }
+}
+
+@JvmName("recipientsToJsonArray")
+private fun List<Recipient>.toJsonArray(): JsonArray = buildJsonArray {
+    forEach { recipient ->
+        add(
+            buildJsonObject {
+                put("email", JsonPrimitive(recipient.email.trim()))
+                put("name", JsonPrimitive(recipient.name.trim()))
+                if (recipient.jobTitle.isNotBlank()) {
+                    put("job", JsonPrimitive(recipient.jobTitle.trim()))
+                }
+            },
+        )
+    }
+}
+
+/** Attachment id → stamp, in the shape the server's personaliser reads. */
+private fun Map<String, WatermarkStyle>.toJsonObject(): JsonObject = buildJsonObject {
+    forEach { (attachmentId, style) ->
+        put(
+            attachmentId,
+            buildJsonObject {
+                put("line1", JsonPrimitive(style.line1.wire))
+                put("line1Custom", JsonPrimitive(style.line1Custom))
+                put("line2", JsonPrimitive(style.line2.wire))
+                put("line2Custom", JsonPrimitive(style.line2Custom))
+                put("size", JsonPrimitive(style.size.wire))
+                put("color", JsonPrimitive(style.color))
+                put("opacity", JsonPrimitive(style.opacity))
+            },
+        )
+    }
+}
+
+/** Unused today; kept beside its writer so the two shapes stay together. */
+@Suppress("unused")
+private fun JsonObject.idsOf(key: String): List<String> =
+    this[key]?.jsonArray?.mapNotNull { (it as? JsonPrimitive)?.content }.orEmpty()

@@ -1,0 +1,84 @@
+# Zillit Desktop — static analysis ruleset.
+# Layered on detekt's defaults (`buildUponDefaultConfig = true`), so only
+# deviations are listed here.
+
+build:
+  maxIssues: 0
+
+complexity:
+  LongParameterList:
+    # Composables legitimately take many parameters.
+    functionThreshold: 8
+    constructorThreshold: 10
+    ignoreAnnotated: ['Composable']
+  TooManyFunctions:
+    ignoreAnnotatedFunctions: ['Composable']
+    thresholdInFiles: 20
+    thresholdInClasses: 20
+    # Reducers and token objects legitimately expose one small function per
+    # operation. The default of 11 forces splits that make the API worse rather
+    # than the code simpler; 20 matches the file and class thresholds.
+    thresholdInObjects: 20
+    # Repository interfaces grow the same way — one suspend fun per server
+    # operation. Splitting a feature's data contract in two to satisfy a count
+    # makes every fake and injection site worse.
+    thresholdInInterfaces: 20
+
+naming:
+  FunctionNaming:
+    # Composables are PascalCase by convention.
+    ignoreAnnotated: ['Composable']
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: true
+  SwallowedException:
+    active: true
+
+potential-bugs:
+  UnsafeCallOnNullableType:
+    active: true
+
+style:
+  MagicNumber:
+    ignoreAnnotated: ['Composable']
+    ignorePropertyDeclaration: true
+  MaxLineLength:
+    maxLineLength: 120
+  ReturnCount:
+    max: 4
+
+  # -------------------------------------------------------------------------
+  # Security rules — DESKTOP_KMP_PLAN.md §8.2 / §11.7.
+  #
+  # Build-blocking on purpose. The Android client ships a trust-all
+  # X509TrustManager wired in unconditionally (NetworkClient.kt:202); these
+  # rules exist so the same defect cannot reach the desktop codebase, in any
+  # build type, behind any flag.
+  # -------------------------------------------------------------------------
+  # NOTE: ForbiddenMethodCall only fires with detekt type resolution, which is
+  # not configured for this KMP build — so these are currently ADVISORY, not
+  # enforced. Verified empirically: a `runBlocking` in desktopApp/main.kt passes
+  # detekt clean. The TLS rules below (ForbiddenImport) are syntactic and DO
+  # fire, and `scripts/security-scan.sh` backstops them.
+  #
+  # To make these enforced, detekt needs a classpath per compilation. Tracked in
+  # OUT_OF_SCOPE.md §10.
+  ForbiddenMethodCall:
+    active: true
+    methods:
+      - reason: 'Freezes the UI thread on desktop. Use a suspend function (plan §11.2).'
+        value: 'kotlinx.coroutines.runBlocking'
+      - reason: 'Use Napier with redaction, never stdout (plan §8.4).'
+        value: 'kotlin.io.println'
+      - reason: 'Use Napier with redaction, never stdout (plan §8.4).'
+        value: 'kotlin.io.print'
+  ForbiddenImport:
+    active: true
+    imports:
+      - reason: 'Custom TrustManagers disable certificate validation. Never (plan §8.2).'
+        value: 'javax.net.ssl.X509TrustManager'
+      - reason: 'Custom TrustManagers disable certificate validation. Never (plan §8.2).'
+        value: 'javax.net.ssl.TrustManager'
+      - reason: 'Use the platform SSLContext via OkHttp defaults (plan §8.2).'
+        value: 'javax.net.ssl.SSLContext'
