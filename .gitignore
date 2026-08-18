@@ -21,3 +21,7 @@ node_modules/
 # Server configuration — real values are per-machine and must never be committed.
 # The committed placeholder is zillit.properties.template (see README).
 zillit.properties
+
+# JVM crash dumps — per-machine, carry local paths and environment details.
+hs_err_pid*.log
+replay_pid*.log

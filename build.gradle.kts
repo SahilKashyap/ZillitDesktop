@@ -55,7 +55,7 @@ subprojects {
 tasks.register<Exec>("securityScan") {
     group = "verification"
     description = "Fails the build on TLS-bypass patterns (plan §8.2)."
-    commandLine("bash", "${rootProject.projectDir}/scripts/security-scan.sh")
+    commandLine(posixBash(), "${rootProject.projectDir}/scripts/security-scan.sh")
     // Scans the whole tree, so it is a single task — but it must be reachable
     // from any module's `check`, which is why subprojects hook it below rather
     // than the root declaring its own aggregate `check`. The container projects
@@ -69,4 +69,43 @@ tasks.register<Exec>("securityScan") {
     )
     inputs.file("${rootProject.projectDir}/scripts/security-scan.sh")
     outputs.upToDateWhen { false }
+}
+
+/**
+ * The shell the tripwire runs under.
+ *
+ * `bash` off PATH is not safe to assume on Windows: System32 ships a `bash.exe`
+ * that is only a WSL launcher, so CI failed the scan with "Windows Subsystem
+ * for Linux has no installed distributions" rather than on anything it found —
+ * a green-looking guard that never actually ran. Git for Windows carries a real
+ * bash and is present wherever this repo was cloned, so it is preferred and the
+ * WSL stub is skipped explicitly.
+ *
+ * Falls back to plain `bash` rather than failing configuration, so a machine
+ * with a bash somewhere unusual still gets the original error from the task
+ * rather than a build that will not configure at all.
+ */
+fun posixBash(): String {
+    if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return "bash"
+
+    val onPath = (providers.environmentVariable("PATH").orNull ?: "")
+        .split(java.io.File.pathSeparator)
+        .filter { it.isNotBlank() }
+        .map { java.io.File(it, "bash.exe") }
+        // System32's bash is WSL; WindowsApps holds the Store alias stubs.
+        .filterNot { it.path.contains("System32", ignoreCase = true) }
+        .filterNot { it.path.contains("WindowsApps", ignoreCase = true) }
+
+    val alongsideGit = (providers.environmentVariable("PATH").orNull ?: "")
+        .split(java.io.File.pathSeparator)
+        .filter { it.isNotBlank() && java.io.File(it, "git.exe").isFile }
+        // git.exe lives in Git's `cmd/`; bash sits beside it in `bin/`.
+        .map { java.io.File(java.io.File(it).parentFile, "bin/bash.exe") }
+
+    val wellKnown = listOf(
+        java.io.File("""C:\Program Files\Git\bin\bash.exe"""),
+        java.io.File("""C:\Program Files (x86)\Git\bin\bash.exe"""),
+    )
+
+    return (onPath + alongsideGit + wellKnown).firstOrNull { it.isFile }?.absolutePath ?: "bash"
 }
