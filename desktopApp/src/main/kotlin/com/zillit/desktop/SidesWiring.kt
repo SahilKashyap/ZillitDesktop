@@ -3,6 +3,7 @@ package com.zillit.desktop
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork

@@ -39,6 +39,7 @@ dependencies {
     implementation(project(":core:notifications"))
     implementation(project(":core:units"))
     implementation(project(":core:database"))
+    implementation(project(":core:sync"))
     implementation(project(":core:localization"))
     implementation(project(":core:session"))
     implementation(project(":core:socket"))
@@ -65,6 +66,8 @@ dependencies {
     implementation(project(":feature:drive"))
     implementation(project(":feature:pagedistribution"))
     implementation(project(":feature:recce"))
+    implementation(project(":feature:location"))
+    implementation(project(":feature:transportation"))
 
     // The app module had no tests until the single-instance guard, which is
     // logic rather than wiring and worth pinning — particularly its behaviour
@@ -264,10 +267,12 @@ compose.desktop {
         }
 
         nativeDistributions {
-            // Dmg → macOS, Msi → Windows, Deb → ChromeOS/Crostini + Linux
+            // Dmg → macOS, Msi + Exe → Windows, Deb → ChromeOS/Crostini + Linux
             // (plan §1). Signing and notarization are configured in M12; these
-            // formats build unsigned today.
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            // formats build unsigned today. jpackage builds only the host OS's
+            // formats: `packageExe`/`packageMsi` must run ON Windows (with WiX
+            // 3.x installed) — see docs/WINDOWS_BUILD.md.
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb)
             packageName = "Zillit"
             packageVersion = "1.0.0"
 
@@ -375,6 +380,17 @@ compose.desktop {
                         <string>Zillit uses your microphone for production calls.</string>
                         <key>NSCameraUsageDescription</key>
                         <string>Zillit uses your camera for production video calls.</string>
+                        <key>CFBundleURLTypes</key>
+                        <array>
+                            <dict>
+                                <key>CFBundleURLName</key>
+                                <string>com.zillit.desktop</string>
+                                <key>CFBundleURLSchemes</key>
+                                <array>
+                                    <string>zillit</string>
+                                </array>
+                            </dict>
+                        </array>
                     """.trimIndent()
                 }
             }
@@ -384,6 +400,13 @@ compose.desktop {
                 // Stable UUID — required for MSI upgrades to replace rather
                 // than install alongside. Do not regenerate.
                 upgradeUuid = "8F5D2C41-9A3E-4B7C-BE21-6D4A0F3E9C58"
+                // Start-menu entry, desktop shortcut, and a folder chooser —
+                // the installer people expect on Windows rather than a silent
+                // per-user drop into AppData.
+                menu = true
+                shortcut = true
+                dirChooser = true
+                perUserInstall = false
             }
             linux {
                 packageName = "zillit-desktop"

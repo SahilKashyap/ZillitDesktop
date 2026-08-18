@@ -48,17 +48,14 @@ fun List<Notice>.withDateSeparators(
 }
 
 /**
- * Pinned posts first under their own "Pinned" header, then everything else in
- * date-separated order. History skips the section — a record reads in pure
- * chronology.
+ * The posts the banner over the board points at: pinned, on the server,
+ * most recently touched first. Pinned posts keep their place in the board's
+ * chronology — the banner is how they stay in view without shuffling the
+ * conversation, and clicking it scrolls to the post.
  */
-fun List<Notice>.withPinnedSection(nowMillis: Long): List<BoardRow> {
-    val (pinned, rest) = partition { it.isPinned }
-    if (pinned.isEmpty()) return rest.withDateSeparators(nowMillis)
-    return listOf(BoardRow.Separator("Pinned")) +
-        pinned.map { BoardRow.Post(it) } +
-        rest.withDateSeparators(nowMillis)
-}
+fun List<Notice>.pinnedForBanner(): List<Notice> =
+    filter { it.isPinned && it.sendState == NoticeSendState.Sent }
+        .sortedByDescending { if (it.updatedAtMillis > 0) it.updatedAtMillis else it.createdAtMillis }
 
 /** `HH:mm`, zero-padded — the time under each post. */
 fun Long.toClockTime(zone: TimeZone = TimeZone.currentSystemDefault()): String {

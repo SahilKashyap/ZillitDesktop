@@ -24,8 +24,16 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.common.EpochDate
+import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitNotice
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.CircleShape
@@ -37,6 +45,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import androidx.compose.ui.draw.rotate
 import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -60,12 +72,34 @@ fun HomeScreen(
     /** Unread count for one tool's tile, by backend identifier. */
     toolBadge: (String) -> Int = { 0 },
 ) {
+    // The find box is the screen's own: forty tiles is a wall, and the phones
+    // put a search over theirs. Local state — a query is not a fact about the
+    // production and has no business surviving a tool switch.
+    var query by remember { mutableStateOf("") }
+    val shown = remember(state.sections, query) { state.sections.matching(query) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(ZillitTheme.colors.canvas),
     ) {
-        GridHeader(state.gridTools.size)
+        GridHeader(
+            toolCount = state.gridTools.size,
+            query = query,
+            onQueryChange = { query = it },
+            canReorder = state.sections.count { it.identifier != null } > 1,
+            onReorder = { onEvent(HomeEvent.StartReorder) },
+        )
+
+        state.staleSince?.let { since ->
+            ZillitNotice(
+                text = "You're offline — showing the tools saved ${EpochDate.dateTime(since)}. " +
+                    "They'll refresh when the connection is back.",
+                tone = StatusTone.Pending,
+                icon = ZillitIcons.Info,
+                modifier = Modifier.padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm),
+            )
+        }
 
         when {
             state.isBusy && state.gridTools.isEmpty() -> Centred("Loading your tools…")
@@ -77,14 +111,111 @@ fun HomeScreen(
                     "A coordinator can grant access.",
             )
 
-            else -> ToolGrid(state.sections, onEvent, toolBadge)
+            shown.isEmpty() -> Centred("No tool matches \"${query.trim()}\".")
+
+            else -> ToolGrid(shown, onEvent, toolBadge)
+        }
+    }
+
+    ReorderGroupsDialog(
+        visible = state.isReordering,
+        sections = state.sections.filter { it.identifier != null },
+        onSave = { onEvent(HomeEvent.SaveGroupOrder(it)) },
+        onDismiss = { onEvent(HomeEvent.CancelReorder) },
+    )
+}
+
+/**
+ * The phones' "Reorder groups" sheet: the sections in a list, each with up
+ * and down, Save and Cancel. Saved for this user only — the subtitle says
+ * so, as Android's does. Arrows rather than a drag: the list is short and
+ * a keyboard-reachable control needs no gesture.
+ */
+@Composable
+private fun ReorderGroupsDialog(
+    visible: Boolean,
+    sections: List<ToolSection>,
+    onSave: (List<String>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    // The working order lives here and resets each time the dialog opens.
+    var order by remember(visible) { mutableStateOf(sections.mapNotNull { it.identifier }) }
+    val titles = remember(sections) { sections.associate { it.identifier to it.title } }
+    ZillitDialogShell(
+        title = "Reorder groups",
+        subtitle = "Arrange the order of the groups on your Tools page. This is saved only for you.",
+        icon = ZillitIcons.Grid,
+        visible = visible,
+        onDismiss = onDismiss,
+        width = REORDER_WIDTH,
+        actions = {
+            Spacer(Modifier.weight(1f))
+            ZillitButton(text = "Cancel", variant = ButtonVariant.Secondary, onClick = onDismiss)
+            ZillitButton(text = "Save", onClick = { onSave(order) })
+        },
+    ) {
+        order.forEachIndexed { index, id ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                Box(Modifier.size(SECTION_DOT).clip(CircleShape).background(avatarHue(titles[id] ?: id)))
+                ZillitText(
+                    text = titles[id] ?: id,
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = ZillitTheme.colors.textPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                ZillitIconButton(
+                    icon = ZillitIcons.ChevronDown,
+                    contentDescription = "Move down",
+                    enabled = index < order.lastIndex,
+                    onClick = { order = order.swapped(index, index + 1) },
+                )
+                ZillitIconButton(
+                    icon = ZillitIcons.ChevronDown,
+                    contentDescription = "Move up",
+                    enabled = index > 0,
+                    onClick = { order = order.swapped(index, index - 1) },
+                    modifier = Modifier.rotate(HALF_TURN),
+                )
+            }
         }
     }
 }
 
-/** The accent bar, the name, and how much this person may open. */
+private fun List<String>.swapped(a: Int, b: Int): List<String> =
+    toMutableList().also { val t = it[a]; it[a] = it[b]; it[b] = t }
+
+/**
+ * The sections with only the tools whose name — or whose section's name —
+ * contains [query]; every section untouched when the query is blank. Case
+ * folded; a department name matches its whole run, so "camera" finds every
+ * camera tool even when none is called that.
+ */
+internal fun List<ToolSection>.matching(query: String): List<ToolSection> {
+    val needle = query.trim()
+    if (needle.isEmpty()) return this
+    return mapNotNull { section ->
+        val tools = if (section.title.contains(needle, ignoreCase = true)) {
+            section.tools
+        } else {
+            section.tools.filter { it.label.contains(needle, ignoreCase = true) }
+        }
+        tools.takeIf { it.isNotEmpty() }?.let { section.copy(tools = it) }
+    }
+}
+
+/** The accent bar, the name, how much this person may open — and the find box. */
 @Composable
-private fun GridHeader(toolCount: Int) {
+private fun GridHeader(
+    toolCount: Int,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    canReorder: Boolean,
+    onReorder: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -110,6 +241,23 @@ private fun GridHeader(toolCount: Int) {
                 },
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        ZillitTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            placeholder = "Search tools…",
+            leadingIcon = ZillitIcons.Search,
+            shape = ZillitTheme.shapes.pill,
+            modifier = Modifier.width(SEARCH_WIDTH),
+        )
+        // The phones' sort icon beside the search: your own section order.
+        if (canReorder) {
+            ZillitIconButton(
+                icon = ZillitIcons.Filter,
+                contentDescription = "Reorder groups",
+                onClick = onReorder,
             )
         }
     }
@@ -332,6 +480,9 @@ private fun Centred(text: String) {
 }
 
 private val TILE_MIN = 132.dp
+private val SEARCH_WIDTH = 260.dp
+private val REORDER_WIDTH = 420.dp
+private const val HALF_TURN = 180f
 private val TILE_ICON = 24.dp
 private const val DISC_TINT = 0.16f
 private val SECTION_DOT = 8.dp

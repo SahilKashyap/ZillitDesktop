@@ -8,7 +8,9 @@ import com.zillit.desktop.feature.home.domain.HomeFeedRepository
 import com.zillit.desktop.feature.home.domain.HomeUnit
 import com.zillit.desktop.feature.home.domain.Notice
 import com.zillit.desktop.feature.home.domain.NoticeComment
-import com.zillit.desktop.feature.home.domain.canBeModifiedBy
+import com.zillit.desktop.feature.home.domain.ModifyVerdict
+import com.zillit.desktop.feature.home.domain.deleteVerdict
+import com.zillit.desktop.feature.home.domain.editVerdict
 import com.zillit.desktop.feature.home.domain.NoticeKind
 import com.zillit.desktop.feature.home.domain.NoticeSendState
 import com.zillit.desktop.feature.home.domain.PickedMedia
@@ -119,12 +121,15 @@ class NoticeReplyTest {
         override suspend fun loadNotices(unitId: String, beforeMillis: Long) =
             ZillitResult.Success(
                 listOf(
+                    // Fresh and ours: the edit window is re-checked at the moment of the act.
                     Notice(
                         id = "n1",
                         body = "parent",
                         authorName = "Sam",
+                        authorId = "me",
+                        createdAtMillis = NOW,
                         comments = listOf(
-                            NoticeComment(id = "c1", body = "original words", authorId = "me"),
+                            NoticeComment(id = "c1", body = "original words", authorId = "me", createdAtMillis = NOW),
                         ),
                     ),
                 ),
@@ -206,9 +211,10 @@ class NoticeReplyTest {
 
     private fun viewModel(board: FakeBoard = FakeBoard()) = HomeFeedViewModel(
         repository = board,
-        nowMillis = { 1000 },
+        nowMillis = { NOW },
         newLocalId = { "local-1" },
         isAdmin = { false },
+        currentUserId = { "me" },
         media = com.zillit.desktop.feature.home.ui.MediaCapture(
             pick = { PickedMedia("set.jpg", "image/jpeg", ByteArray(4)) },
             upload = { _, _ -> ZillitResult.Failure(ZillitError.NoConnection()) },
@@ -424,23 +430,31 @@ class NoticeReplyTest {
     // -- who may ------------------------------------------------------------
 
     @Test
-    fun `the rule is the web's rule`() {
+    fun `the reply rules are the phones' rules`() {
         val now = 1_800_000_000_000L
         val fresh = NoticeComment(id = "c", body = "b", authorId = "me", createdAtMillis = now)
         val stale = fresh.copy(createdAtMillis = now - 31 * 60 * 1000L)
         val someoneElses = fresh.copy(authorId = "them")
 
-        // Own and fresh: yes. Own and old: no. Someone else's: no.
-        assertTrue(fresh.canBeModifiedBy("me", isAdmin = false, nowMillis = now))
-        assertTrue(!stale.canBeModifiedBy("me", isAdmin = false, nowMillis = now))
-        assertTrue(!someoneElses.canBeModifiedBy("me", isAdmin = false, nowMillis = now))
+        // Edit: own and fresh only. Own and old: the window. Someone else's: not yours.
+        assertEquals(ModifyVerdict.Allowed, fresh.editVerdict("me", now))
+        assertEquals(ModifyVerdict.WindowClosed, stale.editVerdict("me", now))
+        assertEquals(ModifyVerdict.NotOwner, someoneElses.editVerdict("me", now))
+        // No admin exception for editing — on either phone.
+        assertEquals(ModifyVerdict.NotOwner, someoneElses.editVerdict("admin", now))
 
-        // An admin may touch anything, any age.
-        assertTrue(stale.canBeModifiedBy("admin", isAdmin = true, nowMillis = now))
-        assertTrue(someoneElses.canBeModifiedBy("admin", isAdmin = true, nowMillis = now))
+        // Delete: an admin may remove anything at any age; others as for edit.
+        assertEquals(ModifyVerdict.Allowed, stale.deleteVerdict("admin", isAdmin = true, nowMillis = now))
+        assertEquals(ModifyVerdict.Allowed, someoneElses.deleteVerdict("admin", isAdmin = true, nowMillis = now))
+        assertEquals(ModifyVerdict.WindowClosed, stale.deleteVerdict("me", isAdmin = false, nowMillis = now))
+        assertEquals(ModifyVerdict.NotOwner, someoneElses.deleteVerdict("me", isAdmin = false, nowMillis = now))
+
+        // Exactly thirty minutes is still inside the window (iOS `<= 30`).
+        val onTheLine = fresh.copy(createdAtMillis = now - 30 * 60 * 1000L)
+        assertEquals(ModifyVerdict.Allowed, onTheLine.editVerdict("me", now))
 
         // Nobody signed in, nobody may.
-        assertTrue(!fresh.canBeModifiedBy(null, isAdmin = false, nowMillis = now))
+        assertEquals(ModifyVerdict.NotOwner, fresh.editVerdict(null, now))
     }
 
     // -- editing and deleting the post itself ------------------------------
@@ -489,10 +503,11 @@ class NoticeReplyTest {
         val sent = Notice(id = "n", body = "b", authorName = "A", authorId = "me", createdAtMillis = now)
         val inFlight = sent.copy(sendState = NoticeSendState.Sending)
 
-        assertTrue(sent.canBeModifiedBy("me", isAdmin = false, nowMillis = now))
+        assertEquals(ModifyVerdict.Allowed, sent.editVerdict("me", now))
+        assertEquals(ModifyVerdict.Allowed, sent.deleteVerdict("me", isAdmin = false, nowMillis = now))
         // An optimistic card has no server id to address; retry is its path.
-        assertTrue(!inFlight.canBeModifiedBy("me", isAdmin = false, nowMillis = now))
-        assertTrue(!inFlight.canBeModifiedBy("admin", isAdmin = true, nowMillis = now))
+        assertEquals(ModifyVerdict.NotSent, inFlight.editVerdict("me", now))
+        assertEquals(ModifyVerdict.NotSent, inFlight.deleteVerdict("admin", isAdmin = true, nowMillis = now))
     }
 
     @Test
@@ -511,3 +526,5 @@ class NoticeReplyTest {
         assertEquals("half a notice", model.state.value.draft.text)
     }
 }
+
+private const val NOW = 1000L

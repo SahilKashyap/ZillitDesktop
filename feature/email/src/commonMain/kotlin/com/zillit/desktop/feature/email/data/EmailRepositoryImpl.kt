@@ -6,6 +6,7 @@ import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.jsonBody
@@ -101,6 +102,12 @@ class EmailRepositoryImpl(
                     put("folder_name", folderName)
                     put("message_ids", buildJsonArray { messageIds.forEach { add(JsonPrimitive(it)) } })
                 },
+            ),
+            // A read in a POST's clothing: named so a message opened online
+            // opens again with the network gone. Ids sorted — the same thread
+            // asked for in another order is the same question.
+            options = CallOptions(
+                cacheAs = "${api}imap-emails/get-emails/$folderName/${messageIds.sorted().joinToString(",")}",
             ),
         ).map { payload -> payload.emailRows().mapNotNull(::readMessage).asThread() }
     }

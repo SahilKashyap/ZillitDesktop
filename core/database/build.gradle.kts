@@ -44,5 +44,17 @@ sqldelight {
             // (§5), and this is what enforces it.
             verifyMigrations.set(false)
         }
+        // The durable store — outbox and drafts. A separate database with the
+        // opposite schema policy to the cache above: forward-only migrations,
+        // verified against the committed baseline in `databases/`, because a
+        // row here may be the only copy of something the user typed.
+        // Bumping the schema means adding `N.sqm` and regenerating the `.db`
+        // (`generateCommonMainSyncDatabaseSchema`), never editing history.
+        create("SyncDatabase") {
+            packageName.set("com.zillit.desktop.core.database.sync")
+            srcDirs.setFrom("src/commonMain/sqldelight-sync")
+            schemaOutputDirectory.set(file("src/commonMain/sqldelight-sync/databases"))
+            verifyMigrations.set(true)
+        }
     }
 }

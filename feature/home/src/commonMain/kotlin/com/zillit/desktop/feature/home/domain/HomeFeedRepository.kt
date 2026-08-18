@@ -26,6 +26,32 @@ interface HomeFeedRepository {
     ): ZillitResult<Notice>
 
     /**
+     * [postNotice] with the call sheet's replace flag — see
+     * [NoticeDraft.replacePrevious]. Same endpoint, one extra boolean; the
+     * server does the archiving. Defaults to the plain post so a repository
+     * without call sheets need not know the flag exists.
+     */
+    suspend fun postNotice(
+        unitId: String,
+        text: String,
+        localId: String,
+        attachment: UploadedNoticeMedia?,
+        location: GeoPoint?,
+        replacePrevious: Boolean?,
+    ): ZillitResult<Notice> = postNotice(unitId, text, localId, attachment, location)
+
+    /**
+     * The watermarked rendition of a call sheet's document — the server stamps
+     * a copy per reader and hands back its keys (`GET home/chat/watermark/{id}`).
+     * Both phones open and download call-sheet PDFs through this rather than
+     * the raw upload; on failure they fall back to the original.
+     */
+    suspend fun watermarkedAttachment(noticeId: String): ZillitResult<NoticeAttachment> =
+        ZillitResult.Failure(
+            com.zillit.desktop.core.common.ZillitError.Storage("watermarking is not wired for this board"),
+        )
+
+    /**
      * Posts a copy of [notice] to another unit — the forward on both live
      * clients is exactly this, not a dedicated endpoint. The attachment is
      * carried by reference (same storage keys, no re-upload); the body is
@@ -40,6 +66,13 @@ interface HomeFeedRepository {
     /** Who has and hasn't read a post — the web's `chat/readby/{id}`. */
     suspend fun readBy(noticeId: String): ZillitResult<ReadBy>
 
+    /**
+     * The same for one reply of the post — Android's `?commentId=` on the same
+     * route. Defaults to the post's receipts so a repository without replies
+     * need not know the parameter exists.
+     */
+    suspend fun readBy(noticeId: String, commentId: String?): ZillitResult<ReadBy> = readBy(noticeId)
+
     /** Pins a post to the top of its board, or takes it back down. */
     suspend fun setPinned(notice: Notice, unitId: String, pinned: Boolean): ZillitResult<Unit>
 
@@ -48,6 +81,10 @@ interface HomeFeedRepository {
      * the unread list — the web's notify button (`POST home/unit/{unitId}`).
      */
     suspend fun notifyUnread(unitId: String, noticeId: String): ZillitResult<Unit>
+
+    /** The same for one reply's unread list — iOS adds `commentId` to the call. */
+    suspend fun notifyUnread(unitId: String, noticeId: String, commentId: String?): ZillitResult<Unit> =
+        notifyUnread(unitId, noticeId)
 
     /**
      * Replies to a notice. Returns the parent's full reply list, which is what

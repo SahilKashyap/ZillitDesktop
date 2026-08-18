@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,8 +26,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -80,7 +83,20 @@ import com.zillit.desktop.core.designsystem.component.ZillitEmojiPicker
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.input.pointer.pointerInput
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -107,16 +123,27 @@ private data class BoardUi(
     val onEvent: (HomeFeedEvent) -> Unit,
     val media: NoticeMediaSource?,
     val onPreview: (NoticeAttachment) -> Unit,
-    val onOpen: (NoticeAttachment) -> Unit,
+    /**
+     * Save-and-open, by way of the model: the post's id rides along so a
+     * call sheet's document can open as its watermarked copy.
+     */
+    val onOpen: (noticeId: String, NoticeAttachment) -> Unit,
     val resolveAuthor: (String?) -> String?,
     val player: AudioPlayer?,
     val onOpenLocation: (GeoPoint) -> Unit,
     val highlightQuery: String?,
     val canReply: Boolean,
-    val canModifyComment: (NoticeComment) -> Boolean,
-    val canModifyNotice: (Notice) -> Boolean,
+    /** Whether Edit and Delete belong in the menu — author or admin; the click enforces the clock. */
+    val canActOnComment: (NoticeComment) -> Boolean,
+    val canActOnNotice: (Notice) -> Boolean,
     /** Pin rides the edit route, so it takes the author's rights — untimed. */
     val canPin: (Notice) -> Boolean,
+    /** The call sheet unit: no Forward in its menus, as on both phones. */
+    val isCallSheet: Boolean,
+    /** "Publish to Doc Distribution" on the call sheet's files — see DistributionHook. */
+    val canPublishToDistribution: Boolean = false,
+    /** Opens the pen-over-picture editor for a post — the phones' Image Reply. */
+    val onImageReply: (Notice) -> Unit,
     /** The production's crew names, for mention highlights. */
     val crewNames: () -> List<String>,
     /** One crew member's profile picture, or null for the initials fallback. */
@@ -163,8 +190,12 @@ internal fun HomeFeedScreen(
     // Which image is blown up, if any. Screen-level so the lightbox covers the
     // whole board, not one bubble.
     var lightbox by remember { mutableStateOf<NoticeAttachment?>(null) }
+    // The post whose picture is open in the pen editor, if any.
+    var imageReply by remember { mutableStateOf<Notice?>(null) }
     // An OS drag is over the board; drives the drop overlay.
     var dropHover by remember { mutableStateOf(false) }
+
+    HandOffOpens(state.pendingOpen, onOpenAttachment, onEvent)
 
     Box(modifier = modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
@@ -180,6 +211,11 @@ internal fun HomeFeedScreen(
         if (state.selectedUnit?.kind == HomeUnitKind.CallSheet) {
             HistoryToggle(state.isHistory, onEvent)
         }
+
+        // Pinned posts stay in view as a banner over the board — the
+        // messaging convention — rather than floating to the top and
+        // reshuffling the conversation. Click scrolls to the post.
+        PinnedBanner(state.pinnedBanner, resolveAuthor, onEvent)
 
         // weight, NOT fillMaxSize: a fillMaxSize child of a Column consumes
         // every remaining pixel, which measured the composer below at zero
@@ -199,11 +235,11 @@ internal fun HomeFeedScreen(
                 onEvent = onEvent,
                 calendar = calendar,
                 media = media,
-                onOpenAttachment = onOpenAttachment,
                 resolveAuthor = resolveAuthor,
                 player = player,
                 onOpenLocation = onOpenLocation,
                 onPreview = { lightbox = it },
+                onImageReply = { imageReply = it },
                 loadAvatar = loadAvatar,
                 crewNames = crewNames,
             )
@@ -218,10 +254,65 @@ internal fun HomeFeedScreen(
         MediaLightbox(attachment = attachment, media = media, onClose = { lightbox = null })
     }
 
-    // Overlays stay composed and drive the shell's visible flag — an `if`
-    // would unmount them before the exit animation could play.
+    BoardDialogs(
+        state = state,
+        onEvent = onEvent,
+        media = media,
+        resolveAuthor = resolveAuthor,
+        loadAvatar = loadAvatar,
+        imageReply = imageReply,
+        onImageReplyClosed = { imageReply = null },
+    )
+    }
+}
+
+/**
+ * The model named the rendition to open (a call sheet's watermarked copy
+ * takes a round trip); the host saves and opens it, once per request.
+ */
+@Composable
+private fun HandOffOpens(
+    pending: PendingOpen?,
+    onOpenAttachment: (NoticeAttachment) -> Unit,
+    onEvent: (HomeFeedEvent) -> Unit,
+) {
+    LaunchedEffect(pending) {
+        pending?.let {
+            onOpenAttachment(it.attachment)
+            onEvent(HomeFeedEvent.OpenHandled)
+        }
+    }
+}
+
+/**
+ * Everything that floats over the board: the pickers and panels, the call
+ * sheet's question, the pen editor, and the two toasts. Overlays stay
+ * composed and drive the shell's visible flag — an `if` would unmount them
+ * before the exit animation could play.
+ */
+@Composable
+private fun BoardDialogs(
+    state: HomeFeedUiState,
+    onEvent: (HomeFeedEvent) -> Unit,
+    media: NoticeMediaSource?,
+    resolveAuthor: (String?) -> String?,
+    loadAvatar: suspend (String) -> ByteArray?,
+    imageReply: Notice?,
+    onImageReplyClosed: () -> Unit,
+) {
     ForwardPicker(state, onEvent)
     ReadByPanel(state.readBy, canNotify = state.canCompose, resolveAuthor, loadAvatar, onEvent)
+    CallSheetPromptDialog(state, onEvent)
+    PublishPromptDialog(state, onEvent)
+    ImageReplyDialog(
+        target = imageReply,
+        media = media,
+        onPost = { picked, caption ->
+            onImageReplyClosed()
+            onEvent(HomeFeedEvent.PostImageReply(picked, caption))
+        },
+        onDismiss = onImageReplyClosed,
+    )
 
     // Errors float, as the web's `message.error` does; the board stays put.
     if (state.notices.isNotEmpty()) {
@@ -235,7 +326,6 @@ internal fun HomeFeedScreen(
         onDismiss = { onEvent(HomeFeedEvent.DismissInfo) },
         tone = ZillitToastTone.Success,
     )
-    }
 }
 
 /** The first dropped file as an attach event; the rest are counted, not lost. */
@@ -343,6 +433,105 @@ private fun ForwardPicker(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> Un
 }
 
 /**
+ * "Publish to Document Distribution" — the phones' confirm before the
+ * hand-off (`dd_publish_confirm_title` / `_body` / `_action`): the file's
+ * name, one question, one button.
+ */
+@Composable
+private fun PublishPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> Unit) {
+    var shown by remember { mutableStateOf(state.distributionPrompt) }
+    if (state.distributionPrompt != null) shown = state.distributionPrompt
+    ZillitDialogShell(
+        title = "Publish to Document Distribution",
+        icon = ZillitIcons.Upload,
+        visible = state.distributionPrompt != null,
+        onDismiss = { onEvent(HomeFeedEvent.DismissPublish) },
+        width = CALL_SHEET_PROMPT_WIDTH,
+        actions = {
+            Spacer(Modifier.weight(1f))
+            ZillitButton(
+                text = "Cancel",
+                variant = ButtonVariant.Secondary,
+                onClick = { onEvent(HomeFeedEvent.DismissPublish) },
+            )
+            ZillitButton(text = "Publish", onClick = { onEvent(HomeFeedEvent.ConfirmPublish) })
+        },
+    ) {
+        val name = shown?.attachment?.fileName?.takeIf { it.isNotBlank() } ?: "this file"
+        ZillitText(
+            text = "\"$name\" to the Document Distribution library?",
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textPrimary,
+        )
+    }
+}
+
+/**
+ * The call sheet's two-step question — see [CallSheetPrompt].
+ *
+ * The phones' exact words, because the crew already knows them: "Alert" over
+ * "Are you uploading document in continuation…" with *Continuation* / *New*
+ * / *Cancel* (Android `Home.kt:862-882`, iOS `ProductionVC.swift:1087-1130`),
+ * then on *New* the warning that everything here goes to History, *No* /
+ * *Yes* (Android `Home.kt:889-903`, iOS `:1105-1118`). Only *Yes* replaces.
+ */
+@Composable
+private fun CallSheetPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> Unit) {
+    val prompt = state.callSheetPrompt
+    val unitLabel = state.selectedUnit?.label ?: "Call Sheet"
+    // Remembered across the exit so the fading card keeps its last words.
+    var confirming by remember { mutableStateOf(false) }
+    if (prompt != null) confirming = prompt.confirmingReplace
+
+    ZillitDialogShell(
+        title = "Alert",
+        icon = ZillitIcons.Warning,
+        visible = prompt != null,
+        onDismiss = { onEvent(HomeFeedEvent.CallSheetDismiss) },
+        width = CALL_SHEET_PROMPT_WIDTH,
+        actions = {
+            Spacer(Modifier.weight(1f))
+            if (!confirming) {
+                ZillitButton(
+                    text = "Cancel",
+                    variant = ButtonVariant.Tertiary,
+                    onClick = { onEvent(HomeFeedEvent.CallSheetDismiss) },
+                )
+                ZillitButton(
+                    text = "Continuation",
+                    variant = ButtonVariant.Secondary,
+                    onClick = { onEvent(HomeFeedEvent.CallSheetContinuation) },
+                )
+                ZillitButton(text = "New", onClick = { onEvent(HomeFeedEvent.CallSheetNew) })
+            } else {
+                ZillitButton(
+                    text = "No",
+                    variant = ButtonVariant.Secondary,
+                    onClick = { onEvent(HomeFeedEvent.CallSheetDismiss) },
+                )
+                ZillitButton(
+                    text = "Yes",
+                    variant = ButtonVariant.Danger,
+                    onClick = { onEvent(HomeFeedEvent.CallSheetReplaceConfirmed) },
+                )
+            }
+        },
+    ) {
+        ZillitText(
+            text = if (!confirming) {
+                "Are you uploading a document in continuation of the existing $unitLabel, " +
+                    "or uploading a new $unitLabel? Please choose below."
+            } else {
+                "Doing this will send all current data posted here to History. " +
+                    "It will be replaced with the new upload. Do you still want to proceed?"
+            },
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textPrimary,
+        )
+    }
+}
+
+/**
  * Who has and hasn't read a post — the web's `ReadByUsersModal`, as a card
  * over the board: two tabs, a row per crew member, the read time on the read
  * side. Receipts live server-side only, so the panel opens loading.
@@ -366,6 +555,7 @@ private fun ReadByPanel(
 
     ZillitDialogShell(
         title = "Read by",
+        subtitle = if (current?.commentId != null) "For one reply of the post." else null,
         icon = ZillitIcons.Check,
         visible = view != null,
         onDismiss = { onEvent(HomeFeedEvent.DismissReadBy) },
@@ -649,6 +839,12 @@ private fun ComposerInput(
 ) {
     val draft = state.draft
     var emojiOpen by remember { mutableStateOf(false) }
+    // The caret stays in the field across a send: the field is never
+    // disabled for it (the model already refuses a double send), and the
+    // send button hands focus straight back — a click takes it, and a
+    // composer that goes dark after every post makes the next one start
+    // with a click.
+    val fieldFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     Row(
             // Centred on the field, not bottom-hung: with the pill at its
             // one-line height the icons and send sit on its midline.
@@ -658,7 +854,7 @@ private fun ComposerInput(
             // Replies are text on this endpoint; hiding the paperclip says so
             // more honestly than a click that does nothing.
             if (state.replyTo == null && state.editing == null) {
-                MediaButtons(enabled = !state.isSending, onEvent = onEvent)
+                MediaButtons(enabled = !state.isSending, documentsOnly = state.documentsOnly, onEvent = onEvent)
             }
 
             // Emoji work in every text mode — a reply deserves a 👍 as much as
@@ -680,11 +876,11 @@ private fun ComposerInput(
                 },
                 shape = RoundedCornerShape(COMPOSER_RADIUS),
                 singleLine = false,
-                enabled = !state.isSending,
                 errorText = if (draft.isOverLimit) "Too long by ${-draft.remaining}" else null,
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = COMPOSER_MIN_HEIGHT)
+                    .focusRequester(fieldFocus)
                     .onPreviewKeyEvent { event ->
                         handleMentionKey(event, picker) { name ->
                             onEvent(HomeFeedEvent.MentionPicked(name))
@@ -701,7 +897,10 @@ private fun ComposerInput(
                     state.replyTo != null -> "Send the reply"
                     else -> "Post"
                 },
-                onClick = { onEvent(HomeFeedEvent.Send) },
+                onClick = {
+                    onEvent(HomeFeedEvent.Send)
+                    fieldFocus.requestFocus()
+                },
                 enabled = draft.canSend && !state.isSending,
                 filled = true,
                 size = SEND_BUTTON,
@@ -751,15 +950,20 @@ private fun ReplyBar(parent: Notice, onCancel: () -> Unit) {
     }
 }
 
-/** The paperclip and the mic — the web's orange pair, plain posting only. */
+/**
+ * The paperclip and the mic — the web's orange pair, plain posting only.
+ * On the call sheet the paperclip stands alone: that unit takes documents,
+ * and both phones hide the microphone and the location share there.
+ */
 @Composable
-private fun MediaButtons(enabled: Boolean, onEvent: (HomeFeedEvent) -> Unit) {
+private fun MediaButtons(enabled: Boolean, documentsOnly: Boolean, onEvent: (HomeFeedEvent) -> Unit) {
     ZillitIconButton(
         icon = ZillitIcons.Add,
-        contentDescription = "Attach a file",
+        contentDescription = if (documentsOnly) "Attach a document" else "Attach a file",
         onClick = { onEvent(HomeFeedEvent.Attach) },
         enabled = enabled,
     )
+    if (documentsOnly) return
     ZillitIconButton(
         icon = ZillitIcons.Mic,
         contentDescription = "Record a voice message",
@@ -1040,6 +1244,74 @@ private fun handleComposerKey(
     return true
 }
 
+/**
+ * The pinned posts, kept in view over the board.
+ *
+ * One line: the pin, "Pinned" with a count when there are several, the
+ * newest pinned post's author and first words. With several, the chevron
+ * steps through them; a click anywhere else scrolls the board to the one
+ * shown. Nothing pinned, no banner.
+ */
+@Composable
+private fun PinnedBanner(
+    pinned: List<Notice>,
+    resolveAuthor: (String?) -> String?,
+    onEvent: (HomeFeedEvent) -> Unit,
+) {
+    if (pinned.isEmpty()) return
+    // Which of several is shown; a pin added or removed starts over at the newest.
+    var index by remember(pinned.map { it.id }) { mutableStateOf(0) }
+    val shown = pinned[index.coerceIn(0, pinned.lastIndex)]
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ZillitTheme.colors.surface)
+            .clickable { onEvent(HomeFeedEvent.JumpToPost(shown.id)) }
+            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Box(
+            Modifier
+                .width(PINNED_BAR_WIDTH)
+                .height(PINNED_BAR_HEIGHT)
+                .clip(ZillitTheme.shapes.pill)
+                .background(ZillitTheme.colors.accent),
+        )
+        ZillitIcon(
+            icon = ZillitIcons.Pin,
+            contentDescription = null,
+            tint = ZillitTheme.colors.accent,
+            size = PIN_GLYPH,
+        )
+        Column(Modifier.weight(1f)) {
+            ZillitText(
+                text = if (pinned.size > 1) "Pinned · ${index + 1} of ${pinned.size}" else "Pinned",
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.accentText,
+            )
+            val author = resolveAuthor(shown.authorId) ?: shown.authorName
+            val words = shown.body.lineSequence().firstOrNull { it.isNotBlank() }?.trim()
+                ?: shown.attachment?.fileName?.takeIf { it.isNotBlank() }
+                ?: shown.kind.name
+            ZillitText(
+                text = "$author: $words",
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textPrimary,
+                maxLines = 1,
+            )
+        }
+        if (pinned.size > 1) {
+            ZillitIconButton(
+                icon = ZillitIcons.ChevronDown,
+                contentDescription = "Next pinned post",
+                onClick = { index = (index + 1) % pinned.size },
+            )
+        }
+    }
+    Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
+}
+
 @Composable
 private fun HistoryToggle(isHistory: Boolean, onEvent: (HomeFeedEvent) -> Unit) {
     Row(
@@ -1211,6 +1483,7 @@ private fun NoticeBoard(
     unit: HomeUnit,
     ui: BoardUi,
     currentMatch: String?,
+    jumpTo: JumpTarget? = null,
 ) {
     val listState = rememberLazyListState()
 
@@ -1222,6 +1495,12 @@ private fun NoticeBoard(
     // `scrollToRow(.top)` does.
     LaunchedEffect(currentMatch) {
         val index = rows.indexOfFirst { it is BoardRow.Post && it.notice.id == currentMatch }
+        if (index >= 0) listState.animateScrollToItem(index)
+    }
+    // The pinned banner was clicked: the same scroll, to that post.
+    LaunchedEffect(jumpTo) {
+        val target = jumpTo ?: return@LaunchedEffect
+        val index = rows.indexOfFirst { it is BoardRow.Post && it.notice.id == target.noticeId }
         if (index >= 0) listState.animateScrollToItem(index)
     }
 
@@ -1269,8 +1548,8 @@ private fun NoticeBoard(
 }
 
 @Composable
+@Suppress("LongMethod") // Three menu entry points (right-click, long-press, kebab) share one card body.
 private fun NoticeCard(notice: Notice, ui: BoardUi) {
-    val canModifyNotice = ui.canModifyNotice(notice)
     val colors = ZillitTheme.colors
     val pending = notice.sendState != NoticeSendState.Sent
     val failed = notice.sendState == NoticeSendState.Failed
@@ -1286,12 +1565,21 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
     // edge to point at, and a single square corner reads as a rendering fault.
     val bubbleShape = RoundedCornerShape(BUBBLE_RADIUS)
 
-    // The web puts these behind a kebab dropdown; the desktop convention for
-    // "actions on this thing" is the right button, so that is where they live.
-    NoticeContextMenu(
-        items = noticeMenuItems(notice, ui.canReply, canModifyNotice, ui.canPin(notice), ui.onEvent) {
-            confirmingDelete = true
-        },
+    // Three ways in, one menu: right-click (the desktop's native), a
+    // long-press (what the phones teach, and what a trackpad hand reaches
+    // for), and a "⋯" that appears on hover — the web's kebab — so the
+    // actions are discoverable without knowing any gesture at all.
+    val menuItems = noticeMenuItems(notice, ui) { confirmingDelete = true }
+    var menuOpen by remember(notice.id) { mutableStateOf(false) }
+    val hoverSource = remember { MutableInteractionSource() }
+    val hovered by hoverSource.collectIsHoveredAsState()
+    NoticeContextMenu(items = menuItems) {
+    Box(
+        modifier = Modifier
+            .hoverable(hoverSource)
+            .pointerInput(notice.id) {
+                detectTapGestures(onLongPress = { menuOpen = true })
+            },
     ) {
     Column(
         modifier = Modifier
@@ -1318,7 +1606,7 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
     ) {
         NoticeHeader(notice, ui)
 
-        NoticeAttachment(notice.kind, notice.attachment, notice.location, ui)
+        NoticeAttachment(notice.id, notice.kind, notice.attachment, notice.location, ui)
 
         if (notice.body.isNotBlank()) {
             ZillitText(
@@ -1332,7 +1620,7 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
 
         if (confirmingDelete) {
             DeleteConfirmRow(
-                prompt = "Delete this post?",
+                prompt = DELETE_PROMPT,
                 onConfirm = {
                     confirmingDelete = false
                     ui.onEvent(HomeFeedEvent.DeleteNotice(notice.id))
@@ -1343,12 +1631,93 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
 
         NoticeThread(notice, ui)
     }
+    // The kebab, over the card's top-right on hover or while the menu is
+    // up — held open by the menu so it does not vanish under the pointer.
+    //
+    // Always composed, faded in on hover — NOT conditionally composed on
+    // hover. Verified live (2026-08-17) with a log on the kebab's press: gated
+    // by `if (hovered)`, the press never reached it. The card's hover state
+    // drops for the instant of the press (the pointer re-check after the
+    // press's relayout reads the card as un-hovered), the kebab left the
+    // composition, and the press landed on the card underneath — hence the
+    // long-press menu worked from the same spot while a click did nothing.
+    // Faded rather than removed, the button is there to take the press. It
+    // opens on the press and swallows the release, so nothing underneath
+    // sees a click.
+    Box(
+        Modifier
+            .align(Alignment.TopEnd)
+            .padding(ZillitTheme.spacing.xs)
+            .alpha(if (hovered || menuOpen) 1f else 0f),
+    ) {
+        KebabButton(onPress = { menuOpen = true })
+        NoticeActionsMenu(open = menuOpen, items = menuItems, onDismiss = { menuOpen = false })
+    }
+    }
     }
 }
 
-/** One bubble's attachment, with the shared context unpacked once. */
+/**
+ * The "⋯" that opens the card's menu — see the note at its call site for why
+ * this is a bare icon with its own pointer handling and not [ZillitIconButton].
+ */
+@Composable
+private fun KebabButton(onPress: () -> Unit) {
+    val hover = remember { MutableInteractionSource() }
+    val hovered by hover.collectIsHoveredAsState()
+    Box(
+        modifier = Modifier
+            .size(KEBAB_SIZE)
+            .clip(CircleShape)
+            .background(if (hovered) ZillitTheme.colors.surfaceSunken else Color.Transparent)
+            .hoverable(hover)
+            .semantics { contentDescription = "Message actions"; role = Role.Button }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown().consume()
+                    onPress()
+                    waitForUpOrCancellation()?.consume()
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitIcon(
+            icon = ZillitIcons.MoreHorizontal,
+            contentDescription = null,
+            tint = ZillitTheme.colors.textMuted,
+            size = KEBAB_GLYPH,
+        )
+    }
+}
+
+/**
+ * The same actions the right button offers, as a dropdown from the kebab or a
+ * long-press. Items come from one builder so the three entry points can never
+ * disagree about what a post allows.
+ */
+@Composable
+private fun NoticeActionsMenu(open: Boolean, items: () -> List<NoticeMenuItem>, onDismiss: () -> Unit) {
+    androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = onDismiss) {
+        items().forEach { item ->
+            androidx.compose.material3.DropdownMenuItem(
+                text = { ZillitText(text = item.label, style = ZillitTheme.typography.bodyMedium) },
+                onClick = {
+                    onDismiss()
+                    item.onClick()
+                },
+            )
+        }
+    }
+}
+
+/**
+ * One bubble's attachment, with the shared context unpacked once. [noticeId]
+ * is the post the file belongs to (a reply's is its parent's) — what the
+ * open path needs to name a call sheet's watermarked copy.
+ */
 @Composable
 private fun NoticeAttachment(
+    noticeId: String,
     kind: NoticeKind,
     attachment: NoticeAttachment?,
     location: GeoPoint?,
@@ -1359,48 +1728,99 @@ private fun NoticeAttachment(
         attachment = attachment,
         media = ui.media,
         onPreview = ui.onPreview,
-        onOpen = ui.onOpen,
+        onOpen = { file -> ui.onOpen(noticeId, file) },
         player = ui.player,
         location = location,
         onOpenLocation = ui.onOpenLocation,
     )
 }
 
-/** The right-click menu on a post: Reply, and Edit / Delete where allowed. */
+/**
+ * The menu on a post — the phones' set, in a fixed order rather than
+ * Android's alphabetical one, with Delete last as there.
+ *
+ * What is missing and why: *Share* (a system share sheet — nothing to hand
+ * to on a desktop), *Gallery* (the unit's media wall), *Translate* (no
+ * translation layer here), *Publish to Doc Distribution* (the call sheet's
+ * hand-off to that tool — a cross-module wiring for a later pass).
+ */
 private fun noticeMenuItems(
     notice: Notice,
-    canReply: Boolean,
-    canModifyNotice: Boolean,
-    canPin: Boolean,
-    onEvent: (HomeFeedEvent) -> Unit,
+    ui: BoardUi,
     onArmDelete: () -> Unit,
 ): () -> List<NoticeMenuItem> = {
-    buildList {
-        if (canReply && notice.sendState == NoticeSendState.Sent) {
-            add(NoticeMenuItem("Reply") { onEvent(HomeFeedEvent.StartReply(notice.id)) })
-        }
-        // Anyone may forward any sent post — rights are the *target* unit's
-        // business, checked when one is chosen, as on both live clients.
-        if (notice.sendState == NoticeSendState.Sent) {
-            add(NoticeMenuItem("Forward…") { onEvent(HomeFeedEvent.StartForward(notice.id)) })
-            add(NoticeMenuItem("Read by…") { onEvent(HomeFeedEvent.ShowReadBy(notice.id)) })
-            // The server lets only the author (or an admin) edit, and the pin
-            // flag rides the edit route — offering it elsewhere earns a
-            // refusal (found live: "You do not have access to this").
-            if (canPin) {
-                add(
-                    NoticeMenuItem(if (notice.isPinned) "Unpin" else "Pin") {
-                        onEvent(HomeFeedEvent.TogglePin(notice.id))
-                    },
-                )
-            }
-        }
-        if (canModifyNotice) {
-            // Editing rewrites the text; a media post's caption is its text.
-            add(NoticeMenuItem("Edit") { onEvent(HomeFeedEvent.StartEditNotice(notice.id)) })
-            add(NoticeMenuItem("Delete") { onArmDelete() })
+    if (notice.sendState == NoticeSendState.Sent) {
+        replyItems(notice, ui) + fileItems(notice, ui) + boardItems(notice, ui) + ownerItems(notice, ui, onArmDelete)
+    } else {
+        // Nothing to say about a post the server has not taken yet — its
+        // Try again is on the card. Copy still works on the words.
+        fileItems(notice, ui)
+    }
+}
+
+/** Reply, and — for a picture — the pen editor's Image Reply, posting rights required. */
+private fun replyItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buildList {
+    if (!ui.canReply) return@buildList
+    add(NoticeMenuItem("Reply") { ui.onEvent(HomeFeedEvent.StartReply(notice.id)) })
+    // Android `Home.kt:1339`: pictures only.
+    if (notice.kind == NoticeKind.Image && notice.attachment != null) {
+        add(NoticeMenuItem("Image Reply") { ui.onImageReply(notice) })
+    }
+}
+
+/** Copy on any words (iOS), Download on any file — gated by the model on `download_access`. */
+private fun fileItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buildList {
+    if (notice.body.isNotBlank()) {
+        add(NoticeMenuItem("Copy") { copyTextToClipboard(notice.body) })
+    }
+    val file = notice.attachment ?: return@buildList
+    val isFile = notice.kind != NoticeKind.Text && notice.kind != NoticeKind.Location
+    if (isFile && notice.sendState == NoticeSendState.Sent) {
+        add(
+            NoticeMenuItem("Download") {
+                ui.onEvent(HomeFeedEvent.OpenAttachment(notice.id, file, download = true))
+            },
+        )
+        // The call sheet's hand-off to the library — non-text posts, with
+        // rights on the Distribution tool (Android `Home.kt:1349`, `:2171`).
+        if (ui.isCallSheet && ui.canPublishToDistribution) {
+            add(NoticeMenuItem("Publish to Doc Distribution") { ui.onEvent(HomeFeedEvent.StartPublish(notice.id)) })
         }
     }
+}
+
+/**
+ * Forward, Read by, Pin. Anyone may forward any sent post — rights are the
+ * *target* unit's business, checked when one is chosen — but not from the
+ * call sheet, on either phone (Android `Home.kt:1331`). The pin flag rides
+ * the edit route, so it takes the author's (or an admin's) rights; offering
+ * it elsewhere earns a refusal (found live: "You do not have access to this").
+ */
+private fun boardItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buildList {
+    if (!ui.isCallSheet) {
+        add(NoticeMenuItem("Forward…") { ui.onEvent(HomeFeedEvent.StartForward(notice.id)) })
+    }
+    add(NoticeMenuItem("Read by…") { ui.onEvent(HomeFeedEvent.ShowReadBy(notice.id)) })
+    if (ui.canPin(notice)) {
+        add(
+            NoticeMenuItem(if (notice.isPinned) "Unpin" else "Pin") {
+                ui.onEvent(HomeFeedEvent.TogglePin(notice.id))
+            },
+        )
+    }
+}
+
+/**
+ * Edit and Delete for the author or an admin — untimed here; the click
+ * enforces the clock. Editing rewrites the text, a media post's caption is
+ * its text, and one without a caption has nothing to edit (Android `:1344`).
+ */
+private fun ownerItems(notice: Notice, ui: BoardUi, onArmDelete: () -> Unit): List<NoticeMenuItem> = buildList {
+    if (!ui.canActOnNotice(notice)) return@buildList
+    if (notice.body.isNotBlank()) {
+        add(NoticeMenuItem("Edit") { ui.onEvent(HomeFeedEvent.StartEditNotice(notice.id)) })
+    }
+    add(NoticeMenuItem("Delete") { onArmDelete() })
 }
 
 /**
@@ -1615,11 +2035,11 @@ private fun BoardArea(
     onEvent: (HomeFeedEvent) -> Unit,
     calendar: (@Composable () -> Unit)?,
     media: NoticeMediaSource?,
-    onOpenAttachment: (NoticeAttachment) -> Unit,
     resolveAuthor: (String?) -> String?,
     player: AudioPlayer?,
     onOpenLocation: (GeoPoint) -> Unit,
     onPreview: (NoticeAttachment) -> Unit,
+    onImageReply: (Notice) -> Unit,
     loadAvatar: suspend (String) -> ByteArray?,
     crewNames: () -> List<String>,
 ) {
@@ -1652,24 +2072,28 @@ private fun BoardArea(
                 onEvent = onEvent,
                 media = media,
                 onPreview = onPreview,
-                onOpen = onOpenAttachment,
+                onOpen = { noticeId, file -> onEvent(HomeFeedEvent.OpenAttachment(noticeId, file)) },
                 resolveAuthor = resolveAuthor,
                 player = player,
                 onOpenLocation = onOpenLocation,
                 highlightQuery = state.searchQuery
                     ?.trim()?.takeIf { it.length >= MIN_QUERY_LENGTH },
                 canReply = state.canCompose,
-                canModifyComment = state::canModify,
-                canModifyNotice = state::canModify,
+                canActOnComment = state::canAct,
+                canActOnNotice = state::canAct,
                 canPin = { notice ->
                     state.isAdmin ||
                         (notice.authorId != null && notice.authorId == state.currentUserId)
                 },
+                isCallSheet = unit.kind == HomeUnitKind.CallSheet,
+                canPublishToDistribution = state.canPublishToDistribution,
+                onImageReply = onImageReply,
                 crewNames = crewNames,
                 loadAvatar = loadAvatar,
                 uploadProgress = { localId -> state.uploadProgress[localId] },
             ),
             currentMatch = state.currentSearchMatch,
+            jumpTo = state.jumpTo,
         )
     }
 }
@@ -1737,11 +2161,11 @@ private fun NoticeHeader(notice: Notice, ui: BoardUi) {
  */
 @Composable
 private fun CommentBubble(parentId: String, comment: NoticeComment, ui: BoardUi) {
-    val canModify = ui.canModifyComment(comment)
+    val canAct = ui.canActOnComment(comment)
     var confirmingDelete by remember(comment.id) { mutableStateOf(false) }
 
     NoticeContextMenu(
-        items = commentMenuItems(parentId, comment, canModify, ui.onEvent) {
+        items = commentMenuItems(parentId, comment, canAct, ui.onEvent) {
             confirmingDelete = true
         },
     ) {
@@ -1758,7 +2182,7 @@ private fun CommentBubble(parentId: String, comment: NoticeComment, ui: BoardUi)
     ) {
         CommentHeader(comment, ui)
 
-        NoticeAttachment(comment.kind, comment.attachment, comment.location, ui)
+        NoticeAttachment(parentId, comment.kind, comment.attachment, comment.location, ui)
 
         if (comment.body.isNotBlank()) {
             ZillitText(
@@ -1776,7 +2200,7 @@ private fun CommentBubble(parentId: String, comment: NoticeComment, ui: BoardUi)
             )
         }
 
-        if (canModify) {
+        if (canAct) {
             CommentActions(
                 parentId = parentId,
                 comment = comment,
@@ -1789,16 +2213,25 @@ private fun CommentBubble(parentId: String, comment: NoticeComment, ui: BoardUi)
     }
 }
 
-/** The right-click menu on a reply: Edit / Delete where allowed. */
+/**
+ * The right-click menu on a reply: Edit / Delete for the author or an admin.
+ * The clock is the model's business at the click, as for a post.
+ */
 private fun commentMenuItems(
     parentId: String,
     comment: NoticeComment,
-    canModify: Boolean,
+    canAct: Boolean,
     onEvent: (HomeFeedEvent) -> Unit,
     onArmDelete: () -> Unit,
 ): () -> List<NoticeMenuItem> = {
     buildList {
-        if (canModify) {
+        if (comment.body.isNotBlank()) {
+            add(NoticeMenuItem("Copy") { copyTextToClipboard(comment.body) })
+        }
+        // A reply has its own receipts — Android's `Read By User` on the
+        // comment menu, the same route with the reply's id.
+        add(NoticeMenuItem("Read by…") { onEvent(HomeFeedEvent.ShowReadBy(parentId, comment.id)) })
+        if (canAct) {
             if (comment.kind == NoticeKind.Text) {
                 add(
                     NoticeMenuItem("Edit reply") {
@@ -1852,7 +2285,7 @@ private fun CommentActions(
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         if (confirmingDelete) {
             DeleteConfirmRow(
-                prompt = "Delete?",
+                prompt = DELETE_PROMPT,
                 onConfirm = {
                     onConfirmingChange(false)
                     onEvent(HomeFeedEvent.DeleteComment(parentId, comment.id))
@@ -1968,8 +2401,12 @@ private fun Centred(text: String) {
 // The find highlight: amber, matching the web's yellow mark on dark bubbles.
 private val HIGHLIGHT = Color(0xFFFFC94D)
 private const val COMMENT_INSET_ALPHA = 0.07f
+
+/** Both phones' delete confirmation, word for word (`DeleteConfirmPop`, `are_you_sure_delete`). */
+private const val DELETE_PROMPT = "Are you sure you want to delete?"
 private val LOCATION_PICKER_WIDTH = 340.dp
 private val FORWARD_PICKER_WIDTH = 340.dp
+private val CALL_SHEET_PROMPT_WIDTH = 440.dp
 private val READ_BY_LIST_HEIGHT = 320.dp
 private val COMPOSER_RADIUS = 22.dp
 private val HEADER_AVATAR = 26.dp
@@ -2001,6 +2438,8 @@ private val BUBBLE_RADIUS = 16.dp
 /** Thicker than a hairline so the ring reads as deliberate, not as a seam. */
 private val PINNED_RING = 2.dp
 private val PIN_GLYPH = 13.dp
+private val PINNED_BAR_WIDTH = 3.dp
+private val PINNED_BAR_HEIGHT = 28.dp
 
 
 private val PAGE_PADDING = 20.dp
@@ -2017,6 +2456,8 @@ private val TAB_ICON = 14.dp
 private val EMPTY_ICON = 32.dp
 private val HAIRLINE = 1.dp
 private val COMPOSER_MIN_HEIGHT = 44.dp
+private val KEBAB_SIZE = 24.dp
+private val KEBAB_GLYPH = 16.dp
 
 /** Matches the view model's UPLOAD_DONE: bytes done, server writing. */
 private const val UPLOAD_DONE_PERCENT = 100

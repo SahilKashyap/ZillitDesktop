@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.ZillitHeaders
+import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.feature.budgetbuilder.server.BudgetBuilderGateway
 import java.awt.Dimension
 import java.awt.event.WindowAdapter

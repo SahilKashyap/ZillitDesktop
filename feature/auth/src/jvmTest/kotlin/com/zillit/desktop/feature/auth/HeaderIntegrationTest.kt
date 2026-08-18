@@ -7,6 +7,7 @@ import com.zillit.desktop.core.network.HeaderCrypto
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.ZillitHeaderProvider
 import com.zillit.desktop.core.network.ZillitHeaders
+import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.core.security.AesCbcCryptoEngine
 import com.zillit.desktop.core.security.CryptoKeyMaterial
 import com.zillit.desktop.core.security.CryptoKeyProvider

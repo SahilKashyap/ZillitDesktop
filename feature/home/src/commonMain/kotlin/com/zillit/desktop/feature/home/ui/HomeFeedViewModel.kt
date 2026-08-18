@@ -6,12 +6,13 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.datetime.toLocalDateTime
 import com.zillit.desktop.feature.home.domain.HomeFeedRepository
 import com.zillit.desktop.feature.home.domain.HomeUnit
 import com.zillit.desktop.feature.home.domain.BoardRow
 import com.zillit.desktop.feature.home.domain.HomeRealtimeEvent
 import com.zillit.desktop.feature.home.domain.withDateSeparators
-import com.zillit.desktop.feature.home.domain.withPinnedSection
+import com.zillit.desktop.feature.home.domain.pinnedForBanner
 import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.domain.applyRealtime
 import com.zillit.desktop.feature.home.domain.forDisplay
@@ -20,7 +21,11 @@ import com.zillit.desktop.feature.home.domain.AudioRecorder
 import com.zillit.desktop.feature.home.domain.GeoPoint
 import com.zillit.desktop.feature.home.domain.NoticeComment
 import com.zillit.desktop.feature.home.domain.NoticeKind
-import com.zillit.desktop.feature.home.domain.canBeModifiedBy
+import com.zillit.desktop.feature.home.domain.NoticeAttachment
+import com.zillit.desktop.feature.home.domain.ModifyVerdict
+import com.zillit.desktop.feature.home.domain.deleteVerdict
+import com.zillit.desktop.feature.home.domain.editVerdict
+import com.zillit.desktop.feature.home.domain.isActionableBy
 import com.zillit.desktop.feature.home.domain.nextMatchIndex
 import com.zillit.desktop.feature.home.domain.searchMatches
 import com.zillit.desktop.feature.home.domain.PickedMedia
@@ -66,6 +71,30 @@ data class HomeFeedUiState(
     val forwarding: Notice? = null,
     /** The read-receipts panel: which post, and the lists once fetched. */
     val readBy: ReadByView? = null,
+    /**
+     * The call sheet's "continuation or new?" question, while it is being
+     * asked; null otherwise. See [CallSheetPrompt].
+     */
+    val callSheetPrompt: CallSheetPrompt? = null,
+    /**
+     * A file the board should hand to the host to save and open — set once
+     * the right rendition is known (a call sheet's watermarked copy takes a
+     * round trip to name), consumed by the screen, then cleared.
+     */
+    val pendingOpen: PendingOpen? = null,
+    /**
+     * A post the board should scroll to — the pinned banner's click. Carries a
+     * nonce so the same post can be jumped to twice.
+     */
+    val jumpTo: JumpTarget? = null,
+    /**
+     * Whether the menu offers "Publish to Doc Distribution" at all — the
+     * hand-off is wired. Rights are checked at the click, with Android's
+     * sentence when they are missing, so the item is discoverable either way.
+     */
+    val canPublishToDistribution: Boolean = false,
+    /** The post whose publish is being confirmed, or null. */
+    val distributionPrompt: Notice? = null,
     val error: String? = null,
     /** A success note ("Forwarded to…") — floated like [error], toned green. */
     val info: String? = null,
@@ -101,10 +130,14 @@ data class HomeFeedUiState(
      * keeping them in state would mean recomputing on every socket arrival.
      */
     val rows: List<BoardRow>
-        get() = notices.forDisplay(history = isHistory).let { shown ->
-            // History reads in pure chronology; the live board floats pins.
-            if (isHistory) shown.withDateSeparators(nowMillis) else shown.withPinnedSection(nowMillis)
-        }
+        get() = notices.forDisplay(history = isHistory).withDateSeparators(nowMillis)
+
+    /**
+     * What the banner over the board shows — the pinned posts, newest first.
+     * Empty in history: a record has no "keep this in view".
+     */
+    val pinnedBanner: List<Notice>
+        get() = if (isHistory) emptyList() else notices.pinnedForBanner()
 
     /** Matching post ids, in board order. Empty until two characters. */
     val searchMatches: List<String>
@@ -122,13 +155,31 @@ data class HomeFeedUiState(
             return matches[searchIndex.coerceIn(0, matches.size - 1)]
         }
 
-    /** Whether this user may edit or delete [comment] — the web's rule. */
-    fun canModify(comment: NoticeComment): Boolean =
-        comment.canBeModifiedBy(currentUserId, isAdmin, nowMillis)
+    /**
+     * Whether Edit and Delete belong in this reply's menu at all — the
+     * author's, or an admin's. Untimed: the window is enforced at the click,
+     * with a sentence saying why (the phones' toast), rather than by an item
+     * that silently vanishes at minute thirty-one.
+     */
+    fun canAct(comment: NoticeComment): Boolean = comment.isActionableBy(currentUserId, isAdmin)
 
-    /** The same rule for a post. */
-    fun canModify(notice: Notice): Boolean =
-        notice.canBeModifiedBy(currentUserId, isAdmin, nowMillis)
+    /** The same, for a post. */
+    fun canAct(notice: Notice): Boolean = notice.isActionableBy(currentUserId, isAdmin)
+
+    /**
+     * Whether Download is offered on this unit — `download_access`, admins
+     * excepted (iOS `getLoginUserAdminAccess() || hasDownloadAccess`).
+     */
+    val canDownload: Boolean
+        get() = isAdmin || selectedUnit?.canDownload == true
+
+    /**
+     * Whether the paperclip takes documents only — the call sheet unit, where
+     * both phones' attach sheet offers nothing else and hide the microphone
+     * (Android `Home.kt:908-911`, `:403`; iOS `ProductionVC.swift:1149`).
+     */
+    val documentsOnly: Boolean
+        get() = selectedUnit?.kind == HomeUnitKind.CallSheet
 
     /**
      * Whether the composer bar is on screen at all.
@@ -178,14 +229,69 @@ class MediaCapture(
     val staticMap: suspend (GeoPoint) -> PickedMedia? = { null },
 )
 
+/**
+ * The board's hand-off to Document Distribution — "Publish to Doc
+ * Distribution" on a call sheet's documents. The host wires it to the
+ * library's from-tool route; null removes the item.
+ *
+ * [canPublish] is the phones' gate: posting rights on the Document
+ * Distribution tool (`document_distribution_tool`), admin or not
+ * (Android `hasDistributionToolPermission`, `DocDistRights.canPost`).
+ * [publish] registers the post's file in the library under [folderPath],
+ * dated the day it was posted (`yyyy-MM-dd`), without re-uploading it.
+ */
+class DistributionHook(
+    val canPublish: () -> Boolean,
+    val publish: suspend (notice: Notice, folderPath: List<String>, folderDate: String) -> ZillitResult<Unit>,
+)
+
 /** Which reply the composer is rewriting. */
 data class EditingComment(val noticeId: String, val commentId: String)
 
-/** The read-receipts panel's state; [lists] is null while the fetch is out. */
-data class ReadByView(val noticeId: String, val lists: ReadBy? = null)
+/**
+ * The read-receipts panel's state; [lists] is null while the fetch is out.
+ * [commentId] set means the panel is for one reply of the post — its own
+ * receipts, on the same route with `?commentId=` (Android `ReadByUserPage`).
+ */
+data class ReadByView(val noticeId: String, val lists: ReadBy? = null, val commentId: String? = null)
+
+/**
+ * The call sheet's two-step question, asked when a document is about to be
+ * attached to a board that already has posts.
+ *
+ * Step one: "in continuation of the existing call sheet, or a new one?" —
+ * *Continuation* appends; *New* asks step two, "this sends everything here to
+ * History; proceed?" — and only a *Yes* there marks the upload as a
+ * replacement. Both phones ask exactly this, in this order (Android
+ * `Home.kt:862-903`, iOS `ProductionVC.swift:1087-1123`).
+ *
+ * [dropped] carries a file that arrived by drag rather than the picker, so
+ * the answer can attach it without asking the OS again.
+ */
+data class CallSheetPrompt(
+    val confirmingReplace: Boolean = false,
+    val dropped: PickedMedia? = null,
+)
+
+/**
+ * A file the host should save and open. [nonce] makes two opens of the same
+ * file two distinct requests, so the screen's effect fires for each.
+ */
+data class PendingOpen(val attachment: NoticeAttachment, val nonce: Long)
+
+/** A post to scroll to; [nonce] as for [PendingOpen]. */
+data class JumpTarget(val noticeId: String, val nonce: Long)
 
 sealed interface HomeFeedEvent {
     data object Load : HomeFeedEvent
+
+    /**
+     * A different production is open. Everything here belonged to the last
+     * one — the board, the tab, the reply target, and the half-typed draft —
+     * so it all goes. The board loads again when it is next shown ([Load]);
+     * this only forgets.
+     */
+    data object ProjectChanged : HomeFeedEvent
     data class SelectUnit(val unitId: String) : HomeFeedEvent
     data object Refresh : HomeFeedEvent
     data class DraftChanged(val text: String) : HomeFeedEvent
@@ -231,8 +337,8 @@ sealed interface HomeFeedEvent {
     data class ForwardTo(val unitId: String) : HomeFeedEvent
     data object CancelForward : HomeFeedEvent
 
-    /** Who has read this post — opens the receipts panel. */
-    data class ShowReadBy(val noticeId: String) : HomeFeedEvent
+    /** Who has read this post — or one reply of it — opens the receipts panel. */
+    data class ShowReadBy(val noticeId: String, val commentId: String? = null) : HomeFeedEvent
     data object DismissReadBy : HomeFeedEvent
 
     /** Push a reminder notification to everyone still on the unread list. */
@@ -256,6 +362,46 @@ sealed interface HomeFeedEvent {
     /** A crew name completed from the mention picker — feeds the recency boost. */
     data class MentionPicked(val name: String) : HomeFeedEvent
 
+    /**
+     * The call sheet's question, answered — see [CallSheetPrompt].
+     * Continuation and a confirmed replace both go on to attach; New asks
+     * the second question; Dismiss drops the whole thing.
+     */
+    data object CallSheetContinuation : HomeFeedEvent
+    data object CallSheetNew : HomeFeedEvent
+    data object CallSheetReplaceConfirmed : HomeFeedEvent
+    data object CallSheetDismiss : HomeFeedEvent
+
+    /**
+     * The phones' "Image Reply": a post's picture, marked up in the editor,
+     * posted as a new picture with [caption]. Rides the ordinary media send.
+     */
+    data class PostImageReply(val picked: PickedMedia, val caption: String) : HomeFeedEvent
+
+    /**
+     * Save-and-open a post's file. Through the model rather than straight to
+     * the host because a call sheet's document opens as its watermarked copy,
+     * which the server names on request; other files pass straight through.
+     * [download] marks the menu's explicit Download, which the phones gate on
+     * the unit's `download_access` — a click to *read* a file is not gated.
+     */
+    data class OpenAttachment(
+        val noticeId: String,
+        val attachment: NoticeAttachment,
+        val download: Boolean = false,
+    ) : HomeFeedEvent
+
+    /** The screen has handed [HomeFeedUiState.pendingOpen] to the host. */
+    data object OpenHandled : HomeFeedEvent
+
+    /** Scroll the board to a post — the pinned banner's click. */
+    data class JumpToPost(val noticeId: String) : HomeFeedEvent
+
+    /** "Publish to Doc Distribution": ask first, then register the file in the library. */
+    data class StartPublish(val noticeId: String) : HomeFeedEvent
+    data object ConfirmPublish : HomeFeedEvent
+    data object DismissPublish : HomeFeedEvent
+
     /** Delivered by the socket, not by the user. */
     data class Realtime(val event: HomeRealtimeEvent) : HomeFeedEvent
 }
@@ -267,7 +413,11 @@ sealed interface HomeFeedEvent {
  * These are different lifetimes: rights are fetched once per production, while
  * the board is refetched whenever the user changes tab.
  */
-@Suppress("TooManyFunctions") // One function per board event; splitting the board's own state machine hides the set.
+// One function per board event, one class per board: splitting the board's
+// own state machine across files hides the set without shrinking it. The
+// constructor is the host's seams, one per capability, each defaulted to
+// "absent" — a holder object would rename the list, not shorten it.
+@Suppress("TooManyFunctions", "LargeClass", "LongParameterList")
 class HomeFeedViewModel(
     private val repository: HomeFeedRepository,
     private val nowMillis: () -> Long,
@@ -290,6 +440,16 @@ class HomeFeedViewModel(
      */
     private val loadRecentMentions: suspend () -> List<String> = { emptyList() },
     private val saveRecentMentions: suspend (List<String>) -> Unit = {},
+    /**
+     * The tab to land on when none is chosen yet — the profile's
+     * `default_unit_id`, set from the phones' preferences. Null or a unit
+     * this user cannot see falls back to the first tab (Android
+     * `handleDefaultUnitSelection`). Read at load time: the profile lands
+     * beside the units, and a value captured earlier could be stale.
+     */
+    private val defaultUnitId: () -> String? = { null },
+    /** The library hand-off; null hides the menu item. See [DistributionHook]. */
+    private val distribution: DistributionHook? = null,
 ) : ZillitViewModel<HomeFeedUiState, HomeFeedEvent, Nothing>(HomeFeedUiState()) {
 
     /**
@@ -310,6 +470,13 @@ class HomeFeedViewModel(
      */
     private val pickedByLocalId = mutableMapOf<String, PickedMedia>()
 
+    /**
+     * The call sheet's replace answer behind each in-flight post, by local
+     * id — a retry must carry the same flag, or a "New" that failed once
+     * would land as a "Continuation" on the second try.
+     */
+    private val replaceByLocalId = mutableMapOf<String, Boolean>()
+
     /** Test seam: the pre-fix state where a failed upload's file is gone. */
     internal fun forgetPickedFor(localId: String) {
         pickedByLocalId.remove(localId)
@@ -324,18 +491,10 @@ class HomeFeedViewModel(
     override fun onEvent(event: HomeFeedEvent) {
         when (event) {
             HomeFeedEvent.Load -> loadUnits()
+            HomeFeedEvent.ProjectChanged -> forgetProject()
             HomeFeedEvent.Refresh -> currentState.selectedUnit?.let { loadNotices(it) }
             is HomeFeedEvent.DraftChanged -> setState {
                 copy(draft = NoticeDraft(event.text, draft.media), error = null)
-            }
-            HomeFeedEvent.Attach -> attach()
-            is HomeFeedEvent.AttachDropped ->
-                attach(dropped = event.picked, extraDropped = event.extra)
-            HomeFeedEvent.StartRecording -> record()
-            HomeFeedEvent.StopRecording -> record(discard = false)
-            HomeFeedEvent.CancelRecording -> record(discard = true)
-            HomeFeedEvent.RemoveAttachment -> setState {
-                copy(draft = draft.copy(media = null, location = null))
             }
             HomeFeedEvent.Send -> send()
             is HomeFeedEvent.Retry -> retry(event.localId)
@@ -350,7 +509,7 @@ class HomeFeedViewModel(
             }
             is HomeFeedEvent.ForwardTo -> forwardTo(event.unitId)
             HomeFeedEvent.CancelForward -> setState { copy(forwarding = null) }
-            is HomeFeedEvent.ShowReadBy -> showReadBy(event.noticeId)
+            is HomeFeedEvent.ShowReadBy -> showReadBy(event.noticeId, event.commentId)
             HomeFeedEvent.DismissReadBy -> setState { copy(readBy = null) }
             HomeFeedEvent.DismissError -> setState { copy(error = null) }
             HomeFeedEvent.DismissInfo -> setState { copy(info = null) }
@@ -383,6 +542,42 @@ class HomeFeedViewModel(
                     }
                 }
             is HomeFeedEvent.SelectUnit -> selectUnit(event.unitId)
+            else -> onFileEvent(event)
+        }
+    }
+
+    /**
+     * Files and the microphone: picking, dropping, recording, the call
+     * sheet's question about a pick, the image reply's picture, and opening
+     * what a post carries. Split from the main dispatch as the composer's
+     * mode events are — the same exhaustive-dispatch shape (see onEvent).
+     */
+    @Suppress("CyclomaticComplexMethod")
+    private fun onFileEvent(event: HomeFeedEvent) {
+        when (event) {
+            HomeFeedEvent.Attach -> attach()
+            is HomeFeedEvent.AttachDropped ->
+                attach(dropped = event.picked, extraDropped = event.extra)
+            HomeFeedEvent.StartRecording -> record()
+            HomeFeedEvent.StopRecording -> record(discard = false)
+            HomeFeedEvent.CancelRecording -> record(discard = true)
+            // The replace answer leaves with the file it was given for.
+            HomeFeedEvent.RemoveAttachment -> setState {
+                copy(draft = draft.copy(media = null, location = null, replacePrevious = null))
+            }
+            is HomeFeedEvent.PostImageReply -> postImageReply(event.picked, event.caption)
+            is HomeFeedEvent.OpenAttachment -> open(event.noticeId, event.attachment, event.download)
+            HomeFeedEvent.OpenHandled -> setState { copy(pendingOpen = null) }
+            is HomeFeedEvent.JumpToPost -> setState { copy(jumpTo = JumpTarget(event.noticeId, ++openCounter)) }
+            HomeFeedEvent.CallSheetContinuation -> answerCallSheet(replace = false)
+            HomeFeedEvent.CallSheetNew -> setState {
+                copy(callSheetPrompt = callSheetPrompt?.copy(confirmingReplace = true))
+            }
+            HomeFeedEvent.CallSheetReplaceConfirmed -> answerCallSheet(replace = true)
+            HomeFeedEvent.CallSheetDismiss -> setState { copy(callSheetPrompt = null) }
+            is HomeFeedEvent.StartPublish -> startPublish(event.noticeId)
+            HomeFeedEvent.ConfirmPublish -> publishToDistribution()
+            HomeFeedEvent.DismissPublish -> setState { copy(distributionPrompt = null) }
             else -> onComposerModeEvent(event)
         }
     }
@@ -439,11 +634,11 @@ class HomeFeedViewModel(
             // Rights re-checked here even though the UI hides the button —
             // the state that hid it can be stale by the click.
             HomeFeedEvent.NotifyUnread -> {
-                val noticeId = currentState.readBy?.noticeId ?: return
+                val panel = currentState.readBy ?: return
                 val unit = currentState.selectedUnit ?: return
                 if (!requirePostingRights()) return
                 launchResult(
-                    block = { repository.notifyUnread(unit.id, noticeId) },
+                    block = { repository.notifyUnread(unit.id, panel.noticeId, panel.commentId) },
                     onSuccess = {
                         setState { copy(info = "Everyone still unread has been notified.") }
                     },
@@ -462,6 +657,23 @@ class HomeFeedViewModel(
         }
     }
 
+    /**
+     * Drops everything the previous production left here. A recording in
+     * progress is abandoned (its take belonged to that production's board);
+     * the in-flight bookkeeping goes with it — a retry across productions
+     * would post the old file to the new board.
+     */
+    private fun forgetProject() {
+        if (currentState.recordingSeconds != null) {
+            recordingTicker?.cancel()
+            media.recorder?.cancel()
+        }
+        uploadedByLocalId.clear()
+        pickedByLocalId.clear()
+        replaceByLocalId.clear()
+        setState { HomeFeedUiState(nowMillis = nowMillis()) }
+    }
+
     private fun selectUnit(unitId: String) {
         val unit = currentState.tabs.firstOrNull { it.id == unitId } ?: return
         setState {
@@ -474,6 +686,7 @@ class HomeFeedViewModel(
                 draftBeforeEdit = null,
                 searchQuery = null,
                 searchIndex = 0,
+                callSheetPrompt = null,
                 error = null,
             )
         }
@@ -510,25 +723,35 @@ class HomeFeedViewModel(
      * for a location, the poster frame for a video) — fetching or decoding
      * before showing anything makes attaching feel broken on slow hardware.
      */
-    private fun attach(dropped: PickedMedia? = null, extraDropped: Int = 0) {
+    private fun attach(
+        dropped: PickedMedia? = null,
+        extraDropped: Int = 0,
+        /** The call sheet's answer; null when the question has not been put. */
+        replace: Boolean? = null,
+    ) {
         if (!requirePostingRights()) return
         if (media.upload == null || currentState.replyTo != null) return
         val unit = currentState.selectedUnit ?: return
 
+        // A call sheet with posts on it asks first — continuation of what is
+        // there, or a new sheet that sends the rest to History? Both phones
+        // put the question before the picker opens; a dropped file waits in
+        // the prompt so the answer can attach it.
+        if (replace == null && callSheetAsksFirst(unit)) {
+            setState { copy(callSheetPrompt = CallSheetPrompt(dropped = dropped)) }
+            return
+        }
+
         launch {
             val picked = dropped ?: media.pick() ?: return@launch
-
-            // The call sheet unit takes documents only -- iOS's attach sheet
-            // offers nothing else there, and its camera is hidden outright.
-            if (unit.kind == HomeUnitKind.CallSheet && picked.kind != NoticeKind.Document) {
-                setState { copy(error = "Only documents can be posted to " + unit.label + ".") }
-                return@launch
-            }
+            if (refusedByCallSheet(unit, picked)) return@launch
 
             // The chip appears at once; the poster frame joins it when the
             // extraction finishes. Decoding video before showing anything
-            // would make picking a file feel broken.
-            setState { copy(draft = draft.copy(media = picked), error = null) }
+            // would make picking a file feel broken. The replace answer rides
+            // with the file — set here, once there is a file, so a cancelled
+            // picker leaves no stray flag on the next plain post.
+            setState { copy(draft = draft.copy(media = picked, replacePrevious = replace), error = null) }
 
             // The wire takes one attachment per post; saying so beats
             // silently discarding the rest of a multi-file drag.
@@ -550,6 +773,22 @@ class HomeFeedViewModel(
                 }
             }
         }
+    }
+
+    /** The call sheet's question is owed once the board has anything on it. */
+    private fun callSheetAsksFirst(unit: HomeUnit): Boolean =
+        unit.kind == HomeUnitKind.CallSheet &&
+            currentState.notices.any { it.sendState == NoticeSendState.Sent }
+
+    /**
+     * The call sheet unit takes documents only — iOS's attach sheet offers
+     * nothing else there, Android's picker set is `PICKER_ITEM_DOCUMENT`
+     * alone. Anything else is refused with a sentence, not silently dropped.
+     */
+    private fun refusedByCallSheet(unit: HomeUnit, picked: PickedMedia): Boolean {
+        if (unit.kind != HomeUnitKind.CallSheet || picked.kind == NoticeKind.Document) return false
+        setState { copy(error = "Only documents can be posted to " + unit.label + ".") }
+        return true
     }
 
     /** Counts the recording up once a second, for the bar's clock. */
@@ -638,14 +877,126 @@ class HomeFeedViewModel(
             return
         }
 
+        post(unit, draft, clearComposer = true)
+    }
+
+    /**
+     * Puts a draft on the board and sends it — the composer's send, and the
+     * image reply's. [clearComposer] is false for the latter: the picture
+     * came from a dialog, and whatever was half-typed below stays.
+     */
+    private fun post(unit: HomeUnit, draft: NoticeDraft, clearComposer: Boolean) {
         val optimistic = optimisticNotice(newLocalId(), draft, nowMillis())
 
         setState {
-            copy(notices = notices + optimistic, draft = NoticeDraft(), isSending = true, error = null)
+            copy(
+                notices = notices + optimistic,
+                draft = if (clearComposer) NoticeDraft() else this.draft,
+                isSending = true,
+                error = null,
+            )
         }
 
-        deliver(unit.id, optimistic, draft.media, draft.location)
+        deliver(unit.id, optimistic, draft.media, draft.location, draft.replacePrevious)
     }
+
+    /**
+     * The phones' "Image Reply": the marked-up picture posts as a new image
+     * with its caption, through the same upload-then-post path as any file —
+     * Android's `handleImageReply` hands the editor's output to
+     * `uploadFilesInDb`, the ordinary media send.
+     */
+    private fun postImageReply(picked: PickedMedia, caption: String) {
+        val unit = currentState.selectedUnit ?: return
+        if (!requirePostingRights()) return
+        post(unit, NoticeDraft(text = caption, media = picked), clearComposer = false)
+    }
+
+    /**
+     * The call sheet's answer arrives: the prompt closes and attaching goes
+     * ahead with the flag — from the picker, or with the file that was
+     * dropped and has been waiting in the prompt.
+     */
+    private fun answerCallSheet(replace: Boolean) {
+        val prompt = currentState.callSheetPrompt ?: return
+        setState { copy(callSheetPrompt = null) }
+        attach(dropped = prompt.dropped, replace = replace)
+    }
+
+    /**
+     * Registers the confirmed post's file in the Document Distribution
+     * library — the phones' "Publish to Doc Distribution". Filed under the
+     * unit's tool name (`Call Sheet` for the call sheet, the board's own
+     * name otherwise) and dated the day the post was made, exactly as
+     * Android's `setDistributeActionToDD` files it. The file is not
+     * re-uploaded; the library takes the storage keys.
+     */
+    /**
+     * The gate comes before the question, as on Android (`Home.kt:2171`):
+     * no rights on the Distribution tool, no dialog — the sentence instead.
+     */
+    private fun startPublish(noticeId: String) {
+        val hook = distribution ?: return
+        if (!hook.canPublish()) {
+            setState { copy(error = NO_DISTRIBUTION_RIGHTS) }
+            return
+        }
+        setState { copy(distributionPrompt = notices.firstOrNull { it.id == noticeId && it.attachment != null }) }
+    }
+
+    private fun publishToDistribution() {
+        val hook = distribution ?: return
+        val notice = currentState.distributionPrompt ?: return
+        val unit = currentState.selectedUnit ?: return
+        setState { copy(distributionPrompt = null) }
+        if (!hook.canPublish()) {
+            setState { copy(error = NO_DISTRIBUTION_RIGHTS) }
+            return
+        }
+        val folder = if (unit.kind == HomeUnitKind.CallSheet) CALL_SHEET_FOLDER else unit.label
+        launchResult(
+            block = { hook.publish(notice, listOf(folder), notice.createdAtMillis.toIsoDate()) },
+            onSuccess = { setState { copy(info = "Published to Document Distribution.") } },
+            onError = { error -> setState { copy(error = error.localised()) } },
+        )
+    }
+
+    /**
+     * Names the rendition to save-and-open. A call sheet's PDF opens as the
+     * server's watermarked copy — the reader's name stamped on every page, so
+     * a leaked sheet says who leaked it (Android `Home.kt:1783-1815`, iOS
+     * `ProductionVC+Ext.swift:602-651`); if the server cannot produce one the
+     * original opens, as it does on both phones. Everything else passes through.
+     */
+    private fun open(noticeId: String, attachment: NoticeAttachment, download: Boolean) {
+        // The explicit Download is a right of its own on both phones; the
+        // sentence is Android's (`download_permission_alert`).
+        if (download && !currentState.canDownload) {
+            val unit = currentState.selectedUnit?.label ?: "this unit"
+            setState { copy(error = "You do not have downloading rights on $unit.") }
+            return
+        }
+        val notice = currentState.notices.firstOrNull { it.id == noticeId }
+        // A reply's file rides its parent's id; only the parent's own
+        // document is the one the server stamps.
+        val watermarks = currentState.selectedUnit?.kind == HomeUnitKind.CallSheet &&
+            notice?.kind == NoticeKind.Document && notice.attachment?.media == attachment.media &&
+            attachment.isPdf
+        if (!watermarks) {
+            setState { copy(pendingOpen = PendingOpen(attachment, ++openCounter)) }
+            return
+        }
+        launch {
+            val resolved = when (val stamped = repository.watermarkedAttachment(noticeId)) {
+                is ZillitResult.Success -> stamped.data
+                is ZillitResult.Failure -> attachment
+            }
+            setState { copy(pendingOpen = PendingOpen(resolved, ++openCounter)) }
+        }
+    }
+
+    /** Distinguishes two opens of the same file — see [PendingOpen.nonce]. */
+    private var openCounter = 0L
 
     /**
      * Posts a reply and merges what the server returns.
@@ -694,6 +1045,15 @@ class HomeFeedViewModel(
         val notice = currentState.notices.firstOrNull { it.id == noticeId } ?: return
         val comment = commentId?.let { id -> notice.comments.firstOrNull { it.id == id } }
         if (commentId != null && comment == null) return
+
+        // Checked at the moment of the act, not just when the menu was drawn:
+        // a menu opened at 29:50 and clicked at 30:10 must not open the editor.
+        val now = nowMillis()
+        val verdict = comment?.editVerdict(currentUserId(), now) ?: notice.editVerdict(currentUserId(), now)
+        if (!verdict.allowed) {
+            setState { copy(error = refusal(verdict, deleting = false, reply = comment != null), nowMillis = now) }
+            return
+        }
 
         setState {
             copy(
@@ -753,9 +1113,24 @@ class HomeFeedViewModel(
      * button. A failed delete puts it back with the error alongside.
      */
     private fun delete(noticeId: String, commentId: String? = null) {
+        val target = currentState.notices.firstOrNull { it.id == noticeId } ?: return
+        val comment = commentId?.let { id -> target.comments.firstOrNull { it.id == id } }
+        if (commentId != null && comment == null) return
+
+        // The phones' rule, at the click: an admin removes anything, anyone
+        // else only their own and only inside the window — and the refusal
+        // says which of those it was.
+        val now = nowMillis()
+        val verdict = comment?.deleteVerdict(currentUserId(), isAdmin(), now)
+            ?: target.deleteVerdict(currentUserId(), isAdmin(), now)
+        if (!verdict.allowed) {
+            setState { copy(error = refusal(verdict, deleting = true, reply = comment != null), nowMillis = now) }
+            return
+        }
+
         // A whole post: off the board at once, back with the error if refused.
-        if (commentId == null) {
-            val removedNotice = currentState.notices.firstOrNull { it.id == noticeId } ?: return
+        if (comment == null) {
+            val removedNotice = target
             setState { copy(notices = notices.filterNot { it.id == noticeId }) }
             launchResult(
                 block = { repository.deleteNotice(noticeId) },
@@ -771,10 +1146,7 @@ class HomeFeedViewModel(
             )
             return
         }
-        val removed = currentState.notices
-            .firstOrNull { it.id == noticeId }
-            ?.comments?.firstOrNull { it.id == commentId }
-            ?: return
+        val removed = comment
 
         setState {
             copy(
@@ -885,16 +1257,16 @@ class HomeFeedViewModel(
         )
     }
 
-    private fun showReadBy(noticeId: String) {
-        setState { copy(readBy = ReadByView(noticeId)) }
+    private fun showReadBy(noticeId: String, commentId: String? = null) {
+        setState { copy(readBy = ReadByView(noticeId, commentId = commentId)) }
 
         launchResult(
-            block = { repository.readBy(noticeId) },
+            block = { repository.readBy(noticeId, commentId) },
             onSuccess = { lists ->
                 setState {
-                    // Only if the panel is still open for this post.
-                    if (readBy?.noticeId == noticeId) {
-                        copy(readBy = ReadByView(noticeId, lists))
+                    // Only if the panel is still open for this post (and reply).
+                    if (readBy?.noticeId == noticeId && readBy.commentId == commentId) {
+                        copy(readBy = ReadByView(noticeId, lists, commentId))
                     } else {
                         this
                     }
@@ -948,8 +1320,15 @@ class HomeFeedViewModel(
         setState { copy(notices = notices.replacing(localId, failed.copy(sendState = NoticeSendState.Sending))) }
         // The file rides again when the UPLOAD was what failed — with null
         // here, that retry posted the caption alone, and a media-only post's
-        // caption is nothing: a blank card on everyone's board.
-        deliver(unit.id, failed, picked = pickedByLocalId[localId], location = failed.location)
+        // caption is nothing: a blank card on everyone's board. The call
+        // sheet's replace answer rides with it, for the same reason.
+        deliver(
+            unit.id,
+            failed,
+            picked = pickedByLocalId[localId],
+            location = failed.location,
+            replacePrevious = replaceByLocalId[localId],
+        )
     }
 
     /**
@@ -985,9 +1364,11 @@ class HomeFeedViewModel(
         optimistic: Notice,
         picked: PickedMedia?,
         location: GeoPoint? = null,
+        replacePrevious: Boolean? = null,
     ) {
         val localId = optimistic.localId ?: return
         picked?.let { pickedByLocalId[localId] = it }
+        replacePrevious?.let { replaceByLocalId[localId] = it }
 
         launchResult(
             block = {
@@ -1012,7 +1393,7 @@ class HomeFeedViewModel(
                         copy(uploadProgress = uploadProgress + (localId to UPLOAD_DONE))
                     }
                 }
-                repository.postNotice(unitId, optimistic.body, localId, uploaded, location)
+                repository.postNotice(unitId, optimistic.body, localId, uploaded, location, replacePrevious)
             },
             onSuccess = { saved ->
                 // Replace rather than append: the optimistic card and the
@@ -1020,12 +1401,21 @@ class HomeFeedViewModel(
                 // twice.
                 uploadedByLocalId.remove(localId)
                 pickedByLocalId.remove(localId)
+                replaceByLocalId.remove(localId)
                 setState {
                     copy(
                         isSending = false,
                         notices = notices.replacing(localId, saved),
                         uploadProgress = uploadProgress - localId,
                     )
+                }
+                // A "New" call sheet moved every earlier post to History on
+                // the server; the board on screen still shows them until it
+                // is read again. Android learns this from a socket
+                // multi-delete and refetches — the refetch is the part that
+                // matters.
+                if (replacePrevious == true) {
+                    currentState.selectedUnit?.takeIf { it.id == unitId }?.let(::loadNotices)
                 }
             },
             onError = { error ->
@@ -1064,9 +1454,18 @@ class HomeFeedViewModel(
         launchResult(
             block = { repository.loadUnits() },
             onSuccess = { units ->
-                setState { copy(isLoadingUnits = false, units = units) }
-                // Open the first tab immediately: a tab strip with nothing under
-                // it reads as a broken screen.
+                setState {
+                    copy(
+                        isLoadingUnits = false,
+                        units = units,
+                        // The person's chosen landing tab, on first arrival
+                        // only — a tab they picked since is theirs to keep.
+                        selectedUnitId = selectedUnitId
+                            ?: defaultUnitId()?.takeIf { wanted -> units.visibleTabs().any { it.id == wanted } },
+                    )
+                }
+                // Open the tab immediately: a tab strip with nothing under it
+                // reads as a broken screen.
                 currentState.selectedUnit?.let(::loadNotices)
             },
             onError = { setState { copy(isLoadingUnits = false, error = it.localised()) } },
@@ -1077,7 +1476,13 @@ class HomeFeedViewModel(
         // Re-read on every board load, not once at startup: the profile that
         // carries is_admin and the user id loads in parallel with the units,
         // and a value captured before it arrived would stick wrong.
-        setState { copy(isAdmin = isAdmin(), currentUserId = currentUserId()) }
+        setState {
+            copy(
+                isAdmin = isAdmin(),
+                currentUserId = currentUserId(),
+                canPublishToDistribution = distribution != null,
+            )
+        }
 
         // The calendar tab has no board; asking for one would 404. It has a
         // badge, though — event invites and changes are filed under its unit
@@ -1158,8 +1563,53 @@ private fun List<Notice>.replacing(localId: String, replacement: Notice): List<N
 
 private const val TICK_MILLIS = 1_000L
 
+/**
+ * The sentence for a refused edit or delete — the phones' own copy, so a
+ * crew member who knows the app from their phone reads the same rule here.
+ * Android's edit toast, iOS's delete-window alert (Android's says "2 Hours"
+ * for a 30-minute rule — a stale string, not the rule), Android's ownership
+ * and not-yet-delivered toasts.
+ */
+internal fun refusal(verdict: ModifyVerdict, deleting: Boolean, reply: Boolean): String? {
+    val thing = if (reply) "reply" else "message"
+    val things = if (reply) "replies" else "messages"
+    return when (verdict) {
+        ModifyVerdict.Allowed -> null
+        ModifyVerdict.NotSent -> "This message is not uploaded yet."
+        ModifyVerdict.NotOwner ->
+            if (deleting) {
+                "You have no permission to delete other users' $things."
+            } else {
+                "You can't edit other users' $things."
+            }
+        ModifyVerdict.WindowClosed ->
+            if (deleting) {
+                "You are allowed to edit or delete within 30 mins of posting the message. " +
+                    "Only an admin can edit or delete after that. " +
+                    "Please contact an admin if you need this $thing edited or deleted."
+            } else {
+                "You can't edit a $thing after 30 minutes."
+            }
+    }
+}
+
+
 /** The bytes are all in storage; the server is writing the post. */
 private const val UPLOAD_DONE = 100
+
+/** Where the library files a call sheet — Android's `DocDistTool.CALL_SHEET`. */
+private const val CALL_SHEET_FOLDER = "Call Sheet"
+
+/** Android's `you_dont_have_distribution_rights` (`strings.xml:3306`). */
+private const val NO_DISTRIBUTION_RIGHTS = "You do not have Distribution Rights on this Unit."
+
+/** `yyyy-MM-dd` in the viewer's zone — the library's `folder_date`; today when the post has no clock. */
+private fun Long.toIsoDate(): String {
+    val millis = if (this > 0) this else kotlin.time.Clock.System.now().toEpochMilliseconds()
+    val date = kotlinx.datetime.Instant.fromEpochMilliseconds(millis)
+        .toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date
+    return date.toString()
+}
 
 /**
  * Two pickers' worth of memory. Enough that a small production's whole crew

@@ -103,7 +103,7 @@ class ApiClientTest {
         }
         val client = ApiClient(
             httpClient = httpClient(engine),
-            headerProvider = { module, _, _ -> mapOf(ZillitHeaders.MODULE_DATA to module.name) },
+            headerProvider = { module, _, _, _ -> mapOf(ZillitHeaders.MODULE_DATA to module.name) },
         )
 
         client.request(HttpVerb.Get, URL, Project.serializer(), module = RequestModule.Chat)
@@ -161,7 +161,7 @@ class ApiClientTest {
     private fun clientWith(engine: MockEngine, onUnauthorized: () -> Unit = {}): ApiClient =
         ApiClient(
             httpClient = httpClient(engine),
-            headerProvider = { _, _, _ -> emptyMap() },
+            headerProvider = { _, _, _, _ -> emptyMap() },
             onUnauthorized = onUnauthorized,
         )
 

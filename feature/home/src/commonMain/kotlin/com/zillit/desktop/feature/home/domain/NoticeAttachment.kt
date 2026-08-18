@@ -54,6 +54,15 @@ data class NoticeAttachment(
     /** Whether S3 can be asked for this at all. */
     val isFetchable: Boolean get() = !bucket.isNullOrBlank() && !region.isNullOrBlank()
 
+    /**
+     * A PDF — the one document the call sheet watermarks (Android
+     * `content_subtype == PDF`). Subtype first, name as the fallback: some
+     * clients write the subtype with a leading dot, some not at all.
+     */
+    val isPdf: Boolean
+        get() = contentSubtype?.trimStart('.').equals("pdf", ignoreCase = true) ||
+            fileName.endsWith(".pdf", ignoreCase = true)
+
     /** Never prints the key or name — file names on a production are content. */
     override fun toString(): String =
         "NoticeAttachment(kindHint=$contentSubtype, bytes=$sizeBytes, fetchable=$isFetchable)"

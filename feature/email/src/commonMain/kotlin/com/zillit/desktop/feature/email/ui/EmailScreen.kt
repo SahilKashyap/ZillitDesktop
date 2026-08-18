@@ -53,6 +53,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import com.zillit.desktop.core.designsystem.component.ZillitNotice
+import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.email.domain.ComposeMode
@@ -109,7 +111,11 @@ fun EmailScreen(
 
             Box(Modifier.fillMaxSize()) {
                 when {
-                    state.error != null -> Centred(state.error)
+                    // A failed refresh with nothing to show behind it. With
+                    // cached mail on screen the error is a strip above the
+                    // list, not a replacement for it — the rows this machine
+                    // already has are still true.
+                    state.error != null && state.messages.isEmpty() -> Centred(state.error)
 
                     state.isLoadingMessages && state.messages.isEmpty() -> Centred("Loading…")
 
@@ -120,7 +126,7 @@ fun EmailScreen(
                     search.isActive && search.results.isEmpty() ->
                         Centred("Nothing matches \"${search.query.term.trim()}\".\n${search.scope}")
 
-                    else -> MessageList(state, search, onEvent, loadAvatar)
+                    else -> ListWithNotice(state.error) { MessageList(state, search, onEvent, loadAvatar) }
                 }
             }
         }
@@ -619,6 +625,25 @@ private fun EmailFolder.icon() = when (name.lowercase()) {
     "drafts" -> ZillitIcons.Add
     "trash" -> ZillitIcons.Close
     else -> ZillitIcons.Drive
+}
+
+/** The list, with a failed refresh said above it rather than instead of it. */
+@Composable
+private fun ListWithNotice(error: String?, list: @Composable () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        error?.let { message ->
+            ZillitNotice(
+                text = message,
+                tone = StatusTone.Pending,
+                icon = ZillitIcons.Warning,
+                modifier = Modifier.fillMaxWidth().padding(
+                    horizontal = ZillitTheme.spacing.md,
+                    vertical = ZillitTheme.spacing.xs,
+                ),
+            )
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) { list() }
+    }
 }
 
 @Composable

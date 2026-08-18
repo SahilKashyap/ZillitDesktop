@@ -4,6 +4,15 @@ import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.sync.LocalDraft
+import com.zillit.desktop.core.sync.NewOperation
+import com.zillit.desktop.core.sync.OfflineSupport
+import com.zillit.desktop.feature.timecard.data.LOCAL_WEEK_PREFIX
+import com.zillit.desktop.feature.timecard.data.QueuedTimecardSave
+import com.zillit.desktop.feature.timecard.data.QueuedTimecardSubmit
+import com.zillit.desktop.feature.timecard.data.TIMECARD_SAVE_KIND
+import com.zillit.desktop.feature.timecard.data.TIMECARD_SUBMIT_KIND
+import com.zillit.desktop.feature.timecard.data.toLocalTimecard
 import com.zillit.desktop.feature.timecard.domain.Allowance
 import com.zillit.desktop.feature.timecard.domain.AllowanceType
 import com.zillit.desktop.feature.timecard.domain.DayType
@@ -11,10 +20,15 @@ import com.zillit.desktop.feature.timecard.domain.Timecard
 import com.zillit.desktop.feature.timecard.domain.TimecardDay
 import com.zillit.desktop.feature.timecard.domain.TimecardDraft
 import com.zillit.desktop.feature.timecard.domain.TimecardHistoryEntry
+import com.zillit.desktop.feature.timecard.domain.TimecardMetadata
 import com.zillit.desktop.feature.timecard.domain.TimecardRepository
 import com.zillit.desktop.feature.timecard.domain.TimecardStatus
 import com.zillit.desktop.feature.timecard.domain.TimecardViewer
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 
 /** The pages the timecard tool offers. */
 enum class TimecardDestination(val slug: String, val label: String) {
@@ -54,17 +68,26 @@ data class TimecardUiState(
     val search: String = "",
     val draft: TimecardDraft? = null,
     val prompt: TimecardPrompt? = null,
+    /** Weeks saved on this computer that the server has not seen yet. */
+    val localTimecards: List<Timecard> = emptyList(),
+    /** True while the API cannot be reached; saves and submits queue instead of failing. */
+    val offline: Boolean = false,
+    /** When [timecards] was fetched, if it is a saved copy shown because the network is gone. */
+    val staleSince: Long? = null,
 ) {
-    val selected: Timecard? get() = timecards.firstOrNull { it.id == selectedId }
+    val selected: Timecard? get() = (localTimecards + timecards).firstOrNull { it.id == selectedId }
 
     val visibleDestinations: List<TimecardDestination>
         get() = TimecardDestination.entries.filter { it.visibleTo(viewer) }
 
     val rows: List<Timecard>
-        get() = timecards.filter { card ->
-            search.isBlank() ||
-                card.crewName.lowercase().contains(search.trim().lowercase()) ||
-                EpochDate.date(card.weekStarting).lowercase().contains(search.trim().lowercase())
+        get() {
+            val local = if (destination == TimecardDestination.MyWeeks) localTimecards else emptyList()
+            return (local + timecards).filter { card ->
+                search.isBlank() ||
+                    card.crewName.lowercase().contains(search.trim().lowercase()) ||
+                    EpochDate.date(card.weekStarting).lowercase().contains(search.trim().lowercase())
+            }
         }
 
     /** Money the visible weeks come to, per currency. */
@@ -153,28 +176,43 @@ sealed interface TimecardEffect {
  * mutation ends by reloading the page it happened on so a week that leaves a
  * queue actually leaves it.
  */
+@Suppress("TooManyFunctions") // One handler per user action, plus the offline seams.
 class TimecardViewModel(
     private val repository: TimecardRepository,
     private val viewer: () -> TimecardViewer,
     /** The current week's Monday, so a fresh draft knows what it covers. */
     private val currentWeekStarting: () -> Long,
+    /**
+     * With this wired: the week is kept on disk as it is typed, a save or
+     * submit with no network queues instead of failing, and lists that cannot
+     * be fetched are shown from their last good copy. Null keeps the tool
+     * exactly as it was.
+     */
+    private val offline: OfflineSupport? = null,
+    private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
 ) : ZillitViewModel<TimecardUiState, TimecardEvent, TimecardEffect>(
     TimecardUiState(viewer = viewer()),
 ) {
 
     private var loadJob: Job? = null
+    private var draftSaveJob: Job? = null
+    private var syncWatch: Job? = null
     private var started = false
+    private val json = Json { ignoreUnknownKeys = true }
 
     fun start() {
         if (started) return
         started = true
+        watchSync()
         launch {
             val identity = viewer()
-            val metadata = repository.metadata().getOrNull()
+            val metadata = repository.metadata().rememberOrRecall(METADATA_CACHE, TimecardMetadata.serializer())
             // The allowance catalogue rides along: the week grid cannot offer a
             // claim without it, and fetching it on first use would put a wait
             // in front of a keystroke.
-            val allowances = repository.allowanceTypes().getOrNull().orEmpty()
+            val allowances = repository.allowanceTypes()
+                .rememberOrRecall(ALLOWANCES_CACHE, ListSerializer(AllowanceType.serializer()))
+                .orEmpty()
             setState {
                 val base = metadata ?: identity.metadata
                 val resolved = identity.copy(metadata = base.copy(allowanceTypes = allowances))
@@ -195,6 +233,7 @@ class TimecardViewModel(
 
     fun onProjectChanged() {
         started = false
+        setState { copy(draft = null, localTimecards = emptyList(), staleSince = null) }
         start()
     }
 
@@ -203,7 +242,7 @@ class TimecardViewModel(
         when (event) {
             TimecardEvent.Refresh -> load(currentState.destination)
             is TimecardEvent.Open -> {
-                setState { copy(destination = event.destination, selectedId = null, error = null) }
+                setState { copy(destination = event.destination, selectedId = null, error = null, staleSince = null) }
                 load(event.destination)
             }
 
@@ -239,36 +278,32 @@ class TimecardViewModel(
             TimecardEvent.SaveDraft -> saveDraft()
             is TimecardEvent.LoadDraft -> loadDraft(event.timecardId)
 
-            is TimecardEvent.AddAllowance -> setState {
-                val current = draft ?: return@setState this
-                val day = current.days.getOrNull(event.dayIndex) ?: return@setState this
+            is TimecardEvent.AddAllowance -> editAllowances(event.dayIndex) { day ->
                 // A once-a-day allowance claimed twice is a mistake the server
                 // would reject, so the second claim is dropped. Only a per-unit
                 // allowance — mileage — genuinely stacks.
                 val existing = day.allowances.indexOfFirst { it.code == event.type.code }
-                val claims = when {
-                    existing >= 0 && !event.type.perUnit -> day.allowances
-                    else -> day.allowances + event.type.claim()
-                }
-                copy(draft = current.withDay(event.dayIndex, day.copy(allowances = claims)))
+                if (existing >= 0 && !event.type.perUnit) day.allowances else day.allowances + event.type.claim()
             }
 
-            is TimecardEvent.EditAllowance -> setState {
-                val current = draft ?: return@setState this
-                val day = current.days.getOrNull(event.dayIndex) ?: return@setState this
-                val claims = day.allowances.mapIndexed { index, allowance ->
+            is TimecardEvent.EditAllowance -> editAllowances(event.dayIndex) { day ->
+                day.allowances.mapIndexed { index, allowance ->
                     if (index == event.allowanceIndex) event.allowance else allowance
                 }
-                copy(draft = current.withDay(event.dayIndex, day.copy(allowances = claims)))
             }
 
-            is TimecardEvent.RemoveAllowance -> setState {
-                val current = draft ?: return@setState this
-                val day = current.days.getOrNull(event.dayIndex) ?: return@setState this
-                val claims = day.allowances.filterIndexed { index, _ -> index != event.allowanceIndex }
-                copy(draft = current.withDay(event.dayIndex, day.copy(allowances = claims)))
+            is TimecardEvent.RemoveAllowance -> editAllowances(event.dayIndex) { day ->
+                day.allowances.filterIndexed { index, _ -> index != event.allowanceIndex }
             }
         }
+        if (event.editsTheWeek) scheduleDraftSave()
+    }
+
+    /** Rewrites one day's allowances, leaving the rest of the week alone. */
+    private fun editAllowances(dayIndex: Int, claims: (TimecardDay) -> List<Allowance>) = setState {
+        val current = draft ?: return@setState this
+        val day = current.days.getOrNull(dayIndex) ?: return@setState this
+        copy(draft = current.withDay(dayIndex, day.copy(allowances = claims(day))))
     }
 
     private fun load(destination: TimecardDestination) {
@@ -285,23 +320,53 @@ class TimecardViewModel(
             }
             when (result) {
                 is ZillitResult.Success -> {
-                    setState { copy(loading = false, timecards = result.data) }
-                    // Opening the editor with nothing to edit is a dead end, so
-                    // the draft is seeded from this week as soon as the list
-                    // that would contain it has arrived.
-                    if (destination == TimecardDestination.Edit && currentState.draft == null) {
-                        loadDraft(result.data.firstOrNull { it.isEditable }?.id)
-                    }
+                    setState { copy(loading = false, timecards = result.data, staleSince = null) }
+                    remember(destination.cacheName, ListSerializer(Timecard.serializer()), result.data)
+                    seedEditor(destination, result.data)
                 }
 
-                is ZillitResult.Failure -> setState { copy(loading = false, error = result.error) }
+                is ZillitResult.Failure -> {
+                    val saved = recallIfUnreachable(
+                        result.error,
+                        destination.cacheName,
+                        ListSerializer(Timecard.serializer()),
+                    )
+                    when {
+                        saved != null -> {
+                            setState { copy(loading = false, timecards = saved.first, staleSince = saved.second) }
+                            seedEditor(destination, saved.first)
+                        }
+
+                        // No copy to show, but the week filed on this computer
+                        // is still theirs to see — and the editor still opens
+                        // on a blank week rather than an error page.
+                        result.error.isUnreachable() && destination.worksOffline -> {
+                            setState { copy(loading = false, timecards = emptyList(), staleSince = null) }
+                            seedEditor(destination, emptyList())
+                        }
+
+                        else -> setState { copy(loading = false, error = result.error, staleSince = null) }
+                    }
+                }
             }
+        }
+    }
+
+    /**
+     * Opening the editor with nothing to edit is a dead end, so the draft is
+     * seeded from this week as soon as the list that would contain it has
+     * arrived.
+     */
+    private suspend fun seedEditor(destination: TimecardDestination, weeks: List<Timecard>) {
+        if (destination == TimecardDestination.Edit && currentState.draft == null) {
+            loadDraft(weeks.firstOrNull { it.isEditable }?.id)
         }
     }
 
     private fun selectCard(id: String?) {
         setState { copy(selectedId = id, history = emptyList()) }
-        if (id == null) return
+        // A week that exists only here has no history to fetch.
+        if (id == null || id.startsWith(LOCAL_WEEK_PREFIX)) return
         launch {
             repository.history(id).getOrNull()?.let { entries ->
                 if (currentState.selectedId == id) setState { copy(history = entries) }
@@ -319,22 +384,25 @@ class TimecardViewModel(
      */
     private fun loadDraft(timecardId: String?) {
         val existing = currentState.timecards.firstOrNull { it.id == timecardId }
-        if (existing != null) {
-            setState {
-                copy(
-                    draft = TimecardDraft(
-                        timecardId = existing.id,
-                        weekStarting = existing.weekStarting,
-                        days = existing.days.ifEmpty { blankWeek(existing.weekStarting) },
-                        notes = existing.notes.orEmpty(),
-                    ),
-                )
-            }
-            return
+        val fromServer = if (existing != null) {
+            TimecardDraft(
+                timecardId = existing.id,
+                weekStarting = existing.weekStarting,
+                days = existing.days.ifEmpty { blankWeek(existing.weekStarting) },
+                notes = existing.notes.orEmpty(),
+            )
+        } else {
+            val monday = currentWeekStarting()
+            TimecardDraft(timecardId = null, weekStarting = monday, days = blankWeek(monday))
         }
-        val monday = currentWeekStarting()
-        setState {
-            copy(draft = TimecardDraft(timecardId = null, weekStarting = monday, days = blankWeek(monday)))
+        setState { copy(draft = fromServer) }
+        // Words typed into this week on this computer, if newer than what the
+        // server has, come back over it. Never over something typed since.
+        launch {
+            val saved = restoreDraft(fromServer.weekStarting, newerThan = existing?.updatedAt) ?: return@launch
+            if (currentState.draft == fromServer) {
+                setState { copy(draft = saved.copy(timecardId = fromServer.timecardId)) }
+            }
         }
     }
 
@@ -358,7 +426,170 @@ class TimecardViewModel(
             sendEffect(TimecardEffect.Failed(invalid))
             return
         }
-        act("Timecard saved") { repository.save(draft) }
+        val support = offline
+        if (support != null && support.isOffline) {
+            launch { queueSave(support, draft) }
+            return
+        }
+        launch {
+            setState { copy(busy = true) }
+            when (val result = repository.save(draft)) {
+                is ZillitResult.Success -> {
+                    forgetDraft(draft.weekStarting)
+                    setState { copy(busy = false, notice = "Timecard saved") }
+                    load(currentState.destination)
+                }
+
+                is ZillitResult.Failure -> {
+                    // The request never left this machine: queue it rather than
+                    // lose the week. Anything else is reported; the grid keeps
+                    // its hours either way.
+                    if (support != null && result.error is ZillitError.NoConnection) {
+                        queueSave(support, draft)
+                    } else {
+                        setState { copy(busy = false) }
+                        sendEffect(TimecardEffect.Failed(result.error.userMessage))
+                    }
+                }
+            }
+        }
+    }
+
+    // -- offline: the queue ----------------------------------------------------
+
+    private suspend fun queueSave(support: OfflineSupport, draft: TimecardDraft) {
+        val queued = QueuedTimecardSave(draft = draft, userId = currentState.viewer.userId, queuedAt = nowMillis())
+        val enqueued = support.engine.enqueue(
+            NewOperation(
+                kind = TIMECARD_SAVE_KIND,
+                label = "Timecard: week of ${EpochDate.date(draft.weekStarting)}",
+                payload = json.encodeToString(QueuedTimecardSave.serializer(), queued),
+                groupKey = weekGroup(draft.weekStarting),
+            ),
+        )
+        if (enqueued == null) {
+            setState { copy(busy = false) }
+            sendEffect(TimecardEffect.Failed("Open a production before saving a timecard."))
+            return
+        }
+        forgetDraft(draft.weekStarting)
+        setState { copy(busy = false, notice = QUEUED_SAVE_NOTICE) }
+        refreshLocalWeeks()
+    }
+
+    /**
+     * Queues the submit behind the week's queued save when there is one, so
+     * it runs once the server has the week and its id.
+     */
+    private suspend fun queueSubmit(support: OfflineSupport, targetId: String) {
+        val week = currentState.selected?.takeIf { it.id == targetId }
+        val pendingSave = support.engine.operations()
+            .firstOrNull { it.kind == TIMECARD_SAVE_KIND && it.isOpen && it.groupKey == weekGroup(week?.weekStarting) }
+        val serverId = targetId.takeUnless { it.startsWith(LOCAL_WEEK_PREFIX) }
+        val enqueued = support.engine.enqueue(
+            NewOperation(
+                kind = TIMECARD_SUBMIT_KIND,
+                label = "Submit timecard: week of ${EpochDate.date(week?.weekStarting)}",
+                payload = json.encodeToString(
+                    QueuedTimecardSubmit.serializer(),
+                    QueuedTimecardSubmit(timecardId = serverId, weekStarting = week?.weekStarting),
+                ),
+                groupKey = weekGroup(week?.weekStarting),
+                dependsOn = pendingSave?.id,
+            ),
+        )
+        if (enqueued == null) {
+            sendEffect(TimecardEffect.Failed("Open a production before submitting a timecard."))
+            return
+        }
+        setState { copy(notice = QUEUED_SUBMIT_NOTICE) }
+        refreshLocalWeeks()
+    }
+
+    private fun watchSync() {
+        val support = offline ?: return
+        syncWatch?.cancel()
+        syncWatch = launch {
+            var pending = support.engine.status.value.pending
+            support.engine.status.collect { status ->
+                setState { copy(offline = !status.online) }
+                refreshLocalWeeks()
+                // Something queued has gone through: the server now has the
+                // week where the local row was, so the list is fetched again.
+                if (status.online && status.pending < pending) load(currentState.destination)
+                pending = status.pending
+            }
+        }
+    }
+
+    private suspend fun refreshLocalWeeks() {
+        val support = offline ?: return
+        val operations = support.engine.operations()
+        val submits = operations.filter { it.kind == TIMECARD_SUBMIT_KIND }
+        setState { copy(localTimecards = operations.mapNotNull { it.toLocalTimecard(submits, json) }) }
+    }
+
+    // -- offline: the draft on disk ------------------------------------------------
+
+    private fun scheduleDraftSave() {
+        val support = offline ?: return
+        draftSaveJob?.cancel()
+        draftSaveJob = launch {
+            delay(DRAFT_SAVE_DEBOUNCE_MILLIS)
+            val draft = currentState.draft ?: return@launch
+            val scope = support.currentScope() ?: return@launch
+            support.drafts.save(
+                LocalDraft(
+                    id = draftId(scope.userId, scope.projectId, draft.weekStarting),
+                    scope = scope,
+                    kind = DRAFT_KIND,
+                    payload = json.encodeToString(TimecardDraft.serializer(), draft),
+                    updatedAt = nowMillis(),
+                ),
+            )
+        }
+    }
+
+    private suspend fun restoreDraft(weekStarting: Long?, newerThan: Long?): TimecardDraft? {
+        val scope = offline?.currentScope() ?: return null
+        val saved = offline?.drafts?.get(draftId(scope.userId, scope.projectId, weekStarting))
+            ?.takeIf { newerThan == null || it.updatedAt > newerThan }
+            ?: return null
+        return runCatching { json.decodeFromString(TimecardDraft.serializer(), saved.payload) }.getOrNull()
+    }
+
+    private suspend fun forgetDraft(weekStarting: Long?) {
+        val support = offline ?: return
+        val scope = support.currentScope() ?: return
+        draftSaveJob?.cancel()
+        support.drafts.delete(draftId(scope.userId, scope.projectId, weekStarting))
+    }
+
+    // -- offline: the read cache -------------------------------------------------
+
+    private suspend fun <T> ZillitResult<T>.rememberOrRecall(name: String, serializer: KSerializer<T>): T? =
+        when (this) {
+            is ZillitResult.Success -> data.also { remember(name, serializer, it) }
+            is ZillitResult.Failure -> recallIfUnreachable(error, name, serializer)?.first
+        }
+
+    private suspend fun <T> remember(name: String, serializer: KSerializer<T>, value: T) {
+        val support = offline ?: return
+        val scope = support.currentScope() ?: return
+        support.cache.put(scope, name, json.encodeToString(serializer, value), nowMillis())
+    }
+
+    /** The saved copy, with when it was fetched — only when the failure is the network, not the server. */
+    private suspend fun <T> recallIfUnreachable(
+        error: ZillitError,
+        name: String,
+        serializer: KSerializer<T>,
+    ): Pair<T, Long>? {
+        val scope = offline?.currentScope()
+        if (!error.isUnreachable() || scope == null) return null
+        val cached = offline?.cache?.get(scope, name) ?: return null
+        return runCatching { json.decodeFromString(serializer, cached.json) }.getOrNull()
+            ?.let { it to cached.fetchedAt }
     }
 
     @Suppress("CyclomaticComplexMethod") // One branch per confirmable action.
@@ -367,7 +598,7 @@ class TimecardViewModel(
         setState { copy(prompt = null) }
         when (prompt) {
             is TimecardPrompt.Confirm -> when (prompt.action) {
-                TimecardConfirmAction.Submit -> act("Timecard submitted") { repository.submit(prompt.targetId) }
+                TimecardConfirmAction.Submit -> submitWeek(prompt.targetId)
                 TimecardConfirmAction.Approve -> act("Approved") { repository.approve(prompt.targetId, null) }
                 TimecardConfirmAction.FinalApprove ->
                     act("Final approved") { repository.finalApprove(prompt.targetId) }
@@ -413,6 +644,25 @@ class TimecardViewModel(
         }
     }
 
+    /**
+     * Submits a week: straight to the server when it is there and we are
+     * online; through the queue when either is not — a week saved offline is
+     * only on this computer, and its submit rides behind its save.
+     */
+    private fun submitWeek(targetId: String) {
+        val support = offline
+        val local = targetId.startsWith(LOCAL_WEEK_PREFIX)
+        if (support != null && (local || support.isOffline)) {
+            launch { queueSubmit(support, targetId) }
+            return
+        }
+        if (local) {
+            sendEffect(TimecardEffect.Failed(NOT_ON_SERVER_MESSAGE))
+            return
+        }
+        act("Timecard submitted") { repository.submit(targetId) }
+    }
+
     private fun batch(verb: String, block: suspend (List<String>) -> ZillitResult<Unit>) {
         val ids = currentState.selection.toList()
         if (ids.isEmpty()) {
@@ -438,11 +688,44 @@ class TimecardViewModel(
         }
     }
 
-    private companion object {
-        const val DAYS_IN_WEEK = 7
-        const val DAY_MILLIS = 86_400_000L
+    /** Keyed by what is fetched, not which tab asked — My Timecards and the editor share one list. */
+    private val TimecardDestination.cacheName: String
+        get() = when (this) {
+            TimecardDestination.ApprovalQueue -> "timecard.list.approval"
+            TimecardDestination.Processing -> "timecard.list.processing"
+            TimecardDestination.Outstanding -> "timecard.list.outstanding"
+            TimecardDestination.MyWeeks, TimecardDestination.Edit -> "timecard.list.my"
+        }
+
+    /** The pages that draw the person's own weeks — the ones with a local row to show. */
+    private val TimecardDestination.worksOffline: Boolean
+        get() = this == TimecardDestination.MyWeeks || this == TimecardDestination.Edit
+
+    private fun ZillitError.isUnreachable() = this is ZillitError.NoConnection || this is ZillitError.Timeout
+
+    private fun weekGroup(weekStarting: Long?) = "timecard:${weekStarting ?: "unknown"}"
+
+    private fun draftId(userId: String, projectId: String, weekStarting: Long?) =
+        "timecard.draft:$userId:$projectId:${weekStarting ?: "unknown"}"
+
+    companion object {
+        const val DRAFT_KIND = "timecard.draft"
+        const val METADATA_CACHE = "timecard.metadata"
+        const val ALLOWANCES_CACHE = "timecard.allowances"
+        const val QUEUED_SAVE_NOTICE = "Saved on this computer — it will be sent when you're back online."
+        const val QUEUED_SUBMIT_NOTICE = "Will be submitted as soon as you're back online."
+        const val NOT_ON_SERVER_MESSAGE = "This week is still waiting to be sent; it can be submitted once it is."
+        private const val DAYS_IN_WEEK = 7
+        private const val DAY_MILLIS = 86_400_000L
+        private const val DRAFT_SAVE_DEBOUNCE_MILLIS = 400L
     }
 }
+
+/** Whether an event changes the open week — and so should reach the disk. */
+private val TimecardEvent.editsTheWeek: Boolean
+    get() = this is TimecardEvent.EditDay || this is TimecardEvent.EditNotes ||
+        this is TimecardEvent.AddAllowance || this is TimecardEvent.EditAllowance ||
+        this is TimecardEvent.RemoveAllowance
 
 /** The tone a timecard status is drawn in. */
 internal val TimecardStatus.isTerminal: Boolean get() = this == TimecardStatus.Paid

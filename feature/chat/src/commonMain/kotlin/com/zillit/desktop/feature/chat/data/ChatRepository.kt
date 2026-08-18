@@ -8,6 +8,7 @@ import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.database.ChatCache
@@ -47,6 +48,15 @@ interface ChatRepository {
 
     /** Ids of everyone this user has a DM thread with, newest server order. */
     suspend fun recentPeers(): ZillitResult<List<String>>
+
+    /**
+     * The server's unread per conversation — DMs keyed by the peer's user id,
+     * rooms by the room id — read off the notification backlog, exactly as
+     * both phones and the web seed their chat-list badges. A count exists for
+     * a thread this desktop has never opened; the local cache alone cannot
+     * say that.
+     */
+    suspend fun conversationUnread(): ZillitResult<Map<String, Int>> = ZillitResult.Success(emptyMap())
 
     /** Peers currently typing to us: peer id to started/stopped. */
     val typing: Flow<Pair<String, Boolean>>
@@ -158,8 +168,19 @@ class ChatRepositoryImpl(
      */
     private var scopedTo: String? = null
 
+    /**
+     * Our own sends, as the server saved them — the ack's copy, carrying the
+     * server's `_id`. Merged into [incoming] so the open thread swaps the
+     * optimistic bubble (whose id is still the local unique id) for one the
+     * server can address. Without this a just-sent line could not be
+     * reacted to or withdrawn until the thread was reopened: the emit went
+     * out with an id the server had never issued and nothing came back.
+     */
+    private val acked = kotlinx.coroutines.flow.MutableSharedFlow<ChatMessage>(extraBufferCapacity = ACK_BUFFER)
+
     override val incoming: Flow<ChatMessage> =
         kotlinx.coroutines.flow.merge(
+            acked,
             bus.on(PRIVATE_CHAT).mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt) }
             },
@@ -367,6 +388,27 @@ class ChatRepositoryImpl(
             .filter { it }
             .map { }
 
+    /**
+     * `GET notification/project/all/notifications/{now}/previous` — the
+     * production's notification rows, the one call the phones and the web
+     * make on open before the socket takes over (Android
+     * `BadgesHandler.getAllBadge`, web `getDeviceBadgesApi`). Chat rows are
+     * `section=cnc_label, tool=chat_label`; a room's rows say
+     * `unit=chat_group_label` and carry `reference_data.chat_room_id`, a
+     * DM's carry the sender.
+     */
+    override suspend fun conversationUnread(): ZillitResult<Map<String, Int>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${config.apiV2(ZillitService.Notification)}project/all/notifications/" +
+                "${kotlin.time.Clock.System.now().toEpochMilliseconds()}/previous",
+            serializer = JsonElement.serializer(),
+            module = RequestModule.ProjectUser,
+            options = CallOptions(
+                cacheAs = "${config.apiV2(ZillitService.Notification)}project/all/notifications/newest",
+            ),
+        ).map(::conversationUnreadFrom)
+
     override suspend fun recentPeers(): ZillitResult<List<String>> {
         val me = myUserId() ?: return ZillitResult.Success(emptyList())
         val project = projectId() ?: return ZillitResult.Success(emptyList())
@@ -407,6 +449,13 @@ class ChatRepositoryImpl(
             // Android sends both, the department empty for CNC; a missing
             // parameter is not the same as an empty one to this server.
             queryParameters = mapOf("tool" to "cnc_section", "department_id" to ""),
+            // Always the newest window, from "now": one name per thread so
+            // the read cache answers it offline (the disk cache does too;
+            // this keeps the fetch itself from failing).
+            options = CallOptions(
+                cacheAs = "${config.apiV2(ZillitService.Chat)}" +
+                    (if (isGroup) "group-chat" else "private-chat") + "/messages/$otherUserId/newest",
+            ),
         ).map { body ->
             chatRows(body)
                 .mapNotNull { readChatMessage(it, myUserId(), decrypt, isGroup) }
@@ -480,23 +529,34 @@ class ChatRepositoryImpl(
                 // state: lastMessageOf and newestActivity never learned of
                 // them, so the recents shelf kept showing the *peer's* last
                 // line — stale preview, stale clock — until the peer spoke
-                // again. The server's later echo, if any, replaces this row
-                // by unique id.
-                remember(
-                    ChatMessage(
-                        id = uniqueId,
-                        uniqueId = uniqueId,
-                        senderId = me,
-                        receiverId = receiverId,
-                        body = body,
-                        timestampMillis = nowMillis,
-                        isMine = true,
-                        sendState = ChatSendState.Sent,
-                        bodyCipher = cipher,
-                        isGroup = isGroup,
-                        attachment = attachment,
-                    ),
+                // again.
+                val local = ChatMessage(
+                    id = uniqueId,
+                    uniqueId = uniqueId,
+                    senderId = me,
+                    receiverId = receiverId,
+                    body = body,
+                    timestampMillis = nowMillis,
+                    isMine = true,
+                    sendState = ChatSendState.Sent,
+                    bodyCipher = cipher,
+                    isGroup = isGroup,
+                    attachment = attachment,
                 )
+                // The ack carries the row as saved — its `_id` above all.
+                // Kept with our own unique id and words (the server's copy
+                // may spell neither the way we do), it is what the thread
+                // needs to address the line from now on.
+                val saved = readChatMessage(ack, me, decrypt, isGroup)
+                    ?.takeIf { it.id.isNotBlank() && it.id != uniqueId }
+                    ?.let { row ->
+                        local.copy(
+                            id = row.id,
+                            timestampMillis = row.timestampMillis.takeIf { it > 0 } ?: nowMillis,
+                        )
+                    }
+                remember(saved ?: local)
+                saved?.let { acked.tryEmit(it) }
                 ZillitResult.Success(Unit)
             } else {
                 ZillitLog.w(TAG) { "the server refused a message: $complaint" }
@@ -507,3 +567,6 @@ class ChatRepositoryImpl(
 }
 
 private const val TAG = "Chat"
+
+/** Acks arrive one per send; a small buffer covers a burst without a subscriber stalling the ack. */
+private const val ACK_BUFFER = 16

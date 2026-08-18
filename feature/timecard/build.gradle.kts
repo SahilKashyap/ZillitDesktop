@@ -15,6 +15,7 @@ kotlin {
             implementation(project(":core:network"))
             implementation(project(":core:localization"))
             implementation(project(":core:workspace"))
+            implementation(project(":core:sync"))
             implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {

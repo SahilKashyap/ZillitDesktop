@@ -56,6 +56,14 @@ fun BudgetBuilderScreen(state: BudgetBuilderUiState, onEvent: (BudgetBuilderEven
                 icon = ZillitIcons.Info,
             )
 
+            state.offline -> ZillitNotice(
+                text = "Budget Builder is a hosted application and needs a connection — " +
+                    "there is no offline copy of the budget on this computer. " +
+                    "It opens again as soon as you’re back online.",
+                tone = StatusTone.Pending,
+                icon = ZillitIcons.Warning,
+            )
+
             else -> LaunchCard(state, onEvent)
         }
     }

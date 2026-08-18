@@ -26,6 +26,7 @@ import java.awt.Desktop
  * setups) this declines quietly: reminders stop working, the app does not.
  */
 @Composable
+@Suppress("LongParameterList") // Each is a distinct tray concern.
 fun ApplicationScope.AppTray(
     graph: AppGraph,
     preferences: PreferenceStore,
@@ -34,6 +35,9 @@ fun ApplicationScope.AppTray(
     // Hoisted: alerts post through the same tray presence, and a second
     // TrayState would be a second (invisible) delivery channel.
     trayState: TrayState,
+    /** The Drive widget's state and switch — the tray is where it lives when the main window is away. */
+    driveWidgetOpen: Boolean,
+    onToggleDriveWidget: () -> Unit,
     onQuit: () -> Unit,
 ) {
 
@@ -48,6 +52,7 @@ fun ApplicationScope.AppTray(
             onAction = { showMainWindow(frame, windowState) },
         ) {
             Item("Show Zillit", onClick = { showMainWindow(frame, windowState) })
+            Item(if (driveWidgetOpen) "Hide Drive widget" else "Show Drive widget", onClick = onToggleDriveWidget)
             Separator()
             // Named, not just "Quit": in a menu bar full of other apps' icons,
             // an unqualified Quit is a coin flip about what is about to close.

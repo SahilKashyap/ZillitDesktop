@@ -7,6 +7,7 @@ import com.zillit.desktop.feature.settings.ui.SettingsEvent
 import com.zillit.desktop.feature.settings.ui.NotificationSettings
 import com.zillit.desktop.feature.settings.ui.SettingsUiState
 import com.zillit.desktop.feature.settings.ui.SettingsViewModel
+import com.zillit.desktop.feature.settings.ui.unsentChangesWarning
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,11 +54,13 @@ class SettingsTest {
     private fun viewModel(
         recorder: Recorder,
         initial: SettingsUiState = SettingsUiState(),
+        unsentChanges: suspend () -> Int = { 0 },
     ) = SettingsViewModel(
         setTheme = recorder.themes::add,
         setScale = recorder.scales::add,
         notifications = NotificationSettings(setMuted = recorder.mutes::add),
         signOut = { recorder.signOuts++ },
+        unsentChanges = unsentChanges,
         initial = initial,
     )
 
@@ -134,6 +137,21 @@ class SettingsTest {
 
         assertTrue(settings.state.value.isConfirmingSignOut)
         assertEquals(0, recorder.signOuts)
+    }
+
+    @Test
+    fun `the question counts the offline work signing out would lose`() = runTest {
+        // Sign-out clears the keychain, which makes the durable store
+        // unreadable — the one thing it destroys for good is unsent work, so
+        // the dialog says how much.
+        val settings = viewModel(Recorder(), unsentChanges = { 3 })
+
+        settings.onEvent(SettingsEvent.AskSignOut)
+        advanceUntilIdle()
+
+        assertEquals(3, settings.state.value.unsentChanges)
+        assertTrue(unsentChangesWarning(3).contains("3 changes"))
+        assertTrue(unsentChangesWarning(1).contains("1 change made"))
     }
 
     @Test

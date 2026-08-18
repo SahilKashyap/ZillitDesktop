@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.purchaseorder.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.serialization.Serializable
 
 /**
  * A purchase order: a commitment to a vendor, approved before the money is
@@ -10,6 +11,7 @@ import com.zillit.desktop.core.common.ZillitResult
  * only becomes real when it has cleared its approval chain, and only reaches
  * the ledger once it is posted.
  */
+@Serializable
 data class PurchaseOrder(
     val id: String,
     val number: String,
@@ -34,7 +36,16 @@ data class PurchaseOrder(
     val lines: List<PoLine> = emptyList(),
     val approvals: List<PoApproval> = emptyList(),
     val attachmentCount: Int = 0,
+    /**
+     * Set when this order exists only on this computer so far — raised while
+     * offline and waiting in the outbox. Such a row has no number and no
+     * server id ([id] is the local operation's), and nothing can be done to it
+     * but wait, retry or discard.
+     */
+    val local: LocalCopy? = null,
 ) {
+    val isLocalOnly: Boolean get() = local != null
+
     /** Sum of the lines, for checking the header total against its detail. */
     val lineTotal: Double get() = lines.sumOf { it.total }
 
@@ -48,12 +59,22 @@ data class PurchaseOrder(
     val totalsDisagree: Boolean
         get() = lines.isNotEmpty() && kotlin.math.abs(lineTotal - total) > PENNY
 
-    private companion object {
-        const val PENNY = 0.005
+    companion object {
+        private const val PENNY = 0.005
     }
 }
 
+/** An order that has not reached the server: where it is in the outbox. */
+@Serializable
+data class LocalCopy(
+    val operationId: String,
+    /** True once the server refused it and it needs the user; false while it waits or sends. */
+    val failed: Boolean,
+    val error: String? = null,
+)
+
 /** One costed line of a purchase order. */
+@Serializable
 data class PoLine(
     val id: String?,
     val description: String,
@@ -66,6 +87,7 @@ data class PoLine(
 }
 
 /** One step of a PO's approval chain, and whether it has been taken. */
+@Serializable
 data class PoApproval(
     val userId: String?,
     val name: String,
@@ -77,27 +99,35 @@ data class PoApproval(
     val decided: Boolean get() = !decision.isNullOrBlank()
 }
 
-/** Where a purchase order is in its lifecycle. */
+/**
+ * Where a purchase order is in its lifecycle.
+ *
+ * The wire values are the server's, as Android's `POMapper` and the web's
+ * `PurchaseOrdersModule` read them (upper-case on the wire, compared
+ * case-insensitively): `DRAFT`, `PENDING` (awaiting approval), `ACCT_ENTERED`
+ * (raised by accounts, no approval chain), `QUEUED` (approved and queued for
+ * posting), `APPROVED`, `REJECTED`, `POSTED`, `CLOSED`, `CANCELLED`.
+ */
+@Serializable
 enum class PoStatus(val wire: String, val label: String) {
     Draft("draft", "Draft"),
-    Submitted("submitted", "Submitted"),
-    AwaitingApproval("awaiting_approval", "Awaiting approval"),
+    AwaitingApproval("pending", "Awaiting approval"),
+    AccountsEntered("acct_entered", "Entered by accounts"),
     Approved("approved", "Approved"),
+    Queued("queued", "Queued for posting"),
     Rejected("rejected", "Rejected"),
-    Queried("queried", "Queried"),
     Posted("posted", "Posted"),
-    PartiallyInvoiced("partially_invoiced", "Part invoiced"),
     Closed("closed", "Closed"),
     Cancelled("cancelled", "Cancelled"),
     Unknown("", "Unknown"),
     ;
 
     /** Still open to being edited by whoever raised it. */
-    val isEditable: Boolean get() = this == Draft || this == Rejected || this == Queried
+    val isEditable: Boolean get() = this == Draft || this == Rejected
 
     /** Committed: the vendor can be told to proceed. */
     val isCommitted: Boolean
-        get() = this == Approved || this == Posted || this == PartiallyInvoiced
+        get() = this == Approved || this == AccountsEntered || this == Queued || this == Posted
 
     val isFinished: Boolean get() = this == Closed || this == Cancelled
 
@@ -159,6 +189,7 @@ internal fun String?.normalisedRole(): String =
     orEmpty().lowercase().map { if (it.isLetterOrDigit()) it else ' ' }.joinToString("").trim()
 
 /** A purchase order as the form filled it in. */
+@Serializable
 data class NewPurchaseOrder(
     val vendorId: String?,
     val vendorName: String,
@@ -171,6 +202,12 @@ data class NewPurchaseOrder(
     val notes: String?,
     val effectiveDate: Long?,
     val lines: List<PoLine>,
+    /**
+     * The status the order is created in — the server's own vocabulary
+     * (`PENDING` for crew, `ACCT_ENTERED` when accounts raise it, `DRAFT` to
+     * hold it). Null on an update, which leaves the status alone.
+     */
+    val status: String? = null,
 ) {
     val total: Double get() = lines.sumOf { it.total }
 
@@ -186,6 +223,7 @@ data class NewPurchaseOrder(
 }
 
 /** A vendor the production can raise orders against. */
+@Serializable
 data class Vendor(
     val id: String,
     val name: String,

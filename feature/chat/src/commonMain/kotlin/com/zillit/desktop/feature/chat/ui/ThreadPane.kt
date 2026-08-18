@@ -5,6 +5,11 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,7 +35,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
@@ -246,6 +257,11 @@ private fun Composer(state: ChatUiState, peerName: String, onEvent: (ChatEvent) 
         }
         return
     }
+    // The caret belongs in the field after every send: Enter keeps it there
+    // by never leaving, and the send button hands it straight back — a click
+    // on a button takes focus with it, and a composer that goes dark after
+    // each line makes the next one start with a click.
+    val fieldFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -260,18 +276,43 @@ private fun Composer(state: ChatUiState, peerName: String, onEvent: (ChatEvent) 
             onValueChange = { onEvent(ChatEvent.DraftChanged(it)) },
             placeholder = "Message $peerName…",
             shape = androidx.compose.foundation.shape.RoundedCornerShape(COMPOSER_RADIUS),
-            modifier = Modifier.weight(1f).heightIn(min = COMPOSER_MIN_HEIGHT),
-            onImeAction = { if (state.canSend) onEvent(ChatEvent.Send) },
+            // Multi-line like the board's composer: Enter sends, Shift+Enter
+            // breaks the line — the same keys the board answers to.
+            singleLine = false,
+            modifier = Modifier
+                .weight(1f)
+                .heightIn(min = COMPOSER_MIN_HEIGHT)
+                .focusRequester(fieldFocus)
+                .onPreviewKeyEvent { event -> handleChatComposerKey(event, state.canSend, onEvent) },
         )
         ZillitIconButton(
             icon = ZillitIcons.Send,
             contentDescription = "Send",
-            onClick = { onEvent(ChatEvent.Send) },
+            onClick = {
+                onEvent(ChatEvent.Send)
+                fieldFocus.requestFocus()
+            },
             enabled = state.canSend,
             filled = true,
             size = SEND_BUTTON,
         )
     }
+}
+
+/**
+ * Enter sends, Shift+Enter breaks the line — the board's rule, so the two
+ * composers agree. A blank Enter is swallowed rather than inserting a
+ * newline nobody asked for.
+ */
+private fun handleChatComposerKey(
+    event: androidx.compose.ui.input.key.KeyEvent,
+    canSend: Boolean,
+    onEvent: (ChatEvent) -> Unit,
+): Boolean {
+    if (event.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return false
+    if (event.key != androidx.compose.ui.input.key.Key.Enter || event.isShiftPressed) return false
+    if (canSend) onEvent(ChatEvent.Send)
+    return true
 }
 
 @Composable
@@ -347,6 +388,7 @@ private fun Messages(
                     onReact = { emoji -> onEvent(ChatEvent.React(row.message.id, emoji)) },
                     onDelete = { onEvent(ChatEvent.Delete(row.message.id)) },
                     uploadPercent = state.uploads[row.message.uniqueId],
+                    resolveName = resolveName,
                 )
             }
         }
@@ -457,9 +499,10 @@ private fun IncomingAware(
     onReact: (String) -> Unit,
     onDelete: () -> Unit = {},
     uploadPercent: Int? = null,
+    resolveName: (String) -> String? = { null },
 ) {
     if (message.isMine) {
-        Bubble(message, senderName, media, onReact, onDelete, uploadPercent)
+        Bubble(message, senderName, media, onReact, onDelete, uploadPercent, resolveName)
         return
     }
     Row(
@@ -471,7 +514,7 @@ private fun IncomingAware(
             message.senderId,
         ) { value = loadAvatar(message.senderId) }.value
         ZillitAvatar(name = senderName ?: "?", image = face, size = ROW_AVATAR)
-        Bubble(message, senderName, media, onReact)
+        Bubble(message, senderName, media, onReact, resolveName = resolveName)
     }
 }
 
@@ -505,6 +548,7 @@ internal class BubbleMedia(
 )
 
 @Composable
+@Suppress("LongParameterList", "LongMethod") // One bubble: its affordances, its menu, its body.
 private fun Bubble(
     message: ChatMessage,
     senderName: String? = null,
@@ -512,6 +556,7 @@ private fun Bubble(
     onReact: (String) -> Unit = {},
     onDelete: () -> Unit = {},
     uploadPercent: Int? = null,
+    resolveName: (String) -> String? = { null },
 ) {
     val mine = message.isMine
     val hover = androidx.compose.runtime.remember {
@@ -524,33 +569,67 @@ private fun Bubble(
     var reactOpen by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(false)
     }
+    // The bubble's own menu — a right-click or a long-press, in a room or a
+    // DM alike: the phones' long-press sheet, the desktop's right button.
+    var menuOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     Box(
-        Modifier.fillMaxWidth().hoverable(hover),
+        Modifier
+            .fillMaxWidth()
+            .hoverable(hover)
+            .pointerInput(message.id) {
+                awaitEachGesture {
+                    val event = awaitPointerEvent()
+                    if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                        event.changes.forEach { it.consume() }
+                        menuOpen = true
+                    }
+                }
+            }
+            .pointerInput(message.id) { detectTapGestures(onLongPress = { menuOpen = true }) },
         contentAlignment = if (mine) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
+        BubbleMenu(
+            open = menuOpen,
+            onDismiss = { menuOpen = false },
+            message = message,
+            media = media,
+            onReact = onReact,
+            onDelete = onDelete,
+        )
         // The affordance sits on the bubble's inner side — between it and the
         // row's empty half. Anchored at the row's outer edge, the menu's
         // popup window has no room to be placed and is never shown at all.
+        // The affordances are always composed and *faded* until hover — not
+        // conditionally composed on hover. Composed only while hovered, they
+        // vanished for the instant of the press (the row's hover drops as the
+        // press relays out) and the click landed on nothing; the reaction on
+        // one's own message "did nothing" exactly this way. See the Home
+        // board's kebab for the same lesson.
+        val revealed = hovered || reactOpen
         Row(
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
         ) {
-            if (mine && (hovered || reactOpen)) {
-                if (message.isDeletable) DeleteAffordance(onDelete)
-                ReactAffordance(
-                    open = reactOpen,
-                    onOpenChange = { reactOpen = it },
-                    onReact = onReact,
-                    openLeft = true,
-                )
+            if (mine) {
+                Row(Modifier.alpha(if (revealed) 1f else 0f)) {
+                    if (message.isDeletable) DeleteAffordance(onDelete)
+                    ReactAffordance(
+                        open = reactOpen,
+                        onOpenChange = { reactOpen = it },
+                        onReact = onReact,
+                        openLeft = true,
+                    )
+                }
             }
-            BubbleBody(message, senderName, media, onReact, mine, uploadPercent)
-            if (!mine && (hovered || reactOpen)) {
-                ReactAffordance(
-                    open = reactOpen,
-                    onOpenChange = { reactOpen = it },
-                    onReact = onReact,
-                )
+            BubbleBody(message, senderName, media, onReact, mine, uploadPercent, resolveName)
+            if (!mine) {
+                Box(Modifier.alpha(if (revealed) 1f else 0f)) {
+                    ReactAffordance(
+                        open = reactOpen,
+                        onOpenChange = { reactOpen = it },
+                        onReact = onReact,
+                    )
+                }
             }
         }
     }
@@ -566,6 +645,7 @@ private fun BubbleBody(
     onReact: (String) -> Unit,
     mine: Boolean,
     uploadPercent: Int? = null,
+    resolveName: (String) -> String? = { null },
 ) {
     Column(
         modifier = Modifier
@@ -621,7 +701,7 @@ private fun BubbleBody(
             )
         }
         BubbleFooter(message)
-        ReactionChips(message, onReact)
+        ReactionChips(message, onReact, resolveName)
     }
 }
 
@@ -670,6 +750,7 @@ private fun UploadingFile(name: String, percent: Int) {
 private fun androidx.compose.foundation.layout.ColumnScope.ReactionChips(
     message: ChatMessage,
     onReact: (String) -> Unit,
+    resolveName: (String) -> String? = { null },
 ) {
     if (message.reactions.isEmpty()) return
     Row(
@@ -677,26 +758,95 @@ private fun androidx.compose.foundation.layout.ColumnScope.ReactionChips(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
         message.reactions.groupBy { it.emoji }.forEach { (emoji, rows) ->
-            Row(
-                modifier = Modifier
-                    .clip(ZillitTheme.shapes.pill)
-                    .background(ZillitTheme.colors.surfaceHover)
-                    .clickable { onReact(emoji) }
-                    .padding(horizontal = ZillitTheme.spacing.xs, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                ZillitText(text = emoji, style = ZillitTheme.typography.labelSmall)
-                if (rows.size > 1) {
-                    ZillitText(
-                        text = rows.size.toString(),
-                        style = ZillitTheme.typography.labelSmall,
-                        color = ZillitTheme.colors.textMuted,
-                    )
+            // Who: resting the pointer on a chip names the people behind it —
+            // the phones open a sheet for the same question. The wire carries
+            // only ids; the crew list gives the names.
+            val who = rows.joinToString { resolveName(it.userId) ?: "Someone" }
+            com.zillit.desktop.core.designsystem.component.ZillitTooltip(text = who) {
+                Row(
+                    modifier = Modifier
+                        .clip(ZillitTheme.shapes.pill)
+                        .background(ZillitTheme.colors.surfaceHover)
+                        .clickable { onReact(emoji) }
+                        .padding(horizontal = ZillitTheme.spacing.xs, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    ZillitText(text = emoji, style = ZillitTheme.typography.labelSmall)
+                    if (rows.size > 1) {
+                        ZillitText(
+                            text = rows.size.toString(),
+                            style = ZillitTheme.typography.labelSmall,
+                            color = ZillitTheme.colors.textMuted,
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+/**
+ * The bubble's menu: the quick reactions in a row, then Copy for words,
+ * Download for a file, Delete for our own delivered lines — the phones'
+ * long-press sheet reduced to what this client can do (no reply-quote,
+ * forward, edit or translate here yet).
+ */
+@Composable
+private fun BubbleMenu(
+    open: Boolean,
+    onDismiss: () -> Unit,
+    message: ChatMessage,
+    media: BubbleMedia,
+    onReact: (String) -> Unit,
+    onDelete: () -> Unit,
+) {
+    androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = onDismiss) {
+        Row(
+            modifier = Modifier.width(REACT_MENU_WIDTH).padding(horizontal = ZillitTheme.spacing.sm),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            QUICK_REACTIONS.forEach { emoji ->
+                ZillitText(
+                    text = emoji,
+                    style = ZillitTheme.typography.titleSmall,
+                    modifier = Modifier
+                        .clip(ZillitTheme.shapes.pill)
+                        .clickable {
+                            onDismiss()
+                            onReact(emoji)
+                        }
+                        .padding(ZillitTheme.spacing.xs),
+                )
+            }
+        }
+        if (message.body.isNotBlank()) {
+            MenuLine("Copy") {
+                onDismiss()
+                com.zillit.desktop.core.designsystem.component.copyTextToClipboard(message.body)
+            }
+        }
+        message.attachment?.let { file ->
+            MenuLine("Download") {
+                onDismiss()
+                media.onOpen(file)
+            }
+        }
+        if (message.isDeletable) {
+            MenuLine("Delete for everyone") {
+                onDismiss()
+                onDelete()
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuLine(label: String, onClick: () -> Unit) {
+    androidx.compose.material3.DropdownMenuItem(
+        text = { ZillitText(text = label, style = ZillitTheme.typography.bodyMedium) },
+        onClick = onClick,
+    )
 }
 
 /** The quick six, on hover — the same shortlist the other clients offer. */
@@ -937,7 +1087,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.BubbleFooter(message:
 }
 
 private fun ChatSendState.icon() = when (this) {
-    ChatSendState.Sending -> ZillitIcons.Clock
+    ChatSendState.Sending, ChatSendState.Queued -> ZillitIcons.Clock
     ChatSendState.Failed -> ZillitIcons.Info
     ChatSendState.Sent -> ZillitIcons.Tick
     ChatSendState.Delivered, ChatSendState.Read -> ZillitIcons.DoubleTick
@@ -954,6 +1104,7 @@ private fun ChatSendState.tint() = when (this) {
 
 private fun ChatSendState.describe() = when (this) {
     ChatSendState.Sending -> "Sending"
+    ChatSendState.Queued -> "Waiting to send — goes when you're back online"
     ChatSendState.Sent -> "Sent"
     ChatSendState.Delivered -> "Delivered"
     ChatSendState.Read -> "Read"

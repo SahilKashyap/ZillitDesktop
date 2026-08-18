@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.feature.callsheet.domain.CallSheetRepository
 import com.zillit.desktop.feature.callsheet.domain.CallSheetStatus
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.email.data
 
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.database.EmailCache
 import com.zillit.desktop.core.database.EmailFolderSnapshot
 import com.zillit.desktop.core.database.EmailSnapshot
@@ -50,7 +51,9 @@ class SqlMailboxCache(
     }
 
     override fun messages(folderName: String): List<EmailSummary> =
-        cache.emails(projectId, folderName).map(::toSummary)
+        cache.emails(projectId, folderName).map(::toSummary).also { rows ->
+            ZillitLog.d(TAG) { "messages($folderName) for project '${projectId}': ${rows.size} cached" }
+        }
 
     private fun toSummary(row: EmailSnapshot) = EmailSummary(
         id = row.messageId,
@@ -72,6 +75,7 @@ class SqlMailboxCache(
         messages: List<EmailSummary>,
         dropUids: Set<Int>,
     ) {
+        ZillitLog.d(TAG) { "saveMessages($folderName) for project '${projectId}': ${messages.size} rows" }
         cache.saveEmails(
             projectId = projectId,
             folderName = folderName,
@@ -104,3 +108,5 @@ class SqlMailboxCache(
         cache.markRead(projectId, folderName, messageId)
     }
 }
+
+private const val TAG = "MailboxCache"

@@ -96,12 +96,11 @@ class HomeUnitTest {
     }
 
     @Test
-    fun `pinned notices sit at the top regardless of age`() {
+    fun `pinned notices keep their place in the chronology`() {
         val feed = listOf(notice("new", 300), notice("old", 100), notice("pin", 50, pinned = true))
             .forDisplay()
 
-        assertEquals("pin", feed.first().id)
-        assertEquals(listOf("old", "new"), feed.drop(1).map { it.id })
+        assertEquals(listOf("pin", "old", "new"), feed.map { it.id })
     }
 
     @Test

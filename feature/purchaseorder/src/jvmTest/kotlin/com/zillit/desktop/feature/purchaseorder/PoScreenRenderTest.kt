@@ -2,10 +2,13 @@ package com.zillit.desktop.feature.purchaseorder
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.feature.purchaseorder.domain.LocalCopy
 import com.zillit.desktop.feature.purchaseorder.domain.PoApproval
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
@@ -113,6 +116,85 @@ class PoScreenRenderTest {
             // below the fold.
             onNodeWithText("Approve").assertExists()
             onNodeWithText("Reject").assertExists()
+        }
+    }
+
+    @Test
+    fun `an order raised offline shows as waiting, with why, and no server actions`() {
+        val local = order("local:op-1", PoStatus.Draft).copy(
+            number = "",
+            local = LocalCopy(operationId = "op-1", failed = false),
+        )
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    PurchaseOrderScreen(
+                        state = state(PoDestination.MyOrders, crew).copy(
+                            localOrders = listOf(local),
+                            selectedId = local.id,
+                        ),
+                        onEvent = {},
+                    )
+                }
+            }
+            // The row's number cell and the pill, in the table and the detail.
+            onNodeWithText("Not sent yet").assertExists()
+            onAllNodesWithText("Waiting to send").onFirst().assertExists()
+            onNodeWithText("New order").assertExists()
+            onNodeWithText(
+                "This order is saved on this computer and will be raised on the server " +
+                    "as soon as you're back online. It has no number until then.",
+            ).assertExists()
+            onNodeWithText("Delete").assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun `a refused offline order says so and points at Pending changes`() {
+        val local = order("local:op-2", PoStatus.Draft).copy(
+            number = "",
+            local = LocalCopy(operationId = "op-2", failed = true, error = "Vendor is not active"),
+        )
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    PurchaseOrderScreen(
+                        state = state(PoDestination.MyOrders, crew)
+                            .copy(localOrders = listOf(local), selectedId = local.id),
+                        onEvent = {},
+                    )
+                }
+            }
+            onAllNodesWithText("Not sent").onFirst().assertExists()
+            onNodeWithText(
+                "This order could not be sent: Vendor is not active. " +
+                    "Retry or discard it from Pending changes in the status bar.",
+            ).assertExists()
+        }
+    }
+
+    @Test
+    fun `offline, the list is dated and the raise page says what will happen`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = true) {
+                    PurchaseOrderScreen(
+                        state = state(PoDestination.MyOrders, crew)
+                            .copy(offline = true, staleSince = 1_754_000_000_000),
+                        onEvent = {},
+                    )
+                }
+            }
+            onNodeWithText("You're offline — showing orders saved", substring = true).assertExists()
+        }
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    PurchaseOrderScreen(state = state(PoDestination.Raise, crew).copy(offline = true), onEvent = {})
+                }
+            }
+            onNodeWithText("Save and raise when online").assertExists()
+            onNodeWithText("You're offline. The order will be saved on this computer", substring = true).assertExists()
         }
     }
 

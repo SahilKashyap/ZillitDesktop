@@ -50,6 +50,7 @@ import com.zillit.desktop.feature.drive.domain.formatBytes
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveUiState
 import com.zillit.desktop.feature.drive.ui.DriveViewMode
+import com.zillit.desktop.feature.drive.ui.LocalDriveCompact
 import com.zillit.desktop.feature.drive.ui.refs
 
 /**
@@ -69,10 +70,15 @@ import com.zillit.desktop.feature.drive.ui.refs
 fun BrowsePage(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
     var newFolderOpen by remember { mutableStateOf(false) }
 
-    FixedPage {
-        DriveToolbar(state, onEvent, onNewFolder = { newFolderOpen = true })
+    val compact = LocalDriveCompact.current
+    FixedPage(padding = if (compact) ZillitTheme.spacing.sm else ZillitTheme.spacing.xl) {
+        if (compact) {
+            CompactToolbar(state, onEvent, onNewFolder = { newFolderOpen = true })
+        } else {
+            DriveToolbar(state, onEvent, onNewFolder = { newFolderOpen = true })
+        }
         Breadcrumb(state, onEvent)
-        QuickFilters(state, onEvent)
+        if (!compact) QuickFilters(state, onEvent)
 
         when (state.viewMode) {
             DriveViewMode.List -> ListView(state, onEvent)
@@ -89,6 +95,46 @@ fun BrowsePage(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
             onEvent(DriveEvent.CreateFolder(name))
         },
     )
+}
+
+/**
+ * The widget's toolbar: search takes the width; sort and grouping are not
+ * offered (the window is too narrow for two selects and they are one click
+ * away in the main app); view toggle and New folder are icons.
+ */
+@Composable
+private fun CompactToolbar(
+    state: DriveUiState,
+    onEvent: (DriveEvent) -> Unit,
+    onNewFolder: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitSearchField(
+            value = state.search,
+            onValueChange = { onEvent(DriveEvent.Search(it)) },
+            placeholder = "Search",
+            modifier = Modifier.weight(1f),
+        )
+        ZillitIconButton(
+            icon = if (state.viewMode == DriveViewMode.List) ZillitIcons.Grid else ZillitIcons.File,
+            contentDescription = "Switch to ${state.viewMode.toggled().label} view",
+            onClick = { onEvent(DriveEvent.ToggleViewMode) },
+        )
+        if (state.viewer.canCreate) {
+            ZillitIconButton(icon = ZillitIcons.Add, contentDescription = "New folder", onClick = onNewFolder)
+        }
+    }
+    if (state.selected.isNotEmpty()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) { BulkActions(state, onEvent) }
+    }
 }
 
 @Composable
@@ -274,7 +320,7 @@ private fun ColumnScope.ListView(state: DriveUiState, onEvent: (DriveEvent) -> U
             rows = state.items.sortedByDescending { it.isFolder },
             key = { it.id },
             loading = state.loading,
-            columns = driveColumns(state, onEvent),
+            columns = driveColumns(state, onEvent, compact = LocalDriveCompact.current),
             onRowClick = { onEvent(DriveEvent.OpenItem(it)) },
             isSelected = { it.id in state.selected || it.id == state.details.item?.id },
             emptyTitle = emptyTitle(state),
@@ -396,6 +442,8 @@ private fun emptyMessage(state: DriveUiState): String? = when {
 private fun driveColumns(
     state: DriveUiState,
     onEvent: (DriveEvent) -> Unit,
+    /** The widget's width has room for name, size and the actions — not who or when. */
+    compact: Boolean = false,
 ): List<TableColumn<DriveItem>> = buildList {
     add(
         TableColumn(
@@ -439,12 +487,14 @@ private fun driveColumns(
             if (item.isFolder) item.itemCount?.let { "$it items" } ?: "—" else formatBytes(item.sizeBytes)
         },
     )
-    add(textColumn("Uploaded by", ColumnWidth.Weight(1f), muted = true) {
-        it.uploadedByName.ifBlank { "—" }
-    })
-    add(textColumn("Modified", ColumnWidth.Fixed(DATE_COLUMN.dp), muted = true) {
-        EpochDate.date(it.updatedAt ?: it.createdAt).ifBlank { "—" }
-    })
+    if (!compact) {
+        add(textColumn("Uploaded by", ColumnWidth.Weight(1f), muted = true) {
+            it.uploadedByName.ifBlank { "—" }
+        })
+        add(textColumn("Modified", ColumnWidth.Fixed(DATE_COLUMN.dp), muted = true) {
+            EpochDate.date(it.updatedAt ?: it.createdAt).ifBlank { "—" }
+        })
+    }
     add(
         TableColumn(
             header = "",

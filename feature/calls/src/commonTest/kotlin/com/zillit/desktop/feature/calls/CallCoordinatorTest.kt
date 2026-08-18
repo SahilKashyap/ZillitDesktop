@@ -145,7 +145,7 @@ class CallCoordinatorTest {
         val api = CallApi(
             apiClient = com.zillit.desktop.core.network.ApiClient(
                 httpClient = io.ktor.client.HttpClient(),
-                headerProvider = { _, _, _ -> emptyMap() },
+                headerProvider = { _, _, _, _ -> emptyMap() },
             ),
             config = com.zillit.desktop.core.config.AppConfig(
                 environment = com.zillit.desktop.core.config.Environment.Develop,

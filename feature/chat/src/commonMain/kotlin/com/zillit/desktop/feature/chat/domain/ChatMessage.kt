@@ -58,6 +58,12 @@ data class GroupRoom(val id: String, val name: String)
  */
 enum class ChatSendState(val wire: Int) {
     Sending(PENDING),
+    /**
+     * Ours alone, like [Failed]: written with no network and kept on this
+     * computer to go automatically when it is back. Wears the clock the way
+     * the phones' pending messages do.
+     */
+    Queued(PENDING),
     Sent(ACCEPTED),
     Delivered(ON_DEVICE),
     Read(OPENED),

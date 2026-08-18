@@ -27,6 +27,7 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
  * The path matches the web's (`/film-tools/drive`) so the tools grid, badge
  * routing and any deep link agree across clients.
  */
+@Suppress("LongParameterList") // One seam per host capability; see each parameter's doc.
 class DriveToolProvider(
     private val viewModel: DriveViewModel,
     /** Hands a URL to the OS. Injected because this module has no file layer. */
@@ -53,6 +54,8 @@ class DriveToolProvider(
     private val onOpenEditor: (url: String, fileName: String) -> Unit = { url, _ ->
         onOpenUrl(url)
     },
+    /** Opens the desktop Drive widget. Null hides the button. */
+    private val onOpenWidget: (() -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = DRIVE_PATH
@@ -101,7 +104,7 @@ class DriveToolProvider(
             navigator.setTitle("Drive · ${state.destination.label}")
         }
 
-        DriveScreen(state = state, onEvent = viewModel::onEvent)
+        DriveScreen(state = state, onEvent = viewModel::onEvent, onOpenWidget = onOpenWidget)
 
         ZillitErrorToast(message = failure, onDismiss = { failure = null })
     }

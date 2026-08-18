@@ -4,7 +4,6 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.flatMap
 import com.zillit.desktop.core.common.map
-import com.zillit.desktop.core.common.toAmount
 import com.zillit.desktop.core.common.toAmountOrNull
 import com.zillit.desktop.core.common.toEpochMillisOrNull
 import com.zillit.desktop.core.config.AppConfig
@@ -23,12 +22,16 @@ import com.zillit.desktop.feature.purchaseorder.domain.Vendor
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * Every `/api/v2/purchase-orders` route.
@@ -136,41 +139,55 @@ class PurchaseOrderRepositoryImpl(
     private fun noteBody(note: String?): JsonObject? =
         note?.takeIf { it.isNotBlank() }?.let { buildJsonObject { put("note", JsonPrimitive(it)) } }
 
-    private fun NewPurchaseOrder.body(): JsonObject = buildJsonObject {
-        putIfPresent("vendor_id", vendorId)
-        put("vendor_name", JsonPrimitive(vendorName))
-        put("description", JsonPrimitive(description))
-        put("total", JsonPrimitive(total))
-        putIfPresent("department_id", departmentId)
-        putIfPresent("company_id", companyId)
-        putIfPresent("currency", currency)
-        putIfPresent("nominal_code", nominalCode)
-        putIfPresent("episode", episode)
-        putIfPresent("notes", notes)
-        effectiveDate?.let { put("effective_date", JsonPrimitive(it)) }
-        put(
-            "lines",
-            buildJsonArray {
-                lines.forEach { line ->
-                    add(
-                        buildJsonObject {
-                            putIfPresent("id", line.id)
-                            put("description", JsonPrimitive(line.description))
-                            put("quantity", JsonPrimitive(line.quantity))
-                            put("unit_price", JsonPrimitive(line.unitPrice))
-                            putIfPresent("nominal_code", line.nominalCode)
-                            line.vatRate?.let { put("vat_rate", JsonPrimitive(it)) }
-                        },
-                    )
-                }
-            },
-        )
-    }
-
     private companion object {
         const val VENDOR_LIMIT = 500
     }
 }
+
+/**
+ * The create/update body, field for field as Android's `CreatePORequest`
+ * and the web's `POForm` send it. Note what the server does **not** take:
+ * a vendor name (it keys on `vendor_id` and the client resolves the name),
+ * a header `total` (it is `net_amount`, and each line carries its own
+ * `total`), or a `lines` array (`line_items`). Sending the wrong keys is
+ * accepted with a 200 and stored as an order with no vendor, no total and
+ * no status — seen live 2026-08-18.
+ */
+internal fun NewPurchaseOrder.body(): JsonObject = buildJsonObject {
+    putIfPresent("vendor_id", vendorId)
+    put("description", JsonPrimitive(description))
+    put("currency", JsonPrimitive(currency?.takeIf { it.isNotBlank() } ?: DEFAULT_PO_CURRENCY))
+    putIfPresent("department_id", departmentId)
+    putIfPresent("company_id", companyId)
+    putIfPresent("nominal_code", nominalCode)
+    putIfPresent("episode", episode)
+    putIfPresent("notes", notes)
+    effectiveDate?.let { put("effective_date", JsonPrimitive(it)) }
+    put("net_amount", JsonPrimitive(total))
+    putIfPresent("status", status)
+    put(
+        "line_items",
+        buildJsonArray {
+            lines.forEach { line ->
+                add(
+                    buildJsonObject {
+                        putIfPresent("id", line.id)
+                        put("description", JsonPrimitive(line.description))
+                        put("quantity", JsonPrimitive(line.quantity))
+                        put("unit_price", JsonPrimitive(line.unitPrice))
+                        put("total", JsonPrimitive(line.total))
+                        put("account", JsonPrimitive(line.nominalCode.orEmpty()))
+                        put("department", JsonPrimitive(""))
+                        put("expenditure_type", JsonPrimitive(""))
+                        line.vatRate?.let { put("tax_rate", JsonPrimitive(it)) }
+                    },
+                )
+            }
+        },
+    )
+}
+
+private const val DEFAULT_PO_CURRENCY = "GBP"
 
 @Serializable
 internal data class PoDto(
@@ -184,7 +201,12 @@ internal data class PoDto(
     @SerialName("company_id") val companyId: String? = null,
     @SerialName("status") val status: String? = null,
     @SerialName("currency") val currency: String? = null,
-    @SerialName("total") val total: String? = null,
+    // The server's amounts, in order of preference — see [total] below.
+    @SerialName("gross_amount") val grossAmount: JsonElement? = null,
+    @SerialName("net_total") val netTotal: JsonElement? = null,
+    @SerialName("net_amount") val netAmount: JsonElement? = null,
+    @SerialName("gross_total") val grossTotal: JsonElement? = null,
+    @SerialName("total") val total: JsonElement? = null,
     @SerialName("vat_treatment") val vatTreatment: String? = null,
     @SerialName("nominal") val nominal: String? = null,
     @SerialName("nominal_code") val nominalCode: String? = null,
@@ -198,7 +220,9 @@ internal data class PoDto(
     @SerialName("assigned_to") val assignedTo: String? = null,
     @SerialName("reassignment_reason") val reassignmentReason: String? = null,
     @SerialName("delivery") val delivery: String? = null,
-    @SerialName("lines") val lines: List<PoLineDto>? = null,
+    // An array on most endpoints, a JSON *string* holding an array on some —
+    // Android's `parseLineItems` handles both, so this does too.
+    @SerialName("line_items") val lineItems: JsonElement? = null,
     @SerialName("approvals") val approvals: List<PoApprovalDto>? = null,
     @SerialName("attachments") val attachments: List<JsonObject>? = null,
 ) {
@@ -214,7 +238,7 @@ internal data class PoDto(
             companyId = companyId,
             status = PoStatus.from(status),
             currency = currency,
-            total = total.toAmount(),
+            total = headerTotal(parsedLines),
             vatTreatment = vatTreatment,
             nominalCode = nominalCode ?: nominal,
             episode = episode,
@@ -225,33 +249,79 @@ internal data class PoDto(
             assignedTo = assignedTo ?: assigned,
             reassignmentReason = reassignmentReason,
             deliveryAddress = delivery,
-            lines = lines.orEmpty().map { it.toDomain() },
+            lines = parsedLines,
             approvals = approvals.orEmpty().map { it.toDomain() },
             attachmentCount = attachments?.size ?: 0,
         )
     }
+
+    private val parsedLines: List<PoLine> get() = lineItems.asLineItems().map { it.toDomain() }
+
+    /**
+     * The order's total, the way Android's `POMapper` and the web's `mapApiPO`
+     * settle it: the server-maintained gross first, then the lines' own
+     * gross, then whatever legacy field is present.
+     */
+    private fun headerTotal(lines: List<PoLine>): Double {
+        grossAmount.toAmountOrNull()?.let { return it }
+        if (lines.isNotEmpty()) return lines.sumOf { it.total * (1 + (it.vatRate ?: 0.0) / PERCENT) }
+        return netTotal.toAmountOrNull() ?: netAmount.toAmountOrNull() ?: grossTotal.toAmountOrNull()
+            ?: total.toAmountOrNull() ?: 0.0
+    }
+
+    companion object {
+        private const val PERCENT = 100.0
+    }
 }
+
+/** A number the server may send as a number, a numeric string, or not at all. */
+internal fun JsonElement?.toAmountOrNull(): Double? =
+    (this as? JsonPrimitive)?.contentOrNull?.toAmountOrNull()
+
+/** `line_items` as the server sends it: an array, or a string containing one. */
+internal fun JsonElement?.asLineItems(): List<PoLineDto> {
+    val array = when (this) {
+        is JsonArray -> this
+        is JsonPrimitive -> runCatching { Json.parseToJsonElement(content) as? JsonArray }.getOrNull()
+        else -> null
+    } ?: return emptyList()
+    return array.mapNotNull { element ->
+        runCatching { lenientJson.decodeFromJsonElement(PoLineDto.serializer(), element) }.getOrNull()
+    }
+}
+
+private val lenientJson = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
 
 @Serializable
 internal data class PoLineDto(
     @SerialName("id") val id: String? = null,
     @SerialName("description") val description: String? = null,
-    @SerialName("quantity") val quantity: String? = null,
-    @SerialName("unit_price") val unitPrice: String? = null,
+    @SerialName("quantity") val quantity: JsonElement? = null,
+    @SerialName("unit_price") val unitPrice: JsonElement? = null,
+    @SerialName("total") val total: JsonElement? = null,
+    // The server's name for the cost code on a line; `nominal_code` is the
+    // older spelling some endpoints still echo.
+    @SerialName("account") val account: String? = null,
     @SerialName("nominal_code") val nominalCode: String? = null,
-    @SerialName("vat_rate") val vatRate: String? = null,
+    @SerialName("tax_rate") val taxRate: JsonElement? = null,
+    @SerialName("vat_rate") val vatRate: JsonElement? = null,
 ) {
-    fun toDomain() = PoLine(
-        id = id,
-        description = description.orEmpty(),
+    fun toDomain(): PoLine {
         // A line with no quantity is one item, not none: the wire omits the
         // field for single-item lines and reading it as zero silently zeroes
-        // the order's total.
-        quantity = quantity.toAmountOrNull() ?: 1.0,
-        unitPrice = unitPrice.toAmount(),
-        nominalCode = nominalCode,
-        vatRate = vatRate.toAmountOrNull(),
-    )
+        // the order's total. A line with a total but no unit price is priced
+        // from its total.
+        val qty = quantity.toAmountOrNull() ?: 1.0
+        val price = unitPrice.toAmountOrNull() ?: total.toAmountOrNull()?.let { if (qty > 0) it / qty else it } ?: 0.0
+        return PoLine(
+            id = id,
+            description = description.orEmpty(),
+            quantity = qty,
+            unitPrice = price,
+            nominalCode = account?.takeIf { it.isNotBlank() } ?: nominalCode,
+            vatRate = taxRate.toAmountOrNull() ?: vatRate.toAmountOrNull(),
+        )
+    }
 }
 
 @Serializable

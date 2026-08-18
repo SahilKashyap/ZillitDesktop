@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDelivery
 import com.zillit.desktop.feature.callsheet.domain.SheetPdfPage
 import com.zillit.desktop.feature.email.data.AwsCredentials

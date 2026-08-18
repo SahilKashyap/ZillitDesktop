@@ -88,7 +88,7 @@ class ChatScreenRenderTest {
         }
 
         onNodeWithText("Chat & Calls").assertExists()
-        onNodeWithText("Crew").assertExists()
+        onNodeWithText("Contacts").assertExists()
         onNodeWithText("Aisha Khan").assertExists()
         onNodeWithText("Vivek Mishra").assertExists()
     }
@@ -199,7 +199,7 @@ class ChatScreenRenderTest {
  * [ChatEvent.OpenThread], and a screen with no view model cannot show it.
  *
  * The regression it guards is a click that stops at a card. That card's only
- * action was "Message", so reaching a conversation from the Crew tab cost two
+ * action was "Message", so reaching a conversation from the Contacts tab cost two
  * clicks while the Chats tab beside it cost one.
  */
 @OptIn(ExperimentalTestApi::class)
@@ -228,7 +228,7 @@ class CrewRowOpensThreadTest {
         }
 
         // Before the click the pane invites a choice rather than showing one.
-        onNodeWithText("Pick someone from the crew to see their card.").assertExists()
+        onNodeWithText("Pick a contact to see their card.").assertExists()
 
         onNodeWithText("Aisha Khan").performClick()
         waitForIdle()
@@ -256,6 +256,22 @@ class CrewRowOpensThreadTest {
         waitForIdle()
 
         assertEquals("u2", model.state.value.peer?.userId)
+    }
+
+    @Test
+    fun `the signed-in user is not offered as a contact`() = runComposeUiTest {
+        val repository = StubChatRepository()
+        val model = viewModel(repository)
+
+        setContent {
+            ZillitTheme {
+                ChatScreen(crew = crew, selfId = "u2", loadAvatar = { null }, viewModel = model)
+            }
+        }
+
+        onNodeWithText("Aisha Khan").assertExists()
+        // Vivek is signed in: still in the crew for name resolution, not a row.
+        onNodeWithText("Vivek Mishra").assertDoesNotExist()
     }
 }
 

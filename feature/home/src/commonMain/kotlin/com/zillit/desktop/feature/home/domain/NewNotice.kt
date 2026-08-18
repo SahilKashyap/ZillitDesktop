@@ -33,6 +33,15 @@ data class NoticeDraft(
     val media: PickedMedia? = null,
     /** A shared location; [media] is then its map image, when one was made. */
     val location: GeoPoint? = null,
+    /**
+     * The call sheet's answer to "continuation or new?" — `true` sends every
+     * current post to History and keeps only this upload; `false` appends
+     * alongside; null when the question was never asked (any other unit, or
+     * an empty board). Travels as `replacePreviousChats`, the one field that
+     * differs between the two paths on both phones (Android `HomeVm.kt:1481`,
+     * iOS `ProductionVC+Audio.swift:394`).
+     */
+    val replacePrevious: Boolean? = null,
 ) {
 
     val trimmed: String get() = text.trim()

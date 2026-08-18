@@ -17,8 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -65,6 +65,11 @@ internal fun EventFormDialog(
     if (form != null) shown.value = form
     val current = shown.value
 
+    // The shell scrolls the body and pins the buttons beneath it. The fields
+    // used to sit in their own `weight + verticalScroll` column inside that
+    // body — a scroll nested in a scroll under unbounded height, which
+    // measured to nothing: the dialog opened as a title over two buttons and
+    // no event could be made (seen live 2026-08-17).
     ZillitDialogShell(
         title = current?.draft?.formTitle ?: "Event",
         icon = ZillitIcons.Calendar,
@@ -73,46 +78,35 @@ internal fun EventFormDialog(
         width = FORM_WIDTH,
         maxHeight = FORM_MAX_HEIGHT,
         modifier = modifier,
+        actions = { current?.let { FormActions(it, onEvent) } },
     ) {
         if (current != null) {
-            Column(
-                modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                FormFields(current, onEvent)
+            FormFields(current, onEvent)
+            current.error?.let {
+                ZillitText(
+                    text = it,
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.danger,
+                )
             }
-
-            FormFooter(current, onEvent)
         }
     }
 }
 
-/** The error, if any, and the two buttons. */
+/** The two buttons, pinned under the scrolling fields. */
 @Composable
-private fun FormFooter(form: EventFormState, onEvent: (CalendarEvent2Event) -> Unit) {
-    form.error?.let {
-        ZillitText(
-            text = it,
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.danger,
-        )
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
-    ) {
-        ZillitButton(
-            text = "Cancel",
-            variant = ButtonVariant.Tertiary,
-            onClick = { onEvent(CalendarEvent2Event.CloseForm) },
-        )
-        ZillitButton(
-            text = if (form.draft.isEdit) "Save" else "Create",
-            loading = form.isSaving,
-            onClick = { onEvent(CalendarEvent2Event.SaveForm) },
-        )
-    }
+private fun RowScope.FormActions(form: EventFormState, onEvent: (CalendarEvent2Event) -> Unit) {
+    Spacer(Modifier.weight(1f))
+    ZillitButton(
+        text = "Cancel",
+        variant = ButtonVariant.Tertiary,
+        onClick = { onEvent(CalendarEvent2Event.CloseForm) },
+    )
+    ZillitButton(
+        text = if (form.draft.isEdit) "Save" else "Create",
+        loading = form.isSaving,
+        onClick = { onEvent(CalendarEvent2Event.SaveForm) },
+    )
 }
 
 @Composable

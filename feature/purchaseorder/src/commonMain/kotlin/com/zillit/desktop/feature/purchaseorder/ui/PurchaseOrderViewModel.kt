@@ -3,6 +3,12 @@ package com.zillit.desktop.feature.purchaseorder.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.sync.NewOperation
+import com.zillit.desktop.core.sync.OfflineSupport
+import com.zillit.desktop.feature.purchaseorder.data.LOCAL_ID_PREFIX
+import com.zillit.desktop.feature.purchaseorder.data.PO_CREATE_KIND
+import com.zillit.desktop.feature.purchaseorder.data.QueuedPurchaseOrder
+import com.zillit.desktop.feature.purchaseorder.data.toLocalOrder
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PoHistoryEntry
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
@@ -12,6 +18,10 @@ import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrderRepository
 import com.zillit.desktop.feature.purchaseorder.domain.Vendor
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 
 /** The pages the purchase order tool offers. */
 enum class PoDestination(val slug: String, val label: String) {
@@ -34,6 +44,9 @@ enum class PoDestination(val slug: String, val label: String) {
         AllOrders -> viewer.isAccountant || viewer.hasFullAccess
         else -> true
     }
+
+    /** Whether orders raised offline, not yet on the server, belong on this page. */
+    val showsLocalOrders: Boolean get() = this == MyOrders || this == AllOrders
 }
 
 /** Everything the purchase order tool is showing. */
@@ -45,6 +58,8 @@ data class PoUiState(
     val error: ZillitError? = null,
     val notice: String? = null,
     val orders: List<PurchaseOrder> = emptyList(),
+    /** Orders raised on this computer that the server has not seen yet. */
+    val localOrders: List<PurchaseOrder> = emptyList(),
     val vendors: List<Vendor> = emptyList(),
     val history: List<PoHistoryEntry> = emptyList(),
     val search: String = "",
@@ -53,16 +68,23 @@ data class PoUiState(
     val selection: Set<String> = emptySet(),
     val draft: PoDraft = PoDraft(),
     val prompt: PoPrompt? = null,
+    /** True while the API cannot be reached; writes queue instead of failing. */
+    val offline: Boolean = false,
+    /** When [orders] was fetched, if it is a saved copy shown because the network is gone. */
+    val staleSince: Long? = null,
 ) {
-    val selected: PurchaseOrder? get() = orders.firstOrNull { it.id == selectedId }
+    val selected: PurchaseOrder? get() = (localOrders + orders).firstOrNull { it.id == selectedId }
 
     val visibleDestinations: List<PoDestination>
         get() = PoDestination.entries.filter { it.visibleTo(viewer) }
 
-    /** Rows after the search box and the status filter. */
+    /** Rows after the search box and the status filter — local ones first, they are newest. */
     val rows: List<PurchaseOrder>
-        get() = orders.filter { order ->
-            (statusFilter == null || order.status == statusFilter) && order.matches(search)
+        get() {
+            val local = if (destination.showsLocalOrders) localOrders else emptyList()
+            return (local + orders).filter { order ->
+                (statusFilter == null || order.status == statusFilter) && order.matches(search)
+            }
         }
 
     /** Committed spend, per currency — mixing currencies would be a lie. */
@@ -73,7 +95,8 @@ data class PoUiState(
             .mapValues { (_, group) -> group.sumOf { it.total } }
 }
 
-/** The Raise an Order form. */
+/** The Raise an Order form. Serialisable so it survives a restart. */
+@Serializable
 data class PoDraft(
     val vendorId: String? = null,
     val vendorName: String = "",
@@ -86,7 +109,10 @@ data class PoDraft(
 ) {
     val total: Double get() = lines.sumOf { it.total }
 
-    fun toRequest() = NewPurchaseOrder(
+    val isBlank: Boolean get() = this == PoDraft()
+
+    /** [status] is the server's creation status — see [NewPurchaseOrder.status]. */
+    fun toRequest(status: String? = null) = NewPurchaseOrder(
         vendorId = vendorId,
         vendorName = vendorName.trim(),
         description = description.trim(),
@@ -98,6 +124,7 @@ data class PoDraft(
         notes = notes.takeIf { it.isNotBlank() },
         effectiveDate = null,
         lines = lines.filter { it.description.isNotBlank() },
+        status = status,
     )
 }
 
@@ -153,14 +180,29 @@ sealed interface PoEffect {
  * Same shape as the two expense tools — per-destination loading, reload after
  * every mutation — so the three read alike. See `CashExpensesViewModel` for the
  * reasoning behind that arrangement.
+ *
+ * ## Offline
+ *
+ * With [offline] wired, three things change and nothing else does: the form
+ * is kept on disk as it is typed and restored on reopen; raising an order with
+ * no network queues it (and it appears in the lists as "waiting to send")
+ * instead of failing; and a list that cannot be fetched is shown from its last
+ * good copy, dated. A raise that fails because the request never left the
+ * machine is queued too — that is not a refusal.
  */
+@Suppress("TooManyFunctions") // One handler per user action, plus the offline seams.
 class PurchaseOrderViewModel(
     private val repository: PurchaseOrderRepository,
     private val viewer: () -> PoViewer,
+    private val offline: OfflineSupport? = null,
+    private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
 ) : ZillitViewModel<PoUiState, PoEvent, PoEffect>(PoUiState(viewer = viewer())) {
 
     private var loadJob: Job? = null
+    private var draftSaveJob: Job? = null
+    private var syncWatch: Job? = null
     private var started = false
+    private val json = Json { ignoreUnknownKeys = true }
 
     /** Resolves the viewer and opens their landing page. Idempotent. */
     fun start() {
@@ -179,12 +221,15 @@ class PurchaseOrderViewModel(
                 },
             )
         }
-        launch { repository.vendors().getOrNull()?.let { list -> setState { copy(vendors = list) } } }
+        launch { loadVendors() }
+        launch { restoreDraft() }
+        watchSync()
         load(currentState.destination)
     }
 
     fun onProjectChanged() {
         started = false
+        setState { copy(draft = PoDraft(), localOrders = emptyList(), staleSince = null) }
         start()
     }
 
@@ -194,7 +239,13 @@ class PurchaseOrderViewModel(
             PoEvent.Refresh -> load(currentState.destination)
             is PoEvent.Open -> {
                 setState {
-                    copy(destination = event.destination, search = "", selectedId = null, error = null)
+                    copy(
+                        destination = event.destination,
+                        search = "",
+                        selectedId = null,
+                        error = null,
+                        staleSince = null,
+                    )
                 }
                 load(event.destination)
             }
@@ -214,23 +265,23 @@ class PurchaseOrderViewModel(
             PoEvent.DismissPrompt -> setState { copy(prompt = null) }
             PoEvent.ConfirmPrompt -> resolvePrompt()
 
-            is PoEvent.EditDraft -> setState { copy(draft = event.draft) }
-            PoEvent.AddLine -> setState {
-                copy(draft = draft.copy(lines = draft.lines + PoLine(null, "", 1.0, 0.0, null, null)))
-            }
+            is PoEvent.EditDraft -> editDraft(event.draft)
+            PoEvent.AddLine -> editDraft(
+                currentState.draft.let { it.copy(lines = it.lines + PoLine(null, "", 1.0, 0.0, null, null)) },
+            )
 
-            is PoEvent.RemoveLine -> setState {
-                val remaining = draft.lines.filterIndexed { index, _ -> index != event.index }
-                copy(
-                    draft = draft.copy(
-                        lines = remaining.ifEmpty { listOf(PoLine(null, "", 1.0, 0.0, null, null)) },
-                    ),
-                )
-            }
+            is PoEvent.RemoveLine -> editDraft(
+                currentState.draft.let { draft ->
+                    val remaining = draft.lines.filterIndexed { index, _ -> index != event.index }
+                    draft.copy(lines = remaining.ifEmpty { listOf(PoLine(null, "", 1.0, 0.0, null, null)) })
+                },
+            )
 
             PoEvent.SubmitDraft -> submitDraft()
         }
     }
+
+    // -- reads ---------------------------------------------------------------
 
     private fun load(destination: PoDestination) {
         loadJob?.cancel()
@@ -242,16 +293,67 @@ class PurchaseOrderViewModel(
                 else -> repository.orders(null)
             }
             when (result) {
-                is ZillitResult.Success -> setState { copy(loading = false, orders = result.data) }
-                is ZillitResult.Failure -> setState { copy(loading = false, error = result.error) }
+                is ZillitResult.Success -> {
+                    setState { copy(loading = false, orders = result.data.named(vendors), staleSince = null) }
+                    remember(destination.cacheName, ListSerializer(PurchaseOrder.serializer()), result.data)
+                }
+
+                is ZillitResult.Failure -> {
+                    val saved = recallIfUnreachable(
+                        result.error,
+                        destination.cacheName,
+                        ListSerializer(PurchaseOrder.serializer()),
+                    )
+                    when {
+                        saved != null -> setState {
+                            copy(loading = false, orders = saved.first.named(vendors), staleSince = saved.second)
+                        }
+
+                        // No copy to show, but the person's own unsent orders
+                        // are still theirs to see: an empty list under them
+                        // beats an error page that hides them.
+                        result.error.isUnreachable() && destination.showsLocalOrders &&
+                            currentState.localOrders.isNotEmpty() ->
+                            setState { copy(loading = false, orders = emptyList(), staleSince = null) }
+
+                        else -> setState { copy(loading = false, error = result.error, staleSince = null) }
+                    }
+                }
             }
+        }
+    }
+
+    private suspend fun loadVendors() {
+        when (val fetched = repository.vendors()) {
+            is ZillitResult.Success -> {
+                setState { copy(vendors = fetched.data, orders = orders.named(fetched.data)) }
+                remember(VENDORS_CACHE, ListSerializer(Vendor.serializer()), fetched.data)
+            }
+
+            is ZillitResult.Failure ->
+                recallIfUnreachable(fetched.error, VENDORS_CACHE, ListSerializer(Vendor.serializer()))
+                    ?.let { (saved, _) -> setState { copy(vendors = saved, orders = orders.named(saved)) } }
+        }
+    }
+
+    /**
+     * Fills in vendor names from the vendor list: the server keys an order on
+     * `vendor_id` and sends no name, exactly as Android's `POMapper` resolves
+     * `vendorObj?.name`. An order whose vendor is not in the list keeps blank.
+     */
+    private fun List<PurchaseOrder>.named(vendors: List<Vendor>): List<PurchaseOrder> {
+        if (vendors.isEmpty()) return this
+        val names = vendors.associate { it.id to it.name }
+        return map { order ->
+            if (order.vendorName.isNotBlank()) order else order.copy(vendorName = names[order.vendorId].orEmpty())
         }
     }
 
     /** Selecting an order also fetches its audit trail for the detail pane. */
     private fun selectOrder(id: String?) {
         setState { copy(selectedId = id, history = emptyList()) }
-        if (id == null) return
+        // A row that exists only here has no history to fetch.
+        if (id == null || id.startsWith(LOCAL_ID_PREFIX)) return
         launch {
             repository.history(id).getOrNull()?.let { entries ->
                 if (currentState.selectedId == id) setState { copy(history = entries) }
@@ -259,15 +361,154 @@ class PurchaseOrderViewModel(
         }
     }
 
+    // -- the form --------------------------------------------------------------
+
+    private fun editDraft(draft: PoDraft) {
+        setState { copy(draft = draft) }
+        val support = offline ?: return
+        // Debounced: every keystroke changes the draft, and the disk does not
+        // need to hear each one. Short enough that a crash loses a phrase.
+        draftSaveJob?.cancel()
+        draftSaveJob = launch {
+            delay(DRAFT_SAVE_DEBOUNCE_MILLIS)
+            val scope = support.currentScope() ?: return@launch
+            if (draft.isBlank) {
+                support.drafts.delete(draftId(scope.userId, scope.projectId))
+            } else {
+                support.drafts.save(
+                    com.zillit.desktop.core.sync.LocalDraft(
+                        id = draftId(scope.userId, scope.projectId),
+                        scope = scope,
+                        kind = DRAFT_KIND,
+                        payload = json.encodeToString(PoDraft.serializer(), draft),
+                        updatedAt = nowMillis(),
+                    ),
+                )
+            }
+        }
+    }
+
+    private suspend fun restoreDraft() {
+        val support = offline ?: return
+        val scope = support.currentScope() ?: return
+        val saved = support.drafts.get(draftId(scope.userId, scope.projectId)) ?: return
+        val draft = runCatching { json.decodeFromString(PoDraft.serializer(), saved.payload) }.getOrNull() ?: return
+        // Only if nothing has been typed since — a restore must never overwrite.
+        if (currentState.draft.isBlank) setState { copy(draft = draft) }
+    }
+
+    private suspend fun forgetDraft() {
+        val support = offline ?: return
+        val scope = support.currentScope() ?: return
+        draftSaveJob?.cancel()
+        support.drafts.delete(draftId(scope.userId, scope.projectId))
+    }
+
     private fun submitDraft() {
-        val request = currentState.draft.toRequest()
+        // Accounts raise straight into the ledger's queue; everyone else into
+        // the approval chain — the same two statuses the phones send.
+        val status = if (currentState.viewer.isAccountant) STATUS_ACCOUNTS_ENTERED else STATUS_PENDING
+        val request = currentState.draft.toRequest(status)
         val invalid = request.validationError()
         if (invalid != null) {
             sendEffect(PoEffect.Failed(invalid))
             return
         }
-        act("Order raised", clearDraft = true) { repository.create(request) }
+        val support = offline
+        if (support != null && support.isOffline) {
+            launch { queueOrder(support, request) }
+            return
+        }
+        launch {
+            setState { copy(busy = true) }
+            when (val result = repository.create(request)) {
+                is ZillitResult.Success -> {
+                    forgetDraft()
+                    setState { copy(busy = false, notice = "Order raised", draft = PoDraft()) }
+                    load(currentState.destination)
+                }
+
+                is ZillitResult.Failure -> {
+                    // The request never left this machine: queue it rather than
+                    // make the user retype it later. Anything else — a timeout,
+                    // a refusal — is reported, and the form keeps their words.
+                    if (support != null && result.error is ZillitError.NoConnection) {
+                        queueOrder(support, request)
+                    } else {
+                        setState { copy(busy = false) }
+                        sendEffect(PoEffect.Failed(result.error.userMessage))
+                    }
+                }
+            }
+        }
     }
+
+    private suspend fun queueOrder(support: OfflineSupport, request: NewPurchaseOrder) {
+        val queued = QueuedPurchaseOrder(order = request, raisedBy = currentState.viewer.userId, queuedAt = nowMillis())
+        val label = "Purchase order: ${request.vendorName} — ${request.description}".take(LABEL_MAX)
+        val enqueued = support.engine.enqueue(
+            NewOperation(
+                kind = PO_CREATE_KIND,
+                label = label,
+                payload = json.encodeToString(QueuedPurchaseOrder.serializer(), queued),
+            ),
+        )
+        if (enqueued == null) {
+            setState { copy(busy = false) }
+            sendEffect(PoEffect.Failed("Open a production before raising an order."))
+            return
+        }
+        forgetDraft()
+        setState { copy(busy = false, draft = PoDraft(), notice = QUEUED_NOTICE) }
+        refreshLocalOrders()
+    }
+
+    // -- the outbox, as rows -------------------------------------------------
+
+    private fun watchSync() {
+        val support = offline ?: return
+        syncWatch?.cancel()
+        syncWatch = launch {
+            var pending = support.engine.status.value.pending
+            support.engine.status.collect { status ->
+                setState { copy(offline = !status.online) }
+                refreshLocalOrders()
+                // Something queued has gone through: the server now has a row
+                // where the local one was, so the list is fetched again.
+                if (status.online && status.pending < pending) load(currentState.destination)
+                pending = status.pending
+            }
+        }
+    }
+
+    private suspend fun refreshLocalOrders() {
+        val support = offline ?: return
+        val local = support.engine.operations().mapNotNull { it.toLocalOrder(json) }
+        setState { copy(localOrders = local) }
+    }
+
+    // -- the read cache ------------------------------------------------------
+
+    private suspend fun <T> remember(name: String, serializer: kotlinx.serialization.KSerializer<T>, value: T) {
+        val support = offline ?: return
+        val scope = support.currentScope() ?: return
+        support.cache.put(scope, name, json.encodeToString(serializer, value), nowMillis())
+    }
+
+    /** The saved copy, with when it was fetched — only when the failure is the network, not the server. */
+    private suspend fun <T> recallIfUnreachable(
+        error: ZillitError,
+        name: String,
+        serializer: kotlinx.serialization.KSerializer<T>,
+    ): Pair<T, Long>? {
+        val scope = offline?.currentScope()
+        if (!error.isUnreachable() || scope == null) return null
+        val cached = offline?.cache?.get(scope, name) ?: return null
+        return runCatching { json.decodeFromString(serializer, cached.json) }.getOrNull()
+            ?.let { it to cached.fetchedAt }
+    }
+
+    // -- actions on existing orders --------------------------------------------
 
     private fun resolvePrompt() {
         val prompt = currentState.prompt ?: return
@@ -303,17 +544,11 @@ class PurchaseOrderViewModel(
         setState { copy(selection = emptySet()) }
     }
 
-    private fun act(
-        success: String,
-        clearDraft: Boolean = false,
-        block: suspend () -> ZillitResult<Unit>,
-    ) = launch {
+    private fun act(success: String, block: suspend () -> ZillitResult<Unit>) = launch {
         setState { copy(busy = true) }
         when (val result = block()) {
             is ZillitResult.Success -> {
-                setState {
-                    copy(busy = false, notice = success, draft = if (clearDraft) PoDraft() else draft)
-                }
+                setState { copy(busy = false, notice = success) }
                 load(currentState.destination)
             }
 
@@ -322,6 +557,28 @@ class PurchaseOrderViewModel(
                 sendEffect(PoEffect.Failed(result.error.userMessage))
             }
         }
+    }
+
+    /** Keyed by what is fetched, not which tab asked — My Orders and Raise share one list. */
+    private val PoDestination.cacheName: String
+        get() = when (this) {
+            PoDestination.ApprovalQueue -> "po.orders.approval"
+            PoDestination.MyOrders, PoDestination.Raise -> "po.orders.my"
+            else -> "po.orders.all"
+        }
+
+    private fun ZillitError.isUnreachable() = this is ZillitError.NoConnection || this is ZillitError.Timeout
+
+    private fun draftId(userId: String, projectId: String) = "po.draft:$userId:$projectId"
+
+    companion object {
+        const val STATUS_PENDING = "PENDING"
+        const val STATUS_ACCOUNTS_ENTERED = "ACCT_ENTERED"
+        const val DRAFT_KIND = "po.draft"
+        const val VENDORS_CACHE = "po.vendors"
+        const val QUEUED_NOTICE = "Saved on this computer — it will be raised when you're back online."
+        private const val DRAFT_SAVE_DEBOUNCE_MILLIS = 400L
+        private const val LABEL_MAX = 80
     }
 }
 

@@ -275,3 +275,49 @@ Honest list of what is *not* finished in the current code:
   rules are unaffected: `ForbiddenImport` is syntactic and does fire, and
   `scripts/security-scan.sh` backstops it independently. Fixing this means
   giving detekt a per-compilation classpath.
+
+## 11. Home board — validated against both phones (2026-08-17), what is still not there
+
+The board now enforces the phones' rules (edit = author within 30 min, no admin
+exception; delete = admin any age, author within 30 min; call sheet
+Continuation / New → History confirm with `replacePreviousChats`; Image Reply
+through a pen editor; watermarked call-sheet PDF opens; Download gated on
+`download_access`; Forward hidden on the call sheet). Deliberately left out:
+
+- **Share** — Android's system share sheet and iOS's multi-select share. There
+  is no share sheet to hand to on a desktop; Copy and Download cover the desk.
+- **Gallery** (Android) / **Media Gallery** (iOS) — the unit's media wall.
+- **Translate** — no translation layer exists in this client; the `Translated
+  message` separator convention is not implemented either.
+- **Publish to Doc Distribution** — the call sheet's hand-off to that tool.
+  The `documentdistribution` module exists but is a concurrent session's; the
+  cross-module wiring waits until it settles.
+- **Auto-distribution of every call-sheet post** (Android's
+  `isDistributeAutomatic` → C&C after a successful post) and the ≥25 MB admin DM
+  on iOS. Both are side-effects of a post, not the post itself.
+- **Keep-name-private gate** before the first post (`keepNamePrivate` on the
+  profile). The profile flag is cached; the confirm-and-flip flow is not built.
+- **"REQUEST" link on the no-posting-rights banner** (a DM to an admin over the
+  socket, `UnitPermissionChatMessage`).
+- **Contacts share** (one text post per contact) — no address book on desktop.
+- **Print** (call sheet documents) — the OS's own print from the opened file.
+- **Media caption edit with an empty caption** — Android allows clearing a
+  caption; the desktop's edit path requires words.
+
+## 12. Chat & Calls message menu — what the phones' long-press sheet has that this menu does not (2026-08-17)
+
+The desktop bubble menu (right-click / long-press) offers the six quick
+reactions, Copy, Download and Delete-for-everyone. Android's sheet also has:
+Reply (quote), Forward, Edit, Translate, Read By User (groups), Image Reply,
+Print, Share. None of those features exist in the desktop chat yet — they are
+whole features, not menu items, and each is its own piece of work.
+
+Also from this pass:
+- **Publish to Doc Distribution end to end** could only be exercised up to
+  the rights refusal — the dev production has no `document_distribution_tool`
+  switched on. The from-tool body matches Android/iOS/web field for field.
+- **"Scroll issue no info"** — the Info board scrolls both ways here; without
+  a description of what was seen this stays unreproduced. The one thing that
+  can look odd is a "Today" post above a "5 May" post that got a reply today:
+  the live board orders by last activity (Android's rule) while the day
+  separators read the posting date.

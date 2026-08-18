@@ -75,13 +75,20 @@ class PurchaseOrderTest {
     fun `status decides what may still be edited and what is committed`() {
         assertTrue(PoStatus.Draft.isEditable)
         assertTrue(PoStatus.Rejected.isEditable)
-        assertTrue(PoStatus.Queried.isEditable)
+        assertFalse(PoStatus.AwaitingApproval.isEditable)
         assertFalse(PoStatus.Approved.isEditable)
 
         assertTrue(PoStatus.Approved.isCommitted)
+        assertTrue(PoStatus.AccountsEntered.isCommitted)
         assertTrue(PoStatus.Posted.isCommitted)
         assertFalse(PoStatus.Draft.isCommitted)
         assertFalse(PoStatus.Rejected.isCommitted)
+
+        // The server's spelling: upper-case, and the names it actually uses.
+        assertEquals(PoStatus.AwaitingApproval, PoStatus.from("PENDING"))
+        assertEquals(PoStatus.AccountsEntered, PoStatus.from("ACCT_ENTERED"))
+        assertEquals(PoStatus.Queued, PoStatus.from("QUEUED"))
+        assertEquals(PoStatus.Unknown, PoStatus.from("something_new"))
     }
 
     @Test

@@ -13,12 +13,32 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.OkHttpEngineProvider
 import com.zillit.desktop.core.network.HeaderContext
+import com.zillit.desktop.core.network.ReadScope
 import com.zillit.desktop.core.network.HeaderCrypto
 import com.zillit.desktop.core.badges.BadgeStore
 import com.zillit.desktop.core.database.LabelCache
 import com.zillit.desktop.core.database.ProjectCache
+import com.zillit.desktop.core.database.ProjectListCache
 import com.zillit.desktop.core.database.ZillitDatabase
+import com.zillit.desktop.core.database.SyncDatabaseFactory
 import com.zillit.desktop.core.database.ZillitDatabaseFactory
+import com.zillit.desktop.core.database.sync.SyncDatabase
+import com.zillit.desktop.core.sync.ConnectivityMonitor
+import com.zillit.desktop.core.sync.DraftStore
+import com.zillit.desktop.core.sync.OfflineSupport
+import com.zillit.desktop.feature.chat.data.ChatSendHandler
+import com.zillit.desktop.feature.purchaseorder.data.PoSyncHandler
+import com.zillit.desktop.feature.timecard.data.TimecardSaveHandler
+import com.zillit.desktop.feature.timecard.data.TimecardSubmitHandler
+import com.zillit.desktop.core.sync.SqlDraftStore
+import com.zillit.desktop.core.sync.SqlOutboxStore
+import com.zillit.desktop.core.sync.SyncEngine
+import com.zillit.desktop.core.sync.SyncHandlerRegistry
+import com.zillit.desktop.core.sync.SyncScope
+import io.ktor.client.request.head
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import com.zillit.desktop.core.localization.LabelStore
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.localization.PresetLabelSource
@@ -26,6 +46,7 @@ import com.zillit.desktop.core.security.DatabaseKeyManager
 import com.zillit.desktop.core.session.ProjectContextLoader
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.ZillitHeaderProvider
+import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.units.UnitRepository
 import com.zillit.desktop.feature.settings.account.AccountRepository
@@ -381,6 +402,8 @@ sealed interface AppGraph {
         val attachmentUploader: AttachmentUploader,
         val projectContext: ProjectContextLoader?,
         val projectCache: ProjectCache?,
+        /** The picker's last list, so productions show without a network. */
+        val projectListCache: ProjectListCache?,
         val emailCache: EmailCache?,
         val unitRepository: UnitRepository,
         /** The admin's two approval queues — joining crew and profile changes. */
@@ -444,6 +467,18 @@ sealed interface AppGraph {
         val sessionExpired: SharedFlow<Unit>,
         /** Null until the user has entered API keys on this machine. */
         val hasApiKeys: Boolean,
+        /** One answer to "are we online?", fed by every REST call and the socket. */
+        val connectivity: ConnectivityMonitor,
+        /**
+         * The outbox: work done offline, sent when the network returns.
+         * Null when the durable store could not be opened — the app then runs
+         * online-only, exactly as before it existed.
+         */
+        val syncEngine: SyncEngine?,
+        /** Drafts that survive a restart. Null under the same condition. */
+        val draftStore: DraftStore?,
+        /** The two above plus the online flag, for the view models that work offline. */
+        val offlineSupport: OfflineSupport?,
     ) : AppGraph
 
     /**
@@ -457,7 +492,9 @@ sealed interface AppGraph {
     data class Unconfigured(val reason: String) : AppGraph
 
     companion object {
-        @Suppress("LongMethod") // Linear construction of one graph; splitting it hides the order.
+        // Linear construction of one graph; splitting it hides the order. The
+        // branches are the optional caches (`database?.let`), nothing else.
+        @Suppress("LongMethod", "CyclomaticComplexMethod")
         fun build(): AppGraph {
             // Before anything else: Napier drops every log until a backend is
             // registered, so any logging above this line goes nowhere.
@@ -529,6 +566,27 @@ sealed interface AppGraph {
                 onBufferOverflow = BufferOverflow.DROP_OLDEST,
             )
 
+            // Realtime. Connected on project selection, not at startup: the
+            // handshake carries the device id, which does not exist until the
+            // device is linked.
+            val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            val socketClient = SocketIoClient(scope = appScope)
+
+            // The encrypted local cache — opened before the REST client so every
+            // read can be kept for offline viewing.
+            val database = openLocalDatabase(secureStore)
+            val readCache = database?.let { SqlReadCache(it) }
+            readCache?.let { cache -> appScope.launch { cache.prune(System.currentTimeMillis()) } }
+
+            // Fed by every REST call below and by the socket coming up; probes
+            // the API host while offline so an idle app still notices the
+            // network returning.
+            val connectivity = ConnectivityMonitor(
+                scope = appScope,
+                socketConnected = socketClient.connectionState.map { it.isConnected },
+                probe = { storageClient.reaches(config.baseUrl(ZillitService.Core)) },
+            ).also { it.start() }
+
             val apiClient = ApiClient(
                 httpClient = HttpClientFactory.create(
                     engineFactory = OkHttpEngineProvider(),
@@ -541,6 +599,16 @@ sealed interface AppGraph {
                 ),
                 headerProvider = headerProvider,
                 onUnauthorized = { sessionExpired.tryEmit(Unit) },
+                onOutcome = connectivity::report,
+                // Every production screen's reads are kept, keyed by who and
+                // which production, and shown again when the server cannot be
+                // reached — see ApiClient.remembered.
+                readCache = readCache,
+                readScope = {
+                    val context = headerContext.value
+                    ReadScope(userId = context.userId.orEmpty(), projectId = context.projectId.orEmpty())
+                },
+                nowMillis = System::currentTimeMillis,
             )
 
             // Before the repositories that reference it in their callbacks.
@@ -550,11 +618,6 @@ sealed interface AppGraph {
                 decrypt = cryptoEngine::decryptFromHex,
             )
 
-            // Realtime. Connected on project selection, not at startup: the
-            // handshake carries the device id, which does not exist until the
-            // device is linked.
-            val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-            val socketClient = SocketIoClient(scope = appScope)
             val socketEvents = SocketEventBus(socketClient)
 
             appScope.reportSocketRejections(socketClient, sessionExpired)
@@ -564,10 +627,57 @@ sealed interface AppGraph {
             val badgeStore = BadgeStore(BadgeSourceImpl(apiClient, config))
             val badgeDrilldown = com.zillit.desktop.feature.home.data.BadgeDrilldownImpl(apiClient, config)
 
-            val database = openLocalDatabase(secureStore)
+            // The finance repositories, built here because the offline
+            // handlers below send through them.
+            val purchaseOrderRepository = PurchaseOrderRepositoryImpl(apiClient, config)
+            // Timecards are served by the payroll host even though the tool
+            // is its own surface — see TimecardRepositoryImpl.
+            val timecardRepository = TimecardRepositoryImpl(apiClient, config)
+
+            val syncDatabase = openSyncDatabase(secureStore)
+            // What can be sent later: an operation of a kind nobody here
+            // handles parks with a reason rather than running. Chat's handler
+            // joins below, once its repository exists.
+            val syncHandlers = SyncHandlerRegistry(
+                listOf(
+                    PoSyncHandler(purchaseOrderRepository),
+                    TimecardSaveHandler(timecardRepository),
+                    TimecardSubmitHandler(timecardRepository),
+                ),
+            )
+            val syncEngine = syncDatabase?.let { durable ->
+                SyncEngine(
+                    store = SqlOutboxStore(durable),
+                    handlers = syncHandlers,
+                    online = connectivity.online,
+                    currentScope = { headerContext.value.syncScope() },
+                    scope = appScope,
+                    nowMillis = System::currentTimeMillis,
+                    newId = { java.util.UUID.randomUUID().toString() },
+                ).also { engine ->
+                    engine.start()
+                    // A production switch changes whose operations may run.
+                    headerContext.onEach { engine.wake() }.launchIn(appScope)
+                    // The socket coming up is when queued messages can go —
+                    // the REST side may have been "online" all along.
+                    socketClient.connectionState.map { it.isConnected }.filter { it }
+                        .onEach { engine.wake() }.launchIn(appScope)
+                }
+            }
+            val draftStore = syncDatabase?.let { SqlDraftStore(it) }
+            val offlineSupport = if (syncEngine != null && draftStore != null) {
+                OfflineSupport(syncEngine, draftStore, connectivity.online) { headerContext.value.syncScope() }
+            } else {
+                null
+            }
 
             val projectCache = database?.let {
                 ProjectCache(it, nowMillis = System::currentTimeMillis)
+            }
+            // Device-scoped, unlike the project cache: survives a switch,
+            // cleared on sign-out below.
+            val projectListCache = database?.let {
+                ProjectListCache(it, nowMillis = System::currentTimeMillis)
             }
 
             // Mail shares the database with the project cache but is its own
@@ -630,6 +740,7 @@ sealed interface AppGraph {
                     keyProvider.invalidate()
                     remoteConfigRepository.clear()
                     badgeStore.clear()
+                    projectListCache?.clear()
                     socketClient.disconnect()
                 },
                 onDeviceIdentified = { identity ->
@@ -717,6 +828,8 @@ sealed interface AppGraph {
                 decrypt = { cipher -> (cryptoEngine.decryptFromHex(cipher) as? ZillitResult.Success)?.data },
                 disk = chatCache,
             )
+            // Messages written offline leave through the same send as live ones.
+            syncHandlers.register(ChatSendHandler(chatRepository))
 
             val callEngine = buildCallEngine(config, appScope)
             // One instance, shared: the coordinator and the call-log list are
@@ -823,6 +936,7 @@ sealed interface AppGraph {
 
                 projectContext = projectContext,
                 projectCache = projectCache,
+                projectListCache = projectListCache,
                 emailCache = emailCache,
                 unitRepository = unitRepository,
                 approvalsRepository = approvalsRepository,
@@ -838,10 +952,8 @@ sealed interface AppGraph {
                 // signed client — see ZillitService.
                 cashRepository = CashRepositoryImpl(apiClient, config),
                 cardRepository = CardRepositoryImpl(apiClient, config),
-                purchaseOrderRepository = PurchaseOrderRepositoryImpl(apiClient, config),
-                // Timecards are served by the payroll host even though the tool
-                // is its own surface — see TimecardRepositoryImpl.
-                timecardRepository = TimecardRepositoryImpl(apiClient, config),
+                purchaseOrderRepository = purchaseOrderRepository,
+                timecardRepository = timecardRepository,
                 payrollRepository = PayrollRepositoryImpl(apiClient, config),
                 dealMemoRepository = DealMemoRepositoryImpl(apiClient, config),
                 // Each on its own service host. Document Distribution also
@@ -875,6 +987,10 @@ sealed interface AppGraph {
                 remoteConfigRepository = remoteConfigRepository,
                 apiKeySetup = apiKeySetup,
                 hasApiKeys = hasApiKeys,
+                connectivity = connectivity,
+                syncEngine = syncEngine,
+                draftStore = draftStore,
+                offlineSupport = offlineSupport,
             )
         }
     }
@@ -899,6 +1015,40 @@ private fun openLocalDatabase(secureStore: SecureStore): ZillitDatabase? = runBl
         }
     }
 }
+
+/**
+ * Opens the durable store — outbox and drafts — or returns null.
+ *
+ * Same footing as the cache: no key on a never-signed-in machine is ordinary.
+ * Unlike the cache, a file this build cannot migrate is left alone and the
+ * app runs without offline support until a build that can read it.
+ */
+@Suppress("ForbiddenMethodCall")
+private fun openSyncDatabase(secureStore: SecureStore): SyncDatabase? = runBlocking {
+    when (val opened = SyncDatabaseFactory(keyManager = DatabaseKeyManager(secureStore)).open()) {
+        is ZillitResult.Success -> opened.data
+        is ZillitResult.Failure -> {
+            ZillitLog.w("Startup") {
+                "durable store unavailable, offline changes disabled: ${opened.error.technical}"
+            }
+            null
+        }
+    }
+}
+
+/** Whose queued work may run: the signed-in person, in the open production. */
+private fun HeaderContext.syncScope(): SyncScope? {
+    val user = userId?.takeIf { it.isNotBlank() } ?: return null
+    val project = projectId?.takeIf { it.isNotBlank() } ?: return null
+    return SyncScope(userId = user, projectId = project)
+}
+
+/**
+ * Whether [url]'s host answers at all. Any HTTP status is a yes — a 404 from
+ * the right server is proof of a network; only a transport failure is a no.
+ */
+private suspend fun io.ktor.client.HttpClient.reaches(url: String): Boolean =
+    runCatching { head(url); true }.getOrDefault(false)
 
 /**
  * Attachment uploads, straight to S3.

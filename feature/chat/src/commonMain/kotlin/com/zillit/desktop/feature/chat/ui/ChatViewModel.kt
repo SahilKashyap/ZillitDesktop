@@ -3,7 +3,17 @@ package com.zillit.desktop.feature.chat.ui
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.sync.NewOperation
+import com.zillit.desktop.core.sync.OfflineSupport
+import com.zillit.desktop.core.sync.SyncState
+import com.zillit.desktop.feature.chat.data.CHAT_SEND_KIND
+import com.zillit.desktop.feature.chat.data.QueuedChatSend
+import com.zillit.desktop.feature.chat.data.toQueuedBubble
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import com.zillit.desktop.feature.chat.data.ChatRepository
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.ChatSendState
@@ -143,7 +153,15 @@ class ChatViewModel(
     private val sectionBadges: suspend () -> Map<String, Int>? = { emptyMap() },
     /** Reads the missed-call badge — the Calls tab was opened. Hosts wire the emit. */
     private val onCallsViewed: suspend () -> Unit = {},
+    /**
+     * With this wired, a message written with no network is kept on this
+     * computer and sent when it is back — the clock the phones show. Null
+     * keeps sends live-only, as before.
+     */
+    private val offline: OfflineSupport? = null,
 ) : ZillitViewModel<ChatUiState, ChatEvent, Nothing>(ChatUiState()) {
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     init {
         launch {
@@ -160,11 +178,15 @@ class ChatViewModel(
             }
         }
         launch { repository.incoming.collect { onEvent(ChatEvent.Arrived(it)) } }
+        // A queued message's clock becomes a tick (or a failure mark) as the
+        // outbox moves it, without waiting for the thread to be reopened.
+        offline?.let { support -> launch { support.engine.status.collect { refreshQueued() } } }
         // A thread read on another of this user's devices: drop the row's
         // count here too, and let the badge store re-ask the server.
         launch {
             repository.selfReads.collect { conversationId ->
                 repository.markThreadRead(conversationId, nowMillis())
+                serverUnread.remove(conversationId)
                 setState { copy(unread = unread - conversationId) }
                 onThreadRead(conversationId)
                 refreshSectionBadges()
@@ -235,27 +257,64 @@ class ChatViewModel(
                     onSuccess = { rooms -> setState { copy(groups = rooms) } },
                     onError = { },
                 )
+                // The per-conversation counts, from the server's backlog. A
+                // failed fetch keeps whatever the cache can say — no toast.
                 launchResult(
-                block = { repository.recentPeers() },
-                onSuccess = { ids ->
-                    // A cached thread proves a conversation even when the
-                    // server's list misses it — the union is the truth.
-                    val activity = repository.newestActivity()
-                    val ordered = sortedRecents((ids + activity.keys).distinct(), activity)
-                    setState {
-                        copy(
-                            recents = ordered,
-                            previews = previewsFor(ordered),
-                            unread = repository.unreadCounts(),
-                            activity = activity,
-                        )
-                    }
-                },
-                // A failed list costs the tab, not the screen — no toast.
-                onError = { },
+                    block = { repository.conversationUnread() },
+                    onSuccess = { counts ->
+                        serverUnread.clear()
+                        // A thread open right now was just read; its rows in
+                        // the backlog predate that.
+                        serverUnread.putAll(currentState.peer?.userId?.let { counts - it } ?: counts)
+                        setState { copy(unread = combinedUnread(repository.unreadCounts())) }
+                    },
+                    onError = { },
+                )
+                launchResult(
+                    block = { repository.recentPeers() },
+                    onSuccess = { ids ->
+                        launch { rememberRecents(ids) }
+                        showRecents(ids)
+                    },
+                    // The list comes over the socket, so with no network it
+                    // never answers: show the last list this production had,
+                    // plus every thread kept on this computer — no toast.
+                    onError = { launch { showRecents(rememberedRecents()) } },
                 )
             }
         }
+    }
+
+    /**
+     * A cached thread proves a conversation even when the server's list
+     * misses it — the union is the truth.
+     */
+    private fun showRecents(ids: List<String>) {
+        val activity = repository.newestActivity()
+        val ordered = sortedRecents((ids + activity.keys).distinct(), activity)
+        setState {
+            copy(
+                recents = ordered,
+                previews = previewsFor(ordered),
+                unread = combinedUnread(repository.unreadCounts()),
+                activity = activity,
+            )
+        }
+    }
+
+    private suspend fun rememberRecents(ids: List<String>) {
+        val support = offline ?: return
+        val scope = support.currentScope() ?: return
+        val encoded = json.encodeToString(ListSerializer(String.serializer()), ids)
+        support.cache.put(scope, RECENTS_CACHE, encoded, nowMillis())
+    }
+
+    private suspend fun rememberedRecents(): List<String> {
+        val support = offline ?: return emptyList()
+        val scope = support.currentScope() ?: return emptyList()
+        val kept = support.cache.get(scope, RECENTS_CACHE) ?: return emptyList()
+        return runCatching { json.decodeFromString(ListSerializer(String.serializer()), kept.json) }
+            .getOrDefault(emptyList())
     }
 
     /** Re-asks the badge service for this area's split — after anything moves. */
@@ -302,6 +361,8 @@ class ChatViewModel(
                         this
                     }
                 }
+                // Messages written offline for this thread, still waiting.
+                launch { refreshQueued() }
                 // The sender learns their words were seen the moment the
                 // thread is on screen — Android's status 3 on the newest row.
                 // Groups emit their own read-untill (room_id + my user id):
@@ -315,6 +376,7 @@ class ChatViewModel(
                 rows.maxOfOrNull(ChatMessage::timestampMillis)?.let {
                     repository.markThreadRead(contact.userId, it)
                 }
+                serverUnread.remove(contact.userId)
                 setState { copy(unread = unread - contact.userId) }
                 launch {
                     onThreadRead(contact.userId)
@@ -334,21 +396,93 @@ class ChatViewModel(
         val body = currentState.draft.trim().ifEmpty { if (attachment == null) return else "" }
         val optimistic = appendOptimistic(peer, body, attachment)
         setState { copy(draft = "") }
+        val isGroup = currentState.peerIsGroup
+
+        // No network and no file to upload: straight to the outbox, no
+        // round trip to fail first.
+        val support = offline
+        if (support != null && support.isOffline && attachment == null) {
+            launch { queue(support, peer.userId, body, optimistic, isGroup) }
+            return
+        }
 
         launchResult(
             block = {
                 repository.send(
                     peer.userId, body, optimistic.uniqueId, optimistic.timestampMillis,
-                    isGroup = currentState.peerIsGroup,
+                    isGroup = isGroup,
                     attachment = attachment,
                 )
             },
             onSuccess = { setSendState(optimistic.uniqueId, ChatSendState.Sent) },
             onError = { error ->
-                setSendState(optimistic.uniqueId, ChatSendState.Failed)
-                setState { copy(error = error.localised()) }
+                // The message never left this machine (socket down, no
+                // network): keep it and send it later rather than fail it.
+                if (support != null && attachment == null && error is ZillitError.NoConnection) {
+                    launch { queue(support, peer.userId, body, optimistic, isGroup) }
+                } else {
+                    setSendState(optimistic.uniqueId, ChatSendState.Failed)
+                    setState { copy(error = error.localised()) }
+                }
             },
         )
+    }
+
+    // -- offline: the outbox -----------------------------------------------------
+
+    private suspend fun queue(
+        support: OfflineSupport,
+        receiverId: String,
+        body: String,
+        optimistic: ChatMessage,
+        isGroup: Boolean,
+    ) {
+        val payload = QueuedChatSend(
+            receiverId = receiverId,
+            body = body,
+            uniqueId = optimistic.uniqueId,
+            timestampMillis = optimistic.timestampMillis,
+            isGroup = isGroup,
+        )
+        val enqueued = support.engine.enqueue(
+            NewOperation(
+                kind = CHAT_SEND_KIND,
+                label = "Message to ${currentState.peer?.fullName?.ifBlank { null } ?: receiverId}",
+                payload = json.encodeToString(QueuedChatSend.serializer(), payload),
+                // One thread's messages leave in the order they were written.
+                groupKey = "chat:$receiverId",
+                // The message's own id, so the bubble and the queue agree by construction.
+                id = optimistic.uniqueId,
+            ),
+        )
+        setSendState(optimistic.uniqueId, if (enqueued != null) ChatSendState.Queued else ChatSendState.Failed)
+    }
+
+    /**
+     * The open thread's queued messages, from the outbox: those still there
+     * wear the clock (or the failure mark), those the outbox has sent become
+     * sent — unless the server's echo already replaced the bubble.
+     */
+    private suspend fun refreshQueued() {
+        val support = offline ?: return
+        val peerId = currentState.peer?.userId ?: return
+        val operations = support.engine.operations().filter { it.kind == CHAT_SEND_KIND }
+        val byId = operations.associateBy { it.id }
+        setState {
+            if (peer?.userId != peerId) return@setState this
+            val known = messages.map { it.uniqueId }.toSet()
+            val restored = operations.mapNotNull { it.toQueuedBubble(peerId, json) }.filter { it.uniqueId !in known }
+            val followed = messages.map { message ->
+                val op = byId[message.uniqueId] ?: return@map message
+                val state = when (op.state) {
+                    SyncState.Done -> ChatSendState.Sent
+                    SyncState.Failed -> ChatSendState.Failed
+                    SyncState.Pending, SyncState.InFlight -> ChatSendState.Queued
+                }
+                if (message.isMine && message.sendState.isOurs()) message.copy(sendState = state) else message
+            }
+            copy(messages = (followed + restored).sortedBy { it.timestampMillis })
+        }
     }
 
     /** The bubble that appears before the server has spoken. */
@@ -452,7 +586,23 @@ class ChatViewModel(
      * the open production, and a list of what to wipe would rot the next time
      * one is added.
      */
+    /**
+     * The server's unread per conversation, seeded from the notification
+     * backlog on every listing refresh and moved by arrivals and reads
+     * between refreshes. The rows the local cache can count are only the
+     * threads this desktop has opened; a peer who wrote while it was closed
+     * has a badge on the phone and had none here until this.
+     */
+    private val serverUnread = mutableMapOf<String, Int>()
+
+    /** What the rows show: the larger of the server's word and the cache's. */
+    private fun combinedUnread(local: Map<String, Int>): Map<String, Int> =
+        (local.keys + serverUnread.keys).associateWith { key ->
+            maxOf(local[key] ?: 0, serverUnread[key] ?: 0)
+        }.filterValues { it > 0 }
+
     private fun startFreshProject() {
+        serverUnread.clear()
         setState { ChatUiState() }
         launch {
             val stars = loadFavourites()
@@ -647,7 +797,12 @@ class ChatViewModel(
         }
 
         val activity = repository.newestActivity()
-        val unread = repository.unreadCounts()
+        // A line for a thread not on screen is one more the server counts;
+        // the cache counts it too, and the row shows whichever is larger.
+        if (!isOpen && !message.isMine && other.isNotBlank()) {
+            serverUnread[other] = (serverUnread[other] ?: 0) + 1
+        }
+        val unread = combinedUnread(repository.unreadCounts())
         setState {
             copy(
                 recents = sortedRecents(withPeer(recents, other), activity),
@@ -695,8 +850,15 @@ class ChatViewModel(
 private const val TAG = "Chat"
 private const val RECORDING_TICK_MILLIS = 1_000L
 
+/** The last DM list the socket gave this production, for when it cannot. */
+private const val RECENTS_CACHE = "chat.recents"
+
 /** How long the server gets to apply a read before the tab split is re-asked. */
 private const val SECTION_BADGE_SETTLE_MILLIS = 1_800L
 
 /** The file is being prepared (posters, PDF pages) — no bytes moving yet. */
 private const val PREPARING = -1
+
+/** The states this device assigns itself; the server's own words never yield to the outbox. */
+private fun ChatSendState.isOurs(): Boolean =
+    this == ChatSendState.Sending || this == ChatSendState.Queued || this == ChatSendState.Failed

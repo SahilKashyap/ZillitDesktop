@@ -5,6 +5,7 @@ import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.jsonBody
@@ -43,6 +44,9 @@ class DraftRepositoryImpl(
             url = "${api}email-draft/$beforeMillis/previous",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
+            // Only ever the newest page, from "now": one name, so the Drafts
+            // folder still shows offline what it showed last time.
+            options = CallOptions(cacheAs = "${api}email-draft/newest"),
         ).map { payload ->
             payload.draftRows()
                 .mapNotNull(::readDraft)

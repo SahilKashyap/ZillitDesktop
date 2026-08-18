@@ -6,6 +6,7 @@ import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.flatMap
@@ -119,6 +120,10 @@ class HomeFeedRepositoryImpl(
             url = "${home}chat/$unitId/$beforeMillis/previous",
             serializer = ListSerializer(JsonElement.serializer()),
             module = RequestModule.ProjectUser,
+            // The only page ever asked for is the newest one, from "now" — a
+            // URL that differs on every load. Kept under one name so the board
+            // still shows offline what it showed last time.
+            options = CallOptions(cacheAs = "${home}chat/$unitId/newest"),
         ).map { rows ->
             rows.mapNotNull { readNotice(it, ::decryptBody) }.forDisplay()
         }
@@ -161,6 +166,16 @@ class HomeFeedRepositoryImpl(
         localId: String,
         attachment: UploadedNoticeMedia?,
         location: GeoPoint?,
+    ): ZillitResult<Notice> = postNotice(unitId, text, localId, attachment, location, replacePrevious = null)
+
+    @Suppress("LongParameterList") // The wire body's fields, one each; a holder would rename, not reduce.
+    override suspend fun postNotice(
+        unitId: String,
+        text: String,
+        localId: String,
+        attachment: UploadedNoticeMedia?,
+        location: GeoPoint?,
+        replacePrevious: Boolean?,
     ): ZillitResult<Notice> {
         // Captions are encrypted exactly like message bodies — the web's
         // `generate-message-payload` runs both through `encryptMessage`.
@@ -191,6 +206,7 @@ class HomeFeedRepositoryImpl(
                     messageGroup = nowMillis(),
                     attachment = attachment?.toDto(),
                     location = location?.let { LocationDto(it.lat, it.long) },
+                    replacePreviousChats = replacePrevious,
                 ),
             ),
         ).flatMap { row ->
@@ -241,13 +257,40 @@ class HomeFeedRepositoryImpl(
         ).map { }
     }
 
+    /**
+     * `GET home/chat/watermark/{id}` — `{data: <attachment>}`, the same object
+     * shape a post carries (Android `WatermarkResponse.data: AttachmentModel`).
+     * The keys point at a per-reader stamped copy in the same bucket, so the
+     * ordinary media fetch reads it.
+     */
+    override suspend fun watermarkedAttachment(noticeId: String): ZillitResult<NoticeAttachment> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${home}chat/watermark/$noticeId",
+            serializer = JsonElement.serializer(),
+            module = RequestModule.ProjectUser,
+        ).flatMap { row ->
+            (row as? JsonObject)?.toAttachment()
+                ?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(
+                    ZillitError.Serialization("the watermark response carried no attachment"),
+                )
+        }
+
     /** `GET home/chat/readby/{id}` — read receipts live server-side only. */
-    override suspend fun readBy(noticeId: String): ZillitResult<ReadBy> =
+    override suspend fun readBy(noticeId: String): ZillitResult<ReadBy> = readBy(noticeId, commentId = null)
+
+    /**
+     * The same route with `?commentId=` for one reply (Android
+     * `ChatAndGroupVM.redaByUserResponseWithUrl`, `ReadByUserPage.kt:130-141`).
+     */
+    override suspend fun readBy(noticeId: String, commentId: String?): ZillitResult<ReadBy> =
         apiClient.request(
             verb = HttpVerb.Get,
             url = "${home}chat/readby/$noticeId",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
+            queryParameters = commentId?.let { mapOf("commentId" to it) }.orEmpty(),
         ).map(::readReadBy)
 
     /**
@@ -289,12 +332,16 @@ class HomeFeedRepositoryImpl(
      * from Info and Confidential Info too.
      */
     override suspend fun notifyUnread(unitId: String, noticeId: String): ZillitResult<Unit> =
+        notifyUnread(unitId, noticeId, commentId = null)
+
+    /** iOS passes the reply's id as `commentId` beside `messageId`; so does this. */
+    override suspend fun notifyUnread(unitId: String, noticeId: String, commentId: String?): ZillitResult<Unit> =
         apiClient.request(
             verb = HttpVerb.Post,
             url = "${homeUnits}unit/$unitId",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
-            body = jsonBody(NotifyUnreadDto(messageId = noticeId)),
+            body = jsonBody(NotifyUnreadDto(messageId = noticeId, commentId = commentId)),
         ).map { }
 
     /**
@@ -450,6 +497,12 @@ internal data class NewNoticeDto(
     @SerialName("attachment") val attachment: AttachmentDto? = null,
     /** `{lat, long}` — the wire's spelling, as the web sends it. */
     @SerialName("location") val location: LocationDto? = null,
+    /**
+     * The call sheet's "New" (true) or "Continuation" (false); omitted
+     * elsewhere. camelCase on purpose — Android serialises the Kotlin name
+     * (`HomeChatRequest.kt:43`) and iOS spells it the same (`ChatAPIModel.swift:426`).
+     */
+    @SerialName("replacePreviousChats") val replacePreviousChats: Boolean? = null,
 )
 
 @Serializable
@@ -462,6 +515,8 @@ internal data class LocationDto(
 @Serializable
 internal data class NotifyUnreadDto(
     @SerialName("messageId") val messageId: String,
+    /** Set for a reply's unread list — omitted for a post's (`explicitNulls = false`). */
+    @SerialName("commentId") val commentId: String? = null,
 )
 
 /**
@@ -571,6 +626,7 @@ internal data class HomeUnitDto(
     @SerialName("enabled") val enabled: Boolean? = null,
     @SerialName("view_access") val viewAccess: Boolean? = null,
     @SerialName("posting_access") val postingAccess: Boolean? = null,
+    @SerialName("download_access") val downloadAccess: Boolean? = null,
 ) {
     fun toDomain(): HomeUnit? {
         val resolvedId = unitId ?: id ?: return null
@@ -582,6 +638,7 @@ internal data class HomeUnitDto(
             // Absent means denied, as everywhere else rights are read.
             canView = viewAccess == true,
             canPost = postingAccess == true,
+            canDownload = downloadAccess == true,
             enabled = enabled ?: true,
         )
     }

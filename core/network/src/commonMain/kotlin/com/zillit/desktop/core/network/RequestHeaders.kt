@@ -81,8 +81,22 @@ fun interface RequestHeaderProvider {
         module: RequestModule,
         bodyJson: String?,
         projectId: String?,
+        /**
+         * The caller's id **on that production**, when [projectId] is
+         * overridden. Project-user ids differ per production, so a call
+         * scoped to another production with the open one's user id is a
+         * call the server answers for the wrong person (or 406s).
+         */
+        userId: String?,
     ): Map<String, String>
 }
+
+/** The common case: the open production, its own user. */
+suspend fun RequestHeaderProvider.headersFor(
+    module: RequestModule,
+    bodyJson: String?,
+    projectId: String?,
+): Map<String, String> = headersFor(module, bodyJson, projectId, null)
 
 /**
  * Header names, matching the Android client's `ApiConstants` **exactly**.

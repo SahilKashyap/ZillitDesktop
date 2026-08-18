@@ -7,10 +7,13 @@ import com.zillit.desktop.feature.home.domain.GeoPoint
 import com.zillit.desktop.feature.home.domain.HomeFeedRepository
 import com.zillit.desktop.feature.home.domain.HomeUnit
 import com.zillit.desktop.feature.home.domain.Notice
+import com.zillit.desktop.feature.home.domain.NoticeSendState
 import com.zillit.desktop.feature.home.domain.NoticeComment
 import com.zillit.desktop.feature.home.domain.ReadBy
 import com.zillit.desktop.feature.home.domain.UploadedNoticeMedia
-import com.zillit.desktop.feature.home.domain.withPinnedSection
+import com.zillit.desktop.feature.home.domain.pinnedForBanner
+import com.zillit.desktop.feature.home.domain.withDateSeparators
+import com.zillit.desktop.feature.home.domain.forDisplay
 import com.zillit.desktop.feature.home.ui.HomeFeedEvent
 import com.zillit.desktop.feature.home.ui.HomeFeedViewModel
 import kotlinx.coroutines.Dispatchers
@@ -48,26 +51,42 @@ class PinNoticeTest {
     // -- the section -------------------------------------------------------
 
     @Test
-    fun `pinned posts float first under their own header`() {
-        val rows = listOf(
+    fun `pinned posts keep their place, and the banner lists them newest first`() {
+        val posts = listOf(
             Notice(id = "a", body = "plain", authorName = "S", createdAtMillis = 3),
             Notice(id = "b", body = "pinned", authorName = "S", createdAtMillis = 2, isPinned = true),
             Notice(id = "c", body = "plain", authorName = "S", createdAtMillis = 1),
-        ).withPinnedSection(nowMillis = 10)
-
-        assertEquals("Pinned", (rows.first() as BoardRow.Separator).label)
-        assertEquals("b", (rows[1] as BoardRow.Post).notice.id)
-        // The rest keep their chronology, date separators intact.
-        assertTrue(rows.drop(2).filterIsInstance<BoardRow.Post>().map { it.notice.id } == listOf("a", "c"))
+            Notice(
+                id = "d",
+                body = "pinned later",
+                authorName = "S",
+                createdAtMillis = 1,
+                updatedAtMillis = 5,
+                isPinned = true,
+            ),
+        )
+        // The board is one conversation: chronology, pins in place.
+        val rows = posts.forDisplay().withDateSeparators(todayMillis = 10)
+        assertEquals(listOf("c", "b", "a", "d"), rows.filterIsInstance<BoardRow.Post>().map { it.notice.id })
+        assertTrue(rows.filterIsInstance<BoardRow.Separator>().none { it.label == "Pinned" })
+        // The banner is where the pins live: most recently touched first.
+        assertEquals(listOf("d", "b"), posts.pinnedForBanner().map { it.id })
     }
 
     @Test
-    fun `no pins, no header`() {
-        val rows = listOf(
+    fun `no pins, no banner — and an in-flight pin is not one yet`() {
+        val posts = listOf(
             Notice(id = "a", body = "plain", authorName = "S", createdAtMillis = 1),
-        ).withPinnedSection(nowMillis = 10)
-
-        assertTrue(rows.filterIsInstance<BoardRow.Separator>().none { it.label == "Pinned" })
+            Notice(
+                id = "s",
+                body = "sending",
+                authorName = "S",
+                createdAtMillis = 2,
+                isPinned = true,
+                sendState = NoticeSendState.Sending,
+            ),
+        )
+        assertTrue(posts.pinnedForBanner().isEmpty())
     }
 
     // -- the toggle --------------------------------------------------------

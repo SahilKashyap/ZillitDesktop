@@ -4,7 +4,6 @@ import com.zillit.desktop.core.datastore.ZillitPreferences
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.flatMap
 import com.zillit.desktop.core.common.map
-import com.zillit.desktop.core.common.map
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 import com.zillit.desktop.feature.email.data.FilePicker
 import com.zillit.desktop.feature.email.domain.StorageKind
@@ -172,7 +171,11 @@ internal fun openSavedFile(path: String) {
 }
 
 /** The home feed, wired to the clock and the signed-in user. */
-internal fun buildHomeFeed(ready: AppGraph.Ready) = HomeFeedViewModel(
+internal fun buildHomeFeed(
+    ready: AppGraph.Ready,
+    /** The production's tool rights — the Document Distribution gate reads them live. */
+    permissions: () -> ProjectPermissions = { ProjectPermissions.Empty },
+) = HomeFeedViewModel(
     repository = ready.homeFeedRepository,
     nowMillis = System::currentTimeMillis,
     // Matches Android's `unique_id`: a client value the server echoes, so an
@@ -194,7 +197,12 @@ internal fun buildHomeFeed(ready: AppGraph.Ready) = HomeFeedViewModel(
     saveRecentMentions = { names ->
         ready.preferences.set(ZillitPreferences.RecentMentions, names.joinToString("\n"))
     },
+    // The Home tab to land on — the profile's `default_unit_id`, as the
+    // phones honour it. Read at load; the profile arrives beside the units.
+    defaultUnitId = { ready.projectContext?.context?.value?.profile?.defaultUnitId },
+    distribution = distributionHook(ready, permissions),
 )
+
 
 /**
  * The web's `notification:read` emit, payload for payload (`Notices.jsx`):
@@ -410,43 +418,67 @@ internal fun AppGraph.Ready.boardFeed(
 }
 
 /**
- * The Camera & Sound Report tool — a notice board with SEVERAL units.
+ * A notice-board tool whose tabs come from ITS OWN service — Camera & Sound
+ * Report (script-notes host, `reports/unit/`), Catering (unit host,
+ * `catering/unit`), Accounts (unit host, `account/unit`).
  *
- * The web's `ReportsMain` fetches its tabs from the reports service itself
- * (`GET reports/unit/` on the script-notes host — camera reports, sound
- * reports, whatever the production has), and gates every one of them with
- * the single `reports_tool` right. The board engine is the same; only the
- * host and the unit source differ.
+ * The web mounts the same unit-chat for each with a different REST segment;
+ * one right (the tool's) covers every tab. [postAlways] is Accounts'
+ * ZL-17603: posting is not gated by the tool right there.
  */
-internal fun AppGraph.Ready.reportsFeed(
+internal fun AppGraph.Ready.serviceUnitsFeed(
+    toolIdentifier: String,
+    board: String,
+    service: ZillitService,
+    unitsRoute: String,
     permissions: () -> ProjectPermissions,
+    postAlways: Boolean = false,
+    readModule: String = "${toolIdentifier.removeSuffix("_tool")}_label",
 ): HomeFeedViewModel {
-    val source = ReportUnitsSource(apiClient, config)
+    val source = ReportUnitsSource(apiClient, config, service, unitsRoute)
     val units: suspend () -> ZillitResult<List<HomeUnit>> = {
-        val access = permissions().access(REPORTS_TOOL)
+        val access = permissions().access(toolIdentifier)
         val admin = permissions().isAdmin
         source.units().map { rows ->
             rows.map { row ->
                 HomeUnit(
                     id = row.id,
-                    identifier = row.identifier ?: REPORTS_TOOL,
+                    identifier = row.identifier ?: toolIdentifier,
                     unitName = row.name,
-                    // One right for every sub-unit — the web spreads
-                    // `reports_tool`'s access over each tab.
                     canView = access.canView || admin,
-                    canPost = access.canPost || admin,
+                    canPost = postAlways || access.canPost || admin,
                     enabled = access.enabled,
                 )
             }
         }
     }
-    return boardFeed(
-        board = "reports",
-        toolIdentifier = REPORTS_TOOL,
-        units = units,
-        service = ZillitService.ScriptNotes,
-    )
+    return boardFeed(board, toolIdentifier, units, service, readModule)
 }
+
+/** Camera & Sound Report — `GET reports/unit/` on the script-notes host. */
+internal fun AppGraph.Ready.reportsFeed(permissions: () -> ProjectPermissions): HomeFeedViewModel =
+    serviceUnitsFeed(REPORTS_TOOL, "reports", ZillitService.ScriptNotes, "reports/unit/", permissions)
+
+/** Catering — `GET catering/unit` on the unit host; breakfast/lunch/dinner plus the production's own. */
+internal fun AppGraph.Ready.cateringFeed(permissions: () -> ProjectPermissions): HomeFeedViewModel =
+    serviceUnitsFeed("catering_tool", "catering", ZillitService.Units, "catering/unit", permissions)
+
+/**
+ * Message Accounts — `GET account/unit` on the unit host (General, Purchase
+ * Orders, Petty Cash, and the production's own). The web hard-codes posting
+ * on for this tool (ZL-17603).
+ */
+internal fun AppGraph.Ready.accountsFeed(permissions: () -> ProjectPermissions): HomeFeedViewModel =
+    serviceUnitsFeed(
+        toolIdentifier = "accounting_tool",
+        board = "account",
+        service = ZillitService.Units,
+        unitsRoute = "account/unit",
+        permissions = permissions,
+        postAlways = true,
+        // The badge module is `accounts_label`, not the identifier's stem.
+        readModule = "accounts_label",
+    )
 
 private const val REPORTS_TOOL = "reports_tool"
 
@@ -456,6 +488,8 @@ private fun AppGraph.Ready.boardFeed(
     toolIdentifier: String,
     units: suspend () -> ZillitResult<List<HomeUnit>>,
     service: ZillitService = ZillitService.Units,
+    /** The `notification:read` module; defaults to `<tool>_label`, which Accounts breaks. */
+    readModule: String = "${toolIdentifier.removeSuffix("_tool")}_label",
 ): HomeFeedViewModel {
     val repository = HomeFeedRepositoryImpl(
         apiClient = apiClient,
@@ -476,9 +510,7 @@ private fun AppGraph.Ready.boardFeed(
         media = homeMediaCapture(this),
         // The board's read receipt names its own module label — the web
         // sends `info_label` / `confidential_info_label` here, not `home_label`.
-        onBoardViewed = { unitId ->
-            emitSegmentRead(this, segment = unitId, module = "${toolIdentifier.removeSuffix("_tool")}_label")
-        },
+        onBoardViewed = { unitId -> emitSegmentRead(this, segment = unitId, module = readModule) },
         loadRecentMentions = {
             preferences.get(ZillitPreferences.RecentMentions).split('\n').filter { it.isNotBlank() }
         },

@@ -61,6 +61,9 @@ class ProjectPermissions(
     private val byIdentifier: Map<String, ToolAccess> =
         tools.associateBy { it.identifier }
 
+    /** Every tool the server issued, as issued — for keeping a copy of the answer. */
+    val tools: List<ToolAccess> get() = byIdentifier.values.toList()
+
     /**
      * Rights for [identifier], with admin bypass applied.
      *

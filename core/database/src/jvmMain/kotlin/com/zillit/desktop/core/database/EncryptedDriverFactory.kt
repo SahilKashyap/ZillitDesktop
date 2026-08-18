@@ -38,6 +38,7 @@ object EncryptedDriverFactory {
         location: DatabaseLocation,
         keyProvider: DatabaseKeyProvider,
         schema: app.cash.sqldelight.db.SqlSchema<app.cash.sqldelight.db.QueryResult.Value<Unit>>,
+        policy: SchemaPolicy = SchemaPolicy.RebuildOnChange,
     ): ZillitResult<SqlDriver> {
         val key = when (val result = keyProvider.key()) {
             is ZillitResult.Success -> result.data
@@ -68,18 +69,44 @@ object EncryptedDriverFactory {
             // rather than as a failure to create tables.
             driver.execute(null, "SELECT count(*) FROM sqlite_master", 0)
 
-            if (isNew) schema.create(driver).value else driver.reconcileSchema(schema)
+            driver.applySchema(schema, policy, isNew)
 
             ZillitResult.Success(driver)
+        } catch (schema: SchemaException) {
+            ZillitLog.e(TAG, schema.cause) { "Could not bring the database schema up to date" }
+            ZillitResult.Failure(ZillitError.Storage("$SCHEMA_FAILURE_PREFIX${schema.cause?.message}"))
         } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
             ZillitLog.e(TAG, throwable) { "Could not open the database" }
             ZillitResult.Failure(
-                ZillitError.Storage("open failed: ${throwable::class.simpleName}: ${throwable.message}"),
+                ZillitError.Storage("$OPEN_FAILURE_PREFIX${throwable::class.simpleName}: ${throwable.message}"),
             )
         } finally {
             // The driver has copied what it needs; do not leave the key in the
             // heap (plan §8.4).
             key.fill(0)
+        }
+    }
+
+    /**
+     * Brings the freshly opened file to the current schema under [policy].
+     *
+     * A failure here is distinguished from "open failed" on purpose: a caller
+     * that recreates a file it cannot open must not do that to a file it
+     * opened fine but cannot bring up to date.
+     */
+    private fun SqlDriver.applySchema(
+        schema: app.cash.sqldelight.db.SqlSchema<app.cash.sqldelight.db.QueryResult.Value<Unit>>,
+        policy: SchemaPolicy,
+        isNew: Boolean,
+    ) {
+        try {
+            when (policy) {
+                SchemaPolicy.RebuildOnChange -> if (isNew) schema.create(this).value else reconcileSchema(schema)
+                SchemaPolicy.MigrateForward -> migrateForward(schema, isNew)
+            }
+        } catch (@Suppress("TooGenericExceptionCaught") schemaFailure: Throwable) {
+            close()
+            throw SchemaException(schemaFailure)
         }
     }
 
@@ -149,6 +176,96 @@ object EncryptedDriverFactory {
 
     const val KEY_BYTES = 32
     const val TAG = "Database"
+
+    /** How a failure to open at all is reported — the file or the key. */
+    const val OPEN_FAILURE_PREFIX = "open failed: "
+
+    /** How a schema that could not be applied is reported — the file is fine. */
+    const val SCHEMA_FAILURE_PREFIX = "schema: "
+}
+
+/**
+ * What to do with a file whose tables are not the current schema.
+ *
+ * Two answers, for two kinds of data. Chosen per database, not per launch:
+ * the cache and the durable store are different files precisely so each can
+ * have the policy its contents deserve.
+ */
+sealed interface SchemaPolicy {
+    /**
+     * Cache semantics: any difference drops every table and recreates them.
+     * Right for data the server still has; catastrophic for anything else.
+     */
+    data object RebuildOnChange : SchemaPolicy
+
+    /**
+     * Durable semantics: the file's `user_version` says which schema it has,
+     * migrations bring it forward one version at a time, and a file from a
+     * *newer* build is refused rather than touched. Nothing is ever dropped.
+     */
+    data object MigrateForward : SchemaPolicy
+}
+
+/** A schema step that did not apply; the file itself opened. */
+private class SchemaException(cause: Throwable) : RuntimeException(cause)
+
+/**
+ * Brings a durable file to the current schema by migration.
+ *
+ * `user_version` is the source of truth. A new file gets the current schema
+ * and the current version in one go. An existing file at an older version is
+ * migrated forward, and the version stamped only after the migration ran, so
+ * an interruption re-runs it rather than skipping it. A file that reports a
+ * version this build does not know is left exactly as it is: the user has run
+ * a newer Zillit on this machine, and the right answer is to say so, not to
+ * guess at columns.
+ *
+ * A file at version 0 with tables in it is one whose creator crashed between
+ * creating the schema and stamping it — before this code, only version 1 ever
+ * existed unstamped, so it is treated as 1 and migrated from there.
+ */
+private fun SqlDriver.migrateForward(
+    schema: app.cash.sqldelight.db.SqlSchema<app.cash.sqldelight.db.QueryResult.Value<Unit>>,
+    isNew: Boolean,
+) {
+    val target = schema.version
+    if (isNew || !hasTables()) {
+        schema.create(this).value
+        setUserVersion(target)
+        return
+    }
+    val current = userVersion().takeIf { it > 0 } ?: 1L
+    when {
+        current == target -> Unit
+        current < target -> {
+            ZillitLog.i(EncryptedDriverFactory.TAG) { "migrating durable store $current → $target" }
+            schema.migrate(this, current, target).value
+            setUserVersion(target)
+        }
+        else -> error("database is at schema version $current, newer than this build's $target")
+    }
+}
+
+private fun SqlDriver.userVersion(): Long {
+    var version = 0L
+    executeQuery(null, "PRAGMA user_version", { cursor ->
+        if (cursor.next().value) version = cursor.getLong(0) ?: 0L
+        app.cash.sqldelight.db.QueryResult.Unit
+    }, 0)
+    return version
+}
+
+private fun SqlDriver.setUserVersion(version: Long) {
+    execute(null, "PRAGMA user_version = $version", 0)
+}
+
+private fun SqlDriver.hasTables(): Boolean {
+    var count = 0L
+    executeQuery(null, "SELECT count(*) FROM sqlite_master WHERE type = 'table'", { cursor ->
+        if (cursor.next().value) count = cursor.getLong(0) ?: 0L
+        app.cash.sqldelight.db.QueryResult.Unit
+    }, 0)
+    return count > 0
 }
 
 /**

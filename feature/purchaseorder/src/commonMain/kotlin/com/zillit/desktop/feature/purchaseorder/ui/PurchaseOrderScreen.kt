@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
@@ -51,6 +52,7 @@ import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
+import com.zillit.desktop.feature.purchaseorder.domain.LocalCopy
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 
 /**
@@ -100,6 +102,7 @@ fun PurchaseOrderScreen(
                 )
             }
             ZillitDivider()
+            OfflineBanner(state)
 
             val error = state.error
             when {
@@ -324,7 +327,9 @@ private fun OrderDetail(state: PoUiState, order: PurchaseOrder, onEvent: (PoEven
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 ZillitText(
-                    text = order.number.ifBlank { "Order ${order.id.take(ID_FALLBACK)}" },
+                    text = order.number.ifBlank {
+                        if (order.isLocalOnly) "New order" else "Order ${order.id.take(ID_FALLBACK)}"
+                    },
                     style = ZillitTheme.typography.titleMedium,
                 )
                 ZillitText(
@@ -333,8 +338,10 @@ private fun OrderDetail(state: PoUiState, order: PurchaseOrder, onEvent: (PoEven
                     color = ZillitTheme.colors.textSecondary,
                 )
             }
-            ZillitStatusPill(order.status.label, tone = order.status.tone, dot = true)
+            OrderStatusPill(order)
         }
+
+        order.local?.let { LocalOrderNotice(it) }
 
         ZillitText(
             text = Money.format(order.total, order.currency),
@@ -418,6 +425,8 @@ private fun OrderDetail(state: PoUiState, order: PurchaseOrder, onEvent: (PoEven
 @Suppress("LongMethod") // A rights table; flattening it is what makes it readable.
 @Composable
 private fun OrderActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEvent) -> Unit) {
+    // Nothing on the server to act on yet; the outbox owns retry and discard.
+    if (order.isLocalOnly) return
     val actions = buildList {
         // Approvals belong to whoever the chain routed it to; the queue is that
         // routing, so the buttons are offered there rather than everywhere.
@@ -616,8 +625,16 @@ private fun RaisePage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.padding(ZillitTheme.spacing.xs))
+            if (state.offline) {
+                ZillitNotice(
+                    text = "You're offline. The order will be saved on this computer and raised automatically " +
+                        "when you're back — you'll see it under My Orders as \"Waiting to send\".",
+                    tone = StatusTone.InTransit,
+                    icon = ZillitIcons.Info,
+                )
+            }
             ZillitButton(
-                text = "Raise this order",
+                text = if (state.offline) "Save and raise when online" else "Raise this order",
                 onClick = { onEvent(PoEvent.SubmitDraft) },
                 leadingIcon = ZillitIcons.Send,
                 loading = state.busy,
@@ -739,27 +756,77 @@ private fun PoPrompt?.isDestructive(): Boolean = when (this) {
 internal val PoStatus.tone: StatusTone
     get() = when (this) {
         PoStatus.Draft, PoStatus.Unknown -> StatusTone.Neutral
-        PoStatus.Submitted, PoStatus.AwaitingApproval -> StatusTone.Pending
-        PoStatus.Approved -> StatusTone.Ready
+        PoStatus.AwaitingApproval -> StatusTone.Pending
+        PoStatus.Approved, PoStatus.AccountsEntered -> StatusTone.Ready
+        PoStatus.Queued -> StatusTone.Progress
         PoStatus.Posted -> StatusTone.Done
-        PoStatus.PartiallyInvoiced -> StatusTone.Progress
         PoStatus.Rejected, PoStatus.Cancelled -> StatusTone.Rejected
-        PoStatus.Queried -> StatusTone.Pending
         PoStatus.Closed -> StatusTone.Neutral
     }
 
+/**
+ * The line under the tabs when the list is a saved copy: the network is gone
+ * and these are the orders as of the last time it answered.
+ */
+@Composable
+private fun OfflineBanner(state: PoUiState) {
+    val since = state.staleSince ?: return
+    ZillitNotice(
+        text = "You're offline — showing orders saved ${EpochDate.dateTime(since)}. " +
+            "They'll refresh when the connection is back.",
+        tone = StatusTone.Pending,
+        icon = ZillitIcons.Info,
+        modifier = Modifier.padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm),
+    )
+}
+
+/** Why a local-only order has no number, and what to do if it could not be sent. */
+@Composable
+private fun LocalOrderNotice(local: LocalCopy) {
+    ZillitNotice(
+        text = if (local.failed) {
+            "This order could not be sent: ${local.error ?: "the server refused it"}. " +
+                "Retry or discard it from Pending changes in the status bar."
+        } else {
+            "This order is saved on this computer and will be raised on the server " +
+                "as soon as you're back online. It has no number until then."
+        },
+        tone = if (local.failed) StatusTone.Rejected else StatusTone.InTransit,
+        icon = ZillitIcons.Info,
+    )
+}
+
+/**
+ * The status pill, with one exception: an order that exists only on this
+ * computer is not "Draft" — it is waiting to be sent, or could not be, and
+ * the pill says which.
+ */
+@Composable
+private fun OrderStatusPill(order: PurchaseOrder) {
+    val local = order.local
+    when {
+        local == null -> ZillitStatusPill(order.status.label, tone = order.status.tone, dot = true)
+        local.failed -> ZillitStatusPill("Not sent", tone = StatusTone.Rejected, dot = true)
+        else -> ZillitStatusPill("Waiting to send", tone = StatusTone.InTransit, dot = true)
+    }
+}
+
 @Suppress("MagicNumber") // Column proportions.
 private fun orderColumns(): List<TableColumn<PurchaseOrder>> = listOf(
-    textColumn("Number", ColumnWidth.Weight(1f)) { it.number.ifBlank { it.id.take(ID_FALLBACK) } },
+    textColumn("Number", ColumnWidth.Weight(1f)) { it.number.ifBlank { it.numberFallback() } },
     textColumn("Vendor", ColumnWidth.Weight(1.4f)) { it.vendorName.ifBlank { "—" } },
     textColumn("Description", ColumnWidth.Weight(1.6f), muted = true) { it.description.ifBlank { "—" } },
     textColumn("Total", ColumnWidth.Weight(1f), numeric = true) { Money.format(it.total, it.currency) },
     TableColumn(
         header = "Status",
         width = ColumnWidth.Fixed(STATUS_COLUMN),
-        cell = { ZillitStatusPill(it.status.label, tone = it.status.tone, dot = true) },
+        cell = { OrderStatusPill(it) },
     ),
 )
+
+/** What to show where the number would be: a local row has none yet. */
+private fun PurchaseOrder.numberFallback(): String =
+    if (isLocalOnly) "Not sent yet" else id.take(ID_FALLBACK)
 
 private fun selectableColumns(
     state: PoUiState,

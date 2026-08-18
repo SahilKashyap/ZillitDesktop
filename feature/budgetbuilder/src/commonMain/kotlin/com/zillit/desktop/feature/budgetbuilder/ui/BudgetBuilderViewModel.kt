@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.budgetbuilder.ui
 
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.budgetbuilder.domain.BudgetBuilderViewer
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The launch page's view model.
@@ -19,9 +20,15 @@ class BudgetBuilderViewModel(
      */
     private val resolveViewer: () -> BudgetBuilderViewer,
     private val configured: Boolean,
+    /** Whether the network is reachable; null means "assume yes". */
+    online: StateFlow<Boolean>? = null,
 ) : ZillitViewModel<BudgetBuilderUiState, BudgetBuilderEvent, BudgetBuilderEffect>(
     BudgetBuilderUiState(),
 ) {
+
+    init {
+        online?.let { flow -> launch { flow.collect { up -> setState { copy(offline = !up) } } } }
+    }
 
     fun start() {
         // Resolved before entering the reducer: inside it the State receiver's
@@ -44,7 +51,7 @@ class BudgetBuilderViewModel(
         // answer is the one that should decide.
         val resolved = resolveViewer()
         setState { copy(viewer = resolved) }
-        if (!configured || resolved.isBlocked) return
+        if (!configured || resolved.isBlocked || currentState.offline) return
         sendEffect(BudgetBuilderEffect.Launch)
     }
 }

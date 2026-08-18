@@ -4,11 +4,13 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.timecard.domain.DayType
 import com.zillit.desktop.feature.timecard.domain.Deduction
+import com.zillit.desktop.feature.timecard.domain.LocalWeek
 import com.zillit.desktop.feature.timecard.domain.Timecard
 import com.zillit.desktop.feature.timecard.domain.TimecardDay
 import com.zillit.desktop.feature.timecard.domain.TimecardDraft
@@ -172,6 +174,72 @@ class TimecardScreenRenderTest {
             onAllNodesWithText("Meal penalty").assertCountEquals(2)
             // Per-unit and unclaimed, so it appears once and stays offered.
             onNodeWithText("Mileage").assertExists()
+        }
+    }
+
+    @Test
+    fun `a week saved offline shows as waiting and offers only submit`() {
+        val local = week("local:op-1", TimecardStatus.Draft).copy(local = LocalWeek("op-1", failed = false))
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    TimecardScreen(
+                        state = state(TimecardDestination.MyWeeks, crew).copy(
+                            timecards = emptyList(),
+                            localTimecards = listOf(local),
+                            selectedId = local.id,
+                        ),
+                        onEvent = {},
+                    )
+                }
+            }
+            onAllNodesWithText("Waiting to send").onFirst().assertExists()
+            onNodeWithText(
+                "This week is saved on this computer and will be sent to the server as soon as you're back online.",
+            ).assertExists()
+            onNodeWithText("Submit").assertExists()
+        }
+
+        val queued = local.copy(local = LocalWeek("op-1", failed = false, submitQueued = true))
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = true) {
+                    TimecardScreen(
+                        state = state(TimecardDestination.MyWeeks, crew).copy(
+                            timecards = emptyList(),
+                            localTimecards = listOf(queued),
+                            selectedId = queued.id,
+                        ),
+                        onEvent = {},
+                    )
+                }
+            }
+            onAllNodesWithText("Submitting when online").onFirst().assertExists()
+            onNodeWithText("Submit").assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun `offline, the list is dated and the editor says what will happen`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    TimecardScreen(
+                        state = state(TimecardDestination.MyWeeks, crew)
+                            .copy(offline = true, staleSince = 1_754_000_000_000),
+                        onEvent = {},
+                    )
+                }
+            }
+            onNodeWithText("You're offline — showing timecards saved", substring = true).assertExists()
+        }
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    TimecardScreen(state = state(TimecardDestination.Edit, crew).copy(offline = true), onEvent = {})
+                }
+            }
+            onNodeWithText("Save and send when online").assertExists()
         }
     }
 

@@ -50,8 +50,9 @@ object ToolCatalogue {
     private val known: Map<String, Pair<ImageVector, WorkspaceRoute>> = mapOf(
         "account_hub_tool" to
             (ZillitToolIcons.PurchaseOrder to WorkspaceRoute.Tool("/film-tools/account-hub")),
+        // "Message Accounts" — the web mounts it at `/film-tools/accounts`.
         "accounting_tool" to
-            (ZillitToolIcons.Account to WorkspaceRoute.Tool("/film-tools/accounting")),
+            (ZillitToolIcons.Account to WorkspaceRoute.Tool("/film-tools/accounts")),
         "ad_dashboard_tool" to
             (ZillitToolIcons.AdDash to WorkspaceRoute.Tool("/film-tools/ad-dashboard")),
         "asset_report_tool" to

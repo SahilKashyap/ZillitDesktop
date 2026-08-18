@@ -387,7 +387,9 @@ class CashExpensesViewModel(
             return
         }
 
-        act("Receipts submitted", resetDraft = true) { repository.submitReceipts(request) }
+        act("Receipts submitted", onSuccess = { copy(draft = SubmitDraft()) }) {
+            repository.submitReceipts(request)
+        }
     }
 
     private fun submitFloatRequest() {
@@ -410,8 +412,12 @@ class CashExpensesViewModel(
             duration = draft.duration.takeIf { it.isNotBlank() },
             durationType = draft.durationType,
         )
-        act("Float requested") { repository.requestFloat(request) }
-        setState { copy(floatDraft = FloatRequestDraft()) }
+        // The form is cleared only when the request lands: clearing it here,
+        // before the answer, threw the amount and purpose away on every
+        // failed save.
+        act("Float requested", onSuccess = { copy(floatDraft = FloatRequestDraft()) }) {
+            repository.requestFloat(request)
+        }
     }
 
     /**
@@ -473,8 +479,11 @@ class CashExpensesViewModel(
         }
 
         val lines = LineItemEditor.toWire(draft.lines, newLineId)
-        act("Coding saved") { repository.saveClaimLines(draft.batchId, draft.claimId, lines) }
-        setState { copy(coding = null) }
+        // The editor closes only on a saved coding; a failed save keeps the
+        // hand-entered lines open for a retry instead of discarding them.
+        act("Coding saved", onSuccess = { copy(coding = null) }) {
+            repository.saveClaimLines(draft.batchId, draft.claimId, lines)
+        }
     }
 
     private fun saveSettings() {
@@ -622,19 +631,16 @@ class CashExpensesViewModel(
      */
     private fun act(
         success: String,
-        resetDraft: Boolean = false,
+        // Applied only once the server has said yes — a submit clears its
+        // draft here, never before the round trip, so a failed save (offline,
+        // rejected, timed out) leaves the typing where the user can retry it.
+        onSuccess: CashUiState.() -> CashUiState = { this },
         block: suspend () -> ZillitResult<Unit>,
     ) = launch {
         setState { copy(busy = true) }
         when (val result = block()) {
             is ZillitResult.Success -> {
-                setState {
-                    copy(
-                        busy = false,
-                        notice = success,
-                        draft = if (resetDraft) SubmitDraft() else draft,
-                    )
-                }
+                setState { onSuccess().copy(busy = false, notice = success) }
                 load(currentState.destination)
             }
 

@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.auth.domain.DeviceStatus
 import com.zillit.desktop.feature.auth.domain.Project
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.auth.domain.ProjectFilter
+import com.zillit.desktop.feature.auth.domain.ProjectListStore
 import com.zillit.desktop.feature.auth.domain.ProjectRepository
 import com.zillit.desktop.feature.auth.domain.filterProjects
 import com.zillit.desktop.feature.auth.domain.QrLoginRepository
@@ -97,6 +98,11 @@ data class AuthUiState(
     val activeProject: Project? = null,
     val isBusy: Boolean = false,
     val error: String? = null,
+    /**
+     * The list on screen is the last one saved on this device, because the
+     * server could not be reached. Cleared the moment a refresh lands.
+     */
+    val isShowingSavedProjects: Boolean = false,
     val isCreatingProduction: Boolean = false,
     /** The join dialog is open; it owns its own state. */
     val isJoining: Boolean = false,
@@ -193,6 +199,12 @@ class AuthViewModel(
      * before a production is open. Hosts wire it; empty keeps cards bare.
      */
     private val projectUnread: suspend () -> Map<String, Int> = { emptyMap() },
+    /** The last list this device was given; null when there is no local cache. */
+    private val projectListStore: ProjectListStore? = null,
+    /** Whether the API can be reached right now. Hosts wire the connectivity monitor; true keeps every open live. */
+    private val isOnline: () -> Boolean = { true },
+    /** Whether a production was visited before on this computer, so it can open from what was saved. */
+    private val hasOfflineData: (projectId: String) -> Boolean = { true },
 ) : ZillitViewModel<AuthUiState, AuthEvent, AuthEffect>(AuthUiState()) {
 
     /**
@@ -326,11 +338,30 @@ class AuthViewModel(
         )
     }
 
+    /**
+     * Offline-first: whatever this device was last given goes on screen at
+     * once, the server's answer replaces it, and if the server cannot be
+     * reached the saved list stays — with a note saying so — rather than
+     * an empty picker telling someone they are on no production.
+     */
     private fun loadProjects() {
+        val saved = projectListStore?.load().orEmpty()
+        if (saved.isNotEmpty() && currentState.projects.isEmpty()) {
+            setState { copy(step = AuthStep.ProjectSelection, projects = saved, isShowingSavedProjects = true) }
+        }
         launchResult(
             block = { projectRepository.listProjects() },
             onSuccess = { projects ->
-                setState { copy(isBusy = false, step = AuthStep.ProjectSelection, projects = projects) }
+                projectListStore?.save(projects)
+                setState {
+                    copy(
+                        isBusy = false,
+                        step = AuthStep.ProjectSelection,
+                        projects = projects,
+                        isShowingSavedProjects = false,
+                        error = null,
+                    )
+                }
                 // Which production has news — asked alongside the list, not
                 // before it: cards render immediately and the counts join.
                 launch {
@@ -341,7 +372,16 @@ class AuthViewModel(
                 // choose; making the user pick from a list of one is friction.
                 projects.singleOrNull()?.let(::selectProject)
             },
-            onError = { fail(it) },
+            onError = { error ->
+                // A saved list beats an error banner over an empty grid: the
+                // productions are still real, only the refresh failed.
+                if (currentState.projects.isNotEmpty() && currentState.isShowingSavedProjects) {
+                    ZillitLog.w(TAG) { "project list refresh failed, keeping the saved list: ${error.technical}" }
+                    setState { copy(isBusy = false) }
+                } else {
+                    fail(error)
+                }
+            },
         )
     }
 
@@ -352,6 +392,15 @@ class AuthViewModel(
         // arrives twice.
         if (currentState.isBusy || currentState.activeProject?.id == project.id) {
             ZillitLog.d(TAG) { "ignoring a repeat open of ${project.id}" }
+            return
+        }
+
+        // With no network, only a production this computer has seen before can
+        // open — everything inside it would be drawn from what was saved. Said
+        // at the click, not after a screen full of errors.
+        if (!isOnline() && !hasOfflineData(project.id)) {
+            ZillitLog.i(TAG) { "offline and nothing saved for ${project.id}; not opening" }
+            setState { copy(isBusy = false, error = NO_OFFLINE_DATA) }
             return
         }
 
@@ -586,6 +635,7 @@ class AuthViewModel(
 
         /** Says what happened and what to do, without blaming the user. */
         const val SESSION_EXPIRED_MESSAGE = "Your session has ended. Scan the code to sign in again."
+        const val NO_OFFLINE_DATA = "No offline data available for this production. Connect to the internet to open it."
     }
 }
 

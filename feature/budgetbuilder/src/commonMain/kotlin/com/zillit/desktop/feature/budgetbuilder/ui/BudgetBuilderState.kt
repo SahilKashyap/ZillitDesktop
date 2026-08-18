@@ -19,6 +19,13 @@ data class BudgetBuilderUiState(
      * window.
      */
     val configured: Boolean = true,
+    /**
+     * Whether the network is gone. Budget Builder is a hosted application in
+     * an embedded browser, talking to its own service — there is nothing on
+     * this computer to show; the launch page says so instead of opening a
+     * window that cannot load.
+     */
+    val offline: Boolean = false,
 )
 
 sealed interface BudgetBuilderEvent {

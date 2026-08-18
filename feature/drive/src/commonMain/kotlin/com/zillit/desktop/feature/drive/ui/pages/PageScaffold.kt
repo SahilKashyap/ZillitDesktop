@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 
@@ -22,11 +23,15 @@ import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 @Composable
 fun FixedPage(
     modifier: Modifier = Modifier,
+    /** The widget passes less; a 500px window has no room for a 32px gutter. */
+    padding: Dp = ZillitTheme.spacing.xl,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
-        modifier = modifier.fillMaxSize().padding(ZillitTheme.spacing.xl),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
+        modifier = modifier.fillMaxSize().padding(padding),
+        verticalArrangement = Arrangement.spacedBy(
+            if (padding < ZillitTheme.spacing.xl) ZillitTheme.spacing.sm else ZillitTheme.spacing.lg,
+        ),
         content = content,
     )
 }

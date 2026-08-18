@@ -116,51 +116,106 @@ private val QUERY_POINT = Regex("[?&]q=$COORD(?:%2C|,)$COORD")
 private val AT_POINT = Regex("@$COORD,$COORD")
 
 /**
- * Whether this user may edit or delete a reply.
+ * Why an edit or delete is refused — or [Allowed].
  *
- * The web's `canSelectMessage`, reduced to what it actually enforces: an admin
- * may touch anything; everyone else only their own replies, and only within
- * thirty minutes of writing — after that the thread is a record, not a draft.
- * One rule for both operations because the web applies the same two checks to
- * both.
+ * Named outcomes rather than a boolean because the refusal is what the user
+ * sees: both phones toast a different sentence for "not yours" and "too old",
+ * and the desktop should say the same things (Android `Home.kt:2128-2136`,
+ * iOS `ProductionVC+Ext.swift:1021-1030`).
  */
-fun NoticeComment.canBeModifiedBy(
-    userId: String?,
-    isAdmin: Boolean,
-    nowMillis: Long,
-): Boolean = when {
-    isAdmin -> true
-    userId == null || authorId != userId -> false
-    else -> nowMillis - createdAtMillis <= MODIFY_WINDOW_MILLIS
+enum class ModifyVerdict {
+    Allowed,
+
+    /** Only the author may; admins get no exception for *editing*. */
+    NotOwner,
+
+    /** Past [MODIFY_WINDOW_MILLIS] since posting. */
+    WindowClosed,
+
+    /** Not on the server yet — nothing to address. Retry is its own affordance. */
+    NotSent,
+    ;
+
+    val allowed: Boolean get() = this == Allowed
 }
 
 /**
- * The same rule, for a post.
+ * Whether this user may edit a reply.
  *
- * One extra gate: only a post the server has taken can be edited or deleted —
- * an optimistic card still in flight has no server id to address, and its
- * failure path (retry) is its own affordance.
+ * Owner only, and only within thirty minutes of writing — after that the
+ * thread is a record, not a draft. **No admin override**: an admin cannot
+ * rewrite what someone else said, on either phone (Android `canEditMessage`,
+ * `Home.kt:2343-2352`; iOS `ProductionVC+CommentAction.swift:124-128`).
  */
-fun Notice.canBeModifiedBy(
-    userId: String?,
-    isAdmin: Boolean,
-    nowMillis: Long,
-): Boolean = when {
-    sendState != NoticeSendState.Sent -> false
-    isAdmin -> true
-    userId == null || authorId != userId -> false
-    else -> nowMillis - createdAtMillis <= MODIFY_WINDOW_MILLIS
+fun NoticeComment.editVerdict(userId: String?, nowMillis: Long): ModifyVerdict = when {
+    userId == null || authorId != userId -> ModifyVerdict.NotOwner
+    nowMillis - createdAtMillis > MODIFY_WINDOW_MILLIS -> ModifyVerdict.WindowClosed
+    else -> ModifyVerdict.Allowed
 }
 
-/** Thirty minutes, matching the web's `isWithin30MinRange`. */
+/**
+ * Whether this user may delete a reply.
+ *
+ * An admin may remove anything at any age — moderation has no clock. Anyone
+ * else, only their own and only within the window (Android `canDeleteMessage`,
+ * `Home.kt:2363-2384`; iOS `ProductionVC+CommentAction.swift:92-114`).
+ */
+fun NoticeComment.deleteVerdict(userId: String?, isAdmin: Boolean, nowMillis: Long): ModifyVerdict =
+    when {
+        isAdmin -> ModifyVerdict.Allowed
+        userId == null || authorId != userId -> ModifyVerdict.NotOwner
+        nowMillis - createdAtMillis > MODIFY_WINDOW_MILLIS -> ModifyVerdict.WindowClosed
+        else -> ModifyVerdict.Allowed
+    }
+
+/**
+ * The edit rule for a post — as for a reply, plus one gate: only a post the
+ * server has taken can be edited; an optimistic card still in flight has no
+ * server id to address.
+ */
+fun Notice.editVerdict(userId: String?, nowMillis: Long): ModifyVerdict = when {
+    sendState != NoticeSendState.Sent -> ModifyVerdict.NotSent
+    userId == null || authorId != userId -> ModifyVerdict.NotOwner
+    nowMillis - createdAtMillis > MODIFY_WINDOW_MILLIS -> ModifyVerdict.WindowClosed
+    else -> ModifyVerdict.Allowed
+}
+
+/** The delete rule for a post: admin any age, owner within the window, sent only. */
+fun Notice.deleteVerdict(userId: String?, isAdmin: Boolean, nowMillis: Long): ModifyVerdict = when {
+    sendState != NoticeSendState.Sent -> ModifyVerdict.NotSent
+    isAdmin -> ModifyVerdict.Allowed
+    userId == null || authorId != userId -> ModifyVerdict.NotOwner
+    nowMillis - createdAtMillis > MODIFY_WINDOW_MILLIS -> ModifyVerdict.WindowClosed
+    else -> ModifyVerdict.Allowed
+}
+
+/**
+ * Whether the user has any business with this post's Edit and Delete items at
+ * all — the author, or an admin. Untimed on purpose: the item stays in the
+ * menu after the window closes and the click explains why it will not act,
+ * which is how Android teaches the rule (its toast, not a vanished item).
+ */
+fun Notice.isActionableBy(userId: String?, isAdmin: Boolean): Boolean =
+    sendState == NoticeSendState.Sent && (isAdmin || (userId != null && authorId == userId))
+
+/** The same, for a reply. */
+fun NoticeComment.isActionableBy(userId: String?, isAdmin: Boolean): Boolean =
+    isAdmin || (userId != null && authorId == userId)
+
+/**
+ * Thirty minutes — `Constants.DIFFERENCE_IN_HOURS = 30` (minutes, despite the
+ * name) on Android, `minuteDiffFromEpoch() <= 30` on iOS.
+ */
 const val MODIFY_WINDOW_MILLIS: Long = 30 * 60 * 1000L
 
 /**
- * Orders a feed for display: pinned first, then oldest to newest.
+ * Orders a feed for display: oldest to newest.
  *
  * Newest **last**, like a conversation rather than a news feed — both clients
  * scroll to the bottom on open, and reversing that here would put the tail of
- * the board at the top.
+ * the board at the top. Pinned posts keep their place; the banner over the
+ * board ([pinnedForBanner]) is what keeps them in view — floating them to the
+ * top reshuffled the conversation and read as a second board.
  *
  * ## Why the ordering key differs by mode
  *
@@ -170,10 +225,7 @@ const val MODIFY_WINDOW_MILLIS: Long = 30 * 60 * 1000L
  * it (`NoticesV2:78-82`; Android `HomeVm:434`).
  */
 fun List<Notice>.forDisplay(history: Boolean = false): List<Notice> =
-    sortedWith(
-        compareByDescending<Notice> { it.isPinned }
-            .thenBy { if (history) it.createdAtMillis else it.orderingTimestamp },
-    )
+    sortedBy { if (history) it.createdAtMillis else it.orderingTimestamp }
 
 /** `updated` when the server sent one, else `created` — never 0, which would sort to the top. */
 private val Notice.orderingTimestamp: Long

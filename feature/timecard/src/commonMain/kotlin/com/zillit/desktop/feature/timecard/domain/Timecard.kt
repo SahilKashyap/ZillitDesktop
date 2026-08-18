@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.timecard.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.serialization.Serializable
 
 /**
  * One crew member's week.
@@ -8,6 +9,7 @@ import com.zillit.desktop.core.common.ZillitResult
  * The unit of everything in this tool: hours are entered against a week,
  * approved as a week, and paid as a week. A day never moves on its own.
  */
+@Serializable
 data class Timecard(
     val id: String,
     val userId: String,
@@ -34,7 +36,16 @@ data class Timecard(
     val paidAt: Long?,
     val updatedAt: Long?,
     val locked: Boolean = false,
+    /**
+     * Set when this week exists only on this computer so far — saved while
+     * offline and waiting in the outbox. It has no server id ([id] is the
+     * local operation's) and nothing can be done to it but wait or submit it
+     * into the same queue.
+     */
+    val local: LocalWeek? = null,
 ) {
+    val isLocalOnly: Boolean get() = local != null
+
     /** Hours actually worked, across the week. */
     val workedHours: Double get() = days.sumOf { it.workedHours }
 
@@ -56,7 +67,19 @@ data class Timecard(
     val isEditable: Boolean get() = !locked && status.isEditable
 }
 
+/** A week that has not reached the server: where it is in the outbox. */
+@Serializable
+data class LocalWeek(
+    val operationId: String,
+    /** True once the server refused it and it needs the user; false while it waits or sends. */
+    val failed: Boolean,
+    val error: String? = null,
+    /** True when a submit is queued behind the save. */
+    val submitQueued: Boolean = false,
+)
+
 /** One day of a week. */
+@Serializable
 data class TimecardDay(
     val date: Long?,
     val dayType: DayType,
@@ -70,6 +93,7 @@ data class TimecardDay(
 )
 
 /** What kind of day this was, which decides how it is paid. */
+@Serializable
 enum class DayType(val wire: String, val label: String) {
     Worked("worked", "Worked"),
     Travel("travel", "Travel"),
@@ -93,6 +117,7 @@ enum class DayType(val wire: String, val label: String) {
 }
 
 /** A per-day or per-week payment on top of the rate. */
+@Serializable
 data class Allowance(
     val code: String,
     val label: String,
@@ -109,6 +134,7 @@ data class Allowance(
  * "meal penalty" on one production is `MP` and on another `MEAL_PEN`, and a
  * free-text claim is one payroll cannot process.
  */
+@Serializable
 data class AllowanceType(
     val code: String,
     val label: String,
@@ -143,6 +169,7 @@ data class AllowanceType(
  * `3in5` is the one that surprises people: a five-day week that includes three
  * qualifying days pays the whole week's allowance, not three days of it.
  */
+@Serializable
 enum class AllowanceBasis(val wire: String) {
     Day("day"),
     Week("week"),
@@ -163,6 +190,7 @@ enum class AllowanceBasis(val wire: String) {
 }
 
 /** Which days an allowance may be claimed on. */
+@Serializable
 enum class AllowanceScope(val wire: String) {
     Shoot("shoot"),
     NonShoot("non_shoot"),
@@ -176,6 +204,7 @@ enum class AllowanceScope(val wire: String) {
 }
 
 /** Something taken off the week's gross. */
+@Serializable
 data class Deduction(
     val id: String?,
     val label: String,
@@ -184,6 +213,7 @@ data class Deduction(
 )
 
 /** Where a timecard is in the approval chain. */
+@Serializable
 enum class TimecardStatus(val wire: String, val label: String) {
     Draft("draft", "Draft"),
     Submitted("submitted", "Submitted"),
@@ -236,6 +266,7 @@ data class TimecardViewer(
 }
 
 /** What the server says this viewer may do, per `GET timecards/metadata`. */
+@Serializable
 data class TimecardMetadata(
     val isApprover: Boolean = false,
     val isFinalApprover: Boolean = false,
@@ -248,6 +279,7 @@ data class TimecardMetadata(
 )
 
 /** A week as the crew member filled it in. */
+@Serializable
 data class TimecardDraft(
     val timecardId: String?,
     val weekStarting: Long?,

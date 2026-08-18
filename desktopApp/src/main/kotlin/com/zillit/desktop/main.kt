@@ -133,7 +133,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import com.zillit.desktop.feature.home.ui.HomeUiState
 import com.zillit.desktop.feature.home.ui.HomeEvent
-import com.zillit.desktop.core.socket.SocketConnectionState
+import com.zillit.desktop.core.sync.SyncStatus
 import com.zillit.desktop.feature.home.data.pdfThumbnailJpeg
 import com.zillit.desktop.feature.email.domain.StorageKind
 import com.zillit.desktop.feature.email.domain.storageKindOf
@@ -193,6 +193,11 @@ import com.zillit.desktop.feature.pagedistribution.domain.DistributionTool
 import com.zillit.desktop.feature.pagedistribution.ui.DistributionToolProvider
 import com.zillit.desktop.feature.pagedistribution.ui.DistributionViewModel
 import com.zillit.desktop.feature.recce.ui.RecceToolProvider
+import com.zillit.desktop.feature.location.ui.LocationViewModel
+import com.zillit.desktop.feature.transportation.data.TransportRepositoryImpl
+import com.zillit.desktop.feature.transportation.domain.TransportViewer
+import com.zillit.desktop.feature.transportation.ui.TransportToolProvider
+import com.zillit.desktop.feature.transportation.ui.TransportViewModel
 import com.zillit.desktop.feature.recce.ui.RecceViewModel
 import com.zillit.desktop.feature.maps.ui.MapViewModel
 import com.zillit.desktop.feature.sides.data.SidesRepositoryImpl
@@ -227,15 +232,19 @@ import kotlinx.datetime.atStartOfDayIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
-fun main() {
+fun main(args: Array<String>) {
+    val wantsDriveWidget = DriveWidgetLaunch.requestedBy(args)
     // Before anything opens the database or the preference file — the point of
     // the guard is that the second copy touches neither. See SingleInstance.
     if (!SingleInstance.claim()) {
-        reportAlreadyRunning()
+        // A "Zillit Drive" shortcut while Zillit is up: hand the request to
+        // the running copy and go quietly — a dialog here would be noise.
+        if (wantsDriveWidget) DriveWidgetLaunch.signalRunningApp() else reportAlreadyRunning()
         return
     }
     installDockIcon()
-    runZillit()
+    DriveWidgetLaunch.installUriHandler()
+    runZillit(openDriveWidget = wantsDriveWidget)
 }
 
 /**
@@ -280,11 +289,15 @@ private fun installDockIcon() {
     }
 }
 
-private fun runZillit() = application {
+@Suppress("LongMethod") // The application's wiring, in the order it must happen; splitting it hides that.
+private fun runZillit(openDriveWidget: Boolean) = application {
     val graph = remember { AppGraph.build() }
     val preferences = remember {
         (graph as? AppGraph.Ready)?.preferences ?: PreferenceStoreFactory.create()
     }
+    // The sign-in state, at application level: the main window shows it, and
+    // the Drive widget lives or dies by it (see DriveWidgetWindow).
+    val authViewModel = remember(graph) { (graph as? AppGraph.Ready)?.let { buildAuth(it) } }
     // Armed here because this is the first point at which there is somewhere to
     // save to, and every way out of the app after it goes through the hook.
     remember(preferences) { Shutdown.install(preferences) }
@@ -296,7 +309,18 @@ private fun runZillit() = application {
     val scope = rememberCoroutineScope()
     val viewModels = rememberAppViewModels(graph, preferences, scope)
 
-    val registry = remember(viewModels) { buildRegistry(graph, viewModels, scope) }
+    // The Drive widget: open if asked for on the command line, or if it was
+    // open when the app last quit. Toggled from the tray, the Drive tool, and
+    // a second launch with `--drive-widget`.
+    var driveWidgetOpen by remember {
+        mutableStateOf(openDriveWidget || runBlocking { preferences.get(ZillitPreferences.DriveWidgetOpen) })
+    }
+    LaunchedEffect(driveWidgetOpen) { preferences.set(ZillitPreferences.DriveWidgetOpen, driveWidgetOpen) }
+    LaunchedEffect(Unit) { DriveWidgetLaunch.watch { driveWidgetOpen = true } }
+
+    val registry = remember(viewModels) {
+        buildRegistry(graph, viewModels, scope, openDriveWidget = { driveWidgetOpen = true })
+    }
 
     val workspaceViewModel = remember(registry) {
         WorkspaceViewModel(
@@ -314,12 +338,25 @@ private fun runZillit() = application {
 
     val trayState = rememberTrayState()
 
+    val driveWidgetHost = remember(graph, viewModels) {
+        (graph as? AppGraph.Ready)?.let { ready ->
+            DriveWidgetHost(
+                ready = ready,
+                scope = scope,
+                openPermissions = { viewModels.home?.state?.value?.permissions ?: ProjectPermissions.Empty },
+                openProjectId = { authViewModel?.currentState?.activeProject?.id },
+            )
+        }
+    }
+
     AppTray(
         trayState = trayState,
         graph = graph,
         preferences = preferences,
         windowState = windowState,
         frame = mainFrame,
+        driveWidgetOpen = driveWidgetOpen,
+        onToggleDriveWidget = { driveWidgetOpen = !driveWidgetOpen },
         // The same shutdown the close button runs, geometry and all — a second
         // way out of the app must not be a way to lose your window layout.
         onQuit = { quitZillit(windowState) },
@@ -346,9 +383,24 @@ private fun runZillit() = application {
         windowState = windowState,
         registry = registry,
         viewModel = workspaceViewModel,
+        authViewModel = authViewModel,
+        driveWidget = DriveWidgetMount(
+            host = driveWidgetHost,
+            open = driveWidgetOpen,
+            onClose = { driveWidgetOpen = false },
+            showMain = { showMainWindow(mainFrame, windowState) },
+        ),
         onFrame = { mainFrame = it },
     )
 }
+
+/** What the widget window needs from the application, gathered so ZillitWindows stays readable. */
+private class DriveWidgetMount(
+    val host: DriveWidgetHost?,
+    val open: Boolean,
+    val onClose: () -> Unit,
+    val showMain: () -> Unit,
+)
 
 /**
  * Ends the session.
@@ -392,6 +444,7 @@ private fun WindowState.geometry() = WindowGeometry(
  * The app's windows: the main frame, plus one OS window per torn-off tool.
  */
 @Composable
+@Suppress("LongParameterList", "LongMethod") // One parameter and one block per OS window; see the doc.
 private fun ApplicationScope.ZillitWindows(
     graph: AppGraph,
     viewModels: AppViewModels,
@@ -399,6 +452,8 @@ private fun ApplicationScope.ZillitWindows(
     windowState: WindowState,
     registry: ToolRegistry,
     viewModel: WorkspaceViewModel,
+    authViewModel: AuthViewModel?,
+    driveWidget: DriveWidgetMount,
     onFrame: (ComposeWindow) -> Unit,
 ) {
     val workspace by viewModel.state.collectAsState()
@@ -446,6 +501,7 @@ private fun ApplicationScope.ZillitWindows(
                 registry = registry,
                 viewModels = viewModels,
                 workspaceViewModel = viewModel,
+                authViewModel = authViewModel,
                 themeMode = themeMode,
                 onThemeModeChange = { mode ->
                     scope.launch { preferences.set(ZillitPreferences.ThemeMode, mode.name) }
@@ -468,6 +524,18 @@ private fun ApplicationScope.ZillitWindows(
     (graph as? AppGraph.Ready)?.let { ready ->
         CallPipWindow(ready = ready, calls = viewModels.calls, darkTheme = isDark)
     }
+
+    // The Drive widget: the desktop's own small window onto one production's
+    // drive, tied to the main window's session. See DriveWidgetWindow.
+    DriveWidgetWindow(
+        host = driveWidget.host,
+        auth = authViewModel,
+        preferences = preferences,
+        visible = driveWidget.open,
+        darkTheme = isDark,
+        onClose = driveWidget.onClose,
+        showMain = driveWidget.showMain,
+    )
 }
 
 /**
@@ -728,6 +796,18 @@ private fun ProjectScopedLoads(
             workspace.onEvent(WorkspaceEvent.Open(WorkspaceRoute.Tool("/home")))
         }
         viewModels.home?.onEvent(HomeEvent.Reload)
+        // Every notice board forgets the last production — its posts, its
+        // tab, and the half-typed draft, which used to carry over into the
+        // next production's composer. Home reloads at once (it is what opens);
+        // the other boards load when their tool is next shown.
+        listOf(
+            viewModels.homeFeed,
+            viewModels.info,
+            viewModels.confidentialInfo,
+            viewModels.reports,
+            viewModels.catering,
+            viewModels.accounts,
+        ).forEach { it?.onEvent(HomeFeedEvent.ProjectChanged) }
         viewModels.homeFeed?.onEvent(HomeFeedEvent.Load)
         viewModels.chat?.onEvent(ChatEvent.ProjectChanged)
         viewModels.email?.onEvent(EmailEvent.ProjectChanged)
@@ -824,11 +904,14 @@ private fun AuthEffects(
 }
 
 @Composable
+@Suppress("LongParameterList") // The screens' shared inputs; see the doc.
 private fun ZillitContent(
     graph: AppGraph,
     registry: ToolRegistry,
     viewModels: AppViewModels,
     workspaceViewModel: WorkspaceViewModel,
+    /** Built with the application (the widget shares it); null only when [graph] is not ready. */
+    authViewModel: AuthViewModel?,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
 ) {
@@ -847,7 +930,7 @@ private fun ZillitContent(
         return
     }
 
-    val authViewModel = remember { buildAuth(ready) }
+    val authViewModel = authViewModel ?: remember { buildAuth(ready) }
     val joinViewModel = remember { buildJoin(ready) }
     val createViewModel = remember {
         CreateProductionViewModel(
@@ -860,47 +943,12 @@ private fun ZillitContent(
 
     // Rights are per production. Reloading on switch rather than rebuilding the
     // ViewModel keeps one owner of the permission set for the session.
-    val homeState by (viewModels.home?.state ?: MutableStateFlow(HomeUiState())).collectAsState()
-    val badges by ready.badgeStore.counts.collectAsState()
     ProjectScopedLoads(authState.activeProject?.id, viewModels, workspaceViewModel, ready.badgeStore)
 
     BackgroundWork(ready, authViewModel, createViewModel, joinViewModel, viewModels, workspaceViewModel)
 
     if (authState.step == AuthStep.Complete) {
-        val socketState by ready.socketEvents.connectionState.collectAsState()
-
-        // Whether the rail offers Admin at all, and what is waiting behind it.
-        // Read from the settings state rather than the project: it is the same
-        // flag the admin page itself gates on, so the rail and the page cannot
-        // disagree about who is a coordinator.
-        val settingsState by viewModels.settings.state.collectAsState()
-
-        Box {
-            AppShell(
-            viewModel = workspaceViewModel,
-            registry = registry,
-            themeMode = themeMode,
-            onThemeModeChange = onThemeModeChange,
-            projectName = authState.activeProject?.name,
-            statusText = socketState.statusLabel(),
-            railItems = railItemsWith(
-                badges = badges,
-                isAdmin = settingsState.account.isAdmin,
-                pendingApprovals = settingsState.admin.pendingTotal,
-            ),
-            // Tabs read the same store as the rail — two sources would disagree
-            // the moment one missed an update.
-            badgeFor = { route -> badges.forWindow(route, homeState) },
-            onSwitchProject = {
-                // Windows are project-scoped (plan M3). Leaving them open would
-                // carry one production's content into another's workspace.
-                workspaceViewModel.onEvent(WorkspaceEvent.CloseAllForProjectSwitch)
-                authViewModel.onEvent(AuthEvent.SwitchProject)
-            },
-            )
-
-            CallSurface(ready, viewModels.calls)
-        }
+        SignedInShell(ready, registry, viewModels, workspaceViewModel, authViewModel, themeMode, onThemeModeChange)
     } else {
         AuthScreen(
             viewModel = authViewModel,
@@ -912,6 +960,71 @@ private fun ZillitContent(
             createViewModel = createViewModel,
             joinViewModel = joinViewModel,
         )
+    }
+}
+
+/**
+ * The frame around a signed-in session: rail, tabs, status bar, calls, and
+ * the sync queue's dialog. Split from [ZillitContent] so the auth branches
+ * and the shell branch each read on their own.
+ */
+@Composable
+private fun SignedInShell(
+    ready: AppGraph.Ready,
+    registry: ToolRegistry,
+    viewModels: AppViewModels,
+    workspaceViewModel: WorkspaceViewModel,
+    authViewModel: AuthViewModel,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+) {
+    val authState by authViewModel.state.collectAsState()
+    val homeState by (viewModels.home?.state ?: MutableStateFlow(HomeUiState())).collectAsState()
+    val badges by ready.badgeStore.counts.collectAsState()
+    val socketState by ready.socketEvents.connectionState.collectAsState()
+    val syncStatus by (ready.syncEngine?.status ?: MutableStateFlow(SyncStatus())).collectAsState()
+    var pendingChangesOpen by remember { mutableStateOf(false) }
+
+    // Whether the rail offers Admin at all, and what is waiting behind it.
+    // Read from the settings state rather than the project: it is the same
+    // flag the admin page itself gates on, so the rail and the page cannot
+    // disagree about who is a coordinator.
+    val settingsState by viewModels.settings.state.collectAsState()
+
+    Box {
+        AppShell(
+        viewModel = workspaceViewModel,
+        registry = registry,
+        themeMode = themeMode,
+        onThemeModeChange = onThemeModeChange,
+        projectName = authState.activeProject?.name,
+        statusText = statusText(socketState, syncStatus),
+        statusAction = syncStatusAction(syncStatus) { pendingChangesOpen = true },
+        railItems = railItemsWith(
+            badges = badges,
+            isAdmin = settingsState.account.isAdmin,
+            pendingApprovals = settingsState.admin.pendingTotal,
+        ),
+        // Tabs read the same store as the rail — two sources would disagree
+        // the moment one missed an update.
+        badgeFor = { route -> badges.forWindow(route, homeState) },
+        onSwitchProject = {
+            // Windows are project-scoped (plan M3). Leaving them open would
+            // carry one production's content into another's workspace.
+            workspaceViewModel.onEvent(WorkspaceEvent.CloseAllForProjectSwitch)
+            authViewModel.onEvent(AuthEvent.SwitchProject)
+        },
+        )
+
+        CallSurface(ready, viewModels.calls)
+        ready.syncEngine?.let { engine ->
+            PendingChangesDialog(
+                engine = engine,
+                connectivity = ready.connectivity,
+                visible = pendingChangesOpen,
+                onDismiss = { pendingChangesOpen = false },
+            )
+        }
     }
 }
 
@@ -1139,9 +1252,14 @@ private fun mailProvider(viewModel: EmailViewModel, ready: AppGraph.Ready) = Ema
  * explains why a runtime with no embedded browser is told so rather than
  * quietly falling back.
  */
-private fun driveProvider(viewModel: DriveViewModel, scope: CoroutineScope) = DriveToolProvider(
+private fun driveProvider(
+    viewModel: DriveViewModel,
+    scope: CoroutineScope,
+    openWidget: () -> Unit,
+) = DriveToolProvider(
     viewModel = viewModel,
     onOpenUrl = ::openInBrowser,
+    onOpenWidget = openWidget,
     onPickFiles = { report ->
         scope.launch {
             val picked = DriveFilePicker().pick()
@@ -1162,7 +1280,7 @@ private fun driveProvider(viewModel: DriveViewModel, scope: CoroutineScope) = Dr
 )
 
 /** Puts [text] on the system clipboard. Failures are logged, never thrown. */
-private fun copyToClipboard(text: String) {
+internal fun copyToClipboard(text: String) {
     runCatching {
         java.awt.Toolkit.getDefaultToolkit().systemClipboard
             .setContents(java.awt.datatransfer.StringSelection(text), null)
@@ -1177,6 +1295,10 @@ private fun buildAuth(ready: AppGraph.Ready) = AuthViewModel(
     qrLoginRepository = ready.qrLoginRepository,
     nowMillis = System::currentTimeMillis,
     projectUnread = { fetchProjectUnread(ready) },
+    projectListStore = ready.projectListCache?.let(::CachedProjectList),
+    // Offline, only a production this computer has seen before can open.
+    isOnline = { ready.connectivity.online.value },
+    hasOfflineData = { projectId -> ready.projectContext?.hasCached(projectId) == true },
 )
 
 /**
@@ -1260,6 +1382,8 @@ private fun chatProvider(
                 )
             }
     },
+    // Hidden from Contacts: the signed-in user is not someone to message.
+    selfId = { ready.projectContext?.context?.value?.profile?.userId },
     loadAvatar = { userId -> fetchAvatar(ready, userId)?.let(::decodeImageBitmap) },
     viewModel = viewModel,
     onCall = calls?.let { vm ->
@@ -1543,12 +1667,19 @@ internal class AppViewModels(
     val confidentialInfo: HomeFeedViewModel?,
     /** Camera & Sound Report — the same engine on the script-notes host, one tab per report unit. */
     val reports: HomeFeedViewModel?,
+    /** Catering and Message Accounts — the same engine on the unit host, tabs from each tool's units. */
+    val catering: HomeFeedViewModel?,
+    val accounts: HomeFeedViewModel?,
     /** The production diary: typed date blocks plus events and notes. */
     val boxSchedule: BoxScheduleViewModel?,
     /** Cities, typed pins and studio zones — the map tool without tiles. */
     val maps: MapViewModel?,
     /** Recce: scout-day plans — date, rendezvous, stops, personnel. */
     val recce: RecceViewModel?,
+    /** Transportation: vehicles, pickup requests, permanent allocations, drivers. */
+    val transport: TransportViewModel?,
+    /** Location: the scouting library — photos, videos and links by place. */
+    val location: LocationViewModel?,
     /** The three PDF distribution tools — one engine, three [DistributionTool]s. */
     val scheduleDistribution: DistributionViewModel?,
     val scriptDistribution: DistributionViewModel?,
@@ -1574,7 +1705,7 @@ private fun rememberAppViewModels(
         // read from it: the tool-access grid arrives with Home's `project/tools`
         // fetch, and the library tools are gated by it. Issuing a second call
         // for the same list would mean two answers that can disagree.
-        val home = ready?.let { HomeViewModel(it.toolsRepository) }
+        val home = ready?.let { HomeViewModel(it.toolsRepository, offline = it.offlineSupport) }
         val permissions = { home?.state?.value?.permissions ?: ProjectPermissions.Empty }
 
         AppViewModels(
@@ -1584,6 +1715,7 @@ private fun rememberAppViewModels(
                     repository = it.chatRepository,
                     nowMillis = System::currentTimeMillis,
                     newUniqueId = { UUID.randomUUID().toString() },
+                    offline = it.offlineSupport,
                     // The same picker and routed uploader mail and the board
                     // use; the stored key rides the message envelope.
                     pickAttachment = { pickChatAttachment(it) },
@@ -1616,7 +1748,7 @@ private fun rememberAppViewModels(
                     },
                 )
             },
-            homeFeed = ready?.let(::buildHomeFeed),
+            homeFeed = ready?.let { buildHomeFeed(it, permissions) },
             calendar = ready?.let(::buildCalendar),
             email = ready?.let(::buildMailbox),
             settings = settings,
@@ -1669,13 +1801,18 @@ private fun rememberAppViewModels(
                 CardExpensesViewModel(graph.cardRepository) { graph.cardViewer() }
             },
             purchaseOrders = ready?.let { graph ->
-                PurchaseOrderViewModel(graph.purchaseOrderRepository) { graph.poViewer() }
+                PurchaseOrderViewModel(
+                    repository = graph.purchaseOrderRepository,
+                    viewer = { graph.poViewer() },
+                    offline = graph.offlineSupport,
+                )
             },
             timecards = ready?.let { graph ->
                 TimecardViewModel(
                     repository = graph.timecardRepository,
                     viewer = { graph.timecardViewer() },
                     currentWeekStarting = ::currentWeekStarting,
+                    offline = graph.offlineSupport,
                 )
             },
             payroll = ready?.let { graph ->
@@ -1703,6 +1840,7 @@ private fun rememberAppViewModels(
                         .containsKey(com.zillit.desktop.core.config.ZillitService.BudgetBuilder) &&
                         graph.config.services
                             .containsKey(com.zillit.desktop.core.config.ZillitService.BudgetBuilderWeb),
+                    online = graph.connectivity.online,
                 )
             },
             formSignature = ready?.let { graph ->
@@ -1812,6 +1950,8 @@ private fun rememberAppViewModels(
                 permissions = permissions,
             ),
             reports = ready?.reportsFeed(permissions),
+            catering = ready?.cateringFeed(permissions),
+            accounts = ready?.accountsFeed(permissions),
             boxSchedule = ready?.let { graph ->
                 BoxScheduleViewModel(
                     repository = BoxScheduleRepositoryImpl(graph.apiClient, graph.config),
@@ -1827,6 +1967,20 @@ private fun rememberAppViewModels(
                 )
             },
             recce = ready?.buildRecce(permissions),
+            location = ready?.buildLocation(permissions),
+            transport = ready?.let { graph ->
+                TransportViewModel(
+                    repository = TransportRepositoryImpl(graph.apiClient, graph.config),
+                    resolveViewer = {
+                        TransportViewer.from(permissions(),
+                            graph.projectContext?.context?.value?.profile?.userId.orEmpty())
+                    },
+                    nowMillis = System::currentTimeMillis,
+                    // The web's `notification:read` for a request segment, module `transportation_label`.
+                    onSegmentViewed = { segment -> emitSegmentRead(graph, segment = segment,
+                        module = "transportation_label") },
+                )
+            },
             scheduleDistribution = ready?.buildDistribution(DistributionTool.ScheduleDistribution, permissions),
             scriptDistribution = ready?.buildDistribution(DistributionTool.ScriptDistribution, permissions),
             scheduleDod = ready?.buildDistribution(DistributionTool.ScheduleDod, permissions),
@@ -1857,6 +2011,8 @@ private fun buildRegistry(
     graph: AppGraph,
     viewModels: AppViewModels,
     scope: CoroutineScope,
+    /** Opens the desktop Drive widget — offered from the Drive tool's header. */
+    openDriveWidget: () -> Unit,
 ): ToolRegistry {
     val homeViewModel = viewModels.home
     val chatViewModel = viewModels.chat
@@ -1929,6 +2085,8 @@ private fun buildRegistry(
     val preProduction = viewModels.boxSchedule?.let { BoxScheduleToolProvider(it, PRE_PRODUCTION_PATH) }
     val maps = viewModels.maps?.let { MapToolProvider(it, onOpenUrl = ::openInBrowser) }
     val recce = viewModels.recce?.let { RecceToolProvider(it, onOpenUrl = ::openInBrowser) }
+    val transport = viewModels.transport?.let { TransportToolProvider(it) }
+    val location = viewModels.location?.let { vm -> (graph as? AppGraph.Ready)?.locationProvider(vm, scope) }
     // Schedule Full & One Line, Script & Pages, Schedule D.O.D — the same
     // PDF-distribution engine at the web's three paths.
     val ready = graph as? AppGraph.Ready
@@ -1950,6 +2108,26 @@ private fun buildRegistry(
             path = BoardToolProvider.CONFIDENTIAL_INFO_PATH,
             title = "Confidential Info",
             icon = ZillitToolIcons.Info,
+            feedViewModel = feed,
+            board = boardContext,
+            badges = (graph as? AppGraph.Ready)?.badgeStore?.counts,
+        )
+    }
+    val catering = viewModels.catering?.let { feed ->
+        BoardToolProvider(
+            path = BoardToolProvider.CATERING_PATH,
+            title = "Catering",
+            icon = ZillitToolIcons.Catering,
+            feedViewModel = feed,
+            board = boardContext,
+            badges = (graph as? AppGraph.Ready)?.badgeStore?.counts,
+        )
+    }
+    val accounts = viewModels.accounts?.let { feed ->
+        BoardToolProvider(
+            path = BoardToolProvider.ACCOUNTS_PATH,
+            title = "Message Accounts",
+            icon = ZillitToolIcons.Account,
             feedViewModel = feed,
             board = boardContext,
             badges = (graph as? AppGraph.Ready)?.badgeStore?.counts,
@@ -1997,7 +2175,7 @@ private fun buildRegistry(
         // storage URL opens and anything else is refused.
         DocDistToolProvider(it, onOpenUrl = ::openInBrowser)
     }
-    val drive = viewModels.drive?.let { driveProvider(it, scope) }
+    val drive = viewModels.drive?.let { driveProvider(it, scope, openDriveWidget) }
     // The console hands off to the finance tools above via its own window
     // navigator, so it needs nothing from here beyond its view model.
     val accountHub = viewModels.accountHub?.let { AccountHubToolProvider(it) }
@@ -2035,8 +2213,8 @@ private fun buildRegistry(
         home, chat, email, signatures, settings, admin,
         cash, cards, orders, timecards, payroll, deals, distribution, drive,
         accountHub, budgetBuilder, formSignature, esignature,
-        callSheet, productionReport, sides, info, confidentialInfo, reports,
-        boxSchedule, preProduction, maps, recce,
+        callSheet, productionReport, sides, info, confidentialInfo, reports, catering, accounts,
+        boxSchedule, preProduction, maps, recce, transport, location,
         scheduleDistribution, scriptDistribution, scheduleDod,
     )
     val realPaths = real.map { it.path }.toSet()
@@ -2064,6 +2242,12 @@ private fun ProjectContext.crewContacts(): List<EmailContact> =
             subtitle = user.department.orEmpty(),
         )
     }
+
+/** Outbox rows plus drafts belonging to [userId] on this machine; 0 when nothing is signed in. */
+private suspend fun AppGraph.Ready.unsentWorkFor(userId: String?): Int {
+    if (userId.isNullOrBlank()) return 0
+    return (syncEngine?.openCount(userId) ?: 0) + (draftStore?.countForUser(userId) ?: 0)
+}
 
 /**
  * Settings, wired to the things it actually changes.
@@ -2105,6 +2289,9 @@ private fun buildSettings(
         ),
         // Clears the encrypted cache with the session — the dialog says so.
         signOut = { ready?.authRepository?.signOut() },
+        // …and the durable store with it, which is why the dialog counts what
+        // that would lose: unsent operations plus drafts, for this person.
+        unsentChanges = { ready?.unsentWorkFor(ready.projectContext?.context?.value?.profile?.userId) ?: 0 },
         unitRepository = ready?.unitRepository,
         // The unit decides which notices and call sheets arrive, so a change
         // has to reach the rest of the app rather than sit in this screen.
@@ -2235,16 +2422,3 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
     },
 )
 
-/**
- * The socket state, in the words the status bar shows.
- *
- * "Live" rather than "Connected" — the user cares whether the board updates
- * itself, not what transport is involved.
- */
-private fun SocketConnectionState.statusLabel(): String = when (this) {
-    is SocketConnectionState.Connected -> "Live"
-    SocketConnectionState.Connecting -> "Connecting…"
-    is SocketConnectionState.Reconnecting -> "Reconnecting…"
-    is SocketConnectionState.Failed -> "Offline — updates paused"
-    SocketConnectionState.Disconnected -> "Offline"
-}

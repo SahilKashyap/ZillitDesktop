@@ -1,3 +1,5 @@
+import org.jetbrains.compose.ExperimentalComposeLibrary
+
 plugins {
     id("zillit.compose.library")
     alias(libs.plugins.kotlinSerialization)
@@ -10,6 +12,7 @@ kotlin {
             implementation(project(":core:config"))
             implementation(project(":core:network"))
             implementation(project(":core:permissions"))
+            implementation(project(":core:sync"))
             implementation(project(":core:badges"))
             implementation(project(":core:datastore"))
             implementation(project(":core:localization"))
@@ -31,6 +34,10 @@ kotlin {
         }
         jvmTest.dependencies {
             implementation(libs.pdfbox)
+            // Render tests compose the real board — see HomeBoardRenderTest.
+            implementation(compose.desktop.currentOs)
+            @OptIn(ExperimentalComposeLibrary::class)
+            implementation(compose.uiTest)
         }
     }
 }

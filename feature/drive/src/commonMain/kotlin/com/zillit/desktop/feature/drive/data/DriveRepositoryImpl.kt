@@ -7,6 +7,7 @@ import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
@@ -77,6 +78,13 @@ class DriveRepositoryImpl(
      * request per page open for data the app is holding.
      */
     private val resolveUserName: (String) -> String? = { null },
+    /**
+     * Which production (and which of the user's per-production ids) every
+     * call is scoped to. The default is the open production — the ambient
+     * headers. The Drive widget hands in a production of its own choosing,
+     * so it can browse one drive while the main window is on another.
+     */
+    private val callOptions: () -> CallOptions = { CallOptions() },
 ) : DriveRepository {
 
     private val base = "${config.baseUrl(ZillitService.Drive)}/api/v2/drive"
@@ -116,6 +124,7 @@ class DriveRepositoryImpl(
         url = "$base/folders",
         serializer = DriveItemDto.serializer(),
         module = RequestModule.ProjectUser,
+        options = callOptions(),
         body = buildJsonObject {
             put("folder_name", JsonPrimitive(name.trim()))
             put("name", JsonPrimitive(name.trim()))
@@ -185,6 +194,7 @@ class DriveRepositoryImpl(
             url = "$base/bulk/download-urls",
             serializer = ListSerializer(BulkUrlDto.serializer()),
             module = RequestModule.ProjectUser,
+            options = callOptions(),
             body = buildJsonObject { put("file_ids", fileIds.toJsonArray()) },
         ).map { rows -> rows.mapNotNull { it.url?.takeIf(String::isNotBlank) } }
 
@@ -217,6 +227,7 @@ class DriveRepositoryImpl(
         url = "$base/files/$fileId/share-link",
         serializer = UrlDto.serializer(),
         module = RequestModule.ProjectUser,
+        options = callOptions(),
         // The server fixes the expiry at 24 hours; sending it makes the
         // client's intent explicit and survives a future default change.
         body = buildJsonObject { put("expiry", JsonPrimitive(SHARE_EXPIRY)) },
@@ -253,6 +264,7 @@ class DriveRepositoryImpl(
             url = "$base/uploads",
             serializer = UploadSessionDto.serializer(),
             module = RequestModule.ProjectUser,
+            options = callOptions(),
             body = buildJsonObject {
                 put("file_name", JsonPrimitive(request.fileName))
                 put("file_size_bytes", JsonPrimitive(request.sizeBytes))
@@ -275,6 +287,7 @@ class DriveRepositoryImpl(
         url = "$base/uploads/$uploadId/complete",
         serializer = DriveItemDto.serializer(),
         module = RequestModule.ProjectUser,
+        options = callOptions(),
         body = buildJsonObject {
             put(
                 "parts",
@@ -552,6 +565,7 @@ class DriveRepositoryImpl(
         url = url,
         serializer = serializer,
         module = RequestModule.ProjectUser,
+        options = callOptions(),
         queryParameters = query,
     )
 
@@ -578,6 +592,7 @@ class DriveRepositoryImpl(
         verb = verb,
         url = path,
         module = RequestModule.ProjectUser,
+        options = callOptions(),
         body = body,
     ).map { }
 

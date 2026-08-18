@@ -141,6 +141,8 @@ private fun ProjectListBody(
             onThemeModeChange = onThemeModeChange,
         )
 
+        if (state.isShowingSavedProjects) OfflineNotice()
+
         // Without this a failed selection is completely silent — the row stops
         // responding and nothing says why.
         state.error?.let { message ->
@@ -190,6 +192,25 @@ private fun ProjectListBody(
             }
         }
     }
+}
+
+/**
+ * Offline: the cards are the last list this device was given. Said plainly,
+ * in a calm colour — the productions are real, only the refresh is missing —
+ * so nobody reads a saved list as a stale one.
+ */
+@Composable
+private fun OfflineNotice() {
+    ZillitText(
+        text = "You're offline — showing the productions saved on this device. " +
+            "They'll refresh when the connection is back.",
+        style = ZillitTheme.typography.bodySmall,
+        color = ZillitTheme.colors.textSecondary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ZillitTheme.colors.infoSoft)
+            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
+    )
 }
 
 @Composable

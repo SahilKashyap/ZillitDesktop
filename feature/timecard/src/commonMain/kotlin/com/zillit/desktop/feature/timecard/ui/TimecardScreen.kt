@@ -52,6 +52,7 @@ import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.timecard.domain.AllowanceType
 import com.zillit.desktop.feature.timecard.domain.DayType
+import com.zillit.desktop.feature.timecard.domain.LocalWeek
 import com.zillit.desktop.feature.timecard.domain.Timecard
 import com.zillit.desktop.feature.timecard.domain.TimecardDay
 import com.zillit.desktop.feature.timecard.domain.TimecardStatus
@@ -106,6 +107,7 @@ fun TimecardScreen(
                 )
             }
             ZillitDivider()
+            OfflineBanner(state)
 
             val error = state.error
             when {
@@ -315,8 +317,10 @@ private fun TimecardDetail(state: TimecardUiState, card: Timecard, onEvent: (Tim
                     color = ZillitTheme.colors.textSecondary,
                 )
             }
-            ZillitStatusPill(card.status.label, tone = card.status.tone, dot = true)
+            WeekStatusPill(card)
         }
+
+        card.local?.let { LocalWeekNotice(it) }
 
         ZillitText(text = Money.format(card.net, card.currency), style = ZillitTheme.typography.displayLarge)
         ZillitText(
@@ -409,6 +413,9 @@ private fun DayRow(day: TimecardDay) {
 @Suppress("LongMethod") // A rights table; flattening it is what makes it readable.
 @Composable
 private fun TimecardActions(state: TimecardUiState, card: Timecard, onEvent: (TimecardEvent) -> Unit) {
+    // A week that is only on this computer can be queued for submission behind
+    // its save — once — and nothing else; the outbox owns retry and discard.
+    if (card.local.blocksActions()) return
     val actions = buildList {
         if (card.userId == state.viewer.userId && card.isEditable) {
             add(
@@ -578,8 +585,16 @@ private fun WeekEditor(state: TimecardUiState, onEvent: (TimecardEvent) -> Unit)
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.padding(ZillitTheme.spacing.xs))
+            if (state.offline) {
+                ZillitNotice(
+                    text = "You're offline. The week will be saved on this computer and sent automatically " +
+                        "when you're back — you'll see it under My Timecards as \"Waiting to send\".",
+                    tone = StatusTone.InTransit,
+                    icon = ZillitIcons.Info,
+                )
+            }
             ZillitButton(
-                text = "Save this week",
+                text = if (state.offline) "Save and send when online" else "Save this week",
                 onClick = { onEvent(TimecardEvent.SaveDraft) },
                 leadingIcon = ZillitIcons.Check,
                 loading = state.busy,
@@ -873,8 +888,61 @@ private fun timecardColumns(
         TableColumn(
             header = "Status",
             width = ColumnWidth.Fixed(STATUS_COLUMN),
-            cell = { ZillitStatusPill(it.status.label, tone = it.status.tone, dot = true) },
+            cell = { WeekStatusPill(it) },
         ),
+    )
+}
+
+/**
+ * The status pill, with one exception: a week that exists only on this
+ * computer is not "Draft" — it is waiting to be sent, or could not be.
+ */
+@Composable
+private fun WeekStatusPill(card: Timecard) {
+    val local = card.local
+    when {
+        local == null -> ZillitStatusPill(card.status.label, tone = card.status.tone, dot = true)
+        local.failed -> ZillitStatusPill("Not sent", tone = StatusTone.Rejected, dot = true)
+        local.submitQueued -> ZillitStatusPill("Submitting when online", tone = StatusTone.InTransit, dot = true)
+        else -> ZillitStatusPill("Waiting to send", tone = StatusTone.InTransit, dot = true)
+    }
+}
+
+private fun LocalWeek?.blocksActions(): Boolean = this != null && (failed || submitQueued)
+
+/** Why a local-only week is where it is, and what to do if it could not be sent. */
+@Composable
+private fun LocalWeekNotice(local: LocalWeek) {
+    ZillitNotice(
+        text = when {
+            local.failed ->
+                "This week could not be sent: ${local.error ?: "the server refused it"}. " +
+                    "Retry or discard it from Pending changes in the status bar."
+            local.submitQueued ->
+                "This week is saved on this computer and will be sent, then submitted, " +
+                    "as soon as you're back online."
+            else ->
+                "This week is saved on this computer and will be sent to the server " +
+                    "as soon as you're back online."
+        },
+        tone = if (local.failed) StatusTone.Rejected else StatusTone.InTransit,
+        icon = ZillitIcons.Info,
+    )
+}
+
+/**
+ * The line under the tabs when the list is a saved copy: the network is gone
+ * and these are the weeks as of the last time it answered.
+ */
+@Composable
+private fun OfflineBanner(state: TimecardUiState) {
+    val since = state.staleSince ?: return
+    ZillitNotice(
+        text = "You're offline — showing timecards saved ${EpochDate.dateTime(since)}. " +
+            "They'll refresh when the connection is back.",
+        tone = StatusTone.Pending,
+        icon = ZillitIcons.Info,
+        modifier = Modifier.padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm),
     )
 }
 

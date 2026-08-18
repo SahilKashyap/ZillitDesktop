@@ -157,3 +157,16 @@ interface ProjectRepository {
 
     suspend fun selectProject(project: Project, unit: Unit?): ZillitResult<kotlin.Unit>
 }
+
+/**
+ * Where the picker keeps the last production list it was given, so it has
+ * something to show when the network does not answer.
+ *
+ * A seam rather than the database: the host wires it to the encrypted cache;
+ * tests hand in a map. Null on the view model means "no cache on this
+ * machine" — the picker still works, it just cannot work offline.
+ */
+interface ProjectListStore {
+    fun load(): List<Project>
+    fun save(projects: List<Project>)
+}

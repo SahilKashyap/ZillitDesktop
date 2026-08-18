@@ -41,7 +41,7 @@ class ZillitDatabaseFactory(
 
         val failure = first as ZillitResult.Failure
         val stranded = File(databasePath).exists() &&
-            failure.error.technical?.startsWith("open failed") == true
+            failure.error.technical?.startsWith(EncryptedDriverFactory.OPEN_FAILURE_PREFIX) == true
         if (!stranded) return first
 
         ZillitLog.w(TAG) { "cache unreadable with the current key; recreating it" }

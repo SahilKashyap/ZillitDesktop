@@ -48,6 +48,12 @@ data class ProfileSnapshot(
     /** The production unit this user is attached to, if they have picked one. */
     val joinUnitId: String? = null,
     val joinUnitName: String? = null,
+    /**
+     * The Home unit this person asked to land on — the profile's
+     * `default_unit_id`, set from the phones' preferences. Null lands them
+     * on the first tab (Android `handleDefaultUnitSelection`).
+     */
+    val defaultUnitId: String? = null,
 )
 
 data class ProjectSnapshot(
@@ -146,6 +152,7 @@ class ProjectCache(database: ZillitDatabase, private val nowMillis: () -> Long) 
             isAdmin = profile.isAdmin.toDb(),
             joinUnitId = profile.joinUnitId,
             joinUnitName = profile.joinUnitName,
+            defaultUnitId = profile.defaultUnitId,
             cachedAt = nowMillis(),
         )
     }
@@ -168,6 +175,7 @@ class ProjectCache(database: ZillitDatabase, private val nowMillis: () -> Long) 
                 isAdmin = it.isAdmin.toBool(),
                 joinUnitId = it.joinUnitId,
                 joinUnitName = it.joinUnitName,
+                defaultUnitId = it.defaultUnitId,
             )
         }
 

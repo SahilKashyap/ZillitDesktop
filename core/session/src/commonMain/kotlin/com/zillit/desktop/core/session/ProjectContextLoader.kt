@@ -65,6 +65,13 @@ class ProjectContextLoader(
     private var currentProject: String? = null
 
     /**
+     * Whether this production can be opened without the network: its profile
+     * and its own record were saved on a previous visit. Nothing is published.
+     */
+    fun hasCached(projectId: String): Boolean =
+        cache?.profile(projectId) != null && cache.project(projectId) != null
+
+    /**
      * Publishes whatever is cached and answers whether it was enough to open
      * on. "Enough" is the profile and the production itself — screens degrade
      * gracefully without the crew list, which follows with the refresh.
@@ -215,6 +222,8 @@ internal data class ProfileDto(
     // settings; the web reads the same two fields back to seed it.
     @SerialName("join_unit_id") val joinUnitId: String? = null,
     @SerialName("join_unit_name") val joinUnitName: String? = null,
+    /** The Home tab to land on — Android's `UserData.defaultUnitId`, same key. */
+    @SerialName("default_unit_id") val defaultUnitId: String? = null,
 ) {
     fun toSnapshot(): ProfileSnapshot? {
         val resolved = userId ?: id ?: return null
@@ -237,6 +246,7 @@ internal data class ProfileDto(
             isAdmin = isAdmin == true,
             joinUnitId = joinUnitId?.takeIf { it.isNotBlank() },
             joinUnitName = joinUnitName?.takeIf { it.isNotBlank() },
+            defaultUnitId = defaultUnitId?.takeIf { it.isNotBlank() },
         )
     }
 }

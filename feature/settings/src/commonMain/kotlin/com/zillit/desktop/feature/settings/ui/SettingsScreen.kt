@@ -96,7 +96,7 @@ fun SettingsScreen(
         }
 
         // Composed always so the exit can play; the flag drives visibility.
-        SignOutDialog(visible = state.isConfirmingSignOut, onEvent = onEvent)
+        SignOutDialog(visible = state.isConfirmingSignOut, unsent = state.unsentChanges, onEvent = onEvent)
     }
 }
 
@@ -355,7 +355,7 @@ private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent
 }
 
 @Composable
-private fun SignOutDialog(visible: Boolean, onEvent: (SettingsEvent) -> Unit) {
+private fun SignOutDialog(visible: Boolean, unsent: Int, onEvent: (SettingsEvent) -> Unit) {
     ZillitDialogShell(
         title = "Sign out?",
         subtitle = "This computer forgets; the server does not.",
@@ -370,6 +370,15 @@ private fun SignOutDialog(visible: Boolean, onEvent: (SettingsEvent) -> Unit) {
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
         )
+        if (unsent > 0) {
+            // The one thing sign-out does destroy for good: work the server has
+            // not seen. Said in its own paragraph, in the danger colour.
+            ZillitText(
+                text = unsentChangesWarning(unsent),
+                style = ZillitTheme.typography.bodyMedium,
+                color = ZillitTheme.colors.danger,
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
@@ -469,3 +478,10 @@ private val TITLE_ACCENT_HEIGHT = 40.dp
 private val ACCOUNT_AVATAR = 48.dp
 private val SECTION_ICON = 14.dp
 private val UNIT_SELECT_WIDTH = 240.dp
+
+/** The sentence the sign-out question adds when unsent work would be lost. */
+internal fun unsentChangesWarning(count: Int): String {
+    val what = if (count == 1) "1 change made offline that has" else "$count changes made offline that have"
+    return "You have $what not reached the server yet. Signing out deletes them — " +
+        "wait for \"Pending changes\" in the status bar to clear first."
+}

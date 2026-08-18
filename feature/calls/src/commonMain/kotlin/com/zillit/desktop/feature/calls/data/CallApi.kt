@@ -168,6 +168,12 @@ class CallApi(
         selfUserId: String,
         missedOnly: Boolean = false,
         older: Boolean = true,
+        /**
+         * True when [cursorMillis] is "now" — the first page. Its URL differs
+         * on every load, so it is kept under one name for the read cache;
+         * later pages read back from a row's own timestamp and key themselves.
+         */
+        newestPage: Boolean = false,
     ): ZillitResult<List<CallLogEntry>> {
         val direction = if (older) "previous" else "next"
         val query = if (missedOnly) "?missed=yes" else ""
@@ -177,7 +183,10 @@ class CallApi(
             module = RequestModule.ProjectUser,
             // No project override: history is the open production's, unlike a
             // live call which carries its own.
-            options = CallOptions(projectId = null),
+            options = CallOptions(
+                projectId = null,
+                cacheAs = if (newestPage) "${base}call/newest/$direction$query" else null,
+            ),
         ).map { envelope -> readCallLogs(envelope.data ?: JsonObject(emptyMap()), selfUserId) }
     }
 

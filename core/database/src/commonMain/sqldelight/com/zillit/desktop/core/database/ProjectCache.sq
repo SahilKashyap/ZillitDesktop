@@ -32,6 +32,9 @@ CREATE TABLE cachedProfile (
     isAdmin    INTEGER NOT NULL DEFAULT 0,
     joinUnitId   TEXT,
     joinUnitName TEXT,
+    -- The Home unit this person asked to land on (`default_unit_id`); null
+    -- lands them on the first tab, as on the phones.
+    defaultUnitId TEXT,
     cachedAt   INTEGER NOT NULL
 );
 
@@ -105,7 +108,7 @@ CREATE INDEX cachedNotice_unit ON cachedNotice(projectId, unitId, createdAt);
 
 -- profile ------------------------------------------------------------------
 upsertProfile:
-INSERT OR REPLACE INTO cachedProfile VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO cachedProfile VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectProfile:
 SELECT * FROM cachedProfile WHERE projectId = ? LIMIT 1;

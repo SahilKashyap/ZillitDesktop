@@ -13,8 +13,11 @@ import com.zillit.desktop.feature.chat.domain.CrewContact
  * The `/cnc` rail destination. The host hands in the crew (already stripped
  * of keep-name-private members) and an avatar loader; the screen owns the rest.
  */
+@Suppress("LongParameterList") // Every host seam the screen needs, one each; a bag would only hide them.
 class ChatToolProvider(
     private val crew: () -> List<CrewContact>,
+    /** The signed-in user's id, hidden from the Contacts list. */
+    private val selfId: () -> String? = { null },
     private val loadAvatar: suspend (String) -> ImageBitmap?,
     private val viewModel: ChatViewModel? = null,
     private val onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit = {},
@@ -38,6 +41,7 @@ class ChatToolProvider(
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         ChatScreen(
             crew = crew(),
+            selfId = selfId(),
             loadAvatar = loadAvatar,
             viewModel = viewModel,
             onOpenAttachment = onOpenAttachment,

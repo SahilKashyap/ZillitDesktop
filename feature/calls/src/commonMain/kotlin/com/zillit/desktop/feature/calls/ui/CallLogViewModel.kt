@@ -82,6 +82,7 @@ class CallLogViewModel(
             cursorMillis = cursor,
             selfUserId = selfUserId().orEmpty(),
             missedOnly = current.missedOnly,
+            newestPage = reset,
         ).onSuccess { page ->
             setState {
                 val merged = if (reset) page else (entries + page).distinctBy(CallLogEntry::callUuid)

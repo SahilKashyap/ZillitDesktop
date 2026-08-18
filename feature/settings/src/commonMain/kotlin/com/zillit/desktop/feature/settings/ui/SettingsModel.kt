@@ -39,6 +39,11 @@ data class SettingsUiState(
     val unit: UnitSelection = UnitSelection(),
     /** Asked before signing out — it drops the local cache with it. */
     val isConfirmingSignOut: Boolean = false,
+    /**
+     * Work done offline that has not reached the server, plus drafts kept on
+     * this computer. Signing out deletes both, so the question says so.
+     */
+    val unsentChanges: Int = 0,
     /** The administration page, reached from this one. */
     val admin: AdminSettingsUiState = AdminSettingsUiState(),
 ) {

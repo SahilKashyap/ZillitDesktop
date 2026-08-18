@@ -50,6 +50,17 @@ object ZillitPreferences {
 
     val RestoreWorkspaceOnLaunch = PreferenceKey.BooleanKey("workspace.restore", true, PreferenceScope.Device)
 
+    // -- the Drive widget (device-scoped: a window, not an account) --------
+
+    /** Whether the always-on-top Drive widget was open when the app last quit. */
+    val DriveWidgetOpen = PreferenceKey.BooleanKey("drive.widget.open", false, PreferenceScope.Device)
+    val DriveWidgetWidth = PreferenceKey.IntKey("drive.widget.width", DEFAULT_WIDGET_WIDTH, PreferenceScope.Device)
+    val DriveWidgetHeight = PreferenceKey.IntKey("drive.widget.height", DEFAULT_WIDGET_HEIGHT, PreferenceScope.Device)
+    val DriveWidgetX = PreferenceKey.IntKey("drive.widget.x", UNSET_POSITION, PreferenceScope.Device)
+    val DriveWidgetY = PreferenceKey.IntKey("drive.widget.y", UNSET_POSITION, PreferenceScope.Device)
+    /** The production the widget last showed; falls back to the open one. */
+    val DriveWidgetProject = PreferenceKey.StringKey("drive.widget.project", "", PreferenceScope.User)
+
     // -- security (device-scoped) ------------------------------------------
 
     /** Android's `appLock`. */
@@ -151,5 +162,7 @@ object ZillitPreferences {
     private const val DEFAULT_UI_SCALE = 100
     private const val DEFAULT_WINDOW_WIDTH = 1440
     private const val DEFAULT_WINDOW_HEIGHT = 900
+    const val DEFAULT_WIDGET_WIDTH = 520
+    const val DEFAULT_WIDGET_HEIGHT = 680
     private const val DEFAULT_IDLE_MINUTES = 15
 }

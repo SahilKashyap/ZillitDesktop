@@ -72,6 +72,12 @@ import com.zillit.desktop.feature.chat.domain.chatTimeLabel
 @Suppress("LongParameterList")
 fun ChatScreen(
     crew: List<CrewContact>,
+    /**
+     * The signed-in user's id. Kept OUT of the Contacts list — nobody
+     * messages themselves — but left IN [crew], which also names senders in
+     * group threads; stripping it there would blank the user's own lines.
+     */
+    selfId: String? = null,
     loadAvatar: suspend (String) -> ImageBitmap?,
     modifier: Modifier = Modifier,
     viewModel: ChatViewModel? = null,
@@ -87,13 +93,14 @@ fun ChatScreen(
     callLog: (@Composable () -> Unit)? = null,
 ) {
     val chatState = viewModel?.state?.collectAsState()?.value
-    var tab by rememberSaveable { mutableStateOf(DirectoryTab.Crew.name) }
+    var tab by rememberSaveable { mutableStateOf(DirectoryTab.Contacts.name) }
     var query by rememberSaveable { mutableStateOf("") }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
 
     Row(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         DirectoryPane(
             crew = crew,
+            selfId = selfId,
             tab = tab,
             query = query,
             selectedId = selectedId,
@@ -135,7 +142,7 @@ fun ChatScreen(
 
                 else -> PaneMessage(
                     icon = ZillitIcons.User,
-                    text = "Pick someone from the crew to see their card.",
+                    text = "Pick a contact to see their card.",
                 )
             }
         }
@@ -181,7 +188,8 @@ private fun OpenThread(
 
 private enum class DirectoryTab(val label: String) {
     Chats("Chats"),
-    Crew("Crew"),
+    /** The production's people — "Contacts", as the crew asked, not "Crew". */
+    Contacts("Contacts"),
     Calls("Calls"),
 }
 
@@ -190,6 +198,7 @@ private enum class DirectoryTab(val label: String) {
 @Suppress("LongParameterList")
 private fun DirectoryPane(
     crew: List<CrewContact>,
+    selfId: String?,
     tab: String,
     query: String,
     selectedId: String?,
@@ -223,16 +232,16 @@ private fun DirectoryPane(
 
         if (tab == DirectoryTab.Calls.name && callLog != null) {
             callLog()
-        } else if (tab == DirectoryTab.Crew.name) {
+        } else if (tab == DirectoryTab.Contacts.name) {
             ZillitSearchField(
                 value = query,
                 onValueChange = onQuery,
                 placeholder = "Search name, role, department",
             )
             CrewList(
-                crew = crew.searchCrew(query),
+                crew = crew.filterNot { it.userId == selfId }.searchCrew(query),
                 // Follows whichever thread is open, however it was opened —
-                // picking someone in Chats and then switching to Crew should
+                // picking someone in Chats and then switching to Contacts should
                 // show that person as the one being read, not nobody.
                 selectedId = chatState?.peer?.userId ?: selectedId,
                 loadAvatar = loadAvatar,
@@ -289,7 +298,7 @@ private fun RecentsList(
         PaneMessage(
             icon = ZillitIcons.Chat,
             text = when (chosen) {
-                ChatFilter.All -> "No conversations yet — message someone from the Crew tab."
+                ChatFilter.All -> "No conversations yet — message someone from the Contacts tab."
                 else -> "Nothing under ${chosen.label} right now."
             },
         )
@@ -339,7 +348,7 @@ private fun RecentsList(
 }
 
 /**
- * The Crew tab: everyone on the production, by department.
+ * The Contacts tab: everyone else on the production, by department.
  *
  * A row opens that person's conversation. It used to select them and show a
  * card whose only action was "Message" — two clicks to reach the thing the
@@ -517,7 +526,7 @@ private fun DirectoryTabs(
                             if (state.sectionBadges.isEmpty()) state.unread.values.sum() else state.chatsBadge
                         } ?: 0
                         DirectoryTab.Calls -> chatState?.callsBadge ?: 0
-                        DirectoryTab.Crew -> 0
+                        DirectoryTab.Contacts -> 0
                     },
                 )
             },

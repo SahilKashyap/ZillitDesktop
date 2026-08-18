@@ -5,7 +5,9 @@ import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
+import com.zillit.desktop.core.network.jsonBody
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.permissions.ToolAccess
@@ -27,10 +29,16 @@ class ToolsRepositoryImpl(
     config: AppConfig,
     /** Admins bypass access checks; the flag comes from the selected production. */
     private val isAdmin: () -> Boolean,
+    /**
+     * Which production the rights are asked for — the open one by default.
+     * The Drive widget asks for another production's without switching to it.
+     */
+    private val callOptions: () -> CallOptions = { CallOptions() },
 ) : ToolsRepository {
 
     private val toolsUrl = "${config.apiV2()}project/tools"
     private val groupsUrl = "${config.apiV2()}project/tools/groups"
+    private val groupOrderUrl = "${config.apiV2()}project/tools/group/order"
 
     override suspend fun loadPermissions(): ZillitResult<ProjectPermissions> =
         apiClient.request(
@@ -40,6 +48,7 @@ class ToolsRepositoryImpl(
             // `MODELDATA.WITH_PROJECT_USER_ID` (`CommonApis:357`) — rights are
             // per-person, per-production. Sending a lighter header returns 406.
             module = RequestModule.ProjectUser,
+            options = callOptions(),
         ).map { dtos ->
             ProjectPermissions(
                 tools = dtos.mapNotNull { it.toAccess() },
@@ -70,7 +79,53 @@ class ToolsRepositoryImpl(
                 }
             }
         }
+
+    /** `{is_default, groups: [{group_identifier, order}]}` — sorted by `order`. */
+    override suspend fun loadGroupOrder(): ZillitResult<List<String>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = groupOrderUrl,
+            serializer = ToolGroupOrderDto.serializer(),
+            module = RequestModule.ProjectUser,
+        ).map { dto ->
+            if (dto.isDefault == true) {
+                emptyList()
+            } else {
+                dto.groups.orEmpty()
+                    .sortedBy { it.order ?: Int.MAX_VALUE }
+                    .mapNotNull { it.groupIdentifier?.takeIf(String::isNotBlank) }
+            }
+        }
+
+    /** The PUT answers with the same shape; nothing in it the caller does not already hold. */
+    override suspend fun saveGroupOrder(order: List<String>): ZillitResult<Unit> =
+        apiClient.request(
+            verb = HttpVerb.Put,
+            url = groupOrderUrl,
+            serializer = ToolGroupOrderDto.serializer(),
+            module = RequestModule.ProjectUser,
+            body = jsonBody(ToolGroupOrderRequestDto(order)),
+        ).map { }
 }
+
+/** Android's `ToolGroupOrderModels.kt:13-38`, field for field. */
+@Serializable
+internal data class ToolGroupOrderDto(
+    @SerialName("is_default") val isDefault: Boolean? = null,
+    @SerialName("groups") val groups: List<ToolGroupOrderRowDto>? = null,
+)
+
+@Serializable
+internal data class ToolGroupOrderRowDto(
+    @SerialName("group_identifier") val groupIdentifier: String? = null,
+    @SerialName("order") val order: Int? = null,
+)
+
+/** `{"order": ["group_admin", …]}` — position is priority, index 0 the top. */
+@Serializable
+internal data class ToolGroupOrderRequestDto(
+    @SerialName("order") val order: List<String>,
+)
 
 /**
  * Matches Android's `ToolsInfo` field for field.

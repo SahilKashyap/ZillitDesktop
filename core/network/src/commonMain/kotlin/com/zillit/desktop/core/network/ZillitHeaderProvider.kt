@@ -42,8 +42,9 @@ class ZillitHeaderProvider(
         module: RequestModule,
         bodyJson: String?,
         projectId: String?,
+        userId: String?,
     ): Map<String, String> {
-        val payload = json.encodeToString(HeaderPayload.serializer(), payloadFor(module, projectId))
+        val payload = json.encodeToString(HeaderPayload.serializer(), payloadFor(module, projectId, userId))
 
         val encrypted = when (val result = crypto.encryptToHex(payload)) {
             is ZillitResult.Success -> result.data
@@ -80,11 +81,16 @@ class ZillitHeaderProvider(
      * matching Gson's default on the Android side — a header with extra
      * `"project_id":null` keys is a different string and encrypts differently.
      */
-    private fun payloadFor(module: RequestModule, projectOverride: String?): HeaderPayload {
+    private fun payloadFor(module: RequestModule, projectOverride: String?, userOverride: String?): HeaderPayload {
         val ambient = context()
         // The override wins where it is given, so a call about another
-        // production does not have to move the whole app onto it first.
-        val current = projectOverride?.let { ambient.copy(projectId = it) } ?: ambient
+        // production does not have to move the whole app onto it first. The
+        // user id travels with it: it is the person's id on THAT production.
+        val current = when {
+            projectOverride == null -> ambient
+            userOverride == null -> ambient.copy(projectId = projectOverride)
+            else -> ambient.copy(projectId = projectOverride, userId = userOverride)
+        }
         val timestamp = nowMillis()
 
         return when (module) {

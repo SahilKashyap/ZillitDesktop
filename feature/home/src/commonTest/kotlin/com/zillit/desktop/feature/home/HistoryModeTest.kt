@@ -49,13 +49,13 @@ class HistoryModeTest {
     }
 
     @Test
-    fun `pinned still wins in both modes`() {
+    fun `a pin does not reorder either mode — the banner keeps it in view`() {
         val posts = listOf(
             notice("pinned", created = 10).copy(isPinned = true),
             notice("newer", created = 900, updated = 900),
         )
 
-        assertEquals("pinned", posts.forDisplay().first().id)
-        assertEquals("pinned", posts.forDisplay(history = true).first().id)
+        assertEquals(listOf("pinned", "newer"), posts.forDisplay().map { it.id })
+        assertEquals(listOf("pinned", "newer"), posts.forDisplay(history = true).map { it.id })
     }
 }

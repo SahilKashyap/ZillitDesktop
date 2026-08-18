@@ -10,6 +10,8 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -61,6 +63,11 @@ fun AppShell(
      */
     statusText: String = "",
     /**
+     * A second, clickable status — the sync queue's "3 changes waiting",
+     * opening the pending list. Null when there is nothing to say.
+     */
+    statusAction: StatusAction? = null,
+    /**
      * Unread count for a window's tab.
      *
      * A lambda rather than a map so the shell never holds badge state — the
@@ -110,7 +117,7 @@ fun AppShell(
             }
 
             HorizontalDivider(color = ZillitTheme.colors.divider)
-            StatusBar(statusText = statusText, unsaved = state.hasDirtyWindows)
+            StatusBar(statusText = statusText, action = statusAction, unsaved = state.hasDirtyWindows)
         }
     }
 }
@@ -233,7 +240,7 @@ private fun ThemeToggle(themeMode: ThemeMode, onChange: (ThemeMode) -> Unit) {
  * shows it, and the same number in two places is noise the eye has to filter.
  */
 @Composable
-private fun StatusBar(statusText: String, unsaved: Boolean) {
+private fun StatusBar(statusText: String, action: StatusAction?, unsaved: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -248,14 +255,38 @@ private fun StatusBar(statusText: String, unsaved: Boolean) {
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
         )
-        if (unsaved) {
-            ZillitText(
-                text = "Unsaved changes",
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.accent,
-            )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
+        ) {
+            if (action != null) {
+                ZillitText(
+                    text = action.text,
+                    style = ZillitTheme.typography.labelSmall,
+                    color = if (action.attention) ZillitTheme.colors.accent else ZillitTheme.colors.textMuted,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(ZillitTheme.spacing.xs))
+                        .clickable(onClick = action.onClick)
+                        .padding(horizontal = ZillitTheme.spacing.xs)
+                        .testTag("status-action"),
+                )
+            }
+            if (unsaved) {
+                ZillitText(
+                    text = "Unsaved changes",
+                    style = ZillitTheme.typography.labelSmall,
+                    color = ZillitTheme.colors.accent,
+                )
+            }
         }
     }
 }
+
+/** A clickable line in the status bar; [attention] paints it in the accent. */
+data class StatusAction(
+    val text: String,
+    val attention: Boolean,
+    val onClick: () -> Unit,
+)
 
 private val SWITCHER_CHEVRON = 14.dp

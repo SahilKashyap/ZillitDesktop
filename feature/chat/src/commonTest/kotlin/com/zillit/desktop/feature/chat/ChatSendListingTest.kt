@@ -153,8 +153,10 @@ class ChatSendListingTest {
  * include our own sends from that moment — and an arrival is cached by the
  * caller through [rememberArrival], as the socket path does with `remember`.
  */
-private class FakeChatRepository(
+internal class FakeChatRepository(
     private val sendFails: Boolean = false,
+    /** Answers "socket is not connected" until flipped — the offline tests' lever. */
+    var socketDown: Boolean = false,
 ) : ChatRepository {
 
     val sent = mutableListOf<String>()
@@ -178,8 +180,18 @@ private class FakeChatRepository(
     override fun selfId(): String? = "me"
     override suspend fun sendReaction(messageId: String, emoji: String): ChatMessage? = null
     override suspend fun join() = Unit
+    /** What the socket's user list would answer while it is up. */
+    var recents: List<String> = emptyList()
+
+    /** A specific failure for the next sends — the handler tests' lever. */
+    var sendError: ZillitError? = null
+
     override suspend fun recentPeers(): ZillitResult<List<String>> =
-        ZillitResult.Success(emptyList())
+        if (socketDown) {
+            ZillitResult.Failure(ZillitError.NoConnection("socket is not connected"))
+        } else {
+            ZillitResult.Success(recents)
+        }
 
     override fun cached(otherUserId: String): List<ChatMessage>? = null
     override fun lastMessageOf(otherUserId: String): ChatMessage? = lastByPeer[otherUserId]
@@ -204,6 +216,8 @@ private class FakeChatRepository(
         attachment: ChatAttachment?,
     ): ZillitResult<Unit> {
         if (sendFails) return ZillitResult.Failure(ZillitError.Unknown("refused"))
+        sendError?.let { return ZillitResult.Failure(it) }
+        if (socketDown) return ZillitResult.Failure(ZillitError.NoConnection("socket is not connected"))
         sent += uniqueId
         rememberArrival(
             ChatMessage(

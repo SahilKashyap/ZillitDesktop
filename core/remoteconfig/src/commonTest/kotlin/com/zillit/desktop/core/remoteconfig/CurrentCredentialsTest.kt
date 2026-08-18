@@ -52,7 +52,7 @@ class CurrentCredentialsTest {
                 httpClient = HttpClient(engine) {
                     install(ContentNegotiation) { json(HttpClientFactory.json) }
                 },
-                headerProvider = { _, _, _ -> emptyMap() },
+                headerProvider = { _, _, _, _ -> emptyMap() },
             ),
             config = AppConfig(
                 environment = Environment.Develop,

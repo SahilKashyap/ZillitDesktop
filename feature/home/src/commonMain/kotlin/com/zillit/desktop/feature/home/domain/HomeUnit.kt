@@ -52,6 +52,13 @@ data class HomeUnit(
     val unitName: String,
     val canView: Boolean = false,
     val canPost: Boolean = false,
+    /**
+     * `download_access` — gates the menu's Download on both phones (Android
+     * `hasDownloadRights()`, iOS `hasDownloadAccess`). Opening a file to read
+     * it is not gated: a crew member without this right can still *view* a
+     * call sheet on either phone, only not save it.
+     */
+    val canDownload: Boolean = false,
     val enabled: Boolean = true,
 ) {
     val kind: HomeUnitKind get() = HomeUnitKind.of(identifier, unitName)

@@ -23,11 +23,17 @@ import kotlinx.coroutines.flow.flowOf
  * time working out why their choice was ignored. They belong here the moment
  * they are wired, and not before.
  */
+@Suppress("LongParameterList") // One seam per thing the screen changes; each is a test hook, and all default.
 class SettingsViewModel(
     private val setTheme: (ThemeMode) -> Unit,
     private val setScale: (Int) -> Unit,
     private val notifications: NotificationSettings = NotificationSettings(),
     private val signOut: suspend () -> Unit,
+    /**
+     * How much unsent work signing out would delete — the outbox and local
+     * drafts. Asked when the question is raised, not before, so it is current.
+     */
+    private val unsentChanges: suspend () -> Int = { 0 },
     /** Null while no production is open — there are no units to choose from. */
     private val unitRepository: UnitRepository? = null,
     /** Re-reads the profile after a change, so the rest of the app follows. */
@@ -144,7 +150,10 @@ class SettingsViewModel(
                 )
             }
 
-            SettingsEvent.AskSignOut -> setState { copy(isConfirmingSignOut = true) }
+            SettingsEvent.AskSignOut -> {
+                setState { copy(isConfirmingSignOut = true, unsentChanges = 0) }
+                launch { unsentChanges().let { count -> setState { copy(unsentChanges = count) } } }
+            }
             SettingsEvent.DismissSignOut -> setState { copy(isConfirmingSignOut = false) }
             SettingsEvent.ConfirmSignOut -> {
                 setState { copy(isConfirmingSignOut = false) }

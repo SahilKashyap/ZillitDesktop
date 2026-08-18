@@ -1,13 +1,18 @@
 package com.zillit.desktop.feature.home.ui
 
+import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.sync.OfflineSupport
+import com.zillit.desktop.feature.home.data.ToolsOfflineCopy
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.home.domain.ToolCatalogue
 import com.zillit.desktop.feature.home.domain.ToolPresentation
 import com.zillit.desktop.feature.home.domain.ToolGroup
 import com.zillit.desktop.feature.home.domain.ToolsRepository
+import kotlinx.serialization.json.Json
 
 data class HomeUiState(
     /**
@@ -20,6 +25,16 @@ data class HomeUiState(
     val error: String? = null,
     /** The production's sections, server order; empty until they load. */
     val groups: List<ToolGroup> = emptyList(),
+    /**
+     * This user's own section order — group identifiers, top first. Empty
+     * means the production's order stands. Saved for this user only, on the
+     * server, as both phones and the web do it.
+     */
+    val groupOrder: List<String> = emptyList(),
+    /** The reorder dialog is open. */
+    val isReordering: Boolean = false,
+    /** When the grid was last fetched, if it is a saved copy shown because the network is gone. */
+    val staleSince: Long? = null,
 ) {
     val gridTools: List<ToolPresentation>
         get() = permissions.gridTools.map(ToolCatalogue::present)
@@ -35,10 +50,13 @@ data class HomeUiState(
     val sections: List<ToolSection>
         get() {
             val byGroup = permissions.gridTools.groupBy { it.groupIdentifier?.takeIf(String::isNotBlank) }
-            val named = groups.mapNotNull { group ->
+            // The user's own order first, then the production's for anything
+            // the user's list does not name (a group created since) —
+            // Android's `ToolsGroupedAdapter.kt:114-119`.
+            val named = groups.orderedBy(groupOrder).mapNotNull { group ->
                 byGroup[group.identifier]
                     ?.takeIf { it.isNotEmpty() }
-                    ?.let { ToolSection(group.name, it.map(ToolCatalogue::present)) }
+                    ?.let { ToolSection(group.name, it.map(ToolCatalogue::present), group.identifier) }
             }
             val placed = groups.map { it.identifier }.toSet()
             val rest = byGroup.filterKeys { it == null || it !in placed }.values.flatten()
@@ -52,15 +70,33 @@ data class HomeUiState(
     val hasLoaded: Boolean get() = permissions.visibleTools.isNotEmpty() || (!isBusy && error == null)
 }
 
-/** One titled run of tiles in the grid. */
-data class ToolSection(val title: String, val tools: List<ToolPresentation>)
+/** One titled run of tiles in the grid; [identifier] null for the leftovers section. */
+data class ToolSection(val title: String, val tools: List<ToolPresentation>, val identifier: String? = null)
 
 /** Where tools with no section of their own gather. */
 const val OTHER_TOOLS = "Other tools"
 
+/**
+ * The groups in the user's chosen order, then the rest in the production's:
+ * a saved order that names a group no longer here is ignored, and one that
+ * misses a new group puts it after the ones it knows.
+ */
+internal fun List<ToolGroup>.orderedBy(order: List<String>): List<ToolGroup> {
+    if (order.isEmpty()) return this
+    val byId = associateBy { it.identifier }
+    val chosen = order.mapNotNull { byId[it] }
+    val chosenIds = chosen.map { it.identifier }.toSet()
+    return chosen + filterNot { it.identifier in chosenIds }
+}
+
 sealed interface HomeEvent {
     data object Reload : HomeEvent
     data class OpenTool(val route: WorkspaceRoute) : HomeEvent
+
+    /** The reorder dialog. Save sends the full list to the server, top first. */
+    data object StartReorder : HomeEvent
+    data object CancelReorder : HomeEvent
+    data class SaveGroupOrder(val order: List<String>) : HomeEvent
 }
 
 sealed interface HomeEffect {
@@ -75,7 +111,16 @@ sealed interface HomeEffect {
  */
 class HomeViewModel(
     private val toolsRepository: ToolsRepository,
+    /**
+     * With this wired, the grid as last answered is kept per production and
+     * drawn when the network is gone — the way into every tool that works
+     * offline. Null leaves the grid network-only, as before.
+     */
+    private val offline: OfflineSupport? = null,
+    private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
 ) : ZillitViewModel<HomeUiState, HomeEvent, HomeEffect>(HomeUiState()) {
+
+    private val json = Json { ignoreUnknownKeys = true }
 
     // Deliberately no eager load. The tools call carries project and user in
     // its `moduledata`, so firing it at construction — before a production is
@@ -86,7 +131,28 @@ class HomeViewModel(
         when (event) {
             HomeEvent.Reload -> load()
             is HomeEvent.OpenTool -> sendEffect(HomeEffect.Open(event.route))
+            HomeEvent.StartReorder -> setState { copy(isReordering = true) }
+            HomeEvent.CancelReorder -> setState { copy(isReordering = false) }
+            is HomeEvent.SaveGroupOrder -> saveGroupOrder(event.order)
         }
+    }
+
+    /**
+     * Applies the new order at once and tells the server; a refusal puts the
+     * old order back with the error alongside. The list sent names every
+     * current group exactly once, which is what the server validates
+     * (Android `reconcileGroupOrder`, ZL-20167).
+     */
+    private fun saveGroupOrder(order: List<String>) {
+        val before = currentState.groupOrder
+        val known = currentState.groups.map { it.identifier }
+        val reconciled = order.filter { it in known } + known.filterNot { it in order }
+        setState { copy(isReordering = false, groupOrder = reconciled) }
+        launchResult(
+            block = { toolsRepository.saveGroupOrder(reconciled) },
+            onSuccess = { },
+            onError = { error -> setState { copy(groupOrder = before, error = error.localised()) } },
+        )
     }
 
     private fun load() {
@@ -99,18 +165,66 @@ class HomeViewModel(
             onSuccess = { groups -> setState { copy(groups = groups) } },
             onError = { },
         )
-
+        // The user's own order for them — a failure leaves the production's.
         launchResult(
-            block = { toolsRepository.loadPermissions() },
-            onSuccess = { permissions ->
-                setState { copy(isBusy = false, permissions = permissions) }
-            },
-            onError = { error ->
-                // Permissions are not partially applied on failure: the state
-                // keeps whatever it had, which for a first load is Empty. A
-                // failed rights call must never widen access.
-                setState { copy(isBusy = false, error = error.localised()) }
-            },
+            block = { toolsRepository.loadGroupOrder() },
+            onSuccess = { order -> setState { copy(groupOrder = order) } },
+            onError = { },
         )
+
+        launch {
+            when (val loaded = toolsRepository.loadPermissions()) {
+                is ZillitResult.Success -> {
+                    setState { copy(isBusy = false, permissions = loaded.data, staleSince = null) }
+                    rememberGrid()
+                }
+
+                is ZillitResult.Failure -> {
+                    // Permissions are not partially applied on failure: the state
+                    // keeps whatever it had, which for a first load is Empty. A
+                    // failed rights call must never widen access. The one thing
+                    // that may stand in is this production's own last answer,
+                    // and only when the failure is the network, not the server.
+                    val saved = recallGrid(loaded.error)
+                    if (saved != null) {
+                        setState {
+                            copy(
+                                isBusy = false,
+                                permissions = saved.first.permissions(),
+                                groups = groups.ifEmpty { saved.first.toolGroups() },
+                                groupOrder = groupOrder.ifEmpty { saved.first.groupOrder },
+                                staleSince = saved.second,
+                            )
+                        }
+                    } else {
+                        setState { copy(isBusy = false, error = loaded.error.localised()) }
+                    }
+                }
+            }
+        }
+    }
+
+    // -- the grid, kept for offline ---------------------------------------------
+
+    /** Kept a moment after the answer, so the sections and order have usually landed too. */
+    private suspend fun rememberGrid() {
+        val support = offline ?: return
+        val scope = support.currentScope() ?: return
+        val state = currentState
+        val copy = ToolsOfflineCopy.of(state.permissions, state.groups, state.groupOrder)
+        support.cache.put(scope, GRID_CACHE, json.encodeToString(ToolsOfflineCopy.serializer(), copy), nowMillis())
+    }
+
+    private suspend fun recallGrid(error: ZillitError): Pair<ToolsOfflineCopy, Long>? {
+        val unreachable = error is ZillitError.NoConnection || error is ZillitError.Timeout
+        val scope = offline?.currentScope()
+        if (!unreachable || scope == null) return null
+        val cached = offline?.cache?.get(scope, GRID_CACHE) ?: return null
+        return runCatching { json.decodeFromString(ToolsOfflineCopy.serializer(), cached.json) }.getOrNull()
+            ?.let { it to cached.fetchedAt }
+    }
+
+    companion object {
+        const val GRID_CACHE = "home.tools"
     }
 }
