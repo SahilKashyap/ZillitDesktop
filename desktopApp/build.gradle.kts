@@ -270,6 +270,68 @@ if (jbrFrameworks.isDirectory) {
 }
 
 /*
+ * The same hole on Windows, in Windows' layout.
+ *
+ * Windows has no framework bundle — CEF ships flat in the JBR's `bin`, so the
+ * DLLs sit beside `jcef.dll` and jlink brings them along. That is the whole of
+ * what it brings: a helper *executable*, a `.dat`, three `.pak`s, a `.bin` and
+ * the `locales` directory are not libraries, so the trimmed runtime gets the
+ * loader and none of what it loads. `libcef.dll` is present and every check
+ * that looks for it passes.
+ *
+ * The failure is the macOS one wearing different clothes — `N_Initialize`
+ * reaching for what is not there — and it aborts the process rather than
+ * throwing, so the `runCatching` around `CefApp.startup` never sees it:
+ *
+ *     Internal Error (os_windows_x86.cpp:144)
+ *     guarantee(result == EXCEPTION_CONTINUE_EXECUTION) failed
+ *     j org.cef.CefApp.N_Initialize(...)+0 jcef
+ *
+ * `./gradlew :desktopApp:run` cannot show this either: it runs on the whole
+ * JBR, where the payload is. Only the packaged app is broken — and it starts,
+ * signs in and renders before dying, which reads as a runtime fault rather
+ * than a packaging one.
+ *
+ * A plain `Copy` is enough here; there are no symlinks to flatten and no
+ * signature to break, which is why this is not the `ditto` dance above.
+ */
+val jbrBin = File(jetbrainsRuntime.get().metadata.installationPath.asFile, "bin")
+
+// Registered only where there is something to copy, decided at configuration
+// time for the same reason as the macOS block: an `onlyIf` predicate closes
+// over this script and the configuration cache cannot serialise that.
+if (File(jbrBin, "jcef_helper.exe").isFile) {
+    val copyCefResources = tasks.register<Copy>("copyCefResources") {
+        dependsOn("createDistributable")
+        description = "Copies CEF's data files and subprocess helper into the packaged runtime."
+
+        // Named rather than globbed: a wildcard over `bin` would also sweep in
+        // the JDK tooling jlink deliberately left out.
+        from(jbrBin) {
+            include(
+                "jcef_helper.exe",
+                "cef_server.exe",
+                "icudtl.dat",
+                "v8_context_snapshot.bin",
+                "resources.pak",
+                "chrome_100_percent.pak",
+                "chrome_200_percent.pak",
+            )
+        }
+        // Chromium resolves these relative to the process, so they land beside
+        // the DLLs rather than in a directory of their own.
+        from(File(jbrBin, "locales")) { into("locales") }
+
+        into(layout.buildDirectory.dir("compose/binaries/main/app/Zillit/runtime/bin"))
+    }
+
+    listOf("packageExe", "packageMsi", "packageDistributionForCurrentOS", "runDistributable")
+        .forEach { consumer ->
+            tasks.matching { it.name == consumer }.configureEach { dependsOn(copyCefResources) }
+        }
+}
+
+/*
  * Shipping the configuration inside the app.
  *
  * `JvmConfigLoader` looks for `zillit.properties` beside the executable, but
