@@ -1,0 +1,39 @@
+-- Drafts the user is still working on, kept across restarts and across a lost
+-- connection. One row per draft; the payload is the owning module's own JSON.
+--
+-- Durable, like the outbox: forward-only migrations, never rebuilt.
+
+CREATE TABLE localDraft (
+    id        TEXT    NOT NULL PRIMARY KEY,
+    userId    TEXT    NOT NULL,
+    projectId TEXT    NOT NULL,
+    -- Which module and form: "cash.submit", "po.new", …
+    kind      TEXT    NOT NULL,
+    payload   TEXT    NOT NULL,
+    updatedAt INTEGER NOT NULL
+);
+
+CREATE INDEX localDraft_scope ON localDraft(userId, projectId, kind);
+
+upsert:
+INSERT OR REPLACE INTO localDraft(id, userId, projectId, kind, payload, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?);
+
+selectById:
+SELECT * FROM localDraft WHERE id = ?;
+
+selectForKind:
+SELECT * FROM localDraft
+WHERE userId = ? AND projectId = ? AND kind = ?
+ORDER BY updatedAt DESC;
+
+-- Drafts only: rows under the `cache.` kind prefix are the last good answers
+-- to reads (ScopedJsonCache), which sign-out may lose without harm.
+countForUser:
+SELECT count(*) FROM localDraft WHERE userId = ? AND kind NOT LIKE 'cache.%';
+
+deleteById:
+DELETE FROM localDraft WHERE id = ?;
+
+deleteAll:
+DELETE FROM localDraft;

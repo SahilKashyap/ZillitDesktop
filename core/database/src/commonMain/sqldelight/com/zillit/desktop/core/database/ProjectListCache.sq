@@ -1,0 +1,34 @@
+-- The device's production list, as last answered by `GET project`.
+--
+-- Separate from `cachedProject` on purpose: that table is the OPEN production's
+-- detail (storage, folders) and is wiped on project switch; this one is the
+-- picker's list, belongs to the signed-in device, and must survive a switch —
+-- it is what the picker shows when the network is not there. Wiped on
+-- sign-out only.
+
+CREATE TABLE cachedProjectListEntry (
+    projectId  TEXT NOT NULL PRIMARY KEY,
+    name       TEXT NOT NULL,
+    code       TEXT NOT NULL,
+    type       TEXT,
+    region     TEXT,
+    isFavourite INTEGER NOT NULL DEFAULT 0,
+    userId     TEXT,
+    parentName TEXT,
+    subType    TEXT,
+    isAdmin    INTEGER NOT NULL DEFAULT 0,
+    isPending  INTEGER NOT NULL DEFAULT 0,
+    createdOn  INTEGER,
+    -- Server order, so the offline picker lists what the online one did.
+    ordinal    INTEGER NOT NULL,
+    cachedAt   INTEGER NOT NULL
+);
+
+upsertProjectListEntry:
+INSERT OR REPLACE INTO cachedProjectListEntry VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectProjectList:
+SELECT * FROM cachedProjectListEntry ORDER BY ordinal;
+
+deleteProjectList:
+DELETE FROM cachedProjectListEntry;

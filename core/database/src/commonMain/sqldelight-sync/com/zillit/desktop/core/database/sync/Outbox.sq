@@ -1,0 +1,80 @@
+-- The outbox: work the user did that the server has not yet accepted.
+--
+-- Unlike every table in ZillitDatabase this is NOT a cache — a row here may be
+-- the only copy of something the user typed. This schema therefore moves by
+-- forward-only migrations (.sqm files next to this one, verified at build
+-- time), never by drop-and-rebuild. See `SchemaPolicy.MigrateForward`.
+
+CREATE TABLE syncOperation (
+    -- Client-minted, unique for ever. Also what a handler sends as the
+    -- server's idempotency key where the backend accepts one.
+    id            TEXT    NOT NULL PRIMARY KEY,
+    userId        TEXT    NOT NULL,
+    projectId     TEXT    NOT NULL,
+    -- Which handler executes it: "cash.requestFloat", "po.create", …
+    kind          TEXT    NOT NULL,
+    -- Human words, fixed at enqueue time so the pending list can be drawn
+    -- without the module that owns the operation.
+    label         TEXT    NOT NULL,
+    -- The handler's own JSON. Opaque here.
+    payload       TEXT    NOT NULL,
+    -- Operations sharing a group run strictly in creation order, and a failed
+    -- one holds the rest of its group until it is retried or discarded.
+    groupKey      TEXT,
+    -- Must be DONE before this one runs; its `result` is readable by this one.
+    dependsOn     TEXT,
+    -- PENDING | IN_FLIGHT | FAILED | DONE
+    status        TEXT    NOT NULL,
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    lastError     TEXT,
+    -- What the handler wants dependents to know once done — a server id, say.
+    result        TEXT,
+    nextAttemptAt INTEGER NOT NULL,
+    createdAt     INTEGER NOT NULL,
+    updatedAt     INTEGER NOT NULL
+);
+
+CREATE INDEX syncOperation_scope ON syncOperation(userId, projectId, status);
+CREATE INDEX syncOperation_group ON syncOperation(groupKey, createdAt);
+
+insert:
+INSERT INTO syncOperation(
+    id, userId, projectId, kind, label, payload, groupKey, dependsOn,
+    status, attempts, lastError, result, nextAttemptAt, createdAt, updatedAt
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectById:
+SELECT * FROM syncOperation WHERE id = ?;
+
+selectForScope:
+SELECT * FROM syncOperation
+WHERE userId = ? AND projectId = ?
+ORDER BY createdAt ASC, rowid ASC;
+
+selectAll:
+SELECT * FROM syncOperation ORDER BY createdAt ASC, rowid ASC;
+
+countOpenForUser:
+SELECT count(*) FROM syncOperation
+WHERE userId = ? AND status != 'DONE';
+
+updateStatus:
+UPDATE syncOperation
+SET status = ?, attempts = ?, lastError = ?, result = ?, nextAttemptAt = ?, updatedAt = ?
+WHERE id = ?;
+
+updatePayload:
+UPDATE syncOperation SET payload = ?, updatedAt = ? WHERE id = ?;
+
+-- Crash recovery: a row left IN_FLIGHT was interrupted, not finished.
+requeueInFlight:
+UPDATE syncOperation SET status = 'PENDING', updatedAt = ? WHERE status = 'IN_FLIGHT';
+
+deleteById:
+DELETE FROM syncOperation WHERE id = ?;
+
+deleteDoneBefore:
+DELETE FROM syncOperation WHERE status = 'DONE' AND updatedAt < ?;
+
+deleteAll:
+DELETE FROM syncOperation;

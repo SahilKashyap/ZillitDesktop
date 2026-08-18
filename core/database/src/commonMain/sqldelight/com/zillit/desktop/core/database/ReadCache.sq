@@ -1,0 +1,37 @@
+-- The last good answer to every cacheable GET, keyed by who asked, which
+-- production they were in, and what they asked for — so a screen can show
+-- what it showed last time when the network is gone, and never another
+-- production's answer.
+--
+-- A cache like every table in this database: refetchable, rebuilt on schema
+-- change, gone with the key on sign-out.
+
+CREATE TABLE cachedRead (
+    key       TEXT    NOT NULL PRIMARY KEY,
+    userId    TEXT    NOT NULL,
+    projectId TEXT    NOT NULL,
+    -- The whole envelope as JSON — status, message, data.
+    body      TEXT    NOT NULL,
+    fetchedAt INTEGER NOT NULL
+);
+
+CREATE INDEX cachedRead_scope ON cachedRead(userId, projectId);
+
+upsert:
+INSERT OR REPLACE INTO cachedRead(key, userId, projectId, body, fetchedAt)
+VALUES (?, ?, ?, ?, ?);
+
+selectByKey:
+SELECT body, fetchedAt FROM cachedRead WHERE key = ?;
+
+countForProject:
+SELECT count(*) FROM cachedRead WHERE userId = ? AND projectId = ?;
+
+deleteForProject:
+DELETE FROM cachedRead WHERE userId = ? AND projectId = ?;
+
+deleteOlderThan:
+DELETE FROM cachedRead WHERE fetchedAt < ?;
+
+deleteAll:
+DELETE FROM cachedRead;
