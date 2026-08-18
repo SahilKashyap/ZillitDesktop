@@ -1,0 +1,27 @@
+-- Zillit Draft's scripts. Local: there is no server for a screenplay's text.
+-- One row per script, per production; the body is the feature's own JSON
+-- (title page + elements) and is opaque here. Kept across project switches
+-- and sign-out — a writer's pages are theirs; the file is SQLCipher-encrypted.
+
+CREATE TABLE screenplay (
+    id         TEXT NOT NULL PRIMARY KEY,
+    projectId  TEXT NOT NULL,
+    title      TEXT NOT NULL,
+    body       TEXT NOT NULL,
+    createdAt  INTEGER NOT NULL,
+    updatedAt  INTEGER NOT NULL
+);
+
+CREATE INDEX screenplay_project ON screenplay(projectId, updatedAt);
+
+upsertScreenplay:
+INSERT OR REPLACE INTO screenplay VALUES (?, ?, ?, ?, ?, ?);
+
+selectScreenplays:
+SELECT * FROM screenplay WHERE projectId = ? ORDER BY updatedAt DESC;
+
+selectScreenplay:
+SELECT * FROM screenplay WHERE id = ?;
+
+deleteScreenplay:
+DELETE FROM screenplay WHERE id = ?;

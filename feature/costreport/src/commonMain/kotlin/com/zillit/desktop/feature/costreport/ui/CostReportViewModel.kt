@@ -1,0 +1,364 @@
+@file:Suppress("TooManyFunctions") // One handler per user act.
+
+package com.zillit.desktop.feature.costreport.ui
+
+import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.feature.costreport.domain.BudgetVersion
+import com.zillit.desktop.feature.costreport.domain.CoaRow
+import com.zillit.desktop.feature.costreport.domain.CostReportExporter
+import com.zillit.desktop.feature.costreport.domain.CostReportFiles
+import com.zillit.desktop.feature.costreport.domain.CostReportRepository
+import com.zillit.desktop.feature.costreport.domain.CostReportTab
+import com.zillit.desktop.feature.costreport.domain.CostReportViewer
+import com.zillit.desktop.feature.costreport.domain.CrColumn
+import com.zillit.desktop.feature.costreport.domain.CrCompany
+import com.zillit.desktop.feature.costreport.domain.CrCurrency
+import com.zillit.desktop.feature.costreport.domain.CrNominal
+import com.zillit.desktop.feature.costreport.domain.CurrencyOptions
+import com.zillit.desktop.feature.costreport.domain.ExportFormat
+import com.zillit.desktop.feature.costreport.domain.SnapshotCadence
+import com.zillit.desktop.feature.costreport.domain.SnapshotHeader
+import com.zillit.desktop.feature.costreport.domain.WeekWindow
+import com.zillit.desktop.feature.costreport.domain.buildSections
+import com.zillit.desktop.feature.costreport.domain.currentWeek
+import com.zillit.desktop.feature.costreport.domain.priorVarianceByKey
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+
+/**
+ * Cost Report, the crew-facing film tool: the live worksheet for the current
+ * production week and the timeline of posted snapshots. Read-only — seven
+ * GETs and one export POST.
+ */
+class CostReportViewModel(
+    private val repository: CostReportRepository,
+    private val exporter: CostReportExporter,
+    private val files: CostReportFiles,
+    private val resolveViewer: () -> CostReportViewer,
+    private val projectName: () -> String,
+    private val resolveUser: (String) -> String?,
+    private val nowMillis: () -> Long,
+) : ZillitViewModel<CostReportUiState, CostReportEvent, CostReportEffect>(CostReportUiState()) {
+
+    private var liveJob: Job? = null
+
+    fun start() {
+        setState { copy(viewer = resolveViewer(), projectName = projectName()) }
+        loadReference()
+    }
+
+    @Suppress("CyclomaticComplexMethod") // Event fan-out.
+    override fun onEvent(event: CostReportEvent) {
+        when (event) {
+            is CostReportEvent.SelectTab -> selectTab(event.tab)
+            CostReportEvent.Refresh -> refresh()
+            CostReportEvent.DismissError -> setState {
+                copy(
+                    referenceError = null,
+                    current = current.copy(error = null),
+                    posted = posted.copy(error = null),
+                    snapshot = snapshot?.copy(error = null),
+                )
+            }
+            is CostReportEvent.SelectCompany -> refilter { copy(companyId = event.companyId) }
+            is CostReportEvent.SelectBudget -> refilter { copy(budgetKey = event.budgetKey) }
+            is CostReportEvent.SelectCurrency -> refilter { copy(currencyCode = event.code) }
+            is CostReportEvent.SearchCurrent -> setState { copy(current = current.copy(query = event.query)) }
+            is CostReportEvent.ToggleSection -> setState {
+                copy(current = current.copy(toggles = current.toggles.toggleSection(event.sectionId)))
+            }
+            is CostReportEvent.ToggleHeader -> setState {
+                copy(current = current.copy(toggles = current.toggles.toggleHeader(event.key)))
+            }
+            is CostReportEvent.ToggleNominal -> setState {
+                copy(current = current.copy(toggles = current.toggles.toggleNominal(event.key)))
+            }
+            is CostReportEvent.OpenLedger -> openLedger(event.nominal, event.column)
+            CostReportEvent.CloseLedger -> setState { copy(ledger = null) }
+            is CostReportEvent.SelectPostedFilter -> setState { copy(posted = posted.copy(filter = event.filter)) }
+            CostReportEvent.RefreshPosted -> loadPosted()
+            is CostReportEvent.OpenSnapshot -> openSnapshot(event.header)
+            CostReportEvent.CloseSnapshot -> setState { copy(snapshot = null) }
+            is CostReportEvent.SearchSnapshot -> setState { copy(snapshot = snapshot?.copy(query = event.query)) }
+            is CostReportEvent.ToggleSnapshotSection -> setState {
+                copy(snapshot = snapshot?.let { it.copy(toggles = it.toggles.toggleSection(event.sectionId)) })
+            }
+            is CostReportEvent.ToggleSnapshotHeader -> setState {
+                copy(snapshot = snapshot?.let { it.copy(toggles = it.toggles.toggleHeader(event.key)) })
+            }
+            is CostReportEvent.ToggleSnapshotNominal -> setState {
+                copy(snapshot = snapshot?.let { it.copy(toggles = it.toggles.toggleNominal(event.key)) })
+            }
+            is CostReportEvent.Export -> export(event.format)
+        }
+    }
+
+    private fun selectTab(tab: CostReportTab) {
+        setState { copy(tab = tab, snapshot = null, ledger = null) }
+        if (tab == CostReportTab.Posted && !state.value.posted.loadedOnce && !state.value.posted.loading) loadPosted()
+    }
+
+    private fun refresh() {
+        when (state.value.tab) {
+            CostReportTab.Current -> {
+                val current = state.value.current
+                val liveOnly = current.loaded && !current.unavailable && state.value.referenceError == null
+                if (liveOnly) loadLive(refresh = true) else loadReference()
+            }
+            CostReportTab.Posted -> loadPosted()
+        }
+    }
+
+    private fun refilter(change: CurrentCr.() -> CurrentCr) {
+        setState { copy(current = current.change()) }
+        if (!state.value.current.unavailable && !state.value.referenceLoading) loadLive(refresh = true)
+    }
+
+    // -- reference data --------------------------------------------------------
+
+    /** COA, budgets, companies and currencies, together; the first two decide whether the tool can run at all. */
+    private fun loadReference() {
+        setState { copy(referenceLoading = true, referenceError = null, current = current.copy(phase = PHASE_INIT)) }
+        launch {
+            val loaded = coroutineScope {
+                val coa = async { repository.chartOfAccounts() }
+                val budgets = async { repository.budgets() }
+                val companies = async { repository.companies() }
+                val currencies = async { repository.currencies() }
+                Reference(coa.await(), budgets.await(), companies.await(), currencies.await())
+            }
+            val failure = loaded.coa.errorOrNull() ?: loaded.budgets.errorOrNull()
+            if (failure != null) {
+                setState {
+                    copy(
+                        referenceLoading = false,
+                        referenceError = failure.userMessage,
+                        current = current.copy(phase = null),
+                    )
+                }
+                return@launch
+            }
+            val coa = loaded.coa.getOrNull().orEmpty()
+            val budgets = loaded.budgets.getOrNull().orEmpty()
+            val currencies = loaded.currencies.getOrNull() ?: CurrencyOptions()
+            val catalogue = if (currencies.currencies.isEmpty() || currencies.currencies.any { it.symbol.isBlank() }) {
+                repository.currencyCatalogue().getOrNull().orEmpty()
+            } else {
+                emptyList()
+            }
+            applyReference(coa, budgets, loaded, currencies, catalogue)
+        }
+    }
+
+    private fun applyReference(
+        coa: List<CoaRow>,
+        budgets: List<BudgetVersion>,
+        loaded: Reference,
+        currencies: CurrencyOptions,
+        catalogue: List<CrCurrency>,
+    ) {
+        val unavailable = coa.isEmpty() || budgets.isEmpty()
+        setState {
+            val kept = current.budgetKey?.takeIf { key -> budgets.any { it.version == key } }
+            val budgetKey = kept ?: pickInitialBudgetKey(budgets)
+            copy(
+                referenceLoading = false,
+                coa = coa,
+                currencyCatalogue = catalogue,
+                current = current.copy(
+                    phase = null,
+                    unavailable = unavailable,
+                    companies = loaded.companies.getOrNull().orEmpty(),
+                    budgets = budgets,
+                    budgetKey = budgetKey,
+                    currencies = currencies.currencies,
+                    currencyCode = current.currencyCode ?: currencies.defaultCode
+                        ?: currencies.currencies.firstOrNull()?.code,
+                ),
+            )
+        }
+        if (!unavailable) loadLive(refresh = false)
+    }
+
+    // -- live ------------------------------------------------------------------
+
+    private fun loadLive(refresh: Boolean) {
+        val now = nowMillis()
+        val week = currentWeek(now)
+        val current = state.value.current
+        val phase = if (refresh) PHASE_REFRESH else PHASE_LIVE
+        setState { copy(current = this.current.copy(phase = phase, error = null, week = week, todayMs = now)) }
+        liveJob?.cancel()
+        liveJob = launch {
+            val prior = async { priorWeekVariance(week) }
+            val result = repository.live(
+                periodStartMs = week.startMs,
+                periodEndMs = week.endMs,
+                budgetVersionId = current.budgetVersionId,
+                companyId = current.companyId,
+                currency = current.currencyCode,
+            )
+            when (result) {
+                is ZillitResult.Failure -> {
+                    prior.cancel()
+                    setState { copy(current = this.current.copy(phase = null, error = result.error.userMessage)) }
+                }
+                is ZillitResult.Success -> {
+                    val (variance, hasPrior) = prior.await()
+                    val report = result.data
+                    setState {
+                        copy(
+                            current = this.current.copy(
+                                phase = null,
+                                report = report,
+                                sections = buildSections(coa, report.lines),
+                                priorVariance = variance,
+                                hasPrior = hasPrior,
+                                symbol = symbolFor(report.displayCurrency ?: this.current.currencyCode),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /** The most recent weekly snapshot that ended before this week — the VTP baseline. Best effort. */
+    private suspend fun priorWeekVariance(week: WeekWindow): Pair<Map<String, Double>, Boolean> {
+        val headers = repository.snapshots(SnapshotCadence.Weekly).getOrNull().orEmpty()
+        val prior = headers.filter { (it.periodEndMs ?: Long.MAX_VALUE) < week.startMs }
+            .maxByOrNull { it.postedAtMs ?: 0L } ?: return emptyMap<String, Double>() to false
+        val detail = repository.snapshot(prior.id).getOrNull() ?: return emptyMap<String, Double>() to false
+        return priorVarianceByKey(detail.lines) to true
+    }
+
+    // -- posted ----------------------------------------------------------------
+
+    private fun loadPosted() {
+        setState { copy(posted = posted.copy(loading = true, error = null)) }
+        launch {
+            when (val result = repository.snapshots(null)) {
+                is ZillitResult.Failure -> setState {
+                    copy(posted = posted.copy(loading = false, loadedOnce = true, error = result.error.userMessage))
+                }
+                is ZillitResult.Success -> setState {
+                    copy(posted = posted.copy(loading = false, loadedOnce = true, rows = result.data))
+                }
+            }
+        }
+    }
+
+    private fun openSnapshot(header: SnapshotHeader) {
+        setState {
+            copy(snapshot = SnapshotView(header = header, symbol = symbolFor(header.currency ?: current.currencyCode)))
+        }
+        launch {
+            when (val result = repository.snapshot(header.id)) {
+                is ZillitResult.Failure -> setState {
+                    val open = snapshot?.takeIf { it.header.id == header.id } ?: return@setState this
+                    copy(snapshot = open.copy(loading = false, error = result.error.userMessage))
+                }
+                is ZillitResult.Success -> setState {
+                    val open = snapshot?.takeIf { it.header.id == header.id } ?: return@setState this
+                    copy(
+                        snapshot = open.copy(
+                            loading = false,
+                            detail = result.data,
+                            sections = buildSections(coa, result.data.lines),
+                            symbol = symbolFor(result.data.header.currency ?: current.currencyCode),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun export(format: ExportFormat) {
+        val open = state.value.snapshot ?: return
+        if (open.exporting != null) return
+        val header = open.shownHeader
+        setState { copy(snapshot = snapshot?.copy(exporting = format)) }
+        launch {
+            val body = buildJsonObject {
+                put("project_name", JsonPrimitive(state.value.projectName))
+                state.value.current.companies.firstOrNull { it.id == header.companyId }?.let {
+                    put("company_name", JsonPrimitive(it.name))
+                }
+                header.postedBy?.let { put("generated_by", JsonPrimitive(resolveUser(it) ?: it)) }
+            }
+            val outcome = when (val bytes = exporter.export(header.id, format, body)) {
+                is ZillitResult.Failure -> bytes
+                is ZillitResult.Success -> files.saveAndOpen(exportFileName(header, format), bytes.data)
+            }
+            setState { copy(snapshot = snapshot?.copy(exporting = null, error = outcome.errorOrNull()?.userMessage)) }
+            if (outcome is ZillitResult.Success) sendEffect(CostReportEffect.Notice("${format.label} downloaded"))
+        }
+    }
+
+    // -- ledger ----------------------------------------------------------------
+
+    private fun openLedger(nominal: CrNominal, column: CrColumn?) {
+        if (nominal.isBucket) {
+            sendEffect(CostReportEffect.Notice("Non-allocated rows have no ledger to open"))
+            return
+        }
+        val current = state.value.current
+        setState {
+            copy(
+                ledger = LedgerView(
+                    nominal = nominal,
+                    type = column?.ledgerType,
+                    source = column?.ledgerSource,
+                    budget = nominal.line.budget,
+                    symbol = current.symbol,
+                ),
+            )
+        }
+        launch {
+            val result = repository.accountLineItems(
+                code = nominal.apiCode,
+                type = column?.ledgerType,
+                source = column?.ledgerSource,
+                currency = current.currencyCode,
+            )
+            setState {
+                val open = ledger?.takeIf { it.nominal.identity == nominal.identity } ?: return@setState this
+                when (result) {
+                    is ZillitResult.Failure ->
+                        copy(ledger = open.copy(loading = false, error = result.error.userMessage))
+                    is ZillitResult.Success ->
+                        copy(ledger = open.copy(loading = false, result = result.data))
+                }
+            }
+        }
+    }
+
+    private class Reference(
+        val coa: ZillitResult<List<CoaRow>>,
+        val budgets: ZillitResult<List<BudgetVersion>>,
+        val companies: ZillitResult<List<CrCompany>>,
+        val currencies: ZillitResult<CurrencyOptions>,
+    )
+
+    private companion object {
+        const val PHASE_INIT = "Loading…"
+        const val PHASE_LIVE = "Computing live report"
+        const val PHASE_REFRESH = "Refreshing live report…"
+    }
+}
+
+/** LIVE → APPROVED → first, keyed by `version` (spec §4.2). */
+fun pickInitialBudgetKey(budgets: List<BudgetVersion>): String? =
+    (budgets.firstOrNull { it.status == "LIVE" } ?: budgets.firstOrNull { it.status == "APPROVED" }
+        ?: budgets.firstOrNull())?.version
+
+/** `{reference || name}.{fmt}`, with path-hostile characters flattened. */
+fun exportFileName(header: SnapshotHeader, format: ExportFormat): String {
+    val stem = header.reference.ifBlank { header.name }.ifBlank { "cr-snapshot" }
+    val safe = stem.replace(Regex("""[\\/:*?"<>|]"""), "-").trim()
+    return "$safe.${format.wire}"
+}
