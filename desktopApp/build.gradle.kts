@@ -301,9 +301,21 @@ val jbrBin = File(jetbrainsRuntime.get().metadata.installationPath.asFile, "bin"
 // time for the same reason as the macOS block: an `onlyIf` predicate closes
 // over this script and the configuration cache cannot serialise that.
 if (File(jbrBin, "jcef_helper.exe").isFile) {
+    /*
+     * Into jlink's runtime image, not the app directory beside it.
+     *
+     * `createDistributable` and `packageExe` are siblings, not a chain: each
+     * takes this image and lays out its own copy, and jpackage builds the
+     * installer's payload itself. Patching `binaries/main/app/…` therefore
+     * fixes the directory `runDistributable` uses and nothing that ships —
+     * the app image runs, the installer carries `libcef.dll` with none of its
+     * payload, and the crash comes back on the installed copy alone.
+     */
+    val runtimeImageBin = layout.buildDirectory.dir("compose/tmp/main/runtime/bin")
+
     val copyCefResources = tasks.register<Copy>("copyCefResources") {
-        dependsOn("createDistributable")
-        description = "Copies CEF's data files and subprocess helper into the packaged runtime."
+        dependsOn("createRuntimeImage")
+        description = "Copies CEF's data files and subprocess helper into the jlink runtime image."
 
         // Named rather than globbed: a wildcard over `bin` would also sweep in
         // the JDK tooling jlink deliberately left out.
@@ -322,13 +334,38 @@ if (File(jbrBin, "jcef_helper.exe").isFile) {
         // the DLLs rather than in a directory of their own.
         from(File(jbrBin, "locales")) { into("locales") }
 
-        into(layout.buildDirectory.dir("compose/binaries/main/app/Zillit/runtime/bin"))
+        into(runtimeImageBin)
+
+        // jlink rewrites this image, so a copy Gradle considers up to date can
+        // have had its output deleted underneath it.
+        outputs.upToDateWhen { false }
+
+        // `Copy` creates whatever destination it is given, so pointing at the
+        // wrong directory succeeds and packages nothing — which is exactly how
+        // the first version of this shipped broken. `libcef.dll` is jlink's
+        // own output and marks the image this must land in.
+        doFirst {
+            val marker = runtimeImageBin.get().file("libcef.dll").asFile
+            check(marker.isFile) {
+                "copyCefResources: no libcef.dll in ${marker.parent}. The runtime image " +
+                    "is not where this expects it, so CEF's payload would be copied somewhere " +
+                    "nothing packages and the installed app would crash in N_Initialize."
+            }
+        }
     }
 
-    listOf("packageExe", "packageMsi", "packageDistributionForCurrentOS", "runDistributable")
-        .forEach { consumer ->
-            tasks.matching { it.name == consumer }.configureEach { dependsOn(copyCefResources) }
-        }
+    // Everything that lays out or wraps the runtime needs the payload in it
+    // first, `createDistributable` included — it is a consumer here, not the
+    // producer this hangs off.
+    listOf(
+        "createDistributable",
+        "packageExe",
+        "packageMsi",
+        "packageDistributionForCurrentOS",
+        "runDistributable",
+    ).forEach { consumer ->
+        tasks.matching { it.name == consumer }.configureEach { dependsOn(copyCefResources) }
+    }
 }
 
 /*
