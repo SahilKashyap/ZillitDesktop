@@ -12,7 +12,13 @@ import kotlinx.datetime.toLocalDateTime
  * part of the list, not a decoration on a card.
  */
 sealed interface BoardRow {
-    data class Separator(val label: String) : BoardRow
+    /**
+     * [key] is what the list keys off, and is the label until a label repeats.
+     * Grouping follows the sort, so a day cannot reopen and the two are the
+     * same in practice — but posts that arrive out of order should degrade to
+     * a repeated heading rather than crash the board.
+     */
+    data class Separator(val label: String, val key: String = label) : BoardRow
     data class Post(val notice: Notice) : BoardRow
 }
 
@@ -29,17 +35,24 @@ sealed interface BoardRow {
 fun List<Notice>.withDateSeparators(
     todayMillis: Long,
     zone: TimeZone = TimeZone.currentSystemDefault(),
+    history: Boolean = false,
 ): List<BoardRow> {
     if (isEmpty()) return emptyList()
 
     val today = todayMillis.toLocalDate(zone)
     var lastDate: kotlinx.datetime.LocalDate? = null
+    val timesLabelled = mutableMapOf<String, Int>()
 
     return buildList {
         this@withDateSeparators.forEach { notice ->
-            val date = notice.createdAtMillis.toLocalDate(zone)
+            // The stamp this mode is sorted by, so the days run in one
+            // direction and none of them can reopen further down.
+            val date = notice.displayTimestamp(history).toLocalDate(zone)
             if (date != lastDate) {
-                add(BoardRow.Separator(date.label(today)))
+                val label = date.label(today)
+                val seen = timesLabelled.getOrElse(label) { 0 }
+                timesLabelled[label] = seen + 1
+                add(BoardRow.Separator(label, if (seen == 0) label else "$label#$seen"))
                 lastDate = date
             }
             add(BoardRow.Post(notice))

@@ -133,7 +133,8 @@ data class HomeFeedUiState(
      * keeping them in state would mean recomputing on every socket arrival.
      */
     val rows: List<BoardRow>
-        get() = notices.forDisplay(history = isHistory).withDateSeparators(nowMillis)
+        get() = notices.forDisplay(history = isHistory)
+            .withDateSeparators(nowMillis, history = isHistory)
 
     /**
      * What the banner over the board shows — the pinned posts, newest first.

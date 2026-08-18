@@ -2058,7 +2058,7 @@ private fun DateSeparator(label: String) {
 }
 
 private fun rowKey(row: BoardRow): String = when (row) {
-    is BoardRow.Separator -> "sep-${row.label}"
+    is BoardRow.Separator -> "sep-${row.key}"
     is BoardRow.Post -> row.notice.id
 }
 

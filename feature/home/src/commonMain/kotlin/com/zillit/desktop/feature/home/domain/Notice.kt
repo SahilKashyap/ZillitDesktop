@@ -241,7 +241,19 @@ const val MODIFY_WINDOW_MILLIS: Long = 30 * 60 * 1000L
  * it (`NoticesV2:78-82`; Android `HomeVm:434`).
  */
 fun List<Notice>.forDisplay(history: Boolean = false): List<Notice> =
-    sortedBy { if (history) it.createdAtMillis else it.orderingTimestamp }
+    sortedBy { it.displayTimestamp(history) }
+
+/**
+ * The stamp a mode orders by — and so the one its date separators group by.
+ *
+ * These have to be the same value. Grouping on `created` while the live board
+ * sorts on `updated` reopens a day that already closed: an edited post sits at
+ * the bottom carrying its creation date, a second separator appears for a day
+ * already shown above, and both separators key off the same label. A
+ * `LazyColumn` refuses a repeated key and takes the whole board down with it.
+ */
+fun Notice.displayTimestamp(history: Boolean): Long =
+    if (history) createdAtMillis else orderingTimestamp
 
 /** `updated` when the server sent one, else `created` — never 0, which would sort to the top. */
 private val Notice.orderingTimestamp: Long

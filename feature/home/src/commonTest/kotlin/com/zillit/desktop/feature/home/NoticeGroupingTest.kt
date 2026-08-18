@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.home
 
 import com.zillit.desktop.feature.home.domain.BoardRow
 import com.zillit.desktop.feature.home.domain.Notice
+import com.zillit.desktop.feature.home.domain.forDisplay
 import com.zillit.desktop.feature.home.domain.toClockTime
 import com.zillit.desktop.feature.home.domain.withDateSeparators
 import kotlinx.datetime.TimeZone
@@ -100,5 +101,54 @@ class NoticeGroupingTest {
     @Test
     fun `a post with no timestamp shows no time rather than 1970`() {
         assertEquals("", 0L.toClockTime(utc))
+    }
+
+    /**
+     * The live board sorts by `updated`, so an edited post moves to the bottom.
+     * Grouping by `created` put it there under its old day — reopening a day
+     * already shown above and giving two separators the same key, which is
+     * what `LazyColumn` refused with "Key sep-14 August 2026 was already used".
+     */
+    @Test
+    fun `an edited post does not reopen the day it was written`() {
+        val edited = notice("b", noon - day).copy(updatedAtMillis = noon + 3_600_000)
+        val rows = listOf(notice("a", noon - day), edited, notice("c", noon))
+            .forDisplay(history = false)
+            .withDateSeparators(todayMillis = noon, zone = utc)
+
+        // Asserted on labels, not keys: the unique-key fallback would hide the
+        // second heading behind "Yesterday#1" and let this pass with the bug
+        // still in place. One heading per day is the actual claim.
+        val separators = rows.filterIsInstance<BoardRow.Separator>()
+        assertEquals(listOf("Yesterday", "Today"), separators.map { it.label })
+        assertEquals(listOf("Yesterday", "Today"), separators.map { it.key })
+    }
+
+    /** History sorts by `created`, so its separators have to group by it too. */
+    @Test
+    fun `history groups by the day a post was written`() {
+        val edited = notice("b", noon - day).copy(updatedAtMillis = noon + 3_600_000)
+        val rows = listOf(notice("a", noon - day), edited, notice("c", noon))
+            .forDisplay(history = true)
+            .withDateSeparators(todayMillis = noon, zone = utc, history = true)
+
+        val keys = rows.filterIsInstance<BoardRow.Separator>().map { it.key }
+        assertEquals(listOf("Yesterday", "Today"), keys)
+    }
+
+    /**
+     * Ordering can still surprise us — a socket arrival racing a page of
+     * history, say. The board must show an odd heading twice rather than
+     * disappear behind a crash.
+     */
+    @Test
+    fun `a repeated day degrades to a distinct key rather than a duplicate`() {
+        val outOfOrder = listOf(notice("a", noon - day), notice("b", noon), notice("c", noon - day))
+            .withDateSeparators(todayMillis = noon, zone = utc)
+
+        val separators = outOfOrder.filterIsInstance<BoardRow.Separator>()
+        val keys = separators.map { it.key }
+        assertEquals(keys.distinct(), keys, "keys must stay unique: $keys")
+        assertEquals(listOf("Yesterday", "Today", "Yesterday"), separators.map { it.label })
     }
 }
