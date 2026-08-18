@@ -373,8 +373,13 @@ object ZillitIcons {
 
     /** Details, metadata. */
     val Info: ImageVector = stroked("Info") {
-        moveTo(12f, 21f)
-        arcTo(9f, 9f, 0f, true, true, 12.01f, 3f)
+        // The ring as two half-arcs, like Clock: one arc between two
+        // diametrically opposite points is exactly a semicircle whichever way
+        // the large-arc flag points — which is how this icon shipped as a "(".
+        moveTo(12f, 3f)
+        arcTo(9f, 9f, 0f, true, true, 12f, 21f)
+        arcTo(9f, 9f, 0f, true, true, 12f, 3f)
+        close()
         moveTo(12f, 11f); lineTo(12f, 16f)
         moveTo(12f, 7.6f); lineTo(12f, 8f)
     }

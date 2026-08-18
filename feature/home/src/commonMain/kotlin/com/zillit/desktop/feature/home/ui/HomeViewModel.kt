@@ -35,6 +35,12 @@ data class HomeUiState(
     val isReordering: Boolean = false,
     /** When the grid was last fetched, if it is a saved copy shown because the network is gone. */
     val staleSince: Long? = null,
+    /**
+     * Tools this desktop provides itself, without a server entry — Zillit
+     * Draft, which keeps its scripts locally. Shown as their own section at
+     * the end of the grid, on every production, regardless of rights.
+     */
+    val localSections: List<ToolSection> = emptyList(),
 ) {
     val gridTools: List<ToolPresentation>
         get() = permissions.gridTools.map(ToolCatalogue::present)
@@ -60,11 +66,12 @@ data class HomeUiState(
             }
             val placed = groups.map { it.identifier }.toSet()
             val rest = byGroup.filterKeys { it == null || it !in placed }.values.flatten()
-            return if (rest.isEmpty()) {
+            val served = if (rest.isEmpty()) {
                 named
             } else {
                 named + ToolSection(OTHER_TOOLS, rest.map(ToolCatalogue::present))
             }
+            return served + localSections
         }
 
     val hasLoaded: Boolean get() = permissions.visibleTools.isNotEmpty() || (!isBusy && error == null)
@@ -118,7 +125,9 @@ class HomeViewModel(
      */
     private val offline: OfflineSupport? = null,
     private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
-) : ZillitViewModel<HomeUiState, HomeEvent, HomeEffect>(HomeUiState()) {
+    /** Sections the desktop adds itself; see [HomeUiState.localSections]. */
+    localSections: List<ToolSection> = emptyList(),
+) : ZillitViewModel<HomeUiState, HomeEvent, HomeEffect>(HomeUiState(localSections = localSections)) {
 
     private val json = Json { ignoreUnknownKeys = true }
 

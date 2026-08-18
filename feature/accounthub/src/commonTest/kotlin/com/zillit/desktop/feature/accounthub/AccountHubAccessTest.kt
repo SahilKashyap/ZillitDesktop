@@ -188,7 +188,10 @@ class AccountHubAccessTest {
 
         val titles = HubNavigation.visibleTo(viewer).map { it.title }
 
-        assertFalse(titles.contains("Transactions"))
+        // Every payroll row is gated on a tool this viewer lacks; Transactions
+        // keeps its ungated Invoices row (as on the web) and stays.
+        assertFalse(titles.contains("Payroll Management"))
+        assertTrue(titles.contains("Transactions"))
         assertTrue(titles.contains("Setup"))
     }
 

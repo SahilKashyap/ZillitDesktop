@@ -55,6 +55,10 @@ object ToolCatalogue {
             (ZillitToolIcons.Account to WorkspaceRoute.Tool("/film-tools/accounts")),
         "ad_dashboard_tool" to
             (ZillitToolIcons.AdDash to WorkspaceRoute.Tool("/film-tools/ad-dashboard")),
+        // The 1st AD's daily report — the production-report engine on its
+        // own template (web `/film-tools/ad-report`).
+        "ad_report_tool" to
+            (ZillitToolIcons.AdDashboard to WorkspaceRoute.Tool("/film-tools/ad-report")),
         "asset_report_tool" to
             (ZillitToolIcons.IcAssets to WorkspaceRoute.Tool("/film-tools/asset-report")),
         "box_schedule_tool" to
@@ -84,6 +88,9 @@ object ToolCatalogue {
             (ZillitToolIcons.Budget to WorkspaceRoute.Tool("/film-tools/budget-builder")),
         "continuity_tool" to
             (ZillitToolIcons.Continuity to WorkspaceRoute.Tool("/film-tools/continuity")),
+        // The crew-facing cost report (live worksheet + posted snapshots).
+        "cost_report_tool" to
+            (ZillitIcons.BarChart to WorkspaceRoute.Tool("/film-tools/cost-report")),
         "deal_memo_tool" to
             (ZillitToolIcons.DealMemo to WorkspaceRoute.Tool("/film-tools/deal-memo")),
         "department_budget_tool" to
@@ -122,6 +129,10 @@ object ToolCatalogue {
             (ZillitToolIcons.IcContinuity to WorkspaceRoute.Tool("/film-tools/home-unit-call-sheet")),
         "home_unit_notices" to
             (ZillitToolIcons.InfoBlack to WorkspaceRoute.Tool("/film-tools/home-unit-notices")),
+        // Accounts payable — the department view for crew, the accountant
+        // pages for the accounts department.
+        "invoices_tool" to
+            (ZillitIcons.Receipt to WorkspaceRoute.Tool("/film-tools/invoices")),
         "info_tool" to
             (ZillitToolIcons.Info to WorkspaceRoute.Tool("/film-tools/info")),
         "location_tool" to
@@ -140,6 +151,9 @@ object ToolCatalogue {
             (ZillitToolIcons.PreProduction to WorkspaceRoute.Tool("/film-tools/pre-production")),
         "production_report_tool" to
             (ZillitToolIcons.ProductionReport to WorkspaceRoute.Tool("/film-tools/production-report")),
+        // The end-of-day wrap report — same engine as the production report.
+        "wrap_report_tool" to
+            (ZillitToolIcons.ProductionReport to WorkspaceRoute.Tool("/film-tools/wrap-report")),
         "production_tool" to
             (ZillitToolIcons.Production to WorkspaceRoute.Tool("/film-tools/production")),
         "purchase_order_tool" to

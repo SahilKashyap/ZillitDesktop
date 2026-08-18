@@ -39,6 +39,8 @@ class HomeBoardContext(
     val player: AudioPlayer? = null,
     /** Opens a shared location in the browser's maps. */
     val onOpenLocation: (GeoPoint) -> Unit = {},
+    /** Opens a web address (the library's Links tab) in the browser. */
+    val onOpenLink: (String) -> Unit = {},
     /** A profile picture's bytes by user id; null falls back to initials. */
     val loadAvatar: suspend (String) -> ByteArray? = { null },
     /** The production's crew names — mention picker and highlights. */
@@ -86,6 +88,7 @@ class HomeToolProvider(
             resolveAuthor = board.resolveAuthor,
             player = board.player,
             onOpenLocation = board.onOpenLocation,
+            onOpenLink = board.onOpenLink,
             loadAvatar = board.loadAvatar,
             crewNames = board.crewNames,
             unitBadge = { unitId -> counts.unit(unitId) },

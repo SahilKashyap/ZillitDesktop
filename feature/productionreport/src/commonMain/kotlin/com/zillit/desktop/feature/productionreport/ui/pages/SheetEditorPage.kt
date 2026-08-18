@@ -51,8 +51,8 @@ internal fun SheetEditorPage(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitPageHeader(
-            title = editor.name.ifBlank { "New production report" },
-            eyebrow = "Production report",
+            title = editor.name.ifBlank { "New ${state.kind.nameStem.lowercase()}" },
+            eyebrow = state.kind.nameStem,
             actions = {
                 ZillitButton(
                     text = "Back",

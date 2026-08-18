@@ -19,6 +19,7 @@ import com.zillit.desktop.core.badges.BadgeStore
 import com.zillit.desktop.core.database.LabelCache
 import com.zillit.desktop.core.database.ProjectCache
 import com.zillit.desktop.core.database.ProjectListCache
+import com.zillit.desktop.core.database.ScreenplayCache
 import com.zillit.desktop.core.database.ZillitDatabase
 import com.zillit.desktop.core.database.SyncDatabaseFactory
 import com.zillit.desktop.core.database.ZillitDatabaseFactory
@@ -404,6 +405,8 @@ sealed interface AppGraph {
         val projectCache: ProjectCache?,
         /** The picker's last list, so productions show without a network. */
         val projectListCache: ProjectListCache?,
+        /** Zillit Draft's scripts, per production; null when the database did not open. */
+        val screenplayCache: ScreenplayCache?,
         val emailCache: EmailCache?,
         val unitRepository: UnitRepository,
         /** The admin's two approval queues — joining crew and profile changes. */
@@ -676,6 +679,7 @@ sealed interface AppGraph {
             }
             // Device-scoped, unlike the project cache: survives a switch,
             // cleared on sign-out below.
+            val screenplayCache = database?.let(::ScreenplayCache)
             val projectListCache = database?.let {
                 ProjectListCache(it, nowMillis = System::currentTimeMillis)
             }
@@ -937,6 +941,7 @@ sealed interface AppGraph {
                 projectContext = projectContext,
                 projectCache = projectCache,
                 projectListCache = projectListCache,
+                screenplayCache = screenplayCache,
                 emailCache = emailCache,
                 unitRepository = unitRepository,
                 approvalsRepository = approvalsRepository,

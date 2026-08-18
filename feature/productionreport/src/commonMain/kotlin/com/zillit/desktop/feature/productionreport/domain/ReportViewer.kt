@@ -38,8 +38,9 @@ data class ReportViewer(
             userId: String,
             displayName: String,
             designation: String,
+            toolIdentifier: String = TOOL_IDENTIFIER,
         ): ReportViewer {
-            val access = permissions.access(TOOL_IDENTIFIER)
+            val access = permissions.access(toolIdentifier)
             if (!access.enabled && permissions.visibleTools.isEmpty()) {
                 return ReportViewer(
                     userId = userId,
@@ -52,8 +53,8 @@ data class ReportViewer(
                 userId = userId,
                 displayName = displayName,
                 designation = designation,
-                canView = permissions.canView(TOOL_IDENTIFIER),
-                canPost = permissions.canPost(TOOL_IDENTIFIER),
+                canView = permissions.canView(toolIdentifier),
+                canPost = permissions.canPost(toolIdentifier),
                 isAdmin = permissions.isAdmin,
                 ready = true,
             )

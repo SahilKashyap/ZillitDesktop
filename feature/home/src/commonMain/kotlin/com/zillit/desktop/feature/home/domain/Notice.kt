@@ -169,9 +169,17 @@ fun NoticeComment.deleteVerdict(userId: String?, isAdmin: Boolean, nowMillis: Lo
     }
 
 /**
- * The edit rule for a post — as for a reply, plus one gate: only a post the
- * server has taken can be edited; an optimistic card still in flight has no
- * server id to address.
+ * The edit rule for a post — the author, within the window; only a post the
+ * server has taken (an optimistic card still in flight has no server id to
+ * address).
+ *
+ * Owner-only because the **server** is: `PUT home/chat/{id}` — the route an
+ * edit and a pin both ride — answers "You do not have access to this" to an
+ * admin on someone else's post, and takes the author's own seven-day-old one
+ * (found live, 2026-08-18). Android's client is looser (`Options.EditComment`
+ * lets anyone with posting rights into the editor) and would meet the same
+ * refusal on save; the desktop does not offer what the server will not take.
+ * Replies: `canEditMessage`, owner-only there too.
  */
 fun Notice.editVerdict(userId: String?, nowMillis: Long): ModifyVerdict = when {
     sendState != NoticeSendState.Sent -> ModifyVerdict.NotSent
@@ -179,6 +187,14 @@ fun Notice.editVerdict(userId: String?, nowMillis: Long): ModifyVerdict = when {
     nowMillis - createdAtMillis > MODIFY_WINDOW_MILLIS -> ModifyVerdict.WindowClosed
     else -> ModifyVerdict.Allowed
 }
+
+/**
+ * Whether Edit — and Pin, which rides the same route — belongs in a post's
+ * menu at all: the author's, on the server. Untimed, like [isActionableBy];
+ * the click explains the clock.
+ */
+fun Notice.isEditableBy(userId: String?): Boolean =
+    sendState == NoticeSendState.Sent && userId != null && authorId == userId
 
 /** The delete rule for a post: admin any age, owner within the window, sent only. */
 fun Notice.deleteVerdict(userId: String?, isAdmin: Boolean, nowMillis: Long): ModifyVerdict = when {

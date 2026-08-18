@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.productionreport.ui
 
+import com.zillit.desktop.feature.productionreport.domain.ReportKind
 import com.zillit.desktop.feature.productionreport.domain.ReportStatus
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.ReportViewer
@@ -15,8 +16,10 @@ enum class ReportDestination(val label: String) {
     Published("Published"),
     ;
 
-    fun visibleTo(viewer: ReportViewer): Boolean =
-        viewer.canAuthor || this == Approvals
+    fun visibleTo(viewer: ReportViewer, kind: ReportKind = ReportKind.Production): Boolean = when {
+        this == Approvals -> kind.hasApprovals
+        else -> viewer.canAuthor
+    }
 }
 
 /** The approvals tab's three buckets — same split as the web. */
@@ -62,6 +65,7 @@ data class PublishDialog(
 )
 
 data class ReportUiState(
+    val kind: ReportKind = ReportKind.Production,
     val viewer: ReportViewer = ReportViewer(),
     val destination: ReportDestination = ReportDestination.Drafts,
     val bucket: ApprovalBucket = ApprovalBucket.Sent,

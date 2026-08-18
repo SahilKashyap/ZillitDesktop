@@ -67,6 +67,10 @@ dependencies {
     implementation(project(":feature:pagedistribution"))
     implementation(project(":feature:recce"))
     implementation(project(":feature:location"))
+    implementation(project(":feature:draft"))
+    implementation(project(":feature:continuity"))
+    implementation(project(":feature:costreport"))
+    implementation(project(":feature:invoices"))
     implementation(project(":feature:transportation"))
 
     // The app module had no tests until the single-instance guard, which is
@@ -75,6 +79,9 @@ dependencies {
     testImplementation(kotlin("test"))
 
     implementation(compose.desktop.currentOs)
+    // Already on the runtime classpath transitively; declared so the Drive
+    // widget's desktop-layer call (DesktopWindowLevel) can compile against it.
+    implementation("net.java.dev.jna:jna:5.13.0")
     implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.kotlinx.datetime)
     implementation(libs.compose.uiToolingPreview)

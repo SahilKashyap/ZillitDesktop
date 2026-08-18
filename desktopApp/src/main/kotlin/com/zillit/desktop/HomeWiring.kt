@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions") // One feed factory per Home-engine board.
+
 package com.zillit.desktop
 
 import com.zillit.desktop.core.datastore.ZillitPreferences
@@ -458,6 +460,16 @@ internal fun AppGraph.Ready.serviceUnitsFeed(
 /** Camera & Sound Report — `GET reports/unit/` on the script-notes host. */
 internal fun AppGraph.Ready.reportsFeed(permissions: () -> ProjectPermissions): HomeFeedViewModel =
     serviceUnitsFeed(REPORTS_TOOL, "reports", ZillitService.ScriptNotes, "reports/unit/", permissions)
+
+/**
+ * Script Notes — the same board engine on the script-notes host, segment
+ * `script-notes`, three system units (Script Takes, Daily Progress Report,
+ * Continuity Notes) from `GET script-notes/unit`. The web's V2 page is this
+ * engine verbatim; its only extras — an episode stamp on document posts for
+ * television productions and a deleted-messages history view — are not here.
+ */
+internal fun AppGraph.Ready.scriptNotesFeed(permissions: () -> ProjectPermissions): HomeFeedViewModel =
+    serviceUnitsFeed("script_notes_tool", "script-notes", ZillitService.ScriptNotes, "script-notes/unit", permissions)
 
 /** Catering — `GET catering/unit` on the unit host; breakfast/lunch/dinner plus the production's own. */
 internal fun AppGraph.Ready.cateringFeed(permissions: () -> ProjectPermissions): HomeFeedViewModel =

@@ -61,6 +61,8 @@ object PayloadWire {
             ),
             approverIds = obj.textList("approverIds", "approver_ids"),
             internalReceiverIds = obj.textList("internalReceiverIds", "internal_receiver_ids"),
+            reportType = obj.text("reportType", "report_type").trim().lowercase(),
+            secondAdName = obj.text("secondADName", "second_ad_name"),
         )
     }
 
@@ -133,6 +135,10 @@ object PayloadWire {
                 put("date", payload.shared.dateYmd)
                 put("approverIds", payload.shared.approverIds.toJsonArray())
                 put("internalReceiverIds", payload.shared.internalReceiverIds.toJsonArray())
+                // Only the AD / Wrap kinds carry these; a production report's
+                // `shared` stays byte-for-byte what the web writes.
+                if (payload.shared.reportType.isNotBlank()) put("reportType", payload.shared.reportType)
+                if (payload.shared.secondAdName.isNotBlank()) put("secondADName", payload.shared.secondAdName)
             },
         )
         put(

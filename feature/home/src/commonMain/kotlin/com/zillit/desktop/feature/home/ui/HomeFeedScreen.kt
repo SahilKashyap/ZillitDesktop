@@ -61,6 +61,7 @@ import com.zillit.desktop.feature.home.domain.HomeUnit
 import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.domain.BoardRow
 import com.zillit.desktop.feature.home.domain.Notice
+import com.zillit.desktop.feature.home.domain.toLibrary
 import com.zillit.desktop.feature.home.domain.ReadBy
 import com.zillit.desktop.feature.home.domain.ReadReceipt
 import com.zillit.desktop.feature.home.domain.toClockTime
@@ -136,6 +137,8 @@ private data class BoardUi(
     /** Whether Edit and Delete belong in the menu — author or admin; the click enforces the clock. */
     val canActOnComment: (NoticeComment) -> Boolean,
     val canActOnNotice: (Notice) -> Boolean,
+    /** Whether Edit belongs in a post's menu — the author's, as the server has it. */
+    val canEditNotice: (Notice) -> Boolean,
     /** Pin rides the edit route, so it takes the author's rights — untimed. */
     val canPin: (Notice) -> Boolean,
     /** The call sheet unit: no Forward in its menus, as on both phones. */
@@ -172,6 +175,8 @@ internal fun HomeFeedScreen(
     player: AudioPlayer? = null,
     /** Opens a shared location in the browser's maps. Injected — no IO here. */
     onOpenLocation: (GeoPoint) -> Unit = {},
+    /** Opens a web address from the library's Links tab in the browser. */
+    onOpenLink: (String) -> Unit = {},
     /**
      * The sender's display line, from the production's crew list.
      *
@@ -250,10 +255,6 @@ internal fun HomeFeedScreen(
 
     if (dropHover) DropOverlay()
 
-    lightbox?.let { attachment ->
-        MediaLightbox(attachment = attachment, media = media, onClose = { lightbox = null })
-    }
-
     BoardDialogs(
         state = state,
         onEvent = onEvent,
@@ -262,7 +263,15 @@ internal fun HomeFeedScreen(
         loadAvatar = loadAvatar,
         imageReply = imageReply,
         onImageReplyClosed = { imageReply = null },
+        onPreview = { lightbox = it },
+        onOpenLink = onOpenLink,
     )
+
+    // Last, so it covers everything — including the Gallery it can be
+    // opened from; drawn before the dialogs it sat underneath them.
+    lightbox?.let { attachment ->
+        MediaLightbox(attachment = attachment, media = media, onClose = { lightbox = null })
+    }
     }
 }
 
@@ -299,9 +308,24 @@ private fun BoardDialogs(
     loadAvatar: suspend (String) -> ByteArray?,
     imageReply: Notice?,
     onImageReplyClosed: () -> Unit,
+    onPreview: (NoticeAttachment) -> Unit,
+    onOpenLink: (String) -> Unit,
 ) {
     ForwardPicker(state, onEvent)
     ReadByPanel(state.readBy, canNotify = state.canCompose, resolveAuthor, loadAvatar, onEvent)
+    // Android's Gallery — built from the posts on screen, as there.
+    val library = remember(state.notices) { state.notices.toLibrary() }
+    NoticeLibraryPanel(
+        visible = state.libraryOpen,
+        unitLabel = state.selectedUnit?.label,
+        library = library,
+        media = media,
+        resolveAuthor = resolveAuthor,
+        onPreview = onPreview,
+        onOpen = { noticeId, file -> onEvent(HomeFeedEvent.OpenAttachment(noticeId, file)) },
+        onOpenLink = onOpenLink,
+        onDismiss = { onEvent(HomeFeedEvent.DismissLibrary) },
+    )
     CallSheetPromptDialog(state, onEvent)
     PublishPromptDialog(state, onEvent)
     ImageReplyDialog(
@@ -1737,12 +1761,17 @@ private fun NoticeAttachment(
 
 /**
  * The menu on a post — the phones' set, in a fixed order rather than
- * Android's alphabetical one, with Delete last as there.
+ * Android's alphabetical one, with Delete last as there. Android's list
+ * (`Home.kt` `showDropDownOptions`, `optionHandler`): Translate, Publish to
+ * Doc Distribution, Read By User, Edit, Gallery, Reply, Forward, Share,
+ * Download, Image Reply, Delete.
  *
  * What is missing and why: *Share* (a system share sheet — nothing to hand
- * to on a desktop), *Gallery* (the unit's media wall), *Translate* (no
- * translation layer here), *Publish to Doc Distribution* (the call sheet's
- * hand-off to that tool — a cross-module wiring for a later pass).
+ * to on a desktop), *Translate* (no translation layer here). Where Android
+ * shows an item to everyone and refuses on the click (Reply, Forward,
+ * Delete without rights), this menu leaves it out — the same rule, one
+ * step earlier; Edit and Delete keep the item and explain the *clock* on
+ * the click, as Android's toast does.
  */
 private fun noticeMenuItems(
     notice: Notice,
@@ -1790,17 +1819,22 @@ private fun fileItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = build
 }
 
 /**
- * Forward, Read by, Pin. Anyone may forward any sent post — rights are the
- * *target* unit's business, checked when one is chosen — but not from the
- * call sheet, on either phone (Android `Home.kt:1331`). The pin flag rides
- * the edit route, so it takes the author's (or an admin's) rights; offering
- * it elsewhere earns a refusal (found live: "You do not have access to this").
+ * Forward, Read by, Gallery, Pin. Forwarding takes posting rights on *this*
+ * unit (Android `optionHandler` `Options.Forward`: `hasPostingRights()` or
+ * the posting-rights toast) and the target's rights are checked again when
+ * one is chosen — but never from the call sheet, on either phone (Android
+ * `Home.kt` `showForward`). Gallery is the unit's Media / Docs / Links
+ * library, on every post's menu as on Android (`showGallery = true`). The
+ * pin flag rides the edit route, so it takes the author's (or an admin's)
+ * rights — an admin's are not enough; offering it elsewhere earns a refusal
+ * (found live, twice: "You do not have access to this").
  */
 private fun boardItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buildList {
-    if (!ui.isCallSheet) {
+    if (!ui.isCallSheet && ui.canReply) {
         add(NoticeMenuItem("Forward…") { ui.onEvent(HomeFeedEvent.StartForward(notice.id)) })
     }
     add(NoticeMenuItem("Read by…") { ui.onEvent(HomeFeedEvent.ShowReadBy(notice.id)) })
+    add(NoticeMenuItem("Gallery") { ui.onEvent(HomeFeedEvent.ShowLibrary) })
     if (ui.canPin(notice)) {
         add(
             NoticeMenuItem(if (notice.isPinned) "Unpin" else "Pin") {
@@ -1811,16 +1845,19 @@ private fun boardItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buil
 }
 
 /**
- * Edit and Delete for the author or an admin — untimed here; the click
- * enforces the clock. Editing rewrites the text, a media post's caption is
- * its text, and one without a caption has nothing to edit (Android `:1344`).
+ * Edit for the author (the server's rule — see `Notice.editVerdict`), Delete
+ * for the author or an admin — untimed here; the click enforces the clock.
+ * Editing rewrites the text, a media post's caption is its text, and one
+ * without a caption has nothing to edit (Android `showEdit =
+ * !message.isNullOrEmpty()`).
  */
 private fun ownerItems(notice: Notice, ui: BoardUi, onArmDelete: () -> Unit): List<NoticeMenuItem> = buildList {
-    if (!ui.canActOnNotice(notice)) return@buildList
-    if (notice.body.isNotBlank()) {
+    if (notice.body.isNotBlank() && ui.canEditNotice(notice)) {
         add(NoticeMenuItem("Edit") { ui.onEvent(HomeFeedEvent.StartEditNotice(notice.id)) })
     }
-    add(NoticeMenuItem("Delete") { onArmDelete() })
+    if (ui.canActOnNotice(notice)) {
+        add(NoticeMenuItem("Delete") { onArmDelete() })
+    }
 }
 
 /**
@@ -2081,10 +2118,9 @@ private fun BoardArea(
                 canReply = state.canCompose,
                 canActOnComment = state::canAct,
                 canActOnNotice = state::canAct,
-                canPin = { notice ->
-                    state.isAdmin ||
-                        (notice.authorId != null && notice.authorId == state.currentUserId)
-                },
+                canEditNotice = state::canEdit,
+                // Pin rides the edit route: the author's, as the server has it.
+                canPin = state::canEdit,
                 isCallSheet = unit.kind == HomeUnitKind.CallSheet,
                 canPublishToDistribution = state.canPublishToDistribution,
                 onImageReply = onImageReply,

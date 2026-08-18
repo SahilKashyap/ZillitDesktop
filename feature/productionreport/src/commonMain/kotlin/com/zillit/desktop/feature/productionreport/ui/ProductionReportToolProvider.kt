@@ -15,18 +15,25 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.feature.productionreport.domain.ReportKind
 
 /**
- * Production Report as a workspace tool, at the tile's own path
- * (`/film-tools/production-report`).
+ * Production Report — or the AD / Wrap report, which share the engine — as a
+ * workspace tool at the tile's own path (`/film-tools/production-report`,
+ * `/film-tools/ad-report`, `/film-tools/wrap-report`).
  */
 class ProductionReportToolProvider(
     private val viewModel: ReportViewModel,
 ) : ToolProvider {
 
-    override val path: String = PRODUCTION_REPORT_PATH
-    override val title: String = "Production Report"
-    override val icon = ZillitToolIcons.ProductionReport
+    private val kind: ReportKind get() = viewModel.kind
+
+    override val path: String = viewModel.kind.path
+    override val title: String = viewModel.kind.title
+    override val icon = when (viewModel.kind) {
+        ReportKind.Ad -> ZillitToolIcons.AdDashboard
+        else -> ZillitToolIcons.ProductionReport
+    }
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
     override val defaultSize: DpSize = DpSize(1280.dp, 860.dp)
@@ -51,3 +58,5 @@ class ProductionReportToolProvider(
 }
 
 const val PRODUCTION_REPORT_PATH = "/film-tools/production-report"
+const val AD_REPORT_PATH = "/film-tools/ad-report"
+const val WRAP_REPORT_PATH = "/film-tools/wrap-report"

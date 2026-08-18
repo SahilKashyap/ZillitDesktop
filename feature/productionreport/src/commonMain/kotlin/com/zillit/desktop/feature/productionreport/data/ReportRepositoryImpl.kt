@@ -277,7 +277,16 @@ class ReportRepositoryImpl(
             createdAt = obj.text("created_on", "createdAt"),
             updatedAt = obj.text("updated_on", "updatedAt"),
             publishedAt = obj.text("published_on", "publishedAt"),
+            reportType = reportTypeOf(obj),
         )
+    }
+
+    /** List rows embed the current revision, so the kind is known without opening the sheet. */
+    private fun reportTypeOf(obj: JsonObject): String {
+        val revision = obj.firstOf("currentRevision", "current_revision") as? JsonObject
+        val payload = (revision?.firstOf("payload") ?: obj.firstOf("payload")) as? JsonObject
+        val shared = payload?.firstOf("shared") as? JsonObject
+        return shared?.text("reportType", "report_type").orEmpty().trim().lowercase()
     }
 
     private fun parseDetail(obj: JsonObject?): ReportDetail {

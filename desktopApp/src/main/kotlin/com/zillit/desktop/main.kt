@@ -46,6 +46,9 @@ import com.zillit.desktop.core.workspace.ToolRegistry
 import com.zillit.desktop.core.workspace.WorkspaceShortcuts
 import com.zillit.desktop.core.workspace.WorkspaceEvent
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.home.domain.ToolPresentation
+import com.zillit.desktop.feature.home.ui.ToolSection
 import com.zillit.desktop.core.workspace.WorkspaceViewModel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -179,6 +182,7 @@ import com.zillit.desktop.feature.esignature.domain.EsignViewer
 import com.zillit.desktop.feature.esignature.ui.EsignToolProvider
 import com.zillit.desktop.feature.esignature.ui.EsignViewModel
 import com.zillit.desktop.feature.productionreport.data.ReportRepositoryImpl
+import com.zillit.desktop.feature.productionreport.domain.ReportKind
 import com.zillit.desktop.feature.productionreport.domain.ReportViewer
 import com.zillit.desktop.feature.productionreport.ui.ProductionReportToolProvider
 import com.zillit.desktop.feature.productionreport.ui.ReportViewModel
@@ -194,6 +198,12 @@ import com.zillit.desktop.feature.pagedistribution.ui.DistributionToolProvider
 import com.zillit.desktop.feature.pagedistribution.ui.DistributionViewModel
 import com.zillit.desktop.feature.recce.ui.RecceToolProvider
 import com.zillit.desktop.feature.location.ui.LocationViewModel
+import com.zillit.desktop.feature.continuity.ui.ContinuityViewModel
+import com.zillit.desktop.feature.costreport.ui.CostReportViewModel
+import com.zillit.desktop.feature.invoices.ui.InvoicesViewModel
+import com.zillit.desktop.feature.draft.ui.DRAFT_PATH
+import com.zillit.desktop.feature.draft.ui.DraftToolProvider
+import com.zillit.desktop.feature.draft.ui.DraftViewModel
 import com.zillit.desktop.feature.transportation.data.TransportRepositoryImpl
 import com.zillit.desktop.feature.transportation.domain.TransportViewer
 import com.zillit.desktop.feature.transportation.ui.TransportToolProvider
@@ -1565,7 +1575,10 @@ private fun AppGraph.Ready.callSheetViewer(permissions: ProjectPermissions): Cal
     )
 }
 
-private fun AppGraph.Ready.productionReportViewer(permissions: ProjectPermissions): ReportViewer {
+private fun AppGraph.Ready.productionReportViewer(
+    permissions: ProjectPermissions,
+    kind: ReportKind = ReportKind.Production,
+): ReportViewer {
     val context = projectContext?.context?.value
     val me = context?.user(context.profile?.userId)
     return ReportViewer.from(
@@ -1573,8 +1586,33 @@ private fun AppGraph.Ready.productionReportViewer(permissions: ProjectPermission
         userId = context?.profile?.userId.orEmpty(),
         displayName = context?.profile?.fullName.orEmpty(),
         designation = me?.designation.orEmpty(),
+        toolIdentifier = kind.toolIdentifier,
     )
 }
+
+/**
+ * One report engine, three tools: the production report, and the AD / Wrap
+ * reports that ride the same service under `shared.reportType`.
+ */
+private fun AppGraph.Ready.buildReport(
+    kind: ReportKind,
+    permissions: () -> ProjectPermissions,
+    today: () -> kotlinx.datetime.LocalDate,
+): ReportViewModel = ReportViewModel(
+    repository = ReportRepositoryImpl(apiClient, config),
+    kind = kind,
+    delivery = productionReportDelivery(),
+    callSheets = productionReportCallSheets(CallSheetRepositoryImpl(apiClient, config)),
+    resolveViewer = { productionReportViewer(permissions(), kind) },
+    projectId = { projectContext?.context?.value?.project?.projectId },
+    membersProvider = { reportMembers() },
+    todayYmd = {
+        val day = today()
+        "${day.year}-" +
+            "${day.monthNumber.toString().padStart(2, '0')}-" +
+            day.dayOfMonth.toString().padStart(2, '0')
+    },
+)
 
 /** The crew as the call sheet's employee sections and pickers need them. */
 private fun AppGraph.Ready.sheetMembers(): List<SheetMember> =
@@ -1659,6 +1697,9 @@ internal class AppViewModels(
     val callSheet: CallSheetViewModel?,
     /** The daily production report, seeded from the last call sheet. */
     val productionReport: ReportViewModel?,
+    /** AD and Wrap reports: the production-report engine on their own templates. */
+    val adReport: ReportViewModel?,
+    val wrapReport: ReportViewModel?,
     /** Script sides: scripts in, scene picks, server-generated PDFs out. */
     val sides: SidesViewModel?,
     /** The Info board — the Home feed engine on the `info` segment. */
@@ -1667,6 +1708,8 @@ internal class AppViewModels(
     val confidentialInfo: HomeFeedViewModel?,
     /** Camera & Sound Report — the same engine on the script-notes host, one tab per report unit. */
     val reports: HomeFeedViewModel?,
+    /** Script Notes — the board engine on the script-notes host: takes, daily progress, continuity notes. */
+    val scriptNotes: HomeFeedViewModel?,
     /** Catering and Message Accounts — the same engine on the unit host, tabs from each tool's units. */
     val catering: HomeFeedViewModel?,
     val accounts: HomeFeedViewModel?,
@@ -1678,8 +1721,16 @@ internal class AppViewModels(
     val recce: RecceViewModel?,
     /** Transportation: vehicles, pickup requests, permanent allocations, drivers. */
     val transport: TransportViewModel?,
+    /** Zillit Draft: the screenwriting editor, scripts kept on this machine per production. */
+    val draft: DraftViewModel?,
     /** Location: the scouting library — photos, videos and links by place. */
     val location: LocationViewModel?,
+    /** Continuity: photos, videos and documents by scene, per department and forwarded. */
+    val continuity: ContinuityViewModel?,
+    /** Cost Report: the crew-facing live worksheet and posted snapshots. */
+    val costReport: CostReportViewModel?,
+    /** Invoices: accounts payable — the department view, and the accountant pages. */
+    val invoices: InvoicesViewModel?,
     /** The three PDF distribution tools — one engine, three [DistributionTool]s. */
     val scheduleDistribution: DistributionViewModel?,
     val scriptDistribution: DistributionViewModel?,
@@ -1688,6 +1739,33 @@ internal class AppViewModels(
     val docDist: DocDistViewModel?,
     val drive: DriveViewModel?,
 )
+
+/**
+ * The Film Tools grid's desktop-only section: tools this app provides without
+ * a server entry. Zillit Draft keeps its scripts on this machine, so it is on
+ * every production and needs no rights.
+ */
+private fun localToolSections(): List<ToolSection> = listOf(
+    ToolSection(
+        title = "Writing",
+        tools = listOf(
+            ToolPresentation(
+                identifier = "zillit_draft",
+                label = "Zillit Draft",
+                icon = ZillitIcons.Edit,
+                route = WorkspaceRoute.Tool(DRAFT_PATH),
+            ),
+        ),
+        identifier = null,
+    ),
+)
+
+/**
+ * The Drive view model, for Zillit Draft's "Send PDF to Drive": built after
+ * it in the same factory, so it is read through a holder rather than
+ * captured. Set once the view models exist.
+ */
+private val driveHolder = java.util.concurrent.atomic.AtomicReference<DriveViewModel?>(null)
 
 @Composable
 // Linear construction of every screen; splitting it hides the set, and the
@@ -1705,7 +1783,9 @@ private fun rememberAppViewModels(
         // read from it: the tool-access grid arrives with Home's `project/tools`
         // fetch, and the library tools are gated by it. Issuing a second call
         // for the same list would mean two answers that can disagree.
-        val home = ready?.let { HomeViewModel(it.toolsRepository, offline = it.offlineSupport) }
+        val home = ready?.let {
+            HomeViewModel(it.toolsRepository, offline = it.offlineSupport, localSections = localToolSections())
+        }
         val permissions = { home?.state?.value?.permissions ?: ProjectPermissions.Empty }
 
         AppViewModels(
@@ -1901,26 +1981,9 @@ private fun rememberAppViewModels(
                     },
                 )
             },
-            productionReport = ready?.let { graph ->
-                ReportViewModel(
-                    repository = ReportRepositoryImpl(graph.apiClient, graph.config),
-                    delivery = graph.productionReportDelivery(),
-                    callSheets = productionReportCallSheets(
-                        CallSheetRepositoryImpl(graph.apiClient, graph.config),
-                    ),
-                    resolveViewer = { graph.productionReportViewer(permissions()) },
-                    projectId = {
-                        graph.projectContext?.context?.value?.project?.projectId
-                    },
-                    membersProvider = { graph.reportMembers() },
-                    todayYmd = {
-                        val day = today()
-                        "${day.year}-" +
-                            "${day.monthNumber.toString().padStart(2, '0')}-" +
-                            day.dayOfMonth.toString().padStart(2, '0')
-                    },
-                )
-            },
+            productionReport = ready?.buildReport(ReportKind.Production, permissions, ::today),
+            adReport = ready?.buildReport(ReportKind.Ad, permissions, ::today),
+            wrapReport = ready?.buildReport(ReportKind.Wrap, permissions, ::today),
             sides = ready?.let { graph ->
                 SidesViewModel(
                     repository = SidesRepositoryImpl(
@@ -1950,6 +2013,7 @@ private fun rememberAppViewModels(
                 permissions = permissions,
             ),
             reports = ready?.reportsFeed(permissions),
+            scriptNotes = ready?.scriptNotesFeed(permissions),
             catering = ready?.cateringFeed(permissions),
             accounts = ready?.accountsFeed(permissions),
             boxSchedule = ready?.let { graph ->
@@ -1968,6 +2032,15 @@ private fun rememberAppViewModels(
             },
             recce = ready?.buildRecce(permissions),
             location = ready?.buildLocation(permissions),
+            continuity = ready?.buildContinuity(permissions),
+            costReport = ready?.buildCostReport(permissions),
+            invoices = ready?.buildInvoices(permissions, scope),
+            draft = ready?.let { graph ->
+                graph.buildDraft(
+                    drive = { driveHolder.get() },
+                    projectId = { graph.projectContext?.context?.value?.project?.projectId },
+                )
+            },
             transport = ready?.let { graph ->
                 TransportViewModel(
                     repository = TransportRepositoryImpl(graph.apiClient, graph.config),
@@ -2000,7 +2073,7 @@ private fun rememberAppViewModels(
                     // MultipartDriveUploader.
                     uploader = MultipartDriveUploader(graph.driveRepository, graph.httpClient),
                     newUploadId = { UUID.randomUUID().toString() },
-                )
+                ).also(driveHolder::set)
             },
         )
     }
@@ -2036,6 +2109,7 @@ private fun buildRegistry(
                     player = audioPlayer,
                     // The same guarded launcher the auth links use — https only.
                     onOpenLocation = { point -> openInBrowser(point.mapsUrl) },
+                    onOpenLink = { url -> openInBrowser(url) },
                     loadAvatar = { userId -> ready?.let { fetchAvatar(it, userId) } },
                     crewNames = {
                         ready?.projectContext?.context?.value?.users
@@ -2086,7 +2160,13 @@ private fun buildRegistry(
     val maps = viewModels.maps?.let { MapToolProvider(it, onOpenUrl = ::openInBrowser) }
     val recce = viewModels.recce?.let { RecceToolProvider(it, onOpenUrl = ::openInBrowser) }
     val transport = viewModels.transport?.let { TransportToolProvider(it) }
+    val draft = viewModels.draft?.let { DraftToolProvider(it) }
     val location = viewModels.location?.let { vm -> (graph as? AppGraph.Ready)?.locationProvider(vm, scope) }
+    val continuity = viewModels.continuity?.let { vm ->
+        (graph as? AppGraph.Ready)?.continuityProvider(vm, scope)
+    }
+    val costReport = viewModels.costReport?.let { vm -> (graph as? AppGraph.Ready)?.costReportProvider(vm) }
+    val invoices = viewModels.invoices?.let { invoicesProvider(it) }
     // Schedule Full & One Line, Script & Pages, Schedule D.O.D — the same
     // PDF-distribution engine at the web's three paths.
     val ready = graph as? AppGraph.Ready
@@ -2140,6 +2220,16 @@ private fun buildRegistry(
             path = BoardToolProvider.REPORTS_PATH,
             title = "Camera & Sound Report",
             icon = ZillitToolIcons.ProductionReport,
+            feedViewModel = feed,
+            board = boardContext,
+            badges = (graph as? AppGraph.Ready)?.badgeStore?.counts,
+        )
+    }
+    val scriptNotes = viewModels.scriptNotes?.let { feed ->
+        BoardToolProvider(
+            path = BoardToolProvider.SCRIPT_NOTES_PATH,
+            title = "Script Notes",
+            icon = ZillitToolIcons.ScriptNote,
             feedViewModel = feed,
             board = boardContext,
             badges = (graph as? AppGraph.Ready)?.badgeStore?.counts,
@@ -2209,12 +2299,15 @@ private fun buildRegistry(
         )
     }
     val productionReport = viewModels.productionReport?.let { ProductionReportToolProvider(it) }
+    val adReport = viewModels.adReport?.let { ProductionReportToolProvider(it) }
+    val wrapReport = viewModels.wrapReport?.let { ProductionReportToolProvider(it) }
     val real = listOfNotNull(
         home, chat, email, signatures, settings, admin,
         cash, cards, orders, timecards, payroll, deals, distribution, drive,
         accountHub, budgetBuilder, formSignature, esignature,
-        callSheet, productionReport, sides, info, confidentialInfo, reports, catering, accounts,
-        boxSchedule, preProduction, maps, recce, transport, location,
+        callSheet, productionReport, adReport, wrapReport, sides, info, confidentialInfo, reports, scriptNotes,
+        catering, accounts,
+        boxSchedule, preProduction, maps, recce, transport, location, continuity, costReport, invoices, draft,
         scheduleDistribution, scriptDistribution, scheduleDod,
     )
     val realPaths = real.map { it.path }.toSet()

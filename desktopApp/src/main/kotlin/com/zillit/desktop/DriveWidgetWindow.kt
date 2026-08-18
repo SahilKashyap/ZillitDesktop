@@ -7,9 +7,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.ApplicationScope
+import androidx.compose.ui.window.FrameWindowScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
@@ -37,6 +43,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
+import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.auth.domain.Project
 import com.zillit.desktop.feature.auth.ui.AuthStep
@@ -48,6 +55,8 @@ import com.zillit.desktop.feature.drive.ui.DriveViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.awt.event.WindowAdapter
+import java.awt.event.WindowEvent
 
 /**
  * The Drive widget: a small always-on-top window that lives on the desktop
@@ -89,30 +98,90 @@ internal fun ApplicationScope.DriveWidgetWindow(
     if (!visible) return
     val scope = rememberCoroutineScope()
     val windowState = rememberDriveWidgetWindowState(preferences)
-    var pinned by remember { mutableStateOf(true) }
+    var mode by remember {
+        mutableStateOf(runBlocking { WidgetMode.fromId(preferences.get(ZillitPreferences.DriveWidgetMode)) })
+    }
+    LaunchedEffect(mode) { preferences.set(ZillitPreferences.DriveWidgetMode, mode.name) }
 
     LaunchedEffect(windowState.size, windowState.position) {
         delay(WIDGET_GEOMETRY_SETTLE_MILLIS)
         runCatching { preferences.saveDriveWidgetGeometry(windowState) }
     }
 
-    Window(
-        onCloseRequest = onClose,
-        state = windowState,
-        title = "Zillit Drive",
-        icon = androidx.compose.ui.res.painterResource("icons/zillit-icon.png"),
-        alwaysOnTop = pinned,
-        resizable = true,
-    ) {
-        ZillitTheme(darkTheme = darkTheme) {
-            WidgetContent(
-                host = host,
-                auth = auth,
-                preferences = preferences,
-                pinned = pinned,
-                onTogglePin = { pinned = !pinned },
-                showMain = showMain,
-            )
+    // Keyed on the mode: decorations cannot change on a shown window, so the
+    // switch is a new native window at the same place and size.
+    key(mode) {
+        Window(
+            onCloseRequest = onClose,
+            state = windowState,
+            title = "Zillit Drive",
+            icon = androidx.compose.ui.res.painterResource("icons/zillit-icon.png"),
+            alwaysOnTop = mode == WidgetMode.Floating,
+            undecorated = mode == WidgetMode.Desktop,
+            resizable = true,
+        ) {
+            DesktopLayer(mode)
+            ZillitTheme(darkTheme = darkTheme) {
+                Column(Modifier.fillMaxSize()) {
+                    // No title bar on the desktop: this strip is the handle
+                    // that moves the window, and carries its close.
+                    if (mode == WidgetMode.Desktop) {
+                        WindowDraggableArea { GripStrip(onClose = onClose) }
+                    }
+                    WidgetContent(
+                        host = host,
+                        auth = auth,
+                        preferences = preferences,
+                        mode = mode,
+                        onToggleMode = { mode = mode.toggled() },
+                        showMain = showMain,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * How the widget sits among other windows.
+ *
+ * [Floating]: an ordinary titled window kept on top — handy while working in
+ * something else. [Desktop]: no title bar, and the window lives on the
+ * desktop layer like the OS's own widgets — behind every normal window, above
+ * the wallpaper, unmoved by "Show Desktop" (macOS; see [DesktopWindowLevel]
+ * for what other platforms can do). Dragged by its bar; resized at its edges.
+ */
+internal enum class WidgetMode {
+    Floating,
+    Desktop,
+    ;
+
+    fun toggled(): WidgetMode = if (this == Floating) Desktop else Floating
+
+    companion object {
+        fun fromId(id: String): WidgetMode = entries.firstOrNull { it.name == id } ?: Floating
+    }
+}
+
+/**
+ * Applies (and re-applies on every activation) the desktop layer for
+ * [WidgetMode.Desktop]; puts the window back when the mode leaves.
+ */
+@Composable
+private fun FrameWindowScope.DesktopLayer(mode: WidgetMode) {
+    val frame = window
+    DisposableEffect(frame, mode) {
+        if (mode != WidgetMode.Desktop) return@DisposableEffect onDispose { }
+        DesktopWindowLevel.sinkToDesktop(frame)
+        val listener = object : WindowAdapter() {
+            override fun windowActivated(event: WindowEvent) {
+                DesktopWindowLevel.sinkToDesktop(frame)
+            }
+        }
+        frame.addWindowListener(listener)
+        onDispose {
+            frame.removeWindowListener(listener)
+            DesktopWindowLevel.restore(frame)
         }
     }
 }
@@ -124,8 +193,8 @@ private fun WidgetContent(
     host: DriveWidgetHost?,
     auth: AuthViewModel?,
     preferences: PreferenceStore,
-    pinned: Boolean,
-    onTogglePin: () -> Unit,
+    mode: WidgetMode,
+    onToggleMode: () -> Unit,
     showMain: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -165,12 +234,12 @@ private fun WidgetContent(
         WidgetBar(
             projects = projects,
             current = session?.project,
-            pinned = pinned,
+            mode = mode,
             onSelect = { project ->
                 scope.launch { preferences.set(ZillitPreferences.DriveWidgetProject, project.id) }
                 host.select(project)
             },
-            onTogglePin = onTogglePin,
+            onToggleMode = onToggleMode,
             onOpenZillit = showMain,
         )
         ZillitDivider()
@@ -233,14 +302,52 @@ private fun WidgetDrive(viewModel: DriveViewModel) {
     }
 }
 
-/** The strip along the top: which production, pinned or not, and the way to the main window. */
+/**
+ * The desktop-mode handle: a whole-width strip with nothing on it that eats
+ * the pointer except the close — so anywhere on it drags the window. The
+ * production picker and buttons below stay clickable; a drag area wrapped
+ * around them would have left no pixel to grab.
+ */
+@Composable
+private fun GripStrip(onClose: () -> Unit) {
+    val colors = ZillitTheme.colors
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(GRIP_HEIGHT)
+            .background(colors.surfaceRaised),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .width(GRIP_WIDTH)
+                .height(GRIP_THICKNESS)
+                .background(colors.textMuted, ZillitTheme.shapes.pill),
+        )
+        ZillitText(
+            text = "Zillit Drive",
+            style = ZillitTheme.typography.labelSmall,
+            color = colors.textMuted,
+            modifier = Modifier.align(Alignment.CenterStart).padding(start = ZillitTheme.spacing.sm),
+        )
+        ZillitIconButton(
+            icon = ZillitIcons.Close,
+            contentDescription = "Close the widget",
+            onClick = onClose,
+            size = GRIP_BUTTON,
+            modifier = Modifier.align(Alignment.CenterEnd),
+        )
+    }
+}
+
+/** The strip along the top: which production, how the window sits, and the way to the main window. */
 @Composable
 private fun WidgetBar(
     projects: List<Project>,
     current: Project?,
-    pinned: Boolean,
+    mode: WidgetMode,
     onSelect: (Project) -> Unit,
-    onTogglePin: () -> Unit,
+    onToggleMode: () -> Unit,
     onOpenZillit: () -> Unit,
 ) {
     val colors = ZillitTheme.colors
@@ -264,10 +371,10 @@ private fun WidgetBar(
             Box(Modifier.weight(1f))
         }
         ZillitIconButton(
-            icon = ZillitIcons.Pin,
-            contentDescription = if (pinned) "Unpin from the top" else "Keep on top",
-            onClick = onTogglePin,
-            tint = if (pinned) colors.accent else colors.textMuted,
+            icon = if (mode == WidgetMode.Desktop) ZillitIcons.Home else ZillitIcons.Pin,
+            contentDescription = if (mode == WidgetMode.Desktop) "Float on top instead" else "Fix on the desktop",
+            onClick = onToggleMode,
+            tint = colors.accent,
         )
         ZillitIconButton(
             icon = ZillitIcons.Monitor,
@@ -327,4 +434,8 @@ private suspend fun PreferenceStore.saveDriveWidgetGeometry(state: WindowState) 
 }
 
 private val NO_SESSION = kotlinx.coroutines.flow.MutableStateFlow<DriveWidgetHost.Session?>(null)
+private val GRIP_HEIGHT = 22.dp
+private val GRIP_WIDTH = 40.dp
+private val GRIP_THICKNESS = 4.dp
+private val GRIP_BUTTON = 18.dp
 private const val WIDGET_GEOMETRY_SETTLE_MILLIS = 400L

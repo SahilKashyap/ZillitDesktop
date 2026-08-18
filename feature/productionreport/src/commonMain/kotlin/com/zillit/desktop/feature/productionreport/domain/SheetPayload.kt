@@ -29,6 +29,10 @@ data class SharedHeader(
     val dateYmd: String = "",
     val approverIds: List<String> = emptyList(),
     val internalReceiverIds: List<String> = emptyList(),
+    /** `ad` | `wrap` | empty — see [ReportKind]. Never key-normalised on the wire. */
+    val reportType: String = "",
+    /** The AD report's own header field; empty on the other kinds. */
+    val secondAdName: String = "",
 )
 
 /** One horizontal band of the sheet. A page break is a row with no cells. */

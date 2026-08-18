@@ -92,6 +92,13 @@ object HubNavigation {
                     gate = "purchase_order_tool",
                     forDepartmentUsers = true,
                 ),
+                // Accountant-only in the web sidebar (department users get the
+                // `invoices_tool` tile instead); no grid gate of its own there.
+                HubItem(
+                    id = "invoices",
+                    label = "Invoices / Accounts Payable",
+                    target = HubTarget.Tool("/film-tools/invoices", "invoices_tool"),
+                ),
                 HubItem(
                     id = "card-expenses",
                     label = "Production Expense Cards",
@@ -128,6 +135,18 @@ object HubNavigation {
                     label = "Deal Memo",
                     target = HubTarget.Tool("/film-tools/deal-memo", "deal_memo_tool"),
                     gate = "deal_memo_tool",
+                ),
+            ),
+        ),
+        HubSection(
+            title = "Reports",
+            items = listOf(
+                // The web's REPORTS group; Period Close, Trial Balance and Bible
+                // Report stay out until their modules exist.
+                HubItem(
+                    id = "cost-report",
+                    label = "Cost Report",
+                    target = HubTarget.Tool("/film-tools/cost-report", "cost_report_tool"),
                 ),
             ),
         ),

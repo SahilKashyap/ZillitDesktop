@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.home
 
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.longClick
@@ -18,6 +19,7 @@ import com.zillit.desktop.feature.home.domain.Notice
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.home.domain.NoticeKind
 import com.zillit.desktop.feature.home.ui.CallSheetPrompt
+import com.zillit.desktop.feature.home.ui.HomeFeedEvent
 import com.zillit.desktop.feature.home.ui.HomeFeedScreen
 import com.zillit.desktop.feature.home.ui.HomeFeedUiState
 import kotlin.test.Test
@@ -90,18 +92,73 @@ class HomeBoardRenderTest {
         onNodeWithText("Download").assertDoesNotExist()
     }
 
+    /**
+     * Someone else's captioned picture: Image Reply and Download with posting
+     * rights, Gallery for everyone; neither Edit nor Pin (the server's edit
+     * route is the author's alone) nor Delete (not the author, not an admin).
+     */
     @Test
-    fun `someone else's picture offers Image Reply and Download, not Edit`() = runComposeUiTest {
+    fun `someone else's picture offers Image Reply, Download and Gallery, not Edit, Pin or Delete`() =
+        runComposeUiTest {
+            setContent {
+                ZillitTheme { HomeFeedScreen(state = board(notices, myOldPost, theirPhoto), onEvent = {}) }
+            }
+
+            onNodeWithText("the door we need").performTouchInput { longClick() }
+
+            onNodeWithText("Image Reply").assertExists()
+            onNodeWithText("Download").assertExists()
+            onNodeWithText("Gallery").assertExists()
+            onNodeWithText("Edit").assertDoesNotExist()
+            onNodeWithText("Pin").assertDoesNotExist()
+            onNodeWithText("Delete").assertDoesNotExist()
+        }
+
+    /**
+     * A viewer without posting rights (Android: Reply / Image Reply hidden,
+     * Forward and Edit refused on the click): only the read-side items.
+     */
+    @Test
+    fun `without posting rights the menu keeps only Copy, Download, Read by and Gallery`() = runComposeUiTest {
+        val viewer = notices.copy(canPost = false)
         setContent {
-            ZillitTheme { HomeFeedScreen(state = board(notices, myOldPost, theirPhoto), onEvent = {}) }
+            ZillitTheme { HomeFeedScreen(state = board(viewer, theirPhoto), onEvent = {}) }
         }
 
         onNodeWithText("the door we need").performTouchInput { longClick() }
 
-        onNodeWithText("Image Reply").assertExists()
+        onNodeWithText("Copy").assertExists()
         onNodeWithText("Download").assertExists()
+        onNodeWithText("Read by…").assertExists()
+        onNodeWithText("Gallery").assertExists()
+        onNodeWithText("Image Reply").assertDoesNotExist()
+        onNodeWithText("Forward…").assertDoesNotExist()
         onNodeWithText("Edit").assertDoesNotExist()
         onNodeWithText("Delete").assertDoesNotExist()
+        onAllNodesWithText("Reply").assertCountEquals(0)
+    }
+
+    /** Gallery — Android's `HomeChatLibraryActivity` — opens over the board with its three tabs. */
+    @Test
+    fun `Gallery opens the unit's Media Docs Links library`() = runComposeUiTest {
+        val state = board(notices, myOldPost, theirPhoto)
+        val opened = mutableStateOf(false)
+        setContent {
+            ZillitTheme {
+                HomeFeedScreen(
+                    state = if (opened.value) state.copy(libraryOpen = true) else state,
+                    onEvent = { if (it is HomeFeedEvent.ShowLibrary) opened.value = true },
+                )
+            }
+        }
+
+        onNodeWithText("the door we need").performTouchInput { longClick() }
+        onNodeWithText("Gallery").performClick()
+
+        onNodeWithText("Media").assertExists()
+        onNodeWithText("Docs").assertExists()
+        onNodeWithText("Links").assertExists()
+        onNodeWithText("What has been shared on this board.").assertExists()
     }
 
     @Test

@@ -26,6 +26,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.feature.productionreport.domain.ReportKind
 import com.zillit.desktop.feature.productionreport.domain.ReportStatus
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.ui.pages.PublishSheetDialog
@@ -81,8 +82,12 @@ fun ProductionReportScreen(
 private fun HubChrome(state: ReportUiState, onEvent: (ReportEvent) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
             ZillitPageHeader(
-                title = "Production Report",
-                description = "Compose, review and publish the daily production report.",
+                title = state.kind.title,
+                description = when (state.kind) {
+                    ReportKind.Production -> "Compose, review and publish the daily production report."
+                    ReportKind.Ad -> "The 1st AD's daily report — day progress, cast times and requirements."
+                    ReportKind.Wrap -> "The end-of-day wrap: day info, scenes and locations."
+                },
                 actions = {
                     if (state.viewer.canAuthor) {
                         ZillitButton(
@@ -116,7 +121,7 @@ private fun HubChrome(state: ReportUiState, onEvent: (ReportEvent) -> Unit) {
 
             ZillitTabStrip(
                 tabs = ReportDestination.entries
-                    .filter { it.visibleTo(state.viewer) }
+                    .filter { it.visibleTo(state.viewer, state.kind) }
                     .map { ZillitTab(id = it.name, label = it.label) },
                 activeId = state.destination.name,
                 onSelect = { id ->
@@ -159,7 +164,7 @@ private fun SheetRow(
         ) {
             Column(Modifier.weight(1f)) {
                 ZillitText(
-                    text = sheet.name.ifBlank { "Production report" },
+                    text = sheet.name.ifBlank { state.kind.nameStem },
                     style = ZillitTheme.typography.titleSmall,
                 )
                 ZillitText(

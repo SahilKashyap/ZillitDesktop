@@ -60,6 +60,8 @@ object ZillitPreferences {
     val DriveWidgetY = PreferenceKey.IntKey("drive.widget.y", UNSET_POSITION, PreferenceScope.Device)
     /** The production the widget last showed; falls back to the open one. */
     val DriveWidgetProject = PreferenceKey.StringKey("drive.widget.project", "", PreferenceScope.User)
+    /** `Floating` (on top) or `Desktop` (on the desktop layer, like an OS widget). */
+    val DriveWidgetMode = PreferenceKey.StringKey("drive.widget.mode", "Floating", PreferenceScope.Device)
 
     // -- security (device-scoped) ------------------------------------------
 

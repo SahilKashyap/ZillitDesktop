@@ -242,6 +242,12 @@ class HomeBoardRulesTest {
     }
 
     @Test
+    /**
+     * The server's rule for the edit route: the author alone — an admin on
+     * someone else's post is refused there ("You do not have access to
+     * this", found live), so the desktop refuses first. Same for a reply
+     * (Android `canEditMessage`).
+     */
     fun `an admin still cannot edit someone else's post`() = runTest(dispatcher) {
         val board = FakeBoard(listOf(notices), listOf(post("n1", "them", NOW)))
         val model = viewModel(board, me = "admin", admin = true)

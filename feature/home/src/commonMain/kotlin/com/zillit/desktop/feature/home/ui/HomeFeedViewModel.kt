@@ -26,6 +26,7 @@ import com.zillit.desktop.feature.home.domain.ModifyVerdict
 import com.zillit.desktop.feature.home.domain.deleteVerdict
 import com.zillit.desktop.feature.home.domain.editVerdict
 import com.zillit.desktop.feature.home.domain.isActionableBy
+import com.zillit.desktop.feature.home.domain.isEditableBy
 import com.zillit.desktop.feature.home.domain.nextMatchIndex
 import com.zillit.desktop.feature.home.domain.searchMatches
 import com.zillit.desktop.feature.home.domain.PickedMedia
@@ -71,6 +72,8 @@ data class HomeFeedUiState(
     val forwarding: Notice? = null,
     /** The read-receipts panel: which post, and the lists once fetched. */
     val readBy: ReadByView? = null,
+    /** The unit's Media / Docs / Links library is open — Android's Gallery. */
+    val libraryOpen: Boolean = false,
     /**
      * The call sheet's "continuation or new?" question, while it is being
      * asked; null otherwise. See [CallSheetPrompt].
@@ -165,6 +168,9 @@ data class HomeFeedUiState(
 
     /** The same, for a post. */
     fun canAct(notice: Notice): Boolean = notice.isActionableBy(currentUserId, isAdmin)
+
+    /** Whether Edit and Pin belong in this post's menu — the author's, as the server has it. */
+    fun canEdit(notice: Notice): Boolean = notice.isEditableBy(currentUserId)
 
     /**
      * Whether Download is offered on this unit — `download_access`, admins
@@ -341,6 +347,10 @@ sealed interface HomeFeedEvent {
     data class ShowReadBy(val noticeId: String, val commentId: String? = null) : HomeFeedEvent
     data object DismissReadBy : HomeFeedEvent
 
+    /** Gallery on any post's menu: the unit's Media / Docs / Links library. */
+    data object ShowLibrary : HomeFeedEvent
+    data object DismissLibrary : HomeFeedEvent
+
     /** Push a reminder notification to everyone still on the unread list. */
     data object NotifyUnread : HomeFeedEvent
 
@@ -510,6 +520,8 @@ class HomeFeedViewModel(
             is HomeFeedEvent.ForwardTo -> forwardTo(event.unitId)
             HomeFeedEvent.CancelForward -> setState { copy(forwarding = null) }
             is HomeFeedEvent.ShowReadBy -> showReadBy(event.noticeId, event.commentId)
+            HomeFeedEvent.ShowLibrary -> setState { copy(libraryOpen = true) }
+            HomeFeedEvent.DismissLibrary -> setState { copy(libraryOpen = false) }
             HomeFeedEvent.DismissReadBy -> setState { copy(readBy = null) }
             HomeFeedEvent.DismissError -> setState { copy(error = null) }
             HomeFeedEvent.DismissInfo -> setState { copy(info = null) }

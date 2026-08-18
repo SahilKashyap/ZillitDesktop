@@ -544,7 +544,7 @@ internal fun MediaLightbox(
     }
 }
 
-private sealed interface AttachmentImage {
+internal sealed interface AttachmentImage {
     data class Ready(val bitmap: ImageBitmap) : AttachmentImage
     data object Failed : AttachmentImage
 }
@@ -554,7 +554,7 @@ private sealed interface AttachmentImage {
  * cache already holds and recomposition never refires an in-flight load.
  */
 @Composable
-private fun rememberAttachmentImage(
+internal fun rememberAttachmentImage(
     attachment: NoticeAttachment,
     media: NoticeMediaSource?,
     preview: Boolean,

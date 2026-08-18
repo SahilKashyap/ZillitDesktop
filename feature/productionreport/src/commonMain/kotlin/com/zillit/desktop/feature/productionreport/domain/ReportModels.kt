@@ -46,6 +46,8 @@ data class ReportSummary(
     val createdAt: String,
     val updatedAt: String,
     val publishedAt: String,
+    /** `shared.reportType` of the current revision — which tool this row belongs to. */
+    val reportType: String = "",
 )
 
 /** A sheet opened in full: the list row plus its editable payload and reviews. */

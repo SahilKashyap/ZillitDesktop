@@ -53,6 +53,7 @@ class BoardToolProvider(
             resolveAuthor = board.resolveAuthor,
             player = board.player,
             onOpenLocation = board.onOpenLocation,
+            onOpenLink = board.onOpenLink,
             loadAvatar = board.loadAvatar,
             crewNames = board.crewNames,
             unitBadge = { unitId -> counts.unit(unitId) },
@@ -65,6 +66,9 @@ class BoardToolProvider(
 
         /** Camera & Sound Report — the web's `/film-tools/reports` mount. */
         const val REPORTS_PATH = "/film-tools/reports"
+
+        /** Script Notes — the same engine on the script-notes host. */
+        const val SCRIPT_NOTES_PATH = "/film-tools/script-notes"
 
         /** Catering and Message Accounts — boards on the unit host. */
         const val CATERING_PATH = "/film-tools/catering"

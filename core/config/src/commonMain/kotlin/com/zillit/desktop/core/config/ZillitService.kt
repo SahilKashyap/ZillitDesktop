@@ -41,6 +41,9 @@ enum class ZillitService(val configKey: String) {
     Casting("CASTING_BASE_URL"),
     Chat("CHAT_BASE_URL"),
     Continuity("CONTINUITY_BASE_URL"),
+
+    /** The cost-report service (`cost-report-server`): live cost report, posted snapshots, ledger drill-down. */
+    CostReport("COST_REPORT_BASE_URL"),
     DealMemo("DEAL_MEMO_BASE_URL"),
     DocDistribution("DOC_DISTRIBUTION_BASE_URL"),
     Drive("DRIVE_BASE_URL"),

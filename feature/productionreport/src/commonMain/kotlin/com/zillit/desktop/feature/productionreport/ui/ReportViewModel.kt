@@ -7,10 +7,13 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.productionreport.domain.ReportDelivery
 import com.zillit.desktop.feature.productionreport.domain.ReportRepository
 import com.zillit.desktop.feature.productionreport.domain.ReportStatus
+import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.ComposeReport
 import com.zillit.desktop.feature.productionreport.domain.InternalApprover
 import com.zillit.desktop.feature.productionreport.domain.SheetMember
+import com.zillit.desktop.feature.productionreport.domain.ReportKind
 import com.zillit.desktop.feature.productionreport.domain.ReportPopulate
+import com.zillit.desktop.feature.productionreport.domain.ReportTemplates
 import com.zillit.desktop.feature.productionreport.domain.SheetPayload
 import com.zillit.desktop.feature.productionreport.domain.firstUntitledSystemCell
 import com.zillit.desktop.feature.productionreport.domain.normalised
@@ -27,6 +30,8 @@ import com.zillit.desktop.feature.productionreport.domain.withValue
  */
 class ReportViewModel(
     private val repository: ReportRepository,
+    /** Which of the three report tools this instance is. */
+    val kind: ReportKind = ReportKind.Production,
     private val delivery: ReportDelivery,
     private val callSheets: com.zillit.desktop.feature.productionreport.domain.PublishedCallSheetLookup,
     private val resolveViewer: () -> com.zillit.desktop.feature.productionreport.domain.ReportViewer,
@@ -39,9 +44,14 @@ class ReportViewModel(
         val viewer = resolveViewer()
         setState {
             copy(
+                kind = kind,
                 viewer = viewer,
                 members = membersProvider(),
-                destination = if (viewer.canAuthor) destination else ReportDestination.Approvals,
+                destination = when {
+                    !viewer.canAuthor && kind.hasApprovals -> ReportDestination.Approvals
+                    !destination.visibleTo(viewer, kind) -> ReportDestination.Drafts
+                    else -> destination
+                },
             )
         }
         refresh()
@@ -175,7 +185,7 @@ class ReportViewModel(
                     .also { result ->
                         ifOk(result) { sheets ->
                             setState {
-                                copy(received = sheets.filter { it.status.reviewInFlight })
+                                copy(received = sheets.filter { row -> row.status.reviewInFlight })
                             }
                         }
                     }
@@ -194,8 +204,9 @@ class ReportViewModel(
         }
     }
 
-    private inline fun <T> ifOk(result: ZillitResult<T>, onOk: (T) -> Unit) {
-        if (result is ZillitResult.Success) onOk(result.data)
+    /** Only this tool's rows: the service stores all three kinds in one collection. */
+    private inline fun ifOk(result: ZillitResult<List<ReportSummary>>, onOk: (List<ReportSummary>) -> Unit) {
+        if (result is ZillitResult.Success) onOk(result.data.filter { row -> kind.owns(row.reportType) })
     }
 
     /** Template + metadata + crew, then blanks filled from the last call sheet. */
@@ -207,7 +218,9 @@ class ReportViewModel(
                 is ZillitResult.Success -> result.data
                 is ZillitResult.Failure -> state.value.metadata
             }
-            val template = when (val result = repository.defaultTemplate()) {
+            // AD and Wrap templates ship with the client (as on the web); the
+            // production report's comes from the service.
+            val template = ReportTemplates.forKind(kind) ?: when (val result = repository.defaultTemplate()) {
                 is ZillitResult.Success -> result.data
                 is ZillitResult.Failure -> null
             }
@@ -216,9 +229,9 @@ class ReportViewModel(
                 return@launch
             }
             val composed = ComposeReport.newReport(
-                template = template,
+                template = template.copy(shared = template.shared.copy(reportType = kind.wire)),
                 metadata = meta,
-                members = membersProvider(),
+                members = if (kind.generatesCrewSections) membersProvider() else emptyList(),
                 todayYmd = todayYmd(),
             )
             // Best-effort, like the web: a missing call sheet seeds nothing.
@@ -231,7 +244,7 @@ class ReportViewModel(
                     metadata = meta,
                     members = membersProvider(),
                     editor = SheetEditor(
-                        name = "Production report — day ${payload.shared.shootDayNumber}",
+                        name = "${kind.nameStem} — day ${payload.shared.shootDayNumber}",
                         payload = payload,
                     ),
                 )
