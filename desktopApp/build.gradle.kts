@@ -158,11 +158,107 @@ if (jbrFrameworks.isDirectory) {
         commandLine("ditto", jbrFrameworks.absolutePath, destination.get().asFile.absolutePath)
     }
 
+    /*
+     * Everything `createDistributable` could not sign, plus the seals the ditto
+     * above broke. All four steps are here because Apple rejected a build for
+     * each of them; none are precautionary.
+     *
+     * The trap is that `codesign --verify --strict` on the .app passes while
+     * three of these are still wrong — it checks the outer seal and stops.
+     * Apple's notary walks every executable in the archive. Verify with
+     * `--deep`, or the first thing that tells you is a rejection email.
+     *
+     * 1. Native libraries inside jars. Compose's own jar signer matches
+     *    `.jnilib` and nothing else, so `osxkeychain.so` inside jkeychain
+     *    reached Apple carrying the linker's ad-hoc signature: "The binary is
+     *    not signed", for both architectures. jna, skiko and sqlite-jdbc ship
+     *    the same problem in `.dylib` form.
+     *
+     * 2. The JBR frameworks the ditto just copied are signed by JetBrains.
+     *    Every executable in the archive has to carry our Developer ID.
+     *
+     * 3. `Contents/runtime` is a bundle, and the ditto wrote into it, so its
+     *    own seal broke along with the app's. A `--deep` sign of the .app does
+     *    NOT reach it: --deep walks the standard nested-code locations, and
+     *    jpackage's runtime is not one of them. Signing it explicitly is the
+     *    whole fix for "libjli.dylib: the signature of the binary is invalid".
+     *
+     * 4. The outer bundle last, because steps 1-3 all invalidated it.
+     *
+     * Moving the copy before `createDistributable` would avoid 2-4 and is not
+     * available: that is the cycle noted below.
+     */
+    val resignIdentity = providers.gradleProperty("zillitSigningIdentity")
+
+    // Unsigned builds keep the old graph exactly — nothing to sign.
+    val distributableReady = if (resignIdentity.isPresent) {
+        tasks.register<Exec>("resignWithFrameworks") {
+            dependsOn(copyCefFrameworks)
+            description = "Signs what createDistributable missed, then re-seals the bundle."
+
+            val app = layout.buildDirectory
+                .dir("compose/binaries/main/app/Zillit.app").get().asFile.absolutePath
+
+            // Paths arrive as positional arguments rather than interpolated, so
+            // a space in the build directory cannot split a word.
+            commandLine(
+                "bash", "-c",
+                """
+                set -euo pipefail
+                app="${'$'}1"; identity="${'$'}2"; entitlements="${'$'}3"
+
+                staging="${'$'}(mktemp -d)"
+                trap 'rm -rf "${'$'}staging"' EXIT
+
+                for jar in "${'$'}app"/Contents/app/*.jar; do
+                    entries="${'$'}(unzip -Z1 "${'$'}jar" '*.so' '*.dylib' '*.jnilib' 2>/dev/null || true)"
+                    [ -n "${'$'}entries" ] || continue
+
+                    rm -rf "${'$'}{staging:?}"/*
+                    printf '%s\n' "${'$'}entries" | while IFS= read -r entry; do
+                        [ -n "${'$'}entry" ] || continue
+                        # One entry per call. Handing unzip all three patterns at
+                        # once makes it exit 11 whenever one of them matches
+                        # nothing — true of every jar here — and `set -e` turns
+                        # that into a build failure on a jar that extracted fine.
+                        ( cd "${'$'}staging" && unzip -qo "${'$'}jar" "${'$'}entry" )
+                        codesign --force --options runtime --timestamp \
+                            --sign "${'$'}identity" "${'$'}staging/${'$'}entry"
+                    done
+
+                    # Replaces the entries in place, keeping their paths.
+                    ( cd "${'$'}staging" && printf '%s\n' "${'$'}entries" | zip -q "${'$'}jar" -@ )
+                done
+
+                for bundle in "${'$'}app"/Contents/runtime/Contents/Frameworks/*; do
+                    [ -e "${'$'}bundle" ] || continue
+                    codesign --force --deep --options runtime --timestamp \
+                        --entitlements "${'$'}entitlements" --sign "${'$'}identity" "${'$'}bundle"
+                done
+
+                codesign --force --options runtime --timestamp \
+                    --entitlements "${'$'}entitlements" --sign "${'$'}identity" "${'$'}app/Contents/runtime"
+
+                codesign --force --options runtime --timestamp \
+                    --entitlements "${'$'}entitlements" --sign "${'$'}identity" "${'$'}app"
+
+                codesign --verify --deep --strict "${'$'}app"
+                """.trimIndent(),
+                "resignWithFrameworks",
+                app,
+                resignIdentity.get(),
+                project.file("entitlements.plist").absolutePath,
+            )
+        }
+    } else {
+        copyCefFrameworks
+    }
+
     // Everything that consumes the distributable needs the frameworks in it
     // first. `createDistributable` must not depend on this — that is a cycle.
     listOf("packageDmg", "packageDistributionForCurrentOS", "runDistributable", "notarizeDmg")
         .forEach { consumer ->
-            tasks.matching { it.name == consumer }.configureEach { dependsOn(copyCefFrameworks) }
+            tasks.matching { it.name == consumer }.configureEach { dependsOn(distributableReady) }
         }
 }
 
