@@ -39,6 +39,13 @@ Pick the environment with `-Dzillit.env=develop\|qa\|prod` or `$ZILLIT_ENV`.
 Unset resolves to **prod**, so a misconfigured launch fails onto the strictest
 settings rather than silently pointing at QA.
 
+That rule is about the *app* — a packaged build with nothing set is a production
+build. On a development machine it inverts: `gradle.properties` ships
+`zillit.env=develop`, which every `JavaExec` launch picks up, so a bare
+`./gradlew :desktopApp:run` and the IDE's Run button reach **develop** rather
+than production. The startup line is what settles it either way; read it rather
+than reasoning from this paragraph.
+
 ### Key shape
 
 `<PREFIX>_<SERVICE>`, where the prefix is `STG` (develop), `QA` or `PROD` — the
@@ -100,11 +107,15 @@ service is added without a matching template line, so the template cannot drift.
 ```
 
 `-P`, **not** `-D`. A `-D` on the Gradle command line sets the property on
-*Gradle's* JVM, not the app's, so the app silently falls back to **prod** — which
-is not something to discover by accident. `desktopApp/build.gradle.kts` forwards
-`-Pzillit.env` and `-Pzillit.config` into the application JVM.
+*Gradle's* JVM, not the app's, so the flag is dropped and the launch quietly
+keeps the `gradle.properties` default instead of the environment asked for —
+which is not something to discover by accident. `desktopApp/build.gradle.kts`
+forwards `-Pzillit.env` and `-Pzillit.config` into the application JVM.
 
-Values: `develop` (STG URLs), `qa`, `prod`. Unset resolves to `prod`.
+Values: `develop` (STG URLs), `qa`, `prod`. With nothing set, a Gradle or IDE
+launch resolves to `develop` (from `gradle.properties`) and a packaged app
+resolves to `prod` — the two defaults differ on purpose, so that the convenient
+way to launch on a dev machine is never the one that reaches production.
 
 For a packaged build, pass it to the app directly:
 
