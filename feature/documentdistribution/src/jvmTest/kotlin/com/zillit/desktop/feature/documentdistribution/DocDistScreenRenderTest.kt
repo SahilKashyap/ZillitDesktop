@@ -1,9 +1,11 @@
 package com.zillit.desktop.feature.documentdistribution
 
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.runSkikoComposeUiTest
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.documentdistribution.domain.DeliveryStatus
@@ -221,7 +223,11 @@ class DocDistScreenRenderTest {
 
     @Test
     fun `history distinguishes no read receipt from not opened`() {
-        runComposeUiTest {
+        // The third recipient sits ~17px below the 768px default window, so the
+        // pill renders but is clipped and assertIsDisplayed fails. How far down
+        // the row lands depends on the host's font metrics — it fits on macOS and
+        // not on Windows — so the window is sized here rather than left to chance.
+        runSkikoComposeUiTest(size = Size(1280f, 1000f)) {
             setContent {
                 ZillitTheme(darkTheme = false) {
                     DocDistScreen(

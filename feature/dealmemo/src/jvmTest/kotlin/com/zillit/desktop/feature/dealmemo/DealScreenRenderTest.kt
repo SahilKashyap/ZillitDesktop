@@ -4,6 +4,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
+import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.dealmemo.domain.Agreement
 import com.zillit.desktop.feature.dealmemo.domain.Deal
@@ -30,7 +31,7 @@ class DealScreenRenderTest {
 
     private fun deal(
         id: String = "deal-1",
-        acknowledgedAt: Long? = 1_754_000_000_000,
+        acknowledgedAt: Long? = AGREED_AT,
         amendedAt: Long? = null,
     ) = Deal(
         id = id,
@@ -129,7 +130,15 @@ class DealScreenRenderTest {
                     DealMemoScreen(state = state(DealDestination.MyDeal, crew), onEvent = {})
                 }
             }
-            onNodeWithText("You agreed to these terms on 01 Aug, 2025.").assertIsDisplayed()
+            // The date is rendered in the machine's own zone (EpochDate, by design),
+            // so a literal here passes only east of UTC+1:47. Ask the same reader
+            // the screen asks: what matters is that the agreed date is shown at
+            // all, not which timezone the test host keeps.
+            onNodeWithText("You agreed to these terms on ${EpochDate.date(AGREED_AT)}.")
+                .assertIsDisplayed()
         }
     }
 }
+
+/** The acknowledgement stamp the fixture agrees on. */
+private const val AGREED_AT = 1_754_000_000_000
