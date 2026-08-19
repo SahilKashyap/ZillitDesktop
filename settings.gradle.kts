@@ -98,3 +98,11 @@ include(":feature:sides")
 include(":feature:timecard")
 include(":feature:transportation")
 include(":feature:shell")
+
+// ---------------------------------------------------------------------------
+// core:media — the picked-media preview and image editor shared by every
+// composer that attaches a file (Home board, chat).
+// ---------------------------------------------------------------------------
+include(":core:media")
+include(":feature:notifications")
+include(":feature:sos")

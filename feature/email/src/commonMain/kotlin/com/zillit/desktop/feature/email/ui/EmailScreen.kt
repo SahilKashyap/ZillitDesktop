@@ -92,6 +92,16 @@ fun EmailScreen(
      * own and windows are the host's business — the sidebar only asks.
      */
     onOpenSignatures: () -> Unit = {},
+    /** The mail drawer's other three destinations; see `FolderSidebar`. */
+    onOpenContacts: () -> Unit = {},
+    onOpenCalendar: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    /**
+     * Opens a link clicked in a message body. Null uses the platform's own
+     * URI handler; the host passes its guarded browser launcher when it has
+     * one, for the same reason as [onOpenSignatures].
+     */
+    onOpenLink: ((String) -> Unit)? = null,
     /**
      * Anything standing in front of the mailbox — the composers.
      *
@@ -103,7 +113,7 @@ fun EmailScreen(
 ) {
     Box(modifier.fillMaxSize()) {
     Row(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
-        FolderSidebar(state, onEvent, onOpenSignatures)
+        FolderSidebar(state, onEvent, onOpenSignatures, onOpenContacts, onOpenCalendar, onOpenSettings)
 
         Column(Modifier.weight(1f).fillMaxHeight()) {
             ListToolbar(state, search, onEvent)
@@ -142,6 +152,7 @@ fun EmailScreen(
                     onEvent,
                     loadAvatar = loadAvatar,
                     loadThumbnail = loadThumbnail,
+                    onOpenLink = onOpenLink,
                 )
             }
         }
@@ -168,6 +179,9 @@ private fun FolderSidebar(
     state: EmailUiState,
     onEvent: (EmailEvent) -> Unit,
     onOpenSignatures: () -> Unit,
+    onOpenContacts: () -> Unit,
+    onOpenCalendar: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val colors = ZillitTheme.colors
 
@@ -220,9 +234,14 @@ private fun FolderSidebar(
 
         // Signatures belong to mail, not to app settings: the person managing
         // a sign-off is the person about to send something, and this is where
-        // they are standing.
+        // they are standing. Contacts, Calendar and Settings sit with them —
+        // Android's mail drawer has exactly these four
+        // (`FolderDrawerFragment.kt:70-81`).
         Spacer(Modifier.weight(1f))
         SidebarActionRow(icon = ZillitIcons.Edit, label = "Signatures", onClick = onOpenSignatures)
+        SidebarActionRow(icon = ZillitIcons.Users, label = "Contacts", onClick = onOpenContacts)
+        SidebarActionRow(icon = ZillitIcons.Calendar, label = "Calendar", onClick = onOpenCalendar)
+        SidebarActionRow(icon = ZillitIcons.Settings, label = "Settings", onClick = onOpenSettings)
     }
 }
 

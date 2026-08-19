@@ -11,6 +11,7 @@ import com.zillit.desktop.core.sync.SyncState
 import com.zillit.desktop.feature.chat.data.CHAT_SEND_KIND
 import com.zillit.desktop.feature.chat.data.QueuedChatSend
 import com.zillit.desktop.feature.chat.data.toQueuedBubble
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -257,24 +258,32 @@ class ChatViewModel(
                     onSuccess = { rooms -> setState { copy(groups = rooms) } },
                     onError = { },
                 )
-                // The per-conversation counts, from the server's backlog. A
-                // failed fetch keeps whatever the cache can say — no toast.
+                // The per-conversation counts and stamps, from the server's
+                // backlog. A failed fetch keeps whatever the cache can say —
+                // no toast.
                 launchResult(
-                    block = { repository.conversationUnread() },
-                    onSuccess = { counts ->
+                    block = { repository.conversationBacklog() },
+                    onSuccess = { backlog ->
                         serverUnread.clear()
                         // A thread open right now was just read; its rows in
                         // the backlog predate that.
+                        val counts = backlog.unread
                         serverUnread.putAll(currentState.peer?.userId?.let { counts - it } ?: counts)
-                        setState { copy(unread = combinedUnread(repository.unreadCounts())) }
+                        learnActivity(backlog.activity)
+                        // The order follows the stamps as much as the counts:
+                        // a row that just grew a badge from this answer moves
+                        // to where its message puts it, not where the cache
+                        // last saw it.
+                        showRecents(currentState.recents)
+                        launch { rememberRecents() }
                     },
                     onError = { },
                 )
                 launchResult(
                     block = { repository.recentPeers() },
                     onSuccess = { ids ->
-                        launch { rememberRecents(ids) }
                         showRecents(ids)
+                        launch { rememberRecents() }
                     },
                     // The list comes over the socket, so with no network it
                     // never answers: show the last list this production had,
@@ -287,10 +296,11 @@ class ChatViewModel(
 
     /**
      * A cached thread proves a conversation even when the server's list
-     * misses it — the union is the truth.
+     * misses it — the union is the truth. So does a conversation the server
+     * has stamped: a thread never opened here is still a row.
      */
     private fun showRecents(ids: List<String>) {
-        val activity = repository.newestActivity()
+        val activity = knownActivity()
         val ordered = sortedRecents((ids + activity.keys).distinct(), activity)
         setState {
             copy(
@@ -302,19 +312,57 @@ class ChatViewModel(
         }
     }
 
-    private suspend fun rememberRecents(ids: List<String>) {
+    /**
+     * Keeps the listing for when the socket cannot answer: the ids on the
+     * shelf and the server's stamps for them, so an offline open sorts the
+     * way the last online one did rather than by whatever threads happen to
+     * be cached here.
+     */
+    private suspend fun rememberRecents() {
         val support = offline ?: return
         val scope = support.currentScope() ?: return
-        val encoded = json.encodeToString(ListSerializer(String.serializer()), ids)
-        support.cache.put(scope, RECENTS_CACHE, encoded, nowMillis())
+        val kept = CachedRecents(ids = currentState.recents, activity = serverActivity.toMap())
+        support.cache.put(scope, RECENTS_CACHE, json.encodeToString(CachedRecents.serializer(), kept), nowMillis())
     }
 
+    /** The kept listing; its stamps re-enter [serverActivity] before the ids are shown. */
     private suspend fun rememberedRecents(): List<String> {
         val support = offline ?: return emptyList()
         val scope = support.currentScope() ?: return emptyList()
         val kept = support.cache.get(scope, RECENTS_CACHE) ?: return emptyList()
-        return runCatching { json.decodeFromString(ListSerializer(String.serializer()), kept.json) }
-            .getOrDefault(emptyList())
+        val restored = runCatching { json.decodeFromString(CachedRecents.serializer(), kept.json) }
+            // The cache once held a bare id list; a build that wrote that shape
+            // must still read on this one.
+            .getOrElse {
+                runCatching { json.decodeFromString(ListSerializer(String.serializer()), kept.json) }
+                    .map { ids -> CachedRecents(ids = ids) }
+                    .getOrDefault(CachedRecents())
+            }
+        learnActivity(restored.activity)
+        return restored.ids
+    }
+
+    /**
+     * When each conversation last moved, by every account this desktop has:
+     * the local cache's newest line, the server's newest notification, and
+     * live arrivals — the largest wins. Android's `sorting_activity`
+     * (`MembersVM.kt:150`, sorted at `:372-374`) is the newest message
+     * `created` whether or not the thread was ever opened; the cache alone
+     * knows only threads opened here, which left a message that arrived
+     * while the app was closed badged but low.
+     */
+    private fun knownActivity(): Map<String, Long> {
+        val local = repository.newestActivity()
+        return (local.keys + serverActivity.keys).associateWith { key ->
+            maxOf(local[key] ?: 0L, serverActivity[key] ?: 0L)
+        }
+    }
+
+    /** Takes the newer stamp per conversation; an older word never moves a row down. */
+    private fun learnActivity(stamps: Map<String, Long>) {
+        stamps.forEach { (key, at) ->
+            if (at > (serverActivity[key] ?: 0L)) serverActivity[key] = at
+        }
     }
 
     /** Re-asks the badge service for this area's split — after anything moves. */
@@ -595,6 +643,13 @@ class ChatViewModel(
      */
     private val serverUnread = mutableMapOf<String, Int>()
 
+    /**
+     * When each conversation last moved, by accounts other than the local
+     * cache: the backlog's newest notification per conversation, and live
+     * arrivals as they land. See [knownActivity].
+     */
+    private val serverActivity = mutableMapOf<String, Long>()
+
     /** What the rows show: the larger of the server's word and the cache's. */
     private fun combinedUnread(local: Map<String, Int>): Map<String, Int> =
         (local.keys + serverUnread.keys).associateWith { key ->
@@ -603,6 +658,7 @@ class ChatViewModel(
 
     private fun startFreshProject() {
         serverUnread.clear()
+        serverActivity.clear()
         setState { ChatUiState() }
         launch {
             val stars = loadFavourites()
@@ -637,7 +693,10 @@ class ChatViewModel(
      */
     private fun dropDeleted(messageIds: List<String>) {
         val gone = messageIds.toSet()
-        val activity = repository.newestActivity()
+        // The server's stamps stay: Android's `updateDeletedMessage` marks
+        // the line deleted without touching `sorting_activity`, so a row keeps
+        // its place when its newest line is withdrawn.
+        val activity = knownActivity()
         setState {
             copy(
                 messages = messages.filterNot { it.id in gone },
@@ -796,7 +855,12 @@ class ChatViewModel(
             }
         }
 
-        val activity = repository.newestActivity()
+        // The arrival itself is the newest word on its thread — learned here
+        // rather than trusted to the cache, so a row lifts on the message
+        // whether or not the repository kept it (a room this desktop never
+        // opened, a message the disk cache is not scoped to yet).
+        if (other.isNotBlank()) learnActivity(mapOf(other to message.timestampMillis))
+        val activity = knownActivity()
         // A line for a thread not on screen is one more the server counts;
         // the cache counts it too, and the row shows whichever is larger.
         if (!isOpen && !message.isMine && other.isNotBlank()) {
@@ -850,8 +914,20 @@ class ChatViewModel(
 private const val TAG = "Chat"
 private const val RECORDING_TICK_MILLIS = 1_000L
 
-/** The last DM list the socket gave this production, for when it cannot. */
+/** The last DM list this production showed, and its stamps, for when the socket cannot answer. */
 private const val RECENTS_CACHE = "chat.recents"
+
+/**
+ * What [RECENTS_CACHE] holds: the shelf's ids in their last order and the
+ * server's activity per conversation, so an offline open can sort them the
+ * same way. Kept as one record — a list of ids alone re-sorted by the local
+ * cache, which knows only the threads opened here.
+ */
+@Serializable
+internal data class CachedRecents(
+    val ids: List<String> = emptyList(),
+    val activity: Map<String, Long> = emptyMap(),
+)
 
 /** How long the server gets to apply a read before the tab split is re-asked. */
 private const val SECTION_BADGE_SETTLE_MILLIS = 1_800L

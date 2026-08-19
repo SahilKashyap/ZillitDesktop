@@ -1,8 +1,10 @@
 package com.zillit.desktop.feature.home.calendar
 
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.isoDayNumber
+import kotlinx.datetime.plus
 
 /**
  * How often an event repeats.
@@ -81,7 +83,10 @@ fun Recurrence.validate(startDateText: String): Set<RecurrenceError> {
 
     when {
         end == null -> errors += RecurrenceError.NoEndDate
-        start != null && end < start -> errors += RecurrenceError.EndBeforeStart
+        // Strictly after, not on: a repeat that stops the day it starts is a
+        // one-off wearing a rule. The web's picker disables everything before
+        // the day after the event for the same reason.
+        start != null && end <= start -> errors += RecurrenceError.EndBeforeStart
     }
 
     return errors
@@ -119,3 +124,21 @@ fun sundayFirstIndexToDayOfWeek(index: Int): DayOfWeek =
 val WEEKDAY_LABELS: List<String> = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
 private const val DAYS_IN_WEEK = 7
+
+/**
+ * Where a repeat stops by default, for a freshly chosen frequency.
+ *
+ * The web's `getDefaultEndDate`: one more of whatever the unit is. It gives the
+ * required end date a sensible value the moment a repeat is picked, rather than
+ * an empty field that only announces itself as a problem at save time.
+ */
+fun defaultRecurrenceEnd(frequency: RecurrenceFrequency, startDate: LocalDate): LocalDate? =
+    when (frequency) {
+        RecurrenceFrequency.Never -> null
+        RecurrenceFrequency.Daily -> startDate.plus(1, DateTimeUnit.DAY)
+        RecurrenceFrequency.Weekly -> startDate.plus(1, DateTimeUnit.WEEK)
+        RecurrenceFrequency.Monthly -> startDate.plus(1, DateTimeUnit.MONTH)
+        RecurrenceFrequency.Yearly -> startDate.plus(1, DateTimeUnit.YEAR)
+        // A custom rule repeats on weekdays, so it is measured in weeks.
+        RecurrenceFrequency.Custom -> startDate.plus(1, DateTimeUnit.WEEK)
+    }

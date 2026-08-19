@@ -57,3 +57,10 @@ INSERT OR REPLACE INTO chatThreadRead VALUES (?, ?, ?);
 
 selectReadMarks:
 SELECT * FROM chatThreadRead WHERE projectId = ?;
+
+-- sign-out ------------------------------------------------------------------
+deleteAllMessages:
+DELETE FROM cachedChatMessage;
+
+deleteAllThreadReads:
+DELETE FROM chatThreadRead;

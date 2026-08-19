@@ -93,7 +93,10 @@ fun ChatScreen(
     callLog: (@Composable () -> Unit)? = null,
 ) {
     val chatState = viewModel?.state?.collectAsState()?.value
-    var tab by rememberSaveable { mutableStateOf(DirectoryTab.Contacts.name) }
+    // Opens on Chats, as Android's pager does (ChatAndCall.kt:81-140 — page 0
+    // is Chat): the conversations are what the tool is opened for; the
+    // directory is one tab away.
+    var tab by rememberSaveable { mutableStateOf(DirectoryTab.Chats.name) }
     var query by rememberSaveable { mutableStateOf("") }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -186,11 +189,15 @@ private fun OpenThread(
     )
 }
 
+/**
+ * The strip's tabs, in Android's order — `ChatAndCall.kt:81-140` pages 0
+ * Chat, 1 Call, 2 Contacts. Declaration order is display order.
+ */
 private enum class DirectoryTab(val label: String) {
     Chats("Chats"),
+    Calls("Calls"),
     /** The production's people — "Contacts", as the crew asked, not "Crew". */
     Contacts("Contacts"),
-    Calls("Calls"),
 }
 
 /** The left pane: title, the two tabs, and whichever list the tab shows. */

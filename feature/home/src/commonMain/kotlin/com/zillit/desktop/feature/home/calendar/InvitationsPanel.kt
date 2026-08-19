@@ -174,10 +174,31 @@ private fun InvitationRow(
         }
 
         // Only an unanswered invitation for a live event can be answered.
+        // Android's detail sheet (EventDetailBottomSheet.kt:142-503) drops
+        // both buttons for a cancelled event and for one past its end
+        // (`isExpired = endDatetime < now`, wording `event_expired`); the
+        // list here follows, on the same midnight-today clock the popover
+        // uses so a row does not flip while it is being read.
         if (invitation.status == InvitationStatus.Pending && event != null) {
-            AnswerButtons(invitation, enabled = !state.invitationsBusy, onEvent)
+            val now = state.today.startOfDayMillis(state.zone)
+            when {
+                event.isCancelled -> AnswerNote("This event has been cancelled.")
+                event.hasFinished(now) -> AnswerNote("This event has expired.")
+                else -> AnswerButtons(invitation, enabled = !state.invitationsBusy, onEvent)
+            }
         }
     }
+}
+
+/** Why an unanswered invitation cannot be answered — in place of the buttons. */
+@Composable
+private fun AnswerNote(text: String) {
+    ZillitText(
+        text = text,
+        style = ZillitTheme.typography.labelSmall,
+        color = ZillitTheme.colors.textMuted,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable

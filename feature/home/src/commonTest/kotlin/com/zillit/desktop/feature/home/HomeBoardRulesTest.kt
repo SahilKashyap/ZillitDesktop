@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -325,6 +326,8 @@ class HomeBoardRulesTest {
             advanceUntilIdle()
 
             model.onEvent(HomeFeedEvent.Attach)
+           confirmPreview(model)
+            confirmPreview(model)
             advanceUntilIdle()
             // The picker did not open; the question did.
             assertNull(model.state.value.draft.media)
@@ -332,6 +335,8 @@ class HomeBoardRulesTest {
             assertTrue(!prompt.confirmingReplace)
 
             model.onEvent(HomeFeedEvent.CallSheetContinuation)
+           confirmPreview(model)
+            confirmPreview(model)
             advanceUntilIdle()
             assertNull(model.state.value.callSheetPrompt)
             assertEquals(doc, model.state.value.draft.media)
@@ -351,13 +356,14 @@ class HomeBoardRulesTest {
         val loadsBefore = board.loads
 
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         model.onEvent(HomeFeedEvent.CallSheetNew)
         assertTrue(model.state.value.callSheetPrompt?.confirmingReplace == true)
         // Nothing attached yet — "No" here must leave the board untouched.
         assertNull(model.state.value.draft.media)
 
         model.onEvent(HomeFeedEvent.CallSheetReplaceConfirmed)
-        advanceUntilIdle()
+        confirmPreview(model)
         assertEquals(true, model.state.value.draft.replacePrevious)
 
         model.onEvent(HomeFeedEvent.Send)
@@ -375,6 +381,7 @@ class HomeBoardRulesTest {
         advanceUntilIdle()
 
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         model.onEvent(HomeFeedEvent.CallSheetDismiss)
         advanceUntilIdle()
 
@@ -388,6 +395,7 @@ class HomeBoardRulesTest {
         val empty = viewModel(FakeBoard(listOf(callSheet)), picked = doc)
         advanceUntilIdle()
         empty.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(empty)
         advanceUntilIdle()
         assertNull(empty.state.value.callSheetPrompt)
         assertEquals(doc, empty.state.value.draft.media)
@@ -396,6 +404,7 @@ class HomeBoardRulesTest {
         val plain = viewModel(FakeBoard(listOf(notices), listOf(post("n1", "them", NOW))), picked = photo)
         advanceUntilIdle()
         plain.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(plain)
         advanceUntilIdle()
         assertNull(plain.state.value.callSheetPrompt)
         assertEquals(photo, plain.state.value.draft.media)
@@ -409,9 +418,11 @@ class HomeBoardRulesTest {
         advanceUntilIdle()
 
         model.onEvent(HomeFeedEvent.AttachDropped(doc))
+        confirmPreview(model)
         assertEquals(doc, model.state.value.callSheetPrompt?.dropped)
 
         model.onEvent(HomeFeedEvent.CallSheetContinuation)
+        confirmPreview(model)
         advanceUntilIdle()
         assertEquals(doc, model.state.value.draft.media)
     }
@@ -424,6 +435,7 @@ class HomeBoardRulesTest {
         advanceUntilIdle()
 
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         model.onEvent(HomeFeedEvent.CallSheetNew)
         model.onEvent(HomeFeedEvent.CallSheetReplaceConfirmed)
         advanceUntilIdle()
@@ -514,5 +526,19 @@ class HomeBoardRulesTest {
         const val NOW = 1_800_000_000_000L
         const val ONE_MINUTE = 60_000L
         const val THIRTY_ONE_MINUTES = 31 * ONE_MINUTE
+    }
+
+    /**
+     * Drains the picker, then answers the preview the way a person does:
+     * Send with no caption. Attaching now lands in the preview dialog first
+     * (the phones' gallery viewer), so a test that wants the file *in the
+     * draft* has to walk both steps.
+     */
+    private fun TestScope.confirmPreview(model: HomeFeedViewModel) {
+        advanceUntilIdle()
+        model.currentState.pendingPreview?.let { pending ->
+            model.onEvent(HomeFeedEvent.PreviewSent(pending.picked, ""))
+        }
+        advanceUntilIdle()
     }
 }

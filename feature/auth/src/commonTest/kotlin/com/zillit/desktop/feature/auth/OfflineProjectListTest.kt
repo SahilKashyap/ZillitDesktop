@@ -147,7 +147,7 @@ class OfflineProjectListTest {
         advanceUntilIdle()
         assertEquals(AuthStep.ProjectSelection, viewModel.currentState.step, "Beta was never visited: not opened")
         assertEquals(
-            "No offline data available for this production. Connect to the internet to open it.",
+            "No offline data available for this project. Connect to the internet to open it.",
             viewModel.currentState.error,
         )
         assertFalse(viewModel.currentState.isBusy)

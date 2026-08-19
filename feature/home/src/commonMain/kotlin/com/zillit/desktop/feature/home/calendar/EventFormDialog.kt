@@ -3,55 +3,50 @@ package com.zillit.desktop.feature.home.calendar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
+import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 
 /**
  * Creating and editing an event.
  *
- * A port of the web's `EventForm`, minus the parts that need pickers this app
- * does not have yet — recurrence rules, a map location, a colour palette and a
- * timezone list. Those are named in the summary rather than half-built: a
- * recurrence control that writes nothing is worse than its absence.
+ * A port of the web's `calendarV3` `EventForm`, field for field and rule for
+ * rule. The one thing not carried over is the map: the web picks a location on
+ * a map and sends coordinates alongside the description, and this sends the
+ * description alone until the calendar has a map picker of its own.
  */
 @Composable
 internal fun EventFormDialog(
@@ -82,13 +77,7 @@ internal fun EventFormDialog(
     ) {
         if (current != null) {
             FormFields(current, onEvent)
-            current.error?.let {
-                ZillitText(
-                    text = it,
-                    style = ZillitTheme.typography.bodySmall,
-                    color = ZillitTheme.colors.danger,
-                )
-            }
+            current.error?.let { ErrorLine(it) }
         }
     }
 }
@@ -117,16 +106,76 @@ private fun FormFields(form: EventFormState, onEvent: (CalendarEvent2Event) -> U
     ZillitTextField(
         value = draft.title,
         onValueChange = { change(draft.copy(title = it)) },
+        label = "Title",
         placeholder = "Event name",
-        errorText = form.errors.messageFor(EventFieldError.TitleBlank),
+        errorText = form.errors.messageFor(EventFieldError.TitleBlank)
+            ?: form.errors.messageFor(EventFieldError.TitleTooShort),
         modifier = Modifier.fillMaxWidth(),
     )
 
+    AudienceRow(form, change)
+    WhenSection(form, change)
+    MeetingSection(form, change)
+    TimezoneRow(form, change)
+    ColorRow(draft, change)
+    ReminderRow(form, change)
+    RecurrenceSection(form, change)
+    GuestSection(form, change)
+
+    ZillitTextField(
+        value = draft.description,
+        onValueChange = { change(draft.copy(description = it)) },
+        label = "Description",
+        placeholder = "Notes or agenda",
+        singleLine = false,
+        modifier = Modifier.fillMaxWidth().heightIn(min = NOTES_HEIGHT),
+    )
+}
+
+/**
+ * Who the event is for.
+ *
+ * Offered when creating only, exactly as the web hides the choice on an edit:
+ * a personal event turned into a members one part-way through its life leaves
+ * the people newly on it with no idea where it came from, and the server
+ * treats the two as different things.
+ */
+@Composable
+private fun AudienceRow(form: EventFormState, change: (EventDraft) -> Unit) {
+    val draft = form.draft
+    if (draft.isEdit) return
+
+    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        EventAudience.entries.forEach { audience ->
+            ZillitButton(
+                text = audience.label,
+                variant = chosen(audience == draft.audience),
+                size = ButtonSize.Small,
+                onClick = { change(draft.copy(audience = audience)) },
+            )
+        }
+    }
+}
+
+/**
+ * When it happens.
+ *
+ * The end date is shown and not edited, as on the web: an event covers one day
+ * unless its end time runs past midnight, and then it covers two. Showing the
+ * second date makes a 22:00–04:00 night shoot legible instead of looking like
+ * a typo that somehow saved.
+ */
+@Composable
+private fun WhenSection(form: EventFormState, change: (EventDraft) -> Unit) {
+    val draft = form.draft
+
     DatePickerField(
         value = draft.dateText,
-        onValueChange = { change(draft.copy(dateText = it)) },
+        onValueChange = { change(draft.withDate(it)) },
         today = form.today,
-        errorText = form.errors.messageFor(EventFieldError.DateInvalid),
+        label = "Start date",
+        errorText = form.errors.messageFor(EventFieldError.DateInvalid)
+            ?: form.errors.messageFor(EventFieldError.DateInPast),
         modifier = Modifier.fillMaxWidth(),
     )
 
@@ -136,29 +185,76 @@ private fun FormFields(form: EventFormState, onEvent: (CalendarEvent2Event) -> U
         onCheckedChange = { change(draft.copy(isAllDay = it)) },
     )
 
-    TimeFields(form, change)
+    if (!draft.isAllDay) {
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            ZillitTextField(
+                value = draft.startText,
+                onValueChange = { change(draft.withStartTime(it)) },
+                label = "Start time",
+                placeholder = "09:00",
+                errorText = form.errors.messageFor(EventFieldError.StartTimeInvalid)
+                    ?: form.errors.messageFor(EventFieldError.TooShort),
+                modifier = Modifier.weight(1f),
+            )
+            ZillitTextField(
+                value = draft.endText,
+                onValueChange = { change(draft.copy(endText = it)) },
+                label = "End time",
+                placeholder = "17:30",
+                errorText = form.errors.messageFor(EventFieldError.EndTimeInvalid),
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        draft.endDateText.takeIf { it.isNotBlank() }?.let { ends ->
+            ZillitText(
+                text = if (draft.isOvernight) "Ends the next day, $ends" else "Ends $ends",
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+    }
+}
+
+/**
+ * How people are meeting, and where.
+ *
+ * Both belong to a members event; a personal one is a note to yourself and has
+ * nobody to call. The location is asked for only when some of the attendees
+ * are physically travelling to it — the web's `meet_in_person_call`.
+ */
+@Composable
+private fun MeetingSection(form: EventFormState, change: (EventDraft) -> Unit) {
+    val draft = form.draft
+
+    if (draft.isForMembers) {
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+            FieldLabel("Call type")
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+            ) {
+                CallType.entries.forEach { callType ->
+                    ZillitButton(
+                        text = callType.label,
+                        variant = chosen(callType == draft.callType),
+                        size = ButtonSize.Small,
+                        onClick = { change(draft.copy(callType = callType)) },
+                    )
+                }
+            }
+            form.errors.messageFor(EventFieldError.CallTypeMissing)?.let { ErrorLine(it) }
+        }
+    }
 
     ZillitTextField(
         value = draft.location,
         onValueChange = { change(draft.copy(location = it)) },
-        placeholder = "Location",
+        label = if (draft.callType?.needsLocation == true) "Location — required" else "Location",
+        placeholder = "Where to meet",
+        errorText = form.errors.messageFor(EventFieldError.LocationMissing),
         modifier = Modifier.fillMaxWidth(),
     )
-
-    TimezoneRow(form, change)
-    ColorRow(draft, change)
-    ReminderRow(draft, change)
-    RecurrenceSection(form, change)
-
-    ZillitTextField(
-        value = draft.description,
-        onValueChange = { change(draft.copy(description = it)) },
-        placeholder = "Notes",
-        singleLine = false,
-        modifier = Modifier.fillMaxWidth().heightIn(min = NOTES_HEIGHT),
-    )
-
-    InviteeList(form, change)
 }
 
 /**
@@ -168,30 +264,23 @@ private fun FormFields(form: EventFormState, onEvent: (CalendarEvent2Event) -> U
  * fixed block of repeat controls above every one-off event is furniture, and
  * most events are one-offs.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RecurrenceSection(form: EventFormState, change: (EventDraft) -> Unit) {
     val draft = form.draft
     val rule = draft.recurrence
 
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        ZillitText(
-            text = "Repeat",
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textMuted,
-        )
+        FieldLabel("Repeat")
 
         FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             RecurrenceFrequency.entries.forEach { frequency ->
                 ZillitButton(
                     text = frequency.label,
-                    variant = if (frequency == rule.frequency) {
-                        ButtonVariant.Secondary
-                    } else {
-                        ButtonVariant.Tertiary
-                    },
+                    variant = chosen(frequency == rule.frequency),
                     size = ButtonSize.Small,
-                    onClick = { change(draft.copy(recurrence = rule.copy(frequency = frequency))) },
+                    // Choosing a repeat fills in where it stops, rather than
+                    // leaving a required field blank to be discovered on save.
+                    onClick = { change(draft.repeating(frequency)) },
                 )
             }
         }
@@ -206,13 +295,31 @@ private fun RecurrenceSection(form: EventFormState, change: (EventDraft) -> Unit
                 value = rule.endDateText,
                 onValueChange = { change(draft.copy(recurrence = rule.copy(endDateText = it))) },
                 today = form.today,
-                placeholder = "Repeat until — 2026-12-31",
+                label = "Repeat until",
+                placeholder = "2026-12-31",
                 errorText = form.recurrenceErrors.messageFor(RecurrenceError.NoEndDate)
                     ?: form.recurrenceErrors.messageFor(RecurrenceError.EndBeforeStart),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
     }
+}
+
+/**
+ * Picks a frequency and moves the end of the repeat to suit it.
+ *
+ * The web's `RecurrenceSelect`: switching to weekly means "for a week from
+ * here" unless the user says otherwise.
+ */
+private fun EventDraft.repeating(frequency: RecurrenceFrequency): EventDraft {
+    val start = dateText.trim().toLocalDateOrNull()
+    val end = start?.let { defaultRecurrenceEnd(frequency, it) }
+    return copy(
+        recurrence = recurrence.copy(
+            frequency = frequency,
+            endDateText = end?.isoText() ?: recurrence.endDateText,
+        ),
+    )
 }
 
 /** Which days a custom repeat lands on. Sunday first, as the server stores them. */
@@ -222,11 +329,7 @@ private fun WeekdayPicker(rule: Recurrence, change: (Recurrence) -> Unit) {
         WEEKDAY_LABELS.forEachIndexed { index, label ->
             ZillitButton(
                 text = label,
-                variant = if (index in rule.selectedDays) {
-                    ButtonVariant.Secondary
-                } else {
-                    ButtonVariant.Tertiary
-                },
+                variant = chosen(index in rule.selectedDays),
                 size = ButtonSize.Small,
                 onClick = {
                     change(
@@ -244,49 +347,6 @@ private fun WeekdayPicker(rule: Recurrence, change: (Recurrence) -> Unit) {
     }
 }
 
-@Composable
-private fun ErrorLine(text: String) {
-    ZillitText(
-        text = text,
-        style = ZillitTheme.typography.bodySmall,
-        color = ZillitTheme.colors.danger,
-    )
-}
-
-private fun Set<RecurrenceError>.messageFor(error: RecurrenceError): String? =
-    if (error in this) error.message else null
-
-/** The reminder options the web offers, as a row of choices. */
-/**
- * Start and end, side by side.
- *
- * Hidden rather than disabled when the event covers the whole day: two
- * greyed-out fields say "you got something wrong" where nothing is wrong.
- */
-@Composable
-private fun TimeFields(form: EventFormState, change: (EventDraft) -> Unit) {
-    val draft = form.draft
-    if (draft.isAllDay) return
-
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        ZillitTextField(
-            value = draft.startText,
-            onValueChange = { change(draft.copy(startText = it)) },
-            placeholder = "Starts — 09:00",
-            errorText = form.errors.messageFor(EventFieldError.StartTimeInvalid)
-                ?: form.errors.messageFor(EventFieldError.EndBeforeStart),
-            modifier = Modifier.weight(1f),
-        )
-        ZillitTextField(
-            value = draft.endText,
-            onValueChange = { change(draft.copy(endText = it)) },
-            placeholder = "Ends — 17:30",
-            errorText = form.errors.messageFor(EventFieldError.EndTimeInvalid),
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
 /**
  * Which zone the typed times are meant in — the web's `SelectTimezone`, as a
  * searchable dropdown. Hidden for all-day events: a whole day is a whole day.
@@ -296,10 +356,10 @@ private fun TimezoneRow(form: EventFormState, change: (EventDraft) -> Unit) {
     val draft = form.draft
     // A whole day is a whole day — no clock to reinterpret.
     if (draft.isAllDay) return
-    var open by remember { mutableStateOf(false) }
-    var search by remember { mutableStateOf("") }
+    val open = remember { mutableStateOf(false) }
+    val search = remember { mutableStateOf("") }
 
-    val chosen = form.timezones.firstOrNull { it.identifier == draft.timezoneId }
+    val chosenZone = form.timezones.firstOrNull { it.identifier == draft.timezoneId }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -312,20 +372,22 @@ private fun TimezoneRow(form: EventFormState, change: (EventDraft) -> Unit) {
         )
         Box {
             ZillitButton(
-                text = chosen?.label ?: "Device timezone",
+                text = chosenZone?.label ?: "Device timezone",
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
-                onClick = { open = true; search = "" },
+                onClick = { open.value = true; search.value = "" },
                 enabled = form.timezones.isNotEmpty(),
             )
-            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenu(expanded = open.value, onDismissRequest = { open.value = false }) {
                 TimezoneMenu(
                     form = form,
-                    search = search,
-                    onSearch = { search = it },
+                    search = search.value,
+                    onSearch = { search.value = it },
                     onPick = { id ->
-                        change(draft.copy(timezoneId = id))
-                        open = false
+                        // The moment is kept and the clock moves, as on the
+                        // web — switching zone must not silently reschedule.
+                        change(draft.inTimezone(id, form.zone))
+                        open.value = false
                     },
                 )
             }
@@ -421,13 +483,11 @@ private fun ColorRow(draft: EventDraft, change: (EventDraft) -> Unit) {
 }
 
 @Composable
-private fun ReminderRow(draft: EventDraft, change: (EventDraft) -> Unit) {
+private fun ReminderRow(form: EventFormState, change: (EventDraft) -> Unit) {
+    val draft = form.draft
+
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        ZillitText(
-            text = "Reminder",
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textMuted,
-        )
+        FieldLabel("Reminder")
         // Wraps: a Row squeezed the last chip into a one-letter-wide column.
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
@@ -436,17 +496,38 @@ private fun ReminderRow(draft: EventDraft, change: (EventDraft) -> Unit) {
             REMINDER_CHOICES.forEach { minutes ->
                 ZillitButton(
                     text = reminderLabel(minutes),
-                    variant = if (minutes == draft.reminderMinutes) {
-                        ButtonVariant.Secondary
-                    } else {
-                        ButtonVariant.Tertiary
-                    },
+                    variant = chosen(minutes == draft.reminderMinutes),
                     size = ButtonSize.Small,
                     onClick = { change(draft.copy(reminderMinutes = minutes)) },
                 )
             }
         }
+        form.errors.messageFor(EventFieldError.ReminderPassed)?.let { ErrorLine(it) }
     }
+}
+
+/**
+ * Who is coming.
+ *
+ * Only a members event has guests. The section disappears for a personal one
+ * rather than greying out, so switching to "Personal" reads as "this is just
+ * mine" instead of "these controls broke".
+ */
+@Composable
+private fun GuestSection(form: EventFormState, change: (EventDraft) -> Unit) {
+    val draft = form.draft
+    if (!draft.isForMembers) return
+
+    InviteeList(form, change)
+    ExternalGuests(draft, change)
+
+    ZillitCheckbox(
+        checked = draft.excludeOrganiser,
+        label = "I will not be part of this event",
+        onCheckedChange = { change(draft.copy(excludeOrganiser = it)) },
+    )
+
+    form.errors.messageFor(EventFieldError.NoInvitees)?.let { ErrorLine(it) }
 }
 
 /**
@@ -461,14 +542,12 @@ private fun InviteeList(form: EventFormState, change: (EventDraft) -> Unit) {
     val draft = form.draft
 
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        ZillitText(
-            text = if (draft.inviteeIds.isEmpty()) {
+        FieldLabel(
+            if (draft.inviteeIds.isEmpty()) {
                 "Invite crew"
             } else {
                 "Invite crew — ${draft.inviteeIds.size} selected"
             },
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textMuted,
         )
 
         Column(
@@ -495,7 +574,112 @@ private fun InviteeList(form: EventFormState, change: (EventDraft) -> Unit) {
     }
 }
 
+/**
+ * People outside the production, invited by address.
+ *
+ * The web opens a modal that also searches previously invited outsiders; this
+ * is the part of it that does not need a request — type an address, add it,
+ * remove it again. Bad addresses and repeats are refused here rather than
+ * accepted and dropped by the server, where nobody would see it happen.
+ */
+@Composable
+private fun ExternalGuests(draft: EventDraft, change: (EventDraft) -> Unit) {
+    val typed = remember { mutableStateOf("") }
+    val problem = remember { mutableStateOf<String?>(null) }
+
+    val add = {
+        when (val outcome = draft.addingGuest(typed.value)) {
+            GuestAddition.Empty -> Unit
+            is GuestAddition.Refused -> problem.value = outcome.reason
+            is GuestAddition.Added -> {
+                change(outcome.draft)
+                typed.value = ""
+                problem.value = null
+            }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        FieldLabel("External guests")
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitTextField(
+                value = typed.value,
+                onValueChange = { typed.value = it; problem.value = null },
+                placeholder = "name@example.com",
+                errorText = problem.value,
+                onImeAction = add,
+                modifier = Modifier.weight(1f),
+            )
+            ZillitButton(
+                text = "Add",
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+                enabled = typed.value.isNotBlank(),
+                onClick = add,
+            )
+        }
+
+        draft.externalEmails.forEach { address ->
+            GuestRow(address) {
+                change(draft.copy(externalEmails = draft.externalEmails - address))
+            }
+        }
+    }
+}
+
+@Composable
+private fun GuestRow(address: String, onRemove: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        ZillitText(
+            text = address,
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textPrimary,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        ZillitButton(
+            text = "Remove",
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            onClick = onRemove,
+        )
+    }
+}
+
+@Composable
+private fun FieldLabel(text: String) {
+    ZillitText(
+        text = text,
+        style = ZillitTheme.typography.labelSmall,
+        color = ZillitTheme.colors.textMuted,
+    )
+}
+
+@Composable
+private fun ErrorLine(text: String) {
+    ZillitText(
+        text = text,
+        style = ZillitTheme.typography.bodySmall,
+        color = ZillitTheme.colors.danger,
+    )
+}
+
+/** The chip style for a choice that is on. */
+private fun chosen(selected: Boolean): ButtonVariant =
+    if (selected) ButtonVariant.Secondary else ButtonVariant.Tertiary
+
 private fun Set<EventFieldError>.messageFor(error: EventFieldError): String? =
+    if (error in this) error.message else null
+
+private fun Set<RecurrenceError>.messageFor(error: RecurrenceError): String? =
     if (error in this) error.message else null
 
 /** The web's `NOTIFY_OPTIONS`. */

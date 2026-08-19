@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.calls
 
 import com.zillit.desktop.feature.calls.data.readCallLog
 import com.zillit.desktop.feature.calls.data.readCallLogs
+import com.zillit.desktop.feature.calls.domain.CallLine
 import com.zillit.desktop.feature.calls.domain.CallLogDirection
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallType
@@ -117,5 +118,50 @@ class CallLogWireTest {
         val rendered = row.toString()
         assertFalse(rendered.contains("Camera Unit"))
         assertFalse(rendered.contains("vivek"))
+    }
+
+    /** `line` per Android's sheet: agora is Line 2, livekit Line 3, anything else Line 1. */
+    @Test
+    fun `the line reads as the sheet labels it`() {
+        assertEquals(CallLine.Two, read("""{"call_uuid":"u1","line":"agora"}""")?.line)
+        assertEquals(CallLine.Three, read("""{"call_uuid":"u1","line":"LiveKit"}""")?.line)
+        assertEquals(CallLine.One, read("""{"call_uuid":"u1","line":"mediasoup"}""")?.line)
+        assertEquals(CallLine.One, read("""{"call_uuid":"u1"}""")?.line)
+    }
+
+    /** `call_users` arrives as bare ids on older rows and objects on newer ones — mixed, even. */
+    @Test
+    fun `the legacy roster reads both of its shapes`() {
+        val row = read(
+            """{"call_uuid":"u1","from_user_id":"me","to_user_id":"vivek",
+                "call_users":["me",{"user_id":"vivek","current_status":"declined"},"", null, 7]}""",
+        )
+        assertEquals(listOf("me", "vivek", "7"), row?.callUsers?.map { it.userId })
+        assertEquals("declined", row?.callUsers?.get(1)?.status)
+        assertEquals("me", row?.callerUserId)
+        assertEquals("vivek", row?.calleeUserId)
+    }
+
+    @Test
+    fun `the rich roster keeps attendance, and drops a row with no user`() {
+        val row = read(
+            """{"call_uuid":"u1","line":"livekit","participants":[
+                 {"user_id":"me","status":"caller","answered_at":1000,"join_count":1,"total_ms":60000},
+                 {"user_id":"g1","status":"left","display_name":"Guest Sam","is_guest":true,
+                  "invited_by":"me","join_count":"3","leave_count":2,"total_ms":"45000","missed":false},
+                 {"status":"missed"}
+               ]}""",
+        )
+        val roster = row?.participants.orEmpty()
+        assertEquals(listOf("me", "g1"), roster.map { it.userId })
+        assertTrue(roster[0].isCaller)
+        assertEquals(1_000L, roster[0].answeredAtMillis)
+        val guest = roster[1]
+        assertEquals("Guest Sam", guest.displayName)
+        assertTrue(guest.isGuest)
+        assertEquals("me", guest.invitedBy)
+        assertEquals(3, guest.joinCount)
+        assertEquals(2, guest.leaveCount)
+        assertEquals(45_000L, guest.totalMillis)
     }
 }

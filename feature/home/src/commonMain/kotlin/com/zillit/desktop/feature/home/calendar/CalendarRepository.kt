@@ -239,60 +239,7 @@ class CalendarRepositoryImpl(
             url = if (draft.isEdit) "${base}calendar/edit/${draft.id}" else "${base}calendar",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
-            body = jsonBody(
-                buildJsonObject {
-                    put("title", draft.title.trim())
-                    // Edits carry their scope — iOS's `edit_type`. "all" is
-                    // the whole event; the 406 without it was found live when
-                    // the first drag-reschedule hit the edit route.
-                    if (draft.isEdit) put("edit_type", "all")
-                    // 0 = a members event, 1 = personal — iOS's `EventType`.
-                    // Required, and derived: a members event must carry at
-                    // least one invitee (`calendar_members_event_needs_invitee`
-                    // — found live), so an uninvited event is personal.
-                    put("type", if (draft.inviteeIds.isEmpty()) PERSONAL_EVENT else MEMBERS_EVENT)
-                    put("start_datetime", times.startMillis)
-                    put("end_datetime", times.endMillis)
-                    put("dayStartDate", times.startMillis)
-                    put("full_day", draft.isAllDay)
-                    put("description", draft.description.trim())
-                    put("location_description", draft.location.trim())
-                    put("notify", draft.reminderMinutes)
-                    // The web sends white when the user picked nothing.
-                    put("color", draft.colorHex.ifBlank { "#ffffff" })
-                    // The zone the typed times were meant in — the web always
-                    // sends one, falling back to the device's.
-                    put("timezone", draft.effectiveZone(zone).id)
-                    put("recurrence_rule", draft.recurrence.toPayload(zone))
-                    // The reminder flag and its minutes are separate fields;
-                    // sending minutes without the flag leaves it switched off.
-                    put("reminder_status", draft.reminderMinutes > 0)
-                    put(
-                        "invited_users",
-                        buildJsonArray {
-                            draft.inviteeIds.forEach { userId ->
-                                add(buildJsonObject { put("user_id", userId) })
-                            }
-                        },
-                    )
-                    // iOS's spelling, and this server requires the key even
-                    // when nobody is invited ("invitees" is required — found
-                    // live). invited_users above is the web's; both travel.
-                    put(
-                        "invitees",
-                        buildJsonArray {
-                            draft.inviteeIds.forEach { userId ->
-                                add(
-                                    buildJsonObject {
-                                        put("user_id", userId)
-                                        put("type", "project_user")
-                                    },
-                                )
-                            }
-                        },
-                    )
-                },
-            ),
+            body = jsonBody(eventBody(draft, times, zone)),
         ).map { }
     }
 
@@ -301,10 +248,6 @@ class CalendarRepositoryImpl(
 
         /** The web's `pageLimit: 50` in `RecivedEvents.jsx`. */
         const val INVITE_PAGE = 50
-
-        /** iOS's `EventType`: members carry invitees, personal do not. */
-        const val MEMBERS_EVENT = 0
-        const val PERSONAL_EVENT = 1
     }
 }
 
@@ -390,12 +333,16 @@ internal fun readEvent(row: JsonElement): CalendarEvent? {
         isRecurring = row.isRecurring(),
         recurrence = row.readRecurrence(),
         invitedCount = (row["invited_users"] as? JsonArray)?.size ?: 0,
+        audience = row.readAudience(),
+        callType = CallType.of(row.str("call_type")),
+        inviteeIds = row.inviteeIds(),
+        externalEmails = row.externalEmails(),
     )
 }
 
-private fun JsonObject.prim(key: String) = this[key] as? JsonPrimitive
+internal fun JsonObject.prim(key: String) = this[key] as? JsonPrimitive
 
-private fun JsonObject.str(key: String): String? =
+internal fun JsonObject.str(key: String): String? =
     prim(key)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
 
 private fun JsonObject.int(key: String): Int =
@@ -426,7 +373,7 @@ private fun JsonObject.millis(key: String): Long =
  * `recurrence_rule.selectedDays`, so that is the field it looks at. The web —
  * which is a generation newer than Android here — sends the same.
  */
-private fun Recurrence.toPayload(zone: TimeZone): JsonObject = buildJsonObject {
+internal fun Recurrence.toPayload(zone: TimeZone): JsonObject = buildJsonObject {
     put("frequency", frequency.wireValue)
     put(
         "selectedDays",

@@ -125,22 +125,34 @@ class AuthRepositoryImpl(
         }
 
     /**
-     * Clears local state first, then tells the server.
+     * Tells the server first — while the headers still carry the device and
+     * the session — then clears local state.
      *
-     * Deliberately in that order: if the network call fails, the user is still
-     * signed out locally. Signing out only on a successful round trip leaves
-     * someone stuck signed in on a machine they are trying to leave.
+     * The server call is best-effort: a failure does not un-sign-out, because
+     * signing out only on a successful round trip leaves someone stuck signed
+     * in on a machine they are trying to leave (Android likewise clears
+     * `SharedPref` whatever the answer, `ProjectListActivity.kt:194-211`).
+     * But it has to go *before* the local wipe: `POST device/unlink` needs the
+     * device id in its body and the project-user headers, and both are gone a
+     * line later.
      */
     override suspend fun signOut(): ZillitResult<kotlin.Unit> {
+        val deviceId = _session.value?.device?.deviceId
+            ?: runCatching { storedDeviceId() }.getOrNull()
+        if (deviceId != null) {
+            runCatching {
+                apiClient.envelope(
+                    HttpVerb.Post,
+                    endpoints.unlinkDevice,
+                    module = RequestModule.ProjectUser,
+                    body = jsonBody(UnlinkDeviceDto(deviceId)),
+                )
+            }.onFailure { ZillitLog.w(TAG) { "sign-out notification failed: ${it::class.simpleName}" } }
+        }
+
         _session.value = null
         val cleared = secureStore.clear()
         onSignOut()
-
-        // Best-effort server notification; a failure here does not un-sign-out.
-        runCatching {
-            apiClient.envelope(HttpVerb.Delete, endpoints.device, module = RequestModule.Device)
-        }.onFailure { ZillitLog.w(TAG) { "sign-out notification failed: ${it::class.simpleName}" } }
-
         return cleared
     }
 
@@ -213,6 +225,12 @@ class AuthRepositoryImpl(
         // works until it is there.
         onDeviceIdentified(identity)
         return ZillitResult.Success(identity)
+    }
+
+    /** The keychain's device id, when the session was never restored into memory. */
+    private suspend fun storedDeviceId(): String? {
+        val stored = secureStore.get(SecureKey.DeviceKey).getOrNull() ?: return null
+        return stored.decodeToString().also { stored.fill(0) }.takeIf { it.isNotBlank() }
     }
 
     override suspend fun rememberDevice(identity: DeviceIdentity): ZillitResult<kotlin.Unit> {

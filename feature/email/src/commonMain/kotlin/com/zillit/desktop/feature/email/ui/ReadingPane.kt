@@ -30,13 +30,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
@@ -53,6 +48,7 @@ import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.EmailAttachment
 import com.zillit.desktop.feature.email.domain.EmailMessage
 import com.zillit.desktop.feature.email.domain.htmlToSpans
+import com.zillit.desktop.feature.email.domain.plainTextToSpans
 
 /**
  * The third pane: the selected conversation.
@@ -69,7 +65,16 @@ internal fun ReadingPane(
     modifier: Modifier = Modifier,
     loadAvatar: suspend (String) -> ImageBitmap? = { null },
     loadThumbnail: suspend (EmailAttachment, String) -> ImageBitmap? = { _, _ -> null },
+    /**
+     * Opens a link from a message body in the browser. Null falls back to the
+     * platform's own handler — the host wires its guarded launcher when it
+     * has one, so the mailbox never has to know how a browser is opened.
+     */
+    onOpenLink: ((String) -> Unit)? = null,
 ) {
+    val uriHandler = LocalUriHandler.current
+    val openLink: (String) -> Unit = onOpenLink ?: { url -> uriHandler.openUri(url) }
+
     Column(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.surface)) {
         when {
             state.selectedMessageId == null -> Centred("Select a message to read it.")
@@ -89,7 +94,7 @@ internal fun ReadingPane(
                     verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 ) {
                     items(state.thread, key = EmailMessage::id) { message ->
-                        MessageCard(message, downloads, onEvent, loadAvatar, loadThumbnail)
+                        MessageCard(message, downloads, onEvent, openLink, loadAvatar, loadThumbnail)
                     }
                 }
             }
@@ -134,6 +139,7 @@ private fun MessageCard(
     message: EmailMessage,
     downloads: Map<String, AttachmentDownload>,
     onEvent: (EmailEvent) -> Unit,
+    onOpenLink: (String) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap? = { null },
     loadThumbnail: suspend (EmailAttachment, String) -> ImageBitmap? = { _, _ -> null },
 ) {
@@ -149,7 +155,7 @@ private fun MessageCard(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         MessageHeader(message, loadAvatar)
-        MessageBody(message)
+        MessageBody(message, onOpenLink)
         if (message.attachments.isNotEmpty()) {
             AttachmentRow(message.attachments, message.id, downloads, onEvent, loadThumbnail)
         }
@@ -232,42 +238,16 @@ private fun MessageHeader(
 /**
  * The body.
  *
- * HTML is converted to text with its links kept — see `htmlToSpans` for why it
- * is not rendered. Plain-text mail passes through untouched.
+ * HTML is read into styled spans — see `htmlToSpans` for what is honoured and
+ * why it is not rendered by a browser — and drawn by [HtmlBody]. Plain-text
+ * mail passes through untouched, apart from its URLs becoming links.
  */
 @Composable
-private fun MessageBody(message: EmailMessage) {
-    val colors = ZillitTheme.colors
-
-    val text = remember(message.id, message.isHtml) {
-        if (message.isHtml) {
-            buildAnnotatedString {
-                htmlToSpans(message.body).forEach { span ->
-                    if (span.isLink) {
-                        // Styled, not clickable yet: opening a link from mail is
-                        // an action with consequences and belongs with the rest
-                        // of the message actions, not smuggled in here.
-                        withStyle(
-                            SpanStyle(
-                                color = colors.accent,
-                                textDecoration = TextDecoration.Underline,
-                            ),
-                        ) { append(span.text) }
-                    } else {
-                        append(span.text)
-                    }
-                }
-            }
-        } else {
-            AnnotatedString(message.body)
-        }
+private fun MessageBody(message: EmailMessage, onOpenLink: (String) -> Unit) {
+    val spans = remember(message.id, message.isHtml, message.body) {
+        if (message.isHtml) htmlToSpans(message.body) else plainTextToSpans(message.body)
     }
-
-    ZillitText(
-        text = text,
-        style = ZillitTheme.typography.bodyMedium,
-        color = colors.textPrimary,
-    )
+    HtmlBody(spans = spans, onOpenLink = onOpenLink)
 }
 
 @Composable

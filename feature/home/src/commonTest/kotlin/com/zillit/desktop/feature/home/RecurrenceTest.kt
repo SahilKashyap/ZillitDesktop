@@ -3,11 +3,13 @@ package com.zillit.desktop.feature.home
 import com.zillit.desktop.feature.home.calendar.Recurrence
 import com.zillit.desktop.feature.home.calendar.RecurrenceError
 import com.zillit.desktop.feature.home.calendar.RecurrenceFrequency
+import com.zillit.desktop.feature.home.calendar.defaultRecurrenceEnd
 import com.zillit.desktop.feature.home.calendar.endMillis
 import com.zillit.desktop.feature.home.calendar.sundayFirstIndexToDayOfWeek
 import com.zillit.desktop.feature.home.calendar.toSundayFirstIndex
 import com.zillit.desktop.feature.home.calendar.validate
 import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -104,11 +106,33 @@ class RecurrenceTest {
     }
 
     @Test
-    fun `ending on the start date is allowed`() {
-        // A single occurrence is a legitimate, if odd, thing to ask for.
+    fun `a repeat that stops the day it starts is refused`() {
+        // A one-off wearing a rule. The web's picker disables everything
+        // before the day after the event, so the earliest it can stop is the
+        // next day.
         val daily = Recurrence(RecurrenceFrequency.Daily, endDateText = "2026-08-04")
 
+        assertTrue(RecurrenceError.EndBeforeStart in daily.validate("2026-08-04"))
+    }
+
+    @Test
+    fun `the day after the event is the earliest it can stop`() {
+        val daily = Recurrence(RecurrenceFrequency.Daily, endDateText = "2026-08-05")
+
         assertTrue(daily.validate("2026-08-04").isEmpty())
+    }
+
+    @Test
+    fun `choosing a frequency suggests where it stops`() {
+        val start = LocalDate(2026, 8, 4)
+
+        assertEquals(LocalDate(2026, 8, 5), defaultRecurrenceEnd(RecurrenceFrequency.Daily, start))
+        assertEquals(LocalDate(2026, 8, 11), defaultRecurrenceEnd(RecurrenceFrequency.Weekly, start))
+        assertEquals(LocalDate(2026, 9, 4), defaultRecurrenceEnd(RecurrenceFrequency.Monthly, start))
+        assertEquals(LocalDate(2027, 8, 4), defaultRecurrenceEnd(RecurrenceFrequency.Yearly, start))
+        // A custom rule repeats on weekdays, so it is measured in weeks.
+        assertEquals(LocalDate(2026, 8, 11), defaultRecurrenceEnd(RecurrenceFrequency.Custom, start))
+        assertNull(defaultRecurrenceEnd(RecurrenceFrequency.Never, start))
     }
 
     @Test

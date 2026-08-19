@@ -41,6 +41,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -113,7 +118,11 @@ fun HomeScreen(
 
             shown.isEmpty() -> Centred("No tool matches \"${query.trim()}\".")
 
-            else -> ToolGrid(shown, onEvent, toolBadge)
+            // Headers ride a search: Android's grouped adapter re-buckets the
+            // matches under their group name with a count
+            // (ToolsGroupedAdapter.kt:108-136), so "camera" reads as *which*
+            // camera tools, not a loose run of tiles.
+            else -> ToolGrid(shown, onEvent, toolBadge, showHeaders = shown.size > 1 || query.isNotBlank())
         }
     }
 
@@ -126,10 +135,11 @@ fun HomeScreen(
 }
 
 /**
- * The phones' "Reorder groups" sheet: the sections in a list, each with up
- * and down, Save and Cancel. Saved for this user only — the subtitle says
- * so, as Android's does. Arrows rather than a drag: the list is short and
- * a keyboard-reachable control needs no gesture.
+ * The phones' "Reorder groups" sheet: the sections in a list, dragged into
+ * place by a grip (Android `ReorderToolGroupsBottomSheet.kt:40-146`, an
+ * `ItemTouchHelper` that moves up and down only), with up/down arrows kept
+ * beside the grip for a keyboard-reachable route. Save and Cancel; saved for
+ * this user only — the subtitle says so, as Android's does.
  */
 @Composable
 private fun ReorderGroupsDialog(
@@ -143,7 +153,7 @@ private fun ReorderGroupsDialog(
     val titles = remember(sections) { sections.associate { it.identifier to it.title } }
     ZillitDialogShell(
         title = "Reorder groups",
-        subtitle = "Arrange the order of the groups on your Tools page. This is saved only for you.",
+        subtitle = "Drag the groups into the order you want on your Tools page. This is saved only for you.",
         icon = ZillitIcons.Grid,
         visible = visible,
         onDismiss = onDismiss,
@@ -154,39 +164,126 @@ private fun ReorderGroupsDialog(
             ZillitButton(text = "Save", onClick = { onSave(order) })
         },
     ) {
-        order.forEachIndexed { index, id ->
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                Box(Modifier.size(SECTION_DOT).clip(CircleShape).background(avatarHue(titles[id] ?: id)))
-                ZillitText(
-                    text = titles[id] ?: id,
-                    style = ZillitTheme.typography.bodyMedium,
-                    color = ZillitTheme.colors.textPrimary,
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitIconButton(
-                    icon = ZillitIcons.ChevronDown,
-                    contentDescription = "Move down",
-                    enabled = index < order.lastIndex,
-                    onClick = { order = order.swapped(index, index + 1) },
-                )
-                ZillitIconButton(
-                    icon = ZillitIcons.ChevronDown,
-                    contentDescription = "Move up",
-                    enabled = index > 0,
-                    onClick = { order = order.swapped(index, index - 1) },
-                    modifier = Modifier.rotate(HALF_TURN),
-                )
-            }
-        }
+        ReorderableGroupList(order, titles, onOrderChange = { order = it })
     }
 }
 
-private fun List<String>.swapped(a: Int, b: Int): List<String> =
-    toMutableList().also { val t = it[a]; it[a] = it[b]; it[b] = t }
+/**
+ * The rows, with drag-to-reorder. Drag distance accumulates and converts to
+ * whole rows crossed — the same scheme as the workspace tab strip — so a
+ * slow drag moves one row at a time and a fast one several, and the list
+ * never reorders per pointer frame.
+ */
+@Composable
+private fun ReorderableGroupList(
+    order: List<String>,
+    titles: Map<String?, String>,
+    onOrderChange: (List<String>) -> Unit,
+) {
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragAccumulator by remember { mutableStateOf(0f) }
+    val rowStep = with(LocalDensity.current) { REORDER_ROW_HEIGHT.toPx() }
+
+    order.forEachIndexed { index, id ->
+        val isDragging = draggingIndex == index
+        ReorderableGroupRow(
+            title = titles[id] ?: id,
+            isDragging = isDragging,
+            canMoveUp = index > 0,
+            canMoveDown = index < order.lastIndex,
+            onMove = { by -> onOrderChange(order.moved(index, index + by)) },
+            onDragStart = { draggingIndex = index; dragAccumulator = 0f },
+            onDrag = { delta ->
+                dragAccumulator += delta
+                val steps = (dragAccumulator / rowStep).toInt()
+                if (steps != 0) {
+                    val from = draggingIndex
+                    val to = (from + steps).coerceIn(0, order.lastIndex)
+                    if (to != from) {
+                        onOrderChange(order.moved(from, to))
+                        draggingIndex = to
+                        dragAccumulator -= steps * rowStep
+                    }
+                }
+            },
+            onDragEnd = { draggingIndex = -1; dragAccumulator = 0f },
+        )
+    }
+}
+
+@Composable
+private fun ReorderableGroupRow(
+    title: String,
+    isDragging: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onMove: (Int) -> Unit,
+    onDragStart: () -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragEnd: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(REORDER_ROW_HEIGHT)
+            .clip(ZillitTheme.shapes.small)
+            // The lifted row wears the sunken surface so the eye can follow it.
+            .background(if (isDragging) ZillitTheme.colors.surfaceSunken else Color.Transparent)
+            .padding(horizontal = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        // The grip: the only place the drag starts, so the arrows stay clickable.
+        Box(
+            modifier = Modifier
+                .size(GRIP_SIZE)
+                .semantics { contentDescription = "Drag to reorder $title" }
+                .pointerInput(title) {
+                    detectVerticalDragGestures(
+                        onDragStart = { onDragStart() },
+                        onDragEnd = onDragEnd,
+                        onDragCancel = onDragEnd,
+                    ) { change, delta ->
+                        change.consume()
+                        onDrag(delta)
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            ZillitIcon(
+                icon = ZillitIcons.MoreHorizontal,
+                contentDescription = null,
+                tint = ZillitTheme.colors.textMuted,
+            )
+        }
+        Box(Modifier.size(SECTION_DOT).clip(CircleShape).background(avatarHue(title)))
+        ZillitText(
+            text = title,
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textPrimary,
+            modifier = Modifier.weight(1f),
+        )
+        ZillitIconButton(
+            icon = ZillitIcons.ChevronDown,
+            contentDescription = "Move down",
+            enabled = canMoveDown,
+            onClick = { onMove(1) },
+        )
+        ZillitIconButton(
+            icon = ZillitIcons.ChevronDown,
+            contentDescription = "Move up",
+            enabled = canMoveUp,
+            onClick = { onMove(-1) },
+            modifier = Modifier.rotate(HALF_TURN),
+        )
+    }
+}
+
+/** The list with the item at [from] moved to [to], everything between shifted. */
+internal fun List<String>.moved(from: Int, to: Int): List<String> {
+    if (from == to || from !in indices || to !in indices) return this
+    return toMutableList().also { it.add(to, it.removeAt(from)) }
+}
 
 /**
  * The sections with only the tools whose name — or whose section's name —
@@ -275,6 +372,8 @@ private fun ToolGrid(
     sections: List<ToolSection>,
     onEvent: (HomeEvent) -> Unit,
     toolBadge: (String) -> Int = { 0 },
+    /** Whether each section is headed; see the call site for when one section still is. */
+    showHeaders: Boolean = sections.size > 1,
 ) {
     val gridState = rememberLazyGridState()
 
@@ -293,8 +392,9 @@ private fun ToolGrid(
     ) {
         sections.forEach { section ->
             // One heading in an otherwise empty production is noise; several
-            // are the map. Below one section the grid stays as it was.
-            if (sections.size > 1) {
+            // are the map — and a search's single surviving group keeps its
+            // name, or the result cannot say which group it came from.
+            if (showHeaders) {
                 item(key = "section-${section.title}", span = { GridItemSpan(maxLineSpan) }) {
                     SectionHeader(section.title, section.tools.size)
                 }
@@ -482,6 +582,8 @@ private fun Centred(text: String) {
 private val TILE_MIN = 132.dp
 private val SEARCH_WIDTH = 260.dp
 private val REORDER_WIDTH = 420.dp
+private val REORDER_ROW_HEIGHT = 40.dp
+private val GRIP_SIZE = 28.dp
 private const val HALF_TURN = 180f
 private val TILE_ICON = 24.dp
 private const val DISC_TINT = 0.16f

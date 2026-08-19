@@ -17,6 +17,12 @@ import kotlinx.serialization.Serializable
  * real message.
  */
 
+/** `POST device/unlink` — Android `StartProjectVM.logout`: `{"device_id": …}`. */
+@Serializable
+internal data class UnlinkDeviceDto(
+    @SerialName("device_id") val deviceId: String,
+)
+
 @Serializable
 internal data class OtpRequestDto(
     @SerialName("email") val email: String,

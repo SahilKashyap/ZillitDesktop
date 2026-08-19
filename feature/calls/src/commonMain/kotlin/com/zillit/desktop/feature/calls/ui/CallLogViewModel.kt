@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.calls.ui
 
 import com.zillit.desktop.core.common.onSuccess
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.calls.data.CallApi
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
@@ -16,6 +17,21 @@ data class CallLogUiState(
     val isLoading: Boolean = false,
     /** False once a page comes back short — the server has no more to give. */
     val canLoadMore: Boolean = true,
+    /** The search box; the pane filters [entries] by counterpart name with it. */
+    val query: String = "",
+    /** The trash was pressed and the question is on screen. */
+    val confirmingDelete: Boolean = false,
+    /** The wipe is on the wire. */
+    val isDeleting: Boolean = false,
+    /**
+     * The last thing to happen was a wipe: the list is empty because it was
+     * emptied, and the pane says so in Android's words rather than "No calls
+     * yet".
+     */
+    val deletedAll: Boolean = false,
+    /** The row whose Call activity sheet is open; null closes it. */
+    val detail: CallLogEntry? = null,
+    val error: String? = null,
 )
 
 sealed interface CallLogEvent {
@@ -24,6 +40,19 @@ sealed interface CallLogEvent {
     data object Refresh : CallLogEvent
     data object LoadMore : CallLogEvent
     data class Redial(val entry: CallLogEntry) : CallLogEvent
+
+    /** The search box moved. */
+    data class Search(val query: String) : CallLogEvent
+
+    /** The trash: asks first. */
+    data object DeleteAll : CallLogEvent
+    data object ConfirmDeleteAll : CallLogEvent
+    data object CancelDeleteAll : CallLogEvent
+
+    /** The row's info affordance: opens the Call activity sheet. */
+    data class ShowDetail(val entry: CallLogEntry) : CallLogEvent
+    data object CloseDetail : CallLogEvent
+    data object DismissError : CallLogEvent
 }
 
 /**
@@ -53,6 +82,17 @@ class CallLogViewModel(
             CallLogEvent.Refresh -> launch { load(reset = true) }
             CallLogEvent.LoadMore -> launch { load(reset = false) }
             is CallLogEvent.Redial -> onRedial(event.entry)
+            is CallLogEvent.Search -> setState { copy(query = event.query) }
+            // Nothing to wipe is nothing to ask about — Android answers the
+            // press with "There are no call records to delete." and stops.
+            CallLogEvent.DeleteAll -> if (currentState.entries.isNotEmpty()) {
+                setState { copy(confirmingDelete = true) }
+            }
+            CallLogEvent.CancelDeleteAll -> setState { copy(confirmingDelete = false) }
+            CallLogEvent.ConfirmDeleteAll -> launch { deleteAll() }
+            is CallLogEvent.ShowDetail -> setState { copy(detail = event.entry) }
+            CallLogEvent.CloseDetail -> setState { copy(detail = null) }
+            CallLogEvent.DismissError -> setState { copy(error = null) }
         }
     }
 
@@ -60,7 +100,9 @@ class CallLogViewModel(
         if (state.value.missedOnly == missedOnly) return
         // The two views are paginated separately server-side, so the cursor
         // from one is meaningless in the other — start the new one clean.
-        setState { CallLogUiState(missedOnly = missedOnly, isLoading = true) }
+        // The search survives: it is a question about names, not about which
+        // view is answering.
+        setState { CallLogUiState(missedOnly = missedOnly, isLoading = true, query = query) }
         launch { load(reset = true) }
     }
 
@@ -92,6 +134,8 @@ class CallLogViewModel(
                     // A short page is the end of the history; asking again
                     // would re-fetch the same rows forever.
                     canLoadMore = page.size >= PAGE_SIZE,
+                    // A fresh page is the server's word again, not the wipe's.
+                    deletedAll = if (reset) false else deletedAll,
                 )
             }
         }
@@ -100,10 +144,51 @@ class CallLogViewModel(
         setState { copy(isLoading = false) }
     }
 
+    /**
+     * Android's `RecentCallFragment.kt:203-209`: the Missed tab wipes missed
+     * calls; the Recent tab wipes missed *and* recent — in that order, one
+     * `DELETE` each. Only a clean sweep clears the list here; a failure on
+     * either leg re-reads the server, because half a wipe may have landed and
+     * the rows on screen would otherwise be a guess.
+     */
+    private suspend fun deleteAll() {
+        val missedOnly = currentState.missedOnly
+        setState { copy(confirmingDelete = false, isDeleting = true, error = null) }
+        val outcomes = buildList {
+            add(api.deleteMissedCallLogs())
+            if (!missedOnly) add(api.deleteRecentCallLogs())
+        }
+        val failure = outcomes.firstNotNullOfOrNull { it.errorOrNull() }
+        if (failure == null) {
+            setState {
+                copy(entries = emptyList(), canLoadMore = false, isDeleting = false, deletedAll = true)
+            }
+        } else {
+            setState { copy(isDeleting = false, error = failure.localised()) }
+            load(reset = true)
+        }
+    }
+
     private companion object {
         /** The server's page size, as the other clients assume it. */
         const val PAGE_SIZE = 20
     }
+}
+
+/**
+ * The search box's rule — Android's `RecentMissedVM.searchList` (`:265-285`):
+ * a row stays when the name of who it was with contains the text, case-blind.
+ * The counterpart is what [displayTitle] resolves — the room for a group row,
+ * the other person for a 1:1 — because ids are what the row carries and a
+ * name is what anyone types.
+ */
+fun List<CallLogEntry>.matchingCounterpart(
+    query: String,
+    nameFor: (String) -> String?,
+): List<CallLogEntry> {
+    val needle = query.trim()
+    if (needle.isEmpty()) return this
+    return filter { it.displayTitle(nameFor).contains(needle, ignoreCase = true) }
 }
 
 /**

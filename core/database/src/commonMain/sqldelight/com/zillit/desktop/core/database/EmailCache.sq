@@ -87,3 +87,10 @@ DELETE FROM cachedEmail WHERE projectId = ? AND folderName = ?;
 -- wipe -----------------------------------------------------------------------
 deleteEmailData:
 DELETE FROM cachedEmail WHERE projectId = ?;
+
+-- sign-out ------------------------------------------------------------------
+deleteAllEmails:
+DELETE FROM cachedEmail;
+
+deleteAllFolders:
+DELETE FROM cachedEmailFolder;

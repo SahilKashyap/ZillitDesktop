@@ -88,9 +88,34 @@ class ChatScreenRenderTest {
         }
 
         onNodeWithText("Chat & Calls").assertExists()
-        onNodeWithText("Contacts").assertExists()
+        onNodeWithText("Contacts").performClick()
+        waitForIdle()
         onNodeWithText("Aisha Khan").assertExists()
         onNodeWithText("Vivek Mishra").assertExists()
+    }
+
+    /**
+     * Android's pager order and landing page (`ChatAndCall.kt:81-140`): Chat,
+     * Call, Contacts, opening on Chat. QA found the desktop opening on the
+     * directory with Calls last.
+     */
+    @Test
+    fun `the tabs run Chats, Calls, Contacts and open on Chats`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                ChatScreen(crew = crew, loadAvatar = { null }, callLog = {})
+            }
+        }
+
+        val chatsX = onNodeWithText("Chats").fetchSemanticsNode().positionInRoot.x
+        val callsX = onNodeWithText("Calls").fetchSemanticsNode().positionInRoot.x
+        val contactsX = onNodeWithText("Contacts").fetchSemanticsNode().positionInRoot.x
+        assertTrue(chatsX < callsX && callsX < contactsX, "tab order was $chatsX, $callsX, $contactsX")
+
+        // Landed on Chats: its (view-model-less) message shows, and no crew
+        // row does — the directory is one tab away.
+        onNodeWithText("Chats need a signed-in production.").assertExists()
+        onNodeWithText("Aisha Khan").assertDoesNotExist()
     }
 
     /**
@@ -230,6 +255,9 @@ class CrewRowOpensThreadTest {
         // Before the click the pane invites a choice rather than showing one.
         onNodeWithText("Pick a contact to see their card.").assertExists()
 
+        // The screen lands on Chats; the crew rows live under Contacts.
+        onNodeWithText("Contacts").performClick()
+        waitForIdle()
         onNodeWithText("Aisha Khan").performClick()
         waitForIdle()
 
@@ -250,6 +278,8 @@ class CrewRowOpensThreadTest {
             }
         }
 
+        onNodeWithText("Contacts").performClick()
+        waitForIdle()
         onNodeWithText("Aisha Khan").performClick()
         waitForIdle()
         onNodeWithText("Vivek Mishra").performClick()
@@ -269,6 +299,8 @@ class CrewRowOpensThreadTest {
             }
         }
 
+        onNodeWithText("Contacts").performClick()
+        waitForIdle()
         onNodeWithText("Aisha Khan").assertExists()
         // Vivek is signed in: still in the crew for name resolution, not a row.
         onNodeWithText("Vivek Mishra").assertDoesNotExist()

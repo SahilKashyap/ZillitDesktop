@@ -73,7 +73,19 @@ import com.zillit.desktop.feature.shell.RailItem
 import com.zillit.desktop.feature.shell.DefaultRailItems
 import com.zillit.desktop.feature.shell.railItemsFor
 import com.zillit.desktop.feature.shell.AdminRailItem
+import com.zillit.desktop.feature.sos.data.SosRepositoryImpl
+import com.zillit.desktop.feature.sos.domain.SosCrewMember
+import com.zillit.desktop.feature.sos.domain.SosViewer
+import com.zillit.desktop.feature.sos.ui.SosToolProvider
+import com.zillit.desktop.feature.sos.ui.SosViewModel
 import com.zillit.desktop.feature.settings.ui.AdminSettingsToolProvider
+import com.zillit.desktop.feature.notifications.ui.NotificationsViewModel
+import com.zillit.desktop.feature.notifications.ui.NOTIFICATIONS_PATH
+import com.zillit.desktop.feature.notifications.ui.NotificationsToolProvider
+import com.zillit.desktop.feature.settings.ui.PinToStartToolProvider
+import com.zillit.desktop.feature.settings.ui.HostPlatform
+import com.zillit.desktop.feature.settings.ui.HelpToolProvider
+import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.ui.HomeFeedEvent
 import com.zillit.desktop.feature.home.ui.HomeFeedViewModel
 import com.zillit.desktop.feature.home.calendar.CalendarEvent2Event
@@ -127,6 +139,8 @@ import com.zillit.desktop.feature.calls.ui.CallOverlay
 import com.zillit.desktop.feature.calls.ui.CallViewModel
 import com.zillit.desktop.feature.chat.ui.ChatViewModel
 import com.zillit.desktop.feature.email.domain.decodeBase64Default
+import com.zillit.desktop.feature.email.ui.EmailContactsToolProvider
+import com.zillit.desktop.feature.email.ui.EmailSettingsToolProvider
 import com.zillit.desktop.feature.email.ui.EmailToolProvider
 import com.zillit.desktop.feature.email.ui.EmailViewModel
 import com.zillit.desktop.feature.home.ui.HomeViewModel
@@ -742,7 +756,12 @@ private fun ApprovalCounts(viewModels: AppViewModels) {
 }
 
 @Composable
-private fun BadgeRefresh(ready: AppGraph.Ready) {
+private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
+    // Nothing to count once signed out — and the store was cleared at
+    // sign-out; a collector left running would fill it back in from the next
+    // socket event on the shared connection (found in QA: badges kept
+    // arriving after logout). Keying on `signedIn` cancels both effects.
+    if (!signedIn) return
     // The socket only ever says "changed" — someone must ask first; the
     // asking is ProjectScopedLoads' (counts need a production in the
     // headers — asked earlier the server answers 406).
@@ -858,7 +877,7 @@ private fun BackgroundWork(
     SessionExpiry(ready, authViewModel)
     EndCallOnSignOut(ready, signedIn = auth.step == AuthStep.Complete)
     AuthEffects(authViewModel, createViewModel, joinViewModel)
-    BadgeRefresh(ready)
+    BadgeRefresh(ready, signedIn = auth.step == AuthStep.Complete)
     DockBadge(ready)
     ApprovalCounts(viewModels)
     ToolReadOnFocus(ready, viewModels, workspace)
@@ -992,6 +1011,7 @@ private fun SignedInShell(
     val homeState by (viewModels.home?.state ?: MutableStateFlow(HomeUiState())).collectAsState()
     val badges by ready.badgeStore.counts.collectAsState()
     val socketState by ready.socketEvents.connectionState.collectAsState()
+    val scope = rememberCoroutineScope()
     val syncStatus by (ready.syncEngine?.status ?: MutableStateFlow(SyncStatus())).collectAsState()
     var pendingChangesOpen by remember { mutableStateOf(false) }
 
@@ -1018,6 +1038,13 @@ private fun SignedInShell(
         // Tabs read the same store as the rail — two sources would disagree
         // the moment one missed an update.
         badgeFor = { route -> badges.forWindow(route, homeState) },
+        // The rail's Logout: the same sign-out Settings runs (device/unlink,
+        // then the local wipe); the auth view model watches the session and
+        // takes the frame back to the QR screen.
+        onSignOut = { scope.launch { ready.authRepository.signOut() } },
+        // The bell, beside the theme toggle — the phones' notification list.
+        notificationsRoute = WorkspaceRoute.Tool(NOTIFICATIONS_PATH),
+        notificationBadge = badges.section(GLOBAL_BADGE_SEGMENT),
         onSwitchProject = {
             // Windows are project-scoped (plan M3). Leaving them open would
             // carry one production's content into another's workspace.
@@ -1205,8 +1232,13 @@ private val appAttachmentScope =
 // `ready` is not nullable here: the mailbox view model is itself built from a
 // ready graph, so there is no state in which this is called without one — and
 // the composer's repositories have no sensible null form.
-private fun mailProvider(viewModel: EmailViewModel, ready: AppGraph.Ready) = EmailToolProvider(
+private fun mailProvider(
+    viewModel: EmailViewModel,
+    ready: AppGraph.Ready,
+    onOpenCalendar: () -> Unit,
+) = EmailToolProvider(
     viewModel = viewModel,
+    onOpenCalendar = onOpenCalendar,
     composing = Composing(
         repository = ready.emailRepository,
         drafts = ready.draftRepository,
@@ -2236,7 +2268,18 @@ private fun buildRegistry(
         )
     }
     val email = emailViewModel?.let { mailbox ->
-        (graph as? AppGraph.Ready)?.let { ready -> mailProvider(mailbox, ready) }
+        (graph as? AppGraph.Ready)?.let { ready ->
+            // The mail drawer's Calendar row: the production's own calendar,
+            // which is a unit on the Home board rather than a mail-only one.
+            mailProvider(mailbox, ready) {
+                // Selecting the unit is all the mail side does; the Home
+                // window itself is opened by the provider's navigator.
+                viewModels.homeFeed?.let { feed ->
+                    feed.currentState.units.firstOrNull { it.kind == HomeUnitKind.Calendar }
+                        ?.let { unit -> feed.onEvent(HomeFeedEvent.SelectUnit(unit.id)) }
+                }
+            }
+        }
     }
     val chat = (graph as? AppGraph.Ready)?.let {
         chatProvider(it, chatViewModel, viewModels.calls, audioPlayer)
@@ -2254,6 +2297,46 @@ private fun buildRegistry(
     // Its own window, off the rail. Shares the settings view model, which holds
     // the admin state — see AdminSettingsToolProvider.
     val admin = AdminSettingsToolProvider(settingsViewModel, viewModels.approvals, viewModels.admin)
+    // The mail drawer's other two windows — Settings and Contacts.
+    val mailSettings = (graph as? AppGraph.Ready)?.let { ready ->
+        EmailSettingsToolProvider(
+            apiClient = ready.apiClient,
+            config = ready.config,
+            crew = { ready.projectContext?.context?.value?.crewContacts().orEmpty() },
+            isAdmin = { ready.projectContext?.context?.value?.isAdmin == true },
+            onCopy = ::copyToClipboard,
+        )
+    }
+    val mailContacts = (graph as? AppGraph.Ready)?.let { ready ->
+        EmailContactsToolProvider(apiClient = ready.apiClient, config = ready.config)
+    }
+    // The rail's foot: SOS, and the two app pages beside it.
+    val sos = (graph as? AppGraph.Ready)?.let { ready ->
+        SosToolProvider(
+            viewModel = SosViewModel(
+                repository = SosRepositoryImpl(ready.apiClient, ready.config),
+                nowMillis = System::currentTimeMillis,
+                viewer = { ready.projectContext?.context?.value.sosViewer() },
+                crew = { ready.projectContext?.context?.value.sosCrew() },
+            ),
+            onOpenLink = ::openInBrowser,
+        )
+    }
+    // The rail's foot: the web side menu's Pin to Start and Zillit Help.
+    // The bell page: the phones' notification list.
+    val notifications = (graph as? AppGraph.Ready)?.let { ready ->
+        NotificationsToolProvider(
+            viewModel = NotificationsViewModel(
+                repository = ready.notificationsRepository,
+                nowMillis = System::currentTimeMillis,
+                // Reading the list is what marks the global segment read on
+                // the phones; the badge store hears about it on the next poll.
+                onListRead = { ready.badgeStore.refresh() },
+            ),
+        )
+    }
+    val pinToStart = PinToStartToolProvider(hostPlatform())
+    val help = HelpToolProvider(onOpenExternal = ::openInBrowser, onContactSupport = ::contactSupport)
     val cash = viewModels.cashExpenses?.let { CashExpensesToolProvider(it) }
     val cards = viewModels.cardExpenses?.let { CardExpensesToolProvider(it) }
     val orders = viewModels.purchaseOrders?.let { PurchaseOrderToolProvider(it) }
@@ -2302,7 +2385,8 @@ private fun buildRegistry(
     val adReport = viewModels.adReport?.let { ProductionReportToolProvider(it) }
     val wrapReport = viewModels.wrapReport?.let { ProductionReportToolProvider(it) }
     val real = listOfNotNull(
-        home, chat, email, signatures, settings, admin,
+        home, chat, email, signatures, mailSettings, mailContacts, settings, admin, notifications,
+        sos, pinToStart, help,
         cash, cards, orders, timecards, payroll, deals, distribution, drive,
         accountHub, budgetBuilder, formSignature, esignature,
         callSheet, productionReport, adReport, wrapReport, sides, info, confidentialInfo, reports, scriptNotes,
@@ -2325,6 +2409,23 @@ private fun buildRegistry(
  * does not put their name in front of the rest of the unit. Android carries this
  * flag through its email module and never reads it.
  */
+/** Who is asking, for the SOS page's gating — see `SosViewer`. */
+private fun ProjectContext?.sosViewer(): SosViewer = SosViewer(
+    userId = this?.profile?.userId.orEmpty(),
+    isAdmin = this?.isAdmin == true,
+    // Android's `project_type_id == "personal"` — the personal production
+    // hides crew designations on the receivers list.
+    isPersonalProject = this?.project?.type.equals("personal", ignoreCase = true),
+    phone = this?.profile?.phone.orEmpty(),
+)
+
+/** The production's crew, for the "add a receiver" picker. */
+private fun ProjectContext?.sosCrew(): List<SosCrewMember> =
+    this?.users.orEmpty().mapNotNull { user ->
+        val id = user.userId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        SosCrewMember(userId = id, fullName = user.fullName, designation = user.designation.orEmpty())
+    }
+
 private fun ProjectContext.crewContacts(): List<EmailContact> =
     users.mapNotNull { user ->
         val address = user.email?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
@@ -2515,3 +2616,30 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
     },
 )
 
+/** Which desktop this is, for the "Pin to Start" steps. */
+private fun hostPlatform(): HostPlatform {
+    val os = System.getProperty("os.name").orEmpty().lowercase()
+    return when {
+        os.contains("mac") -> HostPlatform.MacOs
+        os.contains("win") -> HostPlatform.Windows
+        else -> HostPlatform.Linux
+    }
+}
+
+/**
+ * Zillit Help › Contact Us: a mail to support in the person's own mail
+ * client, as the web falls back to (`Help.jsx` `mailto:support@zillit.com`
+ * with subject "Zillit Issue"); the in-app compose is the richer route but
+ * needs a mailbox on this production, which the frame cannot assume.
+ */
+private fun contactSupport() {
+    runCatching {
+        val desktop = java.awt.Desktop.getDesktop().takeIf { java.awt.Desktop.isDesktopSupported() }
+        if (desktop?.isSupported(java.awt.Desktop.Action.MAIL) == true) {
+            desktop.mail(java.net.URI("mailto:support@zillit.com?subject=Zillit%20Issue"))
+        }
+    }
+}
+
+/** The segment the phones count the bell against (`GLOBAL_LABEL` on Android). */
+private const val GLOBAL_BADGE_SEGMENT = "global_label"

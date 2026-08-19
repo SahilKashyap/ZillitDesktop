@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.home.domain.ToolGroup
 import com.zillit.desktop.feature.home.domain.ToolPresentation
 import com.zillit.desktop.feature.home.ui.ToolSection
 import com.zillit.desktop.feature.home.ui.matching
+import com.zillit.desktop.feature.home.ui.moved
 import com.zillit.desktop.feature.home.ui.orderedBy
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -37,5 +38,15 @@ class ToolsGridTest {
         val groups = listOf(ToolGroup("a", "A"), ToolGroup("b", "B"), ToolGroup("c", "C"))
         assertEquals(listOf("c", "a", "b"), groups.orderedBy(listOf("c", "gone", "a")).map { it.identifier })
         assertEquals(groups, groups.orderedBy(emptyList()))
+    }
+
+    /** The drag's step: the row lifted out and dropped in, everything between shifting. */
+    @Test
+    fun `moving a group shifts the rows between, and a no-op or bad index leaves the list alone`() {
+        val order = listOf("a", "b", "c", "d")
+        assertEquals(listOf("b", "c", "a", "d"), order.moved(0, 2))
+        assertEquals(listOf("d", "a", "b", "c"), order.moved(3, 0))
+        assertEquals(order, order.moved(1, 1))
+        assertEquals(order, order.moved(1, 9))
     }
 }

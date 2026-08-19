@@ -19,25 +19,37 @@ import kotlinx.serialization.json.longOrNull
  * sender — `reference_data.sender_id` first, the row's own `sender` as the
  * fallback. Rows that name neither cannot be placed and are dropped.
  */
-fun conversationUnreadFrom(payload: JsonElement): Map<String, Int> {
+fun conversationUnreadFrom(payload: JsonElement): Map<String, Int> =
+    conversationBacklogFrom(payload).unread
+
+/**
+ * The backlog in full: [conversationUnreadFrom]'s counts, plus each
+ * conversation's newest `created` across every chat row — read rows and our
+ * own echoes included, since a thread we read on the phone or wrote into from
+ * it still moved.
+ */
+fun conversationBacklogFrom(payload: JsonElement): ConversationBacklog {
     val rows = when (payload) {
         is JsonArray -> payload
         is JsonObject -> payload["data"] as? JsonArray
         else -> null
-    } ?: return emptyMap()
+    } ?: return ConversationBacklog()
     val counts = mutableMapOf<String, Int>()
+    val newest = mutableMapOf<String, Long>()
     rows.forEach { element ->
-        val key = (element as? JsonObject)?.conversationKeyIfUnread() ?: return@forEach
-        counts[key] = (counts[key] ?: 0) + 1
+        val row = element as? JsonObject ?: return@forEach
+        val key = row.conversationKey() ?: return@forEach
+        row.createdMillis()?.let { at -> newest[key] = maxOf(newest[key] ?: 0L, at) }
+        if (row.isUnread() && !row.isSelfEcho()) counts[key] = (counts[key] ?: 0) + 1
     }
-    return counts
+    return ConversationBacklog(unread = counts, activity = newest)
 }
 
-/** The conversation this row badges, or null when it badges nothing. */
-private fun JsonObject.conversationKeyIfUnread(): String? {
-    if (!isUnreadChatRow()) return null
+/** The conversation this row belongs to, or null when it is not a chat row. */
+private fun JsonObject.conversationKey(): String? {
+    if (!isChatRow()) return null
     val reference = this["reference_data"] as? JsonObject
-    if (reference?.flag("self") == true || reference?.flag("ignore") == true) return null
+    if (reference?.flag("ignore") == true) return null
     val key = if (text("unit") == GROUP_UNIT) {
         reference?.text("chat_room_id")
     } else {
@@ -46,12 +58,22 @@ private fun JsonObject.conversationKeyIfUnread(): String? {
     return key?.takeIf { it.isNotBlank() }
 }
 
-private fun JsonObject.isUnreadChatRow(): Boolean {
+/** A live chat notification: the CNC section's chat tool, not deleted. */
+private fun JsonObject.isChatRow(): Boolean {
     if (text("section") != CNC_SECTION || text("tool") != CHAT_TOOL) return false
-    if (flag("message_read") || flag("silent")) return false
     val deleted = (this["deleted"] as? JsonPrimitive)?.longOrNull ?: 0L
     return deleted <= 0L
 }
+
+private fun JsonObject.isUnread(): Boolean = !flag("message_read") && !flag("silent")
+
+/** Our own message, notified back to us from another device — it badges nothing. */
+private fun JsonObject.isSelfEcho(): Boolean =
+    (this["reference_data"] as? JsonObject)?.flag("self") == true
+
+private fun JsonObject.createdMillis(): Long? =
+    (this["created"] as? JsonPrimitive)?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() }
+        ?.takeIf { it > 0L }
 
 private fun JsonObject.text(key: String): String? =
     (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content

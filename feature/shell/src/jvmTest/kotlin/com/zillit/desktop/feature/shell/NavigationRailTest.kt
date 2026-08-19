@@ -16,8 +16,9 @@ class NavigationRailTest {
 
     @Test
     fun `every app section is on the rail, in order`() {
+        // Android's bottom bar order (`BottomNavigationActivity.kt:555-563`).
         assertEquals(
-            listOf("home", "tools", "cnc", "email", "settings"),
+            listOf("home", "email", "tools", "cnc", "settings"),
             DefaultRailItems.map { it.id },
         )
     }
@@ -73,5 +74,16 @@ class NavigationRailTest {
                 "no provider serves ${item.id} -> $path",
             )
         }
+    }
+
+    /**
+     * The foot is the web side menu's tail (`SideMenu.jsx`) — things about
+     * the app rather than places in the production. Logout is not an item:
+     * it confirms first and is drawn by the rail itself.
+     */
+    @Test
+    fun `the rail's foot carries SOS, Pin to Start and Help`() {
+        assertEquals(listOf("sos", "pin", "help"), FooterRailItems.map { it.id })
+        assertTrue(FooterRailItems.none { it.id == "logout" })
     }
 }

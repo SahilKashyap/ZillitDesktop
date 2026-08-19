@@ -1,3 +1,10 @@
+@file:Suppress(
+    // A table of vector paths, not logic: every entry is a name and a handful
+    // of `moveTo`/`lineTo` calls. Splitting it by theme would only make an
+    // icon harder to find, and the class has no behaviour to decompose.
+    "LargeClass",
+)
+
 package com.zillit.desktop.core.designsystem.icon
 
 import androidx.compose.ui.graphics.Color
@@ -773,6 +780,40 @@ object ZillitIcons {
         moveTo(5.5f, 12f); lineTo(5.51f, 12f)
         moveTo(12f, 12f); lineTo(12.01f, 12f)
         moveTo(18.5f, 12f); lineTo(18.51f, 12f)
+    }
+
+    /** A door with the arrow leaving — the rail's Logout. */
+    val Logout: ImageVector = stroked("Logout") {
+        moveTo(10f, 4f); lineTo(5f, 4f); lineTo(5f, 20f); lineTo(10f, 20f)
+        moveTo(9f, 12f); lineTo(20f, 12f)
+        moveTo(16f, 8f); lineTo(20f, 12f); lineTo(16f, 16f)
+    }
+
+    /** A circled question mark — Zillit Help. */
+    val Help: ImageVector = stroked("Help") {
+        moveTo(12f, 21f)
+        curveTo(16.97f, 21f, 21f, 16.97f, 21f, 12f)
+        curveTo(21f, 7.03f, 16.97f, 3f, 12f, 3f)
+        curveTo(7.03f, 3f, 3f, 7.03f, 3f, 12f)
+        curveTo(3f, 16.97f, 7.03f, 21f, 12f, 21f)
+        close()
+        moveTo(9.5f, 9.5f)
+        curveTo(9.5f, 8.1f, 10.6f, 7f, 12f, 7f)
+        curveTo(13.4f, 7f, 14.5f, 8.1f, 14.5f, 9.5f)
+        curveTo(14.5f, 11.2f, 12f, 11.4f, 12f, 13.5f)
+        moveTo(12f, 16.5f); lineTo(12.01f, 16.5f)
+    }
+
+    /** A siren — SOS. */
+    val Siren: ImageVector = stroked("Siren") {
+        moveTo(7f, 17f); lineTo(7f, 12f)
+        curveTo(7f, 9.2f, 9.2f, 7f, 12f, 7f)
+        curveTo(14.8f, 7f, 17f, 9.2f, 17f, 12f)
+        lineTo(17f, 17f)
+        moveTo(4f, 20f); lineTo(20f, 20f); lineTo(20f, 17f); lineTo(4f, 17f); close()
+        moveTo(12f, 2.5f); lineTo(12f, 4.5f)
+        moveTo(4.5f, 5.5f); lineTo(6f, 7f)
+        moveTo(19.5f, 5.5f); lineTo(18f, 7f)
     }
 
     private fun stroked(name: String, pathBuilder: PathBuilder.() -> Unit): ImageVector =

@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -172,6 +173,7 @@ class NoticeAttachTest {
         advanceUntilIdle()
 
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         advanceUntilIdle()
 
         assertEquals(photo, model.state.value.draft.media)
@@ -183,6 +185,7 @@ class NoticeAttachTest {
         advanceUntilIdle()
 
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         advanceUntilIdle()
 
         assertNull(model.state.value.draft.media)
@@ -195,6 +198,7 @@ class NoticeAttachTest {
         val model = viewModel()
         advanceUntilIdle()
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         model.onEvent(HomeFeedEvent.DraftChanged("crew call moved to 6"))
         advanceUntilIdle()
 
@@ -222,6 +226,7 @@ class NoticeAttachTest {
         val model = viewModel(board, uploads)
         advanceUntilIdle()
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         model.onEvent(HomeFeedEvent.DraftChanged("day 12 call sheet"))
         advanceUntilIdle()
 
@@ -244,6 +249,7 @@ class NoticeAttachTest {
         val model = viewModel(board, uploads)
         advanceUntilIdle()
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         advanceUntilIdle()
 
         model.onEvent(HomeFeedEvent.Send)
@@ -266,6 +272,7 @@ class NoticeAttachTest {
         val model = viewModel(board, uploads)
         advanceUntilIdle()
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         advanceUntilIdle()
         model.onEvent(HomeFeedEvent.Send)
         advanceUntilIdle()
@@ -289,6 +296,7 @@ class NoticeAttachTest {
         val model = viewModel(board, uploads)
         advanceUntilIdle()
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         advanceUntilIdle()
         model.onEvent(HomeFeedEvent.Send)
         advanceUntilIdle()
@@ -313,6 +321,7 @@ class NoticeAttachTest {
         val model = viewModel(board, uploads)
         advanceUntilIdle()
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         advanceUntilIdle()
         model.onEvent(HomeFeedEvent.Send)
         advanceUntilIdle()
@@ -332,6 +341,7 @@ class NoticeAttachTest {
         val model = viewModel()
         advanceUntilIdle()
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         model.onEvent(HomeFeedEvent.DraftChanged("caption"))
         advanceUntilIdle()
 
@@ -407,6 +417,7 @@ class NoticeAttachTest {
         advanceUntilIdle()
 
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         advanceUntilIdle()
 
         assertNull(model.state.value.draft.media)
@@ -554,6 +565,7 @@ class NoticeAttachTest {
             advanceUntilIdle()
 
             model.onEvent(HomeFeedEvent.Attach)
+            confirmPreview(model)
             advanceUntilIdle()
 
             val media = model.state.value.draft.media
@@ -622,6 +634,7 @@ class NoticeAttachTest {
         advanceUntilIdle()
 
         model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model)
         advanceUntilIdle()
 
         assertEquals(8, model.state.value.draft.media?.thumbnailBytes?.size)
@@ -655,6 +668,7 @@ class NoticeAttachTest {
             advanceUntilIdle()
 
             model.onEvent(HomeFeedEvent.Attach)
+            confirmPreview(model)
             runCurrent()
             model.onEvent(HomeFeedEvent.RemoveAttachment)
             runCurrent()
@@ -664,4 +678,18 @@ class NoticeAttachTest {
 
             assertNull(model.state.value.draft.media)
         }
+
+    /**
+     * Drains the picker, then answers the preview the way a person does:
+     * Send with no caption. Attaching now lands in the preview dialog first
+     * (the phones' gallery viewer), so a test that wants the file *in the
+     * draft* has to walk both steps.
+     */
+    private fun TestScope.confirmPreview(model: HomeFeedViewModel) {
+        advanceUntilIdle()
+        model.currentState.pendingPreview?.let { pending ->
+            model.onEvent(HomeFeedEvent.PreviewSent(pending.picked, ""))
+        }
+        advanceUntilIdle()
+    }
 }

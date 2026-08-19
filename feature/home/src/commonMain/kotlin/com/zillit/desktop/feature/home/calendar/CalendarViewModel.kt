@@ -11,6 +11,7 @@ import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 data class CalendarUiState(
     val anchor: LocalDate,
@@ -89,6 +90,11 @@ data class EventFormState(
     val invitees: List<EventInvitee> = emptyList(),
     /** The server's timezone list; empty until it arrives. */
     val timezones: List<TimezoneOption> = emptyList(),
+    /**
+     * The device's zone, as the fallback the typed times are read in. The form
+     * needs it to convert them when the picker changes zone.
+     */
+    val zone: TimeZone = TimeZone.currentSystemDefault(),
     val errors: Set<EventFieldError> = emptySet(),
     val recurrenceErrors: Set<RecurrenceError> = emptySet(),
     val isSaving: Boolean = false,
@@ -175,6 +181,13 @@ class CalendarViewModel(
      * request — and works offline for the people most events go to.
      */
     private val invitees: () -> List<EventInvitee> = { emptyList() },
+    /**
+     * The clock, for the rules about whether something has already happened —
+     * a date in the past, a reminder that would have to fire before now.
+     * Injected so those rules can be tested at a fixed moment rather than
+     * passing until whatever time of day breaks them.
+     */
+    private val now: () -> Instant = { kotlin.time.Clock.System.now() },
 ) : ZillitViewModel<CalendarUiState, CalendarEvent2Event, Nothing>(
     CalendarUiState(anchor = today(), today = today()),
 ) {
@@ -333,7 +346,7 @@ class CalendarViewModel(
     private fun openForm(event: CalendarEvent?) {
         val state = currentState
         val draft = event?.toDraft(state.zone)
-            ?: EventDraft(dateText = state.focusedDay.isoText())
+            ?: newEventDraft(state.focusedDay, now(), state.zone)
 
         setState {
             copy(
@@ -343,6 +356,7 @@ class CalendarViewModel(
                     today = state.today,
                     invitees = invitees(),
                     timezones = timezoneCache,
+                    zone = state.zone,
                 ),
             )
         }
@@ -362,7 +376,7 @@ class CalendarViewModel(
 
     private fun saveForm() {
         val form = currentState.form ?: return
-        val checked = form.draft.validate(currentState.zone)
+        val checked = form.draft.validate(currentState.zone, now())
         val repeatErrors = form.draft.recurrence.validate(form.draft.dateText)
 
         if (!checked.isValid || repeatErrors.isNotEmpty()) {

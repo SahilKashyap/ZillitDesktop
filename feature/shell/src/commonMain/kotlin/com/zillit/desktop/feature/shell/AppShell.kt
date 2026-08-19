@@ -30,6 +30,8 @@ import androidx.compose.ui.Modifier
 import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.designsystem.ZillitDimens
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import androidx.compose.foundation.layout.Box
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -54,6 +56,14 @@ fun AppShell(
     onThemeModeChange: (ThemeMode) -> Unit,
     projectName: String? = null,
     railItems: List<RailItem> = DefaultRailItems,
+    /** The rail's foot (SOS, Pin to Start, Help); empty hides it. */
+    footerRailItems: List<RailItem> = FooterRailItems,
+    /** Logout at the rail's foot; null hides it. Confirmed by the rail before this fires. */
+    onSignOut: (() -> Unit)? = null,
+    /** The bell's destination; null hides the bell. */
+    notificationsRoute: WorkspaceRoute? = null,
+    /** What the bell wears — the global unread count. */
+    notificationBadge: Int = 0,
     onSwitchProject: () -> Unit = {},
     /**
      * The connection line in the status bar.
@@ -84,6 +94,10 @@ fun AppShell(
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 onSwitchProject = onSwitchProject,
+                onOpenNotifications = notificationsRoute?.let {
+                    { viewModel.onEvent(WorkspaceEvent.Open(it)) }
+                },
+                notificationBadge = notificationBadge,
             )
             HorizontalDivider(color = ZillitTheme.colors.divider)
 
@@ -92,6 +106,8 @@ fun AppShell(
                     items = railItems,
                     activePath = state.activeWindow?.route?.path,
                     onOpen = { route -> viewModel.onEvent(WorkspaceEvent.Open(route)) },
+                    footerItems = footerRailItems,
+                    onSignOut = onSignOut,
                 )
                 VerticalDivider(color = ZillitTheme.colors.divider)
 
@@ -128,6 +144,9 @@ private fun TopBar(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     onSwitchProject: () -> Unit,
+    /** The bell — the notification list. Null hides it. */
+    onOpenNotifications: (() -> Unit)? = null,
+    notificationBadge: Int = 0,
 ) {
     Row(
         modifier = Modifier
@@ -155,6 +174,25 @@ private fun TopBar(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
             ThemeToggle(themeMode = themeMode, onChange = onThemeModeChange)
+            // The phones keep the bell in the app bar (Android's
+            // `NotificationActivity` is reached from there); on the desktop
+            // it belongs beside the other app-wide controls rather than in
+            // the rail, which lists places inside the production.
+            onOpenNotifications?.let { open ->
+                Box {
+                    ZillitIconButton(
+                        icon = ZillitIcons.Bell,
+                        contentDescription = "Notifications",
+                        onClick = open,
+                    )
+                    if (notificationBadge > 0) {
+                        ZillitBadge(
+                            count = notificationBadge,
+                            modifier = Modifier.align(Alignment.TopEnd),
+                        )
+                    }
+                }
+            }
             ZillitIconButton(
                 icon = ZillitIcons.Search,
                 contentDescription = "Search",

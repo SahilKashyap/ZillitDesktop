@@ -57,6 +57,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.media.PreviewResult
+import com.zillit.desktop.core.media.PreviewItem
+import com.zillit.desktop.core.media.MediaPreviewDialog
 import com.zillit.desktop.feature.home.domain.HomeUnit
 import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.domain.BoardRow
@@ -328,6 +331,20 @@ private fun BoardDialogs(
     )
     CallSheetPromptDialog(state, onEvent)
     PublishPromptDialog(state, onEvent)
+    // The picked file, before it joins the draft — the phones' gallery
+    // viewer (`GalleryViewer.kt:1990-2030`): caption, and a picture's three
+    // edit tools. One item at a time here: the wire takes one per post.
+    val pending = state.pendingPreview
+    MediaPreviewDialog(
+        items = remember(pending) { pending?.let { listOf(it.picked.asPreviewItem()) }.orEmpty() },
+        initialCaption = state.draft.text,
+        onSend = { results, caption ->
+            val edited = results.firstOrNull() ?: return@MediaPreviewDialog
+            pending?.let { onEvent(HomeFeedEvent.PreviewSent(it.picked.withBytesOf(edited), caption)) }
+        },
+        onCancel = { onEvent(HomeFeedEvent.PreviewCancelled) },
+    )
+
     ImageReplyDialog(
         target = imageReply,
         media = media,
@@ -2497,3 +2514,25 @@ private val KEBAB_GLYPH = 16.dp
 
 /** Matches the view model's UPLOAD_DONE: bytes done, server writing. */
 private const val UPLOAD_DONE_PERCENT = 100
+
+/** The picked file as the preview dialog wants it — bytes and a poster. */
+private fun PickedMedia.asPreviewItem(): PreviewItem = PreviewItem(
+    name = name,
+    contentType = contentType,
+    bytes = bytes,
+    thumbnailBytes = thumbnailBytes,
+)
+
+/**
+ * The picked file with whatever the editor returned in place of its bytes.
+ *
+ * Everything else — duration, poster size, the kind derived from the type —
+ * is the pick's own; an edited picture keeps its name so the wire and the
+ * chip say the same thing.
+ */
+private fun PickedMedia.withBytesOf(result: PreviewResult): PickedMedia =
+    if (result.bytes.contentEquals(bytes)) {
+        this
+    } else {
+        copy(bytes = result.bytes, contentType = result.contentType, thumbnailBytes = result.thumbnailBytes)
+    }

@@ -40,6 +40,8 @@ class EmailToolProvider(
      * windows of their own — see [ComposerDock].
      */
     private val composing: Composing,
+    /** Opens the production's calendar — the frame owns that route. */
+    private val onOpenCalendar: () -> Unit = {},
     /**
      * The message being replied to.
      *
@@ -99,6 +101,18 @@ class EmailToolProvider(
             loadThumbnail = loadThumbnail,
             onOpenSignatures = {
                 navigator.openInNewWindow(WorkspaceRoute.Tool(SIGNATURES_PATH))
+            },
+            onOpenContacts = {
+                navigator.openInNewWindow(WorkspaceRoute.Tool(EMAIL_CONTACTS_PATH))
+            },
+            // The production's one calendar, not a mail-only copy: Android's
+            // drawer entry opens the same events the Home tab shows.
+            onOpenCalendar = {
+                onOpenCalendar()
+                navigator.openInNewWindow(WorkspaceRoute.Home)
+            },
+            onOpenSettings = {
+                navigator.openInNewWindow(WorkspaceRoute.Tool(EMAIL_SETTINGS_PATH))
             },
         ) {
             ComposerDock(

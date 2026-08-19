@@ -190,6 +190,33 @@ class CallApi(
         ).map { envelope -> readCallLogs(envelope.data ?: JsonObject(emptyMap()), selfUserId) }
     }
 
+    /**
+     * Wipes the recent-calls history for this user on the open production.
+     *
+     * Android's `RecentMissedVM.deleteCallLogs` (`:236-259`) — a bodiless
+     * `DELETE ${DELETE_CALL_LOGS}/recent` under the project-user headers.
+     * Its `DELETE_CALL_LOGS` is `${CALL_BASE_URL}/call` (`ApiUrl.kt:555`),
+     * one slash more than `GET_CALL_LOGS` on the line above; the server
+     * tolerates the double, but the single spelling is what the path is.
+     */
+    suspend fun deleteRecentCallLogs(): ZillitResult<Unit> = deleteLogs("recent")
+
+    /**
+     * Wipes the missed-calls history — the same call for the missed view.
+     * Android's Recent tab sends both; its Missed tab only this one
+     * (`RecentCallFragment.kt:203-209`).
+     */
+    suspend fun deleteMissedCallLogs(): ZillitResult<Unit> = deleteLogs("missed")
+
+    private suspend fun deleteLogs(which: String): ZillitResult<Unit> =
+        apiClient.envelope(
+            verb = HttpVerb.Delete,
+            url = "${base}call/$which",
+            module = RequestModule.ProjectUser,
+            // History is the open production's — see callLogs.
+            options = CallOptions(projectId = null),
+        ).map { }
+
     /** Admits or refuses a guest waiting outside a room. */
     suspend fun respondToGuest(
         roomId: String,

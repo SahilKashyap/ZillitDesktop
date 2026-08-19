@@ -161,3 +161,19 @@ DELETE FROM cachedProfile WHERE projectId = ?;
 
 deleteNoticeData:
 DELETE FROM cachedNotice WHERE projectId = ?;
+
+-- sign-out: everything, every production ---------------------------------
+deleteAllProfiles:
+DELETE FROM cachedProfile;
+
+deleteAllProjects:
+DELETE FROM cachedProject;
+
+deleteAllProjectUsers:
+DELETE FROM cachedProjectUser;
+
+deleteAllTools:
+DELETE FROM cachedTool;
+
+deleteAllNotices:
+DELETE FROM cachedNotice;

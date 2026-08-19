@@ -81,6 +81,6 @@ class ProjectCardSubtitleTest {
 
     @Test
     fun `a production with neither still says something`() {
-        assertEquals("Production", project().subtitle(loaded))
+        assertEquals("Project", project().subtitle(loaded))
     }
 }

@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.home.calendar.CalendarEvent
 import com.zillit.desktop.feature.home.calendar.CalendarEvent2Event
 import com.zillit.desktop.feature.home.calendar.CalendarRepository
 import com.zillit.desktop.feature.home.calendar.CalendarViewModel
+import com.zillit.desktop.feature.home.calendar.EventAudience
 import com.zillit.desktop.feature.home.calendar.EventDraft
 import com.zillit.desktop.feature.home.calendar.EventTimes
 import com.zillit.desktop.feature.home.calendar.InviteStatus
@@ -32,6 +33,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
 
 /**
  * The event detail popover.
@@ -123,7 +125,14 @@ class EventDetailTest {
     }
 
     private fun viewModel(repo: FakeCalendar, userId: String? = "u1") =
-        CalendarViewModel(repo, today = { LocalDate(2026, 1, 1) }, currentUserId = { userId })
+        CalendarViewModel(
+            repo,
+            today = { LocalDate(2026, 1, 1) },
+            currentUserId = { userId },
+            // Pinned to the same day as `today`: the form refuses a new event
+            // in the past, and a real clock would put every draft there.
+            now = { Instant.parse("2026-01-01T08:00:00Z") },
+        )
 
     // -- reading the status ------------------------------------------------
 
@@ -419,6 +428,9 @@ class EventDetailTest {
                     title = "Unit call",
                     startText = "09:00",
                     endText = "17:30",
+                    // The saving path is the subject; a personal event is the
+                    // shortest way to a draft that passes every rule.
+                    audience = EventAudience.Personal,
                 ),
             ),
         )
@@ -462,6 +474,9 @@ class EventDetailTest {
                     title = "Unit call",
                     startText = "09:00",
                     endText = "17:30",
+                    // The saving path is the subject; a personal event is the
+                    // shortest way to a draft that passes every rule.
+                    audience = EventAudience.Personal,
                 ),
             ),
         )

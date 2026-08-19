@@ -24,6 +24,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,11 +74,24 @@ data class RailItem(
  * So this is the rail, and permissions gate the **grid** behind Film Tools.
  */
 val DefaultRailItems: List<RailItem> = listOf(
+    // Android's bottom bar order (BottomNavigationActivity.kt:555-563,
+    // labels AppHelper.kt:134-172): Home, Email, Tools, C&C, Settings.
     RailItem("home", "Home", ZillitIcons.Home, WorkspaceRoute.Home),
+    RailItem("email", "Email", ZillitIcons.Mail, WorkspaceRoute.Tool("/email")),
     RailItem("tools", "Film Tools", ZillitIcons.Tools, WorkspaceRoute.Tool("/home/tools")),
     RailItem("cnc", "Chat & Calls", ZillitIcons.Chat, WorkspaceRoute.Tool("/cnc")),
-    RailItem("email", "Email", ZillitIcons.Mail, WorkspaceRoute.Tool("/email")),
     RailItem("settings", "Settings", ZillitIcons.Settings, WorkspaceRoute.Tool("/settings")),
+)
+
+/**
+ * The rail's foot — the web's `SideMenu.jsx` tail (SOS, Pin to Start, Help,
+ * then Logout): things about the app rather than places in the production,
+ * kept below the spacer so the sections above read as the map.
+ */
+val FooterRailItems: List<RailItem> = listOf(
+    RailItem("sos", "SOS", ZillitIcons.Siren, WorkspaceRoute.Tool("/sos")),
+    RailItem("pin", "Pin to Start", ZillitIcons.Pin, WorkspaceRoute.Tool("/settings/pin-to-start")),
+    RailItem("help", "Zillit Help", ZillitIcons.Help, WorkspaceRoute.Tool("/settings/help")),
 )
 
 /**
@@ -124,6 +143,10 @@ fun NavigationRail(
     activePath: String?,
     onOpen: (WorkspaceRoute) -> Unit,
     modifier: Modifier = Modifier,
+    /** The items below the spacer — [FooterRailItems] normally; empty hides the foot. */
+    footerItems: List<RailItem> = emptyList(),
+    /** Null hides Logout; the click confirms first, in the rail's own dialog. */
+    onSignOut: (() -> Unit)? = null,
     footer: @Composable ColumnFooterScope.() -> Unit = {},
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -150,9 +173,9 @@ fun NavigationRail(
         // Longest prefix wins, rather than every entry the path starts with:
         // `/settings/admin` also starts with `/settings`, and two lit entries
         // tell the reader they are in two places at once.
-        val activeId = remember(items, activePath) {
+        val activeId = remember(items, footerItems, activePath) {
             activePath?.let { path ->
-                items.filter { path.startsWith(it.route.path) }
+                (items + footerItems).filter { path.startsWith(it.route.path) }
                     .maxByOrNull { it.route.path.length }
                     ?.id
             }
@@ -167,7 +190,57 @@ fun NavigationRail(
             )
         }
         Box(Modifier.weight(1f))
+        footerItems.forEach { item ->
+            RailButton(
+                item = item,
+                isActive = item.id == activeId,
+                expanded = expanded,
+                onClick = { onOpen(item.route) },
+            )
+        }
+        onSignOut?.let { SignOutRailButton(expanded, it) }
         ColumnFooterScope.footer()
+    }
+}
+
+/**
+ * Logout at the very foot, as the web has it. Confirms first — the same
+ * question Settings asks (and Android: "Logout" / "Are you sure?") — because
+ * a stray click here would sign the person out of every production at once.
+ */
+@Composable
+private fun SignOutRailButton(expanded: Boolean, onSignOut: () -> Unit) {
+    var confirming by remember { mutableStateOf(false) }
+    RailButton(
+        item = RailItem("logout", "Logout", ZillitIcons.Logout, WorkspaceRoute.Tool("/logout")),
+        isActive = false,
+        expanded = expanded,
+        onClick = { confirming = true },
+    )
+    ZillitDialogShell(
+        title = "Sign out?",
+        subtitle = "You'll be signed out on this computer and need to sign in again to continue.",
+        icon = ZillitIcons.Logout,
+        visible = confirming,
+        onDismiss = { confirming = false },
+        width = SIGN_OUT_DIALOG_WIDTH,
+        actions = {
+            Spacer(Modifier.weight(1f))
+            ZillitButton(text = "Cancel", variant = ButtonVariant.Secondary, onClick = { confirming = false })
+            ZillitButton(
+                text = "Sign out",
+                onClick = {
+                    confirming = false
+                    onSignOut()
+                },
+            )
+        },
+    ) {
+        ZillitText(
+            text = "Anything waiting to be sent will stay on this computer until you sign in again.",
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textMuted,
+        )
     }
 }
 
@@ -272,6 +345,7 @@ private fun RailLabel(item: RailItem, visible: Boolean, contentColor: Color) {
 }
 
 private val RAIL_BUTTON = 40.dp
+private val SIGN_OUT_DIALOG_WIDTH = 380.dp
 
 /** Left/right breathing room, so the button does not touch the rail edge. */
 private val RAIL_GUTTER = 10.dp

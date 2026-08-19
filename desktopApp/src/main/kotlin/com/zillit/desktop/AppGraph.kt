@@ -123,6 +123,10 @@ import com.zillit.desktop.feature.auth.data.secureLoginCode
 import com.zillit.desktop.feature.auth.domain.PresetRepository
 import com.zillit.desktop.feature.home.data.HomeFeedRepositoryImpl
 import com.zillit.desktop.core.database.ChatCache
+import com.zillit.desktop.core.database.LocalCacheWiper
+import com.zillit.desktop.feature.notifications.domain.NotificationsRepository
+import com.zillit.desktop.feature.notifications.domain.NotificationDecoder
+import com.zillit.desktop.feature.notifications.data.NotificationsRepositoryImpl
 import com.zillit.desktop.core.database.EmailCache
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.BoxAttachmentUploader
@@ -392,6 +396,8 @@ sealed interface AppGraph {
          */
         val noticeDecryptor: NoticeDecryptor,
         val chatRepository: ChatRepository,
+        /** The notification list's source — see `NotificationsToolProvider`. */
+        val notificationsRepository: NotificationsRepository,
         val homeRealtime: HomeRealtimeSource,
         val emailRealtime: EmailRealtimeSource,
         val calendarRepository: CalendarRepository,
@@ -745,6 +751,10 @@ sealed interface AppGraph {
                     remoteConfigRepository.clear()
                     badgeStore.clear()
                     projectListCache?.clear()
+                    // …and every cached row of theirs — boards, threads, mail,
+                    // the read cache, the outbox — so the next person to sign
+                    // in here starts clean (Android wipes Realm on logout).
+                    LocalCacheWiper(database, syncDatabase).wipe()
                     socketClient.disconnect()
                 },
                 onDeviceIdentified = { identity ->
@@ -835,6 +845,16 @@ sealed interface AppGraph {
             // Messages written offline leave through the same send as live ones.
             syncHandlers.register(ChatSendHandler(chatRepository))
 
+            // The notification list — the phones' bell page. Same cipher as
+            // the boards: a row's body arrives encrypted like a notice's.
+            val notificationsRepository = NotificationsRepositoryImpl(
+                apiClient = apiClient,
+                config = config,
+                decoder = NotificationDecoder(
+                    decrypt = { cipher -> (cryptoEngine.decryptFromHex(cipher) as? ZillitResult.Success)?.data },
+                ),
+            )
+
             val callEngine = buildCallEngine(config, appScope)
             // One instance, shared: the coordinator and the call-log list are
             // the same surface talking to the same production.
@@ -919,6 +939,7 @@ sealed interface AppGraph {
                 labelStore = labelStore,
                 toolsRepository = toolsRepository,
                 homeFeedRepository = homeFeedRepository,
+                notificationsRepository = notificationsRepository,
                 noticeDecryptor = noticeDecryptor,
                 chatRepository = chatRepository,
                 homeRealtime = homeRealtime,

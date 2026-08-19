@@ -27,6 +27,14 @@ internal class AuthEndpoints(private val config: AppConfig) {
     /** `GET`/`POST` — device details and registration. */
     val device get() = "${core}device"
 
+    /**
+     * `POST {device_id}` — sign this device out. Android's `ApiUrl.LOGOUT`
+     * (`"${PROJECT_DEVICE}unlink"`, `StartProjectVM.logout`), sent with the
+     * project-user headers; the older `DELETE device` here was a guess the
+     * server never acted on.
+     */
+    val unlinkDevice get() = "${core}device/unlink"
+
     /** `POST` — begin recovery using a registered email. */
     val recoveryByEmail get() = "${core}device/recovery"
 

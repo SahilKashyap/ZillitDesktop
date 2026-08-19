@@ -4,12 +4,68 @@ package com.zillit.desktop.feature.calls.domain
 enum class CallLogDirection { Incoming, Outgoing }
 
 /**
+ * Which line carried a logged call, as the detail sheet names it.
+ *
+ * Android's `CallActivityDetailSheet.kt:94-100`: `line` "agora" is Line 2,
+ * "livekit" is Line 3, and anything else — "mediasoup" or the field missing
+ * on an older row — is Line 1. Not [CallProvider], whose absent-means-Agora
+ * default is right for joining a live call and wrong for labelling history.
+ */
+enum class CallLine(val label: String) {
+    One("Line 1"),
+    Two("Line 2"),
+    Three("Line 3"),
+    ;
+
+    companion object {
+        fun ofWire(raw: String?): CallLine = when (raw?.trim()?.lowercase()) {
+            "agora" -> Two
+            "livekit" -> Three
+            else -> One
+        }
+    }
+}
+
+/**
+ * One person on a logged call — Android's `CallLogParticipant`
+ * (`GetCallLogsModel.kt:70-85`) for Line 3 rows, and the thinner
+ * `CallLogUser` `{user_id, current_status}` (`:55-58`) for the rest.
+ *
+ * The legacy shape carries only [userId] and [status]; every other field
+ * keeps its default there, which is how the detail sheet tells the two apart
+ * (it prefers the rich list when it is non-empty).
+ */
+data class CallLogParticipant(
+    val userId: String,
+    /** The wire status as written: "caller" (host), "incall", "left", "declined", "missed", "ringing"… */
+    val status: String = "",
+    /** The server's own verdict that this person never picked up. */
+    val missed: Boolean = false,
+    /** Server-sent name — the only name a guest has. */
+    val displayName: String = "",
+    val isGuest: Boolean = false,
+    /** Whoever pulled this person into a call already running. */
+    val invitedBy: String = "",
+    val joinCount: Int = 0,
+    val leaveCount: Int = 0,
+    /** Time actually spent in the call, across rejoins. */
+    val totalMillis: Long = 0,
+    val answeredAtMillis: Long = 0,
+) {
+    val isCaller: Boolean get() = status.trim().lowercase() == CALLER_STATUS
+
+    private companion object {
+        const val CALLER_STATUS = "caller"
+    }
+}
+
+/**
  * One row in the call history.
  *
  * A record of a call that is over, which is a different thing from a
  * [CallSession] — there is no channel, no token and nobody to talk to. What it
  * keeps is only what a list needs: who, which way, how long, and whether it was
- * answered.
+ * answered — and, for the detail sheet, who else was on it.
  *
  * [peerUserId] and [roomId] are what a redial needs: a 1:1 row rings the
  * person, a group row rings the room. Either can be blank on old rows, and a
@@ -37,6 +93,15 @@ data class CallLogEntry(
     val roomId: String = "",
     val title: String = "",
     val projectId: String = "",
+    val line: CallLine = CallLine.One,
+    /** Who placed the call — `from_user_id`, or the older rows' `user_id`. */
+    val callerUserId: String = "",
+    /** Who a 1:1 call was placed to — `to_user_id`. */
+    val calleeUserId: String = "",
+    /** The rich Line 3 roster (`participants`); empty on older rows and the legacy lines. */
+    val participants: List<CallLogParticipant> = emptyList(),
+    /** The legacy roster (`call_users`), status only. */
+    val callUsers: List<CallLogParticipant> = emptyList(),
 ) {
     /** Nothing to ring means nothing to redial; the row is still worth showing. */
     val isRedialable: Boolean

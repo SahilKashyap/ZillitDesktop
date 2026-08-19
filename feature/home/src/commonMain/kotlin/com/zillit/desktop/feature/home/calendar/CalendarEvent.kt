@@ -38,6 +38,14 @@ data class CalendarEvent(
     val isRecurring: Boolean = false,
     /** The repeat rule, for editing it. */
     val recurrence: Recurrence = Recurrence(),
+    /** Members or personal — the server's `type`. */
+    val audience: EventAudience = EventAudience.Members,
+    /** How the people on it are meeting; null on a personal event. */
+    val callType: CallType? = null,
+    /** Crew on the event, so reopening it does not uninvite them. */
+    val inviteeIds: Set<String> = emptySet(),
+    /** Guests invited by address rather than by crew record. */
+    val externalEmails: List<String> = emptyList(),
 ) {
     /** Where this user stands on it, read from whatever the server called it. */
     val inviteStatus: InviteStatus get() = inviteStatusOf(status)

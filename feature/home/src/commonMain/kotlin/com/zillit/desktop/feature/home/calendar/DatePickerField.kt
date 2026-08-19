@@ -52,6 +52,7 @@ internal fun DatePickerField(
     onValueChange: (String) -> Unit,
     today: LocalDate,
     modifier: Modifier = Modifier,
+    label: String? = null,
     placeholder: String = "Date — 2026-08-04",
     errorText: String? = null,
     weekStart: DayOfWeek = DayOfWeek.MONDAY,
@@ -65,6 +66,7 @@ internal fun DatePickerField(
         ZillitTextField(
             value = value,
             onValueChange = onValueChange,
+            label = label,
             placeholder = placeholder,
             errorText = errorText,
             modifier = Modifier.fillMaxWidth(),

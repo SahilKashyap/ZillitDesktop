@@ -56,7 +56,16 @@ interface ChatRepository {
      * a thread this desktop has never opened; the local cache alone cannot
      * say that.
      */
-    suspend fun conversationUnread(): ZillitResult<Map<String, Int>> = ZillitResult.Success(emptyMap())
+    suspend fun conversationUnread(): ZillitResult<Map<String, Int>> = conversationBacklog().map { it.unread }
+
+    /**
+     * [conversationUnread] and, from the same rows, when each conversation
+     * last moved — the server's activity stamps, for the listing's order. One
+     * fetch serves both: a badge and the row it lifts must agree on their
+     * source, or "sorted as per badge" is a coincidence.
+     */
+    suspend fun conversationBacklog(): ZillitResult<ConversationBacklog> =
+        ZillitResult.Success(ConversationBacklog())
 
     /** Peers currently typing to us: peer id to started/stopped. */
     val typing: Flow<Pair<String, Boolean>>
@@ -395,9 +404,11 @@ class ChatRepositoryImpl(
      * `BadgesHandler.getAllBadge`, web `getDeviceBadgesApi`). Chat rows are
      * `section=cnc_label, tool=chat_label`; a room's rows say
      * `unit=chat_group_label` and carry `reference_data.chat_room_id`, a
-     * DM's carry the sender.
+     * DM's carry the sender. Every row also carries `created` (Android
+     * `NotificationDataModel.kt:34`) — the newest per conversation is the
+     * server's activity stamp for the listing's order.
      */
-    override suspend fun conversationUnread(): ZillitResult<Map<String, Int>> =
+    override suspend fun conversationBacklog(): ZillitResult<ConversationBacklog> =
         apiClient.request(
             verb = HttpVerb.Get,
             url = "${config.apiV2(ZillitService.Notification)}project/all/notifications/" +
@@ -407,7 +418,7 @@ class ChatRepositoryImpl(
             options = CallOptions(
                 cacheAs = "${config.apiV2(ZillitService.Notification)}project/all/notifications/newest",
             ),
-        ).map(::conversationUnreadFrom)
+        ).map(::conversationBacklogFrom)
 
     override suspend fun recentPeers(): ZillitResult<List<String>> {
         val me = myUserId() ?: return ZillitResult.Success(emptyList())

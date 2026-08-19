@@ -157,6 +157,11 @@ private const val READ_STATUS = 3
 /**
  * The `user:list` ack — `{detail:{usersList:[userId…]}}` — read tolerantly:
  * the ids of everyone this user has a DM thread with.
+ *
+ * Ids only. Android's `getUserListOfChattedUser` (`ChatSocketHelper.kt:832-855`)
+ * reads the same array and learns nothing but membership from it — the
+ * ordering stamp its list sorts by (`sorting_activity`) comes from elsewhere,
+ * which is why the listing's activity is fetched separately here.
  */
 fun recentPeerIds(ack: JsonElement): List<String> {
     val obj = ack as? JsonObject ?: return emptyList()

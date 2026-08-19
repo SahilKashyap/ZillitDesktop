@@ -80,6 +80,13 @@ data class HomeFeedUiState(
      */
     val callSheetPrompt: CallSheetPrompt? = null,
     /**
+     * The file just picked or dropped, waiting in the preview dialog for a
+     * caption and — for a picture — edits, before it joins the draft. The
+     * phones' gallery viewer step between the picker and the composer; see
+     * [PendingPreview]. Null when nothing is being previewed.
+     */
+    val pendingPreview: PendingPreview? = null,
+    /**
      * A file the board should hand to the host to save and open — set once
      * the right rendition is known (a call sheet's watermarked copy takes a
      * round trip to name), consumed by the screen, then cleared.
@@ -284,6 +291,21 @@ data class CallSheetPrompt(
  * A file the host should save and open. [nonce] makes two opens of the same
  * file two distinct requests, so the screen's effect fires for each.
  */
+/**
+ * A picked file waiting in the preview dialog — the phones' gallery viewer
+ * between the picker and the composer (`GalleryViewer.kt:1990-2030`): a
+ * caption, and for a picture the three edit tools, before it joins the draft.
+ *
+ * [replace] rides along because the call sheet's continuation answer is given
+ * before the picker opens, and the post it belongs to is only built once the
+ * preview is sent.
+ */
+data class PendingPreview(
+    val picked: PickedMedia,
+    val replace: Boolean? = null,
+    val extraDropped: Int = 0,
+)
+
 data class PendingOpen(val attachment: NoticeAttachment, val nonce: Long)
 
 /** A post to scroll to; [nonce] as for [PendingOpen]. */
@@ -308,6 +330,12 @@ sealed interface HomeFeedEvent {
 
     /** A file dragged in from the OS; [extra] counts the ones beyond the first. */
     data class AttachDropped(val picked: PickedMedia, val extra: Int = 0) : HomeFeedEvent
+
+    /** The preview dialog's Send: the file as edited, plus its caption. */
+    data class PreviewSent(val picked: PickedMedia, val caption: String) : HomeFeedEvent
+
+    /** The preview dialog's Cancel — nothing is attached. */
+    data object PreviewCancelled : HomeFeedEvent
 
     /** A location chosen in the picker dialog joins the draft like a file. */
     data class AttachLocation(val point: GeoPoint) : HomeFeedEvent
@@ -607,6 +635,8 @@ class HomeFeedViewModel(
         when (event) {
             // A chosen location parks in the draft like a file: the pin lands
             // first and the map image joins it when the fetch finishes.
+            is HomeFeedEvent.PreviewSent -> previewSent(event.picked, event.caption)
+            HomeFeedEvent.PreviewCancelled -> setState { copy(pendingPreview = null) }
             is HomeFeedEvent.AttachLocation -> {
                 if (!requirePostingRights()) return
                 val point = event.point
@@ -759,30 +789,48 @@ class HomeFeedViewModel(
             val picked = dropped ?: media.pick() ?: return@launch
             if (refusedByCallSheet(unit, picked)) return@launch
 
-            // The chip appears at once; the poster frame joins it when the
-            // extraction finishes. Decoding video before showing anything
-            // would make picking a file feel broken. The replace answer rides
-            // with the file — set here, once there is a file, so a cancelled
-            // picker leaves no stray flag on the next plain post.
-            setState { copy(draft = draft.copy(media = picked, replacePrevious = replace), error = null) }
+            // Straight into the preview, not the draft: the phones put their
+            // gallery viewer between the picker and the composer, and a
+            // picture only reaches the board once it has been looked at (and
+            // possibly drawn on). The replace answer and the dropped-file
+            // count ride with it — the post is built when Send is pressed.
+            setState { copy(pendingPreview = PendingPreview(picked, replace, extraDropped), error = null) }
+        }
+    }
 
-            // The wire takes one attachment per post; saying so beats
-            // silently discarding the rest of a multi-file drag.
-            if (extraDropped > 0) {
-                setState { copy(info = "One file per post — attached the first.") }
-            }
+    /**
+     * The preview's Send: what came back is what is posted.
+     *
+     * The caption typed in the dialog becomes the draft's words — the phones'
+     * caption field is the message body, not a second line — unless the
+     * composer already had something in it, which is kept.
+     */
+    private fun previewSent(picked: PickedMedia, caption: String) {
+        val pending = currentState.pendingPreview
+        setState {
+            copy(
+                pendingPreview = null,
+                draft = draft.copy(
+                    media = picked,
+                    replacePrevious = pending?.replace,
+                    text = draft.text.ifBlank { caption },
+                ),
+                // The wire takes one attachment per post; saying so beats
+                // silently discarding the rest of a multi-file drag.
+                info = if ((pending?.extraDropped ?: 0) > 0) "One file per post — attached the first." else info,
+                error = null,
+            )
+        }
 
-            // Videos get a frame, PDFs their first page — the web's pair.
-            if (picked.kind == NoticeKind.Video || picked.isPdf) {
+        // Videos get a frame, PDFs their first page — the web's pair. After
+        // the preview, so an edited picture is never overwritten by a poster.
+        if (picked.kind == NoticeKind.Video || picked.isPdf) {
+            launch {
                 val withPoster = media.videoThumbnail(picked)
                 // Only if this file is still the one attached — the user may
                 // have removed or replaced it while frames were decoding.
                 setState {
-                    if (draft.media === picked) {
-                        copy(draft = draft.copy(media = withPoster))
-                    } else {
-                        this
-                    }
+                    if (draft.media === picked) copy(draft = draft.copy(media = withPoster)) else this
                 }
             }
         }

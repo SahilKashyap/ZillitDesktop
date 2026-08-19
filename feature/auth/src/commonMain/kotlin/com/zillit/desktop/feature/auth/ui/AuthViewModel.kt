@@ -220,6 +220,27 @@ class AuthViewModel(
 
     init {
         resumeOrSignIn()
+        // Signing out anywhere — Settings, the rail's Logout — clears the
+        // repository's session; this is the one place that turns that into a
+        // screen change. Watched rather than wired from each button so a new
+        // sign-out entry point cannot forget to leave the shell. Only a
+        // session that was established counts: the QR screen has none yet.
+        launch {
+            // A session that *was* and now is not — the flow's opening null,
+            // before any device is restored, is not a sign-out.
+            var hadSession = false
+            authRepository.session.collect { session ->
+                if (session != null) {
+                    hadSession = true
+                } else if (hadSession && currentState.step.isEstablished) {
+                    // Nothing of the last person left on the screen: state
+                    // reset, production left, a fresh QR — no "expired" notice,
+                    // they chose this. (Android wipes SharedPref and Realm on
+                    // logout — `LocalDataEraser.kt` — and re-enters from the start.)
+                    signOutToQrLogin(notice = null)
+                }
+            }
+        }
     }
 
     /**
@@ -486,15 +507,17 @@ class AuthViewModel(
      * already useless if it was revoked, and wiping a user's local cache is not
      * something to do as a side effect of one response.
      */
-    private fun signOutToQrLogin() {
-        ZillitLog.i(TAG) { "device registration revoked; returning to sign-in" }
+    private fun signOutToQrLogin(notice: String? = SESSION_EXPIRED_MESSAGE) {
+        ZillitLog.i(TAG) {
+            if (notice == null) "signed out; returning to sign-in" else "device revoked; returning to sign-in"
+        }
 
         qrJob?.cancel()
         setState { AuthUiState() }
 
         launch {
             projectRepository.leaveProject()
-            startQrLogin(notice = SESSION_EXPIRED_MESSAGE)
+            startQrLogin(notice = notice)
         }
     }
 
@@ -635,7 +658,7 @@ class AuthViewModel(
 
         /** Says what happened and what to do, without blaming the user. */
         const val SESSION_EXPIRED_MESSAGE = "Your session has ended. Scan the code to sign in again."
-        const val NO_OFFLINE_DATA = "No offline data available for this production. Connect to the internet to open it."
+        const val NO_OFFLINE_DATA = "No offline data available for this project. Connect to the internet to open it."
     }
 }
 

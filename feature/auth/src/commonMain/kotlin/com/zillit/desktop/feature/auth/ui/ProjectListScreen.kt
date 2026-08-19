@@ -173,18 +173,18 @@ private fun ProjectListBody(
         ) { view ->
             when (view) {
                 ListContent.Loading -> CentredMessage(
-                    text = "Loading your productions...",
+                    text = "Loading your projects...",
                     icon = ZillitIcons.Reload,
                 )
 
                 ListContent.Empty -> CentredMessage(
-                    text = "This device isn't on any production yet. " +
+                    text = "This device isn't on any project yet. " +
                         "Ask a coordinator to add you, then sign in again.",
                     icon = ZillitIcons.Info,
                 )
 
                 ListContent.NoMatches -> CentredMessage(
-                    text = "No production matches \"${state.projectFilter.trim()}\".",
+                    text = "No project matches \"${state.projectFilter.trim()}\".",
                     icon = ZillitIcons.Search,
                 )
 
@@ -202,7 +202,7 @@ private fun ProjectListBody(
 @Composable
 private fun OfflineNotice() {
     ZillitText(
-        text = "You're offline — showing the productions saved on this device. " +
+        text = "You're offline — showing the projects saved on this device. " +
             "They'll refresh when the connection is back.",
         style = ZillitTheme.typography.bodySmall,
         color = ZillitTheme.colors.textSecondary,
@@ -283,12 +283,12 @@ private fun FilterBar(state: AuthUiState, onEvent: (AuthEvent) -> Unit) {
             modifier = Modifier.widthIn(max = SEARCH_MAX_WIDTH).weight(1f),
         )
         ZillitButton(
-            text = "Join a production",
+            text = "Join a project",
             onClick = { onEvent(AuthEvent.StartJoin) },
             variant = ButtonVariant.Secondary,
         )
         ZillitButton(
-            text = "Start a production",
+            text = "Start a project",
             onClick = { onEvent(AuthEvent.StartNewProject) },
             leadingIcon = ZillitIcons.Add,
             variant = ButtonVariant.Primary,
@@ -516,7 +516,7 @@ internal fun Project.subtitle(labels: LabelDictionary): String = listOfNotNull(
     parentName?.let { "in $it" },
     (subType?.takeIf { it.isNotBlank() } ?: type?.takeIf { it.isNotBlank() })
         ?.let { labels.translate(it) },
-).joinToString(" · ").ifEmpty { "Production" }
+).joinToString(" · ").ifEmpty { "Project" }
 
 /** Bolds the parts of [text] matching [query]. */
 private fun highlighted(
@@ -558,10 +558,10 @@ private fun Modifier.cardEntrance(index: Int): Modifier {
 
 /** The header's one line of orientation — counts, in words that scan. */
 private fun countSentence(visible: Int, total: Int): String = when {
-    total == 0 -> "No productions yet."
-    visible != total -> "Showing $visible of $total productions."
-    total == 1 -> "You have access to 1 production."
-    else -> "You have access to $total productions."
+    total == 0 -> "No projects yet."
+    visible != total -> "Showing $visible of $total projects."
+    total == 1 -> "You have access to 1 project."
+    else -> "You have access to $total projects."
 }
 
 private fun ThemeMode.next(): ThemeMode = when (this) {

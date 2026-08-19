@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.chat
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.chat.data.ChatRepository
+import com.zillit.desktop.feature.chat.data.ConversationBacklog
 import com.zillit.desktop.feature.chat.data.ReadReceipt
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.ChatMessage
@@ -191,6 +192,16 @@ internal class FakeChatRepository(
             ZillitResult.Failure(ZillitError.NoConnection("socket is not connected"))
         } else {
             ZillitResult.Success(recents)
+        }
+
+    /** What the notification backlog would say — counts and stamps per conversation. */
+    var backlog: ConversationBacklog = ConversationBacklog()
+
+    override suspend fun conversationBacklog(): ZillitResult<ConversationBacklog> =
+        if (socketDown) {
+            ZillitResult.Failure(ZillitError.NoConnection("no network"))
+        } else {
+            ZillitResult.Success(backlog)
         }
 
     override fun cached(otherUserId: String): List<ChatMessage>? = null
