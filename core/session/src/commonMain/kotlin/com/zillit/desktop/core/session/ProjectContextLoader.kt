@@ -332,6 +332,9 @@ internal data class ProjectUserDto(
     @SerialName("keep_name_private") val keepNamePrivate: Boolean? = null,
     @SerialName("last_activity") val lastActivity: Long? = null,
     @SerialName("last_visited_on") val lastVisitedOn: Long? = null,
+    // "accepted", "approved", "pending", "left", "removed", "rejected" —
+    // Android `JoinProjectResponse.kt:120`. The lists decide who shows by it.
+    @SerialName("status") val status: String? = null,
 ) {
     fun toSnapshot(): UserSnapshot? {
         val resolved = userId ?: id ?: return null
@@ -351,6 +354,7 @@ internal data class ProjectUserDto(
             keepNamePrivate = keepNamePrivate == true,
             // The web's preference order (`UserCard.jsx:357-362`), zeros as absent.
             lastActiveMillis = lastActivity?.takeIf { it > 0 } ?: lastVisitedOn?.takeIf { it > 0 },
+            status = status?.takeIf { it.isNotBlank() },
         )
     }
 }

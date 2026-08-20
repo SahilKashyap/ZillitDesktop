@@ -84,6 +84,12 @@ fun HomeScreen(
      * and a lambda gives the memo below nothing it can compare.
      */
     toolBadges: Map<String, Int> = emptyMap(),
+    /**
+     * Opens the production's tool switches — the phones' customise button on
+     * their Tools tab (`Tools.kt:199`, admin only). Null hides the control:
+     * the host decides where the page lives, this screen only offers the way.
+     */
+    onCustomiseTools: (() -> Unit)? = null,
 ) {
     // The find box is the screen's own: forty tiles is a wall, and the phones
     // put a search over theirs. Local state — a query is not a fact about the
@@ -111,6 +117,8 @@ fun HomeScreen(
             // with no groups at all — would open an empty sheet, so it stays out.
             canReorder = state.groups.isNotEmpty(),
             onReorder = { onEvent(HomeEvent.StartReorder) },
+            // Admin only, as the phones gate their button (`Tools.kt:333`).
+            onCustomiseTools = onCustomiseTools.takeIf { state.isAdmin },
         )
 
         state.staleSince?.let { since ->
@@ -381,6 +389,7 @@ private fun GridHeader(
     onQueryChange: (String) -> Unit,
     canReorder: Boolean,
     onReorder: () -> Unit,
+    onCustomiseTools: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -424,6 +433,15 @@ private fun GridHeader(
                 icon = ZillitIcons.Filter,
                 contentDescription = "Reorder groups",
                 onClick = onReorder,
+            )
+        }
+        // Which tools the production has at all — the phones' customise
+        // button, opening the same switches Admin Settings holds.
+        onCustomiseTools?.let { open ->
+            ZillitIconButton(
+                icon = ZillitIcons.Settings,
+                contentDescription = "Customise tools",
+                onClick = open,
             )
         }
     }

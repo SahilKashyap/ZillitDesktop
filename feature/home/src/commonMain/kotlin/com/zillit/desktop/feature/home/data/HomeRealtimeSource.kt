@@ -22,13 +22,26 @@ import kotlinx.serialization.json.JsonPrimitive
 class HomeRealtimeSource(
     private val events: SocketEventBus,
     private val decryptBody: (String) -> String,
+    /** Who is signed in — rights events for anyone else are not this board's. */
+    private val myUserId: () -> String? = { null },
 ) {
 
     val stream: Flow<HomeRealtimeEvent> =
-        events.onAny(ZillitSocketEvents.Home.All).mapNotNull(::toEvent)
+        events.onAny(ZillitSocketEvents.Home.All + ZillitSocketEvents.AccessGrid.All)
+            .mapNotNull(::toEvent)
 
     private fun toEvent(message: SocketMessage): HomeRealtimeEvent? {
         if (message.event in ZillitSocketEvents.Home.Units) return HomeRealtimeEvent.UnitsChanged
+
+        // An admin moved MY rights: the tab strip and the composer's gate are
+        // both stale, so the unit list is read afresh — Android's own
+        // fallback branch, minus its in-place patching (QA #18: rights taken
+        // away kept working until the app restarted). Somebody else's rights
+        // are their board's business.
+        if (message.event in ZillitSocketEvents.AccessGrid.All) {
+            val target = message.payload?.rightsTargetUserId() ?: return null
+            return HomeRealtimeEvent.UnitsChanged.takeIf { target == myUserId() }
+        }
 
         // The wire nests the interesting object under `data`, sometimes as a
         // JSON **string** rather than an object — Android re-parses it for the
@@ -77,3 +90,20 @@ internal fun JsonElement.unwrapData(): JsonObject? {
 
 private fun JsonObject.stringField(key: String): String? =
     (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
+
+/**
+ * Whose rights an access-grid event moves.
+ *
+ * The payload is an array whose first element names the person as `user_id`
+ * or `_id` (Android's `baseSocketWithUserIDParser`). Not [unwrapData]: that
+ * helper insists on an `_id` key inside `data` envelopes, and these rows
+ * are bare.
+ */
+internal fun JsonElement.rightsTargetUserId(): String? {
+    val row = when (this) {
+        is JsonArray -> firstOrNull() as? JsonObject
+        is JsonObject -> this
+        else -> null
+    } ?: return null
+    return row.stringField("user_id") ?: row.stringField("_id")
+}

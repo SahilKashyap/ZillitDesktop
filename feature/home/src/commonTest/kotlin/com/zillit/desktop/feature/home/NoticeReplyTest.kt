@@ -216,7 +216,7 @@ class NoticeReplyTest {
         isAdmin = { false },
         currentUserId = { "me" },
         media = com.zillit.desktop.feature.home.ui.MediaCapture(
-            pick = { PickedMedia("set.jpg", "image/jpeg", ByteArray(4)) },
+            pick = { listOf(PickedMedia("set.jpg", "image/jpeg", ByteArray(4))) },
             upload = { _, _ -> ZillitResult.Failure(ZillitError.NoConnection()) },
         ),
     ).also {

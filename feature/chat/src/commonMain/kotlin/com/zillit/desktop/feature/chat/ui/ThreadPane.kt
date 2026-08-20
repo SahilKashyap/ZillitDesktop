@@ -1132,6 +1132,13 @@ private fun androidx.compose.foundation.layout.ColumnScope.BubbleFooter(message:
                 color = ZillitTheme.colors.danger,
             )
         }
+        if (message.isEdited) {
+            ZillitText(
+                text = "Edited",
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
         ZillitText(
             text = chatTimeLabel(message.timestampMillis, now),
             style = ZillitTheme.typography.labelSmall,

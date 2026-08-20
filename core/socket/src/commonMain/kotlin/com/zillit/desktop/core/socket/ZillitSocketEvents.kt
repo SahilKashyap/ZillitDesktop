@@ -196,6 +196,37 @@ object ZillitSocketEvents {
     }
 
     /**
+     * The production's tool set or its sections changed — a tool switched on
+     * or off, a group made, renamed or removed, or this user's own section
+     * order saved on another device (Android's `PROJECT_TOOLS_UPDATE` and
+     * `TOOL_GROUP_*` keys). The grid refetches; the payloads carry less than
+     * the list itself does.
+     */
+    object ToolsGrid {
+        val ProjectToolsUpdate = SocketEventName("project:tools:update")
+        val GroupCreate = SocketEventName("tool:group:create")
+        val GroupUpdate = SocketEventName("tool:group:update")
+        val GroupDelete = SocketEventName("tool:group:delete")
+        val GroupOrderUpdate = SocketEventName("project:tool:group:order:update")
+
+        val All = listOf(ProjectToolsUpdate, GroupCreate, GroupUpdate, GroupDelete, GroupOrderUpdate)
+    }
+
+    /**
+     * An admin moved someone's rights on the access grid — view, post or
+     * download, per unit or per tool (Android's `ACCESS_*_SOCKET_KEY` trio).
+     * The payload is an array whose first element carries `user_id`/`_id`;
+     * only the person whose rights moved should react.
+     */
+    object AccessGrid {
+        val ViewingRights = SocketEventName("access-grid:viewing-rights:update")
+        val PostingRights = SocketEventName("access-grid:posting-rights:update")
+        val DownloadRights = SocketEventName("access-grid:download-rights:update")
+
+        val All = listOf(ViewingRights, PostingRights, DownloadRights)
+    }
+
+    /**
      * The mailbox.
      *
      * Transcribed from `BaseSocketListener.emailObservers()`. Note these are

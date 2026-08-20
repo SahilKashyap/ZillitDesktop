@@ -17,6 +17,8 @@ data class ChatMessage(
     /** Every reaction on this message, one row per person. */
     val reactions: List<ChatReaction> = emptyList(),
     val attachment: ChatAttachment? = null,
+    /** Changed after delivery — the bubble says so beside the time. */
+    val isEdited: Boolean = false,
 )
 
 /** A file riding a message — the storage key and enough to fetch it back. */

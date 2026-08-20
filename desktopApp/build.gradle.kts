@@ -62,6 +62,7 @@ dependencies {
     implementation(project(":feature:boxschedule"))
     implementation(project(":feature:callsheet"))
     implementation(project(":feature:maps"))
+    implementation(project(":feature:permissiongrid"))
     implementation(project(":feature:sides"))
     implementation(project(":feature:dealmemo"))
     implementation(project(":feature:productionreport"))

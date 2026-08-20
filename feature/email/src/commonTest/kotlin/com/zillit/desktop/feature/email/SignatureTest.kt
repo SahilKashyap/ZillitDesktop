@@ -5,6 +5,7 @@ import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.EmailMessage
 import com.zillit.desktop.feature.email.domain.EmailSignature
 import com.zillit.desktop.feature.email.domain.RichText
+import com.zillit.desktop.feature.email.domain.SYSTEM_SIGNATURE
 import com.zillit.desktop.feature.email.domain.composedBody
 import com.zillit.desktop.feature.email.domain.defaultFor
 import com.zillit.desktop.feature.email.ui.ComposeEvent
@@ -72,20 +73,22 @@ class SignatureTest {
     }
 
     @Test
-    fun `several unmarked signatures pick none`() {
-        // Guessing between them would put the wrong sign-off on someone's mail.
+    fun `several unmarked signatures fall back to the platform sign-off`() {
+        // Android's chain exactly: marked → only-one → "Sent from Android".
+        // Guessing between saved ones would put the wrong sign-off on
+        // someone's mail, so the neutral system default steps in instead.
         val a = EmailSignature("a", "A", "x")
         val b = EmailSignature("b", "B", "y")
 
-        assertNull(listOf(a, b).defaultFor(ComposeMode.New))
+        assertEquals(SYSTEM_SIGNATURE, listOf(a, b).defaultFor(ComposeMode.New))
     }
 
     @Test
-    fun `no signatures means no signature`() {
-        // Android falls back to a hardcoded "Sent from Android". Appending an
-        // advertisement to a production's mail is not a default a port should
-        // quietly introduce.
-        assertNull(emptyList<EmailSignature>().defaultFor(ComposeMode.New))
+    fun `no signatures means the platform sign-off, as the phones do`() {
+        // QA #15: mails from Android arrive signed "Sent from Android"; a
+        // desktop mail arriving with nothing read as the feature missing.
+        assertEquals(SYSTEM_SIGNATURE, emptyList<EmailSignature>().defaultFor(ComposeMode.New))
+        assertEquals("Sent from Desktop", SYSTEM_SIGNATURE.body)
     }
 
     // -- appending ---------------------------------------------------------

@@ -134,8 +134,6 @@ internal fun AppGraph.Ready.distributionProvider(
     icon = icon,
     onPickPdf = { onPicked -> scope.launch { onPicked(pickPdf()) } },
     resolveUser = { userId ->
-        projectContext?.context?.value?.user(userId)?.let { user ->
-            user.designation?.takeIf { it.isNotBlank() }?.let { "${user.fullName} ($it)" } ?: user.fullName
-        }
+        projectContext?.context?.value?.user(userId)?.authorLine()
     },
 )

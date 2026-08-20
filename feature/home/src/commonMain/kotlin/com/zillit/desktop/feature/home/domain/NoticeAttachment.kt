@@ -47,6 +47,13 @@ data class NoticeAttachment(
     val bucket: String? = null,
     val region: String? = null,
     val sizeBytes: Long = 0,
+    /**
+     * The picked file's own bytes — an image, or a video/PDF poster frame —
+     * carried only on an optimistic card so its preview shows while the
+     * upload runs, instead of an empty well until the server copy lands
+     * (QA #8). Never on a wire row; renderers use it before fetching.
+     */
+    val localBytes: ByteArray? = null,
 ) {
     /** What the thumbnail-first paths should fetch. */
     val previewKey: String get() = thumbnail?.takeIf { it.isNotBlank() } ?: media

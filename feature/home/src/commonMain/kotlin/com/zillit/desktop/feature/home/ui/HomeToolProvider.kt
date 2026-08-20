@@ -58,6 +58,11 @@ class HomeToolProvider(
      * recompose as counts move, which a captured value could never do.
      */
     private val badges: kotlinx.coroutines.flow.StateFlow<BadgeCounts>? = null,
+    /**
+     * Where the production's tool switches live — the admin settings page the
+     * grid's customise button opens. Null hides the button entirely.
+     */
+    private val customiseToolsRoute: String? = null,
 ) : ToolProvider {
 
     override val path: String = "/home"
@@ -117,11 +122,19 @@ class HomeToolProvider(
         val state by viewModel.state.collectAsState()
         val counts = badges?.collectAsState()?.value ?: BadgeCounts.Empty
 
+        // Every arrival at the grid rereads the list — Android's onResume
+        // refresh, for the same reason: switches flipped in Admin Settings
+        // while this tab was away must show without reopening the production.
+        LaunchedEffect(Unit) { viewModel.onEvent(HomeEvent.Reload) }
+
         HomeScreen(
             state = state,
             // The whole slice, not a lookup: the grid orders tiles by unread
             // count, so it needs something it can compare between frames.
             toolBadges = counts.toolMap(),
+            onCustomiseTools = customiseToolsRoute?.let { route ->
+                { navigator.navigate(WorkspaceRoute.Tool(route)) }
+            },
             onEvent = { event ->
                 // Through the navigator the host already hands us, rather than a
                 // ViewModel passed in: the registry is built before the

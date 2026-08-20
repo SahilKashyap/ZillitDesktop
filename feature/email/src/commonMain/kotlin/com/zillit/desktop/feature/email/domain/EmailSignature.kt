@@ -23,19 +23,26 @@ data class EmailSignature(
 }
 
 /**
+ * The platform's own sign-off — Android's hardcoded `DEFAULT_SIGNATURE`
+ * ("Sent from Android"), spelt for this platform. The port originally left
+ * this out as a product decision not its to make; the product asked for the
+ * phones' behaviour (QA 2026-08-20, #15).
+ */
+val SYSTEM_SIGNATURE = EmailSignature(
+    id = "system-default",
+    title = "Default",
+    body = "Sent from Desktop",
+)
+
+/**
  * Which signature a composer opens with.
  *
- * The rule, in order:
+ * The rule, in order — Android's `loadSignatures` chain, fall for fall:
  *
  *  1. the one the user marked for this kind of message
  *  2. failing that, their only signature, if they have exactly one — someone
  *     with a single signature meant it to be used
- *  3. otherwise none
- *
- * Android falls back to a hardcoded "Sent from Android" when a user has no
- * signatures at all. That is not reproduced here: appending an advertisement to
- * a production's mail is a decision for whoever owns the product, not a default
- * a desktop port should quietly introduce.
+ *  3. otherwise the platform's [SYSTEM_SIGNATURE], as the phones do
  */
 fun List<EmailSignature>.defaultFor(mode: ComposeMode): EmailSignature? {
     val marked = if (mode == ComposeMode.New) {
@@ -44,7 +51,7 @@ fun List<EmailSignature>.defaultFor(mode: ComposeMode): EmailSignature? {
         firstOrNull { it.useForReply }
     }
 
-    return marked ?: singleOrNull()
+    return marked ?: singleOrNull() ?: SYSTEM_SIGNATURE
 }
 
 /**

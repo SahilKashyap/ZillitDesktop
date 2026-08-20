@@ -664,11 +664,16 @@ internal fun readNotice(row: JsonElement, decryptBody: (String) -> String): Noti
     return Notice(
         id = id,
         body = decryptBody(row.string("message").orEmpty()),
-        authorName = row.string("name")?.takeIf { it.isNotBlank() } ?: "Unknown",
+        // Blank, not "Unknown": system rows (project invites) name nobody, and
+        // the screen hides a blank author line rather than labelling it.
+        authorName = row.string("name")?.takeIf { it.isNotBlank() }.orEmpty(),
         authorId = row.string("sender"),
         createdAtMillis = row.epochMillis("created"),
         updatedAtMillis = row.epochMillis("updated"),
-        isEdited = row.bool("edited"),
+        // A timestamp on the wire, exactly like `pinned` below — reading it
+        // as a boolean left every edited post untagged (QA 2026-08-20). The
+        // boolean read stays for any client that sends a literal flag.
+        isEdited = row.bool("edited") || row.epochMillis("edited") > 0,
         // A timestamp on the wire, not a flag: any non-zero value is pinned.
         isPinned = row.epochMillis("pinned") > 0,
         kind = NoticeKind.of(row.string("message_type")),
@@ -716,7 +721,8 @@ private fun JsonObject.readComment(decryptBody: (String) -> String): NoticeComme
         kind = NoticeKind.of(string("message_type")),
         attachment = attachmentObject()?.toAttachment(),
         location = (this["location"] as? JsonObject)?.toGeoPoint(),
-        isEdited = bool("edited"),
+        // A timestamp, like the post's own — see readNotice.
+        isEdited = bool("edited") || epochMillis("edited") > 0,
     )
 }
 

@@ -194,7 +194,7 @@ class HomeBoardRulesTest {
             newLocalId = { "local-${n++}" },
             isAdmin = { admin },
             currentUserId = { me },
-            media = MediaCapture(pick = { picked }, upload = ::upload),
+            media = MediaCapture(pick = { listOfNotNull(picked) }, upload = ::upload),
             defaultUnitId = { defaultUnit },
         ).also { it.onEvent(HomeFeedEvent.Load) }
     }
@@ -339,11 +339,9 @@ class HomeBoardRulesTest {
             confirmPreview(model)
             advanceUntilIdle()
             assertNull(model.state.value.callSheetPrompt)
-            assertEquals(doc, model.state.value.draft.media)
-            assertEquals(false, model.state.value.draft.replacePrevious)
-
-            model.onEvent(HomeFeedEvent.Send)
-            advanceUntilIdle()
+            // The preview's Send posted it at once, carrying the answer;
+            // the composer below was never occupied.
+            assertNull(model.state.value.draft.media)
             assertEquals(false, board.posted.single().third)
         }
 
@@ -364,9 +362,6 @@ class HomeBoardRulesTest {
 
         model.onEvent(HomeFeedEvent.CallSheetReplaceConfirmed)
         confirmPreview(model)
-        assertEquals(true, model.state.value.draft.replacePrevious)
-
-        model.onEvent(HomeFeedEvent.Send)
         advanceUntilIdle()
         assertEquals(true, board.posted.single().third)
         // The server moved the rest to History; the board asks for it again.
@@ -392,22 +387,24 @@ class HomeBoardRulesTest {
     @Test
     fun `an empty call sheet, and any other unit, do not ask`() = runTest(dispatcher) {
         val doc = PickedMedia("sheet.pdf", "application/pdf", ByteArray(4))
-        val empty = viewModel(FakeBoard(listOf(callSheet)), picked = doc)
+        val emptyBoard = FakeBoard(listOf(callSheet))
+        val empty = viewModel(emptyBoard, picked = doc)
         advanceUntilIdle()
         empty.onEvent(HomeFeedEvent.Attach)
         confirmPreview(empty)
         advanceUntilIdle()
         assertNull(empty.state.value.callSheetPrompt)
-        assertEquals(doc, empty.state.value.draft.media)
-        assertNull(empty.state.value.draft.replacePrevious)
+        assertEquals(1, emptyBoard.posted.size)
+        assertNull(emptyBoard.posted.single().third)
 
-        val plain = viewModel(FakeBoard(listOf(notices), listOf(post("n1", "them", NOW))), picked = photo)
+        val plainBoard = FakeBoard(listOf(notices), listOf(post("n1", "them", NOW)))
+        val plain = viewModel(plainBoard, picked = photo)
         advanceUntilIdle()
         plain.onEvent(HomeFeedEvent.Attach)
         confirmPreview(plain)
         advanceUntilIdle()
         assertNull(plain.state.value.callSheetPrompt)
-        assertEquals(photo, plain.state.value.draft.media)
+        assertEquals(1, plainBoard.posted.size)
     }
 
     @Test
@@ -417,14 +414,14 @@ class HomeBoardRulesTest {
         val model = viewModel(board)
         advanceUntilIdle()
 
-        model.onEvent(HomeFeedEvent.AttachDropped(doc))
+        model.onEvent(HomeFeedEvent.AttachDropped(listOf(doc)))
         confirmPreview(model)
-        assertEquals(doc, model.state.value.callSheetPrompt?.dropped)
+        assertEquals(listOf(doc), model.state.value.callSheetPrompt?.dropped)
 
         model.onEvent(HomeFeedEvent.CallSheetContinuation)
         confirmPreview(model)
         advanceUntilIdle()
-        assertEquals(doc, model.state.value.draft.media)
+        assertEquals(false, board.posted.single().third)
     }
 
     @Test
@@ -537,7 +534,7 @@ class HomeBoardRulesTest {
     private fun TestScope.confirmPreview(model: HomeFeedViewModel) {
         advanceUntilIdle()
         model.currentState.pendingPreview?.let { pending ->
-            model.onEvent(HomeFeedEvent.PreviewSent(pending.picked, ""))
+            model.onEvent(HomeFeedEvent.PreviewSent(pending.files, ""))
         }
         advanceUntilIdle()
     }

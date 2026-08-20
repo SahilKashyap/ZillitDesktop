@@ -46,6 +46,12 @@ class AdminViewModel(
      * wrong production is the worst possible place for a stale value.
      */
     private val productionName: () -> String = { "" },
+    /**
+     * Fired after the tool switches save, so the Tools grid rereads its list
+     * at once. The `project:tools:update` socket covers other devices; the
+     * device that flipped the switch should not wait for its own echo.
+     */
+    private val onToolsChanged: () -> Unit = {},
 ) : ZillitViewModel<AdminUiState, AdminEvent, AdminEffect>(AdminUiState()) {
 
     /** Destinations already read, so returning to one is not a refetch. */
@@ -114,7 +120,11 @@ class AdminViewModel(
                     },
                 )
             }
-            AdminEvent.SaveTools -> mutate("Tools updated.") { repository.setToolsEnabled(currentState.tools) }
+            AdminEvent.SaveTools -> mutate("Tools updated.") {
+                repository.setToolsEnabled(currentState.tools).also { result ->
+                    if (result is ZillitResult.Success) onToolsChanged()
+                }
+            }
 
             is AdminEvent.MoveTool ->
                 mutate("Tool moved.") { repository.moveTool(event.identifier, event.groupIdentifier) }

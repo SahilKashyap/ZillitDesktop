@@ -212,6 +212,10 @@ fun readChatMessage(
         sendState = ChatSendState.ofWire((obj["status"] as? JsonPrimitive)?.intOrNull),
         attachment = readAttachment(obj),
         reactions = readReactions(obj),
+        // A timestamp on the wire (Android's `edited: Long?`), tolerated as a
+        // literal flag from any client that sends one.
+        isEdited = (obj.long("edited") ?: 0L) > 0L ||
+            (obj["edited"] as? JsonPrimitive)?.booleanOrNull == true,
     )
 }
 

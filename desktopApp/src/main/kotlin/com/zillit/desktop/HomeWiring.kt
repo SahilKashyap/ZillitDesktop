@@ -32,6 +32,9 @@ import com.zillit.desktop.feature.home.data.HomeFeedRepositoryImpl
 import com.zillit.desktop.feature.home.data.ReportUnitsSource
 import com.zillit.desktop.feature.home.domain.HomeUnit
 import java.util.UUID
+import com.zillit.desktop.core.database.UserSnapshot
+import com.zillit.desktop.core.localization.Labels
+import com.zillit.desktop.feature.chat.domain.MEMBER_DESIGNATION
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -43,6 +46,34 @@ import kotlinx.coroutines.withContext
  * save-and-open path for attachments. Split from `main.kt`, which only
  * assembles.
  */
+
+/**
+ * "Full Name (Designation)" — Android's `getUserNameByUserId(true)`, rule for
+ * rule: the placeholder crew designation says nothing and is hidden, and the
+ * designation is a LABEL KEY on the wire (`armourer_label`), so it goes
+ * through the dictionary before anyone reads it (QA saw the raw keys in
+ * brackets on every board and chat list, 2026-08-20).
+ */
+internal fun UserSnapshot.authorLine(): String =
+    designationText()?.let { "$fullName ($it)" } ?: fullName
+
+/** The designation as words, or null when the record has none worth showing. */
+internal fun UserSnapshot.designationText(): String? =
+    designation
+        ?.takeIf { it.isNotBlank() && it != MEMBER_DESIGNATION }
+        ?.let { Labels.translate(it) }
+
+/**
+ * Whether this crew member belongs in people lists.
+ *
+ * Android's Members filter keeps `approved`, `accepted`, `left` and `removed`
+ * (`MembersVM.kt:416-420` — someone who left still has a history worth
+ * opening) and drops the rest: `pending` hasn't joined yet, `rejected` never
+ * will. A row with no status — older caches, thinner payloads — is presumed
+ * present rather than hidden.
+ */
+internal fun UserSnapshot.hasJoined(): Boolean =
+    status != "pending" && status != "rejected"
 
 /**
  * The map image for a shared location — Google Static Maps with the
@@ -74,8 +105,9 @@ internal suspend fun fetchStaticMap(ready: AppGraph.Ready, point: GeoPoint): Pic
 
 /** What the composer can capture: picker, uploader, microphone, poster frames. */
 internal fun homeMediaCapture(ready: AppGraph.Ready) = MediaCapture(
-    // The same OS dialog mail attachments use; one file — the wire allows one.
-    pick = { FilePicker().pick().firstOrNull()?.toNoticeMedia() },
+    // The same OS dialog mail attachments use. Several files become several
+    // posts — the wire takes one attachment per message, as the phones send.
+    pick = { FilePicker().pick().map { it.toNoticeMedia() } },
     // The same routed uploader (S3 or Box by production) mail uses. A video's
     // poster frame travels first as its own object; a poster that fails to
     // upload costs the poster, never the video.

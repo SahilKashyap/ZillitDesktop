@@ -218,8 +218,8 @@ data class HomeFeedUiState(
  * default to "absent", which quietly removes the affordance they power.
  */
 class MediaCapture(
-    /** The OS file dialog; null result means the user cancelled. */
-    val pick: suspend () -> PickedMedia? = { null },
+    /** The OS file dialog; an empty result means the user cancelled. */
+    val pick: suspend () -> List<PickedMedia> = { emptyList() },
     /**
      * Puts a picked file into the production's storage (S3 or Box — the app
      * module routes, as mail attachments do). Null disables attaching. The
@@ -284,7 +284,7 @@ data class ReadByView(val noticeId: String, val lists: ReadBy? = null, val comme
  */
 data class CallSheetPrompt(
     val confirmingReplace: Boolean = false,
-    val dropped: PickedMedia? = null,
+    val dropped: List<PickedMedia> = emptyList(),
 )
 
 /**
@@ -301,9 +301,9 @@ data class CallSheetPrompt(
  * preview is sent.
  */
 data class PendingPreview(
-    val picked: PickedMedia,
+    /** Everything picked or dropped — the wire takes one per post, so N files become N posts. */
+    val files: List<PickedMedia>,
     val replace: Boolean? = null,
-    val extraDropped: Int = 0,
 )
 
 data class PendingOpen(val attachment: NoticeAttachment, val nonce: Long)
@@ -329,10 +329,10 @@ sealed interface HomeFeedEvent {
     data object Attach : HomeFeedEvent
 
     /** A file dragged in from the OS; [extra] counts the ones beyond the first. */
-    data class AttachDropped(val picked: PickedMedia, val extra: Int = 0) : HomeFeedEvent
+    data class AttachDropped(val files: List<PickedMedia>) : HomeFeedEvent
 
     /** The preview dialog's Send: the file as edited, plus its caption. */
-    data class PreviewSent(val picked: PickedMedia, val caption: String) : HomeFeedEvent
+    data class PreviewSent(val files: List<PickedMedia>, val caption: String) : HomeFeedEvent
 
     /** The preview dialog's Cancel — nothing is attached. */
     data object PreviewCancelled : HomeFeedEvent
@@ -597,8 +597,7 @@ class HomeFeedViewModel(
     private fun onFileEvent(event: HomeFeedEvent) {
         when (event) {
             HomeFeedEvent.Attach -> attach()
-            is HomeFeedEvent.AttachDropped ->
-                attach(dropped = event.picked, extraDropped = event.extra)
+            is HomeFeedEvent.AttachDropped -> attach(dropped = event.files)
             HomeFeedEvent.StartRecording -> record()
             HomeFeedEvent.StopRecording -> record(discard = false)
             HomeFeedEvent.CancelRecording -> record(discard = true)
@@ -635,7 +634,7 @@ class HomeFeedViewModel(
         when (event) {
             // A chosen location parks in the draft like a file: the pin lands
             // first and the map image joins it when the fetch finishes.
-            is HomeFeedEvent.PreviewSent -> previewSent(event.picked, event.caption)
+            is HomeFeedEvent.PreviewSent -> previewSent(event.files, event.caption)
             HomeFeedEvent.PreviewCancelled -> setState { copy(pendingPreview = null) }
             is HomeFeedEvent.AttachLocation -> {
                 if (!requirePostingRights()) return
@@ -767,8 +766,7 @@ class HomeFeedViewModel(
      * before showing anything makes attaching feel broken on slow hardware.
      */
     private fun attach(
-        dropped: PickedMedia? = null,
-        extraDropped: Int = 0,
+        dropped: List<PickedMedia> = emptyList(),
         /** The call sheet's answer; null when the question has not been put. */
         replace: Boolean? = null,
     ) {
@@ -778,23 +776,24 @@ class HomeFeedViewModel(
 
         // A call sheet with posts on it asks first — continuation of what is
         // there, or a new sheet that sends the rest to History? Both phones
-        // put the question before the picker opens; a dropped file waits in
-        // the prompt so the answer can attach it.
+        // put the question before the picker opens; dropped files wait in
+        // the prompt so the answer can attach them.
         if (replace == null && callSheetAsksFirst(unit)) {
             setState { copy(callSheetPrompt = CallSheetPrompt(dropped = dropped)) }
             return
         }
 
         launch {
-            val picked = dropped ?: media.pick() ?: return@launch
-            if (refusedByCallSheet(unit, picked)) return@launch
+            val files = dropped.ifEmpty { media.pick() }
+                .filterNot { refusedByCallSheet(unit, it) }
+            if (files.isEmpty()) return@launch
 
             // Straight into the preview, not the draft: the phones put their
             // gallery viewer between the picker and the composer, and a
             // picture only reaches the board once it has been looked at (and
-            // possibly drawn on). The replace answer and the dropped-file
-            // count ride with it — the post is built when Send is pressed.
-            setState { copy(pendingPreview = PendingPreview(picked, replace, extraDropped), error = null) }
+            // possibly drawn on). The replace answer rides with it — the
+            // posts are built when Send is pressed, one per file.
+            setState { copy(pendingPreview = PendingPreview(files, replace), error = null) }
         }
     }
 
@@ -805,33 +804,34 @@ class HomeFeedViewModel(
      * caption field is the message body, not a second line — unless the
      * composer already had something in it, which is kept.
      */
-    private fun previewSent(picked: PickedMedia, caption: String) {
+    private fun previewSent(files: List<PickedMedia>, caption: String) {
         val pending = currentState.pendingPreview
-        setState {
-            copy(
-                pendingPreview = null,
-                draft = draft.copy(
-                    media = picked,
-                    replacePrevious = pending?.replace,
-                    text = draft.text.ifBlank { caption },
-                ),
-                // The wire takes one attachment per post; saying so beats
-                // silently discarding the rest of a multi-file drag.
-                info = if ((pending?.extraDropped ?: 0) > 0) "One file per post — attached the first." else info,
-                error = null,
-            )
-        }
+        val unit = currentState.selectedUnit ?: return
+        if (files.isEmpty()) return
+        if (!requirePostingRights()) return
 
-        // Videos get a frame, PDFs their first page — the web's pair. After
-        // the preview, so an edited picture is never overwritten by a poster.
-        if (picked.kind == NoticeKind.Video || picked.isPdf) {
-            launch {
-                val withPoster = media.videoThumbnail(picked)
-                // Only if this file is still the one attached — the user may
-                // have removed or replaced it while frames were decoding.
-                setState {
-                    if (draft.media === picked) copy(draft = draft.copy(media = withPoster)) else this
+        setState { copy(pendingPreview = null, error = null) }
+
+        // The dialog's Send posts each file as its own post — the wire takes
+        // one attachment per message, so the phones send a multi-pick as a
+        // burst of messages (QA #6). The caption belongs to the first; a
+        // caption repeated under every file would read as a stutter. The
+        // composer below stays untouched — the phones' GalleryViewer
+        // contract (QA #12).
+        files.forEachIndexed { index, picked ->
+            val draft = NoticeDraft(
+                text = if (index == 0) caption else "",
+                media = picked,
+                replacePrevious = pending?.replace,
+            )
+            // Videos get a frame, PDFs their first page — the web's pair.
+            // Before the post, so the card and the upload carry the poster.
+            if (picked.kind == NoticeKind.Video || picked.isPdf) {
+                launch {
+                    post(unit, draft.copy(media = media.videoThumbnail(picked)), clearComposer = false)
                 }
+            } else {
+                post(unit, draft, clearComposer = false)
             }
         }
     }
@@ -949,11 +949,13 @@ class HomeFeedViewModel(
     private fun post(unit: HomeUnit, draft: NoticeDraft, clearComposer: Boolean) {
         val optimistic = optimisticNotice(newLocalId(), draft, nowMillis())
 
+        // No isSending here: posts queue like a chat's messages do. Each card
+        // narrates its own upload, and holding the composer shut until a
+        // 30 MB video finished was QA #7.
         setState {
             copy(
                 notices = notices + optimistic,
                 draft = if (clearComposer) NoticeDraft() else this.draft,
-                isSending = true,
                 error = null,
             )
         }
@@ -1465,7 +1467,6 @@ class HomeFeedViewModel(
                 replaceByLocalId.remove(localId)
                 setState {
                     copy(
-                        isSending = false,
                         notices = notices.replacing(localId, saved),
                         uploadProgress = uploadProgress - localId,
                     )
@@ -1482,7 +1483,6 @@ class HomeFeedViewModel(
             onError = { error ->
                 setState {
                     copy(
-                        isSending = false,
                         notices = notices.replacing(
                             localId,
                             optimistic.copy(sendState = NoticeSendState.Failed),
@@ -1706,4 +1706,18 @@ private fun optimisticNotice(localId: String, draft: NoticeDraft, now: Long): No
     location = draft.location,
     sendState = NoticeSendState.Sending,
     localId = localId,
+    // The picked file rides the card so its preview shows while the bytes
+    // travel — an image as itself, a video or PDF as its poster frame.
+    attachment = draft.media?.let { picked ->
+        NoticeAttachment(
+            media = "",
+            fileName = picked.name,
+            contentType = picked.contentType,
+            durationMillis = picked.durationMillis,
+            sizeBytes = picked.bytes.size.toLong(),
+            widthPx = picked.thumbnailWidth,
+            heightPx = picked.thumbnailHeight,
+            localBytes = if (picked.kind == NoticeKind.Image) picked.bytes else picked.thumbnailBytes,
+        )
+    },
 )

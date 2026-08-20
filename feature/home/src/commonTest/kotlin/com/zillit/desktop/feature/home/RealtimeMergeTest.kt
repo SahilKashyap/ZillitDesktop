@@ -1,11 +1,14 @@
 package com.zillit.desktop.feature.home
 
+import com.zillit.desktop.feature.home.data.rightsTargetUserId
 import com.zillit.desktop.feature.home.domain.HomeRealtimeEvent
 import com.zillit.desktop.feature.home.domain.Notice
 import com.zillit.desktop.feature.home.domain.NoticeSendState
 import com.zillit.desktop.feature.home.domain.applyRealtime
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -164,5 +167,22 @@ class RealtimeMergeTest {
         )
 
         assertTrue(merged.first().isPinned, "a pinned notice should stay at the top")
+    }
+
+    @Test
+    fun `an access-grid payload names its target, array or bare`() {
+        // Android's trio of rights events: an array whose first element says
+        // whose rights moved, as `user_id` or `_id`. Only that person's board
+        // refetches — everyone else's rights are not this board's business.
+        assertEquals(
+            "me123",
+            Json.parseToJsonElement("""[{"unit_id":"u1","user_id":"me123","enabled":false}]""")
+                .rightsTargetUserId(),
+        )
+        assertEquals(
+            "me123",
+            Json.parseToJsonElement("""{"_id":"me123"}""").rightsTargetUserId(),
+        )
+        assertNull(Json.parseToJsonElement("\"noise\"").rightsTargetUserId())
     }
 }

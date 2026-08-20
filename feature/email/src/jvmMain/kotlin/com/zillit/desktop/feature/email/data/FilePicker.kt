@@ -41,7 +41,12 @@ class FilePicker(private val maxBytes: Long = MAX_ATTACHMENT_BYTES) {
 
             else -> PickedFile(
                 name = file.name,
+                // The JRE's table first, then our own: on Windows the JRE's
+                // content-types table misses common types, and a photo typed
+                // `application/octet-stream` classifies as a document — no
+                // preview, no edit tools, a file chip on the board.
                 contentType = URLConnection.guessContentTypeFromName(file.name)
+                    ?: KNOWN_TYPES[file.extension.lowercase()]
                     ?: "application/octet-stream",
                 bytes = file.readBytes(),
             )
@@ -62,5 +67,27 @@ class FilePicker(private val maxBytes: Long = MAX_ATTACHMENT_BYTES) {
          * an upload the server will not deliver.
          */
         const val MAX_ATTACHMENT_BYTES = 25L * 1024 * 1024
+
+        /** The types the boards care about, by extension — see the read note. */
+        val KNOWN_TYPES = mapOf(
+            "jpg" to "image/jpeg",
+            "jpeg" to "image/jpeg",
+            "png" to "image/png",
+            "gif" to "image/gif",
+            "webp" to "image/webp",
+            "heic" to "image/heic",
+            "bmp" to "image/bmp",
+            "mp4" to "video/mp4",
+            "mov" to "video/quicktime",
+            "mkv" to "video/x-matroska",
+            "webm" to "video/webm",
+            "avi" to "video/x-msvideo",
+            "mp3" to "audio/mpeg",
+            "wav" to "audio/wav",
+            "m4a" to "audio/mp4",
+            "aac" to "audio/aac",
+            "ogg" to "audio/ogg",
+            "pdf" to "application/pdf",
+        )
     }
 }

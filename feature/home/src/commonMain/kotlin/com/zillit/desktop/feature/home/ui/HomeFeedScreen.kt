@@ -253,7 +253,7 @@ internal fun HomeFeedScreen(
             )
         }
 
-        if (state.showsComposer) Composer(state, onEvent, crewNames)
+        if (state.showsComposer) Composer(state, onEvent, crewNames, resolveAuthor)
     }
 
     if (dropHover) DropOverlay()
@@ -336,11 +336,18 @@ private fun BoardDialogs(
     // edit tools. One item at a time here: the wire takes one per post.
     val pending = state.pendingPreview
     MediaPreviewDialog(
-        items = remember(pending) { pending?.let { listOf(it.picked.asPreviewItem()) }.orEmpty() },
-        initialCaption = state.draft.text,
+        items = remember(pending) { pending?.files?.map { it.asPreviewItem() }.orEmpty() },
+        // Starts empty: the caption belongs to these files alone, and whatever
+        // is half-typed in the composer stays the composer's (QA #12).
+        initialCaption = "",
         onSend = { results, caption ->
-            val edited = results.firstOrNull() ?: return@MediaPreviewDialog
-            pending?.let { onEvent(HomeFeedEvent.PreviewSent(it.picked.withBytesOf(edited), caption)) }
+            pending?.let { preview ->
+                // Results ride in item order; an edited picture keeps its slot.
+                val files = preview.files.mapIndexed { index, picked ->
+                    results.getOrNull(index)?.let(picked::withBytesOf) ?: picked
+                }
+                onEvent(HomeFeedEvent.PreviewSent(files, caption))
+            }
         },
         onCancel = { onEvent(HomeFeedEvent.PreviewCancelled) },
     )
@@ -369,12 +376,11 @@ private fun BoardDialogs(
     )
 }
 
-/** The first dropped file as an attach event; the rest are counted, not lost. */
+/** Every dropped file rides — one post each, the same as a multi-pick. */
 private fun droppedEvent(files: List<DroppedFile>): HomeFeedEvent? =
-    files.firstOrNull()?.let { file ->
+    files.takeIf { it.isNotEmpty() }?.let { dropped ->
         HomeFeedEvent.AttachDropped(
-            picked = PickedMedia(file.name, file.contentType, file.bytes),
-            extra = files.size - 1,
+            files = dropped.map { PickedMedia(it.name, it.contentType, it.bytes) },
         )
     }
 
@@ -808,6 +814,7 @@ private fun Composer(
     state: HomeFeedUiState,
     onEvent: (HomeFeedEvent) -> Unit,
     crewNames: () -> List<String> = { emptyList() },
+    resolveAuthor: (String?) -> String? = { null },
 ) {
     val colors = ZillitTheme.colors
     val draft = state.draft
@@ -832,7 +839,16 @@ private fun Composer(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         state.replyTo?.let { parent ->
-            ReplyBar(parent, onCancel = { onEvent(HomeFeedEvent.CancelReply) })
+            ReplyBar(
+                parent = parent,
+                // The crew list names the parent, exactly as its card's own
+                // header does — the wire's stored name is usually blank, and
+                // the banner used to read "Replying to Unknown" under a card
+                // that named its author perfectly well.
+                authorLabel = resolveAuthor(parent.authorId)
+                    ?: parent.authorName.takeIf { it.isNotBlank() },
+                onCancel = { onEvent(HomeFeedEvent.CancelReply) },
+            )
         }
 
         if (state.editing != null) {
@@ -957,7 +973,7 @@ private fun ComposerInput(
  * typing — and sending to the wrong one puts words inside a stranger's thread.
  */
 @Composable
-private fun ReplyBar(parent: Notice, onCancel: () -> Unit) {
+private fun ReplyBar(parent: Notice, authorLabel: String?, onCancel: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -969,7 +985,7 @@ private fun ReplyBar(parent: Notice, onCancel: () -> Unit) {
     ) {
         Column(Modifier.weight(1f)) {
             ZillitText(
-                text = "Replying to ${parent.authorName}",
+                text = authorLabel?.let { "Replying to $it" } ?: "Replying",
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.accentText,
             )
@@ -1331,12 +1347,13 @@ private fun PinnedBanner(
                 style = ZillitTheme.typography.labelSmall,
                 color = ZillitTheme.colors.accentText,
             )
-            val author = resolveAuthor(shown.authorId) ?: shown.authorName
+            val author = resolveAuthor(shown.authorId)
+                ?: shown.authorName.takeIf { it.isNotBlank() }
             val words = shown.body.lineSequence().firstOrNull { it.isNotBlank() }?.trim()
                 ?: shown.attachment?.fileName?.takeIf { it.isNotBlank() }
                 ?: shown.kind.name
             ZillitText(
-                text = "$author: $words",
+                text = author?.let { "$it: $words" } ?: words,
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textPrimary,
                 maxLines = 1,
@@ -2115,7 +2132,7 @@ private fun BoardArea(
         unit.kind == HomeUnitKind.Calendar ->
             calendar?.invoke() ?: CalendarPlaceholder(unit)
 
-        state.isLoadingNotices && state.notices.isEmpty() -> Centred("Loading notices…")
+        state.isLoadingNotices && state.notices.isEmpty() -> Centred("Loading posts…")
 
         state.notices.isEmpty() -> Centred("Nothing has been posted to ${unit.label} yet.")
 
@@ -2158,20 +2175,26 @@ private fun NoticeHeader(notice: Notice, ui: BoardUi) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        notice.authorId?.let { author ->
+        // Crew lookup first, then the name the wire stored. Both can miss —
+        // system rows such as project invites name nobody — and then the line
+        // is simply absent, as the phones leave it, never "Unknown".
+        val author = ui.resolveAuthor(notice.authorId) ?: notice.authorName
+        notice.authorId?.let { authorId ->
             ZillitAvatar(
-                name = ui.resolveAuthor(author) ?: notice.authorName,
+                name = author,
                 size = HEADER_AVATAR,
-                image = rememberAvatarBitmap(author, ui.loadAvatar),
+                image = rememberAvatarBitmap(authorId, ui.loadAvatar),
             )
         }
-        ZillitText(
-            text = ui.resolveAuthor(notice.authorId) ?: notice.authorName,
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.accentText,
-            maxLines = 1,
-            modifier = Modifier.weight(1f, fill = false),
-        )
+        if (author.isNotBlank()) {
+            ZillitText(
+                text = author,
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.accentText,
+                maxLines = 1,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+        }
         if (notice.isPinned) {
             ZillitIcon(
                 icon = ZillitIcons.Pin,
@@ -2306,7 +2329,9 @@ private fun CommentHeader(comment: NoticeComment, ui: BoardUi) {
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         ZillitText(
-            text = ui.resolveAuthor(comment.authorId) ?: "Unknown",
+            // Blank when the crew list cannot place them — a nameless line
+            // over the reply, not a reply from "Unknown".
+            text = ui.resolveAuthor(comment.authorId).orEmpty(),
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.accentText,
             maxLines = 1,

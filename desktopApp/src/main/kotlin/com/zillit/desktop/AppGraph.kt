@@ -880,6 +880,7 @@ sealed interface AppGraph {
                         is ZillitResult.Failure -> "[This message could not be decrypted]"
                     }
                 },
+                myUserId = { projectContext.context.value.profile?.userId },
             )
 
             val calendarRepository = CalendarRepositoryImpl(apiClient, config)

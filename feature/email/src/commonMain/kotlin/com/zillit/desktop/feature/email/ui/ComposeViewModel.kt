@@ -89,13 +89,17 @@ data class ComposeUiState(
      * Recipients live as raw text while being typed — half an address is not an
      * address — and are only split when the message is actually used.
      */
-    fun message(): OutgoingEmail = draft.copy(
+    fun message(withSignature: Boolean = true): OutgoingEmail = draft.copy(
         to = toText.toAddresses(),
         cc = ccText.toAddresses(),
         bcc = bccText.toAddresses(),
         // Serialised here, at the edge, and joined with the signature at the
         // same moment — which is the only moment either of them is combined.
-        body = composedBody(body.toHtml(), signature),
+        // Drafts pass false: a draft is what was typed, and baking the
+        // sign-off in would double it on every reopen-and-send — and make an
+        // untouched composer "worth saving" the moment a default signature
+        // exists.
+        body = composedBody(body.toHtml(), signature.takeIf { withSignature }),
     )
 
     /**
@@ -416,7 +420,7 @@ class ComposeViewModel(
     }
 
     private suspend fun saveDraft() {
-        val message = currentState.message()
+        val message = currentState.message(withSignature = false)
         // An empty composer opened and closed must not litter the Drafts
         // folder — and closing saves, so without this it would.
         //

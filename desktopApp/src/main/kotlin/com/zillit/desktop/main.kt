@@ -109,7 +109,9 @@ import com.zillit.desktop.feature.email.ui.MailSearch
 import com.zillit.desktop.feature.email.ui.SignatureToolProvider
 import com.zillit.desktop.feature.settings.account.AccountViewModel
 import com.zillit.desktop.feature.settings.account.ProfileSeed
+import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
 import com.zillit.desktop.feature.settings.admin.ui.AdminViewModel
+import com.zillit.desktop.feature.settings.ui.path
 import com.zillit.desktop.feature.settings.approvals.ApprovalPresets
 import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
 import com.zillit.desktop.feature.settings.approvals.ApprovalsEvent
@@ -127,7 +129,6 @@ import com.zillit.desktop.feature.settings.ui.UnitSelection
 import com.zillit.desktop.feature.settings.ui.SettingsViewModel
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.CrewContact
-import com.zillit.desktop.feature.chat.domain.MEMBER_DESIGNATION
 import com.zillit.desktop.feature.home.ui.decodeImageBitmap
 import com.zillit.desktop.feature.chat.ui.ChatEvent
 import com.zillit.desktop.feature.chat.ui.ChatToolProvider
@@ -172,6 +173,7 @@ import com.zillit.desktop.feature.cardexpenses.ui.CardExpensesViewModel
 import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.ui.CashExpensesToolProvider
 import com.zillit.desktop.feature.cashexpenses.ui.CashExpensesViewModel
+import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.feature.dealmemo.domain.DealViewer
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoToolProvider
@@ -223,6 +225,10 @@ import com.zillit.desktop.feature.transportation.ui.TransportToolProvider
 import com.zillit.desktop.feature.transportation.ui.TransportViewModel
 import com.zillit.desktop.feature.recce.ui.RecceViewModel
 import com.zillit.desktop.feature.maps.ui.MapViewModel
+import com.zillit.desktop.feature.permissiongrid.data.PermissionGridRepositoryImpl
+import com.zillit.desktop.feature.permissiongrid.domain.PermissionGridViewer
+import com.zillit.desktop.feature.permissiongrid.ui.PermissionGridToolProvider
+import com.zillit.desktop.feature.permissiongrid.ui.PermissionGridViewModel
 import com.zillit.desktop.feature.sides.data.SidesRepositoryImpl
 import com.zillit.desktop.feature.sides.domain.SidesViewer
 import com.zillit.desktop.feature.sides.ui.SidesToolProvider
@@ -807,6 +813,24 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
 private const val BADGE_EVENT_SETTLE_MILLIS = 600L
 
 /**
+ * Rereads the tool grid when the production's tool set moves under it — a
+ * switch flipped in Admin Settings (here or on another device), a group made
+ * or renamed, this user's rights on a tool changed. The grid's permissions
+ * gate every feature, so this listens app-wide rather than only while the
+ * Tools tab is open; Android does the same from its base socket listener.
+ */
+@Composable
+private fun ToolsRefresh(ready: AppGraph.Ready, home: HomeViewModel?) {
+    if (home == null) return
+    LaunchedEffect(ready, home) {
+        val moved = ZillitSocketEvents.ToolsGrid.All + ZillitSocketEvents.AccessGrid.All
+        ready.socketEvents.onAny(moved).collect {
+            home.onEvent(HomeEvent.Reload)
+        }
+    }
+}
+
+/**
  * Everything that must be (re)fetched when a production opens.
  *
  * Keyed on the production id, so switching reloads rather than carrying the
@@ -870,6 +894,8 @@ private fun ProjectScopedLoads(
         // show someone a Send button on a shoot they may only read.
         viewModels.docDist?.onProjectChanged()
         viewModels.drive?.onProjectChanged()
+        // The rights spreadsheet is the previous production's until it reloads.
+        viewModels.permissionGrid?.onProjectChanged()
     }
 }
 
@@ -894,6 +920,7 @@ private fun BackgroundWork(
     EndCallOnSignOut(ready, signedIn = auth.step == AuthStep.Complete)
     AuthEffects(authViewModel, createViewModel, joinViewModel)
     BadgeRefresh(ready, signedIn = auth.step == AuthStep.Complete)
+    ToolsRefresh(ready, viewModels.home)
     DockBadge(ready)
     ApprovalCounts(viewModels)
     ToolReadOnFocus(ready, viewModels, workspace)
@@ -1439,12 +1466,20 @@ private fun chatProvider(
         ready.projectContext?.context?.value?.users.orEmpty()
             .filterNot { it.keepNamePrivate }
             .filter { it.fullName.isNotBlank() }
+            // Invited-but-not-joined people are not someone to message yet.
+            .filter { it.hasJoined() }
             .map { user ->
                 CrewContact(
                     userId = user.userId,
                     fullName = user.fullName,
-                    designation = user.designation,
-                    department = user.department,
+                    // Translated words, not the wire's label key — and the
+                    // placeholder "member" designation dropped here, as the
+                    // raw key it is on the wire, before translation hides it
+                    // from the comparison.
+                    designation = user.designationText(),
+                    department = user.department
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { Labels.translate(it) },
                     email = user.email,
                     isAdmin = user.isAdmin,
                     deviceId = user.deviceId,
@@ -1762,6 +1797,9 @@ internal class AppViewModels(
     val wrapReport: ReportViewModel?,
     /** Script sides: scripts in, scene picks, server-generated PDFs out. */
     val sides: SidesViewModel?,
+
+    /** The production's viewing & posting rights, as a spreadsheet. */
+    val permissionGrid: PermissionGridViewModel?,
     /** The Info board — the Home feed engine on the `info` segment. */
     val info: HomeFeedViewModel?,
     /** The Confidential Info board — same engine, `confidentialinfo` segment. */
@@ -1852,7 +1890,13 @@ private fun rememberAppViewModels(
         // fetch, and the library tools are gated by it. Issuing a second call
         // for the same list would mean two answers that can disagree.
         val home = ready?.let {
-            HomeViewModel(it.toolsRepository, offline = it.offlineSupport, localSections = localToolSections())
+            HomeViewModel(
+                it.toolsRepository,
+                offline = it.offlineSupport,
+                // Gates the grid's customise entry, as the phones gate theirs.
+                isAdmin = { it.projectContext?.context?.value?.isAdmin == true },
+                localSections = localToolSections(),
+            )
         }
         val permissions = { home?.state?.value?.permissions ?: ProjectPermissions.Empty }
 
@@ -1933,6 +1977,8 @@ private fun rememberAppViewModels(
                     productionName = {
                         graph.projectContext?.context?.value?.project?.name.orEmpty()
                     },
+                    // The grid rereads at once; its own socket echo may not come.
+                    onToolsChanged = { home?.onEvent(HomeEvent.Reload) },
                 )
             },
             account = ready?.let(::buildAccount),
@@ -2070,6 +2116,19 @@ private fun rememberAppViewModels(
                     },
                 )
             },
+            permissionGrid = ready?.let { graph ->
+                PermissionGridViewModel(
+                    repository = PermissionGridRepositoryImpl(
+                        apiClient = graph.apiClient,
+                        config = graph.config,
+                        // Your own row is hidden: revoking your own view rights
+                        // from this screen is a door that locks behind you.
+                        currentUserId = {
+                            graph.projectContext?.context?.value?.profile?.userId
+                        },
+                    ),
+                )
+            },
             info = ready?.boardFeed(
                 board = "info",
                 toolIdentifier = "info_tool",
@@ -2192,12 +2251,7 @@ private fun buildRegistry(
                     // "Full Name (Designation)", the web's sender line. The
                     // wire does not name senders; the crew list does.
                     resolveAuthor = { senderId ->
-                        ready?.projectContext?.context?.value?.user(senderId)?.let { user ->
-                            user.designation
-                                ?.takeIf { it.isNotBlank() }
-                                ?.let { "${user.fullName} ($it)" }
-                                ?: user.fullName
-                        }
+                        ready?.projectContext?.context?.value?.user(senderId)?.authorLine()
                     },
                 )
     }
@@ -2211,6 +2265,9 @@ private fun buildRegistry(
                 // counts move — the rail reads the same store.
                 badges = (graph as? AppGraph.Ready)?.badgeStore?.counts,
                 board = boardContext,
+                // The grid's customise button opens the same switches Admin
+                // Settings holds — one page, two doors, as the phones do it.
+                customiseToolsRoute = AdminDestination.ToolAvailability.path,
             )
         }
     }
@@ -2432,6 +2489,18 @@ private fun buildRegistry(
             onOpenUrl = ::openInBrowser,
         )
     }
+    val permissionGrid = viewModels.permissionGrid?.let { vm ->
+        PermissionGridToolProvider(
+            viewModel = vm,
+            // Resolved when the window is first shown, not here: the registry
+            // is built before any production is open.
+            viewer = {
+                PermissionGridViewer.from(
+                    homeViewModel?.state?.value?.permissions ?: ProjectPermissions.Empty,
+                )
+            },
+        )
+    }
     val productionReport = viewModels.productionReport?.let { ProductionReportToolProvider(it) }
     val adReport = viewModels.adReport?.let { ProductionReportToolProvider(it) }
     val wrapReport = viewModels.wrapReport?.let { ProductionReportToolProvider(it) }
@@ -2440,9 +2509,11 @@ private fun buildRegistry(
         sos, help,
         cash, cards, orders, timecards, payroll, deals, distribution, drive,
         accountHub, budgetBuilder, formSignature, esignature,
-        callSheet, productionReport, adReport, wrapReport, sides, info, confidentialInfo, reports, scriptNotes,
+        callSheet, productionReport, adReport, wrapReport, sides, permissionGrid,
+        info, confidentialInfo, reports, scriptNotes,
         catering, accounts,
-        boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList, assetRegister, transport, location, continuity, costReport, invoices, draft,
+        boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList,
+        assetRegister, transport, location, continuity, costReport, invoices, draft,
         scheduleDistribution, scriptDistribution, scheduleDod,
     )
     val realPaths = real.map { it.path }.toSet()
@@ -2662,15 +2733,18 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
     // The crew, for the invitee list. From the session the app already holds,
     // so opening the form costs no request.
     invitees = {
-        ready.projectContext?.context?.value?.users.orEmpty()
+        val context = ready.projectContext?.context?.value
+        context?.users.orEmpty()
+            // The organiser is not a guest — the form's "I will not be part
+            // of this event" checkbox is how they step out, so offering them
+            // in their own invite list only invites a double-booking.
+            .filter { it.userId != context?.profile?.userId }
+            .filter { it.hasJoined() }
             .map { user ->
                 EventInvitee(
                     userId = user.userId,
                     name = user.fullName,
-                    // The same rule as the chat lists: the placeholder crew
-                    // designation is no designation at all.
-                    designation = user.designation
-                        ?.takeIf { it.isNotBlank() && it != MEMBER_DESIGNATION },
+                    designation = user.designationText(),
                 )
             }
     },

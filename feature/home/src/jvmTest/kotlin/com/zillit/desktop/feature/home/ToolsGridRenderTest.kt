@@ -46,6 +46,33 @@ class ToolsGridRenderTest {
     )
 
     @Test
+    fun `the customise entry shows for an admin and nobody else`() {
+        runComposeUiTest {
+            // Admin with the host offering a destination: the button is there.
+            setContent {
+                ZillitTheme {
+                    HomeScreen(
+                        state = oneGroup.copy(isAdmin = true),
+                        onEvent = {},
+                        onCustomiseTools = {},
+                    )
+                }
+            }
+            onNodeWithContentDescription("Customise tools").assertExists()
+        }
+        runComposeUiTest {
+            // Not an admin: the same offer renders nothing — the phones gate
+            // their button on `isAdmin` too (`Tools.kt:333`).
+            setContent {
+                ZillitTheme {
+                    HomeScreen(state = oneGroup, onEvent = {}, onCustomiseTools = {})
+                }
+            }
+            onAllNodesWithContentDescription("Customise tools").assertCountEquals(0)
+        }
+    }
+
+    @Test
     fun `a single group still gets its heading, with a count`() {
         runComposeUiTest {
             setContent { ZillitTheme { HomeScreen(state = oneGroup, onEvent = {}) } }

@@ -159,7 +159,7 @@ class NoticeAttachTest {
             newLocalId = { "local-${n++}" },
             isAdmin = { false },
             media = com.zillit.desktop.feature.home.ui.MediaCapture(
-                pick = { picked },
+                pick = { listOfNotNull(picked) },
                 upload = uploads::upload,
             ),
         ).also { it.onEvent(HomeFeedEvent.Load) }
@@ -168,15 +168,57 @@ class NoticeAttachTest {
     // -- picking -----------------------------------------------------------
 
     @Test
-    fun `a picked file waits in the draft as a chip`() = runTest(dispatcher) {
-        val model = viewModel()
+    fun `a confirmed pick posts at once, leaving the composer alone`() = runTest(dispatcher) {
+        // The preview dialog's Send is the send — the phones' gallery viewer.
+        // Parking the file in the composer instead held every later message
+        // hostage to the upload (QA #7).
+        val board = FakeBoard()
+        val model = viewModel(board)
         advanceUntilIdle()
 
         model.onEvent(HomeFeedEvent.Attach)
         confirmPreview(model)
         advanceUntilIdle()
 
-        assertEquals(photo, model.state.value.draft.media)
+        assertNull(model.state.value.draft.media)
+        assertEquals("chat/set.jpg", board.posted.single().second?.media)
+    }
+
+    @Test
+    fun `several picked files become several posts, caption on the first`() = runTest(dispatcher) {
+        // QA #6: the wire takes one attachment per message, so the phones
+        // send a multi-pick as a burst of messages. The caption reads once,
+        // not stuttered under every file.
+        val board = FakeBoard()
+        val uploads = FakeUploads()
+        var n = 0
+        val files = listOf(
+            PickedMedia("a.jpg", "image/jpeg", ByteArray(4)),
+            PickedMedia("b.jpg", "image/jpeg", ByteArray(4)),
+            PickedMedia("c.jpg", "image/jpeg", ByteArray(4)),
+        )
+        val model = HomeFeedViewModel(
+            repository = board,
+            nowMillis = { 1000 },
+            newLocalId = { "local-${n++}" },
+            isAdmin = { false },
+            media = com.zillit.desktop.feature.home.ui.MediaCapture(
+                pick = { files },
+                upload = uploads::upload,
+            ),
+        ).also { it.onEvent(HomeFeedEvent.Load) }
+        advanceUntilIdle()
+
+        model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model, caption = "three from the set")
+        advanceUntilIdle()
+
+        assertEquals(3, uploads.uploads)
+        assertEquals(listOf("three from the set", "", ""), board.posted.map { it.first })
+        assertEquals(
+            listOf("chat/a.jpg", "chat/b.jpg", "chat/c.jpg"),
+            board.posted.map { it.second?.media },
+        )
     }
 
     @Test
@@ -192,21 +234,20 @@ class NoticeAttachTest {
     }
 
     @Test
-    fun `removing the chip keeps the typed caption`() = runTest(dispatcher) {
-        // Changing your mind about the file is not changing your mind about
-        // the words.
-        val model = viewModel()
+    fun `the composer's text stays its own when a file posts with a caption`() = runTest(dispatcher) {
+        // QA #12: words typed under the composer must not ride along with a
+        // file sent from the preview dialog — the dialog's caption is that
+        // post's whole message.
+        val board = FakeBoard()
+        val model = viewModel(board)
         advanceUntilIdle()
-        model.onEvent(HomeFeedEvent.Attach)
-        confirmPreview(model)
         model.onEvent(HomeFeedEvent.DraftChanged("crew call moved to 6"))
+        model.onEvent(HomeFeedEvent.Attach)
+        confirmPreview(model, caption = "unit photo")
         advanceUntilIdle()
 
-        model.onEvent(HomeFeedEvent.RemoveAttachment)
-        advanceUntilIdle()
-
-        assertNull(model.state.value.draft.media)
         assertEquals("crew call moved to 6", model.state.value.draft.text)
+        assertEquals("unit photo", board.posted.single().first)
     }
 
     @Test
@@ -226,11 +267,7 @@ class NoticeAttachTest {
         val model = viewModel(board, uploads)
         advanceUntilIdle()
         model.onEvent(HomeFeedEvent.Attach)
-        confirmPreview(model)
-        model.onEvent(HomeFeedEvent.DraftChanged("day 12 call sheet"))
-        advanceUntilIdle()
-
-        model.onEvent(HomeFeedEvent.Send)
+        confirmPreview(model, caption = "day 12 call sheet")
         advanceUntilIdle()
 
         assertEquals(1, uploads.uploads)
@@ -410,7 +447,7 @@ class NoticeAttachTest {
             newLocalId = { "local-" + n++ },
             isAdmin = { true },
             media = com.zillit.desktop.feature.home.ui.MediaCapture(
-                pick = { photo },
+                pick = { listOf(photo) },
                 upload = { _, _ -> ZillitResult.Failure(ZillitError.NoConnection()) },
             ),
         ).also { it.onEvent(HomeFeedEvent.Load) }
@@ -532,7 +569,7 @@ class NoticeAttachTest {
             newLocalId = { "local-" + n++ },
             isAdmin = adminNow ?: { admin },
             media = com.zillit.desktop.feature.home.ui.MediaCapture(
-                pick = { photo },
+                pick = { listOf(photo) },
                 upload = { _, _ -> ZillitResult.Failure(ZillitError.NoConnection()) },
             ),
         ).also { it.onEvent(HomeFeedEvent.Load) }
@@ -551,7 +588,7 @@ class NoticeAttachTest {
                 newLocalId = { "local-" + n++ },
                 isAdmin = { true },
                 media = com.zillit.desktop.feature.home.ui.MediaCapture(
-                    pick = { video },
+                    pick = { listOf(video) },
                     upload = { _, _ -> ZillitResult.Failure(ZillitError.NoConnection()) },
                     videoThumbnail = { picked ->
                         picked.copy(
@@ -568,9 +605,10 @@ class NoticeAttachTest {
             confirmPreview(model)
             advanceUntilIdle()
 
-            val media = model.state.value.draft.media
-            assertEquals(480, media?.thumbnailWidth)
-            assertEquals(4, media?.thumbnailBytes?.size)
+            // The poster travels on the posted card, ready before the upload.
+            val card = model.state.value.notices.single().attachment
+            assertEquals(480, card?.widthPx)
+            assertEquals(4, card?.localBytes?.size)
         }
 
     @Test
@@ -626,7 +664,7 @@ class NoticeAttachTest {
             newLocalId = { "local-" + n++ },
             isAdmin = { true },
             media = com.zillit.desktop.feature.home.ui.MediaCapture(
-                pick = { pdf },
+                pick = { listOf(pdf) },
                 upload = { _, _ -> ZillitResult.Failure(ZillitError.NoConnection()) },
                 videoThumbnail = { picked -> picked.copy(thumbnailBytes = ByteArray(8)) },
             ),
@@ -637,7 +675,7 @@ class NoticeAttachTest {
         confirmPreview(model)
         advanceUntilIdle()
 
-        assertEquals(8, model.state.value.draft.media?.thumbnailBytes?.size)
+        assertEquals(8, model.state.value.notices.single().attachment?.localBytes?.size)
     }
 
     @Test
@@ -654,7 +692,7 @@ class NoticeAttachTest {
                 newLocalId = { "local-" + n++ },
                 isAdmin = { true },
                 media = com.zillit.desktop.feature.home.ui.MediaCapture(
-                    pick = { video },
+                    pick = { listOf(video) },
                     upload = { _, _ -> ZillitResult.Failure(ZillitError.NoConnection()) },
                     videoThumbnail = { picked ->
                         kotlinx.coroutines.suspendCancellableCoroutine { cont ->
@@ -681,14 +719,14 @@ class NoticeAttachTest {
 
     /**
      * Drains the picker, then answers the preview the way a person does:
-     * Send with no caption. Attaching now lands in the preview dialog first
-     * (the phones' gallery viewer), so a test that wants the file *in the
-     * draft* has to walk both steps.
+     * Send, with the given caption. The dialog's Send IS the send — the post
+     * leaves immediately with the caption as its message, and the composer
+     * below is never touched.
      */
-    private fun TestScope.confirmPreview(model: HomeFeedViewModel) {
+    private fun TestScope.confirmPreview(model: HomeFeedViewModel, caption: String = "") {
         advanceUntilIdle()
         model.currentState.pendingPreview?.let { pending ->
-            model.onEvent(HomeFeedEvent.PreviewSent(pending.picked, ""))
+            model.onEvent(HomeFeedEvent.PreviewSent(pending.files, caption))
         }
         advanceUntilIdle()
     }

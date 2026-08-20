@@ -125,9 +125,7 @@ internal fun AppGraph.Ready.continuityProvider(viewModel: ContinuityViewModel, s
                 ?.data?.let(::decodeImageBitmap)
         },
         resolveUser = { userId ->
-            projectContext?.context?.value?.user(userId)?.let { user ->
-                user.designation?.takeIf { it.isNotBlank() }?.let { "${user.fullName} ($it)" } ?: user.fullName
-            }
+            projectContext?.context?.value?.user(userId)?.authorLine()
         },
         formatDate = ::continuityDate,
     )

@@ -23,6 +23,8 @@ data class HomeUiState(
     val permissions: ProjectPermissions = ProjectPermissions.Empty,
     val isBusy: Boolean = false,
     val error: String? = null,
+    /** Whether this user administers the production — the customise entry shows only then. */
+    val isAdmin: Boolean = false,
     /** The production's sections, server order; empty until they load. */
     val groups: List<ToolGroup> = emptyList(),
     /**
@@ -131,6 +133,8 @@ class HomeViewModel(
      */
     private val offline: OfflineSupport? = null,
     private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    /** Whether this user administers the production; sampled on each load. */
+    private val isAdmin: () -> Boolean = { false },
     /** Sections the desktop adds itself; see [HomeUiState.localSections]. */
     localSections: List<ToolSection> = emptyList(),
 ) : ZillitViewModel<HomeUiState, HomeEvent, HomeEffect>(HomeUiState(localSections = localSections)) {
@@ -171,7 +175,7 @@ class HomeViewModel(
     }
 
     private fun load() {
-        setState { copy(isBusy = true, error = null) }
+        setState { copy(isBusy = true, error = null, isAdmin = isAdmin()) }
 
         // Sections are cosmetic: a failure here leaves one ungrouped grid
         // rather than an empty screen, so it never blocks the tools call.

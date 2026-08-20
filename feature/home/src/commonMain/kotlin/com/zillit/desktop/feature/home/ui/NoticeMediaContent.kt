@@ -100,7 +100,9 @@ internal fun AttachmentContent(
         NoticeKind.Document -> Column(
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
         ) {
-            if (!attachment.thumbnail.isNullOrBlank() && attachment.isFetchable) {
+            if (attachment.localBytes != null ||
+                (!attachment.thumbnail.isNullOrBlank() && attachment.isFetchable)
+            ) {
                 MediaThumbnail(
                     attachment = attachment,
                     media = media,
@@ -559,6 +561,13 @@ internal fun rememberAttachmentImage(
     media: NoticeMediaSource?,
     preview: Boolean,
 ) = produceState<AttachmentImage?>(initialValue = null, attachment.media, preview) {
+    // An optimistic card carries its own bytes; nothing to fetch yet.
+    attachment.localBytes?.let { local ->
+        value = decodeImageBitmap(local)
+            ?.let { AttachmentImage.Ready(it) }
+            ?: AttachmentImage.Failed
+        return@produceState
+    }
     if (media == null) {
         value = AttachmentImage.Failed
         return@produceState

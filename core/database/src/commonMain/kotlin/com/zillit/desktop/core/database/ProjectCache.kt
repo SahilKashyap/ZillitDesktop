@@ -98,6 +98,12 @@ data class UserSnapshot(
      * the "Last Entry" line the web's C&C rows wear (`UserCard.jsx:357-362`).
      */
     val lastActiveMillis: Long? = null,
+    /**
+     * Their standing on the production — "accepted", "approved", "pending",
+     * "left", "removed", "rejected". Null on older cached rows; treated as
+     * present-and-active, never as a reason to hide someone.
+     */
+    val status: String? = null,
 )
 
 data class ToolSnapshot(

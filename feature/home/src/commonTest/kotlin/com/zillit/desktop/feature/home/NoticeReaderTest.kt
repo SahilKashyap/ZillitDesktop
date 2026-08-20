@@ -148,9 +148,11 @@ class NoticeReaderTest {
     }
 
     @Test
-    fun `a missing author is named rather than blank`() {
-        assertEquals("Unknown", read("""{"_id":"n1"}""")!!.authorName)
-        assertEquals("Unknown", read("""{"_id":"n1","name":"  "}""")!!.authorName)
+    fun `a missing author stays blank for the screen to hide, never "Unknown"`() {
+        // System rows — project invites — name nobody. The screen drops a
+        // blank author line; a made-up "Unknown" would render on every one.
+        assertEquals("", read("""{"_id":"n1"}""")!!.authorName)
+        assertEquals("", read("""{"_id":"n1","name":"  "}""")!!.authorName)
     }
 
     @Test
