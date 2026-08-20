@@ -166,8 +166,17 @@ fun assetTotal(lines: List<AssetLine>): Pair<Double, String>? {
 /** `1,234,567.89` — en-GB grouping, always two decimals. */
 fun moneyLabel(amount: Double): String {
     val negative = amount < 0
-    val cents = kotlin.math.round(kotlin.math.abs(amount) * 100).toLong()
-    val whole = (cents / 100).toString().reversed().chunked(3).joinToString(",").reversed()
-    val fraction = (cents % 100).toString().padStart(2, '0')
+    val cents = kotlin.math.round(kotlin.math.abs(amount) * CENTS_PER_UNIT).toLong()
+    val whole = (cents / CENTS_PER_UNIT).toString().reversed().chunked(GROUPING_DIGITS).joinToString(",").reversed()
+    val fraction = (cents % CENTS_PER_UNIT).toString().padStart(FRACTION_DIGITS, '0')
     return (if (negative) "-" else "") + whole + "." + fraction
 }
+
+/** Minor units in one major unit — money is counted in cents to avoid binary fractions. */
+private const val CENTS_PER_UNIT = 100
+
+/** Thousands separators every three digits, en-GB. */
+private const val GROUPING_DIGITS = 3
+
+/** Always two decimals, padded. */
+private const val FRACTION_DIGITS = 2

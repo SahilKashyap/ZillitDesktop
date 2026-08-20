@@ -201,39 +201,7 @@ private fun UserRow(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitAvatar(name = user.fullName)
-        Column(Modifier.weight(1f)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-            ) {
-                ZillitText(
-                    text = user.fullName,
-                    style = ZillitTheme.typography.bodyMedium,
-                    color = colors.textPrimary,
-                    maxLines = 1,
-                )
-                if (user.gender.isNotBlank()) {
-                    ZillitText(
-                        text = "(${user.gender.uppercase()})",
-                        style = ZillitTheme.typography.labelSmall,
-                        color = colors.textMuted,
-                    )
-                }
-                ZillitTag(ExternalUserBucket.of(user.userType).typeLabel(user), tone = TagTone.Neutral)
-            }
-            ZillitText(
-                text = listOfNotNull(
-                    user.email.takeIf { it.isNotBlank() },
-                    listOf(user.countryCode, user.phone)
-                        .filter { it.isNotBlank() }
-                        .joinToString(" ")
-                        .takeIf { it.isNotBlank() },
-                ).joinToString(" · ").ifBlank { "No contact details" },
-                style = ZillitTheme.typography.labelSmall,
-                color = colors.textMuted,
-                maxLines = 1,
-            )
-        }
+        UserIdentity(user, Modifier.weight(1f))
         if (hovered && mayEdit) {
             ZillitIconButton(
                 icon = ZillitIcons.Edit,
@@ -247,6 +215,46 @@ private fun UserRow(
                 onClick = onDelete,
             )
         }
+    }
+}
+
+/** Name, gender and type over the one contact line the row can fit. */
+@Composable
+private fun UserIdentity(user: ExternalUser, modifier: Modifier = Modifier) {
+    val colors = ZillitTheme.colors
+
+    Column(modifier) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            ZillitText(
+                text = user.fullName,
+                style = ZillitTheme.typography.bodyMedium,
+                color = colors.textPrimary,
+                maxLines = 1,
+            )
+            if (user.gender.isNotBlank()) {
+                ZillitText(
+                    text = "(${user.gender.uppercase()})",
+                    style = ZillitTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                )
+            }
+            ZillitTag(ExternalUserBucket.of(user.userType).typeLabel(user), tone = TagTone.Neutral)
+        }
+        ZillitText(
+            text = listOfNotNull(
+                user.email.takeIf { it.isNotBlank() },
+                listOf(user.countryCode, user.phone)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ")
+                    .takeIf { it.isNotBlank() },
+            ).joinToString(" · ").ifBlank { "No contact details" },
+            style = ZillitTheme.typography.labelSmall,
+            color = colors.textMuted,
+            maxLines = 1,
+        )
     }
 }
 

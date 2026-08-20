@@ -72,62 +72,9 @@ private fun TablePage(state: AssetUiState, onEvent: (AssetEvent) -> Unit) {
         modifier = Modifier.fillMaxSize().padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            Column(Modifier.weight(1f)) {
-                ZillitText(text = "Asset Register", style = ZillitTheme.typography.titleLarge)
-                val total = assetTotal(state.visible)
-                ZillitText(
-                    text = buildString {
-                        append(state.visible.size)
-                        append(if (state.visible.size == 1) " asset" else " assets")
-                        total?.let { (sum, currency) ->
-                            append(" · ")
-                            if (currency.isNotBlank()) append("$currency ")
-                            append(moneyLabel(sum))
-                        }
-                    },
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                )
-            }
-            if (state.viewer.mayExport) {
-                ZillitButton(
-                    text = if (state.isExporting) "Exporting…" else "Export PDF",
-                    variant = ButtonVariant.Secondary,
-                    enabled = !state.isExporting,
-                    onClick = { onEvent(AssetEvent.Export("pdf")) },
-                )
-                ZillitButton(
-                    text = "Export Excel",
-                    variant = ButtonVariant.Secondary,
-                    enabled = !state.isExporting,
-                    onClick = { onEvent(AssetEvent.Export("xlsx")) },
-                )
-            }
-        }
+        TableHeading(state, onEvent)
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        ) {
-            CategoryFilter.entries.forEach { filter ->
-                ZillitChoiceChip(
-                    label = filter.label,
-                    selected = state.categoryFilter == filter,
-                    onClick = { onEvent(AssetEvent.Filter(filter)) },
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            ZillitSearchField(
-                value = state.query,
-                onValueChange = { onEvent(AssetEvent.Search(it)) },
-                placeholder = "Search assets, vendors, refs…",
-                modifier = Modifier.width(SEARCH_WIDTH),
-            )
-        }
+        FilterBar(state, onEvent)
 
         HeaderRow()
 
@@ -146,6 +93,115 @@ private fun TablePage(state: AssetUiState, onEvent: (AssetEvent) -> Unit) {
                 }
             }
         }
+    }
+}
+
+/**
+ * The detail's top line: back, what this asset is, and Save when the category
+ * has been changed and there is somebody allowed to save it.
+ */
+@Composable
+private fun DetailHeading(
+    detail: AssetDetail,
+    state: AssetUiState,
+    onEvent: (AssetEvent) -> Unit,
+) {
+    val colors = ZillitTheme.colors
+    val line = detail.line
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitIconButton(
+            icon = ZillitIcons.ArrowLeft,
+            contentDescription = "Back to the register",
+            onClick = { onEvent(AssetEvent.CloseDetail) },
+        )
+        Column(Modifier.weight(1f)) {
+            ZillitText(
+                text = line.description.ifBlank { "—" },
+                style = ZillitTheme.typography.titleLarge,
+                maxLines = 2,
+            )
+            ZillitText(
+                text = listOf(line.account, line.poNumber).filter { it.isNotBlank() }.joinToString(" · "),
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+            )
+        }
+        if (detail.categoryDirty && !detail.isHydrating && state.viewer.mayEdit) {
+            ZillitButton(
+                text = if (detail.isSaving) "Saving…" else "Save",
+                enabled = !detail.isSaving,
+                onClick = { onEvent(AssetEvent.SaveCategory) },
+            )
+        }
+    }
+}
+
+/** Title, the count and running total, and the export buttons. */
+@Composable
+private fun TableHeading(state: AssetUiState, onEvent: (AssetEvent) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Column(Modifier.weight(1f)) {
+            ZillitText(text = "Asset Register", style = ZillitTheme.typography.titleLarge)
+            val total = assetTotal(state.visible)
+            ZillitText(
+                text = buildString {
+                    append(state.visible.size)
+                    append(if (state.visible.size == 1) " asset" else " assets")
+                    total?.let { (sum, currency) ->
+                        append(" · ")
+                        if (currency.isNotBlank()) append("$currency ")
+                        append(moneyLabel(sum))
+                    }
+                },
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+        if (state.viewer.mayExport) {
+            ZillitButton(
+                text = if (state.isExporting) "Exporting…" else "Export PDF",
+                variant = ButtonVariant.Secondary,
+                enabled = !state.isExporting,
+                onClick = { onEvent(AssetEvent.Export("pdf")) },
+            )
+            ZillitButton(
+                text = "Export Excel",
+                variant = ButtonVariant.Secondary,
+                enabled = !state.isExporting,
+                onClick = { onEvent(AssetEvent.Export("xlsx")) },
+            )
+        }
+    }
+}
+
+/** The category chips and the search box that narrow the register. */
+@Composable
+private fun FilterBar(state: AssetUiState, onEvent: (AssetEvent) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        CategoryFilter.entries.forEach { filter ->
+            ZillitChoiceChip(
+                label = filter.label,
+                selected = state.categoryFilter == filter,
+                onClick = { onEvent(AssetEvent.Filter(filter)) },
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        ZillitSearchField(
+            value = state.query,
+            onValueChange = { onEvent(AssetEvent.Search(it)) },
+            placeholder = "Search assets, vendors, refs…",
+            modifier = Modifier.width(SEARCH_WIDTH),
+        )
     }
 }
 
@@ -262,35 +318,7 @@ private fun DetailPage(detail: AssetDetail, state: AssetUiState, onEvent: (Asset
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            ZillitIconButton(
-                icon = ZillitIcons.ArrowLeft,
-                contentDescription = "Back to the register",
-                onClick = { onEvent(AssetEvent.CloseDetail) },
-            )
-            Column(Modifier.weight(1f)) {
-                ZillitText(
-                    text = line.description.ifBlank { "—" },
-                    style = ZillitTheme.typography.titleLarge,
-                    maxLines = 2,
-                )
-                ZillitText(
-                    text = listOf(line.account, line.poNumber).filter { it.isNotBlank() }.joinToString(" · "),
-                    style = ZillitTheme.typography.labelSmall,
-                    color = colors.textMuted,
-                )
-            }
-            if (detail.categoryDirty && !detail.isHydrating && state.viewer.mayEdit) {
-                ZillitButton(
-                    text = if (detail.isSaving) "Saving…" else "Save",
-                    enabled = !detail.isSaving,
-                    onClick = { onEvent(AssetEvent.SaveCategory) },
-                )
-            }
-        }
+        DetailHeading(detail, state, onEvent)
 
         if (detail.isHydrating) {
             ZillitText(

@@ -177,8 +177,8 @@ fun lastMessageAt(
 ): String {
     if (atMillis <= 0) return ""
     val at = Instant.fromEpochMilliseconds(atMillis).toLocalDateTime(zone)
-    val hour = ((at.hour + 11) % 12) + 1
-    val half = if (at.hour < 12) "AM" else "PM"
+    val hour = ((at.hour + HALF_DAY - 1) % HALF_DAY) + 1
+    val half = if (at.hour < HALF_DAY) "AM" else "PM"
     return "${lastEntryDate(atMillis, zone)} at ${hour.pad()}:${at.minute.pad()} $half"
 }
 
@@ -232,3 +232,6 @@ private val MONTHS = listOf(
 )
 
 private val WEEKDAYS = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+/** Noon splits the 12-hour clock; hours past it read PM. */
+private const val HALF_DAY = 12

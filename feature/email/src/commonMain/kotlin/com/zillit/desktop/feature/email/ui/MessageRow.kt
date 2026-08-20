@@ -104,65 +104,92 @@ internal fun MessageRow(
 
             SenderFace(message, loadAvatar)
 
-            Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                ) {
-                    ZillitText(
-                        text = if (showRecipients) {
-                            "To: ${message.to.joinToString(", ").ifBlank { message.senderName }}"
-                        } else {
-                            message.senderName
-                        },
-                        style = ZillitTheme.typography.bodyMedium.copy(fontWeight = weight),
-                        color = colors.textPrimary,
-                        maxLines = 1,
-                        modifier = Modifier.weight(1f),
-                    )
-                    ZillitText(
-                        text = mailListTimeLabel(message.receivedAtMillis, nowMillis),
-                        style = ZillitTheme.typography.labelSmall.copy(fontWeight = weight),
-                        color = if (message.isRead) colors.textMuted else colors.accentText,
-                        maxLines = 1,
-                        textAlign = TextAlign.End,
-                        modifier = Modifier.widthIn(min = TIME_MIN_WIDTH),
-                    )
-                }
+            MessageLines(message, showRecipients, weight, nowMillis)
+        }
+    }
+}
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                ) {
-                    ZillitText(
-                        text = message.subject.ifBlank { "No Subject" },
-                        style = ZillitTheme.typography.bodySmall.copy(fontWeight = weight),
-                        color = if (message.isRead) colors.textSecondary else colors.textPrimary,
-                        maxLines = 1,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (message.hasAttachments) {
-                        ZillitIcon(
-                            icon = ZillitIcons.Paperclip,
-                            contentDescription = "Has attachments",
-                            tint = colors.textMuted,
-                            size = META_ICON,
-                        )
-                    }
-                }
+/**
+ * The three stacked lines beside the face: who and when, subject and clip,
+ * then the snippet.
+ *
+ * Split out of [MessageRow] so the row itself stays about the surface it
+ * draws — the rail, the background, the hover — rather than the text inside.
+ */
+@Composable
+private fun MessageLines(
+    message: EmailSummary,
+    showRecipients: Boolean,
+    weight: FontWeight,
+    nowMillis: Long,
+) {
+    val colors = ZillitTheme.colors
 
-                if (message.snippet.isNotBlank()) {
-                    ZillitText(
-                        text = message.snippet,
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textMuted,
-                        maxLines = 1,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitText(
+                text = if (showRecipients) {
+                    "To: ${message.to.joinToString(", ").ifBlank { message.senderName }}"
+                } else {
+                    message.senderName
+                },
+                style = ZillitTheme.typography.bodyMedium.copy(fontWeight = weight),
+                color = colors.textPrimary,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+            ZillitText(
+                text = mailListTimeLabel(message.receivedAtMillis, nowMillis),
+                style = ZillitTheme.typography.labelSmall.copy(fontWeight = weight),
+                color = if (message.isRead) colors.textMuted else colors.accentText,
+                maxLines = 1,
+                textAlign = TextAlign.End,
+                modifier = Modifier.widthIn(min = TIME_MIN_WIDTH),
+            )
+        }
+
+        SubjectLine(message, weight)
+
+        if (message.snippet.isNotBlank()) {
+            ZillitText(
+                text = message.snippet,
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textMuted,
+                maxLines = 1,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/** The subject, with the paperclip the web puts beside it when there is one. */
+@Composable
+private fun SubjectLine(message: EmailSummary, weight: FontWeight) {
+    val colors = ZillitTheme.colors
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitText(
+            text = message.subject.ifBlank { "No Subject" },
+            style = ZillitTheme.typography.bodySmall.copy(fontWeight = weight),
+            color = if (message.isRead) colors.textSecondary else colors.textPrimary,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        if (message.hasAttachments) {
+            ZillitIcon(
+                icon = ZillitIcons.Paperclip,
+                contentDescription = "Has attachments",
+                tint = colors.textMuted,
+                size = META_ICON,
+            )
         }
     }
 }

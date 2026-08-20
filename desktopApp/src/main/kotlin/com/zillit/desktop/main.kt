@@ -2442,7 +2442,9 @@ private fun buildRegistry(
         accountHub, budgetBuilder, formSignature, esignature,
         callSheet, productionReport, adReport, wrapReport, sides, info, confidentialInfo, reports, scriptNotes,
         catering, accounts,
-        boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList, assetRegister, transport, location, continuity, costReport, invoices, draft,
+        boxSchedule, preProduction, maps, recce, externalUsers, distributionList,
+        crewList, assetRegister, transport, location, continuity, costReport,
+        invoices, draft,
         scheduleDistribution, scriptDistribution, scheduleDod,
     )
     val realPaths = real.map { it.path }.toSet()

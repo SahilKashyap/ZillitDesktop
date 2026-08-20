@@ -167,7 +167,11 @@ class ExternalUsersViewModel(
 
     private fun guardEdit(user: ExternalUser, block: () -> Unit) {
         if (currentState.viewer.mayEdit(user)) block()
-        else sendEffect(ExternalUsersEffect.Notice("Only the person who added this contact, or an admin, can change it."))
+        else sendEffect(
+            ExternalUsersEffect.Notice(
+                "Only the person who added this contact, or an admin, can change it.",
+            ),
+        )
     }
 
     private fun editDraft(change: ExternalUser.() -> ExternalUser) {

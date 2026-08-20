@@ -101,7 +101,10 @@ internal fun ThreadPane(
         val media = BubbleMedia(onOpenAttachment, loadThumbnail, player, loadAudio)
         // Passed beside the react handler rather than through it: deletion is
         // keyed by the server's id, and only rows that have one can offer it.
-        Messages(state, resolveName, MentionHooks(resolveMention, onOpenUser), media, loadAvatar, onEvent, Modifier.weight(1f))
+        Messages(
+            state, resolveName, MentionHooks(resolveMention, onOpenUser),
+            media, loadAvatar, onEvent, Modifier.weight(1f),
+        )
 
         if (state.peerTyping) {
             TypingIndicator(peer.fullName.substringBefore(' '))

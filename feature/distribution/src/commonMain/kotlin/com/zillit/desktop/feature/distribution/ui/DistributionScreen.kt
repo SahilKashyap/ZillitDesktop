@@ -167,38 +167,9 @@ private fun AccessPanel(state: DistributionUiState, onEvent: (DistributionEvent)
             return
         }
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            ZillitText(
-                text = user.userName.ifBlank { user.userId },
-                style = ZillitTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-            )
-            DistributionSection.entries.forEach { section ->
-                ZillitChoiceChip(
-                    label = section.label,
-                    selected = state.section == section,
-                    onClick = { onEvent(DistributionEvent.Section(section)) },
-                )
-            }
-        }
+        PanelHeading(user, state, onEvent)
 
-        Row(Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.sm)) {
-            ZillitText(
-                text = "DISTRIBUTION",
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitText(
-                text = "TO",
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-            )
-        }
+        ColumnHeadings()
 
         val rows = user.units
             .filter { if (state.section == DistributionSection.Home) it.isHome else it.isTool }
@@ -227,6 +198,51 @@ private fun AccessPanel(state: DistributionUiState, onEvent: (DistributionEvent)
                 )
             }
         }
+    }
+}
+
+/** Who is selected, and which section of their distribution is showing. */
+@Composable
+private fun PanelHeading(
+    user: DistributionUser,
+    state: DistributionUiState,
+    onEvent: (DistributionEvent) -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitText(
+            text = user.userName.ifBlank { user.userId },
+            style = ZillitTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+        )
+        DistributionSection.entries.forEach { section ->
+            ZillitChoiceChip(
+                label = section.label,
+                selected = state.section == section,
+                onClick = { onEvent(DistributionEvent.Section(section)) },
+            )
+        }
+    }
+}
+
+/** The two column captions over the list. */
+@Composable
+private fun ColumnHeadings() {
+    Row(Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.sm)) {
+        ZillitText(
+            text = "DISTRIBUTION",
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.textMuted,
+            modifier = Modifier.weight(1f),
+        )
+        ZillitText(
+            text = "TO",
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.textMuted,
+        )
     }
 }
 
