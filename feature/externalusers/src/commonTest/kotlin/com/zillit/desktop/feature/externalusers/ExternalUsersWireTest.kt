@@ -89,9 +89,12 @@ class ExternalUsersWireTest {
         val ok = ExternalUser(fullName = "A", email = "a@b.co", userType = "Caterer")
         assertTrue(ok.validationErrors().isEmpty())
 
-        assertTrue("countryCode" in ExternalUser(fullName = "A", email = "a@b.co", userType = "T", phone = "12345").validationErrors())
-        assertTrue("phone" in ExternalUser(fullName = "A", email = "a@b.co", userType = "T", countryCode = "+44").validationErrors())
-        assertTrue("departmentId" in ExternalUser(fullName = "A", email = "a@b.co", userType = CREW_TYPE).validationErrors())
+        val noCountry = ExternalUser(fullName = "A", email = "a@b.co", userType = "T", phone = "12345")
+        assertTrue("countryCode" in noCountry.validationErrors())
+        val noPhone = ExternalUser(fullName = "A", email = "a@b.co", userType = "T", countryCode = "+44")
+        assertTrue("phone" in noPhone.validationErrors())
+        val noDepartment = ExternalUser(fullName = "A", email = "a@b.co", userType = CREW_TYPE)
+        assertTrue("departmentId" in noDepartment.validationErrors())
         assertTrue("email" in ExternalUser(fullName = "A", email = "nope").validationErrors())
         assertTrue("otherInfo0" in ExternalUser(
             fullName = "A", email = "a@b.co", userType = "T",

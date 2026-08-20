@@ -72,8 +72,8 @@ fun mailFullTimeLabel(
 }
 
 private fun kotlinx.datetime.LocalDateTime.clock12h(): String {
-    val hour = ((hour + 11) % 12) + 1
-    val half = if (this.hour < 12) "AM" else "PM"
+    val hour = ((hour + HALF_DAY - 1) % HALF_DAY) + 1
+    val half = if (this.hour < HALF_DAY) "AM" else "PM"
     return "${hour.pad()}:${minute.pad()} $half"
 }
 
@@ -83,3 +83,6 @@ private val MONTHS = listOf(
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 )
+
+/** Noon splits the 12-hour clock; hours past it read PM. */
+private const val HALF_DAY = 12

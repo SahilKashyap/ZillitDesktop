@@ -105,22 +105,34 @@ data class ExternalUsersViewer(
  */
 fun ExternalUser.validationErrors(): Map<String, String> = buildMap {
     if (fullName.isBlank()) put("fullName", "Please enter the full name")
-    if (email.isBlank() || !email.contains('@') || !email.substringAfter('@').contains('.')) {
-        put("email", "Please enter a valid email")
-    }
+    if (!email.looksLikeEmail()) put("email", "Please enter a valid email")
     if (phone.isNotBlank() && countryCode.isBlank()) {
         put("countryCode", "Please select the country code")
     }
-    if (countryCode.isNotBlank() && phone.isBlank()) put("phone", "Phone number is required")
-    if (phone.isNotBlank() && phone.length < 5) put("phone", "Phone number is too short")
-    if (phone.length > 15) put("phone", "Phone number is too long")
+    phoneError()?.let { put("phone", it) }
     if (userType.isBlank()) put("userType", "Please enter the type")
     if (userType == CREW_TYPE && departmentId.isBlank()) put("departmentId", "Select a department")
     otherInfo.forEachIndexed { index, row ->
+        // A half-filled row is the error; both blank is simply an unused row.
         if (row.label.isBlank() != row.value.isBlank()) {
             put("otherInfo$index", "Both the title and the description are needed")
         }
     }
+}
+
+/** The web's check, not RFC 5322: something, an `@`, and a dot after it. */
+private fun String.looksLikeEmail(): Boolean =
+    isNotBlank() && contains('@') && substringAfter('@').contains('.')
+
+/**
+ * The one phone message, so the three rules cannot contradict each other by
+ * writing to the same key in turn.
+ */
+private fun ExternalUser.phoneError(): String? = when {
+    countryCode.isNotBlank() && phone.isBlank() -> "Phone number is required"
+    phone.isNotBlank() && phone.length < MIN_PHONE_DIGITS -> "Phone number is too short"
+    phone.length > MAX_PHONE_DIGITS -> "Phone number is too long"
+    else -> null
 }
 
 interface ExternalUsersRepository {
@@ -142,3 +154,9 @@ interface ExternalUsersRepository {
 
     suspend fun delete(id: String): ZillitResult<Unit>
 }
+
+/** Shorter than this is not a phone number anywhere we operate. */
+private const val MIN_PHONE_DIGITS = 5
+
+/** E.164 allows fifteen digits; longer is a typo rather than a number. */
+private const val MAX_PHONE_DIGITS = 15

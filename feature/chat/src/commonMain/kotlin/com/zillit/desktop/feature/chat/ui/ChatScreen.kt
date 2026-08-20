@@ -456,54 +456,66 @@ private fun CrewRow(
             name = contact.fullName,
             image = rememberAvatar(contact.userId, loadAvatar),
         )
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        CrewIdentity(contact, unread, subtitle, meta, Modifier.weight(1f))
+        RowTrailing(badge, isFavourite, onToggleFavourite)
+    }
+}
+
+/** The name line, then whatever the row has to say under it. */
+@Composable
+private fun CrewIdentity(
+    contact: CrewContact,
+    unread: Boolean,
+    subtitle: String?,
+    meta: String?,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ZillitText(
+                text = contact.fullName,
+                style = if (unread) {
+                    ZillitTheme.typography.titleSmall
+                } else {
+                    ZillitTheme.typography.bodyMedium
+                },
+                color = ZillitTheme.colors.textPrimary,
+                maxLines = 1,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            // Inline, the web's way — not a trailing tag.
+            if (contact.isAdmin) {
                 ZillitText(
-                    text = contact.fullName,
-                    style = if (unread) {
-                        ZillitTheme.typography.titleSmall
-                    } else {
-                        ZillitTheme.typography.bodyMedium
-                    },
-                    color = ZillitTheme.colors.textPrimary,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                // Inline, the web's way — not a trailing tag.
-                if (contact.isAdmin) {
-                    ZillitText(
-                        text = " - (Admin)",
-                        style = ZillitTheme.typography.labelSmall,
-                        color = ZillitTheme.colors.textSecondary,
-                        maxLines = 1,
-                    )
-                }
-            }
-            // `designation` is a translation key off `project/users`
-            // (`driver_label`); an explicit subtitle is already display text.
-            // The generic member designation is hidden, as on the phones.
-            (subtitle ?: contact.designationLabel()?.localised())?.takeIf { it.isNotBlank() }?.let {
-                ZillitText(
-                    text = it,
+                    text = " - (Admin)",
                     style = ZillitTheme.typography.labelSmall,
-                    color = if (unread) {
-                        ZillitTheme.colors.textSecondary
-                    } else {
-                        ZillitTheme.colors.textMuted
-                    },
-                    maxLines = 1,
-                )
-            }
-            meta?.takeIf { it.isNotBlank() }?.let {
-                ZillitText(
-                    text = it,
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
+                    color = ZillitTheme.colors.textSecondary,
                     maxLines = 1,
                 )
             }
         }
-        RowTrailing(badge, isFavourite, onToggleFavourite)
+        // `designation` is a translation key off `project/users`
+        // (`driver_label`); an explicit subtitle is already display text.
+        // The generic member designation is hidden, as on the phones.
+        (subtitle ?: contact.designationLabel()?.localised())?.takeIf { it.isNotBlank() }?.let {
+            ZillitText(
+                text = it,
+                style = ZillitTheme.typography.labelSmall,
+                color = if (unread) {
+                    ZillitTheme.colors.textSecondary
+                } else {
+                    ZillitTheme.colors.textMuted
+                },
+                maxLines = 1,
+            )
+        }
+        meta?.takeIf { it.isNotBlank() }?.let {
+            ZillitText(
+                text = it,
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+                maxLines = 1,
+            )
+        }
     }
 }
 

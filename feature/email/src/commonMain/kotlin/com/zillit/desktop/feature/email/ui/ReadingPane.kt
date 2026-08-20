@@ -81,87 +81,106 @@ internal fun ReadingPane(
         when {
             // The pane stands open before anything is picked — the web's
             // empty state (`NewEmailComponent.jsx:383-397`).
-            state.selectedMessageId == null -> Box(
-                Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                ) {
-                    ZillitIcon(
-                        icon = ZillitIcons.Mail,
-                        contentDescription = null,
-                        tint = ZillitTheme.colors.textMuted,
-                        size = EMPTY_ICON,
-                    )
-                    ZillitText(
-                        text = "No email has been selected",
-                        style = ZillitTheme.typography.bodyMedium,
-                        color = ZillitTheme.colors.textMuted,
-                    )
-                }
-            }
+            state.selectedMessageId == null -> NoSelection()
 
             state.isLoadingThread && state.thread.isEmpty() -> Centred("Opening…")
 
             state.thread.isEmpty() -> Centred("This message could not be opened.")
 
-            else -> {
-                // Newest first, as the web reads a trail
-                // (`NewEmailDetails.jsx:37-57`); the newest is the one open.
-                val newestFirst = remember(state.thread) { state.thread.asReversed() }
-                val newest = newestFirst.first()
-                var expandedIds by remember(state.selectedMessageId) {
-                    androidx.compose.runtime.mutableStateOf(setOf(newest.id))
-                }
+            else -> MessageTrail(state, downloads, onEvent, openLink, loadAvatar, loadThumbnail)
+        }
+    }
+}
 
-                DetailToolbar(newest, state, onEvent)
+/** The pane before anything is picked — the web's empty state. */
+@Composable
+private fun NoSelection() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitIcon(
+                icon = ZillitIcons.Mail,
+                contentDescription = null,
+                tint = ZillitTheme.colors.textMuted,
+                size = EMPTY_ICON,
+            )
+            ZillitText(
+                text = "No email has been selected",
+                style = ZillitTheme.typography.bodyMedium,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+    }
+}
 
-                val paneState = rememberLazyListState()
-                LazyColumn(
-                    state = paneState,
-                    modifier = Modifier.fillMaxSize().then(rememberWheelScroll(paneState)),
-                    contentPadding = PaddingValues(PANE_PADDING),
-                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-                ) {
-                    // One subject over the whole trail — the web's h1
-                    // (`NewEmailDetails.jsx:25-34`).
-                    item(key = "subject") {
-                        ZillitText(
-                            text = newest.subject.ifBlank { "(no subject)" },
-                            style = ZillitTheme.typography.titleLarge,
-                            maxLines = 3,
-                            modifier = Modifier.padding(bottom = ZillitTheme.spacing.xs),
-                        )
+/**
+ * The open thread: toolbar, one subject, then the trail.
+ *
+ * Which messages are folded is held here rather than in [ReadingPane], so the
+ * state dies with the thread it belongs to.
+ */
+@Composable
+private fun MessageTrail(
+    state: EmailUiState,
+    downloads: Map<String, AttachmentDownload>,
+    onEvent: (EmailEvent) -> Unit,
+    openLink: (String) -> Unit,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    loadThumbnail: suspend (EmailAttachment, String) -> ImageBitmap?,
+) {
+    // Newest first, as the web reads a trail
+    // (`NewEmailDetails.jsx:37-57`); the newest is the one open.
+    val newestFirst = remember(state.thread) { state.thread.asReversed() }
+    val newest = newestFirst.first()
+    var expandedIds by remember(state.selectedMessageId) {
+        androidx.compose.runtime.mutableStateOf(setOf(newest.id))
+    }
+
+    DetailToolbar(newest, state, onEvent)
+
+    val paneState = rememberLazyListState()
+    LazyColumn(
+        state = paneState,
+        modifier = Modifier.fillMaxSize().then(rememberWheelScroll(paneState)),
+        contentPadding = PaddingValues(PANE_PADDING),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        // One subject over the whole trail — the web's h1
+        // (`NewEmailDetails.jsx:25-34`).
+        item(key = "subject") {
+            ZillitText(
+                text = newest.subject.ifBlank { "(no subject)" },
+                style = ZillitTheme.typography.titleLarge,
+                maxLines = 3,
+                modifier = Modifier.padding(bottom = ZillitTheme.spacing.xs),
+            )
+        }
+        items(newestFirst, key = EmailMessage::id) { message ->
+            val isNewest = message.id == newest.id
+            MessageCard(
+                message = message,
+                downloads = downloads,
+                onEvent = onEvent,
+                onOpenLink = openLink,
+                // Older messages start folded and open in place;
+                // the newest never folds (`NewEmailTrailItem.jsx:52-56`).
+                isExpanded = isNewest || message.id in expandedIds,
+                onToggle = if (isNewest) {
+                    null
+                } else {
+                    {
+                        expandedIds = if (message.id in expandedIds) {
+                            expandedIds - message.id
+                        } else {
+                            expandedIds + message.id
+                        }
                     }
-                    items(newestFirst, key = EmailMessage::id) { message ->
-                        val isNewest = message.id == newest.id
-                        MessageCard(
-                            message = message,
-                            downloads = downloads,
-                            onEvent = onEvent,
-                            onOpenLink = openLink,
-                            // Older messages start folded and open in place;
-                            // the newest never folds (`NewEmailTrailItem.jsx:52-56`).
-                            isExpanded = isNewest || message.id in expandedIds,
-                            onToggle = if (isNewest) {
-                                null
-                            } else {
-                                {
-                                    expandedIds = if (message.id in expandedIds) {
-                                        expandedIds - message.id
-                                    } else {
-                                        expandedIds + message.id
-                                    }
-                                }
-                            },
-                            loadAvatar = loadAvatar,
-                            loadThumbnail = loadThumbnail,
-                        )
-                    }
-                }
-            }
+                },
+                loadAvatar = loadAvatar,
+                loadThumbnail = loadThumbnail,
+            )
         }
     }
 }
@@ -272,7 +291,7 @@ private fun EmailMessage.previewLine(): String =
         .replace(Regex("&[a-zA-Z#0-9]{1,8};"), " ")
         .replace(Regex("\\s+"), " ")
         .trim()
-        .take(160)
+        .take(PREVIEW_CHARS)
 
 /**
  * Reply, reply-all and forward, on each message rather than on the thread.
@@ -544,3 +563,6 @@ private val HAIRLINE = 1.dp
 private val HEADER_AVATAR = 40.dp
 
 private val THUMB_MAX = 260.dp
+
+/** How much of a stripped body the collapsed row shows. */
+private const val PREVIEW_CHARS = 160
