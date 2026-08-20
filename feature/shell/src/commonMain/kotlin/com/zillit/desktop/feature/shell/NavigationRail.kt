@@ -27,8 +27,6 @@ import androidx.compose.runtime.getValue
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -84,13 +82,15 @@ val DefaultRailItems: List<RailItem> = listOf(
 )
 
 /**
- * The rail's foot — the web's `SideMenu.jsx` tail (SOS, Pin to Start, Help,
- * then Logout): things about the app rather than places in the production,
- * kept below the spacer so the sections above read as the map.
+ * The two app pages, below the production's sections and below Admin.
+ *
+ * They sit in the run rather than at the rail's foot: the foot is for Logout
+ * alone, and an entry parked down there on its own reads as an afterthought
+ * next to the sign-out it shares a corner with. Pin to Start is gone — a native
+ * app is already installed, and the web's page only existed to install one.
  */
-val FooterRailItems: List<RailItem> = listOf(
+val AppRailItems: List<RailItem> = listOf(
     RailItem("sos", "SOS", ZillitIcons.Siren, WorkspaceRoute.Tool("/sos")),
-    RailItem("pin", "Pin to Start", ZillitIcons.Pin, WorkspaceRoute.Tool("/settings/pin-to-start")),
     RailItem("help", "Zillit Help", ZillitIcons.Help, WorkspaceRoute.Tool("/settings/help")),
 )
 
@@ -119,7 +119,7 @@ val AdminRailItem: RailItem =
  * composition rather than fixed at sign-in.
  */
 fun railItemsFor(isAdmin: Boolean): List<RailItem> =
-    if (isAdmin) DefaultRailItems + AdminRailItem else DefaultRailItems
+    if (isAdmin) DefaultRailItems + AdminRailItem + AppRailItems else DefaultRailItems + AppRailItems
 
 /**
  * The left rail, collapsed to icons until the pointer enters it.
@@ -143,9 +143,11 @@ fun NavigationRail(
     activePath: String?,
     onOpen: (WorkspaceRoute) -> Unit,
     modifier: Modifier = Modifier,
-    /** The items below the spacer — [FooterRailItems] normally; empty hides the foot. */
-    footerItems: List<RailItem> = emptyList(),
-    /** Null hides Logout; the click confirms first, in the rail's own dialog. */
+    /**
+     * Null hides Logout. The click does not sign anyone out — it asks the
+     * frame to confirm, and [SignOutDialog] is drawn there (see its note on
+     * why it cannot be drawn here).
+     */
     onSignOut: (() -> Unit)? = null,
     footer: @Composable ColumnFooterScope.() -> Unit = {},
 ) {
@@ -173,9 +175,9 @@ fun NavigationRail(
         // Longest prefix wins, rather than every entry the path starts with:
         // `/settings/admin` also starts with `/settings`, and two lit entries
         // tell the reader they are in two places at once.
-        val activeId = remember(items, footerItems, activePath) {
+        val activeId = remember(items, activePath) {
             activePath?.let { path ->
-                (items + footerItems).filter { path.startsWith(it.route.path) }
+                items.filter { path.startsWith(it.route.path) }
                     .maxByOrNull { it.route.path.length }
                     ?.id
             }
@@ -189,51 +191,44 @@ fun NavigationRail(
                 onClick = { onOpen(item.route) },
             )
         }
+        // Logout alone below the spacer: it ends the session rather than going
+        // anywhere, and nothing else should share that corner with it.
         Box(Modifier.weight(1f))
-        footerItems.forEach { item ->
+        onSignOut?.let { requestSignOut ->
             RailButton(
-                item = item,
-                isActive = item.id == activeId,
+                item = RailItem("logout", "Logout", ZillitIcons.Logout, WorkspaceRoute.Tool("/logout")),
+                isActive = false,
                 expanded = expanded,
-                onClick = { onOpen(item.route) },
+                onClick = requestSignOut,
             )
         }
-        onSignOut?.let { SignOutRailButton(expanded, it) }
         ColumnFooterScope.footer()
     }
 }
 
 /**
- * Logout at the very foot, as the web has it. Confirms first — the same
- * question Settings asks (and Android: "Logout" / "Are you sure?") — because
- * a stray click here would sign the person out of every production at once.
+ * The question Logout asks first — the same one Settings asks (and Android:
+ * "Logout" / "Are you sure?") — because a stray click at the rail's foot would
+ * sign the person out of every production at once.
+ *
+ * Drawn by the frame, not by the rail. The dialog fills its parent, and the
+ * rail is a 60pt column: composed inside it the card came out rail-width, its
+ * buttons crushed to a few points high, and the foot items were pushed up the
+ * rail to make room for it.
  */
 @Composable
-private fun SignOutRailButton(expanded: Boolean, onSignOut: () -> Unit) {
-    var confirming by remember { mutableStateOf(false) }
-    RailButton(
-        item = RailItem("logout", "Logout", ZillitIcons.Logout, WorkspaceRoute.Tool("/logout")),
-        isActive = false,
-        expanded = expanded,
-        onClick = { confirming = true },
-    )
+fun SignOutDialog(visible: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     ZillitDialogShell(
         title = "Sign out?",
         subtitle = "You'll be signed out on this computer and need to sign in again to continue.",
         icon = ZillitIcons.Logout,
-        visible = confirming,
-        onDismiss = { confirming = false },
+        visible = visible,
+        onDismiss = onDismiss,
         width = SIGN_OUT_DIALOG_WIDTH,
         actions = {
             Spacer(Modifier.weight(1f))
-            ZillitButton(text = "Cancel", variant = ButtonVariant.Secondary, onClick = { confirming = false })
-            ZillitButton(
-                text = "Sign out",
-                onClick = {
-                    confirming = false
-                    onSignOut()
-                },
-            )
+            ZillitButton(text = "Cancel", variant = ButtonVariant.Secondary, onClick = onDismiss)
+            ZillitButton(text = "Sign out", onClick = onConfirm)
         },
     ) {
         ZillitText(

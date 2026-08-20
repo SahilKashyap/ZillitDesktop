@@ -102,7 +102,12 @@ data class EventFormState(
 )
 
 /** Someone who can be invited. */
-data class EventInvitee(val userId: String, val name: String)
+data class EventInvitee(
+    val userId: String,
+    val name: String,
+    /** Shown under the name in the picker; null when the crew record has none. */
+    val designation: String? = null,
+)
 
 sealed interface CalendarEvent2Event {
 

@@ -46,7 +46,19 @@ data class ChatAttachment(
 data class ChatReaction(val userId: String, val emoji: String)
 
 /** One group room, as `GET chat-room` lists them. */
-data class GroupRoom(val id: String, val name: String)
+data class GroupRoom(
+    val id: String,
+    val name: String,
+    /** The owning department, when the room is a department's — see `hasStanding`. */
+    val departmentId: String? = null,
+    /**
+     * The room's newest-message stamp, from the `chat-room` row itself
+     * (Android `GetRoomsModel.sorting_activity`). Durable where the
+     * notification backlog is not: a fully read room's backlog rows age out,
+     * but this survives, so the room keeps its place and its standing.
+     */
+    val sortingActivity: Long = 0L,
+)
 
 /**
  * How far a message has got, as the wire counts it.

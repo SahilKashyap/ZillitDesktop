@@ -21,7 +21,20 @@ data class CrewContact(
     val isAdmin: Boolean = false,
     /** Their primary device — the address a 1:1 call rings. Null: not callable. */
     val deviceId: String? = null,
+    /** When they last used the app — the listing's "Last Entry" line. */
+    val lastActiveMillis: Long? = null,
 )
+
+/**
+ * The designation a listing shows under a name — still a translation key,
+ * localised by the caller. The generic `member_label` is membership, not a
+ * job, and every Android surface hides it rather than captioning half the
+ * crew "Member" (`Constants.MEMBER_TYPE_LABEL`, `BaseViewModel.kt:2065`).
+ */
+fun CrewContact.designationLabel(): String? =
+    designation?.takeIf { it.isNotBlank() && it != MEMBER_DESIGNATION }
+
+const val MEMBER_DESIGNATION = "member_label"
 
 /**
  * The search box's rule: name, role or department, case-blind. A coordinator
@@ -38,23 +51,6 @@ fun List<CrewContact>.searchCrew(query: String): List<CrewContact> {
 }
 
 /**
- * The directory's shape: departments alphabetically, people alphabetically
- * within each, and the department-less gathered at the end — a call-sheet
- * order, not a server order.
- */
-fun List<CrewContact>.byDepartment(): List<Pair<String, List<CrewContact>>> {
-    val named = filter { !it.department.isNullOrBlank() }
-        .groupBy { it.department!!.trim() }
-        .toSortedMap(String.CASE_INSENSITIVE_ORDER)
-        .map { (department, people) -> department to people.sortedBy(CrewContact::fullName) }
-    val unnamed = filter { it.department.isNullOrBlank() }
-        .sortedBy(CrewContact::fullName)
-    return if (unnamed.isEmpty()) named else named + (NO_DEPARTMENT to unnamed)
-}
-
-const val NO_DEPARTMENT = "No department"
-
-/**
  * Recents in reading order: threads with known activity newest first, the
  * never-opened rest behind them in the server's order. Stable, so ties keep
  * their place.
@@ -62,13 +58,128 @@ const val NO_DEPARTMENT = "No department"
 fun sortedRecents(ids: List<String>, newest: Map<String, Long>): List<String> =
     ids.sortedByDescending { newest[it] ?: Long.MIN_VALUE }
 
-/** The listing's filter chips — Android's tabs, as one closed set. */
+/** One row of the Chats listing — a group room or a direct thread. */
+sealed interface RecentRow {
+    val id: String
+
+    data class Group(val room: GroupRoom) : RecentRow {
+        override val id: String get() = room.id
+    }
+
+    data class Direct(val contact: CrewContact) : RecentRow {
+        override val id: String get() = contact.userId
+    }
+}
+
+/**
+ * Groups and direct threads as one list, newest activity first.
+ *
+ * Android's All tab is flat — users and rooms interleaved by
+ * `sorting_activity` descending (`MembersVM.kt:372-374`), so a room a
+ * department stopped using sinks below yesterday's DMs rather than pinning a
+ * Groups block on top. Rows without a stamp gather at the end in the order
+ * given, the same tolerance [sortedRecents] keeps.
+ */
+fun recentRows(
+    groups: List<GroupRoom>,
+    contacts: List<CrewContact>,
+    newest: Map<String, Long>,
+): List<RecentRow> =
+    (groups.map(RecentRow::Group) + contacts.map(RecentRow::Direct))
+        .sortedByDescending { it.newestStamp(newest) }
+
+/**
+ * A row's ordering stamp: the live map's word when it has one, else the
+ * room's own `sorting_activity` — the durable stamp Android sorts rooms by.
+ * The live map is backlog-fed and forgets a conversation once its rows are
+ * read and aged out; the room row remembers.
+ */
+fun RecentRow.newestStamp(newest: Map<String, Long>): Long {
+    val live = newest[id] ?: Long.MIN_VALUE
+    val durable = when (this) {
+        is RecentRow.Group -> room.sortingActivity.takeIf { it > 0L } ?: Long.MIN_VALUE
+        is RecentRow.Direct -> Long.MIN_VALUE
+    }
+    return maxOf(live, durable)
+}
+
+/**
+ * Unread across the conversations the user can still open.
+ *
+ * Deliberately not the server's `cnc_label` section count: the ledger keeps
+ * rows for rooms the user lost (verified live 2026-08-19 — 40 of 45 unread
+ * sat in rooms absent from `chat-room`), which the phones clear locally on
+ * `notification:silent` instructions and never display. A count is dropped
+ * only when the ledger itself filed its key as a room ([ledgerRooms]) and
+ * the room list no longer has it — everything else, DMs included, counts.
+ */
+fun liveChatUnread(
+    groups: List<GroupRoom>,
+    ledgerRooms: Set<String>,
+    unread: Map<String, Int>,
+): Int {
+    val live = groups.mapTo(mutableSetOf(), GroupRoom::id)
+    return unread.entries.sumOf { (id, n) -> if (id in ledgerRooms && id !in live) 0 else n }
+}
+
+/**
+ * Whether a row has earned a place in the listing at all.
+ *
+ * Android's All/Groups/Members tabs hide rows that have never spoken —
+ * `sorting_activity > 0` — with one exception: a department's room shows
+ * before its first message (`MembersVM.kt:213-218, 261-263, 287-289`). The
+ * Unread and Favourites tabs skip this test; their own predicate is the whole
+ * rule.
+ *
+ * A direct row passes by construction: it is only ever built from the
+ * server's `user:list` — everyone this user has a DM thread with — which is
+ * the very fact Android's filter tests against its full-crew list. Re-testing
+ * the stamp map here hid real threads (seen live 2026-08-19: a thread with
+ * days of history whose read rows had aged out of the backlog). The phones'
+ * personal-project clause (every active user listed regardless) is not
+ * carried — the desktop opens film productions only.
+ */
+fun RecentRow.hasStanding(newest: Map<String, Long>): Boolean = when (this) {
+    is RecentRow.Group -> newestStamp(newest) > 0L || !room.departmentId.isNullOrEmpty()
+    is RecentRow.Direct -> true
+}
+
+/**
+ * The listing's filter chips, in the web's order — All, Unread, Members,
+ * Groups, Favourites (`ChatsComponent`'s chip strip). Declaration order is
+ * display order.
+ */
 enum class ChatFilter(val label: String) {
     All("All"),
     Unread("Unread"),
-    Groups("Groups"),
     Members("Members"),
+    Groups("Groups"),
     Favourites("Favourites"),
+}
+
+/**
+ * The C&C rows' date — "Aug 19, 2026" — the web's `OnlydateTimeFormat` as
+ * the "Last Entry" line renders it.
+ */
+fun lastEntryDate(
+    atMillis: Long,
+    zone: TimeZone = TimeZone.currentSystemDefault(),
+): String {
+    if (atMillis <= 0) return ""
+    val at = Instant.fromEpochMilliseconds(atMillis).toLocalDateTime(zone)
+    return "${MONTHS[at.date.monthNumber - 1]} ${at.date.dayOfMonth}, ${at.date.year}"
+}
+
+/** The group rows' stamp — "Aug 19, 2026 at 05:44 PM". */
+fun lastMessageAt(
+    atMillis: Long,
+    zone: TimeZone = TimeZone.currentSystemDefault(),
+): String {
+    if (atMillis <= 0) return ""
+    val at = Instant.fromEpochMilliseconds(atMillis).toLocalDateTime(zone)
+    val hour = ((at.hour + 11) % 12) + 1
+    val half = if (at.hour < 12) "AM" else "PM"
+    return "${lastEntryDate(atMillis, zone)} at ${hour.pad()}:${at.minute.pad()} $half"
 }
 
 /**

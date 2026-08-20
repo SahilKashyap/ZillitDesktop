@@ -36,13 +36,15 @@ fun conversationBacklogFrom(payload: JsonElement): ConversationBacklog {
     } ?: return ConversationBacklog()
     val counts = mutableMapOf<String, Int>()
     val newest = mutableMapOf<String, Long>()
+    val rooms = mutableSetOf<String>()
     rows.forEach { element ->
         val row = element as? JsonObject ?: return@forEach
         val key = row.conversationKey() ?: return@forEach
+        if (row.text("unit") == GROUP_UNIT) rooms += key
         row.createdMillis()?.let { at -> newest[key] = maxOf(newest[key] ?: 0L, at) }
         if (row.isUnread() && !row.isSelfEcho()) counts[key] = (counts[key] ?: 0) + 1
     }
-    return ConversationBacklog(unread = counts, activity = newest)
+    return ConversationBacklog(unread = counts, activity = newest, rooms = rooms)
 }
 
 /** The conversation this row belongs to, or null when it is not a chat row. */

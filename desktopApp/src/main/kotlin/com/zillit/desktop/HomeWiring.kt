@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.email.domain.StorageKind
 import com.zillit.desktop.feature.email.domain.storageKindOf
 import com.zillit.desktop.feature.home.data.ClipAudioPlayer
 import com.zillit.desktop.feature.home.data.JvmAudioRecorder
+import com.zillit.desktop.feature.home.data.identifierToWireTool
 import com.zillit.desktop.feature.home.data.pdfThumbnailJpeg
 import com.zillit.desktop.feature.home.data.videoThumbnailJpeg
 import com.zillit.desktop.feature.home.domain.GeoPoint
@@ -288,13 +289,17 @@ internal suspend fun emitSegmentRead(
  */
 internal suspend fun emitToolRead(ready: AppGraph.Ready, toolIdentifier: String) {
     val projectId = ready.projectContext?.context?.value?.project?.projectId ?: return
+    // iOS's level-read bodies carry the time as `read_time`, not `timestamp`
+    // (`FSBadgeReadModel`…); both are sent so the read is scoped either way.
+    val now = System.currentTimeMillis()
     ready.socketEvents.emit(
         ZillitSocketEvents.Badges.NotificationLevelRead,
         NotificationReadDto(
             projectId = projectId,
             section = "tools_label",
             tool = identifierToWireTool(toolIdentifier),
-            timestamp = System.currentTimeMillis(),
+            timestamp = now,
+            readTime = now,
         ),
         NotificationReadDto.serializer(),
     )
@@ -302,9 +307,6 @@ internal suspend fun emitToolRead(ready: AppGraph.Ready, toolIdentifier: String)
     ready.badgeStore.refresh()
 }
 
-/** `location_tool` → `location_tool_label`: the reverse of the source's normaliser. */
-internal fun identifierToWireTool(identifier: String): String =
-    if (identifier.endsWith("_label")) identifier else identifier + "_label"
 
 /** How long the server gets to apply a read before we ask for counts. */
 private const val READ_SETTLE_MILLIS = 1_500L

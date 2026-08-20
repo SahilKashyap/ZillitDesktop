@@ -82,8 +82,6 @@ import com.zillit.desktop.feature.settings.ui.AdminSettingsToolProvider
 import com.zillit.desktop.feature.notifications.ui.NotificationsViewModel
 import com.zillit.desktop.feature.notifications.ui.NOTIFICATIONS_PATH
 import com.zillit.desktop.feature.notifications.ui.NotificationsToolProvider
-import com.zillit.desktop.feature.settings.ui.PinToStartToolProvider
-import com.zillit.desktop.feature.settings.ui.HostPlatform
 import com.zillit.desktop.feature.settings.ui.HelpToolProvider
 import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.ui.HomeFeedEvent
@@ -129,6 +127,7 @@ import com.zillit.desktop.feature.settings.ui.UnitSelection
 import com.zillit.desktop.feature.settings.ui.SettingsViewModel
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.CrewContact
+import com.zillit.desktop.feature.chat.domain.MEMBER_DESIGNATION
 import com.zillit.desktop.feature.home.ui.decodeImageBitmap
 import com.zillit.desktop.feature.chat.ui.ChatEvent
 import com.zillit.desktop.feature.chat.ui.ChatToolProvider
@@ -593,8 +592,16 @@ private fun railItemsWith(
     badges: BadgeCounts,
     isAdmin: Boolean,
     pendingApprovals: Int,
+    /** The chat feature's live count — not the section's; see the call site. */
+    cncBadge: Int,
 ): List<RailItem> = railItemsFor(isAdmin).map { item ->
-    item.copy(badge = if (item.id == ADMIN_RAIL_ID) pendingApprovals else badges.section(item.badgeKey()))
+    item.copy(
+        badge = when (item.id) {
+            ADMIN_RAIL_ID -> pendingApprovals
+            "cnc" -> cncBadge
+            else -> badges.section(item.badgeKey())
+        },
+    )
 }
 
 /**
@@ -608,6 +615,11 @@ private fun RailItem.badgeKey(): String = when (id) {
     "email" -> "email_label"
     "home" -> "home_label"
     "settings" -> "settings_label"
+    // The SOS feed counts its own segment, as the web's side menu does
+    // (`SideMenu.jsx`'s `sosBadges`). Help has nothing to count and must not
+    // fall through to the tools total.
+    "sos" -> SOS_BADGE_SEGMENT
+    "help" -> ""
     else -> "tools_label"
 }
 
@@ -778,7 +790,11 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
         // So: coalesce arrivals inside a window, refetch once per window.
         val arrivals = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
         launch {
-            ready.socketEvents.onAny(ZillitSocketEvents.Badges.All).collect { arrivals.trySend(Unit) }
+            // Missed calls ride their own event, not `notification:save` —
+            // iOS increments its CnC count directly off it. See
+            // `Calls.MissedCall`.
+            val moved = ZillitSocketEvents.Badges.All + ZillitSocketEvents.Calls.MissedCall
+            ready.socketEvents.onAny(moved).collect { arrivals.trySend(Unit) }
         }
         for (@Suppress("UNUSED_VARIABLE") signal in arrivals) {
             delay(BADGE_EVENT_SETTLE_MILLIS)
@@ -1021,6 +1037,14 @@ private fun SignedInShell(
     // disagree about who is a coordinator.
     val settingsState by viewModels.settings.state.collectAsState()
 
+    // The C&C rail and window tab wear the chat feature's own number — the
+    // server's `cnc_label` section also counts rooms the user lost, which
+    // every phone hides (see `ChatUiState.chatsBadge`, verified 2026-08-19:
+    // 40 of 45 "unread" sat in rooms absent from `chat-room`).
+    val chatBadgeState by (viewModels.chat?.state
+        ?: MutableStateFlow(com.zillit.desktop.feature.chat.ui.ChatUiState())).collectAsState()
+    val cncBadge = chatBadgeState.chatsBadge + chatBadgeState.callsBadge
+
     Box {
         AppShell(
         viewModel = workspaceViewModel,
@@ -1034,15 +1058,18 @@ private fun SignedInShell(
             badges = badges,
             isAdmin = settingsState.account.isAdmin,
             pendingApprovals = settingsState.admin.pendingTotal,
+            cncBadge = cncBadge,
         ),
         // Tabs read the same store as the rail — two sources would disagree
         // the moment one missed an update.
-        badgeFor = { route -> badges.forWindow(route, homeState) },
+        badgeFor = { route ->
+            if (route.path.trimEnd('/') == "/cnc") cncBadge else badges.forWindow(route, homeState)
+        },
         // The rail's Logout: the same sign-out Settings runs (device/unlink,
         // then the local wipe); the auth view model watches the session and
         // takes the frame back to the QR screen.
         onSignOut = { scope.launch { ready.authRepository.signOut() } },
-        // The bell, beside the theme toggle — the phones' notification list.
+        // Behind the Zillit mark in the top bar, as on the phones.
         notificationsRoute = WorkspaceRoute.Tool(NOTIFICATIONS_PATH),
         notificationBadge = badges.section(GLOBAL_BADGE_SEGMENT),
         onSwitchProject = {
@@ -1421,6 +1448,7 @@ private fun chatProvider(
                     email = user.email,
                     isAdmin = user.isAdmin,
                     deviceId = user.deviceId,
+                    lastActiveMillis = user.lastActiveMillis,
                 )
             }
     },
@@ -1751,6 +1779,14 @@ internal class AppViewModels(
     val maps: MapViewModel?,
     /** Recce: scout-day plans — date, rendezvous, stops, personnel. */
     val recce: RecceViewModel?,
+    /** External Users: the production's outside-contact directory. */
+    val externalUsers: com.zillit.desktop.feature.externalusers.ui.ExternalUsersViewModel?,
+    /** Distribution List: the per-user × per-unit email opt-in matrix. */
+    val distribution: com.zillit.desktop.feature.distribution.ui.DistributionViewModel?,
+    /** Crew List: the grouped roster and its generated PDF. */
+    val crewList: com.zillit.desktop.feature.crewlist.ui.CrewListViewModel?,
+    /** Asset Register: PO lines as assets — category, note, export. */
+    val assetRegister: com.zillit.desktop.feature.assetreport.ui.AssetViewModel?,
     /** Transportation: vehicles, pickup requests, permanent allocations, drivers. */
     val transport: TransportViewModel?,
     /** Zillit Draft: the screenwriting editor, scripts kept on this machine per production. */
@@ -2063,6 +2099,10 @@ private fun rememberAppViewModels(
                 )
             },
             recce = ready?.buildRecce(permissions),
+            externalUsers = ready?.buildExternalUsers(permissions),
+            distribution = ready?.buildDistributionList(permissions),
+            crewList = ready?.buildCrewList(permissions),
+            assetRegister = ready?.buildAssetRegister(permissions),
             location = ready?.buildLocation(permissions),
             continuity = ready?.buildContinuity(permissions),
             costReport = ready?.buildCostReport(permissions),
@@ -2191,6 +2231,18 @@ private fun buildRegistry(
     val preProduction = viewModels.boxSchedule?.let { BoxScheduleToolProvider(it, PRE_PRODUCTION_PATH) }
     val maps = viewModels.maps?.let { MapToolProvider(it, onOpenUrl = ::openInBrowser) }
     val recce = viewModels.recce?.let { RecceToolProvider(it, onOpenUrl = ::openInBrowser) }
+    val externalUsers = viewModels.externalUsers?.let {
+        com.zillit.desktop.feature.externalusers.ui.ExternalUsersToolProvider(it)
+    }
+    val distributionList = viewModels.distribution?.let {
+        com.zillit.desktop.feature.distribution.ui.DistributionToolProvider(it)
+    }
+    val crewList = viewModels.crewList?.let {
+        com.zillit.desktop.feature.crewlist.ui.CrewListToolProvider(it)
+    }
+    val assetRegister = viewModels.assetRegister?.let {
+        com.zillit.desktop.feature.assetreport.ui.AssetToolProvider(it)
+    }
     val transport = viewModels.transport?.let { TransportToolProvider(it) }
     val draft = viewModels.draft?.let { DraftToolProvider(it) }
     val location = viewModels.location?.let { vm -> (graph as? AppGraph.Ready)?.locationProvider(vm, scope) }
@@ -2335,7 +2387,6 @@ private fun buildRegistry(
             ),
         )
     }
-    val pinToStart = PinToStartToolProvider(hostPlatform())
     val help = HelpToolProvider(onOpenExternal = ::openInBrowser, onContactSupport = ::contactSupport)
     val cash = viewModels.cashExpenses?.let { CashExpensesToolProvider(it) }
     val cards = viewModels.cardExpenses?.let { CardExpensesToolProvider(it) }
@@ -2386,12 +2437,12 @@ private fun buildRegistry(
     val wrapReport = viewModels.wrapReport?.let { ProductionReportToolProvider(it) }
     val real = listOfNotNull(
         home, chat, email, signatures, mailSettings, mailContacts, settings, admin, notifications,
-        sos, pinToStart, help,
+        sos, help,
         cash, cards, orders, timecards, payroll, deals, distribution, drive,
         accountHub, budgetBuilder, formSignature, esignature,
         callSheet, productionReport, adReport, wrapReport, sides, info, confidentialInfo, reports, scriptNotes,
         catering, accounts,
-        boxSchedule, preProduction, maps, recce, transport, location, continuity, costReport, invoices, draft,
+        boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList, assetRegister, transport, location, continuity, costReport, invoices, draft,
         scheduleDistribution, scriptDistribution, scheduleDod,
     )
     val realPaths = real.map { it.path }.toSet()
@@ -2612,19 +2663,18 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
     // so opening the form costs no request.
     invitees = {
         ready.projectContext?.context?.value?.users.orEmpty()
-            .map { EventInvitee(userId = it.userId, name = it.fullName) }
+            .map { user ->
+                EventInvitee(
+                    userId = user.userId,
+                    name = user.fullName,
+                    // The same rule as the chat lists: the placeholder crew
+                    // designation is no designation at all.
+                    designation = user.designation
+                        ?.takeIf { it.isNotBlank() && it != MEMBER_DESIGNATION },
+                )
+            }
     },
 )
-
-/** Which desktop this is, for the "Pin to Start" steps. */
-private fun hostPlatform(): HostPlatform {
-    val os = System.getProperty("os.name").orEmpty().lowercase()
-    return when {
-        os.contains("mac") -> HostPlatform.MacOs
-        os.contains("win") -> HostPlatform.Windows
-        else -> HostPlatform.Linux
-    }
-}
 
 /**
  * Zillit Help › Contact Us: a mail to support in the person's own mail
@@ -2643,3 +2693,6 @@ private fun contactSupport() {
 
 /** The segment the phones count the bell against (`GLOBAL_LABEL` on Android). */
 private const val GLOBAL_BADGE_SEGMENT = "global_label"
+
+/** The SOS feed's own segment — `SosEndpoints.SEGMENT`, kept a literal here as every other rail key is. */
+private const val SOS_BADGE_SEGMENT = "sos_label"

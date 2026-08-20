@@ -152,6 +152,17 @@ object ZillitSocketEvents {
         /** Rang out unanswered. */
         val Timeout = SocketEventName("call:timeout")
 
+        /**
+         * A missed call landed in this user's ledger. Payload `{project_id}`.
+         *
+         * The server does not emit `notification:save` for it — iOS bumps its
+         * CnC count directly off this event (`ProjectObserver`, its one
+         * surviving direct increment) — so the desktop's badge refresh must
+         * listen here too or the missed call badges nothing until an unrelated
+         * notification arrives.
+         */
+        val MissedCall = SocketEventName("call:missed-call")
+
         /** In-call reactions and ephemeral chat. Never persisted. */
         val InCallData = SocketEventName("call:incall-data")
 
@@ -176,6 +187,12 @@ object ZillitSocketEvents {
 
     object Budget {
         val RecentList = SocketEventName("budget:recent:list")
+    }
+
+    /** The Distribution List tool — the per-user × per-unit opt-in matrix. */
+    object Distribution {
+        /** A switch flipped on another device — refetch the matrix. */
+        val AccessUpdate = SocketEventName("distribution:access:update")
     }
 
     /**
@@ -249,10 +266,11 @@ object ZillitSocketEvents {
         ChatRoom.Create, ChatRoom.Remove, ChatRoom.Updated, ChatRoom.Blocked,
         ChatRoom.UpdateReaction, ChatRoom.PendingMessages,
         Calls.Incoming, Calls.Update, Calls.Response, Calls.Ended, Calls.GroupCallEnded,
-        Calls.Timeout, Calls.InCallData, Calls.Handoff, Calls.HandoffDone, Calls.HandoffEvict,
+        Calls.Timeout, Calls.MissedCall, Calls.InCallData, Calls.Handoff, Calls.HandoffDone, Calls.HandoffEvict,
         Calls.Migrate, Calls.GuestJoinRequest, Calls.GuestJoinResponded,
         Calls.ActiveGroupCalls, Calls.DeleteLog,
         Budget.RecentList,
+        Distribution.AccessUpdate,
         DocumentDistribution.EmailOpened,
         Email.InboundReceived, Email.OutboundSent, Email.Read,
         Email.InboundDeleted, Email.OutboundDeleted, Email.TrailDeleted,

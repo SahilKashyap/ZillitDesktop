@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.home.domain
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.zillit.desktop.core.localization.LabelKind
 import com.zillit.desktop.core.localization.Labels
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.permissions.ToolAccess
@@ -193,10 +194,16 @@ object ToolCatalogue {
         val match = known[access.identifier]
         return ToolPresentation(
             identifier = access.identifier,
-            // Tool names live in the `identifiers` dictionary, so that one is
-            // asked first — `transportation_tool` is titled there, and only
-            // incidentally present in the other two.
-            label = Labels.translate(access.identifier, LabelKind.Identifiers),
+            // `unit_name` is the tool's own name — the key both phones title a
+            // tile with (Android `title = info.unitName`, iOS
+            // `translate(key: unitName)`) — and it is not always the identifier
+            // spelled differently: on develop `accounting_tool` is named
+            // `accounts_label` and `callsheet_tool` is `call_sheet_label`.
+            // The identifier stands in only when the server sent no name, and
+            // is then read from the `identifiers` dictionary, where
+            // `transportation_tool` and its kind are titled.
+            label = access.unitName?.takeIf { it.isNotBlank() }?.localised()
+                ?: Labels.translate(access.identifier, LabelKind.Identifiers),
             icon = match?.first ?: ZillitIcons.Tools,
             // A route derived from the identifier, so an unknown tool still gets
             // its own window rather than colliding with another's.

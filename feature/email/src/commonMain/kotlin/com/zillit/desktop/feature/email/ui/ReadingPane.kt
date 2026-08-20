@@ -21,9 +21,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.ImageBitmap
@@ -77,14 +79,44 @@ internal fun ReadingPane(
 
     Column(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.surface)) {
         when {
-            state.selectedMessageId == null -> Centred("Select a message to read it.")
+            // The pane stands open before anything is picked — the web's
+            // empty state (`NewEmailComponent.jsx:383-397`).
+            state.selectedMessageId == null -> Box(
+                Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                ) {
+                    ZillitIcon(
+                        icon = ZillitIcons.Mail,
+                        contentDescription = null,
+                        tint = ZillitTheme.colors.textMuted,
+                        size = EMPTY_ICON,
+                    )
+                    ZillitText(
+                        text = "No email has been selected",
+                        style = ZillitTheme.typography.bodyMedium,
+                        color = ZillitTheme.colors.textMuted,
+                    )
+                }
+            }
 
             state.isLoadingThread && state.thread.isEmpty() -> Centred("Opening…")
 
             state.thread.isEmpty() -> Centred("This message could not be opened.")
 
             else -> {
-                ThreadHeader(state.thread.first().subject, state.thread.size, onEvent)
+                // Newest first, as the web reads a trail
+                // (`NewEmailDetails.jsx:37-57`); the newest is the one open.
+                val newestFirst = remember(state.thread) { state.thread.asReversed() }
+                val newest = newestFirst.first()
+                var expandedIds by remember(state.selectedMessageId) {
+                    androidx.compose.runtime.mutableStateOf(setOf(newest.id))
+                }
+
+                DetailToolbar(newest, state, onEvent)
 
                 val paneState = rememberLazyListState()
                 LazyColumn(
@@ -93,8 +125,40 @@ internal fun ReadingPane(
                     contentPadding = PaddingValues(PANE_PADDING),
                     verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 ) {
-                    items(state.thread, key = EmailMessage::id) { message ->
-                        MessageCard(message, downloads, onEvent, openLink, loadAvatar, loadThumbnail)
+                    // One subject over the whole trail — the web's h1
+                    // (`NewEmailDetails.jsx:25-34`).
+                    item(key = "subject") {
+                        ZillitText(
+                            text = newest.subject.ifBlank { "(no subject)" },
+                            style = ZillitTheme.typography.titleLarge,
+                            maxLines = 3,
+                            modifier = Modifier.padding(bottom = ZillitTheme.spacing.xs),
+                        )
+                    }
+                    items(newestFirst, key = EmailMessage::id) { message ->
+                        val isNewest = message.id == newest.id
+                        MessageCard(
+                            message = message,
+                            downloads = downloads,
+                            onEvent = onEvent,
+                            onOpenLink = openLink,
+                            // Older messages start folded and open in place;
+                            // the newest never folds (`NewEmailTrailItem.jsx:52-56`).
+                            isExpanded = isNewest || message.id in expandedIds,
+                            onToggle = if (isNewest) {
+                                null
+                            } else {
+                                {
+                                    expandedIds = if (message.id in expandedIds) {
+                                        expandedIds - message.id
+                                    } else {
+                                        expandedIds + message.id
+                                    }
+                                }
+                            },
+                            loadAvatar = loadAvatar,
+                            loadThumbnail = loadThumbnail,
+                        )
                     }
                 }
             }
@@ -102,29 +166,41 @@ internal fun ReadingPane(
     }
 }
 
+/**
+ * The web's detail toolbar (`EmailDetailToolbar.jsx:226-314`): reply verbs on
+ * the left answering the newest message, the destructive and the way out on
+ * the right.
+ */
 @Composable
-private fun ThreadHeader(subject: String, count: Int, onEvent: (EmailEvent) -> Unit) {
+private fun DetailToolbar(newest: EmailMessage, state: EmailUiState, onEvent: (EmailEvent) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(ZillitTheme.colors.surface)
-            .padding(horizontal = PANE_PADDING, vertical = ZillitTheme.spacing.sm),
+            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        Column(Modifier.weight(1f)) {
-            ZillitText(
-                text = subject,
-                style = ZillitTheme.typography.titleMedium,
-                maxLines = 2,
+        listOf(
+            "Reply" to ComposeMode.Reply,
+            "Reply all" to ComposeMode.ReplyAll,
+            "Forward" to ComposeMode.Forward,
+        ).forEach { (label, mode) ->
+            ZillitButton(
+                text = label,
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+                onClick = { onEvent(EmailEvent.Compose(mode, newest)) },
             )
-            if (count > 1) {
-                ZillitText(
-                    text = "$count messages",
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                )
-            }
+        }
+        Spacer(Modifier.weight(1f))
+        state.selectedMessageId?.let { openId ->
+            ZillitIconButton(
+                icon = ZillitIcons.Trash,
+                contentDescription = "Move to Trash",
+                tint = ZillitTheme.colors.danger,
+                onClick = { onEvent(EmailEvent.TrashMessage(openId)) },
+            )
         }
         ZillitIconButton(
             icon = ZillitIcons.Close,
@@ -135,11 +211,16 @@ private fun ThreadHeader(subject: String, count: Int, onEvent: (EmailEvent) -> U
 }
 
 @Composable
+@Suppress("LongParameterList")
 private fun MessageCard(
     message: EmailMessage,
     downloads: Map<String, AttachmentDownload>,
     onEvent: (EmailEvent) -> Unit,
     onOpenLink: (String) -> Unit,
+    /** Folded cards show the header and a line of the body, as on the web. */
+    isExpanded: Boolean = true,
+    /** Null on the newest message — it never folds. */
+    onToggle: (() -> Unit)? = null,
     loadAvatar: suspend (String) -> ImageBitmap? = { null },
     loadThumbnail: suspend (EmailAttachment, String) -> ImageBitmap? = { _, _ -> null },
 ) {
@@ -151,17 +232,47 @@ private fun MessageCard(
             .clip(ZillitTheme.shapes.medium)
             .background(colors.canvas)
             .border(HAIRLINE, colors.border, ZillitTheme.shapes.medium)
+            .then(if (onToggle != null) Modifier.clickable(onClick = onToggle) else Modifier)
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        MessageHeader(message, loadAvatar)
+        MessageHeader(message, isExpanded, loadAvatar)
+        if (!isExpanded) {
+            // The folded card's one-line taste of the body
+            // (`NewEmailTrailItem.jsx:209-213`).
+            ZillitText(
+                text = message.previewLine(),
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textMuted,
+                maxLines = 1,
+            )
+            return@Column
+        }
         MessageBody(message, onOpenLink)
         if (message.attachments.isNotEmpty()) {
+            // The web heads the block with the count
+            // (`NewEmailTrailItem.jsx:422-439`).
+            ZillitText(
+                text = "${message.attachments.size} " +
+                    if (message.attachments.size == 1) "Attachment" else "Attachments",
+                style = ZillitTheme.typography.labelSmall.copy(
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                ),
+                color = colors.textSecondary,
+            )
             AttachmentRow(message.attachments, message.id, downloads, onEvent, loadThumbnail)
         }
         ReplyActions(message, onEvent)
     }
 }
+
+/** The body as one plain line, for the folded card. */
+private fun EmailMessage.previewLine(): String =
+    body.replace(Regex("<[^>]*>"), " ")
+        .replace(Regex("&[a-zA-Z#0-9]{1,8};"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+        .take(160)
 
 /**
  * Reply, reply-all and forward, on each message rather than on the thread.
@@ -188,9 +299,15 @@ private fun ReplyActions(message: EmailMessage, onEvent: (EmailEvent) -> Unit) {
     }
 }
 
+/**
+ * Who wrote it, to whom, and exactly when — the web's card header
+ * (`NewEmailTrailItem.jsx:134-235`). The subject is not here; it stands once
+ * over the whole trail.
+ */
 @Composable
 private fun MessageHeader(
     message: EmailMessage,
+    isExpanded: Boolean,
     loadAvatar: suspend (String) -> ImageBitmap? = { null },
 ) {
     val colors = ZillitTheme.colors
@@ -203,35 +320,42 @@ private fun MessageHeader(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitAvatar(name = message.senderName, image = face, size = HEADER_AVATAR)
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        Column(
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+            modifier = Modifier.weight(1f),
         ) {
             ZillitText(
                 text = message.senderName,
                 style = ZillitTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f),
                 maxLines = 1,
             )
+            // The address as well as the name: two people called "Production"
+            // is normal on a shoot, and the address is what tells them apart.
+            ZillitText(
+                text = message.senderAddress,
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+                maxLines = 1,
+            )
+            if (isExpanded && message.recipients.isNotEmpty()) {
+                // The first two, then an ellipsis — the web's line
+                // (`NewEmailTrailItem.jsx:188-208`).
+                val shown = message.recipients.take(2).joinToString(", ")
+                val more = if (message.recipients.size > 2) ", …" else ""
+                ZillitText(
+                    text = shown + more,
+                    style = ZillitTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                )
+            }
         }
-        // The address as well as the name: two people called "Production" is
-        // normal on a shoot, and the address is what tells them apart.
         ZillitText(
-            text = message.senderAddress,
+            text = com.zillit.desktop.feature.email.domain.mailFullTimeLabel(message.receivedAtMillis),
             style = ZillitTheme.typography.labelSmall,
             color = colors.textMuted,
             maxLines = 1,
         )
-        if (message.recipients.isNotEmpty()) {
-            ZillitText(
-                text = "to ${message.recipients.joinToString(", ")}",
-                style = ZillitTheme.typography.labelSmall,
-                color = colors.textMuted,
-                maxLines = 2,
-            )
-        }
-    }
     }
 }
 
@@ -413,6 +537,7 @@ private fun Centred(text: String) {
 }
 
 private val PANE_PADDING = 16.dp
+private val EMPTY_ICON = 48.dp
 private val CHIP_ICON = 12.dp
 private val HAIRLINE = 1.dp
 

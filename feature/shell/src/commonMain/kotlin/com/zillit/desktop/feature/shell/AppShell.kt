@@ -25,6 +25,8 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.zillit.desktop.core.designsystem.ThemeMode
@@ -56,13 +58,18 @@ fun AppShell(
     onThemeModeChange: (ThemeMode) -> Unit,
     projectName: String? = null,
     railItems: List<RailItem> = DefaultRailItems,
-    /** The rail's foot (SOS, Pin to Start, Help); empty hides it. */
-    footerRailItems: List<RailItem> = FooterRailItems,
-    /** Logout at the rail's foot; null hides it. Confirmed by the rail before this fires. */
+    /** Logout at the rail's foot; null hides it. The frame confirms before this fires. */
     onSignOut: (() -> Unit)? = null,
-    /** The bell's destination; null hides the bell. */
+    /**
+     * Where the Zillit mark leads; null makes it plain text.
+     *
+     * The phones put the notification list behind the logo in the app bar
+     * (Android `BottomNavigationActivity:544` — `imgLogo` starts
+     * `NotificationActivity`, with the unread count pinned beside it), and the
+     * desktop keeps that: one mark, in the corner every window has.
+     */
     notificationsRoute: WorkspaceRoute? = null,
-    /** What the bell wears — the global unread count. */
+    /** What the mark wears — the global unread count. */
     notificationBadge: Int = 0,
     onSwitchProject: () -> Unit = {},
     /**
@@ -86,54 +93,94 @@ fun AppShell(
     badgeFor: (WorkspaceRoute) -> Int = { 0 },
 ) {
     val state by viewModel.state.collectAsState()
+    // The rail asks; the frame confirms. A dialog composed inside the rail is
+    // laid out inside a 60pt column — see [SignOutDialog].
+    var confirmingSignOut by remember { mutableStateOf(false) }
 
     Surface(modifier = Modifier.fillMaxSize(), color = ZillitTheme.colors.canvas) {
-        Column(Modifier.fillMaxSize()) {
-            TopBar(
-                projectName = projectName,
-                themeMode = themeMode,
-                onThemeModeChange = onThemeModeChange,
-                onSwitchProject = onSwitchProject,
-                onOpenNotifications = notificationsRoute?.let {
-                    { viewModel.onEvent(WorkspaceEvent.Open(it)) }
-                },
-                notificationBadge = notificationBadge,
-            )
-            HorizontalDivider(color = ZillitTheme.colors.divider)
-
-            Row(Modifier.fillMaxWidth().weight(1f)) {
-                NavigationRail(
-                    items = railItems,
-                    activePath = state.activeWindow?.route?.path,
-                    onOpen = { route -> viewModel.onEvent(WorkspaceEvent.Open(route)) },
-                    footerItems = footerRailItems,
-                    onSignOut = onSignOut,
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) {
+                TopBar(
+                    projectName = projectName,
+                    themeMode = themeMode,
+                    onThemeModeChange = onThemeModeChange,
+                    onSwitchProject = onSwitchProject,
+                    onOpenNotifications = notificationsRoute?.let {
+                        { viewModel.onEvent(WorkspaceEvent.Open(it)) }
+                    },
+                    notificationBadge = notificationBadge,
                 )
-                VerticalDivider(color = ZillitTheme.colors.divider)
+                HorizontalDivider(color = ZillitTheme.colors.divider)
 
-                Column(Modifier.weight(1f)) {
-                    WorkspaceTabStrip(
-                        state = state,
-                        onEvent = viewModel::onEvent,
-                        iconFor = { window ->
-                            registry.resolve(window.route)?.icon ?: ZillitIcons.Tools
-                        },
-                        badgeFor = { window -> badgeFor(window.rootRoute) },
-                    )
-                    HorizontalDivider(color = ZillitTheme.colors.divider)
-                    // Switches between the tab workspace and free-floating
-                    // cascade windows; a tool cannot tell which it is in.
-                    Workspace(
-                        state = state,
-                        registry = registry,
-                        onEvent = viewModel::onEvent,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+                RailAndWorkspace(
+                    viewModel = viewModel,
+                    registry = registry,
+                    railItems = railItems,
+                    onRequestSignOut = onSignOut?.let { { confirmingSignOut = true } },
+                    badgeFor = badgeFor,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+
+                HorizontalDivider(color = ZillitTheme.colors.divider)
+                StatusBar(statusText = statusText, action = statusAction, unsaved = state.hasDirtyWindows)
             }
 
+            // Above the frame rather than inside the rail: it is a question
+            // about the whole session, and the rail is 60pt wide.
+            onSignOut?.let { signOut ->
+                SignOutDialog(
+                    visible = confirmingSignOut,
+                    onDismiss = { confirmingSignOut = false },
+                    onConfirm = {
+                        confirmingSignOut = false
+                        signOut()
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The middle band: the rail, and the workspace beside it.
+ *
+ * Its own composable so [AppShell] stays a list of the frame's four regions.
+ */
+@Composable
+private fun RailAndWorkspace(
+    viewModel: WorkspaceViewModel,
+    registry: ToolRegistry,
+    railItems: List<RailItem>,
+    onRequestSignOut: (() -> Unit)?,
+    badgeFor: (WorkspaceRoute) -> Int,
+    modifier: Modifier = Modifier,
+) {
+    val state by viewModel.state.collectAsState()
+    Row(modifier) {
+        NavigationRail(
+            items = railItems,
+            activePath = state.activeWindow?.route?.path,
+            onOpen = { route -> viewModel.onEvent(WorkspaceEvent.Open(route)) },
+            onSignOut = onRequestSignOut,
+        )
+        VerticalDivider(color = ZillitTheme.colors.divider)
+
+        Column(Modifier.weight(1f)) {
+            WorkspaceTabStrip(
+                state = state,
+                onEvent = viewModel::onEvent,
+                iconFor = { window -> registry.resolve(window.route)?.iconFor(window.route) ?: ZillitIcons.Tools },
+                badgeFor = { window -> badgeFor(window.rootRoute) },
+            )
             HorizontalDivider(color = ZillitTheme.colors.divider)
-            StatusBar(statusText = statusText, action = statusAction, unsaved = state.hasDirtyWindows)
+            // Switches between the tab workspace and free-floating cascade
+            // windows; a tool cannot tell which it is in.
+            Workspace(
+                state = state,
+                registry = registry,
+                onEvent = viewModel::onEvent,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
@@ -144,7 +191,7 @@ private fun TopBar(
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     onSwitchProject: () -> Unit,
-    /** The bell — the notification list. Null hides it. */
+    /** What the Zillit mark opens — the notification list. Null makes it plain text. */
     onOpenNotifications: (() -> Unit)? = null,
     notificationBadge: Int = 0,
 ) {
@@ -161,11 +208,7 @@ private fun TopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            ZillitText(
-                text = "Zillit",
-                style = ZillitTheme.typography.titleMedium,
-                color = ZillitTheme.colors.accent,
-            )
+            BrandMark(badge = notificationBadge, onOpenNotifications = onOpenNotifications)
             ProjectSwitcher(projectName = projectName, onClick = onSwitchProject)
         }
 
@@ -174,25 +217,6 @@ private fun TopBar(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
             ThemeToggle(themeMode = themeMode, onChange = onThemeModeChange)
-            // The phones keep the bell in the app bar (Android's
-            // `NotificationActivity` is reached from there); on the desktop
-            // it belongs beside the other app-wide controls rather than in
-            // the rail, which lists places inside the production.
-            onOpenNotifications?.let { open ->
-                Box {
-                    ZillitIconButton(
-                        icon = ZillitIcons.Bell,
-                        contentDescription = "Notifications",
-                        onClick = open,
-                    )
-                    if (notificationBadge > 0) {
-                        ZillitBadge(
-                            count = notificationBadge,
-                            modifier = Modifier.align(Alignment.TopEnd),
-                        )
-                    }
-                }
-            }
             ZillitIconButton(
                 icon = ZillitIcons.Search,
                 contentDescription = "Search",
@@ -204,6 +228,54 @@ private fun TopBar(
                 onClick = { },
             )
         }
+    }
+}
+
+/**
+ * The Zillit mark, and the way into the notification list.
+ *
+ * The phones do exactly this — Android's toolbar logo starts
+ * `NotificationActivity` and wears the unread count beside it
+ * (`custom_toolbar_main.xml`'s `imgLogo` + `zBadge`) — and it saves the bar an
+ * icon: the mark is already in the corner, and it is the one thing on the bar
+ * that is about the app rather than the production.
+ */
+@Composable
+private fun BrandMark(badge: Int, onOpenNotifications: (() -> Unit)?) {
+    val colors = ZillitTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+
+    Row(
+        modifier = Modifier
+            .clip(ZillitTheme.shapes.medium)
+            .background(if (hovered && onOpenNotifications != null) colors.surfaceHover else Color.Transparent)
+            .then(
+                if (onOpenNotifications == null) {
+                    Modifier
+                } else {
+                    Modifier
+                        .hoverable(interaction)
+                        .clickable(
+                            interactionSource = interaction,
+                            indication = null,
+                            onClickLabel = "Notifications",
+                            onClick = onOpenNotifications,
+                        )
+                },
+            )
+            .padding(horizontal = ZillitTheme.spacing.xs, vertical = ZillitTheme.spacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitText(
+            text = "Zillit",
+            style = ZillitTheme.typography.titleMedium,
+            color = colors.accent,
+        )
+        // Beside the mark rather than over it: the count is a number people
+        // read, and a badge on a wordmark clips its last letter.
+        if (badge > 0) ZillitBadge(count = badge)
     }
 }
 

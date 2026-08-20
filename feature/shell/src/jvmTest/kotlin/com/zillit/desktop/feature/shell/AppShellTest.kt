@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
@@ -14,6 +15,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.workspace.InMemoryWorkspaceSessionStore
@@ -23,6 +26,7 @@ import com.zillit.desktop.core.workspace.ToolRegistry
 import com.zillit.desktop.core.workspace.WorkspaceViewModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Drives the real frame.
@@ -182,13 +186,79 @@ class AppShellTest {
         onNodeWithText("Transport").assertIsDisplayed()
     }
 
+    /** Logout is all the rail's foot holds, and it asks before it fires. */
+    @Test
+    fun `Logout sits alone at the foot and asks first`() = runComposeUiTest {
+        var signedOut = 0
+        setShell(onSignOut = { signedOut++ })
+
+        onNodeWithContentDescription("Logout").assertIsDisplayed()
+        val railBefore = onNodeWithContentDescription("Film Tools").getUnclippedBoundsInRoot()
+
+        // A stray click here would sign the person out of every production at
+        // once, so it confirms before it does anything.
+        onNodeWithContentDescription("Logout").performClick()
+        assertEquals(0, signedOut, "Logout must ask before signing anyone out")
+        onNodeWithText("Sign out?").assertIsDisplayed()
+
+        // The question belongs to the frame. Composed inside the rail it was
+        // laid out in a 60pt column — the buttons came out five points high
+        // and the rail's own entries were pushed around to make room.
+        assertEquals(railBefore, onNodeWithContentDescription("Film Tools").getUnclippedBoundsInRoot())
+        val confirm = onNodeWithText("Sign out").getUnclippedBoundsInRoot()
+        assertTrue(
+            confirm.height > MIN_DIALOG_BUTTON_HEIGHT,
+            "the confirm button is $confirm — the dialog is being squeezed",
+        )
+
+        onNodeWithText("Sign out").performClick()
+        assertEquals(1, signedOut)
+    }
+
+    /**
+     * The mark is the notification list, as the phones' toolbar logo is
+     * (Android `BottomNavigationActivity:544`). There is no bell any more, so
+     * this is the only way in and it has to work.
+     */
+    @Test
+    fun `the Zillit mark opens notifications and wears the unread count`() = runComposeUiTest {
+        setShell(notificationsRoute = WorkspaceRoute.Tool(TEST_NOTIFICATIONS_PATH), notificationBadge = 3)
+
+        onNodeWithText("3").assertIsDisplayed()
+
+        onNodeWithText("Zillit").performClick()
+
+        onNodeWithText("1 open").assertIsDisplayed()
+        // The window is the notification list: its tab and its content both
+        // name it, which is why this counts rather than asserting one node.
+        onAllNodesWithText("Notifications").assertCountEquals(2)
+    }
+
+    /** Without a destination the mark is just the app's name — and inert. */
+    @Test
+    fun `the mark opens nothing when there is no notification list`() = runComposeUiTest {
+        setShell()
+
+        onNodeWithText("Zillit").performClick()
+
+        onNodeWithText("0 open").assertIsDisplayed()
+    }
+
     private fun ComposeUiTest.setShell(
         initialMode: ThemeMode = ThemeMode.System,
         onSwitchProject: () -> Unit = {},
+        onSignOut: (() -> Unit)? = null,
+        notificationsRoute: WorkspaceRoute? = null,
+        notificationBadge: Int = 0,
     ) {
         setContent {
             var mode by remember { mutableStateOf(initialMode) }
-            val registry = remember { ToolRegistry(placeholderTools()) }
+            val registry = remember {
+                ToolRegistry(
+                    placeholderTools() +
+                        PlaceholderTool(TEST_NOTIFICATIONS_PATH, "Notifications", ZillitIcons.Bell),
+                )
+            }
             val viewModel = remember {
                 var counter = 0
                 WorkspaceViewModel(
@@ -205,8 +275,17 @@ class AppShellTest {
                     onThemeModeChange = { mode = it },
                     onSwitchProject = onSwitchProject,
                     railItems = testRailItems,
+                    onSignOut = onSignOut,
+                    notificationsRoute = notificationsRoute,
+                    notificationBadge = notificationBadge,
                 )
             }
         }
     }
 }
+
+/** Anything shorter than this is a crushed control, not a button. */
+private val MIN_DIALOG_BUTTON_HEIGHT = 24.dp
+
+/** The notification list, for a frame whose real one lives in another module. */
+private const val TEST_NOTIFICATIONS_PATH = "/notifications"

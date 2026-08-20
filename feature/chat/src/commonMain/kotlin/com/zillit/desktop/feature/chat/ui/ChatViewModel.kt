@@ -23,6 +23,7 @@ import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.ChatVoice
 import com.zillit.desktop.feature.chat.domain.GroupRoom
 import com.zillit.desktop.feature.chat.domain.PendingChatUpload
+import com.zillit.desktop.feature.chat.domain.liveChatUnread
 import com.zillit.desktop.feature.chat.domain.sortedRecents
 
 data class ChatUiState(
@@ -61,10 +62,17 @@ data class ChatUiState(
      * and `call_label` (missed calls). Keyed by the wire's tool label.
      */
     val sectionBadges: Map<String, Int> = emptyMap(),
+    /** Keys the notification backlog filed as rooms — see [liveChatUnread]. */
+    val ledgerRooms: Set<String> = emptySet(),
     val error: String? = null,
 ) {
-    /** Unread across every conversation — the Chats tab. */
-    val chatsBadge: Int get() = sectionBadges["chat_label"] ?: 0
+    /**
+     * Unread across the conversations the user can still open — the Chats
+     * tab and the rail's C&C count. Not [sectionBadges]' `chat_label`: the
+     * server's ledger keeps rows for rooms the user lost, which the phones
+     * clear locally and never display (see [liveChatUnread]).
+     */
+    val chatsBadge: Int get() = liveChatUnread(groups, ledgerRooms, unread)
 
     /** Missed calls — the Calls tab. */
     val callsBadge: Int get() = sectionBadges["call_label"] ?: 0
@@ -269,6 +277,7 @@ class ChatViewModel(
                         // the backlog predate that.
                         val counts = backlog.unread
                         serverUnread.putAll(currentState.peer?.userId?.let { counts - it } ?: counts)
+                        setState { copy(ledgerRooms = backlog.rooms) }
                         learnActivity(backlog.activity)
                         // The order follows the stamps as much as the counts:
                         // a row that just grew a badge from this answer moves

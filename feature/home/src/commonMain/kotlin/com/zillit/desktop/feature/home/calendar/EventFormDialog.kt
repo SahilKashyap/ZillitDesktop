@@ -6,12 +6,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -34,10 +37,10 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 
 /**
@@ -53,6 +56,7 @@ internal fun EventFormDialog(
     form: EventFormState?,
     onEvent: (CalendarEvent2Event) -> Unit,
     modifier: Modifier = Modifier,
+    loadAvatar: suspend (String) -> ByteArray? = { null },
 ) {
     // The last opened form survives the exit animation — the state goes null
     // on close, but the fields must not blank while fading out.
@@ -76,7 +80,7 @@ internal fun EventFormDialog(
         actions = { current?.let { FormActions(it, onEvent) } },
     ) {
         if (current != null) {
-            FormFields(current, onEvent)
+            FormFields(current, onEvent, loadAvatar)
             current.error?.let { ErrorLine(it) }
         }
     }
@@ -99,7 +103,11 @@ private fun RowScope.FormActions(form: EventFormState, onEvent: (CalendarEvent2E
 }
 
 @Composable
-private fun FormFields(form: EventFormState, onEvent: (CalendarEvent2Event) -> Unit) {
+private fun FormFields(
+    form: EventFormState,
+    onEvent: (CalendarEvent2Event) -> Unit,
+    loadAvatar: suspend (String) -> ByteArray?,
+) {
     val draft = form.draft
     val change = { updated: EventDraft -> onEvent(CalendarEvent2Event.FormChanged(updated)) }
 
@@ -114,13 +122,33 @@ private fun FormFields(form: EventFormState, onEvent: (CalendarEvent2Event) -> U
     )
 
     AudienceRow(form, change)
-    WhenSection(form, change)
-    MeetingSection(form, change)
-    TimezoneRow(form, change)
     ColorRow(draft, change)
-    ReminderRow(form, change)
-    RecurrenceSection(form, change)
-    GuestSection(form, change)
+
+    FormSection(icon = ZillitIcons.Clock, title = "When") {
+        WhenSection(form, change)
+        TimezoneRow(form, change)
+    }
+
+    FormSection(
+        icon = if (draft.isForMembers) ZillitIcons.Phone else ZillitIcons.Home,
+        title = if (draft.isForMembers) "Meeting" else "Where",
+    ) {
+        MeetingSection(form, change)
+    }
+
+    FormSection(icon = ZillitIcons.Reload, title = "Repeat") {
+        RecurrenceSection(form, change)
+    }
+
+    FormSection(icon = ZillitIcons.Bell, title = "Reminder") {
+        ReminderRow(form, change)
+    }
+
+    if (draft.isForMembers) {
+        FormSection(icon = ZillitIcons.Users, title = "People") {
+            GuestSection(form, change, loadAvatar)
+        }
+    }
 
     ZillitTextField(
         value = draft.description,
@@ -130,6 +158,43 @@ private fun FormFields(form: EventFormState, onEvent: (CalendarEvent2Event) -> U
         singleLine = false,
         modifier = Modifier.fillMaxWidth().heightIn(min = NOTES_HEIGHT),
     )
+}
+
+/**
+ * A titled group of fields on a sunken card.
+ *
+ * The form asks a dozen questions; ungrouped they read as one long
+ * interrogation. Each card is one topic — when, where, how often — so the eye
+ * can skip whole cards that don't apply, the way the web's form separates its
+ * panels.
+ */
+@Composable
+private fun FormSection(
+    icon: ImageVector,
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.large)
+            .background(ZillitTheme.colors.surfaceSunken)
+            .padding(ZillitTheme.spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            ZillitIcon(icon, tint = ZillitTheme.colors.accentText, size = SECTION_ICON)
+            ZillitText(
+                text = title,
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+        content()
+    }
 }
 
 /**
@@ -187,7 +252,7 @@ private fun WhenSection(form: EventFormState, change: (EventDraft) -> Unit) {
 
     if (!draft.isAllDay) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            ZillitTextField(
+            TimePickerField(
                 value = draft.startText,
                 onValueChange = { change(draft.withStartTime(it)) },
                 label = "Start time",
@@ -196,7 +261,7 @@ private fun WhenSection(form: EventFormState, change: (EventDraft) -> Unit) {
                     ?: form.errors.messageFor(EventFieldError.TooShort),
                 modifier = Modifier.weight(1f),
             )
-            ZillitTextField(
+            TimePickerField(
                 value = draft.endText,
                 onValueChange = { change(draft.copy(endText = it)) },
                 label = "End time",
@@ -270,8 +335,6 @@ private fun RecurrenceSection(form: EventFormState, change: (EventDraft) -> Unit
     val rule = draft.recurrence
 
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        FieldLabel("Repeat")
-
         FlowRow(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             RecurrenceFrequency.entries.forEach { frequency ->
                 ZillitButton(
@@ -418,10 +481,13 @@ private fun TimezoneMenu(
                 it.identifier.contains(search, ignoreCase = true)
         }
         val zoneState = rememberLazyListState()
+        // Fixed, not heightIn: the menu asks its content for intrinsic
+        // measurements, which a lazy list cannot answer — opening the
+        // dropdown died on exactly that before the height was pinned.
         LazyColumn(
             state = zoneState,
             modifier = Modifier
-                .heightIn(max = TIMEZONE_LIST_HEIGHT)
+                .height(TIMEZONE_LIST_HEIGHT)
                 .then(rememberWheelScroll(zoneState)),
         ) {
             item(key = "device") {
@@ -487,7 +553,6 @@ private fun ReminderRow(form: EventFormState, change: (EventDraft) -> Unit) {
     val draft = form.draft
 
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-        FieldLabel("Reminder")
         // Wraps: a Row squeezed the last chip into a one-letter-wide column.
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
@@ -514,11 +579,15 @@ private fun ReminderRow(form: EventFormState, change: (EventDraft) -> Unit) {
  * mine" instead of "these controls broke".
  */
 @Composable
-private fun GuestSection(form: EventFormState, change: (EventDraft) -> Unit) {
+private fun GuestSection(
+    form: EventFormState,
+    change: (EventDraft) -> Unit,
+    loadAvatar: suspend (String) -> ByteArray?,
+) {
     val draft = form.draft
     if (!draft.isForMembers) return
 
-    InviteeList(form, change)
+    InviteeList(form, change, loadAvatar)
     ExternalGuests(draft, change)
 
     ZillitCheckbox(
@@ -534,10 +603,16 @@ private fun GuestSection(form: EventFormState, change: (EventDraft) -> Unit) {
  * Who to invite, from the production's crew.
  *
  * The list the session already holds, so this needs no request — and works
- * offline for the people most events go to.
+ * offline for the people most events go to. The picking itself lives in
+ * [InviteePicker]: a searchable dropdown of faces and designations, with the
+ * chosen crew as removable chips.
  */
 @Composable
-private fun InviteeList(form: EventFormState, change: (EventDraft) -> Unit) {
+private fun InviteeList(
+    form: EventFormState,
+    change: (EventDraft) -> Unit,
+    loadAvatar: suspend (String) -> ByteArray?,
+) {
     if (form.invitees.isEmpty()) return
     val draft = form.draft
 
@@ -550,27 +625,22 @@ private fun InviteeList(form: EventFormState, change: (EventDraft) -> Unit) {
             },
         )
 
-        Column(
-            modifier = Modifier.heightIn(max = INVITEE_LIST_HEIGHT).zillitVerticalScroll(),
-        ) {
-            form.invitees.forEach { invitee ->
-                ZillitCheckbox(
-                    checked = invitee.userId in draft.inviteeIds,
-                    label = invitee.name,
-                    onCheckedChange = { on ->
-                        change(
-                            draft.copy(
-                                inviteeIds = if (on) {
-                                    draft.inviteeIds + invitee.userId
-                                } else {
-                                    draft.inviteeIds - invitee.userId
-                                },
-                            ),
-                        )
-                    },
+        InviteePicker(
+            invitees = form.invitees,
+            selectedIds = draft.inviteeIds,
+            onToggle = { userId ->
+                change(
+                    draft.copy(
+                        inviteeIds = if (userId in draft.inviteeIds) {
+                            draft.inviteeIds - userId
+                        } else {
+                            draft.inviteeIds + userId
+                        },
+                    ),
                 )
-            }
-        }
+            },
+            loadAvatar = loadAvatar,
+        )
     }
 }
 
@@ -688,9 +758,9 @@ private val REMINDER_CHOICES = listOf(0, 5, 10, 15, 30, 60)
 private val FORM_WIDTH = 520.dp
 private val FORM_MAX_HEIGHT = 680.dp
 private val NOTES_HEIGHT = 72.dp
-private val INVITEE_LIST_HEIGHT = 160.dp
 
 private val SWATCH = 22.dp
+private val SECTION_ICON = 14.dp
 private val TIMEZONE_MENU_WIDTH = 340.dp
 private val TIMEZONE_LIST_HEIGHT = 260.dp
 private val SWATCH_RING = 2.dp

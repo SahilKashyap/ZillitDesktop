@@ -61,6 +61,7 @@ internal fun CalendarScreen(
     state: CalendarUiState,
     onEvent: (CalendarEvent2Event) -> Unit,
     modifier: Modifier = Modifier,
+    loadAvatar: suspend (String) -> ByteArray? = { null },
 ) {
     Box(modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
@@ -100,7 +101,7 @@ internal fun CalendarScreen(
         // an `if` would unmount them before the exit animation could play.
         InvitationsPanel(state, onEvent)
 
-        EventFormDialog(state.form, onEvent)
+        EventFormDialog(state.form, onEvent, loadAvatar = loadAvatar)
 
         state.detail?.let { detail -> EventDetailPopover(detail, onEvent) }
 

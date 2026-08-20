@@ -318,12 +318,20 @@ internal data class ProjectUserDto(
     @SerialName("last_name") val lastName: String? = null,
     @SerialName("name") val name: String? = null,
     @SerialName("email") val email: String? = null,
+    // The wire's spellings are `department_name`/`designation_name` (Android
+    // `JoinProjectResponse.kt:92-95`, web `UserCard.jsx:352`); the bare forms
+    // are kept as fallbacks for older payloads. Reading only the bare form
+    // left every designation blank across the chat and contact lists.
     @SerialName("department") val department: String? = null,
+    @SerialName("department_name") val departmentName: String? = null,
     @SerialName("designation") val designation: String? = null,
+    @SerialName("designation_name") val designationName: String? = null,
     @SerialName("profile_picture") val avatar: JsonElement? = null,
     @SerialName("is_admin") val isAdmin: Boolean? = null,
     @SerialName("device_id") val deviceId: String? = null,
     @SerialName("keep_name_private") val keepNamePrivate: Boolean? = null,
+    @SerialName("last_activity") val lastActivity: Long? = null,
+    @SerialName("last_visited_on") val lastVisitedOn: Long? = null,
 ) {
     fun toSnapshot(): UserSnapshot? {
         val resolved = userId ?: id ?: return null
@@ -335,12 +343,14 @@ internal data class ProjectUserDto(
             // to; falling back keeps the board readable.
             fullName = full.ifBlank { email ?: "Unknown" },
             email = email,
-            department = department?.takeIf { it.isNotBlank() },
-            designation = designation?.takeIf { it.isNotBlank() },
+            department = (departmentName ?: department)?.takeIf { it.isNotBlank() },
+            designation = (designationName ?: designation)?.takeIf { it.isNotBlank() },
             avatarUrl = avatar.toImageUrl(),
             isAdmin = isAdmin == true,
             deviceId = deviceId?.takeIf { it.isNotBlank() },
             keepNamePrivate = keepNamePrivate == true,
+            // The web's preference order (`UserCard.jsx:357-362`), zeros as absent.
+            lastActiveMillis = lastActivity?.takeIf { it > 0 } ?: lastVisitedOn?.takeIf { it > 0 },
         )
     }
 }

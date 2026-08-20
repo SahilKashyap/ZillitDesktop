@@ -46,6 +46,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -58,6 +61,7 @@ import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
+import com.zillit.desktop.feature.home.domain.ToolGroup
 import com.zillit.desktop.feature.home.domain.ToolPresentation
 
 /**
@@ -74,14 +78,20 @@ fun HomeScreen(
     state: HomeUiState,
     onEvent: (HomeEvent) -> Unit,
     modifier: Modifier = Modifier,
-    /** Unread count for one tool's tile, by backend identifier. */
-    toolBadge: (String) -> Int = { 0 },
+    /**
+     * Unread counts by backend identifier. A map rather than a lookup lambda
+     * because the grid's *order* depends on them — see [sortedForDisplay] —
+     * and a lambda gives the memo below nothing it can compare.
+     */
+    toolBadges: Map<String, Int> = emptyMap(),
 ) {
     // The find box is the screen's own: forty tiles is a wall, and the phones
     // put a search over theirs. Local state — a query is not a fact about the
     // production and has no business surviving a tool switch.
     var query by remember { mutableStateOf("") }
-    val shown = remember(state.sections, query) { state.sections.matching(query) }
+    val shown = remember(state.sections, query, toolBadges) {
+        state.sections.matching(query).sortedForDisplay(toolBadges)
+    }
 
     Column(
         modifier = modifier
@@ -92,7 +102,14 @@ fun HomeScreen(
             toolCount = state.gridTools.size,
             query = query,
             onQueryChange = { query = it },
-            canReorder = state.sections.count { it.identifier != null } > 1,
+            // Whether the production *has* groups, not whether this user can
+            // currently see more than one section of them. Both phones show
+            // the control unconditionally, seeded from the project's own group
+            // set; gating on rendered sections hid it from anyone whose rights
+            // left them one section, and quietly shortened the list they were
+            // reordering. The one case neither phone can reach — a production
+            // with no groups at all — would open an empty sheet, so it stays out.
+            canReorder = state.groups.isNotEmpty(),
             onReorder = { onEvent(HomeEvent.StartReorder) },
         )
 
@@ -118,17 +135,17 @@ fun HomeScreen(
 
             shown.isEmpty() -> Centred("No tool matches \"${query.trim()}\".")
 
-            // Headers ride a search: Android's grouped adapter re-buckets the
-            // matches under their group name with a count
-            // (ToolsGroupedAdapter.kt:108-136), so "camera" reads as *which*
-            // camera tools, not a loose run of tiles.
-            else -> ToolGrid(shown, onEvent, toolBadge, showHeaders = shown.size > 1 || query.isNotBlank())
+            else -> ToolGrid(shown, onEvent, toolBadges, query)
         }
     }
 
     ReorderGroupsDialog(
         visible = state.isReordering,
-        sections = state.sections.filter { it.identifier != null },
+        // The production's groups in this user's current order — every one of
+        // them, including groups holding nothing they can see. Listing only
+        // the rendered sections meant `saveGroupOrder` reconciled the rest
+        // onto the end, rewriting an order for groups the user was never shown.
+        groups = state.groups.orderedBy(state.groupOrder),
         onSave = { onEvent(HomeEvent.SaveGroupOrder(it)) },
         onDismiss = { onEvent(HomeEvent.CancelReorder) },
     )
@@ -144,13 +161,13 @@ fun HomeScreen(
 @Composable
 private fun ReorderGroupsDialog(
     visible: Boolean,
-    sections: List<ToolSection>,
+    groups: List<ToolGroup>,
     onSave: (List<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     // The working order lives here and resets each time the dialog opens.
-    var order by remember(visible) { mutableStateOf(sections.mapNotNull { it.identifier }) }
-    val titles = remember(sections) { sections.associate { it.identifier to it.title } }
+    var order by remember(visible) { mutableStateOf(groups.map { it.identifier }) }
+    val titles = remember(groups) { groups.associate { it.identifier to it.name } }
     ZillitDialogShell(
         title = "Reorder groups",
         subtitle = "Drag the groups into the order you want on your Tools page. This is saved only for you.",
@@ -177,7 +194,7 @@ private fun ReorderGroupsDialog(
 @Composable
 private fun ReorderableGroupList(
     order: List<String>,
-    titles: Map<String?, String>,
+    titles: Map<String, String>,
     onOrderChange: (List<String>) -> Unit,
 ) {
     var draggingIndex by remember { mutableStateOf(-1) }
@@ -286,21 +303,73 @@ internal fun List<String>.moved(from: Int, to: Int): List<String> {
 }
 
 /**
- * The sections with only the tools whose name — or whose section's name —
- * contains [query]; every section untouched when the query is blank. Case
- * folded; a department name matches its whole run, so "camera" finds every
- * camera tool even when none is called that.
+ * The sections with only the tools whose name contains [query]; every section
+ * untouched when the query is blank, and a section left with nothing dropped.
+ * Case folded and trimmed.
+ *
+ * **Tool names only.** Both phones match the tile's own name and nothing else
+ * (Android `fullList.filter { title.lowercase().contains(q) }`, iOS
+ * `applyToolSearch`). Matching the section name too meant "accounts" returned
+ * every tool in Accounts / Payroll on this client and only the tools actually
+ * called that on a phone — the same word answering two different questions
+ * depending on which screen you typed it into.
  */
 internal fun List<ToolSection>.matching(query: String): List<ToolSection> {
     val needle = query.trim()
     if (needle.isEmpty()) return this
     return mapNotNull { section ->
-        val tools = if (section.title.contains(needle, ignoreCase = true)) {
-            section.tools
-        } else {
-            section.tools.filter { it.label.contains(needle, ignoreCase = true) }
+        section.tools
+            .filter { it.label.contains(needle, ignoreCase = true) }
+            .takeIf { it.isNotEmpty() }
+            ?.let { section.copy(tools = it) }
+    }
+}
+
+/**
+ * Each section's tiles in the order both phones put them in: whatever carries
+ * unread work first, then alphabetically.
+ *
+ * The server's own order is not an order — it is the sequence the backend
+ * happened to serialise, and on a production that leaves most tools ungrouped
+ * it is thirty-odd tiles arranged by nothing the reader can predict. Android
+ * sorts `compareByDescending { badgeCount }.thenBy { title }` per group and
+ * iOS `sortToolsByBadgeThenAlphabet`, whose own comment (ZL-20123) records
+ * that every rebuild has to funnel through the sort or an async group fetch
+ * puts it back to A–Z. The identifier is the final tiebreak, as iOS does it,
+ * so the order is total and a recomposition cannot reshuffle equal tiles.
+ */
+internal fun List<ToolSection>.sortedForDisplay(badges: Map<String, Int>): List<ToolSection> =
+    map { section ->
+        section.copy(
+            tools = section.tools.sortedWith(
+                compareByDescending<ToolPresentation> { badges[it.identifier] ?: 0 }
+                    .thenBy { it.label.lowercase() }
+                    .thenBy { it.identifier },
+            ),
+        )
+    }
+
+/**
+ * The tile's name with the letters that answered the query lit — the mark the
+ * board already puts on a search hit, and the one Android puts on this very
+ * grid (`ToolsGroupedAdapter.highlight`). Every occurrence rather than only
+ * the first, matching the board: a two-word tool name can carry the needle
+ * twice, and lighting one of them reads as a miss.
+ *
+ * [HIGHLIGHT] carries an explicit black foreground, so it holds in both themes.
+ */
+internal fun highlightedLabel(label: String, query: String): AnnotatedString {
+    val needle = query.trim()
+    if (needle.isEmpty()) return AnnotatedString(label)
+    return buildAnnotatedString {
+        append(label)
+        var from = 0
+        while (from < label.length) {
+            val hit = label.indexOf(needle, startIndex = from, ignoreCase = true)
+            if (hit < 0) break
+            addStyle(SpanStyle(background = HIGHLIGHT, color = Color.Black), hit, hit + needle.length)
+            from = hit + needle.length
         }
-        tools.takeIf { it.isNotEmpty() }?.let { section.copy(tools = it) }
     }
 }
 
@@ -371,9 +440,9 @@ private fun GridHeader(
 private fun ToolGrid(
     sections: List<ToolSection>,
     onEvent: (HomeEvent) -> Unit,
-    toolBadge: (String) -> Int = { 0 },
-    /** Whether each section is headed; see the call site for when one section still is. */
-    showHeaders: Boolean = sections.size > 1,
+    toolBadges: Map<String, Int> = emptyMap(),
+    /** Lights the matched letters in each tile's name. */
+    query: String = "",
 ) {
     val gridState = rememberLazyGridState()
 
@@ -391,18 +460,19 @@ private fun ToolGrid(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         sections.forEach { section ->
-            // One heading in an otherwise empty production is noise; several
-            // are the map — and a search's single surviving group keeps its
-            // name, or the result cannot say which group it came from.
-            if (showHeaders) {
-                item(key = "section-${section.title}", span = { GridItemSpan(maxLineSpan) }) {
-                    SectionHeader(section.title, section.tools.size)
-                }
+            // Every non-empty section is headed, always — one header per group
+            // is what both phones emit, with no single-group special case.
+            // Suppressing it left a production that keeps its tools in one
+            // group showing an unlabelled grid here and a labelled one on the
+            // same user's phone.
+            item(key = "section-${section.title}", span = { GridItemSpan(maxLineSpan) }) {
+                SectionHeader(section.title, section.tools.size)
             }
             items(section.tools, key = ToolPresentation::identifier) { tool ->
                 ToolTile(
                     tool = tool,
-                    badge = toolBadge(tool.identifier),
+                    badge = toolBadges[tool.identifier] ?: 0,
+                    query = query,
                     onClick = { onEvent(HomeEvent.OpenTool(tool.route)) },
                 )
             }
@@ -480,7 +550,7 @@ private fun SectionHeader(title: String, count: Int) {
 }
 
 @Composable
-private fun ToolTile(tool: ToolPresentation, onClick: () -> Unit, badge: Int = 0) {
+private fun ToolTile(tool: ToolPresentation, onClick: () -> Unit, badge: Int = 0, query: String = "") {
     val colors = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -525,7 +595,7 @@ private fun ToolTile(tool: ToolPresentation, onClick: () -> Unit, badge: Int = 0
         }
         Box(Modifier.padding(top = ZillitTheme.spacing.sm)) {
             ZillitText(
-                text = tool.label,
+                text = highlightedLabel(tool.label, query),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textPrimary,
                 textAlign = TextAlign.Center,
@@ -541,6 +611,10 @@ private fun ToolTile(tool: ToolPresentation, onClick: () -> Unit, badge: Int = 0
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(ZillitTheme.spacing.xs),
+            // Uncapped here, capped everywhere else: a tile has room for the
+            // real number and both phones print it in full, while the rail and
+            // tab strip — where "99+" was introduced — still cannot.
+            cap = null,
         )
     }
     }

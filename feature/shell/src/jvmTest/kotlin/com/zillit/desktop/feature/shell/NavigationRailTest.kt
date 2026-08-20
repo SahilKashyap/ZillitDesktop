@@ -35,10 +35,13 @@ class NavigationRailTest {
     @Test
     fun `admin does not displace anything that was already on the rail`() {
         assertEquals(
-            DefaultRailItems.map { it.id } + AdminRailItem.id,
+            DefaultRailItems.map { it.id } + AdminRailItem.id + AppRailItems.map { it.id },
             railItemsFor(isAdmin = true).map { it.id },
         )
-        assertEquals(DefaultRailItems.map { it.id }, railItemsFor(isAdmin = false).map { it.id })
+        assertEquals(
+            DefaultRailItems.map { it.id } + AppRailItems.map { it.id },
+            railItemsFor(isAdmin = false).map { it.id },
+        )
     }
 
     @Test
@@ -77,13 +80,50 @@ class NavigationRailTest {
     }
 
     /**
-     * The foot is the web side menu's tail (`SideMenu.jsx`) — things about
-     * the app rather than places in the production. Logout is not an item:
-     * it confirms first and is drawn by the rail itself.
+     * SOS and Zillit Help are the app's own pages, and they follow Admin in
+     * the run rather than sitting at the foot. Pin to Start is gone: the web
+     * page behind it exists to install the app, and a desktop build is the
+     * installed app.
      */
     @Test
-    fun `the rail's foot carries SOS, Pin to Start and Help`() {
-        assertEquals(listOf("sos", "pin", "help"), FooterRailItems.map { it.id })
-        assertTrue(FooterRailItems.none { it.id == "logout" })
+    fun `SOS and Help follow Admin, with Pin to Start gone`() {
+        assertEquals(listOf("sos", "help"), AppRailItems.map { it.id })
+        assertEquals(listOf("admin", "sos", "help"), railItemsFor(isAdmin = true).map { it.id }.takeLast(3))
+        assertTrue(railItemsFor(isAdmin = true).none { it.id == "pin" })
+    }
+
+    /**
+     * Nothing sits below the spacer but Logout, and Logout is not an item:
+     * the rail draws it, and the frame asks before it fires.
+     */
+    @Test
+    fun `only Logout is left for the rail's foot`() {
+        assertTrue(railItemsFor(isAdmin = true).none { it.id == "logout" })
+        assertTrue(railItemsFor(isAdmin = true).none { it.id == "notifications" })
+    }
+
+    @Test
+    fun `the app's pages are told apart from the sections above them`() {
+        // The rail sits collapsed most of the time, so an entry is its icon.
+        // Two entries sharing a glyph are two rows nobody can tell apart.
+        val items = railItemsFor(isAdmin = true)
+
+        assertEquals(items.size, items.map { it.id }.toSet().size)
+        assertEquals(items.size, items.map { it.icon }.toSet().size)
+    }
+
+    @Test
+    fun `each app page route resolves to a provider path that exists`() {
+        // `/sos` is its own tool; Zillit Help is a page under Settings. An
+        // entry that resolves to nothing opens a dead window.
+        val servedPrefixes = listOf("/sos", "/settings")
+
+        AppRailItems.forEach { item ->
+            val path = (item.route as? WorkspaceRoute.Tool)?.path ?: "/home"
+            assertTrue(
+                servedPrefixes.any { path.startsWith(it) },
+                "no provider serves ${item.id} -> $path",
+            )
+        }
     }
 }

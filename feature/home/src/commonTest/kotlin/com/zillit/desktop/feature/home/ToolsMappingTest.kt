@@ -5,7 +5,7 @@ import com.zillit.desktop.core.permissions.ToolAccess
 import com.zillit.desktop.feature.home.data.ToolInfoDto
 import com.zillit.desktop.feature.home.domain.ToolCatalogue
 import com.zillit.desktop.feature.home.ui.HomeUiState
-import com.zillit.desktop.feature.home.ui.OTHER_TOOLS
+import com.zillit.desktop.feature.home.ui.UNGROUPED_TOOLS
 import com.zillit.desktop.feature.home.domain.ToolGroup
 import com.zillit.desktop.feature.home.domain.ToolsRepository
 import com.zillit.desktop.core.common.ZillitResult
@@ -70,6 +70,24 @@ class ToolsMappingTest {
     }
 
     // -- catalogue --------------------------------------------------------
+
+    @Test
+    fun `the tool's own name titles the tile, not its identifier`() {
+        // Both phones title a tile from `unit_name`, and the two are not the
+        // same string: on develop `accounting_tool` is named `accounts_label`.
+        // With no dictionary installed both sides humanise, which is enough to
+        // show *which* key was asked for.
+        val named = ToolCatalogue.present(ToolAccess("accounting_tool", unitName = "accounts_label"))
+        assertEquals("Accounts", named.label)
+
+        // Only when the server sent no name does the identifier stand in.
+        assertEquals("Accounting", ToolCatalogue.present(ToolAccess("accounting_tool")).label)
+        assertEquals(
+            "Accounting",
+            ToolCatalogue.present(ToolAccess("accounting_tool", unitName = "  ")).label,
+            "a blank name is no name",
+        )
+    }
 
     @Test
     fun `a known tool gets its designed icon and route`() {
@@ -180,7 +198,7 @@ class ToolSectionsTest {
             groups = listOf(ToolGroup("production", "Production")),
         ).sections
 
-        assertEquals(listOf("Production", OTHER_TOOLS), sections.map { it.title })
+        assertEquals(listOf("Production", UNGROUPED_TOOLS), sections.map { it.title })
         assertEquals(
             listOf("weather_tool"),
             sections.last().tools.map { it.identifier },

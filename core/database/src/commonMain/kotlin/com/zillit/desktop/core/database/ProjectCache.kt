@@ -93,6 +93,11 @@ data class UserSnapshot(
      * would otherwise be put in front of the rest of the unit.
      */
     val keepNamePrivate: Boolean = false,
+    /**
+     * When they last used the app — `last_activity`, else `last_visited_on` —
+     * the "Last Entry" line the web's C&C rows wear (`UserCard.jsx:357-362`).
+     */
+    val lastActiveMillis: Long? = null,
 )
 
 data class ToolSnapshot(

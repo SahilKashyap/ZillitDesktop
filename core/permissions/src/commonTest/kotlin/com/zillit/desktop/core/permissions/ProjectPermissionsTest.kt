@@ -106,11 +106,19 @@ class ProjectPermissionsTest {
     @Test
     fun `visible tools exclude the unviewable and the disabled`() {
         assertEquals(listOf("callsheet_tool"), crew.visibleTools.map { it.identifier })
+    }
+
+    @Test
+    fun `an admin's grid is their own rights, not everything`() {
+        // The bypass answers per-tool questions; it does not build the list.
+        // Neither phone consults isAdmin while filling the tools grid, and a
+        // tile granted here opens a tool that still refuses the data.
         assertEquals(
-            listOf("callsheet_tool", "budget_tool"),
+            listOf("callsheet_tool"),
             admin.visibleTools.map { it.identifier },
-            "admin sees both enabled tools, in server order",
+            "budget_tool has no view_access for this user, admin or not",
         )
+        assertTrue(admin.canView("budget_tool"), "the per-tool check still bypasses")
     }
 
     @Test

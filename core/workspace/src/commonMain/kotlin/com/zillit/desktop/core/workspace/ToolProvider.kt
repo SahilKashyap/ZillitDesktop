@@ -33,6 +33,14 @@ interface ToolProvider {
 
     val icon: ImageVector
 
+    /**
+     * The icon for [route] — [icon] unless the provider serves several faces
+     * from one path. Pairs with [titleFor]: a tab labelled "Film Tools" under
+     * Home's house icon reads as the wrong window just as surely as a wrong
+     * title does.
+     */
+    fun iconFor(route: WorkspaceRoute): ImageVector = icon
+
     /** Whether the tool opens filling the workspace or as a normal window. */
     val openMode: OpenMode get() = OpenMode.Window
 

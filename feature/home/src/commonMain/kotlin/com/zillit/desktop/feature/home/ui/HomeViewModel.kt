@@ -69,7 +69,7 @@ data class HomeUiState(
             val served = if (rest.isEmpty()) {
                 named
             } else {
-                named + ToolSection(OTHER_TOOLS, rest.map(ToolCatalogue::present))
+                named + ToolSection(UNGROUPED_TOOLS, rest.map(ToolCatalogue::present))
             }
             return served + localSections
         }
@@ -80,8 +80,14 @@ data class HomeUiState(
 /** One titled run of tiles in the grid; [identifier] null for the leftovers section. */
 data class ToolSection(val title: String, val tools: List<ToolPresentation>, val identifier: String? = null)
 
-/** Where tools with no section of their own gather. */
-const val OTHER_TOOLS = "Other tools"
+/**
+ * Where tools with no section of their own gather.
+ *
+ * The word both phones use — Android's `R.string.ungrouped`, iOS's hardcoded
+ * `"Ungrouped"` — and on a production that leaves `group_identifier` blank it
+ * is the biggest heading on the page, so it is worth spelling the same way.
+ */
+const val UNGROUPED_TOOLS = "Ungrouped"
 
 /**
  * The groups in the user's chosen order, then the rest in the production's:

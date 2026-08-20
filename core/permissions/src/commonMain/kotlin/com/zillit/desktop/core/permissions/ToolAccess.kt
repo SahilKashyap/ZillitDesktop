@@ -45,7 +45,7 @@ data class ToolAccess(
  *
  * ## Admin bypass, and what it does not bypass
  *
- * An admin passes every *access* check, matching Android
+ * An admin passes every per-tool *access* check, matching Android
  * (`AssetRegisterRights.from`: `canView = isAdmin || info?.viewAccess == true`).
  *
  * An admin does **not** bypass [ToolAccess.enabled]. That flag is the
@@ -53,6 +53,10 @@ data class ToolAccess(
  * everyone, and showing admins a tool nobody else can see would misrepresent
  * the production rather than grant a privilege. The web agrees
  * (`view_access == true && item?.enabled == true`).
+ *
+ * An admin does **not** bypass the *listing* either — see [visibleTools].
+ * `AssetRegisterRights.from` is a per-tool helper, and generalising it to the
+ * grid put tiles in front of admins that neither phone shows them.
  */
 class ProjectPermissions(
     tools: List<ToolAccess>,
@@ -86,9 +90,17 @@ class ProjectPermissions(
     fun canDownload(identifier: String): Boolean =
         canView(identifier) && access(identifier).canDownload
 
-    /** Everything this user may open, in the order the server returned it. */
+    /**
+     * Everything this user may open, in the order the server returned it.
+     *
+     * Rights as issued, with **no admin bypass**: both phones list the grid
+     * from the user's own `view_access` and neither consults `isAdmin` while
+     * doing it (Android `Tools.kt` `removeIf { viewAccess == false }`, iOS
+     * `FilmToolsGrouping.buildSections`). An admin granted a tile here would
+     * open a tool whose own screens still refuse the data.
+     */
     val visibleTools: List<ToolAccess>
-        get() = byIdentifier.values.filter { it.enabled && (isAdmin || it.canView) }
+        get() = byIdentifier.values.filter { it.enabled && it.canView }
 
     val homeTools: List<ToolAccess> get() = visibleTools.filter { it.onHome }
 

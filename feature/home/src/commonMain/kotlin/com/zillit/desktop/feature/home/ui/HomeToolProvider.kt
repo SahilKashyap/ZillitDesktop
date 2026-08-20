@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.home.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.LaunchedEffect
 import com.zillit.desktop.feature.home.calendar.CalendarScreen
 import com.zillit.desktop.feature.home.calendar.CalendarViewModel
@@ -67,6 +68,9 @@ class HomeToolProvider(
     override fun titleFor(route: WorkspaceRoute): String =
         if (route.path.endsWith(TOOLS_SEGMENT)) "Film Tools" else title
 
+    override fun iconFor(route: WorkspaceRoute): ImageVector =
+        if (route.path.endsWith(TOOLS_SEGMENT)) ZillitIcons.Tools else icon
+
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         // `/home/tools` is the grid of everything this user may open; `/home`
@@ -98,7 +102,11 @@ class HomeToolProvider(
                     // Loaded when the tab is first shown rather than at startup:
                     // the events call carries project and user in its header.
                     LaunchedEffect(vm) { vm.load() }
-                    CalendarScreen(state = calendarState, onEvent = vm::onEvent)
+                    CalendarScreen(
+                        state = calendarState,
+                        onEvent = vm::onEvent,
+                        loadAvatar = board.loadAvatar,
+                    )
                 }
             },
         )
@@ -111,7 +119,9 @@ class HomeToolProvider(
 
         HomeScreen(
             state = state,
-            toolBadge = { identifier -> counts[identifier] },
+            // The whole slice, not a lookup: the grid orders tiles by unread
+            // count, so it needs something it can compare between frames.
+            toolBadges = counts.toolMap(),
             onEvent = { event ->
                 // Through the navigator the host already hands us, rather than a
                 // ViewModel passed in: the registry is built before the

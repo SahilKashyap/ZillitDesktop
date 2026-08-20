@@ -148,7 +148,13 @@ fun roomsFrom(body: JsonElement): List<com.zillit.desktop.feature.chat.domain.Gr
     return rows.mapNotNull { row ->
         val room = row as? JsonObject ?: return@mapNotNull null
         val id = room.str("_id") ?: return@mapNotNull null
-        com.zillit.desktop.feature.chat.domain.GroupRoom(id, room.str("room_name") ?: "Group")
+        com.zillit.desktop.feature.chat.domain.GroupRoom(
+            id = id,
+            name = room.str("room_name") ?: "Group",
+            departmentId = room.str("department_id")?.takeIf { it.isNotBlank() },
+            sortingActivity = (room["sorting_activity"] as? JsonPrimitive)
+                ?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() } ?: 0L,
+        )
     }
 }
 

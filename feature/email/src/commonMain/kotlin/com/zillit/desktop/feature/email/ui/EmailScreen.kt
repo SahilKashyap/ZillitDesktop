@@ -35,12 +35,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
@@ -54,6 +58,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
+import com.zillit.desktop.core.designsystem.component.ZillitPaneSplitter
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -111,49 +116,56 @@ fun EmailScreen(
      */
     overlay: @Composable BoxScope.() -> Unit = {},
 ) {
+    // What share of the mailbox the listing keeps while a message is open.
+    // `rememberSaveable`, so a window put away and brought back is still split
+    // where its reader left it — WorkspaceHost disposes an inactive window's
+    // composition and only saveable state survives that.
+    var listFraction by rememberSaveable { mutableStateOf(DEFAULT_LIST_FRACTION) }
+
     Box(modifier.fillMaxSize()) {
     Row(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         FolderSidebar(state, onEvent, onOpenSignatures, onOpenContacts, onOpenCalendar, onOpenSettings)
 
-        Column(Modifier.weight(1f).fillMaxHeight()) {
-            ListToolbar(state, search, onEvent)
-            if (search.isActive) SearchFilters(search, onEvent)
+        // The reading pane always stands beside the listing, empty-state and
+        // all — the web's arrangement (`NewEmailComponent.jsx:314-402`): the
+        // listing keeps its share, the pane owns the rest, and the bar
+        // between them is draggable.
+        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+            val available = maxWidth
+            val listWidth = listPaneWidth(available, listFraction)
+            val density = LocalDensity.current
 
-            Box(Modifier.fillMaxSize()) {
-                when {
-                    // A failed refresh with nothing to show behind it. With
-                    // cached mail on screen the error is a strip above the
-                    // list, not a replacement for it — the rows this machine
-                    // already has are still true.
-                    state.error != null && state.messages.isEmpty() -> Centred(state.error)
-
-                    state.isLoadingMessages && state.messages.isEmpty() -> Centred("Loading…")
-
-                    state.messages.isEmpty() ->
-                        Centred("${state.selectedFolder?.displayName ?: "This folder"} is empty.")
-
-
-                    search.isActive && search.results.isEmpty() ->
-                        Centred("Nothing matches \"${search.query.term.trim()}\".\n${search.scope}")
-
-                    else -> ListWithNotice(state.error) { MessageList(state, search, onEvent, loadAvatar) }
-                }
-            }
-        }
-
-        // The third pane appears only with something to read — an empty pane
-        // permanently occupying a third of the window is a waste of the width
-        // desktop earns.
-        if (state.selectedMessageId != null) {
-            Box(Modifier.width(READING_WIDTH).fillMaxHeight()) {
-                ReadingPane(
+            Row(Modifier.fillMaxSize()) {
+                MessagePane(
                     state,
-                    downloads,
+                    search,
                     onEvent,
-                    loadAvatar = loadAvatar,
-                    loadThumbnail = loadThumbnail,
-                    onOpenLink = onOpenLink,
+                    loadAvatar,
+                    Modifier.width(listWidth).fillMaxHeight().testTag(LIST_PANE_TAG),
                 )
+
+                // Measured from where the bar actually is rather than from
+                // the stored fraction: dragging past a pane's minimum then
+                // has nothing to unwind, so the bar comes straight back
+                // when the pointer does.
+                ZillitPaneSplitter(
+                    onDrag = { delta ->
+                        val moved = listWidth + with(density) { delta.toDp() }
+                        listFraction = moved / available
+                    },
+                    modifier = Modifier.testTag(SPLITTER_TAG),
+                )
+
+                Box(Modifier.weight(1f).fillMaxHeight().testTag(READING_PANE_TAG)) {
+                    ReadingPane(
+                        state,
+                        downloads,
+                        onEvent,
+                        loadAvatar = loadAvatar,
+                        loadThumbnail = loadThumbnail,
+                        onOpenLink = onOpenLink,
+                    )
+                }
             }
         }
     }
@@ -171,6 +183,44 @@ fun EmailScreen(
         }
 
         overlay()
+    }
+}
+
+/**
+ * The listing: its toolbar, the search filters when a search is running, and
+ * the rows themselves — or what stands in for them when there are none.
+ */
+@Composable
+private fun MessagePane(
+    state: EmailUiState,
+    search: SearchState,
+    onEvent: (EmailEvent) -> Unit,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        ListToolbar(state, search, onEvent)
+        if (search.isActive) SearchFilters(search, onEvent)
+
+        Box(Modifier.fillMaxSize()) {
+            when {
+                // A failed refresh with nothing to show behind it. With cached
+                // mail on screen the error is a strip above the list, not a
+                // replacement for it — the rows this machine already has are
+                // still true.
+                state.error != null && state.messages.isEmpty() -> Centred(state.error)
+
+                state.isLoadingMessages && state.messages.isEmpty() -> Centred("Loading…")
+
+                state.messages.isEmpty() ->
+                    Centred("${state.selectedFolder?.displayName ?: "This folder"} is empty.")
+
+                search.isActive && search.results.isEmpty() ->
+                    Centred("Nothing matches \"${search.query.term.trim()}\".\n${search.scope}")
+
+                else -> ListWithNotice(state.error) { MessageList(state, search, onEvent, loadAvatar) }
+            }
+        }
     }
 }
 
@@ -194,11 +244,11 @@ private fun FolderSidebar(
             .padding(vertical = ZillitTheme.spacing.sm),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        // Gmail's signature control: the one filled button in the mailbox,
-        // above the folders it writes into.
+        // The web's one filled control: "New Email" behind a pencil
+        // (`NewEmailSidebar.jsx:329-339`, key `new_email`).
         ZillitButton(
-            text = "Compose",
-            leadingIcon = ZillitIcons.Add,
+            text = "New Email",
+            leadingIcon = ZillitIcons.Edit,
             onClick = { onEvent(EmailEvent.Compose(ComposeMode.New)) },
             modifier = Modifier
                 .fillMaxWidth()
@@ -208,40 +258,94 @@ private fun FolderSidebar(
 
         if (state.isLoadingFolders && state.folders.isEmpty()) {
             ZillitText(
-                text = "Loading folders…",
+                text = "Loading…",
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
                 modifier = Modifier.padding(horizontal = ZillitTheme.spacing.md),
             )
         }
 
-        state.sidebar.forEach { folder ->
-            FolderRow(
-                folder = folder,
-                isActive = folder.name == state.selectedFolder?.name,
-                // The ledger keys folders by lower-cased name (iOS's
-                // `unreadEmailCountsByFolder`); match the same way.
-                badge = state.folderBadges.takeIf { it.isNotEmpty() }
-                    ?.let { split -> split[folder.name] ?: split[folder.name.lowercase()] ?: 0 },
-                onClick = { onEvent(EmailEvent.SelectFolder(folder.name)) },
-                onRename = { onEvent(EmailEvent.EditFolder(folder)) },
+        // System folders first, then the user's own under their section
+        // heading — the web's partition (`NewEmailSidebar.jsx:351-406`).
+        val (system, custom) = state.sidebar.partition { it.isSystem }
+        system.forEach { folder ->
+            SidebarFolder(state, folder, onEvent)
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = ZillitTheme.spacing.md)
+                .padding(top = ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ZillitText(
+                text = "FOLDERS",
+                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.textMuted,
+                modifier = Modifier.weight(1f),
+            )
+            ZillitIconButton(
+                icon = ZillitIcons.Add,
+                contentDescription = "Create folder",
+                onClick = { onEvent(EmailEvent.EditFolder()) },
             )
         }
-
-        SidebarActionRow(icon = ZillitIcons.Add, label = "New folder") {
-            onEvent(EmailEvent.EditFolder())
+        custom.forEach { folder ->
+            SidebarFolder(state, folder, onEvent)
         }
 
-        // Signatures belong to mail, not to app settings: the person managing
-        // a sign-off is the person about to send something, and this is where
-        // they are standing. Contacts, Calendar and Settings sit with them —
-        // Android's mail drawer has exactly these four
-        // (`FolderDrawerFragment.kt:70-81`).
+        // The web's foot is one Settings row behind a top hairline
+        // (`NewEmailSidebar.jsx:429-447`); its menu is where signatures and
+        // the rest live. The desktop has no nav strip, so Contacts and
+        // Calendar ride the same menu.
         Spacer(Modifier.weight(1f))
-        SidebarActionRow(icon = ZillitIcons.Edit, label = "Signatures", onClick = onOpenSignatures)
-        SidebarActionRow(icon = ZillitIcons.Users, label = "Contacts", onClick = onOpenContacts)
-        SidebarActionRow(icon = ZillitIcons.Calendar, label = "Calendar", onClick = onOpenCalendar)
-        SidebarActionRow(icon = ZillitIcons.Settings, label = "Settings", onClick = onOpenSettings)
+        SettingsFootRow(onOpenSignatures, onOpenContacts, onOpenCalendar, onOpenSettings)
+    }
+}
+
+@Composable
+private fun SidebarFolder(state: EmailUiState, folder: EmailFolder, onEvent: (EmailEvent) -> Unit) {
+    FolderRow(
+        folder = folder,
+        isActive = folder.name == state.selectedFolder?.name,
+        // The ledger keys folders by lower-cased name (iOS's
+        // `unreadEmailCountsByFolder`); match the same way.
+        badge = state.folderBadges.takeIf { it.isNotEmpty() }
+            ?.let { split -> split[folder.name] ?: split[folder.name.lowercase()] ?: 0 },
+        onClick = { onEvent(EmailEvent.SelectFolder(folder.name)) },
+        onRename = { onEvent(EmailEvent.EditFolder(folder)) },
+    )
+}
+
+/** The sidebar's foot: one Settings row whose menu holds the rest. */
+@Composable
+private fun SettingsFootRow(
+    onOpenSignatures: () -> Unit,
+    onOpenContacts: () -> Unit,
+    onOpenCalendar: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+
+    Box {
+        SidebarActionRow(icon = ZillitIcons.Settings, label = "Settings") { open = true }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            listOf(
+                "Signatures" to onOpenSignatures,
+                "Contacts" to onOpenContacts,
+                "Calendar" to onOpenCalendar,
+                "Email settings" to onOpenSettings,
+            ).forEach { (label, action) ->
+                DropdownMenuItem(
+                    text = { ZillitText(label, style = ZillitTheme.typography.bodyMedium) },
+                    onClick = {
+                        open = false
+                        action()
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -343,15 +447,11 @@ private fun FolderRow(
             )
         } else {
             // The badge ledger's count when it has spoken, the folder's own
-            // IMAP unread until then — the phones draw the former.
+            // IMAP unread until then — the phones draw the former. The pill
+            // is the web's: brand orange, white count, 99+ cap
+            // (`NewEmailSidebar.jsx:916-920`).
             val shown = badge ?: folder.unreadCount
-            if (shown > 0) {
-                ZillitText(
-                    text = shown.toString(),
-                    style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = if (isActive) colors.accentText else colors.textSecondary,
-                )
-            }
+            ZillitBadge(count = shown, background = colors.accent)
         }
     }
 }
@@ -367,35 +467,49 @@ private fun ListToolbar(
         return
     }
 
-    Row(
+    // The web stacks the toolbar: the search pill on its own line, the
+    // controls under it (`EmailListHeader.jsx:47-201`).
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(ZillitTheme.colors.surface)
             .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        ZillitText(
-            text = state.selectedFolder?.displayName ?: "Mail",
-            style = ZillitTheme.typography.titleMedium,
-        )
-        if (state.isViewingTrash && state.messages.isNotEmpty()) {
-            ZillitButton(
-                text = "Empty Trash",
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-                onClick = { onEvent(EmailEvent.EmptyTrash) },
-            )
-        }
         ZillitSearchField(
             value = search.query.term,
             onValueChange = { onEvent(EmailEvent.QueryChanged(it)) },
-            // Says what it searches. There is no server-side mail search —
-            // neither other client has one — so a box implying otherwise would
-            // be a promise the API cannot keep.
+            // The web's placeholder is "Search Mail..." — but this box only
+            // reaches downloaded mail (no server-side search exists on any
+            // client), and the placeholder must not promise otherwise.
             placeholder = "Search downloaded mail",
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
         )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitIconButton(
+                icon = ZillitIcons.Reload,
+                contentDescription = "Refresh",
+                onClick = { onEvent(EmailEvent.Refresh) },
+            )
+            ZillitText(
+                text = state.selectedFolder?.displayName ?: "Mail",
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+                modifier = Modifier.weight(1f),
+            )
+            if (state.isViewingTrash && state.messages.isNotEmpty()) {
+                ZillitButton(
+                    text = "Empty Trash",
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                    onClick = { onEvent(EmailEvent.EmptyTrash) },
+                )
+            }
+        }
     }
 }
 
@@ -567,9 +681,6 @@ private fun MessageList(
     // recompose every row for nothing.
     val nowMillis = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
 
-    BoxWithConstraints {
-    val compact = maxWidth < COMPACT_LIST_WIDTH
-
     val messageState = rememberLazyListState()
     val rows = if (search.isActive) search.results else state.visibleMessages
 
@@ -597,10 +708,12 @@ private fun MessageList(
                 // never heard of their ids.
                 selectable = !state.isViewingDrafts,
                 nowMillis = nowMillis,
-                compact = compact,
+                // Sent rows lead with who the mail went to, as on the web
+                // (`NewEmailCard.jsx:165-180`).
+                showRecipients = state.selectedFolder?.name
+                    .equals(EmailFolder.SENT, ignoreCase = true),
                 onClick = { onEvent(EmailEvent.SelectMessage(message.id)) },
                 onTick = { onEvent(EmailEvent.ToggleSelection(message.id)) },
-                onTrash = { onEvent(EmailEvent.TrashMessage(message.id)) },
                 loadAvatar = loadAvatar,
             )
         }
@@ -614,7 +727,6 @@ private fun MessageList(
                 LoadMoreFooter(state.isLoadingMore) { onEvent(EmailEvent.LoadMore) }
             }
         }
-    }
     }
 }
 
@@ -638,11 +750,13 @@ private fun LoadMoreFooter(isLoading: Boolean, onLoadMore: () -> Unit) {
     )
 }
 
+/** The web's folder glyphs (`NewEmailSidebar.jsx:756-772`), from our set. */
 private fun EmailFolder.icon() = when (name.lowercase()) {
     "inbox" -> ZillitIcons.Mail
-    "sent" -> ZillitIcons.ChevronRight
-    "drafts" -> ZillitIcons.Add
-    "trash" -> ZillitIcons.Close
+    "sent" -> ZillitIcons.Send
+    "drafts" -> ZillitIcons.File
+    "trash" -> ZillitIcons.Trash
+    "junk", "spam" -> ZillitIcons.Warning
     else -> ZillitIcons.Drive
 }
 
@@ -678,8 +792,36 @@ private fun Centred(text: String) {
     }
 }
 
+/**
+ * Where the listing and the message stand, for a mailbox [total] wide.
+ *
+ * Neither pane may be squeezed to nothing, so the fraction is advisory and
+ * these minimums are not: below them the listing stops being readable and
+ * a message body starts wrapping every line twice.
+ *
+ * On a window too narrow to honour both, the listing takes its minimum and the
+ * message keeps the remainder — still the larger share of any width worth
+ * opening a message in. Narrower again, when half the mailbox is less than the
+ * listing's minimum, the split is simply half each: at that point there is no
+ * arrangement anyone would call good, and an even one is at least predictable.
+ */
+internal fun listPaneWidth(total: Dp, fraction: Float): Dp {
+    val smallest = MIN_LIST_WIDTH.coerceAtMost(total / 2)
+    val largest = (total - MIN_READING_WIDTH).coerceAtLeast(smallest)
+    return (total * fraction).coerceIn(smallest, largest)
+}
+
+/** The listing's share of the mailbox when a message is open; the rest reads it. */
+internal const val DEFAULT_LIST_FRACTION = 0.25f
+
+/** The three parts of the split, for the tests that measure them. */
+internal const val LIST_PANE_TAG = "email-list-pane"
+internal const val SPLITTER_TAG = "email-splitter"
+internal const val READING_PANE_TAG = "email-reading-pane"
+
+internal val MIN_LIST_WIDTH = 220.dp
+internal val MIN_READING_WIDTH = 400.dp
+
 private val SIDEBAR_WIDTH = 200.dp
-private val COMPACT_LIST_WIDTH = 640.dp
-private val READING_WIDTH = 520.dp
 private val PAGE_PADDING = 16.dp
 private val FOLDER_ICON = 16.dp

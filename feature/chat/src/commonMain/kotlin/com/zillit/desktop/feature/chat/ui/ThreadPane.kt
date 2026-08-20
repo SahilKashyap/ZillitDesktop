@@ -57,7 +57,16 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import com.zillit.desktop.feature.chat.domain.chatDayLabel
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
+import com.zillit.desktop.feature.chat.domain.MentionSpan
 import com.zillit.desktop.feature.chat.domain.chatTimeLabel
+import com.zillit.desktop.feature.chat.domain.designationLabel
+import com.zillit.desktop.feature.chat.domain.mentionSpans
 import kotlinx.datetime.toLocalDateTime
 
 /** One open conversation: header, the bubbles, and the composer. */
@@ -67,6 +76,10 @@ internal fun ThreadPane(
     state: ChatUiState,
     onEvent: (ChatEvent) -> Unit,
     resolveName: (String) -> String? = { null },
+    /** Strict crew lookup for tags — null keeps an unknown id as raw text. */
+    resolveMention: (String) -> String? = { null },
+    /** A tapped tag — the host opens that person. */
+    onOpenUser: (String) -> Unit = {},
     onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit = {},
     loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap? = { null },
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) ->
@@ -88,7 +101,7 @@ internal fun ThreadPane(
         val media = BubbleMedia(onOpenAttachment, loadThumbnail, player, loadAudio)
         // Passed beside the react handler rather than through it: deletion is
         // keyed by the server's id, and only rows that have one can offer it.
-        Messages(state, resolveName, media, loadAvatar, onEvent, Modifier.weight(1f))
+        Messages(state, resolveName, MentionHooks(resolveMention, onOpenUser), media, loadAvatar, onEvent, Modifier.weight(1f))
 
         if (state.peerTyping) {
             TypingIndicator(peer.fullName.substringBefore(' '))
@@ -134,7 +147,7 @@ private fun ThreadHeader(
             // leads with, so the header answers "which Sam is this".
             val role = listOfNotNull(
                 peer.department?.takeIf { it.isNotBlank() },
-                peer.designation?.takeIf { it.isNotBlank() },
+                peer.designationLabel(),
             ).joinToString(" · ") { it.localised() }
             if (role.isNotBlank()) {
                 ZillitText(
@@ -320,6 +333,7 @@ private fun handleChatComposerKey(
 private fun Messages(
     state: ChatUiState,
     resolveName: (String) -> String?,
+    mentions: MentionHooks,
     media: BubbleMedia,
     loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap?,
     onEvent: (ChatEvent) -> Unit,
@@ -389,6 +403,7 @@ private fun Messages(
                     onDelete = { onEvent(ChatEvent.Delete(row.message.id)) },
                     uploadPercent = state.uploads[row.message.uniqueId],
                     resolveName = resolveName,
+                    mentions = mentions,
                 )
             }
         }
@@ -500,9 +515,10 @@ private fun IncomingAware(
     onDelete: () -> Unit = {},
     uploadPercent: Int? = null,
     resolveName: (String) -> String? = { null },
+    mentions: MentionHooks = MentionHooks(),
 ) {
     if (message.isMine) {
-        Bubble(message, senderName, media, onReact, onDelete, uploadPercent, resolveName)
+        Bubble(message, senderName, media, onReact, onDelete, uploadPercent, resolveName, mentions)
         return
     }
     Row(
@@ -514,8 +530,58 @@ private fun IncomingAware(
             message.senderId,
         ) { value = loadAvatar(message.senderId) }.value
         ZillitAvatar(name = senderName ?: "?", image = face, size = ROW_AVATAR)
-        Bubble(message, senderName, media, onReact, resolveName = resolveName)
+        Bubble(message, senderName, media, onReact, resolveName = resolveName, mentions = mentions)
     }
+}
+
+/** The tag affordances, carried together so the bubble chain stays short. */
+internal data class MentionHooks(
+    /** Strict crew lookup — null keeps an unknown id as raw text. */
+    val resolve: (String) -> String? = { null },
+    val onOpenUser: (String) -> Unit = {},
+)
+
+/**
+ * The body with its tags lit: `@{{id}}` renders as an accent-coloured
+ * `@Full Name` that opens the person, the reference clients' treatment. A
+ * body with no tags is one plain text node.
+ */
+@Composable
+private fun MentionedBody(body: String, mentions: MentionHooks) {
+    val spans = androidx.compose.runtime.remember(body) { mentionSpans(body, mentions.resolve) }
+    val plain = spans.singleOrNull() as? MentionSpan.Words
+    if (plain != null) {
+        ZillitText(
+            text = plain.text,
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textPrimary,
+        )
+        return
+    }
+
+    val accent = ZillitTheme.colors.accentText
+    val annotated = buildAnnotatedString {
+        spans.forEach { span ->
+            when (span) {
+                is MentionSpan.Words -> append(span.text)
+                is MentionSpan.Mention ->
+                    withLink(
+                        LinkAnnotation.Clickable("mention:${span.userId}") {
+                            mentions.onOpenUser(span.userId)
+                        },
+                    ) {
+                        withStyle(SpanStyle(color = accent, fontWeight = FontWeight.SemiBold)) {
+                            append("@${span.name}")
+                        }
+                    }
+            }
+        }
+    }
+    ZillitText(
+        text = annotated,
+        style = ZillitTheme.typography.bodyMedium,
+        color = ZillitTheme.colors.textPrimary,
+    )
 }
 
 /**
@@ -557,6 +623,7 @@ private fun Bubble(
     onDelete: () -> Unit = {},
     uploadPercent: Int? = null,
     resolveName: (String) -> String? = { null },
+    mentions: MentionHooks = MentionHooks(),
 ) {
     val mine = message.isMine
     val hover = androidx.compose.runtime.remember {
@@ -621,7 +688,7 @@ private fun Bubble(
                     )
                 }
             }
-            BubbleBody(message, senderName, media, onReact, mine, uploadPercent, resolveName)
+            BubbleBody(message, senderName, media, onReact, mine, uploadPercent, resolveName, mentions)
             if (!mine) {
                 Box(Modifier.alpha(if (revealed) 1f else 0f)) {
                     ReactAffordance(
@@ -646,6 +713,7 @@ private fun BubbleBody(
     mine: Boolean,
     uploadPercent: Int? = null,
     resolveName: (String) -> String? = { null },
+    mentions: MentionHooks = MentionHooks(),
 ) {
     Column(
         modifier = Modifier
@@ -694,11 +762,7 @@ private fun BubbleBody(
             )
         }
         if (message.body.isNotBlank()) {
-            ZillitText(
-                text = message.body,
-                style = ZillitTheme.typography.bodyMedium,
-                color = ZillitTheme.colors.textPrimary,
-            )
+            MentionedBody(message.body, mentions)
         }
         BubbleFooter(message)
         ReactionChips(message, onReact, resolveName)

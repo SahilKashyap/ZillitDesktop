@@ -81,7 +81,9 @@ fun ZillitSpinner(
  * Count badge — unread messages on a tab or rail item.
  *
  * Caps at "99+" like the web app's tab strip, so a busy project cannot stretch
- * the chrome.
+ * the chrome. Pass a null [cap] where the number itself is the point and there
+ * is room for it: iOS draws the same distinction, capping its tab bar and
+ * library rows while leaving the Film Tools tiles uncapped.
  */
 @Composable
 fun ZillitBadge(
@@ -89,6 +91,7 @@ fun ZillitBadge(
     modifier: Modifier = Modifier,
     background: Color? = null,
     contentColor: Color? = null,
+    cap: Int? = MAX_BADGE_COUNT,
 ) {
     if (count <= 0) return
     Box(
@@ -99,7 +102,7 @@ fun ZillitBadge(
         contentAlignment = Alignment.Center,
     ) {
         ZillitText(
-            text = if (count > MAX_BADGE_COUNT) "$MAX_BADGE_COUNT+" else count.toString(),
+            text = if (cap != null && count > cap) "$cap+" else count.toString(),
             style = ZillitTheme.typography.labelSmall,
             color = contentColor ?: Color.White,
             maxLines = 1,
@@ -122,6 +125,7 @@ fun ZillitText(
     color: Color? = null,
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Ellipsis,
+    textAlign: TextAlign? = null,
 ) {
     Text(
         text = text,
@@ -130,6 +134,7 @@ fun ZillitText(
         color = color ?: ZillitTheme.colors.textPrimary,
         maxLines = maxLines,
         overflow = overflow,
+        textAlign = textAlign,
     )
 }
 

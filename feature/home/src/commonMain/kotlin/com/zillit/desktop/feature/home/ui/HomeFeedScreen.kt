@@ -2452,7 +2452,10 @@ private fun Centred(text: String) {
 }
 
 // The find highlight: amber, matching the web's yellow mark on dark bubbles.
-private val HIGHLIGHT = Color(0xFFFFC94D)
+// Shared with the tools grid so a search mark means one thing across the app;
+// it is always drawn with an explicit black foreground, which is why a fixed
+// colour is safe in both themes.
+internal val HIGHLIGHT = Color(0xFFFFC94D)
 private const val COMMENT_INSET_ALPHA = 0.07f
 
 /** Both phones' delete confirmation, word for word (`DeleteConfirmPop`, `are_you_sure_delete`). */

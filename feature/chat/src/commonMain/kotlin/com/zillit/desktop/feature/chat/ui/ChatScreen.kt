@@ -43,6 +43,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
+import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
@@ -53,11 +54,14 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.chat.domain.CrewContact
-import com.zillit.desktop.feature.chat.domain.GroupRoom
-import com.zillit.desktop.feature.chat.domain.byDepartment
+import com.zillit.desktop.feature.chat.domain.RecentRow
+import com.zillit.desktop.feature.chat.domain.designationLabel
+import com.zillit.desktop.feature.chat.domain.hasStanding
+import com.zillit.desktop.feature.chat.domain.lastEntryDate
+import com.zillit.desktop.feature.chat.domain.lastMessageAt
+import com.zillit.desktop.feature.chat.domain.recentRows
 import com.zillit.desktop.feature.chat.domain.searchCrew
 import com.zillit.desktop.feature.chat.domain.ChatFilter
-import com.zillit.desktop.feature.chat.domain.chatTimeLabel
 
 /**
  * Chat & Calls: the production's people, in Android's two-tab shape.
@@ -173,6 +177,15 @@ private fun OpenThread(
             crew.firstOrNull { it.userId == id }?.fullName
                 ?: chatState.peer?.fullName
         },
+        // Tags: strict lookup (an unknown id stays raw text), and a tap
+        // opens the person — their thread, whose header is their profile
+        // line, the web's `setCurrentChat` treatment.
+        resolveMention = { id -> crew.firstOrNull { it.userId == id }?.fullName },
+        onOpenUser = { id ->
+            crew.firstOrNull { it.userId == id }?.let { tagged ->
+                viewModel.onEvent(ChatEvent.OpenThread(tagged))
+            }
+        },
         onOpenAttachment = onOpenAttachment,
         loadAvatar = loadAvatar,
         loadThumbnail = loadThumbnail,
@@ -251,6 +264,8 @@ private fun DirectoryPane(
                 // picking someone in Chats and then switching to Contacts should
                 // show that person as the one being read, not nobody.
                 selectedId = chatState?.peer?.userId ?: selectedId,
+                favourites = chatState?.favourites ?: emptySet(),
+                onToggleFavourite = { onChatEvent(ChatEvent.ToggleFavourite(it)) },
                 loadAvatar = loadAvatar,
                 onOpen = { contact ->
                     // Selecting and opening are one act. The card this used to
@@ -281,6 +296,10 @@ private fun DirectoryPane(
  * The Chats tab: everyone with an existing thread, from the server's
  * `user:list`, resolved against the crew for faces and roles. A peer no
  * longer on the production has no card to show and is left out.
+ *
+ * One flat list, groups and threads interleaved by newest activity — the
+ * phones' order (see [recentRows]). It used to pin a Groups section on top,
+ * which held a dormant room above every fresh conversation.
  */
 @Composable
 @Suppress("LongParameterList")
@@ -292,16 +311,16 @@ private fun RecentsList(
 ) {
     var filter by rememberSaveable { mutableStateOf(ChatFilter.All.name) }
     val chosen = ChatFilter.valueOf(filter)
-    val now = state.activity.values.maxOrNull() ?: 0L
 
     FilterChips(chosen) { filter = it.name }
 
-    val groups = state.groups.filter { room -> chosen.admits(room.id, isGroup = true, state) }
-    val rows = state.recents
-        .mapNotNull { id -> crew.firstOrNull { it.userId == id } }
-        .filter { contact -> chosen.admits(contact.userId, isGroup = false, state) }
+    val rows = recentRows(
+        groups = state.groups,
+        contacts = state.recents.mapNotNull { id -> crew.firstOrNull { it.userId == id } },
+        newest = state.activity,
+    ).filter { row -> chosen.admits(row, state) }
 
-    if (rows.isEmpty() && groups.isEmpty()) {
+    if (rows.isEmpty()) {
         PaneMessage(
             icon = ZillitIcons.Chat,
             text = when (chosen) {
@@ -318,55 +337,56 @@ private fun RecentsList(
         modifier = Modifier.then(rememberWheelScroll(roomsState)),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        if (groups.isNotEmpty()) {
-            item(key = "groups-header") { SectionLine("Groups") }
-            items(groups, key = GroupRoom::id) { room ->
-                CrewRow(
-                    contact = CrewContact(userId = room.id, fullName = room.name),
-                    isSelected = false,
-                    loadAvatar = { null },
-                    onClick = { onEvent(ChatEvent.OpenGroup(room)) },
-                    subtitle = state.previews[room.id],
-                    badge = state.unread[room.id] ?: 0,
-                    timeLabel = state.activity[room.id]?.let { chatTimeLabel(it, now) },
-                    isFavourite = room.id in state.favourites,
-                    onToggleFavourite = { onEvent(ChatEvent.ToggleFavourite(room.id)) },
-                    showAdmin = false,
-                )
+        items(rows, key = RecentRow::id) { row ->
+            Column {
+                when (row) {
+                    // The web's group row: name over the stamp line, badge, no
+                    // star and no designation slot (`GroupCard.jsx:300-333`).
+                    is RecentRow.Group -> CrewRow(
+                        contact = CrewContact(userId = row.room.id, fullName = row.room.name),
+                        isSelected = false,
+                        loadAvatar = { null },
+                        onClick = { onEvent(ChatEvent.OpenGroup(row.room)) },
+                        subtitle = (state.activity[row.room.id] ?: row.room.sortingActivity.takeIf { it > 0L })
+                            ?.let { "${"last_message_at".localised()}: ${lastMessageAt(it)}" },
+                        badge = state.unread[row.room.id] ?: 0,
+                    )
+
+                    // The web's user row: name, designation, "Last Entry"
+                    // (`UserCard.jsx:317-362`) — no message preview.
+                    is RecentRow.Direct -> CrewRow(
+                        contact = row.contact,
+                        isSelected = false,
+                        loadAvatar = loadAvatar,
+                        onClick = { onEvent(ChatEvent.OpenThread(row.contact)) },
+                        meta = row.contact.lastEntryLine(),
+                        badge = state.unread[row.contact.userId] ?: 0,
+                        isFavourite = row.contact.userId in state.favourites,
+                        onToggleFavourite = { onEvent(ChatEvent.ToggleFavourite(row.contact.userId)) },
+                    )
+                }
+                ZillitDivider()
             }
-            if (rows.isNotEmpty()) item(key = "dm-header") { SectionLine("Direct messages") }
-        }
-        items(rows, key = CrewContact::userId) { contact ->
-            CrewRow(
-                contact = contact,
-                isSelected = false,
-                loadAvatar = loadAvatar,
-                onClick = { onEvent(ChatEvent.OpenThread(contact)) },
-                // The last line of the thread beats a job title here.
-                subtitle = state.previews[contact.userId],
-                badge = state.unread[contact.userId] ?: 0,
-                timeLabel = state.activity[contact.userId]?.let { chatTimeLabel(it, now) },
-                isFavourite = contact.userId in state.favourites,
-                onToggleFavourite = { onEvent(ChatEvent.ToggleFavourite(contact.userId)) },
-                showAdmin = false,
-            )
         }
     }
 }
 
 /**
- * The Contacts tab: everyone else on the production, by department.
+ * The Contacts tab: everyone else on the production, one flat roll.
  *
- * A row opens that person's conversation. It used to select them and show a
- * card whose only action was "Message" — two clicks to reach the thing the
- * pane exists for, while the Chats tab beside it opened on one.
+ * Alphabetical with no department sections — the web's `ContactsList`, whose
+ * rows are the same card the chat list uses with badges suppressed
+ * (`heideBadges`) and the star kept. A row opens that person's conversation.
  */
 @Composable
+@Suppress("LongParameterList")
 private fun CrewList(
     crew: List<CrewContact>,
     selectedId: String?,
+    favourites: Set<String>,
     loadAvatar: suspend (String) -> ImageBitmap?,
     onOpen: (CrewContact) -> Unit,
+    onToggleFavourite: (String) -> Unit,
 ) {
     val crewState = rememberLazyListState()
     LazyColumn(
@@ -374,44 +394,40 @@ private fun CrewList(
         modifier = Modifier.then(rememberWheelScroll(crewState)),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        crew.byDepartment().forEach { (department, people) ->
-            item(key = "dept-$department") {
-                ZillitText(
-                    // Grouped by the raw key above, so two spellings cannot
-                    // split one department — only the heading is translated.
-                    text = department.localised(),
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                    modifier = Modifier.padding(
-                        top = ZillitTheme.spacing.sm,
-                        bottom = ZillitTheme.spacing.xxs,
-                    ),
-                )
-            }
-            items(people, key = CrewContact::userId) { contact ->
+        items(crew.sortedBy { it.fullName.lowercase() }, key = CrewContact::userId) { contact ->
+            Column {
                 CrewRow(
                     contact = contact,
                     isSelected = contact.userId == selectedId,
                     loadAvatar = loadAvatar,
                     onClick = { onOpen(contact) },
+                    meta = contact.lastEntryLine(),
+                    isFavourite = contact.userId in favourites,
+                    onToggleFavourite = { onToggleFavourite(contact.userId) },
                 )
+                ZillitDivider()
             }
         }
     }
 }
 
+/**
+ * One listing row, the web's `UserCard` shape: name with an inline
+ * "- (Admin)" suffix, the designation (or an explicit subtitle) under it, a
+ * meta line under that, and badge + star at the trailing edge.
+ */
 @Composable
+@Suppress("LongParameterList") // One row's worth of display state.
 private fun CrewRow(
     contact: CrewContact,
     isSelected: Boolean,
     loadAvatar: suspend (String) -> ImageBitmap?,
     onClick: () -> Unit,
     subtitle: String? = null,
+    meta: String? = null,
     badge: Int = 0,
-    timeLabel: String? = null,
     isFavourite: Boolean? = null,
     onToggleFavourite: () -> Unit = {},
-    showAdmin: Boolean = true,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -441,24 +457,35 @@ private fun CrewRow(
             image = rememberAvatar(contact.userId, loadAvatar),
         )
         Column(Modifier.weight(1f)) {
-            ZillitText(
-                text = contact.fullName,
-                style = if (unread) {
-                    ZillitTheme.typography.titleSmall
-                } else {
-                    ZillitTheme.typography.bodyMedium
-                },
-                color = ZillitTheme.colors.textPrimary,
-                maxLines = 1,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ZillitText(
+                    text = contact.fullName,
+                    style = if (unread) {
+                        ZillitTheme.typography.titleSmall
+                    } else {
+                        ZillitTheme.typography.bodyMedium
+                    },
+                    color = ZillitTheme.colors.textPrimary,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                // Inline, the web's way — not a trailing tag.
+                if (contact.isAdmin) {
+                    ZillitText(
+                        text = " - (Admin)",
+                        style = ZillitTheme.typography.labelSmall,
+                        color = ZillitTheme.colors.textSecondary,
+                        maxLines = 1,
+                    )
+                }
+            }
             // `designation` is a translation key off `project/users`
             // (`driver_label`); an explicit subtitle is already display text.
-            (subtitle ?: contact.designation?.localised())?.takeIf { it.isNotBlank() }?.let {
+            // The generic member designation is hidden, as on the phones.
+            (subtitle ?: contact.designationLabel()?.localised())?.takeIf { it.isNotBlank() }?.let {
                 ZillitText(
                     text = it,
                     style = ZillitTheme.typography.labelSmall,
-                    // An unread preview is the message itself, not furniture —
-                    // it earns the darker ink until it is read.
                     color = if (unread) {
                         ZillitTheme.colors.textSecondary
                     } else {
@@ -467,33 +494,30 @@ private fun CrewRow(
                     maxLines = 1,
                 )
             }
+            meta?.takeIf { it.isNotBlank() }?.let {
+                ZillitText(
+                    text = it,
+                    style = ZillitTheme.typography.labelSmall,
+                    color = ZillitTheme.colors.textMuted,
+                    maxLines = 1,
+                )
+            }
         }
-        RowTrailing(contact, badge, timeLabel, isFavourite, onToggleFavourite, showAdmin)
+        RowTrailing(badge, isFavourite, onToggleFavourite)
     }
 }
 
-/** The row's right edge: when, how much is waiting, and the star. */
+/** The row's right edge: how much is waiting, and the star. */
 @Composable
-@Suppress("LongParameterList") // One row's worth of trailing state, passed through.
 private fun RowTrailing(
-    contact: CrewContact,
     badge: Int,
-    timeLabel: String?,
     isFavourite: Boolean?,
     onToggleFavourite: () -> Unit,
-    showAdmin: Boolean,
 ) {
-    timeLabel?.takeIf { it.isNotBlank() }?.let {
-        ZillitText(
-            text = it,
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textMuted,
-        )
-    }
     if (badge > 0) {
-        ZillitBadge(count = badge)
-    } else if (showAdmin && contact.isAdmin) {
-        ZillitTag("Admin", tone = TagTone.Accent)
+        // The C&C listing wears the brand orange, not the alert red —
+        // the web's chat badges.
+        ZillitBadge(count = badge, background = ZillitTheme.colors.accent)
     }
     if (isFavourite != null) {
         ZillitIconButton(
@@ -505,6 +529,11 @@ private fun RowTrailing(
         )
     }
 }
+
+/** The user rows' third line — `last_entry: Aug 19, 2026`, the web's. */
+private fun CrewContact.lastEntryLine(): String? =
+    lastActiveMillis?.takeIf { it > 0 }
+        ?.let { "${"last_entry".localised()}: ${lastEntryDate(it)}" }
 
 private val STAR_SIZE = 22.dp
 
@@ -529,9 +558,8 @@ private fun DirectoryTabs(
                     id = entry.name,
                     label = entry.label,
                     count = when (entry) {
-                        DirectoryTab.Chats -> chatState?.let { state ->
-                            if (state.sectionBadges.isEmpty()) state.unread.values.sum() else state.chatsBadge
-                        } ?: 0
+                        // The live conversations' own sum — see `chatsBadge`.
+                        DirectoryTab.Chats -> chatState?.chatsBadge ?: 0
                         DirectoryTab.Calls -> chatState?.callsBadge ?: 0
                         DirectoryTab.Contacts -> 0
                     },
@@ -560,28 +588,20 @@ private fun FilterChips(chosen: ChatFilter, onPick: (ChatFilter) -> Unit) {
     }
 }
 
-/** Whether one conversation belongs under this chip. */
-private fun ChatFilter.admits(id: String, isGroup: Boolean, state: ChatUiState): Boolean =
+/**
+ * Whether one conversation belongs under this chip — Android's per-tab
+ * predicates (`MembersVM.searchOrSubmitUserGroupList`): All/Groups/Members
+ * also demand the row has spoken ([hasStanding]); Unread and Favourites are
+ * their own whole rule.
+ */
+private fun ChatFilter.admits(row: RecentRow, state: ChatUiState): Boolean =
     when (this) {
-        ChatFilter.All -> true
-        ChatFilter.Groups -> isGroup
-        ChatFilter.Members -> !isGroup
-        ChatFilter.Unread -> (state.unread[id] ?: 0) > 0
-        ChatFilter.Favourites -> id in state.favourites
+        ChatFilter.All -> row.hasStanding(state.activity)
+        ChatFilter.Groups -> row is RecentRow.Group && row.hasStanding(state.activity)
+        ChatFilter.Members -> row is RecentRow.Direct && row.hasStanding(state.activity)
+        ChatFilter.Unread -> (state.unread[row.id] ?: 0) > 0
+        ChatFilter.Favourites -> row.id in state.favourites
     }
-
-@Composable
-private fun SectionLine(text: String) {
-    ZillitText(
-        text = text,
-        style = ZillitTheme.typography.labelSmall,
-        color = ZillitTheme.colors.textMuted,
-        modifier = Modifier.padding(
-            top = ZillitTheme.spacing.sm,
-            bottom = ZillitTheme.spacing.xxs,
-        ),
-    )
-}
 
 /** The right pane: one person, large — the paper crew card, on glass. */
 @Composable
@@ -668,7 +688,7 @@ private fun CardIdentity(contact: CrewContact, loadAvatar: suspend (String) -> I
     }
     val role = listOfNotNull(
         contact.department?.takeIf { it.isNotBlank() },
-        contact.designation?.takeIf { it.isNotBlank() },
+        contact.designationLabel(),
     ).joinToString(" · ")
     if (role.isNotBlank()) {
         ZillitText(

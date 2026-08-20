@@ -21,4 +21,11 @@ data class ConversationBacklog(
      * badge service recorded it.
      */
     val activity: Map<String, Long> = emptyMap(),
+    /**
+     * The keys above that are group rooms (`unit = chat_group_label`), not
+     * DM peers. The badge total needs the distinction: a room key the room
+     * list no longer returns is a room the user lost, and its rows are the
+     * server's garbage, not unread — see `liveChatUnread`.
+     */
+    val rooms: Set<String> = emptySet(),
 )

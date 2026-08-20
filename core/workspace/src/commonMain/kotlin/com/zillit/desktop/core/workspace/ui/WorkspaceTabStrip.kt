@@ -38,18 +38,17 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.core.workspace.LayoutMode
 import com.zillit.desktop.core.workspace.ToolWindow
 import com.zillit.desktop.core.workspace.WindowState
 import com.zillit.desktop.core.workspace.WorkspaceEvent
 import com.zillit.desktop.core.workspace.WorkspaceState
 
 /**
- * The tab strip: one chip per open window, plus the layout controls.
+ * The tab strip: one chip per open window, plus the Close-all control.
  *
- * Ported from the web `ToolTabStrip.jsx`, including the "N open" counter, the
- * per-tab badge, and the Cascade / Close-all controls — so the two clients read
- * as the same product.
+ * Ported from the web `ToolTabStrip.jsx`, including the "N open" counter and the
+ * per-tab badge — so the two clients read as the same product. The layout-mode
+ * toggle is keyboard-only (see `WorkspaceShortcuts`) rather than a strip button.
  */
 @Composable
 fun WorkspaceTabStrip(
@@ -58,7 +57,6 @@ fun WorkspaceTabStrip(
     modifier: Modifier = Modifier,
     iconFor: (ToolWindow) -> ImageVector = { ZillitIcons.Tools },
     badgeFor: (ToolWindow) -> Int = { 0 },
-    onLaunchTool: () -> Unit = {},
 ) {
     Row(
         modifier = modifier
@@ -74,7 +72,6 @@ fun WorkspaceTabStrip(
             onEvent = onEvent,
             iconFor = iconFor,
             badgeFor = badgeFor,
-            onLaunchTool = onLaunchTool,
             modifier = Modifier.weight(1f).fillMaxHeight(),
         )
         LayoutControls(state = state, onEvent = onEvent)
@@ -87,7 +84,6 @@ private fun TabList(
     onEvent: (WorkspaceEvent) -> Unit,
     iconFor: (ToolWindow) -> ImageVector,
     badgeFor: (ToolWindow) -> Int,
-    onLaunchTool: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -108,12 +104,6 @@ private fun TabList(
             iconFor = iconFor,
             badgeFor = badgeFor,
             modifier = Modifier.weight(1f, fill = false).zillitHorizontalScroll(),
-        )
-
-        ZillitIconButton(
-            icon = ZillitIcons.Add,
-            contentDescription = "Open a tool",
-            onClick = onLaunchTool,
         )
     }
 }
@@ -177,16 +167,10 @@ private fun ReorderableTabs(
 
 @Composable
 private fun LayoutControls(state: WorkspaceState, onEvent: (WorkspaceEvent) -> Unit) {
-    val toTabs = state.layoutMode == LayoutMode.Cascade
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        ZillitIconButton(
-            icon = if (toTabs) ZillitIcons.LayoutTabs else ZillitIcons.LayoutCascade,
-            contentDescription = if (toTabs) "Switch to tabs" else "Switch to floating windows",
-            onClick = { onEvent(WorkspaceEvent.ToggleLayoutMode) },
-        )
         ZillitIconButton(
             icon = ZillitIcons.Close,
             contentDescription = "Close all tools",

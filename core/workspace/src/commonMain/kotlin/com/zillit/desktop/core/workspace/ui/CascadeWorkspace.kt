@@ -68,7 +68,7 @@ fun CascadeWorkspace(
                 FloatingToolWindow(
                     window = window,
                     isActive = window.id == state.activeId,
-                    icon = provider?.icon ?: ZillitIcons.Tools,
+                    icon = provider?.iconFor(window.route) ?: ZillitIcons.Tools,
                     workspaceSize = workspaceSize,
                     onFocus = { onEvent(WorkspaceEvent.Focus(window.id)) },
                     onMinimize = { onEvent(WorkspaceEvent.Minimize(window.id)) },
