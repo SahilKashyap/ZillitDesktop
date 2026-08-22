@@ -416,6 +416,19 @@ class AuthViewModel(
             return
         }
 
+        // A production still awaiting approval grants no access to anything
+        // inside it: the backend answers every project-scoped call with 403
+        // `libs_access_denied`, starting with the Home tab strip. The list
+        // already makes these rows unclickable, so this guards the ways in that
+        // do not go through a click — a restored session, a later caller — and
+        // keeps the rule in the layer that knows what pending means rather than
+        // only in the one that draws it.
+        if (project.isPending) {
+            ZillitLog.i(TAG) { "not opening ${project.id}: membership is still pending" }
+            setState { copy(isBusy = false, error = PENDING_APPROVAL) }
+            return
+        }
+
         // With no network, only a production this computer has seen before can
         // open — everything inside it would be drawn from what was saved. Said
         // at the click, not after a screen full of errors.
@@ -659,6 +672,8 @@ class AuthViewModel(
         /** Says what happened and what to do, without blaming the user. */
         const val SESSION_EXPIRED_MESSAGE = "Your session has ended. Scan the code to sign in again."
         const val NO_OFFLINE_DATA = "No offline data available for this project. Connect to the internet to open it."
+        const val PENDING_APPROVAL =
+            "This production is still awaiting approval. You can open it once a coordinator accepts your request."
     }
 }
 
