@@ -12,6 +12,9 @@ kotlin {
             implementation(project(":core:config"))
             implementation(project(":core:database"))
             implementation(project(":core:designsystem"))
+            // The picked-media preview dialog the thread's composer opens
+            // before a file is sent — the same one the Home board hosts.
+            implementation(project(":core:media"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:localization"))
             implementation(project(":core:network"))

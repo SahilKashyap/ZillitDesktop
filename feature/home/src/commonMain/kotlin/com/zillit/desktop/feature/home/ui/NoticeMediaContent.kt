@@ -97,23 +97,7 @@ internal fun AttachmentContent(
         // A document with a poster — a PDF's first page — shows it above the
         // chip, as the web's DocumentMessage does. Same click either way: save
         // and hand to the OS.
-        NoticeKind.Document -> Column(
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-        ) {
-            if (attachment.localBytes != null ||
-                (!attachment.thumbnail.isNullOrBlank() && attachment.isFetchable)
-            ) {
-                MediaThumbnail(
-                    attachment = attachment,
-                    media = media,
-                    overlay = null,
-                    onClick = { onOpen(attachment) },
-                    // The chip is already below; a failed poster shows nothing.
-                    fallback = {},
-                )
-            }
-            FileChip(attachment, onClick = { onOpen(attachment) })
-        }
+        NoticeKind.Document -> DocumentContent(attachment, media, onOpen)
 
         // The attachment is the map screenshot; the click goes to the map
         // itself when coordinates came through, as the web links it.
@@ -127,6 +111,30 @@ internal fun AttachmentContent(
         )
 
         NoticeKind.Text -> Unit
+    }
+}
+
+/** A document: its poster (a PDF's first page) when one exists, and the chip. */
+@Composable
+private fun DocumentContent(
+    attachment: NoticeAttachment,
+    media: NoticeMediaSource?,
+    onOpen: (NoticeAttachment) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        if (attachment.localBytes != null ||
+            (!attachment.thumbnail.isNullOrBlank() && attachment.isFetchable)
+        ) {
+            MediaThumbnail(
+                attachment = attachment,
+                media = media,
+                overlay = null,
+                onClick = { onOpen(attachment) },
+                // The chip is already below; a failed poster shows nothing.
+                fallback = {},
+            )
+        }
+        FileChip(attachment, onClick = { onOpen(attachment) })
     }
 }
 

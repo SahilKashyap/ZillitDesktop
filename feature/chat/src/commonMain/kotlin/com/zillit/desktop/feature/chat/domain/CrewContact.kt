@@ -23,6 +23,15 @@ data class CrewContact(
     val deviceId: String? = null,
     /** When they last used the app — the listing's "Last Entry" line. */
     val lastActiveMillis: Long? = null,
+    /**
+     * They left or were removed from the production, but their history is
+     * still worth opening — Android's Members filter keeps `left` and
+     * `removed` alongside the active statuses (`MembersVM.kt:416-420`), and
+     * its thread header captions such a peer "Disconnected". The host maps
+     * this from `ProjectUser.status` ("left"/"removed"); false covers active
+     * crew and older cached rows with no status at all.
+     */
+    val hasLeft: Boolean = false,
 )
 
 /**
@@ -125,11 +134,12 @@ fun liveChatUnread(
 /**
  * Whether a row has earned a place in the listing at all.
  *
- * Android's All/Groups/Members tabs hide rows that have never spoken —
+ * Android's All/Members tabs hide rows that have never spoken —
  * `sorting_activity > 0` — with one exception: a department's room shows
  * before its first message (`MembersVM.kt:213-218, 261-263, 287-289`). The
- * Unread and Favourites tabs skip this test; their own predicate is the whole
- * rule.
+ * Unread and Favourites tabs skip this test, and so does Groups (see
+ * [admits] — its Android counterpart lists every room); their own predicate
+ * is the whole rule.
  *
  * A direct row passes by construction: it is only ever built from the
  * server's `user:list` — everyone this user has a DM thread with — which is
@@ -155,6 +165,48 @@ enum class ChatFilter(val label: String) {
     Members("Members"),
     Groups("Groups"),
     Favourites("Favourites"),
+}
+
+/**
+ * Whether one conversation belongs under this chip — Android's per-tab
+ * predicates. All and Members also demand the row has spoken
+ * ([hasStanding], `MembersVM.searchOrSubmitUserGroupList`); Unread and
+ * Favourites are their own whole rule.
+ *
+ * Groups deliberately does NOT test standing: Android's Groups tab lists
+ * every enabled room the `chat-room` answer returns — `GroupsVM.searchList`
+ * (`GroupsVM.kt:168-184`) filters only `enabled` and `is_random_call_group`
+ * and sorts by `sorting_activity`, never requiring the room to have spoken.
+ * Gating on [hasStanding] here hid every freshly created or never-used room
+ * (stamp 0, no department) from the one chip named after them (QA#3).
+ */
+fun ChatFilter.admits(
+    row: RecentRow,
+    newest: Map<String, Long>,
+    unread: Map<String, Int>,
+    favourites: Set<String>,
+): Boolean = when (this) {
+    ChatFilter.All -> row.hasStanding(newest)
+    ChatFilter.Groups -> row is RecentRow.Group
+    ChatFilter.Members -> row is RecentRow.Direct && row.hasStanding(newest)
+    ChatFilter.Unread -> (unread[row.id] ?: 0) > 0
+    ChatFilter.Favourites -> row.id in favourites
+}
+
+/** The name a listing row wears — the group's name or the person's. */
+fun RecentRow.displayName(): String = when (this) {
+    is RecentRow.Group -> room.name
+    is RecentRow.Direct -> contact.fullName
+}
+
+/**
+ * The Chats tab's search box: conversations by display name, case-blind —
+ * the same tolerance [searchCrew] extends on the Contacts tab (QA#6).
+ */
+fun List<RecentRow>.searchRecents(query: String): List<RecentRow> {
+    val needle = query.trim()
+    if (needle.isEmpty()) return this
+    return filter { it.displayName().contains(needle, ignoreCase = true) }
 }
 
 /**

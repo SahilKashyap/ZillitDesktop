@@ -699,7 +699,12 @@ private fun MessageList(
         contentPadding = PaddingValues(vertical = ZillitTheme.spacing.xs),
     ) {
 
-        items(rows, key = EmailSummary::id) { message ->
+        // Folder + uid + id, not id alone: a search spans folders, and the
+        // same message legitimately sits in two of them (the cache's own
+        // primary key is composite for this reason — EmailCache.sq). Keying
+        // by id alone made the first inbox search throw "key was already
+        // used" and take the whole window down.
+        items(rows, key = { "${it.folderName}/${it.uid}/${it.id}" }) { message ->
             MessageRow(
                 message = message,
                 isSelected = message.id == state.selectedMessageId,

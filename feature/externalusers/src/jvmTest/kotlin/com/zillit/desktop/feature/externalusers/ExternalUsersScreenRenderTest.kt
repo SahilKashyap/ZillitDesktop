@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.externalusers
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -63,6 +64,39 @@ class ExternalUsersScreenRenderTest {
         onNodeWithText("Phone").assertExists()
         onNodeWithText("Submit").assertExists()
         onNodeWithText("Add more information").assertExists()
+    }
+
+    @Test
+    fun `a poster's own row carries live edit and delete controls`() = runComposeUiTest {
+        val events = mutableListOf<ExternalUsersEvent>()
+        setContent { ZillitTheme { ExternalUsersScreen(state = state, onEvent = { events += it }) } }
+
+        // Composed even before any hover — revealed by alpha, never by
+        // conditional composition, so the click always finds them live.
+        onNodeWithContentDescription("Edit Grip Hire Ltd").performClick()
+        onNodeWithContentDescription("Delete Grip Hire Ltd").performClick()
+
+        assertTrue(events.contains(ExternalUsersEvent.Edit(vendor)))
+        assertTrue(events.contains(ExternalUsersEvent.Delete(vendor)))
+    }
+
+    @Test
+    fun `a view-only viewer sees the roster without edit affordances`() = runComposeUiTest {
+        setContent {
+            ZillitTheme {
+                ExternalUsersScreen(
+                    state = state.copy(
+                        viewer = ExternalUsersViewer(userId = "u-else", canView = true, ready = true),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+
+        onNodeWithText("Grip Hire Ltd").assertExists()
+        onNodeWithText("Add User").assertDoesNotExist()
+        onNodeWithContentDescription("Edit Grip Hire Ltd").assertDoesNotExist()
+        onNodeWithContentDescription("Delete Grip Hire Ltd").assertDoesNotExist()
     }
 
     @Test

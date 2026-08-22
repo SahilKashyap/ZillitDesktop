@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.sos.data
 import com.zillit.desktop.core.common.MessageElement
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
@@ -458,7 +459,12 @@ internal fun ContactDto.toContact(): SosContact? {
         entryType = entryType.orEmpty(),
         userId = userId.orEmpty(),
         userFullName = user?.fullName.orEmpty(),
-        userDesignation = user?.designationName.orEmpty(),
+        // `designation_name` arrives as a label key (`producer_label`);
+        // the dictionary turns it into words, as everywhere else.
+        userDesignation = user?.designationName
+            ?.takeIf { it.isNotBlank() }
+            ?.let { Labels.translate(it) }
+            .orEmpty(),
         contactName = contactName.orEmpty(),
         relation = relation.orEmpty(),
         countryCode = countryCode.orEmpty(),

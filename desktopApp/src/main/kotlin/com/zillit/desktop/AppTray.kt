@@ -45,7 +45,7 @@ fun ApplicationScope.AppTray(
         Tray(
             state = trayState,
             icon = rememberVectorPainter(ZillitIcons.Mark),
-            tooltip = "Zillit",
+            tooltip = "Zillit-Desktop",
             // The click that does *not* open the menu — right-click on macOS,
             // double-click on Windows — still does the obvious thing rather
             // than nothing.

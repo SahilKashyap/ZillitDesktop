@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.email
 
 import com.zillit.desktop.feature.email.data.readFolder
+import com.zillit.desktop.feature.email.data.readMessage
 import com.zillit.desktop.feature.email.data.readSummary
 import com.zillit.desktop.feature.email.data.readUid
 import kotlinx.serialization.json.Json
@@ -115,5 +116,34 @@ class MailReaderTest {
 
         assertFalse(message.snippet.contains("<"), "tag soup in a three-line preview")
         assertTrue(message.snippet.contains("6am"))
+    }
+
+    @Test
+    fun `the references chain reads as an array, a spaced string or a comma string`() {
+        // Three shapes from three writers — Android carries a
+        // `FlexibleStringListAdapter` for exactly this. Losing the chain to a
+        // shape costs the reply its conversation.
+        fun chain(json: String) = readMessage(Json.parseToJsonElement(json))?.references
+
+        assertEquals(listOf("m1", "m2"), chain("""{"id":"m3","references":["m1","m2"]}"""))
+        assertEquals(listOf("m1", "m2"), chain("""{"id":"m3","references":"m1 m2"}"""))
+        assertEquals(listOf("m1", "m2"), chain("""{"id":"m3","references":"m1,m2"}"""))
+        assertEquals(emptyList(), chain("""{"id":"m3"}"""))
+    }
+
+    @Test
+    fun `a message with no trail id is threaded by its chain, then its parent`() {
+        // The phones' `calculateThreadId`: the root of the chain, else the
+        // message it answers, else itself.
+        fun thread(json: String) = readMessage(Json.parseToJsonElement(json))?.threadId
+
+        assertEquals("m1", thread("""{"id":"m3","references":["m1","m2"]}"""))
+        assertEquals("m2", thread("""{"id":"m3","in_reply_to":"m2"}"""))
+        assertEquals("m3", thread("""{"id":"m3"}"""))
+        // A trail the server computed still wins over both.
+        assertEquals(
+            "t9",
+            thread("""{"id":"m3","thread_id":"t9","references":["m1"]}"""),
+        )
     }
 }

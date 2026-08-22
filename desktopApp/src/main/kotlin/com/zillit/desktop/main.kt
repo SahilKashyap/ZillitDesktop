@@ -290,10 +290,10 @@ private fun reportAlreadyRunning() {
     runCatching {
         javax.swing.JOptionPane.showMessageDialog(
             null,
-            "Zillit is already running.\n\n" +
+            "Zillit-Desktop is already running.\n\n" +
                 "Only one copy can be open at a time, because they share the same " +
                 "local data. Switch to the window that is already open.",
-            "Zillit",
+            "Zillit-Desktop",
             javax.swing.JOptionPane.INFORMATION_MESSAGE,
         )
     }
@@ -514,7 +514,7 @@ private fun ApplicationScope.ZillitWindows(
     Window(
         onCloseRequest = { quitZillit(windowState) },
         state = windowState,
-        title = "Zillit",
+        title = "Zillit-Desktop",
         icon = androidx.compose.ui.res.painterResource("icons/zillit-icon.png"),
         // Preview so shortcuts beat focused controls, but unhandled keys fall
         // through — a handler that swallows everything breaks typing.
@@ -896,6 +896,8 @@ private fun ProjectScopedLoads(
         viewModels.drive?.onProjectChanged()
         // The rights spreadsheet is the previous production's until it reloads.
         viewModels.permissionGrid?.onProjectChanged()
+        // The outside-contact directory is the previous production's until it reloads.
+        viewModels.externalUsers?.onProjectChanged()
     }
 }
 
@@ -1229,36 +1231,54 @@ private suspend fun pickChatAttachment(
     val picked = com.zillit.desktop.feature.email.data.FilePicker().pick().firstOrNull()
         ?: return null
 
+    // The bytes ride along so the thread's preview dialog can show (and for a
+    // picture, edit) the file before anything uploads; the upload then takes
+    // the possibly edited bytes back.
     return com.zillit.desktop.feature.chat.domain.PendingChatUpload(
         name = picked.name,
         contentType = picked.contentType,
-    ) { onProgress ->
-        // The board's own capture: a video or PDF gets a poster frame, and the
-        // frame travels as its own upload — the same shape mail and notices use.
-        val media = homeMediaCapture(ready)
-        val withPoster = media.videoThumbnail(
-            com.zillit.desktop.feature.home.domain.PickedMedia(
-                name = picked.name,
-                contentType = picked.contentType,
-                bytes = picked.bytes,
-            ),
-        )
-        val stored = (media.upload?.invoke(withPoster, onProgress)
-            as? com.zillit.desktop.core.common.ZillitResult.Success)?.data
+        bytes = picked.bytes,
+    ) { bytes, onProgress ->
+        uploadChatMedia(ready, picked.name, picked.contentType, bytes, onProgress)
+    }
+}
 
-        stored?.let {
-            ChatAttachment(
-                media = it.media,
-                name = it.fileName,
-                contentType = it.contentType,
-                bucket = it.bucket.orEmpty(),
-                region = it.region.orEmpty(),
-                thumbnail = it.thumbnail.orEmpty(),
-                widthPx = (it.widthPx ?: 0).toLong(),
-                heightPx = (it.heightPx ?: 0).toLong(),
-                durationMillis = it.durationMillis ?: 0,
-            )
-        }
+/**
+ * Chat's route to storage for a named blob — the board's own capture: a video
+ * or PDF gets a poster frame, and the frame travels as its own upload, the
+ * same shape mail and notices use. Serves both the picker's files and the
+ * composer's pasted images (ChatViewModel's `uploadMedia` seam).
+ */
+private suspend fun uploadChatMedia(
+    ready: AppGraph.Ready,
+    name: String,
+    contentType: String,
+    bytes: ByteArray,
+    onProgress: (Int) -> Unit,
+): ChatAttachment? {
+    val media = homeMediaCapture(ready)
+    val withPoster = media.videoThumbnail(
+        com.zillit.desktop.feature.home.domain.PickedMedia(
+            name = name,
+            contentType = contentType,
+            bytes = bytes,
+        ),
+    )
+    val stored = (media.upload?.invoke(withPoster, onProgress)
+        as? com.zillit.desktop.core.common.ZillitResult.Success)?.data
+
+    return stored?.let {
+        ChatAttachment(
+            media = it.media,
+            name = it.fileName,
+            contentType = it.contentType,
+            bucket = it.bucket.orEmpty(),
+            region = it.region.orEmpty(),
+            thumbnail = it.thumbnail.orEmpty(),
+            widthPx = (it.widthPx ?: 0).toLong(),
+            heightPx = (it.heightPx ?: 0).toLong(),
+            durationMillis = it.durationMillis ?: 0,
+        )
     }
 }
 
@@ -1452,14 +1472,19 @@ private suspend fun fetchProjectUnread(ready: AppGraph.Ready): Map<String, Int> 
     return counts
 }
 
+/** The C&C area's tool identifier — Android `Constants.CNC_CHAT_TYPE` (Constants.kt:1898). */
+private const val CNC_TOOL_IDENTIFIER = "cnc_section"
+
 private fun chatProvider(
     ready: AppGraph.Ready,
     viewModel: ChatViewModel?,
     calls: CallViewModel?,
     audioPlayer: com.zillit.desktop.core.designsystem.component.AudioPlayer?,
+    canDownload: () -> Boolean = { true },
 ) = ChatToolProvider(
     player = audioPlayer,
     loadAudio = { file -> fetchChatAudio(ready, file) },
+    canDownload = canDownload,
     // The keep-name-private honour is applied here, before the screen ever
     // sees the list — the same rule Android's members tab keeps.
     crew = {
@@ -1484,6 +1509,10 @@ private fun chatProvider(
                     isAdmin = user.isAdmin,
                     deviceId = user.deviceId,
                     lastActiveMillis = user.lastActiveMillis,
+                    // "left"/"removed" stay listed (Android keeps them in the
+                    // roster) but the thread shows Disconnected and refuses
+                    // sends — ChatAndGroupPage.kt:362.
+                    hasLeft = user.status == "left" || user.status == "removed",
                 )
             }
     },
@@ -1506,25 +1535,40 @@ private fun chatProvider(
         }
     },
     callLog = calls?.let { { CallLogTab(ready, it) } },
+    // The Chats tab's "New group" and its message search — both straight off
+    // the repository; the provider hides the affordances when absent.
+    createRoom = { name, members -> ready.chatRepository.createRoom(name, members) },
+    searchMessages = { query -> ready.chatRepository.searchMessages(query) },
+    deleteRoom = { roomId -> ready.chatRepository.deleteRoom(roomId) },
     onOpenAttachment = { file -> openChatAttachment(ready, file) },
-    loadThumbnail = { file ->
-        (
-            ready.noticeMedia.fetch(
-                com.zillit.desktop.feature.home.domain.NoticeAttachment(
-                    media = file.media,
-                    fileName = file.name,
-                    // Without this the preview fetch had no thumbnail key at
-                    // all — every chat bubble asked S3 for a blank object and
-                    // showed nothing where the picture belonged.
-                    thumbnail = file.thumbnail,
-                    bucket = file.bucket,
-                    region = file.region,
-                ),
-                preview = true,
-            ) as? com.zillit.desktop.core.common.ZillitResult.Success
-            )?.data?.let(::decodeImageBitmap)
-    },
+    loadThumbnail = { file -> fetchChatImage(ready, file, preview = true) },
+    // The lightbox's fetch: the object itself, not its poster.
+    loadFullImage = { file -> fetchChatImage(ready, file, preview = false) },
 )
+
+/**
+ * A chat picture's bytes, decoded — the bubble's preview or the lightbox's
+ * full object, through the same storage source the boards use. The
+ * `thumbnail` key must travel: without it the preview fetch asked S3 for a
+ * blank object and showed nothing where the picture belonged.
+ */
+private suspend fun fetchChatImage(
+    ready: AppGraph.Ready,
+    file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
+    preview: Boolean,
+): androidx.compose.ui.graphics.ImageBitmap? =
+    (
+        ready.noticeMedia.fetch(
+            com.zillit.desktop.feature.home.domain.NoticeAttachment(
+                media = file.media,
+                fileName = file.name,
+                thumbnail = file.thumbnail,
+                bucket = file.bucket,
+                region = file.region,
+            ),
+            preview = preview,
+        ) as? com.zillit.desktop.core.common.ZillitResult.Success
+        )?.data?.let(::decodeImageBitmap)
 
 /**
  * Who this person is, as the two finance tools need to know it.
@@ -1911,6 +1955,10 @@ private fun rememberAppViewModels(
                     // The same picker and routed uploader mail and the board
                     // use; the stored key rides the message envelope.
                     pickAttachment = { pickChatAttachment(it) },
+                    // Pasted images take the same route to storage.
+                    uploadMedia = { name, type, bytes, onProgress ->
+                        uploadChatMedia(it, name, type, bytes, onProgress)
+                    },
                     voice = chatVoice(it),
                     loadFavourites = {
                         it.preferences.get(ZillitPreferences.ChatFavourites)
@@ -2391,7 +2439,21 @@ private fun buildRegistry(
         }
     }
     val chat = (graph as? AppGraph.Ready)?.let {
-        chatProvider(it, chatViewModel, viewModels.calls, audioPlayer)
+        chatProvider(
+            it, chatViewModel, viewModels.calls, audioPlayer,
+            // The C&C tool's download right (Android gates saves with
+            // msg_download_right on the same flag). A production whose tools
+            // list never mentions the tool leaves chat ungated, as the
+            // phones' chat page is.
+            canDownload = canDownload@{
+                val permissions = viewModels.home?.state?.value?.permissions
+                    ?: return@canDownload true
+                if (permissions.tools.none { tool -> tool.identifier == CNC_TOOL_IDENTIFIER }) {
+                    return@canDownload true
+                }
+                permissions.canDownload(CNC_TOOL_IDENTIFIER)
+            },
+        )
     }
     val signatures = (graph as? AppGraph.Ready)?.let {
         SignatureToolProvider(it.signatureRepository)
@@ -2545,7 +2607,9 @@ private fun ProjectContext?.sosViewer(): SosViewer = SosViewer(
 private fun ProjectContext?.sosCrew(): List<SosCrewMember> =
     this?.users.orEmpty().mapNotNull { user ->
         val id = user.userId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-        SosCrewMember(userId = id, fullName = user.fullName, designation = user.designation.orEmpty())
+        // Translated words, not the wire's label key — the same rule the
+        // Contacts tab applies (designationText drops the placeholder too).
+        SosCrewMember(userId = id, fullName = user.fullName, designation = user.designationText().orEmpty())
     }
 
 private fun ProjectContext.crewContacts(): List<EmailContact> =

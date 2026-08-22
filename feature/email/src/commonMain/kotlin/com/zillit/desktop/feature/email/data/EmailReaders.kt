@@ -80,9 +80,19 @@ internal fun readMessage(row: JsonElement): EmailMessage? {
 
     val raw = row.str("body") ?: row.str("text").orEmpty()
 
+    val references = row.headerIds("references")
+    val inReplyTo = row.str("in_reply_to").orEmpty()
+
     return EmailMessage(
         id = id,
-        threadId = row.str("thread_id") ?: row.str("trail_reference_id") ?: id,
+        // The server's own trail id first; then the chain's root and the
+        // parent, which is how the phones group a thread when the server
+        // sends no trail (Android `calculateThreadId`).
+        threadId = row.str("thread_id")
+            ?: row.str("trail_reference_id")
+            ?: references.firstOrNull()
+            ?: inReplyTo.takeIf { it.isNotBlank() }
+            ?: id,
         subject = row.str("subject") ?: "(no subject)",
         from = row.str("from").orEmpty(),
         to = row.addresses("to"),
@@ -93,6 +103,8 @@ internal fun readMessage(row: JsonElement): EmailMessage? {
         // `ingrained_attachment` holds inline images — part of the body, not
         // things to list as files the reader can download.
         attachments = (row["attachments"] as? JsonArray).orEmpty().mapNotNull(::readAttachment),
+        references = references,
+        inReplyTo = inReplyTo,
     )
 }
 
@@ -115,6 +127,7 @@ internal fun readDraft(row: JsonElement): EmailDraft? {
         subject = row.str("subject").orEmpty(),
         body = row.str("body") ?: row.str("text").orEmpty(),
         updatedAtMillis = row.millis("updated_at").takeIf { it > 0 } ?: row.millis("created_at"),
+        references = row.headerIds("references"),
     )
 }
 
@@ -213,6 +226,24 @@ internal fun JsonObject.int(key: String): Int =
 
 internal fun JsonObject.millis(key: String): Long =
     prim(key)?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() } ?: 0
+
+/**
+ * Message ids from a header field — `references`, mostly.
+ *
+ * An array from one client, a single string from another, and that string
+ * separated by spaces (RFC 5322) or commas depending on who wrote it. Android
+ * needs the same three shapes and has a `FlexibleStringListAdapter` for it;
+ * this is that adapter. Order matters: the root is first, and threading reads
+ * it from there.
+ */
+internal fun JsonObject.headerIds(key: String): List<String> = when (val value = this[key]) {
+    is JsonArray -> value.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf(String::isNotEmpty) }
+    is JsonPrimitive -> value.contentOrNull.orEmpty()
+        .split(' ', ',', '\n', '\t')
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+    else -> emptyList()
+}
 
 /** Recipients arrive as an array or, on older mail, a comma-separated string. */
 internal fun JsonObject.addresses(key: String): List<String> = when (val value = this[key]) {

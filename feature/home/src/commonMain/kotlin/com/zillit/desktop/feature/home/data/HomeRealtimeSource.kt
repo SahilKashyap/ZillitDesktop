@@ -30,23 +30,27 @@ class HomeRealtimeSource(
         events.onAny(ZillitSocketEvents.Home.All + ZillitSocketEvents.AccessGrid.All)
             .mapNotNull(::toEvent)
 
-    private fun toEvent(message: SocketMessage): HomeRealtimeEvent? {
-        if (message.event in ZillitSocketEvents.Home.Units) return HomeRealtimeEvent.UnitsChanged
+    private fun toEvent(message: SocketMessage): HomeRealtimeEvent? = when {
+        message.event in ZillitSocketEvents.Home.Units -> HomeRealtimeEvent.UnitsChanged
 
         // An admin moved MY rights: the tab strip and the composer's gate are
         // both stale, so the unit list is read afresh — Android's own
         // fallback branch, minus its in-place patching (QA #18: rights taken
         // away kept working until the app restarted). Somebody else's rights
         // are their board's business.
-        if (message.event in ZillitSocketEvents.AccessGrid.All) {
-            val target = message.payload?.rightsTargetUserId() ?: return null
-            return HomeRealtimeEvent.UnitsChanged.takeIf { target == myUserId() }
-        }
+        message.event in ZillitSocketEvents.AccessGrid.All ->
+            HomeRealtimeEvent.UnitsChanged.takeIf {
+                message.payload?.rightsTargetUserId() == myUserId()
+            }
 
+        else -> message.payload?.unwrapData()?.let { body -> boardEvent(message, body) }
+    }
+
+    /** The per-board events, once the payload has been unwrapped. */
+    private fun boardEvent(message: SocketMessage, body: JsonObject): HomeRealtimeEvent? {
         // The wire nests the interesting object under `data`, sometimes as a
         // JSON **string** rather than an object — Android re-parses it for the
         // same reason (`baseSocketParser`).
-        val body = message.payload?.unwrapData() ?: return null
         val unitId = body.stringField("unit_id")
 
         return when (message.event) {
