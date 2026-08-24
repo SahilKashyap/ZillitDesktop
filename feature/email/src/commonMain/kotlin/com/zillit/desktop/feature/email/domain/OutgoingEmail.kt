@@ -94,8 +94,12 @@ fun EmailMessage.replyDraft(mode: ComposeMode, selfAddress: String = ""): Outgoi
         to = recipients.filter { it.isNotBlank() },
         subject = subject.prefixedFor(mode),
         body = quotedFor(mode),
-        // A forward starts a new conversation; a reply continues this one.
-        references = if (mode == ComposeMode.Forward) emptyList() else listOf(id),
+        // A forward starts a new conversation; a reply continues this one —
+        // and continuing it means the WHOLE chain, not just this message.
+        // Sending only this id threaded a reply to the first message and lost
+        // every later one into a new conversation (QA: "replying generates a
+        // new mail"). Both phones and the web send the parent's chain.
+        references = if (mode == ComposeMode.Forward) emptyList() else replyReferences,
     )
 }
 

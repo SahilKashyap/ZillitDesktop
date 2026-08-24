@@ -36,6 +36,8 @@ class ExternalUsersToolProvider(
         val state by viewModel.state.collectAsState()
         var notice by remember { mutableStateOf<String?>(null) }
 
+        // Re-runs on every window open: start() rescopes the roster to the
+        // open production and refetches — the view model outlives switches.
         LaunchedEffect(viewModel) { viewModel.start() }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->

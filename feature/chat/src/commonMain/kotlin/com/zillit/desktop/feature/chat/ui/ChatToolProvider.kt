@@ -30,6 +30,30 @@ class ChatToolProvider(
     suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray? = { null },
     /** The call history pane, supplied by the app; null hides the Calls tab. */
     private val callLog: (@Composable () -> Unit)? = null,
+    /**
+     * The viewer's download right on the C&C tool — `ProjectPermissions`'
+     * `canDownload`, read per click so a rights change lands live. Gates
+     * every save-to-disk path; the in-app viewer stays free to look.
+     */
+    private val canDownload: () -> Boolean = { true },
+    /** The system clipboard's picture half — composer paste and "Copy image". */
+    private val clipboard: ClipboardMediaSource? = systemClipboardMedia(),
+    /** The full-size fetch behind the lightbox; null falls back to thumbnails. */
+    private val loadFullImage: (
+        suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?
+    )? = null,
+    /** `ChatRepository::createRoom`; null hides the "New group" affordance. */
+    private val createRoom: (
+        suspend (String, List<String>) -> com.zillit.desktop.core.common.ZillitResult<
+            com.zillit.desktop.feature.chat.domain.GroupRoom,
+            >
+    )? = null,
+    /** `ChatRepository::searchMessages`; null keeps the Chats search to names. */
+    private val searchMessages: ((String) -> List<com.zillit.desktop.feature.chat.data.MessageHit>)? = null,
+    /** `ChatRepository::deleteRoom`; null hides the creator's group Delete. */
+    private val deleteRoom: (
+        suspend (roomId: String) -> com.zillit.desktop.core.common.ZillitResult<Unit>
+    )? = null,
 ) : ToolProvider {
 
     override val path: String = "/cnc"
@@ -39,17 +63,31 @@ class ChatToolProvider(
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
-        ChatScreen(
-            crew = crew(),
-            selfId = selfId(),
-            loadAvatar = loadAvatar,
-            viewModel = viewModel,
-            onOpenAttachment = onOpenAttachment,
-            loadThumbnail = loadThumbnail,
-            player = player,
-            loadAudio = loadAudio,
-            onCall = onCall,
-            callLog = callLog,
-        )
+        // Provided as a local rather than parameters: ThreadPane sits behind
+        // ChatScreen, whose signature belongs to a concurrent session — see
+        // ChatSeams.
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalChatSeams provides ChatSeams(
+                canDownload = canDownload,
+                clipboard = clipboard,
+                loadFullImage = loadFullImage,
+            ),
+        ) {
+            ChatScreen(
+                crew = crew(),
+                selfId = selfId(),
+                loadAvatar = loadAvatar,
+                viewModel = viewModel,
+                onOpenAttachment = onOpenAttachment,
+                loadThumbnail = loadThumbnail,
+                player = player,
+                loadAudio = loadAudio,
+                onCall = onCall,
+                callLog = callLog,
+                createRoom = createRoom,
+                searchMessages = searchMessages,
+                deleteRoom = deleteRoom,
+            )
+        }
     }
 }

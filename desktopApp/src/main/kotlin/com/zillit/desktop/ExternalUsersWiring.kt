@@ -17,6 +17,9 @@ internal fun AppGraph.Ready.buildExternalUsers(
     permissions: () -> ProjectPermissions,
 ): ExternalUsersViewModel = ExternalUsersViewModel(
     repository = ExternalUsersRepositoryImpl(apiClient, config),
+    // Which production the rows belong to — sampled per open, so a roster
+    // fetched under one production is wiped before another's window shows.
+    projectId = { projectContext?.context?.value?.project?.projectId },
     resolveViewer = {
         ExternalUsersViewer.from(
             permissions(),

@@ -15,8 +15,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import com.zillit.desktop.core.media.PreviewResult
 import com.zillit.desktop.feature.chat.data.ChatRepository
+import com.zillit.desktop.feature.chat.data.ReplyAwareChatRepository
 import com.zillit.desktop.feature.chat.domain.ChatMessage
+import com.zillit.desktop.feature.chat.domain.ChatReplyRef
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
@@ -64,6 +67,17 @@ data class ChatUiState(
     val sectionBadges: Map<String, Int> = emptyMap(),
     /** Keys the notification backlog filed as rooms — see [liveChatUnread]. */
     val ledgerRooms: Set<String> = emptySet(),
+    /**
+     * The picked (or pasted) file between the picker and the send — what the
+     * preview dialog shows. Nothing uploads until the dialog says Send.
+     */
+    val pendingPreview: PendingChatUpload? = null,
+    /** The message the composer is quoting; null writes a plain line. */
+    val replyTo: ChatMessage? = null,
+    /** The server may hold messages older than the loaded window. */
+    val hasOlder: Boolean = false,
+    /** A page of older messages is on its way. */
+    val loadingOlder: Boolean = false,
     val error: String? = null,
 ) {
     /**
@@ -106,8 +120,26 @@ sealed interface ChatEvent {
     /** A room row: the same thread machinery, group-flavoured. */
     data class OpenGroup(val room: GroupRoom) : ChatEvent
 
-    /** The paperclip: pick, upload, and send into the open thread. */
+    /** The paperclip: pick a file and open the preview over the thread. */
     data object AttachFile : ChatEvent
+
+    /** Cmd+V with a picture on the clipboard: preview it like a picked file. */
+    class ImagePasted(val name: String, val contentType: String, val bytes: ByteArray) : ChatEvent
+
+    /** The preview dialog's Send: the (possibly edited) file plus its caption. */
+    data class PreviewSend(val result: PreviewResult, val caption: String) : ChatEvent
+
+    /** The preview dialog dismissed — the pick is dropped, nothing uploads. */
+    data object PreviewCancelled : ChatEvent
+
+    /** The menu's Reply: quote this message in the composer. */
+    data class StartReply(val messageId: String) : ChatEvent
+
+    /** The reply bar's X: back to a plain line. */
+    data object CancelReply : ChatEvent
+
+    /** The quiet button atop the thread: fetch the page before the oldest loaded. */
+    data object ShowOlder : ChatEvent
 
     /** Withdraws one of our own messages, for everyone in the thread. */
     data class Delete(val messageId: String) : ChatEvent
@@ -136,13 +168,27 @@ sealed interface ChatEvent {
  * with the bubble flipping to Failed rather than vanishing; arrivals for the
  * open peer append, everything else is ignored until a recents list exists.
  */
-@Suppress("LongParameterList", "TooManyFunctions") // One function per chat event; the set is the surface.
+// One function per chat event; the set is the surface. LargeClass follows for
+// the same reason: the events ARE chat's surface (threads, sends, media,
+// replies, paging, offline), and each handler is already extracted and small.
+@Suppress("LongParameterList", "TooManyFunctions", "LargeClass")
 class ChatViewModel(
     private val repository: ChatRepository,
     private val nowMillis: () -> Long,
     private val newUniqueId: () -> String,
-    /** Opens the OS picker; the upload itself runs after the bubble is up. */
+    /** Opens the OS picker; the upload itself runs after the preview's Send. */
     private val pickAttachment: suspend () -> PendingChatUpload? = { null },
+    /**
+     * The host's routed uploader for bytes that never saw the picker — a
+     * pasted image. The picker's own files carry their uploader inside
+     * [PendingChatUpload]; this seam serves the clipboard path.
+     */
+    private val uploadMedia: suspend (
+        name: String,
+        contentType: String,
+        bytes: ByteArray,
+        onProgress: (Int) -> Unit,
+    ) -> ChatAttachment? = { _, _, _, _ -> null },
     /** The microphone, already wired to the uploader; null hides the mic. */
     private val voice: ChatVoice? = null,
     /** The starred set's home between sessions; hosts wire preferences. */
@@ -190,6 +236,13 @@ class ChatViewModel(
         // A queued message's clock becomes a tick (or a failure mark) as the
         // outbox moves it, without waiting for the thread to be reopened.
         offline?.let { support -> launch { support.engine.status.collect { refreshQueued() } } }
+        // Failed media re-sends itself the moment connectivity returns —
+        // media bytes cannot ride the outbox (see [unsentMedia]), so the
+        // online edge is their retry trigger the way the engine's status
+        // stream is the text outbox's.
+        offline?.let { support ->
+            launch { support.online.collect { up -> if (up) retryUnsentMedia() } }
+        }
         // A thread read on another of this user's devices: drop the row's
         // count here too, and let the badge store re-ask the server.
         launch {
@@ -244,7 +297,15 @@ class ChatViewModel(
                     applySplit(sectionBadges())
                 }
             }
-            ChatEvent.AttachFile -> launch { sendPickedFile() }
+            ChatEvent.AttachFile -> launch { pickForPreview() }
+            is ChatEvent.ImagePasted -> imagePasted(event)
+            is ChatEvent.PreviewSend -> sendMedia(event.result, event.caption)
+            ChatEvent.PreviewCancelled -> setState { copy(pendingPreview = null) }
+            is ChatEvent.StartReply -> setState {
+                copy(replyTo = messages.firstOrNull { it.id == event.messageId })
+            }
+            ChatEvent.CancelReply -> setState { copy(replyTo = null) }
+            ChatEvent.ShowOlder -> loadOlder()
             is ChatEvent.Delete -> deleteMessage(event.messageId)
             is ChatEvent.Deleted -> dropDeleted(event.messageIds)
             is ChatEvent.React -> react(event.messageId, event.emoji)
@@ -394,9 +455,16 @@ class ChatViewModel(
                 messages = known.orEmpty(),
                 isLoading = known == null,
                 peerTyping = false,
+                replyTo = null,
+                pendingPreview = null,
+                hasOlder = false,
+                loadingOlder = false,
                 error = null,
             )
         }
+        // Media that never left this machine belongs in the thread even
+        // before history answers — the cache knows nothing of it.
+        mergeUnsentMedia(contact.userId)
         // Re-join on every open: the init-time join can predate the socket
         // connecting, and a join is idempotent while a missed one costs
         // delivery for the whole session.
@@ -413,13 +481,20 @@ class ChatViewModel(
                             local.isMine && local.sendState != ChatSendState.Sent &&
                                 rows.none { it.uniqueId == local.uniqueId }
                         }
-                        copy(isLoading = false, messages = rows + inFlight)
+                        // A full window means the server likely holds more
+                        // before it — the "Show older" pager's cue (QA #7/#8).
+                        copy(
+                            isLoading = false,
+                            messages = rows + inFlight,
+                            hasOlder = rows.size >= CHAT_PAGE,
+                        )
                     } else {
                         this
                     }
                 }
                 // Messages written offline for this thread, still waiting.
                 launch { refreshQueued() }
+                mergeUnsentMedia(contact.userId)
                 // The sender learns their words were seen the moment the
                 // thread is on screen — Android's status 3 on the newest row.
                 // Groups emit their own read-untill (room_id + my user id):
@@ -450,13 +525,22 @@ class ChatViewModel(
 
     private fun send(attachment: ChatAttachment? = null) {
         val peer = currentState.peer ?: return
+        // The composer is gone for a left peer, but the guard holds anyway:
+        // a keyboard shortcut or a stale event must not message someone who
+        // is no longer on the production (Android's userActive gate).
+        if (!currentState.peerIsGroup && peer.hasLeft) {
+            setState { copy(error = "This person is no longer on the production.") }
+            return
+        }
         val body = currentState.draft.trim().ifEmpty { if (attachment == null) return else "" }
-        val optimistic = appendOptimistic(peer, body, attachment)
-        setState { copy(draft = "") }
+        val reply = currentState.replyTo?.asReplyRef()
+        val optimistic = appendOptimistic(peer, body, attachment, reply)
+        setState { copy(draft = "", replyTo = null) }
         val isGroup = currentState.peerIsGroup
 
         // No network and no file to upload: straight to the outbox, no
-        // round trip to fail first.
+        // round trip to fail first. (The outbox carries no reply reference —
+        // a reply queued offline goes out as a plain line.)
         val support = offline
         if (support != null && support.isOffline && attachment == null) {
             launch { queue(support, peer.userId, body, optimistic, isGroup) }
@@ -465,11 +549,7 @@ class ChatViewModel(
 
         launchResult(
             block = {
-                repository.send(
-                    peer.userId, body, optimistic.uniqueId, optimistic.timestampMillis,
-                    isGroup = isGroup,
-                    attachment = attachment,
-                )
+                sendOnWire(peer.userId, body, optimistic, isGroup, attachment, reply)
             },
             onSuccess = { setSendState(optimistic.uniqueId, ChatSendState.Sent) },
             onError = { error ->
@@ -484,6 +564,50 @@ class ChatViewModel(
             },
         )
     }
+
+    /**
+     * One send, with the quote when there is one and the repository can carry
+     * it. The capability is asked for with `as?` because [ChatRepository] and
+     * its implementation are another session's files: until they adopt
+     * [ReplyAwareChatRepository], a reply still sends — as a plain line whose
+     * quote lives only on this screen's bubble.
+     */
+    private suspend fun sendOnWire(
+        receiverId: String,
+        body: String,
+        optimistic: ChatMessage,
+        isGroup: Boolean,
+        attachment: ChatAttachment?,
+        reply: ChatReplyRef?,
+    ): ZillitResult<Unit> {
+        val capable = repository as? ReplyAwareChatRepository
+        return if (reply != null && capable != null) {
+            capable.sendWithReply(
+                receiverId, body, optimistic.uniqueId, optimistic.timestampMillis,
+                isGroup, attachment, reply,
+            )
+        } else {
+            repository.send(
+                receiverId, body, optimistic.uniqueId, optimistic.timestampMillis,
+                isGroup = isGroup,
+                attachment = attachment,
+            )
+        }
+    }
+
+    /**
+     * The parent as the wire's `Reply_chat` wants it — built from the quoted
+     * message exactly as Android does (`ChatAndGroupVM.kt:451-459`): its
+     * server id, sender, words, and what kind of thing it was.
+     */
+    private fun ChatMessage.asReplyRef(): ChatReplyRef = ChatReplyRef(
+        messageId = id,
+        // Our own optimistic rows carry the placeholder sender "me".
+        senderId = if (isMine) repository.selfId() ?: senderId else senderId,
+        body = body,
+        kind = attachment?.kind ?: "text",
+        attachmentName = attachment?.name.orEmpty(),
+    )
 
     // -- offline: the outbox -----------------------------------------------------
 
@@ -547,6 +671,7 @@ class ChatViewModel(
         peer: CrewContact,
         body: String,
         attachment: ChatAttachment?,
+        replyTo: ChatReplyRef? = null,
     ): ChatMessage {
         val uniqueId = newUniqueId()
         val optimistic = ChatMessage(
@@ -559,6 +684,7 @@ class ChatViewModel(
             isMine = true,
             sendState = ChatSendState.Sending,
             attachment = attachment,
+            replyTo = replyTo,
         )
         setState {
             // The listing follows the send, not the ack: the shelf reorders,
@@ -579,63 +705,185 @@ class ChatViewModel(
         return optimistic
     }
 
-    /**
-     * The paperclip's whole journey: bubble first, then bytes.
-     *
-     * The bubble goes up the moment the picker closes, wearing the file's name
-     * and a progress bar fed by [ChatUiState.uploads]. Only once the file is in
-     * storage does the message ride the socket — sent earlier it would name an
-     * object that does not exist yet.
-     */
-    private suspend fun sendPickedFile() {
-        val peer = currentState.peer ?: return
-        val isGroup = currentState.peerIsGroup
-        val pending = pickAttachment() ?: return
-        ZillitLog.d(TAG) { "picked file for upload; bubble up" }
-        val placeholder = ChatAttachment(
-            media = "",
-            name = pending.name,
-            contentType = pending.contentType,
-            bucket = "",
-            region = "",
-            thumbnail = "",
-        )
-        val optimistic = appendOptimistic(peer, body = "", attachment = placeholder)
-        val uniqueId = optimistic.uniqueId
-        setState { copy(uploads = uploads + (uniqueId to PREPARING)) }
+    // -- media: preview, send, survive, retry ------------------------------------
 
-        val stored = pending.upload { percent ->
-            setState { copy(uploads = uploads + (uniqueId to percent)) }
+    /**
+     * One media message not yet accepted by the server, kept by the view
+     * model rather than the screen: the bytes to (re)upload, the stored file
+     * once storage has it, and the bubble to restore when its thread reopens.
+     *
+     * In-memory only, on purpose: the text outbox persists across restarts,
+     * but media bytes do not go in the outbox DB — a restart drops an unsent
+     * file, exactly as scoped for QA #9. What this store fixes is the smaller
+     * betrayal: a failed upload vanishing just because the thread was closed
+     * and reopened.
+     */
+    private class UnsentMedia(
+        val peerId: String,
+        val isGroup: Boolean,
+        var message: ChatMessage,
+        val bytes: ByteArray,
+        val upload: suspend (ByteArray, (Int) -> Unit) -> ChatAttachment?,
+        var stored: ChatAttachment? = null,
+    )
+
+    private val unsentMedia = linkedMapOf<String, UnsentMedia>()
+
+    /** The paperclip: the pick goes to the preview, not straight to the wire. */
+    private suspend fun pickForPreview() {
+        if (currentState.peer == null) return
+        val pending = pickAttachment() ?: return
+        ZillitLog.d(TAG) { "picked ${pending.name} for preview" }
+        setState { copy(pendingPreview = pending) }
+    }
+
+    /** A pasted picture takes the picker's road, with the host uploader behind it. */
+    private fun imagePasted(event: ChatEvent.ImagePasted) {
+        if (currentState.peer == null) return
+        val pending = PendingChatUpload(event.name, event.contentType, event.bytes) { bytes, onProgress ->
+            uploadMedia(event.name, event.contentType, bytes, onProgress)
         }
-        ZillitLog.d(TAG) { "upload finished stored=${stored != null}" }
-        if (stored == null) {
-            setSendState(uniqueId, ChatSendState.Failed)
-            setState {
-                copy(uploads = uploads - uniqueId, error = "Could not upload ${pending.name}.")
-            }
-            return
-        }
+        setState { copy(pendingPreview = pending) }
+    }
+
+    /**
+     * The preview's Send: bubble first, then bytes — the message rides the
+     * socket only once the file is in storage, since sent earlier it would
+     * name an object that does not exist yet. The caption is the message
+     * body, as the phones' gallery viewer sends it.
+     */
+    private fun sendMedia(result: PreviewResult, caption: String) {
+        val peer = currentState.peer ?: return
+        val pending = currentState.pendingPreview ?: return
+        setState { copy(pendingPreview = null) }
+        val placeholder = ChatAttachment(media = "", name = result.name, contentType = result.contentType)
+        val optimistic = appendOptimistic(peer, body = caption.trim(), attachment = placeholder)
+        unsentMedia[optimistic.uniqueId] = UnsentMedia(
+            peerId = peer.userId,
+            isGroup = currentState.peerIsGroup,
+            message = optimistic,
+            bytes = result.bytes,
+            upload = pending.upload,
+        )
+        launch { runMediaSend(optimistic.uniqueId) }
+    }
+
+    /** Upload (once) then send; on failure the entry stays for the next try. */
+    private suspend fun runMediaSend(uniqueId: String) {
+        val entry = unsentMedia[uniqueId] ?: return
+        followMediaState(entry, ChatSendState.Sending)
+        val stored = entry.stored ?: uploadEntry(entry, uniqueId) ?: return
+        entry.stored = stored
+        entry.message = entry.message.copy(attachment = stored)
         setState {
             copy(
                 messages = messages.map {
                     if (it.uniqueId == uniqueId) it.copy(attachment = stored) else it
                 },
-                uploads = uploads - uniqueId,
             )
         }
         when (
             val sent = repository.send(
-                peer.userId, "", uniqueId, optimistic.timestampMillis,
-                isGroup = isGroup,
+                entry.peerId, entry.message.body, uniqueId, entry.message.timestampMillis,
+                isGroup = entry.isGroup,
                 attachment = stored,
             )
         ) {
-            is ZillitResult.Success -> setSendState(uniqueId, ChatSendState.Sent)
+            is ZillitResult.Success -> {
+                unsentMedia.remove(uniqueId)
+                setSendState(uniqueId, ChatSendState.Sent)
+            }
             is ZillitResult.Failure -> {
-                setSendState(uniqueId, ChatSendState.Failed)
+                markMediaUnsent(entry)
                 setState { copy(error = sent.error.localised()) }
             }
         }
+    }
+
+    /** The bytes to storage, narrated by [ChatUiState.uploads]; null keeps the entry. */
+    private suspend fun uploadEntry(entry: UnsentMedia, uniqueId: String): ChatAttachment? {
+        setState { copy(uploads = uploads + (uniqueId to PREPARING)) }
+        val stored = entry.upload(entry.bytes) { percent ->
+            setState { copy(uploads = uploads + (uniqueId to percent)) }
+        }
+        setState { copy(uploads = uploads - uniqueId) }
+        ZillitLog.d(TAG) { "media upload finished stored=${stored != null}" }
+        if (stored == null) {
+            markMediaUnsent(entry)
+            setState { copy(error = "Could not upload ${entry.message.attachment?.name}.") }
+        }
+        return stored
+    }
+
+    /** The clock when the network is the problem (it retries alone), the mark when refused. */
+    private fun markMediaUnsent(entry: UnsentMedia) {
+        val state = if (offline?.isOffline == true) ChatSendState.Queued else ChatSendState.Failed
+        followMediaState(entry, state)
+    }
+
+    /** Keeps the store's copy and the on-screen bubble saying the same thing. */
+    private fun followMediaState(entry: UnsentMedia, state: ChatSendState) {
+        entry.message = entry.message.copy(sendState = state)
+        setSendState(entry.message.uniqueId, state)
+    }
+
+    /** Every entry still waiting or failed, sent again — the online-edge collector's job. */
+    private fun retryUnsentMedia() {
+        val again = unsentMedia.filterValues {
+            it.message.sendState == ChatSendState.Failed || it.message.sendState == ChatSendState.Queued
+        }.keys.toList()
+        again.forEach { id -> launch { runMediaSend(id) } }
+    }
+
+    /**
+     * Restores this peer's unsent media bubbles into the open thread —
+     * `cached()` and history know nothing of a file that never reached the
+     * server, so without this a Failed upload vanished on reopen (QA #9).
+     */
+    private fun mergeUnsentMedia(peerId: String) {
+        if (unsentMedia.values.none { it.peerId == peerId }) return
+        setState {
+            if (peer?.userId != peerId) return@setState this
+            val known = messages.map { it.uniqueId }.toSet()
+            val restored = unsentMedia.values
+                .filter { it.peerId == peerId && it.message.uniqueId !in known }
+                .map { it.message }
+            copy(messages = (messages + restored).sortedBy { it.timestampMillis })
+        }
+    }
+
+    /**
+     * The next page back — `history` pages from the oldest loaded stamp
+     * (`/messages/{peer}/{ts}/previous`), and the pages MERGE: an arrival
+     * during the fetch must not be replaced by the older window.
+     */
+    private fun loadOlder() {
+        val peer = currentState.peer ?: return
+        if (currentState.loadingOlder) return
+        val oldest = currentState.messages
+            .filter { it.timestampMillis > 0 }
+            .minOfOrNull { it.timestampMillis } ?: return
+        val isGroup = currentState.peerIsGroup
+        setState { copy(loadingOlder = true) }
+        launchResult(
+            block = { repository.history(peer.userId, oldest, isGroup) },
+            onSuccess = { page ->
+                setState {
+                    if (this.peer?.userId != peer.userId) {
+                        copy(loadingOlder = false)
+                    } else {
+                        copy(
+                            messages = (page + messages)
+                                .distinctBy { it.uniqueId }
+                                .sortedBy { it.timestampMillis },
+                            loadingOlder = false,
+                            hasOlder = page.size >= CHAT_PAGE,
+                        )
+                    }
+                }
+            },
+            onError = { setState { copy(loadingOlder = false) } },
+        )
     }
 
     /**
@@ -668,6 +916,7 @@ class ChatViewModel(
     private fun startFreshProject() {
         serverUnread.clear()
         serverActivity.clear()
+        unsentMedia.clear()
         setState { ChatUiState() }
         launch {
             val stars = loadFavourites()
@@ -844,6 +1093,9 @@ class ChatViewModel(
      * Only the open thread also appends the bubble.
      */
     private fun arrived(message: ChatMessage) {
+        // The server's echo of our own media send is the ack the store waits
+        // for — the retry loop must not send a file the thread already shows.
+        if (message.isMine) unsentMedia.remove(message.uniqueId)
         val peer = currentState.peer
         val other = if (message.isMine) message.receiverId else message.senderId
         val isOpen = peer != null &&
@@ -915,9 +1167,22 @@ class ChatViewModel(
     ): List<ChatMessage> = when {
         !isOpen -> messages
         messages.any { it.uniqueId == message.uniqueId } ->
-            messages.map { if (it.uniqueId == message.uniqueId) message else it }
+            messages.map { if (it.uniqueId == message.uniqueId) message.keepingQuoteOf(it) else it }
         else -> messages + message
     }
+
+    /**
+     * The echo of a reply carries `reply` as the bare id we sent, not the
+     * expanded object — so the quote the optimistic bubble already renders
+     * would blank until the next history load. The local reference is the
+     * fuller truth; keep it.
+     */
+    private fun ChatMessage.keepingQuoteOf(local: ChatMessage): ChatMessage =
+        if (local.replyTo != null && (replyTo == null || replyTo.body.isEmpty())) {
+            copy(replyTo = local.replyTo)
+        } else {
+            this
+        }
 }
 
 private const val TAG = "Chat"
@@ -943,6 +1208,12 @@ private const val SECTION_BADGE_SETTLE_MILLIS = 1_800L
 
 /** The file is being prepared (posters, PDF pages) — no bytes moving yet. */
 private const val PREPARING = -1
+
+/**
+ * The history window's size — `/messages/{peer}/{ts}/previous` answers ~50
+ * rows per page, so a full page means the server likely holds older ones.
+ */
+private const val CHAT_PAGE = 50
 
 /** The states this device assigns itself; the server's own words never yield to the outbox. */
 private fun ChatSendState.isOurs(): Boolean =

@@ -19,6 +19,27 @@ data class ChatMessage(
     val attachment: ChatAttachment? = null,
     /** Changed after delivery — the bubble says so beside the time. */
     val isEdited: Boolean = false,
+    /** The line this one quotes, when it is a reply; null for a plain message. */
+    val replyTo: ChatReplyRef? = null,
+)
+
+/**
+ * The quoted parent a reply carries — Android's `Reply_chat`
+ * (`chatAndGroupChat/model/ChatAndGroupRequestModelHandler.kt:113-122`),
+ * built from the parent message at `ChatAndGroupVM.kt:451-459`. The wire's
+ * `message` field travels encrypted like any body; here it is already the
+ * plain words, decrypted on read and encrypted again on send.
+ */
+data class ChatReplyRef(
+    /** The parent's server `_id` — what a tap on the quote jumps to. */
+    val messageId: String,
+    val senderId: String,
+    /** The parent's plain words; empty when it was a bare file. */
+    val body: String,
+    /** The parent's `message_type` — text, image, video, audio, document. */
+    val kind: String = "text",
+    /** The parent attachment's file name, for a file-only quote line. */
+    val attachmentName: String = "",
 )
 
 /** A file riding a message — the storage key and enough to fetch it back. */
@@ -51,6 +72,8 @@ data class ChatReaction(val userId: String, val emoji: String)
 data class GroupRoom(
     val id: String,
     val name: String,
+    /** The creator's user id (`owned_by`) — deleting a group is theirs alone. */
+    val ownedBy: String? = null,
     /** The owning department, when the room is a department's — see `hasStanding`. */
     val departmentId: String? = null,
     /**

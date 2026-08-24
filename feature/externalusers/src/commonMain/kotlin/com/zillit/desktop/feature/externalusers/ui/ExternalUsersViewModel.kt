@@ -104,15 +104,57 @@ class ExternalUsersViewModel(
     private val resolveViewer: () -> ExternalUsersViewer,
     private val loadDepartments: suspend () -> List<DepartmentOption>,
     private val nowMillis: () -> Long,
+    /**
+     * The open production, sampled on [start]. Defaults to unknown, which is
+     * treated as "assume it changed" — safe without wiring, precise with it.
+     */
+    private val projectId: () -> String? = { null },
 ) : ZillitViewModel<ExternalUsersUiState, ExternalUsersEvent, ExternalUsersEffect>(ExternalUsersUiState()) {
 
+    /** The production the rows on screen were fetched under. */
+    private var loadedProjectId: String? = null
+
+    /**
+     * Bumped whenever the roster is wiped; a list answer whose stamp no
+     * longer matches is dropped, so a fetch still in flight from the last
+     * production can never paint its rows into this one.
+     */
+    private var rosterGeneration = 0
+
+    /**
+     * Runs on every window open. The reference clients rebuild their page per
+     * visit (the web's `Externaluser.jsx:158-162` refetches on mount;
+     * Android's `ExternalUserListingPage` is a fresh Activity each time), but
+     * this view model outlives production switches — so it refetches every
+     * time, and when the open production is not the one the rows were fetched
+     * under it wipes them first: another production's contacts must never
+     * render here, not even for the beat the refetch takes.
+     */
     fun start() {
+        val project = projectId()
+        if (project == null || project != loadedProjectId) forgetRoster()
+        loadedProjectId = project
         setState { copy(viewer = resolveViewer()) }
         refresh()
         launch {
             val departments = loadDepartments()
             setState { copy(departments = departments) }
         }
+    }
+
+    /**
+     * The production changed: the rows, rights, departments, and any
+     * half-typed form all belong to the previous one. Wiped at once — the
+     * next [start] refetches under the new production's headers.
+     */
+    fun onProjectChanged() {
+        loadedProjectId = null
+        forgetRoster()
+    }
+
+    private fun forgetRoster() {
+        rosterGeneration++
+        setState { ExternalUsersUiState() }
     }
 
     @Suppress("CyclomaticComplexMethod") // Event fan-out: one line per act.
@@ -180,25 +222,30 @@ class ExternalUsersViewModel(
     }
 
     private fun refresh() {
+        val stamp = rosterGeneration
         setState { copy(isLoading = true, hasMore = true) }
         launchResult(
             block = { repository.list(currentState.bucket, nowMillis(), older = false) },
             onSuccess = { rows ->
+                if (stamp != rosterGeneration) return@launchResult
                 setState { copy(users = rows, isLoading = false, hasMore = rows.isNotEmpty()) }
             },
             onError = { error ->
+                if (stamp != rosterGeneration) return@launchResult
                 setState { copy(isLoading = false, error = error.userMessage) }
             },
         )
     }
 
     private fun loadMore() {
+        val stamp = rosterGeneration
         val cursor = currentState.users.maxOfOrNull { it.updatedOnMillis } ?: return
         if (!currentState.hasMore || currentState.isLoading) return
         setState { copy(isLoading = true) }
         launchResult(
             block = { repository.list(currentState.bucket, cursor, older = true) },
             onSuccess = { rows ->
+                if (stamp != rosterGeneration) return@launchResult
                 setState {
                     copy(
                         users = (users + rows).distinctBy { it.id },
@@ -207,7 +254,10 @@ class ExternalUsersViewModel(
                     )
                 }
             },
-            onError = { error -> setState { copy(isLoading = false, error = error.userMessage) } },
+            onError = { error ->
+                if (stamp != rosterGeneration) return@launchResult
+                setState { copy(isLoading = false, error = error.userMessage) }
+            },
         )
     }
 

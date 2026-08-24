@@ -94,6 +94,31 @@ class ReplyDraftTest {
     }
 
     @Test
+    fun `a reply carries the whole chain, not just the message it answers`() {
+        // The bug this pins: replying to the third message in a thread sent
+        // only that message's id, so the recipient — who threads on the FIRST
+        // reference — filed the reply as a new conversation. Both phones and
+        // the web send the parent's chain with the parent appended.
+        val third = message.copy(id = "m3", references = listOf("m1", "m2"))
+
+        assertEquals(
+            listOf("m1", "m2", "m3"),
+            third.replyDraft(ComposeMode.Reply).references,
+        )
+        // The root stays first: that is what every client threads on.
+        assertEquals("m1", third.replyDraft(ComposeMode.ReplyAll).references.first())
+    }
+
+    @Test
+    fun `a chain that already names this message does not name it twice`() {
+        // Some servers include the message's own id in its references. Sending
+        // it twice is malformed, and a duplicate root confuses threading.
+        val odd = message.copy(id = "m3", references = listOf("m1", "m3"))
+
+        assertEquals(listOf("m1", "m3"), odd.replyDraft(ComposeMode.Reply).references)
+    }
+
+    @Test
     fun `the original is quoted, and html is flattened first`() {
         val html = message.copy(body = "<p>Call is <b>6am</b>.</p>", isHtml = true)
 

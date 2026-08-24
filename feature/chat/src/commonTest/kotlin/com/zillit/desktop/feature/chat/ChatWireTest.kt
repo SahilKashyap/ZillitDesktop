@@ -112,6 +112,18 @@ class ChatWireTest {
     }
 
     @Test
+    fun `a room keeps its creator - the Delete affordance is theirs alone`() {
+        val rooms = roomsFrom(
+            Json.parseToJsonElement(
+                """{"data":{"chat_rooms":[
+                   {"_id":"r1","room_name":"Camera Dept","owned_by":"u-me"},
+                   {"_id":"r2","room_name":"Not Mine"}]}}""",
+            ),
+        )
+        assertEquals(listOf("u-me", null), rooms.map { it.ownedBy })
+    }
+
+    @Test
     fun `a group envelope says group and rides the room id`() {
         val envelope = sendEnvelope(
             projectId = "p1", uniqueId = "u", senderId = "me",

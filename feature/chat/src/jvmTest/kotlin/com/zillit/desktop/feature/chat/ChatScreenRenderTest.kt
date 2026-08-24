@@ -2,9 +2,12 @@ package com.zillit.desktop.feature.chat
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.chat.domain.ChatMessage
@@ -307,10 +310,161 @@ class CrewRowOpensThreadTest {
     }
 }
 
+/**
+ * The Chats tab's search box and the create-group flow, composed for real
+ * (QA#6, QA#12, QA#13). Same arrangement as [CrewRowOpensThreadTest]: a real
+ * view model over a stub repository, because the behaviour under test is the
+ * wiring between the controls and the events.
+ */
+@OptIn(ExperimentalTestApi::class)
+class ChatsTabSearchAndGroupsTest {
+
+    private val crew = listOf(
+        CrewContact(userId = "u1", fullName = "Aisha Khan"),
+        CrewContact(userId = "u2", fullName = "Vivek Mishra"),
+    )
+
+    private fun viewModel(repository: ChatRepository) = ChatViewModel(
+        repository = repository,
+        nowMillis = { 1_786_507_000_000L },
+        newUniqueId = { "uid" },
+    )
+
+    @Test
+    fun `typing in the Chats search narrows the rows by name`() = runComposeUiTest {
+        val repository = StubChatRepository().apply { recentsAnswer = listOf("u1", "u2") }
+        val model = viewModel(repository)
+
+        setContent {
+            ZillitTheme {
+                ChatScreen(crew = crew, loadAvatar = { null }, viewModel = model)
+            }
+        }
+
+        // Clicking the (already open) Chats tab is the refresh that loads rows.
+        onNodeWithText("Chats").performClick()
+        waitForIdle()
+        onNodeWithText("Aisha Khan").assertExists()
+        onNodeWithText("Vivek Mishra").assertExists()
+
+        onAllNodes(hasSetTextAction())[0].performTextInput("aisha")
+        waitForIdle()
+
+        onNodeWithText("Aisha Khan").assertExists()
+        onNodeWithText("Vivek Mishra").assertDoesNotExist()
+    }
+
+    /** QA#3: a room nobody has spoken in still lists under the Groups chip. */
+    @Test
+    fun `a silent room shows under the Groups chip`() = runComposeUiTest {
+        val repository = StubChatRepository().apply {
+            roomsAnswer = listOf(GroupRoom("g-silent", "Night Shoot"))
+        }
+        val model = viewModel(repository)
+
+        setContent {
+            ZillitTheme {
+                ChatScreen(crew = crew, loadAvatar = { null }, viewModel = model)
+            }
+        }
+
+        onNodeWithText("Chats").performClick()
+        waitForIdle()
+        onNodeWithText("Groups").performClick()
+        waitForIdle()
+
+        onNodeWithText("Night Shoot").assertExists()
+    }
+
+    @Test
+    fun `a message hit under the Messages header opens its thread`() = runComposeUiTest {
+        val repository = StubChatRepository().apply { recentsAnswer = listOf("u1") }
+        val model = viewModel(repository)
+
+        setContent {
+            ZillitTheme {
+                ChatScreen(
+                    crew = crew,
+                    loadAvatar = { null },
+                    viewModel = model,
+                    searchMessages = {
+                        listOf(
+                            com.zillit.desktop.feature.chat.data.MessageHit(
+                                peerId = "u1",
+                                isGroup = false,
+                                snippet = "…Rolling at 8 sharp…",
+                                timestampMillis = 1_786_500_000_000L,
+                            ),
+                        )
+                    },
+                )
+            }
+        }
+
+        onNodeWithText("Chats").performClick()
+        waitForIdle()
+        // A query matching no conversation NAME: the hit alone answers it.
+        onAllNodes(hasSetTextAction())[0].performTextInput("rolling")
+        waitForIdle()
+
+        onNodeWithText("Messages").assertExists()
+        onNodeWithText("…Rolling at 8 sharp…").performClick()
+        waitForIdle()
+
+        assertEquals("u1", model.state.value.peer?.userId)
+    }
+
+    @Test
+    fun `creating a group sends the pick and refreshes the listing`() = runComposeUiTest {
+        val repository = StubChatRepository()
+        val model = viewModel(repository)
+        var sent: Pair<String, List<String>>? = null
+
+        setContent {
+            ZillitTheme {
+                ChatScreen(
+                    crew = crew,
+                    selfId = "u2",
+                    loadAvatar = { null },
+                    viewModel = model,
+                    createRoom = { name, members ->
+                        sent = name to members
+                        ZillitResult.Success(GroupRoom("g-new", name))
+                    },
+                )
+            }
+        }
+
+        val before = repository.roomsCalls
+        onNodeWithContentDescription("New group").performClick()
+        waitForIdle()
+
+        // Field order in the tree: the Chats search, then the dialog's name
+        // field, then its member search.
+        onAllNodes(hasSetTextAction())[1].performTextInput("Night Shoot")
+        // The member row's whole label toggles; the signed-in u2 is not offered.
+        onNodeWithText("Aisha Khan").performClick()
+        onNodeWithText("Create").performClick()
+        waitForIdle()
+
+        assertEquals("Night Shoot" to listOf("u1"), sent)
+        assertTrue(repository.roomsCalls > before, "success must refresh the room list")
+        // Closed: the dialog's title is gone.
+        onNodeWithText("Create new group").assertDoesNotExist()
+    }
+}
+
 /** The repository reduced to what opening a thread touches. */
 private class StubChatRepository : ChatRepository {
 
     val historyFor = mutableListOf<String>()
+
+    /** What `user:list` answers — the Chats rows. */
+    var recentsAnswer: List<String> = emptyList()
+
+    /** What `GET chat-room` answers, and how often it was asked. */
+    var roomsAnswer: List<GroupRoom> = emptyList()
+    var roomsCalls = 0
 
     override val incoming: Flow<ChatMessage> = emptyFlow()
     override val deletions: Flow<List<String>> = emptyFlow()
@@ -323,7 +477,8 @@ private class StubChatRepository : ChatRepository {
     override fun selfId(): String? = "me"
     override suspend fun sendReaction(messageId: String, emoji: String): ChatMessage? = null
     override suspend fun join() = Unit
-    override suspend fun recentPeers(): ZillitResult<List<String>> = ZillitResult.Success(emptyList())
+    override suspend fun recentPeers(): ZillitResult<List<String>> =
+        ZillitResult.Success(recentsAnswer)
     override fun cached(otherUserId: String): List<ChatMessage>? = null
     override fun lastMessageOf(otherUserId: String): ChatMessage? = null
     override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean) = Unit
@@ -355,5 +510,8 @@ private class StubChatRepository : ChatRepository {
         attachment: ChatAttachment?,
     ): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
-    override suspend fun rooms(): ZillitResult<List<GroupRoom>> = ZillitResult.Success(emptyList())
+    override suspend fun rooms(): ZillitResult<List<GroupRoom>> {
+        roomsCalls++
+        return ZillitResult.Success(roomsAnswer)
+    }
 }

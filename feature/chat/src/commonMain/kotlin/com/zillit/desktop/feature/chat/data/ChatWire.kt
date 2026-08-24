@@ -140,21 +140,23 @@ fun typingFrom(payload: JsonElement): Pair<String, Boolean>? {
     return sender to (detail.str("status") == "start")
 }
 
-/** `GET chat-room` rows — `{data:{chat_rooms:[{_id, room_name…}]}}`. */
+/**
+ * `GET chat-room` rows — `{data:{chat_rooms:[{_id, room_name…}]}}`.
+ *
+ * Disabled rooms and the calling feature's throwaway `is_random_call_group`
+ * rooms are dropped here, as every Android tab drops them before showing a
+ * list (`GroupsVM.searchList`, `GroupsVM.kt:171-172`). Absent flags read as
+ * Android's defaults: enabled true, random-call false.
+ */
 fun roomsFrom(body: JsonElement): List<com.zillit.desktop.feature.chat.domain.GroupRoom> {
     val obj = body as? JsonObject ?: return emptyList()
     val rows = ((obj["data"] as? JsonObject)?.get("chat_rooms") ?: obj["chat_rooms"])
         as? kotlinx.serialization.json.JsonArray ?: return emptyList()
     return rows.mapNotNull { row ->
-        val room = row as? JsonObject ?: return@mapNotNull null
-        val id = room.str("_id") ?: return@mapNotNull null
-        com.zillit.desktop.feature.chat.domain.GroupRoom(
-            id = id,
-            name = room.str("room_name") ?: "Group",
-            departmentId = room.str("department_id")?.takeIf { it.isNotBlank() },
-            sortingActivity = (room["sorting_activity"] as? JsonPrimitive)
-                ?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() } ?: 0L,
-        )
+        (row as? JsonObject)
+            ?.takeIf { (it["enabled"] as? JsonPrimitive)?.booleanOrNull != false }
+            ?.takeIf { (it["is_random_call_group"] as? JsonPrimitive)?.booleanOrNull != true }
+            ?.let(::roomFrom)
     }
 }
 
@@ -196,8 +198,8 @@ fun readChatMessage(
     val obj = (outer["detail"] as? JsonObject) ?: outer
     val id = obj.str("_id") ?: obj.str("unique_id") ?: return null
     val sender = obj.str("sender") ?: return null
-    val receiver = obj.str("receiver") ?: ""
-    val raw = obj.str("message") ?: ""
+    val receiver = obj.str("receiver").orEmpty()
+    val raw = obj.str("message").orEmpty()
 
     return ChatMessage(
         id = id,
@@ -205,6 +207,7 @@ fun readChatMessage(
         senderId = sender,
         receiverId = receiver,
         body = decrypt(raw) ?: raw,
+        replyTo = readReplyRef(obj, decrypt),
         timestampMillis = obj.long("created") ?: obj.long("timestamp") ?: 0L,
         isMine = myUserId != null && sender == myUserId,
         bodyCipher = raw,
@@ -331,6 +334,13 @@ fun sendEnvelope(
     nowMillis: Long,
     isGroup: Boolean = false,
     attachment: com.zillit.desktop.feature.chat.domain.ChatAttachment? = null,
+    /**
+     * The quoted parent's server id. A STRING on the way out — the web sends
+     * `reply: parentChatId` (`cncUtil.js:197`) and the server expands it into
+     * the object every client renders; sending the object back is refused
+     * with `cnc_invalid_message_id` (found live, 2026-08-22).
+     */
+    replyToId: String? = null,
 ): JsonObject = buildJsonObject {
     put("project_id", projectId)
     put("unique_id", uniqueId)
@@ -342,6 +352,9 @@ fun sendEnvelope(
     put("sender", senderId)
     put("receiver", receiverId)
     put("message", cipherBody)
+    // The parent's id under "reply" — the server builds the Reply_chat
+    // object itself and returns it expanded (web `cncUtil.js:197`).
+    if (replyToId != null) put("reply", replyToId)
     if (attachment != null) {
         // Android's `AttachmentModel` in full. The notice board taught this
         // server's habit the hard way: absent is not the same as empty, and it

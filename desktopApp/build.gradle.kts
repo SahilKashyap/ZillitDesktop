@@ -157,6 +157,11 @@ val jetbrainsRuntime = javaToolchains.launcherFor {
  * exist, and the silent result is that this whole block is skipped and the
  * crash ships exactly as before.
  */
+// The product's name everywhere a user sees a file: the .app bundle, the DMG,
+// the Windows installer, the dock and the menu bar. The bundle id stays
+// `com.zillit.desktop` — renaming the bundle must not re-identify the app.
+val desktopPackageName = "Zillit-Desktop"
+
 val jbrFrameworks = File(jetbrainsRuntime.get().metadata.installationPath.asFile.parentFile, "Frameworks")
 
 // Registered only where there is something to copy — macOS. Decided here at
@@ -168,7 +173,7 @@ if (jbrFrameworks.isDirectory) {
         description = "Copies the Chromium Embedded Framework into the packaged runtime."
 
         val destination = layout.buildDirectory
-            .dir("compose/binaries/main/app/Zillit.app/Contents/runtime/Contents/Frameworks")
+            .dir("compose/binaries/main/app/$desktopPackageName.app/Contents/runtime/Contents/Frameworks")
 
         commandLine("ditto", jbrFrameworks.absolutePath, destination.get().asFile.absolutePath)
     }
@@ -257,7 +262,7 @@ if (jbrFrameworks.isDirectory) {
             description = "Signs what createDistributable missed, then re-seals the bundle."
 
             val app = layout.buildDirectory
-                .dir("compose/binaries/main/app/Zillit.app").get().asFile.absolutePath
+                .dir("compose/binaries/main/app/$desktopPackageName.app").get().asFile.absolutePath
 
             // Paths arrive as positional arguments rather than interpolated, so
             // a space in the build directory cannot split a word.
@@ -538,7 +543,7 @@ compose.desktop {
             // formats: `packageExe`/`packageMsi` must run ON Windows (with WiX
             // 3.x installed) — see docs/WINDOWS_BUILD.md.
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb)
-            packageName = "Zillit"
+            packageName = desktopPackageName
             packageVersion = "1.0.0"
 
             // Set only when bundling was asked for. Pointing at the staging

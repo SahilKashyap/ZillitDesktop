@@ -21,6 +21,15 @@ data class EmailDraft(
     val subject: String = "",
     val body: String = "",
     val updatedAtMillis: Long = 0,
+    /**
+     * The `References` chain, when this draft is an unfinished reply.
+     *
+     * Saved and read back so closing a half-written reply and reopening it
+     * from Drafts still sends into the conversation. Dropping it here made
+     * every reopened reply arrive as a new mail — the same bug as losing the
+     * chain on send, one step further along.
+     */
+    val references: List<String> = emptyList(),
 ) {
     /** Never prints the body. */
     override fun toString(): String = "EmailDraft(id=$id, to=${to.size}, chars=${body.length})"
@@ -54,6 +63,7 @@ fun EmailDraft.toOutgoing(): OutgoingEmail = OutgoingEmail(
     subject = subject,
     body = body,
     draftId = id,
+    references = references,
 )
 
 /**

@@ -34,12 +34,12 @@ From the repo root, in PowerShell or `cmd`:
 .\gradlew.bat :desktopApp:packageExe -PzillitEnv=develop -PzillitBundleConfig
 ```
 
-- `.exe` lands at `desktopApp\build\compose\binaries\main\exe\Zillit-1.0.0.exe`
-- `:desktopApp:packageMsi` gives the `.msi` at `...\main\msi\Zillit-1.0.0.msi`
+- `.exe` lands at `desktopApp\build\compose\binaries\main\exe\Zillit-Desktop-1.0.0.exe`
+- `:desktopApp:packageMsi` gives the `.msi` at `...\main\msi\Zillit-Desktop-1.0.0.msi`
 - `:desktopApp:packageDistributionForCurrentOS` builds both.
 - `-PzillitEnv=develop` bakes the environment in (`-Dzillit.env=develop` in the
   launcher's `Zillit.cfg`); drop it for a **prod** installer. Check with
-  `findstr zillit.env desktopApp\build\compose\binaries\main\app\Zillit\app\Zillit.cfg`
+  `findstr zillit.env desktopApp\build\compose\binaries\main\app\Zillit-Desktop\app\Zillit-Desktop.cfg`
   before handing it out — a prod desktop shows a prod QR that a develop phone
   cannot scan.
 - `-PzillitBundleConfig` bundles the properties file staged in step 4 (or

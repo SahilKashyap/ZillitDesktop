@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -202,18 +203,27 @@ private fun UserRow(
     ) {
         ZillitAvatar(name = user.fullName)
         UserIdentity(user, Modifier.weight(1f))
-        if (hovered && mayEdit) {
-            ZillitIconButton(
-                icon = ZillitIcons.Edit,
-                contentDescription = "Edit ${user.fullName}",
-                onClick = onEdit,
-            )
-            ZillitIconButton(
-                icon = ZillitIcons.Trash,
-                contentDescription = "Delete ${user.fullName}",
-                tint = colors.danger,
-                onClick = onDelete,
-            )
+        if (mayEdit) {
+            // Composed always, revealed by alpha: a control that only exists
+            // while hovered leaves the composition on the press-instant hover
+            // flicker and never receives the click on Compose Desktop — the
+            // Home board's kebab had the same fault.
+            Row(
+                modifier = Modifier.alpha(if (hovered) 1f else 0f),
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                ZillitIconButton(
+                    icon = ZillitIcons.Edit,
+                    contentDescription = "Edit ${user.fullName}",
+                    onClick = onEdit,
+                )
+                ZillitIconButton(
+                    icon = ZillitIcons.Trash,
+                    contentDescription = "Delete ${user.fullName}",
+                    tint = colors.danger,
+                    onClick = onDelete,
+                )
+            }
         }
     }
 }

@@ -27,6 +27,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -44,8 +45,10 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
+import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
@@ -53,14 +56,19 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.chat.data.MessageHit
 import com.zillit.desktop.feature.chat.domain.CrewContact
+import com.zillit.desktop.feature.chat.domain.GroupRoom
 import com.zillit.desktop.feature.chat.domain.RecentRow
+import kotlinx.coroutines.launch
+import com.zillit.desktop.feature.chat.domain.admits
 import com.zillit.desktop.feature.chat.domain.designationLabel
-import com.zillit.desktop.feature.chat.domain.hasStanding
 import com.zillit.desktop.feature.chat.domain.lastEntryDate
 import com.zillit.desktop.feature.chat.domain.lastMessageAt
 import com.zillit.desktop.feature.chat.domain.recentRows
 import com.zillit.desktop.feature.chat.domain.searchCrew
+import com.zillit.desktop.feature.chat.domain.searchRecents
 import com.zillit.desktop.feature.chat.domain.ChatFilter
 
 /**
@@ -95,6 +103,22 @@ fun ChatScreen(
     onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean) -> Unit)? = null,
     /** The call history pane; null hides the Calls tab. */
     callLog: (@Composable () -> Unit)? = null,
+    /**
+     * Creates a group room (`ChatRepository.createRoom`) — the host passes
+     * it through because the screen holds no repository. Null hides the
+     * "New group" affordance rather than offering a dead one.
+     */
+    createRoom: (suspend (name: String, memberIds: List<String>) -> ZillitResult<GroupRoom>)? = null,
+    /**
+     * The cached-thread message search (`ChatRepository.searchMessages`,
+     * QA#12); null keeps the Chats search to conversation names.
+     */
+    searchMessages: ((String) -> List<MessageHit>)? = null,
+    /**
+     * `ChatRepository::deleteRoom` — the web's creator-only Delete Group
+     * (`InfoSiderGroup.jsx:119,798`); null hides the affordance.
+     */
+    deleteRoom: (suspend (roomId: String) -> ZillitResult<Unit>)? = null,
 ) {
     val chatState = viewModel?.state?.collectAsState()?.value
     // Opens on Chats, as Android's pager does (ChatAndCall.kt:81-140 — page 0
@@ -103,56 +127,102 @@ fun ChatScreen(
     var tab by rememberSaveable { mutableStateOf(DirectoryTab.Chats.name) }
     var query by rememberSaveable { mutableStateOf("") }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var groupEditorOpen by rememberSaveable { mutableStateOf(false) }
 
-    Row(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
-        DirectoryPane(
-            crew = crew,
-            selfId = selfId,
-            tab = tab,
-            query = query,
-            selectedId = selectedId,
-            chatState = chatState,
-            loadAvatar = loadAvatar,
-            onTab = {
-                tab = it
-                // Opening the tab is the retry — the init-time fetch can
-                // predate the socket connecting.
-                if (it == DirectoryTab.Chats.name) viewModel?.onEvent(ChatEvent.RefreshRecents)
-                // Looking at the log is what reads a missed call.
-                if (it == DirectoryTab.Calls.name) viewModel?.onEvent(ChatEvent.CallsViewed)
-            },
-            onQuery = { query = it },
-            onSelect = { selectedId = it },
-            onChatEvent = { event -> viewModel?.onEvent(event) },
-            callLog = callLog,
-        )
+    // A Box rather than the Row alone so the create-group dialog's scrim
+    // covers the whole screen, not just the 320dp pane its button lives in.
+    Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
+        Row(Modifier.fillMaxSize()) {
+            DirectoryPane(
+                crew = crew,
+                selfId = selfId,
+                tab = tab,
+                query = query,
+                selectedId = selectedId,
+                chatState = chatState,
+                loadAvatar = loadAvatar,
+                onTab = {
+                    tab = it
+                    // Opening the tab is the retry — the init-time fetch can
+                    // predate the socket connecting.
+                    if (it == DirectoryTab.Chats.name) viewModel?.onEvent(ChatEvent.RefreshRecents)
+                    // Looking at the log is what reads a missed call.
+                    if (it == DirectoryTab.Calls.name) viewModel?.onEvent(ChatEvent.CallsViewed)
+                },
+                onQuery = { query = it },
+                onSelect = { selectedId = it },
+                onChatEvent = { event -> viewModel?.onEvent(event) },
+                callLog = callLog,
+                searchMessages = searchMessages,
+                deleteRoom = deleteRoom,
+                onNewGroup = ({ groupEditorOpen = true }).takeIf { createRoom != null },
+            )
 
-        Box(
-            Modifier
-                .width(HAIRLINE)
-                .fillMaxHeight()
-                .background(ZillitTheme.colors.border),
-        )
+            Box(
+                Modifier
+                    .width(HAIRLINE)
+                    .fillMaxHeight()
+                    .background(ZillitTheme.colors.border),
+            )
 
-        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-            val selected = crew.firstOrNull { it.userId == selectedId }
-            when {
-                chatState?.peer != null && viewModel != null ->
-                    OpenThread(
-                        chatState, viewModel, crew, onOpenAttachment,
-                        loadAvatar, loadThumbnail, onCall, player, loadAudio,
-                    )
-
-                selected != null -> ContactCard(selected, loadAvatar) { contact ->
-                    viewModel?.onEvent(ChatEvent.OpenThread(contact))
-                }
-
-                else -> PaneMessage(
-                    icon = ZillitIcons.User,
-                    text = "Pick a contact to see their card.",
+            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                DetailPane(
+                    chatState, viewModel, crew, selectedId, onOpenAttachment,
+                    loadAvatar, loadThumbnail, onCall, player, loadAudio,
                 )
             }
         }
+
+        if (createRoom != null) {
+            GroupEditorHost(
+                // Nobody puts themselves in the member list — the server
+                // adds the creator, as Android's picker leaves them out.
+                contacts = crew.filterNot { it.userId == selfId },
+                createRoom = createRoom,
+                visible = groupEditorOpen,
+                onDismiss = { groupEditorOpen = false },
+                onCreated = {
+                    groupEditorOpen = false
+                    // The same refresh the tab click rides: `rooms()` is
+                    // refetched and the new room takes its row.
+                    viewModel?.onEvent(ChatEvent.RefreshRecents)
+                },
+            )
+        }
+    }
+}
+
+/** The right pane: the open thread, a picked contact's card, or the invite. */
+@Composable
+@Suppress("LongParameterList")
+private fun DetailPane(
+    chatState: ChatUiState?,
+    viewModel: ChatViewModel?,
+    crew: List<CrewContact>,
+    selectedId: String?,
+    onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean) -> Unit)?,
+    player: com.zillit.desktop.core.designsystem.component.AudioPlayer?,
+    loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray?,
+) {
+    val selected = crew.firstOrNull { it.userId == selectedId }
+    when {
+        chatState?.peer != null && viewModel != null ->
+            OpenThread(
+                chatState, viewModel, crew, onOpenAttachment,
+                loadAvatar, loadThumbnail, onCall, player, loadAudio,
+            )
+
+        selected != null -> ContactCard(selected, loadAvatar) { contact ->
+            viewModel?.onEvent(ChatEvent.OpenThread(contact))
+        }
+
+        else -> PaneMessage(
+            icon = ZillitIcons.User,
+            text = "Pick a contact to see their card.",
+        )
     }
 }
 
@@ -237,6 +307,11 @@ private fun DirectoryPane(
      * build with no media engine should do.
      */
     callLog: (@Composable () -> Unit)?,
+    /** The Chats search's reach into cached bodies; null keeps it to names. */
+    searchMessages: ((String) -> List<MessageHit>)?,
+    deleteRoom: (suspend (String) -> ZillitResult<Unit>)? = null,
+    /** Opens the create-group dialog; null hides the affordance. */
+    onNewGroup: (() -> Unit)?,
 ) {
     Column(
         modifier = Modifier
@@ -277,11 +352,15 @@ private fun DirectoryPane(
                 },
             )
         } else if (chatState != null) {
-            RecentsList(
+            ChatsTab(
                 state = chatState,
                 crew = crew,
+                selfId = selfId,
                 loadAvatar = loadAvatar,
                 onEvent = onChatEvent,
+                searchMessages = searchMessages,
+                onNewGroup = onNewGroup,
+                deleteRoom = deleteRoom,
             )
         } else {
             PaneMessage(
@@ -293,21 +372,79 @@ private fun DirectoryPane(
 }
 
 /**
- * The Chats tab: everyone with an existing thread, from the server's
+ * The Chats tab: its own search box over the listing (QA#6), the "New
+ * group" affordance beside it (QA#13), then the filtered recents.
+ *
+ * The query is local `remember` state, the tools grid's arrangement — the
+ * search is this pane's concern and resets with it.
+ */
+@Composable
+@Suppress("LongParameterList")
+private fun ChatsTab(
+    state: ChatUiState,
+    crew: List<CrewContact>,
+    selfId: String?,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    onEvent: (ChatEvent) -> Unit,
+    searchMessages: ((String) -> List<MessageHit>)?,
+    onNewGroup: (() -> Unit)?,
+    deleteRoom: (suspend (String) -> ZillitResult<Unit>)? = null,
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitSearchField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = "Search chats",
+            modifier = Modifier.weight(1f),
+        )
+        if (onNewGroup != null) {
+            ZillitIconButton(
+                icon = ZillitIcons.UserPlus,
+                contentDescription = "New group",
+                onClick = onNewGroup,
+            )
+        }
+    }
+    RecentsList(
+        state = state,
+        crew = crew,
+        selfId = selfId,
+        loadAvatar = loadAvatar,
+        onEvent = onEvent,
+        query = query,
+        searchMessages = searchMessages,
+        deleteRoom = deleteRoom,
+    )
+}
+
+/**
+ * The Chats listing: everyone with an existing thread, from the server's
  * `user:list`, resolved against the crew for faces and roles. A peer no
  * longer on the production has no card to show and is left out.
  *
  * One flat list, groups and threads interleaved by newest activity — the
  * phones' order (see [recentRows]). It used to pin a Groups section on top,
  * which held a dormant room above every fresh conversation.
+ *
+ * [query] narrows by display name; with [searchMessages] wired it also
+ * reaches the cached message bodies, whose hits follow under a "Messages"
+ * header (QA#12).
  */
 @Composable
 @Suppress("LongParameterList")
 private fun RecentsList(
     state: ChatUiState,
     crew: List<CrewContact>,
+    selfId: String?,
     loadAvatar: suspend (String) -> ImageBitmap?,
     onEvent: (ChatEvent) -> Unit,
+    query: String,
+    searchMessages: ((String) -> List<MessageHit>)?,
+    deleteRoom: (suspend (String) -> ZillitResult<Unit>)? = null,
 ) {
     var filter by rememberSaveable { mutableStateOf(ChatFilter.All.name) }
     val chosen = ChatFilter.valueOf(filter)
@@ -318,19 +455,34 @@ private fun RecentsList(
         groups = state.groups,
         contacts = state.recents.mapNotNull { id -> crew.firstOrNull { it.userId == id } },
         newest = state.activity,
-    ).filter { row -> chosen.admits(row, state) }
+    ).filter { row -> chosen.admits(row, state.activity, state.unread, state.favourites) }
+        .searchRecents(query)
 
-    if (rows.isEmpty()) {
+    // Message hits ride the same query; remembered so a recomposition does
+    // not re-run the sweep. Name hits and body hits show together — a query
+    // matching both is answered with both, the way mail search behaves.
+    val hits = remember(query, searchMessages, state.groups, crew) {
+        if (query.isBlank() || searchMessages == null) {
+            emptyList()
+        } else {
+            messageHitRows(searchMessages(query), state.groups, crew)
+        }
+    }
+
+    if (rows.isEmpty() && hits.isEmpty()) {
         PaneMessage(
             icon = ZillitIcons.Chat,
-            text = when (chosen) {
-                ChatFilter.All -> "No conversations yet — message someone from the Contacts tab."
+            text = when {
+                query.isNotBlank() -> "Nothing matches \"${query.trim()}\"."
+                chosen == ChatFilter.All ->
+                    "No conversations yet — message someone from the Contacts tab."
                 else -> "Nothing under ${chosen.label} right now."
             },
         )
         return
     }
 
+    val nowMillis = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
     val roomsState = rememberLazyListState()
     LazyColumn(
         state = roomsState,
@@ -339,35 +491,156 @@ private fun RecentsList(
     ) {
         items(rows, key = RecentRow::id) { row ->
             Column {
-                when (row) {
-                    // The web's group row: name over the stamp line, badge, no
-                    // star and no designation slot (`GroupCard.jsx:300-333`).
-                    is RecentRow.Group -> CrewRow(
-                        contact = CrewContact(userId = row.room.id, fullName = row.room.name),
-                        isSelected = false,
-                        loadAvatar = { null },
-                        onClick = { onEvent(ChatEvent.OpenGroup(row.room)) },
-                        subtitle = (state.activity[row.room.id] ?: row.room.sortingActivity.takeIf { it > 0L })
-                            ?.let { "${"last_message_at".localised()}: ${lastMessageAt(it)}" },
-                        badge = state.unread[row.room.id] ?: 0,
-                    )
-
-                    // The web's user row: name, designation, "Last Entry"
-                    // (`UserCard.jsx:317-362`) — no message preview.
-                    is RecentRow.Direct -> CrewRow(
-                        contact = row.contact,
-                        isSelected = false,
-                        loadAvatar = loadAvatar,
-                        onClick = { onEvent(ChatEvent.OpenThread(row.contact)) },
-                        meta = row.contact.lastEntryLine(),
-                        badge = state.unread[row.contact.userId] ?: 0,
-                        isFavourite = row.contact.userId in state.favourites,
-                        onToggleFavourite = { onEvent(ChatEvent.ToggleFavourite(row.contact.userId)) },
-                    )
-                }
+                RecentRowCard(row, state, selfId, loadAvatar, onEvent, deleteRoom)
                 ZillitDivider()
             }
         }
+        if (hits.isNotEmpty()) {
+            item(key = "message-hits-header") { MessageHitsHeader() }
+            items(hits) { hit ->
+                Column {
+                    MessageHitRowItem(hit, nowMillis, onEvent)
+                    ZillitDivider()
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A group row wearing the creator's Delete — the web's Delete Group from the
+ * group info sider (`InfoSiderGroup.jsx:119,798`): creator only, a
+ * confirmation first ("Are you sure you want to delete this group ?"), and
+ * the listing re-read once the server has taken it.
+ */
+@Composable
+private fun GroupRowWithDelete(
+    row: RecentRow.Group,
+    state: ChatUiState,
+    selfId: String?,
+    onEvent: (ChatEvent) -> Unit,
+    deleteRoom: (suspend (String) -> ZillitResult<Unit>)?,
+) {
+    var confirming by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    var refusal by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val mine = deleteRoom != null && selfId != null && row.room.ownedBy == selfId
+
+    CrewRow(
+        contact = CrewContact(userId = row.room.id, fullName = row.room.name),
+        isSelected = false,
+        loadAvatar = { null },
+        onClick = { onEvent(ChatEvent.OpenGroup(row.room)) },
+        subtitle = (state.activity[row.room.id] ?: row.room.sortingActivity.takeIf { it > 0L })
+            ?.let { "${"last_message_at".localised()}: ${lastMessageAt(it)}" },
+        badge = state.unread[row.room.id] ?: 0,
+        trailing = if (mine) {
+            {
+                ZillitIconButton(
+                    icon = ZillitIcons.Trash,
+                    contentDescription = "Delete ${row.room.name}",
+                    enabled = !deleting,
+                    onClick = { confirming = true },
+                )
+            }
+        } else {
+            null
+        },
+    )
+
+    DeleteGroupDialog(
+        roomName = row.room.name,
+        visible = confirming,
+        deleting = deleting,
+        refusal = refusal,
+        onDismiss = { confirming = false },
+        onConfirm = {
+            deleting = true
+            scope.launch {
+                when (val result = deleteRoom?.invoke(row.room.id)) {
+                    is ZillitResult.Success -> {
+                        confirming = false
+                        onEvent(ChatEvent.RefreshRecents)
+                    }
+
+                    is ZillitResult.Failure -> refusal = result.error.localised()
+                    null -> Unit
+                }
+                deleting = false
+            }
+        },
+    )
+}
+
+/** The web's confirmation before a group goes (`en.js:5666`), word for word. */
+@Composable
+@Suppress("LongParameterList") // One dialog's display state, one each.
+private fun DeleteGroupDialog(
+    roomName: String,
+    visible: Boolean,
+    deleting: Boolean,
+    refusal: String?,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    ZillitDialogShell(
+        title = roomName,
+        subtitle = "Are you sure you want to delete this group ?",
+        icon = ZillitIcons.Trash,
+        visible = visible,
+        onDismiss = onDismiss,
+        actions = {
+            ZillitButton(
+                text = "Cancel",
+                variant = ButtonVariant.Tertiary,
+                onClick = onDismiss,
+            )
+            ZillitButton(
+                text = "Delete",
+                variant = ButtonVariant.Danger,
+                loading = deleting,
+                onClick = onConfirm,
+            )
+        },
+    ) {
+        refusal?.let { message ->
+            ZillitText(
+                text = message,
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.danger,
+            )
+        }
+    }
+}
+
+/** One conversation row, group- or person-flavoured. */
+@Composable
+private fun RecentRowCard(
+    row: RecentRow,
+    state: ChatUiState,
+    selfId: String?,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    onEvent: (ChatEvent) -> Unit,
+    deleteRoom: (suspend (String) -> ZillitResult<Unit>)? = null,
+) {
+    when (row) {
+        // The web's group row: name over the stamp line, badge, no
+        // star and no designation slot (`GroupCard.jsx:300-333`).
+        is RecentRow.Group -> GroupRowWithDelete(row, state, selfId, onEvent, deleteRoom)
+
+        // The web's user row: name, designation, "Last Entry"
+        // (`UserCard.jsx:317-362`) — no message preview.
+        is RecentRow.Direct -> CrewRow(
+            contact = row.contact,
+            isSelected = false,
+            loadAvatar = loadAvatar,
+            onClick = { onEvent(ChatEvent.OpenThread(row.contact)) },
+            meta = row.contact.lastEntryLine(),
+            badge = state.unread[row.contact.userId] ?: 0,
+            isFavourite = row.contact.userId in state.favourites,
+            onToggleFavourite = { onEvent(ChatEvent.ToggleFavourite(row.contact.userId)) },
+        )
     }
 }
 
@@ -428,6 +701,8 @@ private fun CrewRow(
     badge: Int = 0,
     isFavourite: Boolean? = null,
     onToggleFavourite: () -> Unit = {},
+    /** An extra control at the row's end — the group row's Delete. */
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
@@ -458,6 +733,7 @@ private fun CrewRow(
         )
         CrewIdentity(contact, unread, subtitle, meta, Modifier.weight(1f))
         RowTrailing(badge, isFavourite, onToggleFavourite)
+        trailing?.invoke()
     }
 }
 
@@ -599,21 +875,6 @@ private fun FilterChips(chosen: ChatFilter, onPick: (ChatFilter) -> Unit) {
         }
     }
 }
-
-/**
- * Whether one conversation belongs under this chip — Android's per-tab
- * predicates (`MembersVM.searchOrSubmitUserGroupList`): All/Groups/Members
- * also demand the row has spoken ([hasStanding]); Unread and Favourites are
- * their own whole rule.
- */
-private fun ChatFilter.admits(row: RecentRow, state: ChatUiState): Boolean =
-    when (this) {
-        ChatFilter.All -> row.hasStanding(state.activity)
-        ChatFilter.Groups -> row is RecentRow.Group && row.hasStanding(state.activity)
-        ChatFilter.Members -> row is RecentRow.Direct && row.hasStanding(state.activity)
-        ChatFilter.Unread -> (state.unread[row.id] ?: 0) > 0
-        ChatFilter.Favourites -> row.id in state.favourites
-    }
 
 /** The right pane: one person, large — the paper crew card, on glass. */
 @Composable

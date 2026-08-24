@@ -26,6 +26,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /** Direct messages: history over REST, live traffic over the chat socket. */
+@Suppress("TooManyFunctions") // One function per REST route or socket act.
 interface ChatRepository {
     /** Messages arriving on the socket, decrypted; the caller filters by peer. */
     val incoming: Flow<ChatMessage>
@@ -146,7 +147,48 @@ interface ChatRepository {
 
     /** The production's group rooms. */
     suspend fun rooms(): ZillitResult<List<com.zillit.desktop.feature.chat.domain.GroupRoom>>
+
+    /**
+     * Creates a CNC group room — `POST chat-room` with Android's
+     * `ReqGroupModel` body — answering the room the server saved. Defaulted
+     * to a refusal so test fakes that never create rooms need not care.
+     */
+    suspend fun createRoom(
+        name: String,
+        memberIds: List<String>,
+    ): ZillitResult<com.zillit.desktop.feature.chat.domain.GroupRoom> =
+        ZillitResult.Failure(ZillitError.Unknown("group creation is not wired"))
+
+    /**
+     * Deletes a group room — `DELETE chat-room/{id}`, the web's
+     * `deleteChatRoom` (`cncChatApi.js:101-107`), offered to the creator
+     * alone (`InfoSiderGroup.jsx:119,798`). Defaulted like [createRoom].
+     */
+    suspend fun deleteRoom(roomId: String): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("group deletion is not wired"))
+
+    /**
+     * The Chats search's second reach (QA#12): every locally cached line —
+     * the session map plus the disk copy — whose decrypted body contains
+     * [query], case-blind, newest first. Purely local: nothing rides the
+     * wire, and bodies are never logged. Empty when the query is blank.
+     */
+    fun searchMessages(query: String): List<MessageHit> = emptyList()
 }
+
+/**
+ * One cached line matching the Chats search: which conversation to open
+ * (peer user id for DMs, room id for groups) and a readable window of the
+ * matched body. [isGroup] is best-effort — a thread restored from disk lost
+ * the flag, so the listing resolves the conversation against its own rooms
+ * before trusting it.
+ */
+data class MessageHit(
+    val peerId: String,
+    val isGroup: Boolean,
+    val snippet: String,
+    val timestampMillis: Long,
+)
 
 /**
  * The app's one chat socket is the notification socket — both live on the
@@ -163,7 +205,7 @@ class ChatRepositoryImpl(
     private val decrypt: (String) -> String?,
     /** The at-rest copy; null in tests. Bodies stay cipher-hex inside it. */
     private val disk: ChatCache? = null,
-) : ChatRepository {
+) : ChatRepository, ReplyAwareChatRepository {
 
     private val threads = mutableMapOf<String, List<ChatMessage>>()
 
@@ -445,6 +487,52 @@ class ChatRepositoryImpl(
             module = RequestModule.ProjectUser,
         ).map(::roomsFrom)
 
+    /**
+     * `POST chat-room` on the chat host — Android's `CREATE_UPDATE_GROUP_URL`
+     * (`ApiUrl.kt:408`, `CreateGroupVM.createRoom` `CreateGroupVM.kt:78-119`)
+     * with the `ReqGroupModel` body its create page sends
+     * (`CreateGroupPage.kt:393-400`). The answer nests the saved room as
+     * `data.chat_room` (`GetSingleRoomDetail`, `GetRoomsModel.kt:73-83`).
+     */
+    /** `DELETE chat-room/{id}` — the web's `deleteChatRoom` (`cncChatApi.js:101-107`). */
+    override suspend fun deleteRoom(roomId: String): ZillitResult<Unit> =
+        apiClient.envelope(
+            verb = HttpVerb.Delete,
+            url = "${config.apiV2(ZillitService.Chat)}chat-room/$roomId",
+            module = RequestModule.ProjectUser,
+        ).refuseStatusZero().map { }
+
+    override suspend fun createRoom(
+        name: String,
+        memberIds: List<String>,
+    ): ZillitResult<com.zillit.desktop.feature.chat.domain.GroupRoom> {
+        val me = myUserId() ?: return ZillitResult.Failure(
+            ZillitError.Unauthorized("no signed-in user"),
+        )
+        return apiClient.envelope(
+            verb = HttpVerb.Post,
+            url = "${config.apiV2(ZillitService.Chat)}chat-room",
+            module = RequestModule.ProjectUser,
+            body = createRoomBody(name, me, memberIds),
+        ).refuseStatusZero().flatMap { envelope ->
+            createdRoomFrom(envelope.data)
+                ?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Serialization("no chat_room in the answer"))
+        }
+    }
+
+    override fun searchMessages(query: String): List<MessageHit> {
+        val needle = query.trim()
+        if (needle.isEmpty()) return emptyList()
+        // Pull every disk-held thread into the session map first: the sweep
+        // must reach conversations never opened this session, and cached()
+        // is what decrypts and memoises them.
+        projectId()?.let { project ->
+            disk?.lastPerPeer(project).orEmpty().forEach { cached(it.peerId) }
+        }
+        return searchCachedThreads(threads(), needle)
+    }
+
     override suspend fun history(
         otherUserId: String,
         nowMillis: Long,
@@ -497,6 +585,26 @@ class ChatRepositoryImpl(
         return readChatMessage(payload, myUserId(), decrypt)?.also(::remember)
     }
 
+    /**
+     * [ChatRepository.send] with the quoted parent riding the envelope —
+     * Android's `Reply_chat` object under `"reply"`
+     * (ChatAndGroupVM.kt:451-459). Same ack path, same idempotent
+     * `unique_id`; only the payload differs.
+     */
+    @Suppress("LongParameterList") // Mirrors send() plus the reference.
+    override suspend fun sendWithReply(
+        receiverId: String,
+        body: String,
+        uniqueId: String,
+        nowMillis: Long,
+        isGroup: Boolean,
+        attachment: com.zillit.desktop.feature.chat.domain.ChatAttachment?,
+        replyTo: com.zillit.desktop.feature.chat.domain.ChatReplyRef,
+    ): ZillitResult<Unit> = sendInternal(
+        receiverId, body, uniqueId, nowMillis, isGroup, attachment,
+        replyToId = replyTo.messageId,
+    )
+
     override suspend fun send(
         receiverId: String,
         body: String,
@@ -504,6 +612,17 @@ class ChatRepositoryImpl(
         nowMillis: Long,
         isGroup: Boolean,
         attachment: com.zillit.desktop.feature.chat.domain.ChatAttachment?,
+    ): ZillitResult<Unit> = sendInternal(receiverId, body, uniqueId, nowMillis, isGroup, attachment, replyToId = null)
+
+    @Suppress("LongParameterList") // One optional reply object beyond send()'s own list.
+    private suspend fun sendInternal(
+        receiverId: String,
+        body: String,
+        uniqueId: String,
+        nowMillis: Long,
+        isGroup: Boolean,
+        attachment: com.zillit.desktop.feature.chat.domain.ChatAttachment?,
+        replyToId: String?,
     ): ZillitResult<Unit> {
         val me = myUserId() ?: return ZillitResult.Failure(
             com.zillit.desktop.core.common.ZillitError.Unauthorized("no signed-in user"),
@@ -530,6 +649,7 @@ class ChatRepositoryImpl(
                 nowMillis = nowMillis,
                 isGroup = isGroup,
                 attachment = attachment,
+                replyToId = replyToId,
             ),
             JsonElement.serializer(),
         ).flatMap { ack ->
@@ -577,7 +697,71 @@ class ChatRepositoryImpl(
     }
 }
 
+/**
+ * The search itself, over the session's decrypted threads. Pure, so the case
+ * folding and windowing are testable without the impl's socket and cipher
+ * seams. The needle is matched case-blind ([String.indexOf]'s ignoreCase);
+ * bodies never reach a log line. Attachment-only lines have empty bodies and
+ * fall out on their own.
+ */
+internal fun searchCachedThreads(
+    threads: Map<String, List<ChatMessage>>,
+    needle: String,
+): List<MessageHit> =
+    threads.flatMap { (peer, messages) ->
+        messages.mapNotNull { message ->
+            val at = message.body.indexOf(needle, ignoreCase = true)
+            if (at < 0) {
+                null
+            } else {
+                MessageHit(
+                    peerId = peer,
+                    isGroup = message.isGroup,
+                    snippet = snippetAround(message.body, at, needle.length),
+                    timestampMillis = message.timestampMillis,
+                )
+            }
+        }
+    }.sortedByDescending(MessageHit::timestampMillis).take(MAX_MESSAGE_HITS)
+
+/**
+ * A readable window around the match — the matched text with a margin either
+ * side, ellipsised where the body continues. The row is a finder, not a
+ * reader: the full line lives in the thread it opens.
+ */
+internal fun snippetAround(body: String, at: Int, matchLength: Int): String {
+    val start = (at - SNIPPET_MARGIN).coerceAtLeast(0)
+    val end = (at + matchLength + SNIPPET_MARGIN).coerceAtMost(body.length)
+    val head = if (start > 0) "…" else ""
+    val tail = if (end < body.length) "…" else ""
+    return head + body.substring(start, end) + tail
+}
+
+/**
+ * The service says no with `status: 0` on a 200 — surface its message. The
+ * same guard the module's REST-writing neighbours keep
+ * (`DistributionRepositoryImpl.refuseStatusZero`).
+ */
+internal fun ZillitResult<com.zillit.desktop.core.network.ApiEnvelope>.refuseStatusZero():
+    ZillitResult<com.zillit.desktop.core.network.ApiEnvelope> = when (this) {
+    is ZillitResult.Failure -> this
+    is ZillitResult.Success ->
+        if (data.status == 0) {
+            ZillitResult.Failure(
+                ZillitError.Validation(data.message ?: "The server refused the change."),
+            )
+        } else {
+            this
+        }
+}
+
 private const val TAG = "Chat"
 
 /** Acks arrive one per send; a small buffer covers a burst without a subscriber stalling the ack. */
 private const val ACK_BUFFER = 16
+
+/** Characters kept either side of the match in a snippet. */
+private const val SNIPPET_MARGIN = 24
+
+/** Enough rows to find the line; a chat-wide grep is not the surface. */
+private const val MAX_MESSAGE_HITS = 50

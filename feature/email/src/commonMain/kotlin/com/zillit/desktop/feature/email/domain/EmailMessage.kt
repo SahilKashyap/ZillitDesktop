@@ -39,7 +39,27 @@ data class EmailMessage(
     val isHtml: Boolean = false,
     val receivedAtMillis: Long = 0,
     val attachments: List<EmailAttachment> = emptyList(),
+    /**
+     * The `References` chain this message arrived with, oldest first.
+     *
+     * Carried so a reply can send it back with this message's own id appended
+     * — which is what threads the reply onto the conversation. Without it a
+     * reply to anything but the very first message arrives as a brand-new
+     * conversation (both phones keep the chain: Android `Email.references`,
+     * the web `currentEmail.references`).
+     */
+    val references: List<String> = emptyList(),
+    /** The `In-Reply-To` header, when the server sends one. */
+    val inReplyTo: String = "",
 ) {
+    /**
+     * The chain a reply to this message should carry: everything this message
+     * references, then this message itself — RFC 5322, and the web's
+     * `computeReferences` rule for the same reason.
+     */
+    val replyReferences: List<String>
+        get() = (references + id).filter { it.isNotBlank() }.distinct()
+
     val senderName: String get() = from.headerName()
     val senderAddress: String get() = from.headerAddress()
 

@@ -65,16 +65,16 @@ A bundled-config build carries the AES header key in plain text inside the app.
 That is the accepted trade for a build a tester can install with nothing to copy
 — keep those artifacts on internal distribution only.
 
-Gradle names every DMG `Zillit-1.0.0.dmg` regardless of environment. Rename
+Gradle names every DMG `Zillit-Desktop-1.0.0.dmg` regardless of environment. Rename
 anything that leaves the machine, or a develop build will eventually reach a
 real user.
 
 ## Verifying
 
 ```bash
-codesign --verify --deep --strict --verbose=2 <path>/Zillit.app
-spctl -a -t exec -vv <path>/Zillit.app
-xcrun stapler validate <path>/Zillit-1.0.0.dmg
+codesign --verify --deep --strict --verbose=2 <path>/Zillit-Desktop.app
+spctl -a -t exec -vv <path>/Zillit-Desktop.app
+xcrun stapler validate <path>/Zillit-Desktop-1.0.0.dmg
 ```
 
 **`--deep` is not optional.** Without it, `codesign --verify` checks the outer
