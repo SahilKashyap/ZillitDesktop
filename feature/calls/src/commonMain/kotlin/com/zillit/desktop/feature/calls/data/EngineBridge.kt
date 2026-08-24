@@ -1,7 +1,10 @@
 package com.zillit.desktop.feature.calls.data
 
+import com.zillit.desktop.feature.calls.domain.CallDeviceKind
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
 import com.zillit.desktop.feature.calls.domain.EngineConnection
+import com.zillit.desktop.feature.calls.domain.MediaDevice
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -54,6 +57,16 @@ object EngineBridge {
                 connection(obj.str("state")),
                 obj.str("reason"),
             )
+            "token-expiring" -> CallEngineEvent.TokenExpiring
+            "token-expired" -> CallEngineEvent.TokenExpired
+            "screen-share" -> CallEngineEvent.ScreenShare(obj.bool("sharing"))
+            "devices" -> CallEngineEvent.Devices(
+                microphones = obj.devices("microphones"),
+                speakers = obj.devices("speakers"),
+                cameras = obj.devices("cameras"),
+                microphoneId = obj.str("microphoneId").orEmpty(),
+                speakerId = obj.str("speakerId").orEmpty(),
+            )
             "error" -> CallEngineEvent.Failed(obj.str("message") ?: "call page error")
             else -> null
         }
@@ -102,6 +115,26 @@ object EngineBridge {
 
     fun speakerScript(enabled: Boolean): String = "zillitCall.setSpeaker($enabled)"
 
+    const val LIST_DEVICES_SCRIPT = "zillitCall.listDevices()"
+
+    const val START_SCREEN_SHARE_SCRIPT = "zillitCall.startScreenShare()"
+    const val STOP_SCREEN_SHARE_SCRIPT = "zillitCall.stopScreenShare()"
+
+    /**
+     * Device ids are opaque strings from the browser, so they are passed as
+     * JSON rather than spliced raw — the same reasoning as the stage model.
+     */
+    fun deviceScript(kind: CallDeviceKind, deviceId: String): String {
+        val setter = when (kind) {
+            CallDeviceKind.Microphone -> "setMicrophoneDevice"
+            CallDeviceKind.Speaker -> "setSpeakerDevice"
+            CallDeviceKind.Camera -> "setCameraDevice"
+        }
+        return "zillitCall.$setter(${deviceId.asJsString()})"
+    }
+
+    private fun String.asJsString(): String = Json.encodeToString(String.serializer(), this)
+
     /**
      * Pushes the stage model the page draws its tile chrome from.
      *
@@ -134,6 +167,13 @@ object EngineBridge {
 
     private fun JsonObject.bool(key: String): Boolean =
         (this[key] as? JsonPrimitive)?.booleanOrNull ?: false
+
+    private fun JsonObject.devices(key: String): List<MediaDevice> =
+        (this[key] as? JsonArray).orEmpty().mapNotNull { entry ->
+            val row = entry as? JsonObject ?: return@mapNotNull null
+            val id = row.str("id").orEmpty()
+            if (id.isBlank()) null else MediaDevice(id = id, label = row.str("label").orEmpty())
+        }
 
     private fun JsonObject.intList(key: String): List<Int> =
         (this[key] as? JsonArray).orEmpty().mapNotNull { entry ->

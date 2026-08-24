@@ -310,6 +310,52 @@ private fun DisconnectedLine(state: ChatUiState, peer: com.zillit.desktop.featur
  * tinted discs rather than bare glyphs — they are the header's two actions,
  * and the close beside them is not one.
  */
+/**
+ * Who this conversation is with: name, presence, role, address.
+ *
+ * Everything the contact card used to carry, now that the card is no longer on
+ * the way to a conversation — the header has to answer "which Sam is this" on
+ * its own.
+ */
+@Composable
+private fun ThreadIdentity(
+    state: ChatUiState,
+    peer: com.zillit.desktop.feature.chat.domain.CrewContact,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        ZillitText(text = peer.fullName, style = ZillitTheme.typography.titleSmall)
+        OnlineLine(state)
+        DisconnectedLine(state, peer)
+        // Department and role together — the same line their crew card leads
+        // with.
+        val role = listOfNotNull(
+            peer.department?.takeIf { it.isNotBlank() },
+            peer.designationLabel(),
+        ).joinToString(" · ") { it.localised() }
+        if (role.isNotBlank()) {
+            ZillitText(
+                text = role,
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+                maxLines = 1,
+            )
+        }
+        // A line of its own rather than a third item on the role line: an
+        // address is long, and appended there it would be the first thing
+        // truncated — which is the same as not showing it. Groups have no
+        // address, so the null check is the whole guard.
+        peer.email?.takeIf { it.isNotBlank() }?.let { address ->
+            ZillitText(
+                text = address,
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
 @Composable
 private fun ThreadHeader(
     state: ChatUiState,
@@ -332,40 +378,7 @@ private fun ThreadHeader(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitAvatar(name = peer.fullName, image = face, size = HEADER_AVATAR)
-        Column(Modifier.weight(1f)) {
-            ZillitText(text = peer.fullName, style = ZillitTheme.typography.titleSmall)
-            OnlineLine(state)
-            DisconnectedLine(state, peer)
-            // Department and role together — the same line their crew card
-            // leads with, so the header answers "which Sam is this".
-            val role = listOfNotNull(
-                peer.department?.takeIf { it.isNotBlank() },
-                peer.designationLabel(),
-            ).joinToString(" · ") { it.localised() }
-            if (role.isNotBlank()) {
-                ZillitText(
-                    text = role,
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                    maxLines = 1,
-                )
-            }
-            // A line of its own rather than a third item on the role line: an
-            // address is long, and appended there it would be the first thing
-            // truncated — which is the same as not showing it.
-            //
-            // This is the one thing the contact card carried that the header
-            // did not, and the card is no longer on the way to a conversation.
-            // Groups have no address, so the null check is the whole guard.
-            peer.email?.takeIf { it.isNotBlank() }?.let { address ->
-                ZillitText(
-                    text = address,
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                    maxLines = 1,
-                )
-            }
-        }
+        ThreadIdentity(state = state, peer = peer, modifier = Modifier.weight(1f))
         // Callable when the peer has a device to ring (groups always do —
         // the room is the address). No device, no buttons: a call button
         // that fails on press is worse than none.

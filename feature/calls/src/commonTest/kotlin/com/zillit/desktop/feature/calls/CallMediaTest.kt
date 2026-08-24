@@ -127,4 +127,16 @@ class CallMediaTest {
         // roster and the peer map are populated by joins alone.
         assertNull(state.peers[9])
     }
+
+    @Test
+    fun `screen share is remembered on the media picture and clears with the call`() {
+        val sharing = CallMedia().reduce(CallEngineEvent.ScreenShare(sharing = true))
+        assertTrue(sharing.selfSharing)
+
+        val stopped = sharing.reduce(CallEngineEvent.ScreenShare(sharing = false))
+        assertFalse(stopped.selfSharing)
+
+        // Leaving resets everything: a share cannot outlive the call it was in.
+        assertFalse(sharing.reduce(CallEngineEvent.Left("chan")).selfSharing)
+    }
 }

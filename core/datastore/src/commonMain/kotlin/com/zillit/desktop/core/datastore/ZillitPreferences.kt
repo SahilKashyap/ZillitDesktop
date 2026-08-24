@@ -111,6 +111,14 @@ object ZillitPreferences {
     val NotifyActivity = PreferenceKey.BooleanKey("notify.activity", true, PreferenceScope.User)
 
     /**
+     * The call devices this machine last chose. Device-scoped, not user: the
+     * headset belongs to the computer, and signing in as somebody else does
+     * not change which socket it is plugged into. Empty means the OS default.
+     */
+    val CallMicrophoneId = PreferenceKey.StringKey("call.device.microphone", "", PreferenceScope.Device)
+    val CallSpeakerId = PreferenceKey.StringKey("call.device.speaker", "", PreferenceScope.Device)
+
+    /**
      * Calendar occurrences already reminded about, so restarting the app inside
      * a reminder's grace window does not deliver it twice. Pruned on write.
      */
@@ -163,6 +171,7 @@ object ZillitPreferences {
         AppLockEnabled, IdleLockMinutes,
         MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired,
         NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity,
+        CallMicrophoneId, CallSpeakerId,
         LastProjectId, LastUnitId,
         BoxScheduleView, BoxScheduleCalendarMode, BoxScheduleListMode,
         EmailTrailingEnabled, ToolGroupOrder, RecentMentions, ChatFavourites,

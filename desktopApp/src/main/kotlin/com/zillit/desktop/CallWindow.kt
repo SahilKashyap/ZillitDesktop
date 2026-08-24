@@ -11,7 +11,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,6 +32,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.calls.ui.CallEvent
+import com.zillit.desktop.feature.calls.ui.CallOverlay
 import com.zillit.desktop.feature.calls.ui.CallViewModel
 import com.zillit.desktop.feature.calls.ui.headerTitle
 
@@ -49,33 +54,57 @@ import com.zillit.desktop.feature.calls.ui.headerTitle
  * default corner on every call would be moved again every time.
  */
 @Composable
-internal fun ApplicationScope.CallPipWindow(
+internal fun ApplicationScope.CallWindow(
     ready: AppGraph.Ready,
     calls: CallViewModel?,
     darkTheme: Boolean,
 ) {
     calls ?: return
     val state by calls.state.collectAsState()
-    if (!state.pipOpen || !state.videoMounted) return
+    // No video gate: an audio call gets a window too. The surface draws
+    // avatars when there is no picture, and a call the user cannot see is
+    // exactly the thing this window exists to prevent.
+    if (!state.pipOpen) return
 
-    val windowState = rememberPipWindowState()
+    val compact = state.pipCompact
+    val windowState = rememberCallWindowState(compact)
     Window(
         onCloseRequest = { calls.onEvent(CallEvent.TogglePip) },
         state = windowState,
-        title = "Zillit call",
-        alwaysOnTop = true,
+        title = state.headerTitle.ifBlank { "Zillit call" },
+        // Only the thumbnail floats. A full call window that forced itself
+        // over everything would be the one thing nobody could get out of the
+        // way while reading the document they joined the call to discuss.
+        alwaysOnTop = compact,
         resizable = true,
     ) {
         ZillitTheme(darkTheme = darkTheme) {
             val colors = ZillitTheme.colors
-            Column(Modifier.fillMaxSize().background(colors.canvas)) {
-                PipStrip(state, calls)
-                // The picture. The same single component the stage hosts;
-                // its factory hands it over and its disposal parks it again,
-                // so the round trip out and back is two re-parents, not a
-                // rebuild — and never a dropped call.
-                Box(Modifier.fillMaxSize().background(Color.Black)) {
-                    callVideoSurface(ready)?.invoke()
+            Box(Modifier.fillMaxSize().background(colors.canvas)) {
+                if (compact) {
+                    Column(Modifier.fillMaxSize()) {
+                        PipStrip(state, calls)
+                        // The picture. The same single component the stage
+                        // hosts; its factory hands it over and its disposal
+                        // parks it again, so the round trip out and back is
+                        // two re-parents, not a rebuild — never a dropped call.
+                        Box(Modifier.fillMaxSize().background(Color.Black)) {
+                            callVideoSurface(ready)?.invoke()
+                        }
+                    }
+                } else {
+                    // The whole calling surface, in its own window: stage,
+                    // controls, roster and add-people, exactly as the overlay
+                    // drew them inside the app.
+                    CallOverlay(
+                        state = state,
+                        onEvent = calls::onEvent,
+                        loadAvatar = crewFaceLoader(ready),
+                        videoSurface = callVideoSurface(ready),
+                        // This window IS the call: it draws the stage and it
+                        // holds the browser component while it is open.
+                        ownsCall = true,
+                    )
                 }
             }
         }
@@ -108,6 +137,22 @@ private fun PipStrip(state: com.zillit.desktop.feature.calls.ui.CallUiState, cal
             color = colors.textMuted,
             maxLines = 1,
         )
+        // Compact hides the chat panel, so this is the only sign a line
+        // arrived. Growing the window is how it gets read.
+        if (state.chatUnread > 0) {
+            ZillitIconButton(
+                icon = ZillitIcons.Chat,
+                contentDescription = "${state.chatUnread} unread in call chat",
+                onClick = {
+                    // Grows the window *and* opens the panel: one click on an
+                    // unread badge should end with the message on screen.
+                    calls.onEvent(CallEvent.ToggleCallCompact)
+                    if (!state.chatOpen) calls.onEvent(CallEvent.ToggleChat)
+                },
+                tint = colors.accent,
+                size = PIP_BUTTON,
+            )
+        }
         ZillitIconButton(
             icon = if (state.micMuted) ZillitIcons.MicOff else ZillitIcons.Mic,
             contentDescription = if (state.micMuted) "Unmute" else "Mute",
@@ -140,14 +185,41 @@ private fun PipStrip(state: com.zillit.desktop.feature.calls.ui.CallUiState, cal
  * last size and place across those recreations.
  */
 @Composable
-private fun rememberPipWindowState(): WindowState {
+private fun rememberCallWindowState(compact: Boolean): WindowState {
+    // Built once with the mode it opened in. `rememberWindowState` reads its
+    // arguments on first composition only, so a later toggle has to move the
+    // window by assigning to the state — passing different arguments changes
+    // nothing, which is how "Shrink to thumbnail" restyled the chrome and left
+    // a 960x640 window sitting there.
     val state = rememberWindowState(
         placement = WindowPlacement.Floating,
-        position = pipLastPosition ?: WindowPosition.Aligned(Alignment.BottomEnd),
-        size = pipLastSize,
+        position = if (compact) {
+            pipLastPosition ?: WindowPosition.Aligned(Alignment.BottomEnd)
+        } else {
+            WindowPosition.Aligned(Alignment.Center)
+        },
+        size = if (compact) pipLastSize else DpSize(CALL_DEFAULT_WIDTH, CALL_DEFAULT_HEIGHT),
     )
+
+    // Skips the first pass: the state was just built for this mode, and
+    // re-assigning would throw away a position the user had already dragged to.
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(compact) {
+        if (!settled) {
+            settled = true
+            return@LaunchedEffect
+        }
+        if (compact) {
+            state.size = pipLastSize
+            state.position = pipLastPosition ?: WindowPosition.Aligned(Alignment.BottomEnd)
+        } else {
+            state.size = DpSize(CALL_DEFAULT_WIDTH, CALL_DEFAULT_HEIGHT)
+            state.position = WindowPosition.Aligned(Alignment.Center)
+        }
+    }
     // Written back as it moves so the next popout lands where this one was left.
-    androidx.compose.runtime.LaunchedEffect(state) {
+    LaunchedEffect(state, compact) {
+        if (!compact) return@LaunchedEffect
         androidx.compose.runtime.snapshotFlow { state.position to state.size }
             .collect { (position, size) ->
                 if (position is WindowPosition.Absolute) pipLastPosition = position
@@ -157,6 +229,9 @@ private fun rememberPipWindowState(): WindowState {
     return state
 }
 
+/** A call window opens big enough to hold a grid and its controls. */
+private val CALL_DEFAULT_WIDTH = 960.dp
+private val CALL_DEFAULT_HEIGHT = 640.dp
 private val PIP_DEFAULT_WIDTH = 360.dp
 private val PIP_DEFAULT_HEIGHT = 240.dp
 private val PIP_BAR_HEIGHT = 36.dp

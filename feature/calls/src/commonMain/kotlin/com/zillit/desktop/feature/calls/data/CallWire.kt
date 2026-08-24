@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -214,6 +215,12 @@ fun readGuestJoinRequest(payload: JsonElement): GuestJoinRequest? {
 }
 
 /** An in-call reaction or ephemeral line — `call:incall-data`. */
+/** An emoji thrown at the call. */
+const val IN_CALL_KIND_REACTION = "reaction"
+
+/** One ephemeral line of in-call chat. */
+const val IN_CALL_KIND_MESSAGE = "message"
+
 data class InCallData(
     val roomId: String,
     val kind: String,
@@ -253,19 +260,33 @@ fun callResponseEnvelope(roomId: String, status: CallStatus, fromUserId: String)
         put("fromUserId", fromUserId)
     }
 
-/** In-call reactions ride the CNC's generic relay rather than a call event. */
-fun inCallDataEnvelope(roomId: String, data: InCallData): JsonObject =
+/**
+ * In-call reactions ride the CNC's generic relay rather than a call event.
+ *
+ * [recipients] are the OTHER participants' project-scoped user ids — the
+ * relay routes by user room, so addressing the call room instead delivers to
+ * nobody. Composite `userId:deviceId` peer ids are stripped to the plain user
+ * id: that exact detail is why the phones' in-call chat once worked one to
+ * one and vanished in group calls.
+ *
+ * An empty list means there is no one to tell; the caller shows its own line
+ * locally and skips the emit.
+ */
+fun inCallDataEnvelope(roomId: String, data: InCallData, recipients: List<String>): JsonObject =
     buildJsonObject {
         put("event", "call:incall-data")
-        put("rooms", roomId)
+        put(
+            "rooms",
+            buildJsonArray { recipients.forEach { add(JsonPrimitive(it)) } },
+        )
         put(
             "eventData",
             buildJsonObject {
                 put("v", IN_CALL_DATA_VERSION)
                 put("kind", data.kind)
                 put("room_id", roomId)
-                put("emoji", data.emoji)
-                put("text", data.text)
+                if (data.emoji.isNotEmpty()) put("emoji", data.emoji)
+                if (data.text.isNotEmpty()) put("text", data.text)
                 put("name", data.name)
                 put("from_user_id", data.fromUserId)
                 put("id", data.id)

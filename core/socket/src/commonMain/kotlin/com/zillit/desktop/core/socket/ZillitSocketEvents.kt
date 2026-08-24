@@ -163,8 +163,22 @@ object ZillitSocketEvents {
          */
         val MissedCall = SocketEventName("call:missed-call")
 
-        /** In-call reactions and ephemeral chat. Never persisted. */
+        /**
+         * In-call reactions and ephemeral chat. Never persisted.
+         *
+         * Inbound only. The server relays the inner event verbatim to the
+         * addressed user rooms, so this is what ARRIVES; sending one goes out
+         * on [Relay] wrapped in an envelope naming this event.
+         */
         val InCallData = SocketEventName("call:incall-data")
+
+        /**
+         * The CNC's generic relay — `{event, rooms, eventData}` in, the inner
+         * `event` out to each addressed user room. In-call reactions and chat
+         * are sent this way rather than on a call event of their own, and the
+         * phones do the same.
+         */
+        val Relay = SocketEventName("custom:events")
 
         /** Another of this user's devices is taking the call over. */
         val Handoff = SocketEventName("call:handoff")
@@ -297,7 +311,8 @@ object ZillitSocketEvents {
         ChatRoom.Create, ChatRoom.Remove, ChatRoom.Updated, ChatRoom.Blocked,
         ChatRoom.UpdateReaction, ChatRoom.PendingMessages,
         Calls.Incoming, Calls.Update, Calls.Response, Calls.Ended, Calls.GroupCallEnded,
-        Calls.Timeout, Calls.MissedCall, Calls.InCallData, Calls.Handoff, Calls.HandoffDone, Calls.HandoffEvict,
+        Calls.Timeout, Calls.MissedCall, Calls.InCallData, Calls.Relay,
+        Calls.Handoff, Calls.HandoffDone, Calls.HandoffEvict,
         Calls.Migrate, Calls.GuestJoinRequest, Calls.GuestJoinResponded,
         Calls.ActiveGroupCalls, Calls.DeleteLog,
         Budget.RecentList,

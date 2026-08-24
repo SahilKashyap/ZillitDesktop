@@ -8,7 +8,9 @@ import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.domain.CallEngine
+import com.zillit.desktop.feature.calls.domain.CallDevices
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
+import com.zillit.desktop.feature.calls.domain.EngineConnection
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.reduce
 import com.zillit.desktop.feature.calls.domain.CallMode
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Why a call stopped, for the UI's parting message.
@@ -64,6 +67,17 @@ class CallCoordinator(
     private val plane: CallStatusPlane = NoopCallStatusPlane(),
     /** Our display name, stamped on our Firestore row to self-heal docs. */
     private val selfName: () -> String? = { null },
+    /**
+     * The audio devices this machine chose last time, and where to put a new
+     * choice. A headset picked during one call is still the headset the user
+     * expects for the next one, so the selection outlives the call — the
+     * engine only ever holds it for as long as its page is alive.
+     */
+    private val loadAudioDevices: suspend () -> Pair<String, String> = { "" to "" },
+    private val saveAudioDevices: suspend (microphoneId: String, speakerId: String) -> Unit =
+        { _, _ -> },
+    /** Wall clock, stamped onto reactions and lines. Injected so tests can hold it still. */
+    private val now: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
 ) {
 
     private val _phase = MutableStateFlow(CallPhase.Idle)
@@ -71,6 +85,29 @@ class CallCoordinator(
 
     private val _session = MutableStateFlow<CallSession?>(null)
     val session: StateFlow<CallSession?> = _session.asStateFlow()
+
+    /**
+     * Reactions and ephemeral chat. A collaborator rather than more methods
+     * here: it shares nothing with the phase machine but the live session.
+     */
+    private val inCall = InCallDataChannel(
+        bus = bus,
+        scope = scope,
+        session = { _session.value },
+        connected = { _phase.value == CallPhase.InCall },
+        selfName = selfName,
+        selfDeviceId = selfDeviceId,
+        now = now,
+    )
+
+    /** Reactions and lines, inbound and our own echoed back. Never persisted. */
+    val inCallData: SharedFlow<InCallData> get() = inCall.data
+
+    /** Sends an emoji to everyone else on the call, and shows it here. */
+    fun sendReaction(emoji: String) = inCall.sendReaction(emoji)
+
+    /** Sends one ephemeral line to everyone else on the call. */
+    fun sendInCallMessage(text: String) = inCall.sendMessage(text)
 
     private val _ended = MutableSharedFlow<CallEndEvent>(extraBufferCapacity = 4)
     val ended: SharedFlow<CallEndEvent> = _ended.asSharedFlow()
@@ -83,6 +120,19 @@ class CallCoordinator(
     val cameraOn: StateFlow<Boolean> = _cameraOn.asStateFlow()
 
     /** Everything the media stack has told us about this call. */
+    private val _handRaised = MutableStateFlow(false)
+    val handRaised: StateFlow<Boolean> = _handRaised.asStateFlow()
+
+    /** The machine's audio/video hardware, as the engine last reported it. */
+    /** The machine's audio hardware and this user's standing choice of it. */
+    private val audio = CallAudioDevices(
+        engine = engine,
+        scope = scope,
+        load = loadAudioDevices,
+        save = saveAudioDevices,
+    )
+    val devices: StateFlow<CallDevices> get() = audio.devices
+
     private val _media = MutableStateFlow(CallMedia())
     val media: StateFlow<CallMedia> = _media.asStateFlow()
 
@@ -90,6 +140,15 @@ class CallCoordinator(
     val selfDisplayName: String get() = selfName().orEmpty()
 
     private var ringTimeout: Job? = null
+
+    /** Runs only while the media link is down; cancelled the moment it returns. */
+    /** Ends a call the media stack never brought back. */
+    private val reconnect = ReconnectWatchdog(
+        scope = scope,
+        graceMillis = RECONNECT_GRACE_MILLIS,
+        stillInCall = { _phase.value == CallPhase.InCall },
+        onGiveUp = ::fail,
+    )
     private var planeWatch: Job? = null
 
     /**
@@ -105,6 +164,7 @@ class CallCoordinator(
         scope.launch { listenEnded() }
         scope.launch { listenTimeout() }
         scope.launch { listenHandoffEvict() }
+        scope.launch { inCall.listen() }
         scope.launch { listenEngine() }
     }
 
@@ -178,6 +238,11 @@ class CallCoordinator(
                     )
                     _cameraOn.value = session.hasVideo
                     startRingTimeout(CallTimeouts.OUTGOING_MS) { outgoingRangOut() }
+                    // Claim our own row before watching: the caller is a participant
+                    // like any other, and iOS/web read the roster to know who is on
+                    // the call. Without this the desktop was missing from the call
+                    // it had just placed.
+                    scope.launch { plane.announceSelf(session, CallStatus.Caller) }
                     watchPlane(session)
                     joinMedia(session)
                 }
@@ -327,16 +392,69 @@ class CallCoordinator(
         }
     }
 
+    fun refreshDevices() = audio.refresh()
+
+    fun chooseMicrophone(deviceId: String) = audio.chooseMicrophone(deviceId)
+
+    fun chooseSpeaker(deviceId: String) = audio.chooseSpeaker(deviceId)
+
     fun toggleMicrophone() {
         val muted = !_micMuted.value
         _micMuted.value = muted
         engine.setMicrophoneMuted(muted)
+        mirrorMediaState(mapOf("isMute" to muted))
+    }
+
+    /**
+     * Starts or stops sharing this machine's screen.
+     *
+     * The engine answers with a `ScreenShare` event either way — including
+     * when the user cancels — so the button follows what actually happened
+     * rather than what was asked for.
+     */
+    /**
+     * Raises or lowers this user's hand.
+     *
+     * A pure toggle with no timer and no auto-lower, matching the phones: it
+     * stays up until the person who raised it puts it down, or the call ends.
+     * The roster row is the whole transport on this line.
+     */
+    fun toggleHand() {
+        if (_phase.value != CallPhase.InCall) return
+        val raised = !_handRaised.value
+        _handRaised.value = raised
+        mirrorMediaState(mapOf("raise_hand" to raised))
+    }
+
+    fun toggleScreenShare() {
+        if (_phase.value != CallPhase.InCall) return
+        val sharing = _media.value.selfSharing
+        scope.launch {
+            if (sharing) engine.stopScreenShare() else engine.startScreenShare()
+        }
     }
 
     fun toggleCamera() {
         val on = !_cameraOn.value
         _cameraOn.value = on
         engine.setCameraEnabled(on)
+        mirrorMediaState(mapOf("has_video" to on))
+    }
+
+    /**
+     * Publishes a live media flag onto our roster row.
+     *
+     * The phones draw the muted marker and the camera state from `isMute` and
+     * `has_video` on each row, so a desktop that changed them locally and told
+     * nobody looked permanently unmuted with its camera in whatever state it
+     * joined. Only while in the call: the row's status field rides along with
+     * the write, and asserting `in_call` from any other phase would contradict
+     * the phase we are actually in.
+     */
+    private fun mirrorMediaState(fields: Map<String, Any>) {
+        if (_phase.value != CallPhase.InCall) return
+        val session = _session.value ?: return
+        scope.launch { plane.announceSelf(session, CallStatus.InCall, fields) }
     }
 
     /** The user hung up. */
@@ -404,11 +522,9 @@ class CallCoordinator(
             return
         }
 
-        val roster = current.participants.map { participant ->
-            if (participant.userId == change.userId) participant.copy(status = change.status)
-            else participant
-        }
-        _session.value = current.copy(participants = roster)
+        _session.value = current.copy(
+            participants = current.participants.withStatus(change.userId, change.status),
+        )
 
         when (change.status) {
             CallStatus.InCall -> onSomeoneAnswered()
@@ -499,6 +615,35 @@ class CallCoordinator(
                 }
             }
             is PlaneEvent.UserStatus -> onPlaneStatus(current, event)
+            is PlaneEvent.UserFlags -> onPlaneFlags(current, event)
+        }
+    }
+
+    /**
+     * Sharing and raised hands, off the roster row.
+     *
+     * This is the only way the desktop can learn either on the Agora line.
+     * A screen share in particular is invisible in the media stream — the
+     * sharer publishes it on their own uid with the camera unpublished, so a
+     * receiver sees an ordinary video track and nothing marks it as a screen.
+     * The phones read this same flag for exactly that reason.
+     */
+    private fun onPlaneFlags(session: CallSession, event: PlaneEvent.UserFlags) {
+        // Our own row, echoed back by the two-second poll: the local state is
+        // already ahead of it and re-applying would fight the user.
+        if (event.deviceId == selfDeviceId()) return
+
+        // The uid on the row is what ties a roster entry to a picture. Zero
+        // means they have not joined media yet, so there is no tile to mark.
+        if (event.agoraUid != 0) {
+            _media.value = _media.value.reduce(
+                CallEngineEvent.PeerScreenShare(event.agoraUid, event.sharing),
+            )
+        }
+
+        val updated = session.participants.withHand(event.deviceId, event.handRaised)
+        if (updated != session.participants) {
+            _session.value = _session.value?.copy(participants = updated)
         }
     }
 
@@ -543,6 +688,22 @@ class CallCoordinator(
             _media.value = _media.value.reduce(event)
             when (event) {
                 is CallEngineEvent.Joined -> onMediaJoined(event.uid)
+                CallEngineEvent.TokenExpiring ->
+                    ZillitLog.w(TAG) { "RTC token entering its grace period" }
+                // Nothing to renew with, so end it deliberately instead of
+                // leaving a window open on a call whose media has stopped —
+                // the phones tear down here too. Reported as an error so the
+                // user is told, rather than the call simply vanishing.
+                CallEngineEvent.TokenExpired -> fail("call token expired")
+                is CallEngineEvent.ConnectionChanged -> reconnect.onConnectionChanged(event.state)
+                is CallEngineEvent.ScreenShare -> {
+                    // The phones read `screenShare` off the roster row to
+                    // badge the sharer and pin their tile; mirrored only once
+                    // the engine confirms, so a cancelled picker publishes
+                    // nothing.
+                    mirrorMediaState(mapOf("screenShare" to event.sharing))
+                }
+                is CallEngineEvent.Devices -> audio.onEngineDevices(event)
                 is CallEngineEvent.Failed -> fail(event.message)
                 else -> Unit
             }
@@ -567,7 +728,7 @@ class CallCoordinator(
             ).onSuccess { fetched ->
                 if (fetched.isEmpty()) return@onSuccess
                 val base = _session.value ?: return@onSuccess
-                _session.value = base.copy(participants = merge(base, fetched))
+                _session.value = base.copy(participants = mergeRoster(base.participants, fetched))
                 // Dialling into a room that is already live delivers no status
                 // TRANSITION — everyone was `in_call` before we arrived — so
                 // nothing else would take this call out of Outgoing, and at
@@ -633,18 +794,6 @@ class CallCoordinator(
     private fun CallParticipant.isSomeoneElseLive(session: CallSession): Boolean =
         status.isConnected && deviceId != selfDeviceId() && userId != session.selfUserId
 
-    /** Server rows win on status; local rows win on names already resolved. */
-    private fun merge(current: CallSession, fetched: List<CallParticipant>): List<CallParticipant> {
-        val local = current.participants.associateBy(CallParticipant::userId)
-        return fetched.map { row ->
-            val known = local[row.userId] ?: return@map row
-            row.copy(
-                name = row.name.ifBlank { known.name },
-                image = row.image.ifBlank { known.image },
-            )
-        }
-    }
-
     // ── Internals ───────────────────────────────────────────────────────
 
     private suspend fun joinMedia(session: CallSession) {
@@ -665,14 +814,30 @@ class CallCoordinator(
             joining = false
             return
         }
+        audio.restoreBeforeJoin()
+
         engine.join(
             channel = session.channelName,
             token = session.token,
             uid = session.localUid,
             hasVideo = session.hasVideo,
         )
+        // Publishes the lists so a picker opened mid-call has something to
+        // draw without waiting for a hot-plug event.
+        audio.refresh()
     }
 
+    /**
+     * Ends a call whose media never comes back.
+     *
+     * The SDK retries a dropped connection on its own and usually wins, so a
+     * blip must not end anything — but it retries indefinitely, and a laptop
+     * that lost Wi-Fi for good otherwise keeps a dead call on screen with a
+     * running timer, its microphone indicator lit, and every peer still
+     * counting it as present. The grace period is generous enough to cover a
+     * network change and short enough that nobody talks to a room that
+     * stopped hearing them minutes ago.
+     */
     private fun startRingTimeout(afterMillis: Long, onExpiry: () -> Unit) {
         cancelRingTimeout()
         ringTimeout = scope.launch {
@@ -738,7 +903,13 @@ class CallCoordinator(
         // Answered a moment before the timeout fired: accept() has already
         // moved the phase, and reporting "not answered" now would retract it.
         if (_phase.value != CallPhase.Incoming) return
-        scope.launch { sendFinalStatus(current, CallStatus.NotAnswered) }
+        scope.launch {
+            sendFinalStatus(current, CallStatus.NotAnswered)
+            // Declined and Left already mirror beside their REST call; this
+            // one did not, so a rung-out desktop stayed "ringing" on every
+            // other participant's roster for the life of the call document.
+            plane.announceSelf(current, CallStatus.NotAnswered)
+        }
         finish(current, CallEndReason.Timeout)
     }
 
@@ -797,6 +968,10 @@ class CallCoordinator(
         _phase.value = CallPhase.Idle
         _micMuted.value = false
         _cameraOn.value = false
+        // A hand does not carry into the next call.
+        _handRaised.value = false
+        // Reactions and lines never outlive the call that carried them.
+        inCall.reset()
         _media.value = CallMedia()
         joining = false
     }
@@ -810,5 +985,17 @@ class CallCoordinator(
 
         /** What this client stamps into `updated_from`; matches the plane's. */
         const val PLATFORM_SELF = "Desktop"
+
+        /**
+         * How long the media link may stay down before the call is ended.
+         *
+         * Long enough to survive a Wi-Fi handover or a VPN reconnect, short
+         * enough that nobody keeps talking to a room that stopped hearing
+         * them. The SDK retries for as long as it is allowed, so without a
+         * ceiling a permanently dropped call never ends at all.
+         */
+        const val RECONNECT_GRACE_MILLIS = 45_000L
+
+
     }
 }

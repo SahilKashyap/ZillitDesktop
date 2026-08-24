@@ -51,6 +51,35 @@ sealed interface CallEngineEvent {
      * usefully do with an SDK error code except show it.
      */
     data class Failed(val message: String) : CallEngineEvent
+
+    /**
+     * The machine's audio and video hardware, as the page currently sees it.
+     *
+     * Republished whenever a device is plugged or unplugged mid-call, which on
+     * a desktop is the ordinary case rather than an edge one.
+     */
+    /**
+     * The RTC token is within its grace period.
+     *
+     * There is nothing to renew with — the token is minted once by
+     * `call/new-call` and the backend offers no renewal route — so this is a
+     * warning that the call has minutes left, not a request for a new one.
+     */
+    data object TokenExpiring : CallEngineEvent
+
+    /** The token ran out. Media is over; the call has to end deliberately. */
+    data object TokenExpired : CallEngineEvent
+
+    /** This machine started or stopped sharing its screen. */
+    data class ScreenShare(val sharing: Boolean) : CallEngineEvent
+
+    data class Devices(
+        val microphones: List<MediaDevice>,
+        val speakers: List<MediaDevice>,
+        val cameras: List<MediaDevice>,
+        val microphoneId: String,
+        val speakerId: String,
+    ) : CallEngineEvent
 }
 
 /** Transport state, collapsed from each SDK's own enumeration. */
@@ -74,6 +103,9 @@ enum class EngineConnection { Connecting, Connected, Reconnecting, Disconnected,
  * Implementations must be safe to call from the main thread and must never
  * throw; failures arrive on [events] as [CallEngineEvent.Failed].
  */
+/** Which piece of hardware [CallEngine.setDevice] is choosing. */
+enum class CallDeviceKind { Microphone, Speaker, Camera }
+
 interface CallEngine {
 
     /** Everything the stack reports. Replayed to nobody — subscribe first. */
@@ -102,6 +134,18 @@ interface CallEngine {
     fun setCameraEnabled(enabled: Boolean)
 
     fun setSpeakerEnabled(enabled: Boolean)
+
+    /** Asks the engine to publish [CallEngineEvent.Devices]. */
+    fun listDevices() = Unit
+
+    /**
+     * Switches one live device by id, or arms the choice for the next join.
+     *
+     * One method with a [CallDeviceKind] rather than three near-identical
+     * ones: every implementation routes them to the same place, and three
+     * separate names only spread that fact across three call sites.
+     */
+    fun setDevice(kind: CallDeviceKind, deviceId: String) = Unit
 
     /** Cycles to the next capture device, where the host has more than one. */
     fun switchCamera()
@@ -170,6 +214,8 @@ class NoopCallEngine : CallEngine {
     override fun setCameraEnabled(enabled: Boolean) = Unit
 
     override fun setSpeakerEnabled(enabled: Boolean) = Unit
+    override fun listDevices() = Unit
+    override fun setDevice(kind: CallDeviceKind, deviceId: String) = Unit
 
     override fun switchCamera() = Unit
 
@@ -177,4 +223,34 @@ class NoopCallEngine : CallEngine {
         leave()
         ready = false
     }
+}
+
+/**
+ * One selectable piece of hardware.
+ *
+ * [label] is what the OS calls it ("MacBook Pro Microphone", "AirPods Pro").
+ * It can be empty before media permission is granted — browsers withhold
+ * device labels until then — so a picker must fall back to something rather
+ * than draw a blank row.
+ */
+data class MediaDevice(val id: String, val label: String) {
+    val displayName: String get() = label.ifBlank { "Unnamed device" }
+}
+
+/**
+ * The hardware a call can use, and what is currently chosen.
+ *
+ * Empty ids mean "whatever the OS considers default" — the state a call is in
+ * before anybody opens a picker, and the one it stays in for users who never
+ * touch it.
+ */
+data class CallDevices(
+    val microphones: List<MediaDevice> = emptyList(),
+    val speakers: List<MediaDevice> = emptyList(),
+    val cameras: List<MediaDevice> = emptyList(),
+    val microphoneId: String = "",
+    val speakerId: String = "",
+) {
+    /** Nothing to choose between is nothing to show a picker for. */
+    val hasChoice: Boolean get() = microphones.size > 1 || speakers.size > 1
 }

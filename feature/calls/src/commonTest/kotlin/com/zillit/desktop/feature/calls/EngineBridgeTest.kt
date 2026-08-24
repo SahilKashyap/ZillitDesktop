@@ -80,4 +80,36 @@ class EngineBridgeTest {
             EngineBridge.parse("""{"type":"error","message":"join: bad appid"}"""),
         )
     }
+
+    @Test
+    fun `device lists cross the bridge with their labels and current choice`() {
+        val event = EngineBridge.parse(
+            """{"type":"devices","microphones":[{"id":"m1","label":"Built-in"},{"id":"m2","label":"Headset"}],""" +
+                """"speakers":[{"id":"s1","label":"Display"}],"cameras":[],""" +
+                """"microphoneId":"m2","speakerId":""}""",
+        ) as CallEngineEvent.Devices
+
+        assertEquals(listOf("m1", "m2"), event.microphones.map { it.id })
+        assertEquals("Headset", event.microphones[1].label)
+        assertEquals(listOf("s1"), event.speakers.map { it.id })
+        assertTrue(event.cameras.isEmpty())
+        assertEquals("m2", event.microphoneId)
+        // Blank is the OS default, not a missing field.
+        assertEquals("", event.speakerId)
+    }
+
+    @Test
+    fun `a device with no id is dropped and an unlabelled one still shows`() {
+        val event = EngineBridge.parse(
+            """{"type":"devices","microphones":[{"id":"","label":"ghost"},{"id":"m1"}],""" +
+                """"speakers":[],"cameras":[],"microphoneId":"","speakerId":""}""",
+        ) as CallEngineEvent.Devices
+
+        // An id is the only thing that can be selected; a row without one
+        // could be offered but never chosen.
+        assertEquals(listOf("m1"), event.microphones.map { it.id })
+        // Labels are withheld until media permission is granted, so a blank
+        // one is a normal state rather than a broken device.
+        assertEquals("Unnamed device", event.microphones.single().displayName)
+    }
 }

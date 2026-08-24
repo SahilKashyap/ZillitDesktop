@@ -174,13 +174,15 @@ internal fun bannerFrom(payload: JsonElement?, decoder: NotificationDecoder): Ac
     // look identical from the outside — that ambiguity has already cost a
     // debugging day. The section is a label key and safe to log; the payload
     // is not (plan §8.4).
-    if (row.bool("silent")) return dropped("silent", section)
-    val reference = row["reference_data"] as? JsonObject
-    if (reference?.bool("ignore") == true) return dropped("flagged ignore", section)
-    if (reference?.bool("self") == true) return dropped("own action", section)
+    row.quietReason()?.let { return dropped(it, section) }
 
-    val record = readNotification(row, decoder) ?: return dropped("no _id", section)
-    if (record.text.isBlank()) return dropped("no words after decoding", section)
+    // Decoded only once the row has earned it: this is where an encrypted
+    // body is decrypted, and doing that for a notification already destined
+    // to stay quiet is work nobody asked for.
+    val record = readNotification(row, decoder)
+    if (record == null || record.text.isBlank()) {
+        return dropped(if (record == null) "no _id" else "no words after decoding", section)
+    }
 
     return ActivityBanner(
         id = record.id,
@@ -188,6 +190,23 @@ internal fun bannerFrom(payload: JsonElement?, decoder: NotificationDecoder): Ac
         area = record.pathLabel,
         body = record.text,
     )
+}
+
+/**
+ * Why this row should not become a banner, or null to let it through.
+ *
+ * iOS's socket handler drops `ignore` and `self`; the `silent` drop lives on
+ * its banner paths instead, and banners are what this feeds — so all three
+ * apply here.
+ */
+private fun JsonObject.quietReason(): String? {
+    val reference = this["reference_data"] as? JsonObject
+    return when {
+        bool("silent") -> "silent"
+        reference?.bool("ignore") == true -> "flagged ignore"
+        reference?.bool("self") == true -> "own action"
+        else -> null
+    }
 }
 
 private fun dropped(reason: String, section: String?): ActivityBanner? {

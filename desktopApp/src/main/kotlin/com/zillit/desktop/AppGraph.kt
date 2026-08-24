@@ -932,6 +932,7 @@ sealed interface AppGraph {
                 selfUserId = { projectContext?.context?.value?.profile?.userId },
                 selfDeviceId = { headerContext.value.deviceId.takeIf(String::isNotBlank) },
                 selfName = { projectContext?.context?.value?.profile?.fullName },
+                preferences = preferences,
             )
 
             com.zillit.desktop.feature.calls.data.CallRinger(callCoordinator, appScope)
@@ -1214,6 +1215,7 @@ private fun buildCallCoordinator(
     selfUserId: () -> String?,
     selfDeviceId: () -> String?,
     selfName: () -> String?,
+    preferences: PreferenceStore,
 ): CallCoordinator = CallCoordinator(
     api = callApi,
     bus = socketEvents,
@@ -1223,6 +1225,16 @@ private fun buildCallCoordinator(
     selfDeviceId = selfDeviceId,
     plane = buildStatusPlane(config, planeClient, selfDeviceId),
     selfName = selfName,
+    // Device-scoped: the headset belongs to the machine, so the choice
+    // survives sign-out and the next person to use this computer.
+    loadAudioDevices = {
+        preferences.get(ZillitPreferences.CallMicrophoneId) to
+            preferences.get(ZillitPreferences.CallSpeakerId)
+    },
+    saveAudioDevices = { microphoneId, speakerId ->
+        preferences.set(ZillitPreferences.CallMicrophoneId, microphoneId)
+        preferences.set(ZillitPreferences.CallSpeakerId, speakerId)
+    },
 ).also { it.start() }
 
 /**

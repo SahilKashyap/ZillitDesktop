@@ -116,5 +116,13 @@ internal object KcefRuntime {
     private val MEDIA_ARGS = listOf(
         "--use-fake-ui-for-media-stream",
         "--autoplay-policy=no-user-gesture-required",
+        // Screen capture has the same problem as the camera prompt and one
+        // more besides: an embedded browser has nowhere to draw Chromium's
+        // source picker, so there would be no way to choose and no way to
+        // cancel. This shares the whole screen without asking. macOS still
+        // gates it behind its own Screen Recording permission, which is the
+        // consent that matters; choosing a single window instead needs a
+        // native picker and a CEF media-access handler.
+        "--auto-select-desktop-capture-source=Entire screen",
     )
 }

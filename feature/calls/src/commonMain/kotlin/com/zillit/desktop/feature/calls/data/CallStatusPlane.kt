@@ -25,6 +25,25 @@ sealed interface PlaneEvent {
         val updatedFrom: String = "",
     ) : PlaneEvent
 
+    /**
+     * The live flags on one participant's row — the things that change
+     * during a call rather than moving it between phases.
+     *
+     * Separate from [UserStatus] because they change independently: a hand
+     * goes up without the status moving, and a status-keyed change detector
+     * would never notice. On the Agora line this row IS the transport — the
+     * phones send no socket event for any of it (`AgoraCallEngine`'s peer
+     * messaging is a deliberate no-op, "Agora uses Firebase for state sync").
+     */
+    data class UserFlags(
+        val deviceId: String,
+        val userId: String,
+        /** Their media uid, so the picture can be matched to the row. */
+        val agoraUid: Int,
+        val sharing: Boolean,
+        val handRaised: Boolean,
+    ) : PlaneEvent
+
     /** The call document's global status became `End Call`. */
     data class Ended(val callUuid: String) : PlaneEvent
 }

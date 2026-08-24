@@ -110,6 +110,27 @@ class CallWireTest {
         assertFalse(session!!.isJoinable)
     }
 
+    @Test
+    fun `a call on a line this client cannot join stays signalling-only`() {
+        // Both carry credentials Agora cannot use. Answering one used to
+        // reach AgoraRTC.join with an empty channel, throw, and end the call
+        // as "Call failed" — the far side ringing all the while.
+        val mediasoup = readCallSession(
+            parse("""{"call_uuid":"u","line":"mediasoup","invite_code":"inv-1"}"""), "me", "d",
+        )
+        assertEquals(CallProvider.Mediasoup, mediasoup!!.provider)
+        assertFalse(mediasoup.isJoinable)
+
+        val liveKit = readCallSession(
+            parse("""{"call_uuid":"u","line":"livekit","agora_channel_name":"c","agora_token":"t"}"""),
+            "me",
+            "d",
+        )
+        assertEquals(CallProvider.LiveKit, liveKit!!.provider)
+        // Even with channel-shaped fields present: they are not Agora's.
+        assertFalse(liveKit.isJoinable)
+    }
+
     // ── The roster ──────────────────────────────────────────────────────
 
     @Test

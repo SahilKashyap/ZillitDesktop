@@ -12,9 +12,11 @@ import com.zillit.desktop.feature.calls.data.CallApi
 import com.zillit.desktop.feature.calls.data.CallCoordinator
 import com.zillit.desktop.feature.calls.data.CallEndReason
 import com.zillit.desktop.feature.calls.data.CallStatusPlane
+import com.zillit.desktop.feature.calls.data.InCallData
 import com.zillit.desktop.feature.calls.data.PlaneEvent
 import com.zillit.desktop.feature.calls.domain.CallEngine
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
+import com.zillit.desktop.feature.calls.domain.EngineConnection
 import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.calls.domain.CallTimeouts
 import com.zillit.desktop.feature.calls.domain.NoopCallEngine
@@ -31,6 +33,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -50,11 +55,18 @@ class CallCoordinatorTest {
         override val messages: Flow<SocketMessage> = _messages
         override suspend fun connect(config: SocketConfig) = Unit
         override suspend fun disconnect() = Unit
+        /** Everything the coordinator put on the wire, in order. */
+        val sent = mutableListOf<Pair<SocketEventName, JsonElement>>()
+
+        @Suppress("UNCHECKED_CAST")
         override suspend fun <T> emit(
             event: SocketEventName,
             payload: T,
             serializer: KSerializer<T>,
-        ): ZillitResult<Unit> = ZillitResult.Success(Unit)
+        ): ZillitResult<Unit> {
+            sent += event to Json.encodeToJsonElement(serializer, payload)
+            return ZillitResult.Success(Unit)
+        }
 
         override suspend fun emit(event: SocketEventName): ZillitResult<Unit> =
             ZillitResult.Success(Unit)
@@ -119,6 +131,29 @@ class CallCoordinatorTest {
     }
 
 
+    /** Joins, then lets a test push whatever the media stack would report. */
+    private class ScriptableEngine : CallEngine {
+        private val _events = MutableSharedFlow<CallEngineEvent>(extraBufferCapacity = 16)
+        override val events: Flow<CallEngineEvent> = _events.asSharedFlow()
+        override val isReady: Boolean = true
+        var left = false
+            private set
+
+        override suspend fun initialize(): Boolean = true
+        override suspend fun join(channel: String, token: String, uid: Int, hasVideo: Boolean) {
+            _events.emit(CallEngineEvent.Joined(channel, 42))
+        }
+
+        suspend fun push(event: CallEngineEvent) = _events.emit(event)
+
+        override suspend fun leave() { left = true }
+        override fun setMicrophoneMuted(muted: Boolean) = Unit
+        override fun setCameraEnabled(enabled: Boolean) = Unit
+        override fun setSpeakerEnabled(enabled: Boolean) = Unit
+        override fun switchCamera() = Unit
+        override suspend fun destroy() = Unit
+    }
+
     /** An engine that is present but cannot come up — Chromium still downloading. */
     private class DeadEngine : CallEngine {
         private val _events = MutableSharedFlow<CallEngineEvent>(extraBufferCapacity = 8)
@@ -138,6 +173,7 @@ class CallCoordinatorTest {
         socket: FakeSocket,
         plane: FakePlane? = null,
         engine: CallEngine = NoopCallEngine(),
+        now: () -> Long = { 1_000L },
     ): CallCoordinator {
         val bus = SocketEventBus(socket)
         // ApiClient with an unroutable base: every REST call fails as a
@@ -165,6 +201,7 @@ class CallCoordinatorTest {
             selfUserId = { "me" },
             selfDeviceId = { "my-device" },
             plane = plane ?: FakePlane(),
+            now = now,
         )
         coordinator.start()
         runCurrent()
@@ -418,6 +455,142 @@ class CallCoordinatorTest {
             assertEquals(emptyList(), endings)
         }
 
+    // ── Reactions and in-call chat ──────────────────────────────────────
+
+    private val groupRing = ring.replace(
+        RECEIVER_FIELD,
+        RECEIVER_FIELD + ""","call_users":[
+            {"user_id":"me","device_id":"my-device","name":"Me"},
+            {"user_id":"alice","device_id":"d1","name":"Alice"},
+            {"user_id":"alice","device_id":"d2","name":"Alice"},
+            {"user_id":"bob","device_id":"d3","name":"Bob"}]""",
+    )
+
+    /**
+     * The peers a relay has to address, stripped of their device suffix.
+     *
+     * The roster keys people by `userId:deviceId` so two devices of one person
+     * are two tiles. The CNC's rooms are per *user*. Sending the composite id
+     * addresses a room nobody is in — which is exactly how this feature works
+     * one-to-one and goes silent the moment a call has three people.
+     */
+    @Test
+    fun `a reaction is addressed to each peer's user room, without device suffixes`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val coordinator = coordinator(socket)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, groupRing)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            coordinator.sendReaction("🎉")
+            runCurrent()
+
+            val relay = socket.sent.last { it.first == ZillitSocketEvents.Calls.Relay }.second
+            val rooms = relay.jsonObject["rooms"]!!.jsonArray.map { it.jsonPrimitive.content }
+            // Alice appears once despite two devices, and we are not in our
+            // own audience.
+            assertEquals(listOf("alice", "bob"), rooms)
+        }
+
+    @Test
+    fun `a held key sends one reaction, not a stream`() = runTest(StandardTestDispatcher()) {
+        val socket = FakeSocket()
+        var clock = 1_000L
+        val coordinator = coordinator(socket, now = { clock })
+        socket.deliver(ZillitSocketEvents.Calls.Incoming, groupRing)
+        runCurrent()
+        coordinator.accept()
+        runCurrent()
+
+        coordinator.sendReaction("🎉")
+        clock += 100
+        coordinator.sendReaction("🎉")
+        clock += 100
+        coordinator.sendReaction("🎉")
+        runCurrent()
+        assertEquals(1, socket.sent.count { it.first == ZillitSocketEvents.Calls.Relay })
+
+        // Past the gap, the next one goes.
+        clock += 600
+        coordinator.sendReaction("🎉")
+        runCurrent()
+        assertEquals(2, socket.sent.count { it.first == ZillitSocketEvents.Calls.Relay })
+    }
+
+    /**
+     * The relay can echo our own send back, and a reconnect can replay a line.
+     * Either would double a message on screen.
+     */
+    @Test
+    fun `an id already shown does not arrive twice`() = runTest(StandardTestDispatcher()) {
+        val socket = FakeSocket()
+        val coordinator = coordinator(socket)
+        val seen = mutableListOf<InCallData>()
+        val job = launch { coordinator.inCallData.collect { seen += it } }
+        runCurrent()
+
+        socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+        runCurrent()
+        coordinator.accept()
+        runCurrent()
+
+        val line = """
+            {"v":1,"kind":"message","room_id":"r1","text":"two minutes",
+             "name":"Alice","from_user_id":"alice","id":"abc","ts":1000}
+        """.trimIndent()
+        socket.deliver(ZillitSocketEvents.Calls.InCallData, line)
+        socket.deliver(ZillitSocketEvents.Calls.InCallData, line)
+        runCurrent()
+        job.cancel()
+
+        assertEquals(1, seen.size)
+        assertEquals("two minutes", seen.single().text)
+    }
+
+    @Test
+    fun `our own line coming back off the relay is ignored`() = runTest(StandardTestDispatcher()) {
+        val socket = FakeSocket()
+        val coordinator = coordinator(socket)
+        val seen = mutableListOf<InCallData>()
+        val job = launch { coordinator.inCallData.collect { seen += it } }
+        runCurrent()
+
+        socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+        runCurrent()
+        coordinator.accept()
+        runCurrent()
+
+        socket.deliver(
+            ZillitSocketEvents.Calls.InCallData,
+            """{"v":1,"kind":"reaction","room_id":"r1","emoji":"🎉",
+                "from_user_id":"me","id":"not-an-id-we-issued","ts":1000}""",
+        )
+        runCurrent()
+        job.cancel()
+
+        assertEquals(emptyList(), seen)
+    }
+
+    /**
+     * Reactions are for the call, not the room. Sending one before anyone has
+     * joined would address a channel that does not exist yet.
+     */
+    @Test
+    fun `nothing goes on the relay before the call connects`() = runTest(StandardTestDispatcher()) {
+        val socket = FakeSocket()
+        val coordinator = coordinator(socket)
+        socket.deliver(ZillitSocketEvents.Calls.Incoming, groupRing)
+        runCurrent()
+
+        coordinator.sendReaction("🎉")
+        coordinator.sendInCallMessage("hello")
+        runCurrent()
+
+        assertEquals(0, socket.sent.count { it.first == ZillitSocketEvents.Calls.Relay })
+    }
+
     @Test
     fun `accepting a video call shows the camera as on`() = runTest(StandardTestDispatcher()) {
         val socket = FakeSocket()
@@ -458,4 +631,56 @@ class CallCoordinatorTest {
         /** A uid no invite would carry, so only the engine can be its source. */
         const val ISSUED_UID = 937_217_754
     }
+
+    @Test
+    fun `a token that expires ends the call instead of leaving it running`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = coordinator(socket, engine = engine)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+            assertEquals(CallPhase.InCall, coordinator.phase.value)
+
+            // There is no renewal route on the backend, so the only honest
+            // response is to end it — the phones do the same.
+            engine.push(CallEngineEvent.TokenExpired)
+            runCurrent()
+            assertEquals(CallPhase.Idle, coordinator.phase.value)
+        }
+
+    @Test
+    fun `a brief media blip is ridden out, a permanent one ends the call`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = coordinator(socket, engine = engine)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            // Dropped, then back within the grace period: still a live call.
+            engine.push(CallEngineEvent.ConnectionChanged(EngineConnection.Reconnecting))
+            runCurrent()
+            advanceTimeBy(10_000)
+            engine.push(CallEngineEvent.ConnectionChanged(EngineConnection.Connected))
+            runCurrent()
+            advanceTimeBy(120_000)
+            runCurrent()
+            assertEquals(CallPhase.InCall, coordinator.phase.value)
+
+            // Dropped and never recovered: the SDK would retry forever, so the
+            // watchdog is the only thing that ends it.
+            engine.push(CallEngineEvent.ConnectionChanged(EngineConnection.Disconnected))
+            runCurrent()
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(CallPhase.Idle, coordinator.phase.value)
+        }
 }
+
+/** The tail of the canned ring, spliced on when a test needs a roster. */
+private const val RECEIVER_FIELD = """"receiver_user_id":"me""""

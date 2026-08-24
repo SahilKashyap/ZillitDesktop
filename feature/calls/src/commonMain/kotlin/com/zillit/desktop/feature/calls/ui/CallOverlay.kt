@@ -48,6 +48,18 @@ fun CallOverlay(
      * the host decides what fills it, this overlay only places it.
      */
     videoSurface: (@Composable () -> Unit)? = null,
+    /**
+     * True when this overlay IS the call's own window, false when it is the
+     * call drawn inside the main window.
+     *
+     * The two hosts want opposite things from the same state, and neither can
+     * be inferred from it: the call window is always the full surface and
+     * always owns the one browser component, while the main window must fall
+     * back to the pill and keep its hands off the surface precisely when a
+     * call window exists. Deriving this from `pipOpen` reads correctly in the
+     * main window and backwards in the call window — where it is always true.
+     */
+    ownsCall: Boolean = false,
 ) {
     var root by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var slot by remember { mutableStateOf(Rect.Zero) }
@@ -60,7 +72,7 @@ fun CallOverlay(
             CallPhase.Incoming -> CallRingCard(state, incoming = true, onEvent, loadAvatar)
             CallPhase.Outgoing -> CallRingCard(state, incoming = false, onEvent, loadAvatar)
             CallPhase.InCall, CallPhase.Ending ->
-                if (state.expanded) {
+                if (drawsStage(ownsCall, state.pipOpen, state.expanded)) {
                     CallStage(state, onEvent, loadAvatar, videoSurface != null, onSlot)
                 } else {
                     CallPill(state, onEvent, videoSurface != null, onSlot)
@@ -74,10 +86,12 @@ fun CallOverlay(
         // of re-creating it. The slot it follows is a real layout child, which
         // is what guarantees nothing Compose draws is ever inside it.
         //
-        // Not while the picture is out in its own window: there is one
-        // browser, and the PiP window is holding it — mounting a second host
-        // here would tear it out of there.
-        if (videoSurface != null && state.videoMounted && !state.pipOpen) {
+        // Exactly one host mounts it, and [ownsCall] is which: there is a
+        // single browser component, and a second host taking it would tear it
+        // out of the first mid-call. The call window claims it whenever it is
+        // open; the main window has it the rest of the time.
+        val mounts = mountsVideo(ownsCall, state.pipOpen)
+        if (videoSurface != null && state.videoMounted && mounts) {
             CallVideoLayer(slot, videoSurface)
         }
 
@@ -90,6 +104,32 @@ fun CallOverlay(
         }
     }
 }
+
+/**
+ * Whether this host draws the full stage rather than the pill.
+ *
+ * A pure function, and deliberately so: the same two surfaces read the same
+ * state and want opposite things from it, and the last time that rule lived
+ * only inside a Compose `if`, every video call rendered an empty rectangle
+ * without a single test noticing.
+ *
+ * The call's own window is always the whole surface. Inside the main window, a
+ * call that has its own window is just the pill — the way back to it — and the
+ * stage is drawn only when the call actually lives here.
+ */
+internal fun drawsStage(ownsCall: Boolean, pipOpen: Boolean, expanded: Boolean): Boolean =
+    ownsCall || (!pipOpen && expanded)
+
+/**
+ * Whether this host mounts the one browser component.
+ *
+ * There is a single surface and a second host taking it would tear it out of
+ * the first mid-call, so exactly one of the two must answer true for any given
+ * state: the call window claims it whenever it is open, the main window has it
+ * the rest of the time.
+ */
+internal fun mountsVideo(ownsCall: Boolean, pipOpen: Boolean): Boolean =
+    ownsCall || !pipOpen
 
 /** The engine's surface, positioned onto whatever rectangle the chrome reserved. */
 @Composable

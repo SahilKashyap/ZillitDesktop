@@ -282,6 +282,19 @@ private fun ProductionSection(state: SettingsUiState, onEvent: (SettingsEvent) -
     }
 }
 
+/** One category of banner, on or off. */
+@Composable
+private fun NotifyToggle(
+    title: String,
+    detail: String,
+    on: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    SettingRow(title = title, detail = detail) {
+        ZillitCheckbox(checked = on, onCheckedChange = onChange, label = if (on) "On" else "Off")
+    }
+}
+
 @Composable
 private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
     Section("Notifications", ZillitIcons.Calendar) {
@@ -299,68 +312,48 @@ private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent
             )
         }
 
-        SettingRow(
+        NotifyToggle(
             title = "Chat messages",
             detail = "A banner when someone messages you and you are looking " +
                 "elsewhere. Never for the conversation already on screen.",
-        ) {
-            ZillitCheckbox(
-                checked = state.notifyMessages,
-                onCheckedChange = { onEvent(SettingsEvent.NotifyMessagesChanged(it)) },
-                label = if (state.notifyMessages) "On" else "Off",
-            )
-        }
+            on = state.notifyMessages,
+            onChange = { onEvent(SettingsEvent.NotifyMessagesChanged(it)) },
+        )
 
-        SettingRow(
+        NotifyToggle(
             title = "Updates",
             detail = "A banner when someone posts to a notice board you can see. " +
                 "Your own posts never notify you.",
-        ) {
-            ZillitCheckbox(
-                checked = state.notifyUpdates,
-                onCheckedChange = { onEvent(SettingsEvent.NotifyUpdatesChanged(it)) },
-                label = if (state.notifyUpdates) "On" else "Off",
-            )
-        }
+            on = state.notifyUpdates,
+            onChange = { onEvent(SettingsEvent.NotifyUpdatesChanged(it)) },
+        )
 
-        SettingRow(
+        NotifyToggle(
             title = "Email",
             detail = "A banner when mail lands in your inbox. Moving or " +
                 "deleting mail elsewhere does not count as arriving.",
-        ) {
-            ZillitCheckbox(
-                checked = state.notifyMail,
-                onCheckedChange = { onEvent(SettingsEvent.NotifyMailChanged(it)) },
-                label = if (state.notifyMail) "On" else "Off",
-            )
-        }
+            on = state.notifyMail,
+            onChange = { onEvent(SettingsEvent.NotifyMailChanged(it)) },
+        )
 
-        SettingRow(
+        NotifyToggle(
             title = "Production activity",
             detail = "A banner for everything else the production did — a " +
                 "purchase order approved, a document shared, an SOS raised. " +
                 "The bell list's rows, as they happen.",
-        ) {
-            ZillitCheckbox(
-                checked = state.notifyActivity,
-                onCheckedChange = { onEvent(SettingsEvent.NotifyActivityChanged(it)) },
-                label = if (state.notifyActivity) "On" else "Off",
-            )
-        }
+            on = state.notifyActivity,
+            onChange = { onEvent(SettingsEvent.NotifyActivityChanged(it)) },
+        )
 
-        SettingRow(
+        NotifyToggle(
             title = "Calls",
             // Says plainly that this one outranks the mute above, because a
             // missed call is the one notification with someone waiting on it.
             detail = "A banner when a call rings this device. Muting everything " +
                 "above does not silence calls — this switch does.",
-        ) {
-            ZillitCheckbox(
-                checked = state.notifyCalls,
-                onCheckedChange = { onEvent(SettingsEvent.NotifyCallsChanged(it)) },
-                label = if (state.notifyCalls) "On" else "Off",
-            )
-        }
+            on = state.notifyCalls,
+            onChange = { onEvent(SettingsEvent.NotifyCallsChanged(it)) },
+        )
     }
 }
 

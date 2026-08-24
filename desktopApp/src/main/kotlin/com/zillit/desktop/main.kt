@@ -2,6 +2,9 @@
 
 package com.zillit.desktop
 
+import java.io.PrintWriter
+import java.io.StringWriter
+import com.zillit.desktop.core.common.ZillitLogging
 import androidx.compose.foundation.isSystemInDarkTheme
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.minus
@@ -262,6 +265,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 fun main(args: Array<String>) {
+    installCrashLogging()
     val wantsDriveWidget = DriveWidgetLaunch.requestedBy(args)
     // Before anything opens the database or the preference file — the point of
     // the guard is that the second copy touches neither. See SingleInstance.
@@ -274,6 +278,45 @@ fun main(args: Array<String>) {
     installDockIcon()
     DriveWidgetLaunch.installUriHandler()
     runZillit(openDriveWidget = wantsDriveWidget)
+}
+
+/**
+ * Writes the stack trace of anything that kills a thread into the app log.
+ *
+ * Compose Desktop catches an uncaught exception, shows a one-line dialog and
+ * sends the trace to stderr. A packaged `.app` has no stderr anybody can read,
+ * so the dialog is all that survives: "Index 0 out of bounds for length 0",
+ * with no file, no line, and no way to tell which of a hundred lists it was.
+ * That happened, and it cost a debugging round with nothing to go on.
+ *
+ * This is deliberately the very first thing `main` does — earlier than the
+ * single-instance claim, the dock icon, or the log file itself — because a
+ * crash during startup is exactly the one nobody can otherwise reproduce.
+ * Before [ZillitLogging.initialise] runs there is no file sink yet, so this
+ * also writes the trace directly to the log path as a fallback.
+ *
+ * It does not swallow anything: the handler runs and the thread still dies,
+ * so behaviour is unchanged and only the evidence is better.
+ */
+private fun installCrashLogging() {
+    val previous = Thread.getDefaultUncaughtExceptionHandler()
+    Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+        runCatching {
+            val trace = StringWriter().also { error.printStackTrace(PrintWriter(it)) }.toString()
+            ZillitLog.e(CRASH_TAG) { "uncaught on '${thread.name}': $trace" }
+            // Belt and braces: if the failure happened before the file sink was
+            // installed, the line above went nowhere. Appending directly costs
+            // nothing on a path that is already fatal.
+            runCatching {
+                ZillitLogging.logFile.also { it.parentFile?.mkdirs() }
+                    .appendText("\nUNCAUGHT on '${thread.name}':\n$trace\n")
+            }
+        }
+        // Whatever the platform installed still gets its turn — Compose's own
+        // handler is what puts the dialog on screen, and losing it would turn
+        // a visible crash into a silent one.
+        previous?.uncaughtException(thread, error)
+    }
 }
 
 /**
@@ -551,7 +594,7 @@ private fun ApplicationScope.ZillitWindows(
     // The popped-out video call: its own always-on-top OS window, for the
     // same reason — it must outlive being behind the main frame.
     (graph as? AppGraph.Ready)?.let { ready ->
-        CallPipWindow(ready = ready, calls = viewModels.calls, darkTheme = isDark)
+        CallWindow(ready = ready, calls = viewModels.calls, darkTheme = isDark)
     }
 
     // The Drive widget: the desktop's own small window onto one production's
@@ -2638,6 +2681,31 @@ private suspend fun AppGraph.Ready.unsentWorkFor(userId: String?): Int {
  * account summary is read from the session rather than fetched, so the screen
  * never shows a spinner where a name should be.
  */
+/**
+ * The notification switches, each reading and writing its own preference.
+ *
+ * One toggle per category rather than a list, because [NotificationSettings]
+ * names them: the settings screen draws a fixed set of rows and nothing here
+ * is meant to be iterated.
+ */
+private fun notificationSettings(
+    preferences: PreferenceStore,
+    scope: CoroutineScope,
+) = NotificationSettings(
+    muted = preferences.observe(ZillitPreferences.MuteNotifications),
+    messages = preferences.observe(ZillitPreferences.NotifyMessages),
+    mail = preferences.observe(ZillitPreferences.NotifyMail),
+    updates = preferences.observe(ZillitPreferences.NotifyUpdates),
+    calls = preferences.observe(ZillitPreferences.NotifyCalls),
+    activity = preferences.observe(ZillitPreferences.NotifyActivity),
+    setMuted = { muted -> scope.launch { preferences.set(ZillitPreferences.MuteNotifications, muted) } },
+    setMessages = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyMessages, on) } },
+    setMail = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyMail, on) } },
+    setUpdates = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyUpdates, on) } },
+    setCalls = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyCalls, on) } },
+    setActivity = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyActivity, on) } },
+)
+
 private fun buildSettings(
     graph: AppGraph,
     preferences: PreferenceStore,
@@ -2651,28 +2719,7 @@ private fun buildSettings(
         setScale = { percent ->
             scope.launch { preferences.set(ZillitPreferences.UiScalePercent, percent) }
         },
-        notifications = NotificationSettings(
-            muted = preferences.observe(ZillitPreferences.MuteNotifications),
-            messages = preferences.observe(ZillitPreferences.NotifyMessages),
-            mail = preferences.observe(ZillitPreferences.NotifyMail),
-            updates = preferences.observe(ZillitPreferences.NotifyUpdates),
-            calls = preferences.observe(ZillitPreferences.NotifyCalls),
-            activity = preferences.observe(ZillitPreferences.NotifyActivity),
-            setMuted = { muted ->
-                scope.launch { preferences.set(ZillitPreferences.MuteNotifications, muted) }
-            },
-            setMessages = { on ->
-                scope.launch { preferences.set(ZillitPreferences.NotifyMessages, on) }
-            },
-            setMail = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyMail, on) } },
-            setUpdates = { on ->
-                scope.launch { preferences.set(ZillitPreferences.NotifyUpdates, on) }
-            },
-            setCalls = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyCalls, on) } },
-            setActivity = { on ->
-                scope.launch { preferences.set(ZillitPreferences.NotifyActivity, on) }
-            },
-        ),
+        notifications = notificationSettings(preferences, scope),
         // Clears the encrypted cache with the session — the dialog says so.
         signOut = { ready?.authRepository?.signOut() },
         // …and the durable store with it, which is why the dialog counts what
@@ -2840,3 +2887,5 @@ private const val GLOBAL_BADGE_SEGMENT = "global_label"
 
 /** The SOS feed's own segment — `SosEndpoints.SEGMENT`, kept a literal here as every other rail key is. */
 private const val SOS_BADGE_SEGMENT = "sos_label"
+
+private const val CRASH_TAG = "Crash"

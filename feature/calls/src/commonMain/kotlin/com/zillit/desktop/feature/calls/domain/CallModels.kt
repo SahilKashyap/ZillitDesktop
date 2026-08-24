@@ -154,6 +154,8 @@ data class CallParticipant(
     val image: String = "",
     val status: CallStatus = CallStatus.Ringing,
     val missedCall: Boolean = false,
+    /** Their hand is up — the roster row's `raise_hand`. */
+    val handRaised: Boolean = false,
 ) {
     /** The engine's numeric uid, or 0 when the server has not assigned one. */
     val numericUid: Int get() = agoraUid.trim().toIntOrNull() ?: 0
@@ -209,9 +211,20 @@ data class CallSession(
     val othersCount: Int = 0,
     val startedAtMillis: Long = 0,
 ) {
-    /** True once we have what Agora needs to join. */
+    /**
+     * True once we have what Agora needs to join.
+     *
+     * Only Agora. The desktop implements Line 2 alone, and the other two
+     * lines carry credentials this client cannot use — a Mediasoup invite
+     * code, a LiveKit room URL. Reporting those joinable sent them into
+     * `AgoraRTC.join("")`, which throws, and the ring the far side can hear
+     * died on this end as "Call failed" a second after answering. Not
+     * joinable is the honest answer: signalling still works, so the call
+     * connects, statuses flow, and it is a call without media on this
+     * device rather than no call at all.
+     */
     val isJoinable: Boolean
-        get() = provider != CallProvider.Agora || (channelName.isNotBlank() && token.isNotBlank())
+        get() = provider == CallProvider.Agora && channelName.isNotBlank() && token.isNotBlank()
 
     /** Participants with media, us included. */
     val connected: List<CallParticipant> get() = participants.filter { it.status.isConnected }

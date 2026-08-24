@@ -42,7 +42,13 @@ internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?) {
     val theme = themeJson(ZillitTheme.colors)
     LaunchedEffect(engine, theme) { engine.setTheme(theme) }
     LaunchedEffect(engine, callState.stageJson) { engine.setStage(callState.stageJson) }
-    LaunchedEffect(engine, callState.expanded) { engine.setCompact(!callState.expanded) }
+    // Two ways to be small: minimised to the pill inside this window, or
+    // shrunk to the always-on-top thumbnail. The page has one compact mode and
+    // both must reach it — keying on `expanded` alone left the thumbnail
+    // drawing the full multi-tile grid at 360x204.
+    LaunchedEffect(engine, callState.expanded, callState.pipCompact) {
+        engine.setCompact(!callState.expanded || callState.pipCompact)
+    }
 
     CallOverlay(
         state = callState,
@@ -72,8 +78,12 @@ internal fun callVideoSurface(ready: AppGraph.Ready): (@Composable () -> Unit)? 
             // parks the component in a window of its own between calls, and a
             // browser component left with no parent at all is a browser that
             // will not work for the next call.
+            // The claim is taken as this host mounts and handed back as it
+            // leaves, so a host that has already been superseded cannot park a
+            // component the next one is holding. See [KcefCallEngine.releaseSurface].
             DisposableEffect(awtComponent) {
-                onDispose { engine.releaseSurface() }
+                val lease = engine.hostSurface()
+                onDispose { lease.release() }
             }
             SwingPanel(
                 factory = { awtComponent },

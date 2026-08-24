@@ -67,6 +67,13 @@ class FirestoreCallStatusPlane(
         if (deviceId.isEmpty() || session.callUuid.isEmpty()) return
         val fields = buildMap<String, Any> {
             put(FIELD_STATUS, status.wire)
+            // Identity on the row itself, not only in its document id.
+            // [readCallUsers] drops any row without `device_id`, and iOS reads
+            // the same field — so a desktop row that omitted it was invisible
+            // to every reader including this one, and a desktop participant
+            // simply never appeared in anybody's roster.
+            put(FIELD_DEVICE_ID, deviceId)
+            session.selfUserId.takeIf(String::isNotBlank)?.let { put(FIELD_USER_ID, it) }
             putAll(extra)
             put(FIELD_UPDATED_FROM, PLATFORM)
         }
@@ -80,16 +87,14 @@ class FirestoreCallStatusPlane(
 
     override fun watch(session: CallSession): Flow<PlaneEvent> = flow {
         var lastStatuses = emptyMap<String, String>()
+        var lastFlags = emptyMap<String, String>()
         var endedSeen = false
         while (true) {
             if (disabled) return@flow
 
-            readCallDocument(session.callUuid)?.let { doc ->
-                val status = doc.value(FIELD_CALL_STATUS)
-                if (!endedSeen && status == CallStatus.Ended.wire) {
-                    endedSeen = true
-                    emit(PlaneEvent.Ended(session.callUuid))
-                }
+            if (!endedSeen && callHasEnded(session.callUuid)) {
+                endedSeen = true
+                emit(PlaneEvent.Ended(session.callUuid))
             }
 
             readCallUsers(session.callUuid).forEach { row ->
@@ -106,11 +111,52 @@ class FirestoreCallStatusPlane(
                     )
                     lastStatuses = lastStatuses + (deviceId to status)
                 }
+
+                // Sharing and raised hands move without the status moving, so
+                // they carry their own change detector.
+                val flags = row.flags()
+                if (lastFlags[deviceId] != flags.key) {
+                    lastFlags = lastFlags + (deviceId to flags.key)
+                    emit(
+                        PlaneEvent.UserFlags(
+                            deviceId = deviceId,
+                            userId = row.value(FIELD_USER_ID).orEmpty(),
+                            agoraUid = flags.agoraUid,
+                            sharing = flags.sharing,
+                            handRaised = flags.handRaised,
+                        ),
+                    )
+                }
             }
 
             delay(pollMillis)
         }
     }
+
+    private suspend fun callHasEnded(callUuid: String): Boolean =
+        readCallDocument(callUuid)?.value(FIELD_CALL_STATUS) == CallStatus.Ended.wire
+
+    /**
+     * The per-person state that moves without the call status moving.
+     *
+     * `screen_share` is the web's spelling of `screenShare`; the phones read
+     * both, so a desktop that read only one would miss half the fleet's
+     * sharing. [key] is what the poller diffs against — a value, so the
+     * comparison cannot accidentally be an identity check.
+     */
+    private data class UserFlags(
+        val sharing: Boolean,
+        val handRaised: Boolean,
+        val agoraUid: Int,
+    ) {
+        val key: String get() = "$sharing/$handRaised/$agoraUid"
+    }
+
+    private fun JsonObject.flags(): UserFlags = UserFlags(
+        sharing = value(FIELD_SHARING)?.toBoolean() ?: value(FIELD_SHARING_WEB)?.toBoolean() ?: false,
+        handRaised = value(FIELD_HAND)?.toBoolean() ?: false,
+        agoraUid = value(FIELD_AGORA_UID)?.toIntOrNull() ?: 0,
+    )
 
     // ── Firestore REST ──────────────────────────────────────────────────
 
@@ -220,6 +266,12 @@ class FirestoreCallStatusPlane(
         const val PLATFORM = "Desktop"
 
         const val FIELD_STATUS = "current_status"
+        const val FIELD_SHARING = "screenShare"
+
+        /** The web writes the same fact under a snake_case name. */
+        const val FIELD_SHARING_WEB = "screen_share"
+        const val FIELD_HAND = "raise_hand"
+        const val FIELD_AGORA_UID = "agora_uid"
         const val FIELD_CALL_STATUS = "status"
         const val FIELD_DEVICE_ID = "device_id"
         const val FIELD_USER_ID = "user_id"

@@ -2,6 +2,7 @@ package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.feature.calls.data.EngineBridge
+import com.zillit.desktop.feature.calls.domain.CallDeviceKind
 import com.zillit.desktop.feature.calls.domain.CallEngine
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
 import kotlinx.coroutines.CompletableDeferred
@@ -59,7 +60,7 @@ class KcefCallEngine(
     private val initLock = Mutex()
     private var client: CefClient? = null
     private var browser: CefBrowser? = null
-    private var holder: JWindow? = null
+    private val holder = OffscreenHolder()
 
     /** Completed when the page announces itself; replaced when torn down. */
     @Volatile
@@ -79,6 +80,15 @@ class KcefCallEngine(
     private var lastTheme: String? = null
 
     override val isReady: Boolean get() = browser != null && pageReady.isCompleted
+
+    /**
+     * Which host currently owns the browser component, as a monotonic ticket.
+     *
+     * Atomic because it is read from the deferred park on the event thread and
+     * bumped from composition; a plain var would be a data race on a field
+     * whose whole job is deciding whether to re-parent a live component.
+     */
+    private val surfaceClaim = SurfaceClaims()
 
     private val _surface = MutableStateFlow<Component?>(null)
 
@@ -125,7 +135,20 @@ class KcefCallEngine(
         // On the EDT: this builds an AWT window and an AWT component, and
         // JCEF is unforgiving about being driven from anywhere else.
         withContext(Dispatchers.Swing) {
-            runCatching { buildBrowser(cefClient, page) }.onFailure { thrown ->
+            runCatching {
+                val built = buildBrowser(cefClient, page, ::onPageMessage)
+                browser = built
+                // Parked before anything else: JCEF creates the native browser
+                // from a realised AWT peer and not before, so a page nothing
+                // displays never loads — and the call page has to be loaded
+                // before the call that would display it, a chicken-and-egg the
+                // media stack loses. [OffscreenHolder] is the window that
+                // satisfies AWT until a real call surface asks for it.
+                built.uiComponent?.let { component ->
+                    holder.park(component)
+                    _surface.value = component
+                }
+            }.onFailure { thrown ->
                 ZillitLog.w(TAG) { "browser build failed: ${thrown.message ?: thrown::class.simpleName}" }
             }
         }
@@ -147,85 +170,40 @@ class KcefCallEngine(
         return ready
     }
 
-    private fun buildBrowser(cefClient: CefClient, page: File) {
-        if (browser != null) return
-        cefClient.addMessageRouter(KcefPage.messageRouter(::onPageMessage))
-        cefClient.addLoadHandler(KcefPage.loadHandler { note -> ZillitLog.i(TAG) { note } })
-        cefClient.addDisplayHandler(KcefPage.displayHandler { note -> ZillitLog.w(TAG) { "console: $note" } })
-        browser = cefClient.createBrowser(
-            "file://${page.absolutePath}",
-            // Windowed, so video takes Chromium's own GPU path rather than
-            // being copied frame by frame through jogamp. The cost is that
-            // the native browser is not created until its AWT component is
-            // realised — which is what [hold] exists to arrange.
-            CefRendering.DEFAULT,
-            false,
-        )
-        browser?.uiComponent?.let { component ->
-            hold(component)
-            _surface.value = component
+    /**
+     * Lends the browser component to a Compose surface until it lets go.
+     *
+     * One call rather than a claim/release pair, so a host cannot release
+     * something it never took. The returned lease is the host's turn: while it
+     * is the newest, releasing it parks the component; once another host has
+     * taken over, releasing is a no-op.
+     *
+     * That distinction is the whole point. Parking is destructive —
+     * `Container.addImpl` removes the component from its current parent — and
+     * during a hand-off both hosts exist for one frame, the arriving
+     * `SwingPanel` having already adopted the component. A leaving host that
+     * parked unconditionally ripped it out of the group that legitimately owned
+     * it, leaving a *live* `SwingInteropViewGroup` with zero children. Compose
+     * remeasures it, `getPreferredSize` runs `getComponents()[0]` on an empty
+     * array, and the app dies mid-call with
+     * `Index 0 out of bounds for length 0`.
+     *
+     * The ownership test happens inside the deferred block, not before it: the
+     * question is who owns the surface once the frame has settled.
+     */
+    fun hostSurface(): SurfaceLease {
+        val claim = surfaceClaim.claim()
+        return SurfaceLease {
+            val component = _surface.value ?: return@SurfaceLease
+            SwingUtilities.invokeLater {
+                if (!surfaceClaim.mayPark(claim)) return@invokeLater
+                holder.park(component)
+            }
         }
-        ZillitLog.i(TAG) { "call page loading from ${page.absolutePath}" }
     }
 
-    /**
-     * Parks the browser's component in a window nobody looks at.
-     *
-     * JCEF creates the native browser from a realised AWT peer and not
-     * before, so a page nothing displays never loads — and the call page has
-     * to be loaded before the call that would display it, which is a
-     * chicken-and-egg the media stack loses. This gives it a window that
-     * satisfies AWT, parked past the edge of every desktop, and lends the
-     * component to the real call surface when a video call wants one.
-     */
-    private fun hold(component: Component) {
-        val window = holder ?: JWindow().also { window ->
-            window.focusableWindowState = false
-            // Invisible rather than merely moved away. macOS clamps a window
-            // back onto the desktop rather than honouring a large negative
-            // origin, so "parked past the edge of every screen" put a 640 px
-            // panel in the top-left corner instead — showing the last call's
-            // tiles, and swallowing every click that landed on it.
-            runCatching { window.opacity = 0f }
-            holder = window
-        }
-        window.contentPane.add(component)
-        window.isVisible = true
-        // Bounds after the component is in and the window is up, not before:
-        // JCEF creates the native browser off the hierarchy-bounds events its
-        // component receives, and a window sized before it had a child sends
-        // none of them. The size is real because the browser needs one; only
-        // the pixels are hidden.
-        window.setBounds(HOLDER_OFFSCREEN, HOLDER_OFFSCREEN, HOLDER_SIZE, HOLDER_SIZE)
-        window.validate()
-        window.toBack()
-    }
-
-    /**
-     * Lets go of the parking window.
-     *
-     * A displayable AWT window keeps the JVM alive on its own, so a holder
-     * left behind outlives the app that made it: the process stays up with no
-     * main window, which is exactly what it looked like — an app that would
-     * not quit.
-     */
-    fun releaseHolder() {
-        val window = holder ?: return
-        holder = null
-        runCatching { SwingUtilities.invokeLater { window.dispose() } }
-    }
-
-    /**
-     * Takes the component back when the call surface goes away.
-     *
-     * Without this the component is left with no parent once its Compose
-     * panel is disposed, and a browser whose peer has been destroyed stops
-     * being a media stack — the *next* call would be the one that broke.
-     */
-    fun releaseSurface() {
-        val component = _surface.value ?: return
-        SwingUtilities.invokeLater { hold(component) }
-    }
+    /** Drops the parking window so the JVM can exit. See [OffscreenHolder]. */
+    fun releaseHolder() = holder.dispose()
 
     private fun onPageMessage(message: String) {
         if (EngineBridge.isReady(message)) {
@@ -251,24 +229,6 @@ class KcefCallEngine(
             }
             _events.tryEmit(event)
         }
-    }
-
-    /**
-     * The page and its two scripts, unpacked where `file://` can reach them.
-     *
-     * Re-extracted on every launch: the bundle is the versioned copy, and a
-     * stale extraction surviving an upgrade is a debugging session nobody
-     * needs.
-     */
-    private fun extractPage(): File {
-        val dir = File(System.getProperty("user.home"), ".zillit/callengine").apply { mkdirs() }
-        PAGE_FILES.forEach { name ->
-            val resource = checkNotNull(javaClass.getResourceAsStream("/callengine/$name")) {
-                "missing bundled resource callengine/$name"
-            }
-            resource.use { input -> File(dir, name).outputStream().use(input::copyTo) }
-        }
-        return File(dir, "call.html")
     }
 
     override suspend fun join(channel: String, token: String, uid: Int, hasVideo: Boolean) {
@@ -298,6 +258,29 @@ class KcefCallEngine(
 
     override fun switchCamera() {
         browser?.let { run(it, EngineBridge.SWITCH_CAMERA_SCRIPT) }
+    }
+
+    override fun listDevices() {
+        browser?.let { run(it, EngineBridge.LIST_DEVICES_SCRIPT) }
+    }
+
+    override fun setDevice(kind: CallDeviceKind, deviceId: String) {
+        browser?.let { run(it, EngineBridge.deviceScript(kind, deviceId)) }
+    }
+
+    /**
+     * True means "the page was asked", not "the user shared" — Chromium's own
+     * source selection happens after this returns, and a cancelled share
+     * comes back as a `screen-share false` event rather than a failure here.
+     */
+    override suspend fun startScreenShare(): Boolean {
+        val target = browser ?: return false
+        run(target, EngineBridge.START_SCREEN_SHARE_SCRIPT)
+        return true
+    }
+
+    override suspend fun stopScreenShare() {
+        browser?.let { run(it, EngineBridge.STOP_SCREEN_SHARE_SCRIPT) }
     }
 
     override fun setStage(json: String) {
@@ -335,21 +318,112 @@ class KcefCallEngine(
         pageReady = CompletableDeferred()
     }
 
-    private fun run(target: CefBrowser, script: String) {
-        target.executeJavaScript(script, target.url, 0)
-    }
-
     private companion object {
         const val TAG = "KcefCallEngine"
         const val PAGE_READY_TIMEOUT_MS = 20_000L
         const val WARMUP_DELAY_MS = 8_000L
 
-        /** Far enough out that no arrangement of displays reaches it. */
-        const val HOLDER_OFFSCREEN = -8_000
-
-        /** Big enough that AWT treats the window as real. */
-        const val HOLDER_SIZE = 640
-
-        val PAGE_FILES = listOf("call.html", "call.js", "agora-rtc-sdk-ng-4.24.2.js")
     }
 }
+
+private fun run(target: CefBrowser, script: String) {
+    target.executeJavaScript(script, target.url, 0)
+}
+
+/**
+ * The invisible window the call page lives in when nothing is showing it.
+ *
+ * JCEF only creates its native browser once its AWT component is in a
+ * displayable hierarchy, so the page has to be parented somewhere from the
+ * moment it is built — including long before any call. This is that somewhere.
+ */
+private class OffscreenHolder {
+    private var window: JWindow? = null
+
+    fun park(component: Component) {
+        val parked = window ?: JWindow().also { fresh ->
+            fresh.focusableWindowState = false
+            // Invisible rather than merely moved away. macOS clamps a window
+            // back onto the desktop rather than honouring a large negative
+            // origin, so "parked past the edge of every screen" put a 640 px
+            // panel in the top-left corner instead — showing the last call's
+            // tiles, and swallowing every click that landed on it.
+            runCatching { fresh.opacity = 0f }
+            window = fresh
+        }
+        parked.contentPane.add(component)
+        parked.isVisible = true
+        // Bounds after the component is in and the window is up, not before:
+        // JCEF creates the native browser off the hierarchy-bounds events its
+        // component receives, and a window sized before it had a child sends
+        // none of them. The size is real because the browser needs one; only
+        // the pixels are hidden.
+        parked.setBounds(OFFSCREEN, OFFSCREEN, SIZE, SIZE)
+        parked.validate()
+        parked.toBack()
+    }
+
+    /**
+     * A displayable AWT window keeps the JVM alive on its own, so a holder
+     * left behind outlives the app that made it: the process stays up with no
+     * main window, which is exactly what it looked like — an app that would
+     * not quit.
+     */
+    fun dispose() {
+        val parked = window ?: return
+        window = null
+        runCatching { SwingUtilities.invokeLater { parked.dispose() } }
+    }
+
+    private companion object {
+        /** Far enough out that no arrangement of displays reaches it. */
+        const val OFFSCREEN = -8_000
+
+        /** Big enough that AWT treats the window as real. */
+        const val SIZE = 640
+    }
+}
+
+/**
+ * Copies the bundled call page onto disk and returns its entry point.
+ *
+ * Chromium loads it as a `file:` URL rather than from the jar: the SDK inside
+ * pulls in its own workers and wasm by relative path, and none of that
+ * resolves against a resource stream. Rewritten every start, so an app update
+ * cannot leave last version's page behind.
+ */
+private fun extractPage(): File {
+    val dir = File(System.getProperty("user.home"), ".zillit/callengine").apply { mkdirs() }
+    PAGE_FILES.forEach { name ->
+        val resource = checkNotNull(KcefCallEngine::class.java.getResourceAsStream("/callengine/$name")) {
+            "missing bundled resource callengine/$name"
+        }
+        resource.use { input -> File(dir, name).outputStream().use(input::copyTo) }
+    }
+    return File(dir, "call.html")
+}
+
+private val PAGE_FILES = listOf("call.html", "call.js", "agora-rtc-sdk-ng-4.24.2.js")
+
+/**
+ * Wires the handlers and opens the call page.
+ *
+ * Windowed rendering, so video takes Chromium's own GPU path rather than being
+ * copied frame by frame through jogamp. The cost is that the native browser is
+ * not created until its AWT component is realised, which is what parking it
+ * offscreen exists to arrange.
+ *
+ * Must run on the EDT: this builds AWT objects, and JCEF is unforgiving about
+ * being driven from anywhere else.
+ */
+private fun buildBrowser(cefClient: CefClient, page: File, onMessage: (String) -> Unit): CefBrowser {
+    cefClient.addMessageRouter(KcefPage.messageRouter(onMessage))
+    cefClient.addLoadHandler(KcefPage.loadHandler { note -> ZillitLog.i(BROWSER_TAG) { note } })
+    cefClient.addDisplayHandler(
+        KcefPage.displayHandler { note -> ZillitLog.w(BROWSER_TAG) { "console: $note" } },
+    )
+    ZillitLog.i(BROWSER_TAG) { "call page loading from ${page.absolutePath}" }
+    return cefClient.createBrowser("file://${page.absolutePath}", CefRendering.DEFAULT, false)
+}
+
+private const val BROWSER_TAG = "KcefCallEngine"

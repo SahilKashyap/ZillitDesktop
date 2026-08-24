@@ -117,6 +117,18 @@ object ZillitIcons {
         moveTo(5f, 16f); lineTo(5f, 5f); lineTo(16f, 5f)
     }
 
+    /** A raised hand: three fingers, a thumb, and a palm. */
+    val Hand: ImageVector = stroked("Hand") {
+        moveTo(9f, 11f); lineTo(9f, 4.5f)
+        moveTo(12f, 11f); lineTo(12f, 3.5f)
+        moveTo(15f, 11f); lineTo(15f, 5f)
+        moveTo(6f, 12f); lineTo(6f, 9f)
+        moveTo(6f, 12f)
+        curveTo(6f, 17f, 8f, 21f, 12.5f, 21f)
+        curveTo(16f, 21f, 18f, 18f, 18f, 14f)
+        lineTo(18f, 8f)
+    }
+
     val Pin: ImageVector = stroked("Pin") {
         moveTo(12f, 14f); lineTo(12f, 21f)
         moveTo(8f, 3f); lineTo(16f, 3f); lineTo(14.5f, 10f); lineTo(17f, 14f); lineTo(7f, 14f)

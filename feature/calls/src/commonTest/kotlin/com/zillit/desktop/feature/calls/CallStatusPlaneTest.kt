@@ -67,9 +67,42 @@ class CallStatusPlaneTest {
             "Desktop",
             fields["updated_from"]!!.jsonObject["stringValue"]!!.jsonPrimitive.content,
         )
+        // Identity travels on the row, not only in its document id: the
+        // roster reader here and on the phones drops a row without
+        // `device_id`, so omitting it made this desktop invisible on the call.
+        assertEquals(
+            "my-device",
+            fields["device_id"]!!.jsonObject["stringValue"]!!.jsonPrimitive.content,
+        )
+        assertEquals(
+            "me",
+            fields["user_id"]!!.jsonObject["stringValue"]!!.jsonPrimitive.content,
+        )
         // The mask names exactly what we send — an unmasked patch would erase
         // every field the other platforms wrote on this row.
-        assertEquals(setOf("current_status", "updated_from"), mask.toSet())
+        assertEquals(
+            setOf("current_status", "device_id", "user_id", "updated_from"),
+            mask.toSet(),
+        )
+    }
+
+    @Test
+    fun `a row written without a known user still carries its device`() = runTest {
+        var captured: String? = null
+        val engine = MockEngine { request ->
+            captured = (request.body as io.ktor.http.content.TextContent).text
+            respond("{}", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+
+        plane(engine).announceSelf(CallSession(callUuid = "u1"), CallStatus.Ringing)
+
+        val fields = Json.parseToJsonElement(captured!!).jsonObject["fields"]!!.jsonObject
+        assertEquals(
+            "my-device",
+            fields["device_id"]!!.jsonObject["stringValue"]!!.jsonPrimitive.content,
+        )
+        // Blank rather than an empty string on the row.
+        assertTrue(fields["user_id"] == null)
     }
 
     @Test
@@ -102,6 +135,9 @@ class CallStatusPlaneTest {
                     "device_id":{"stringValue":"peer-dev"},
                     "user_id":{"stringValue":"peer"},
                     "current_status":{"stringValue":"ringing"},
+                    "agora_uid":{"integerValue":"77"},
+                    "screenShare":{"booleanValue":true},
+                    "raise_hand":{"booleanValue":true},
                     "updated_from":{"stringValue":"Android"}}}]}"""
             var polls = 0
             val engine = MockEngine { request ->
@@ -116,7 +152,7 @@ class CallStatusPlaneTest {
             }
 
             val events = mutableListOf<PlaneEvent>()
-            val job = launch { plane(engine).watch(session).take(2).toList(events) }
+            val job = launch { plane(engine).watch(session).take(3).toList(events) }
             advanceTimeBy(3_000)
             runCurrent()
             job.join()
@@ -125,7 +161,48 @@ class CallStatusPlaneTest {
                 PlaneEvent.UserStatus("peer-dev", "peer", CallStatus.Ringing, "Android"),
                 events[0],
             )
-            assertEquals(PlaneEvent.Ended("u1"), events[1])
+            // The row's live flags ride the same poll on their own event: a
+            // hand goes up without the status moving, so a status-keyed
+            // detector would never report it.
+            assertEquals(
+                PlaneEvent.UserFlags(
+                    deviceId = "peer-dev",
+                    userId = "peer",
+                    agoraUid = 77,
+                    sharing = true,
+                    handRaised = true,
+                ),
+                events[1],
+            )
+            assertEquals(PlaneEvent.Ended("u1"), events[2])
+        }
+
+    @Test
+    fun `the web's spelling of the sharing flag is read too`() =
+        runTest(StandardTestDispatcher()) {
+            val users = """{"documents":[
+                {"fields":{
+                    "device_id":{"stringValue":"peer-dev"},
+                    "current_status":{"stringValue":"in_call"},
+                    "screen_share":{"booleanValue":true}}}]}"""
+            val engine = MockEngine { request ->
+                if (request.url.encodedPath.endsWith("/call_users")) {
+                    respond(users, HttpStatusCode.OK)
+                } else {
+                    respond("""{"fields":{}}""", HttpStatusCode.OK)
+                }
+            }
+
+            val events = mutableListOf<PlaneEvent>()
+            val job = launch { plane(engine).watch(session).take(2).toList(events) }
+            advanceTimeBy(3_000)
+            runCurrent()
+            // take(2) completes on the pair this row produces, so the
+            // collection finishes on its own rather than being cut short.
+            job.join()
+
+            val flags = events.filterIsInstance<PlaneEvent.UserFlags>().single()
+            assertTrue(flags.sharing)
         }
 
     @Test

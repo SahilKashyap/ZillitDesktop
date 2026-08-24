@@ -56,6 +56,8 @@ data class CallMedia(
     val selfQuality: LinkQuality = LinkQuality.Unknown,
     val peers: Map<Int, MediaPeer> = emptyMap(),
     val speaking: Set<Int> = emptySet(),
+    /** This machine is sharing its screen. */
+    val selfSharing: Boolean = false,
 )
 
 /**
@@ -78,6 +80,12 @@ fun CallMedia.reduce(event: CallEngineEvent): CallMedia = when (event) {
     is CallEngineEvent.ActiveSpeakers -> copy(speaking = event.uids.toSet())
     is CallEngineEvent.NetworkQuality -> withQuality(event.uid, LinkQuality.ofAgora(event.tx, event.rx))
     is CallEngineEvent.ConnectionChanged -> copy(connection = event.state)
+    // The hardware list is not part of the media picture — the coordinator
+    // holds it, because a picker is open outside any one call's lifetime.
+    CallEngineEvent.TokenExpiring -> this
+    CallEngineEvent.TokenExpired -> this
+    is CallEngineEvent.ScreenShare -> copy(selfSharing = event.sharing)
+    is CallEngineEvent.Devices -> this
     is CallEngineEvent.Failed -> this
 }
 

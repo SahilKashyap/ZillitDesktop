@@ -23,6 +23,16 @@
     let stage = { cols: 1, tiles: [] };
     let compact = false;
     const videoTracks = new Map(); // uid -> RemoteVideoTrack
+    const remoteAudio = new Map(); // uid -> RemoteAudioTrack, for output routing
+    /*
+     * The chosen input/output, kept here because they outlive any one track:
+     * a microphone chosen mid-call must survive the next join, and an output
+     * device has to be re-applied to every remote track that arrives after
+     * the choice was made.
+     */
+    let chosenMic = '';
+    let chosenSpeaker = '';
+    let screenTrack = null;
     const speaking = new Set();    // uid
     const cells = new Map();       // uid -> { root, mount }
 
@@ -216,6 +226,45 @@
         try { console.log('[zillit-media] ' + message); } catch (e) { /* no console */ }
     }
 
+    /**
+     * Output routing is per remote track in the Web SDK — it is `setSinkId`
+     * underneath — so there is no global switch to flip. Every track that
+     * arrives gets the current choice, and changing the choice walks the ones
+     * already playing. Browsers without setSinkId throw NOT_SUPPORTED, which
+     * is a warning rather than a failure: the OS default still plays.
+     */
+    function applySpeaker(track) {
+        if (!chosenSpeaker || !track || !track.setPlaybackDevice) { return; }
+        track.setPlaybackDevice(chosenSpeaker).catch(e => warn('setPlaybackDevice', e));
+    }
+
+    /** The three lists Kotlin draws its pickers from, plus what is chosen now. */
+    async function reportDevices() {
+        try {
+            const [mics, speakers, cams] = await Promise.all([
+                AgoraRTC.getMicrophones().catch(() => []),
+                AgoraRTC.getPlaybackDevices().catch(() => []),
+                AgoraRTC.getCameras().catch(() => []),
+            ]);
+            const shape = list => list.map(d => ({ id: d.deviceId, label: d.label || '' }));
+            send({
+                type: 'devices',
+                microphones: shape(mics),
+                speakers: shape(speakers),
+                cameras: shape(cams),
+                microphoneId: chosenMic,
+                speakerId: chosenSpeaker,
+            });
+        } catch (e) {
+            warn('devices', e);
+        }
+    }
+
+    // Hot-plugging a headset mid-call is the normal case on a desktop, not an
+    // edge case: the SDK tells us, and the picker refreshes itself.
+    AgoraRTC.onMicrophoneChanged = () => { reportDevices(); };
+    AgoraRTC.onPlaybackDeviceChanged = () => { reportDevices(); };
+
     function wireClientEvents() {
         client.on('user-published', async (user, mediaType) => {
             try {
@@ -223,6 +272,8 @@
                 trace('subscribed ' + mediaType + ' uid=' + user.uid);
                 if (mediaType === 'audio') {
                     if (user.audioTrack) {
+                        remoteAudio.set(user.uid, user.audioTrack);
+                        applySpeaker(user.audioTrack);
                         user.audioTrack.play();
                         trace('playing remote audio uid=' + user.uid);
                     } else {
@@ -243,6 +294,7 @@
 
         client.on('user-unpublished', (user, mediaType) => {
             if (mediaType === 'audio') {
+                remoteAudio.delete(user.uid);
                 send({ type: 'peer-audio', uid: user.uid, muted: true });
             } else if (mediaType === 'video') {
                 videoTracks.delete(user.uid);
@@ -284,6 +336,13 @@
             send({ type: 'speakers', uids: loud });
         });
 
+        // Nothing can be done about this one: the backend mints an RTC token
+        // at call creation and offers no renewal route, so a warning is all
+        // there is. Reported so the call can end deliberately rather than go
+        // silent when the grace period runs out.
+        client.on('token-privilege-did-expire', () => {
+            send({ type: 'token-expired' });
+        });
         client.on('token-privilege-will-expire', () => {
             send({ type: 'token-expiring' });
         });
@@ -341,7 +400,9 @@
                 trace('joined uid=' + joined + ' (asked for ' + (uid || 'auto') + ')');
                 if (stale()) { await abandon(c, mic, cam); return; }
 
-                mic = await AgoraRTC.createMicrophoneAudioTrack();
+                mic = await AgoraRTC.createMicrophoneAudioTrack(
+                    chosenMic ? { microphoneId: chosenMic } : {},
+                );
                 if (stale()) { await abandon(c, mic, cam); return; }
                 micTrack = mic;
 
@@ -436,9 +497,98 @@
             }
         },
 
-        // Output routing is the OS's business on desktop; kept for interface
-        // parity so Kotlin can call it unconditionally.
+        // Kept for interface parity — desktop has no earpiece/speaker duality,
+        // and output is chosen by device below rather than toggled.
         setSpeaker(_enabled) {},
+
+        /** Asks the page to publish the current device lists. */
+        listDevices() { reportDevices(); },
+
+        /**
+         * Switches the live microphone, or records the choice for the next
+         * join when no track exists yet. `setDevice` swaps the source under a
+         * published track, so the room hears the new microphone without a
+         * republish and without anyone dropping out.
+         */
+        async setMicrophoneDevice(deviceId) {
+            chosenMic = deviceId || '';
+            try {
+                if (micTrack && chosenMic) { await micTrack.setDevice(chosenMic); }
+            } catch (e) {
+                warn('setMicrophoneDevice', e);
+            }
+            reportDevices();
+        },
+
+        /** Routes every remote voice — playing and future — to one output. */
+        async setSpeakerDevice(deviceId) {
+            chosenSpeaker = deviceId || '';
+            remoteAudio.forEach(track => applySpeaker(track));
+            reportDevices();
+        },
+
+        /**
+         * Publishes the screen in place of the camera.
+         *
+         * One video track per client is the SDK's rule, so the camera is
+         * unpublished first and restored on stop — the same trade the phones
+         * make (they suppress camera-flip while sharing for this reason).
+         *
+         * Chromium picks the source itself: an embedded browser has nowhere
+         * to draw the picker, so the runtime is launched with
+         * --auto-select-desktop-capture-source. The whole screen is shared,
+         * not a chosen window.
+         */
+        async startScreenShare() {
+            if (!client || screenTrack) { return; }
+            try {
+                screenTrack = await AgoraRTC.createScreenVideoTrack({}, 'disable');
+                if (camTrack) { await client.unpublish(camTrack); }
+                await client.publish(screenTrack);
+                playLocal(screenTrack);
+                // The browser's own "Stop sharing" bar ends the track without
+                // telling us; without this the UI would still claim to share.
+                screenTrack.on('track-ended', () => { window.zillitCall.stopScreenShare(); });
+                send({ type: 'screen-share', sharing: true });
+            } catch (e) {
+                // A cancelled picker is a decision, not a failure.
+                warn('startScreenShare', e);
+                screenTrack = null;
+                send({ type: 'screen-share', sharing: false });
+            }
+        },
+
+        async stopScreenShare() {
+            if (!screenTrack) { return; }
+            try {
+                await client.unpublish(screenTrack);
+                screenTrack.close();
+            } catch (e) {
+                warn('stopScreenShare', e);
+            }
+            screenTrack = null;
+            try {
+                if (camTrack && desiredCamEnabled) {
+                    await client.publish(camTrack);
+                    playLocal(camTrack);
+                } else {
+                    clearLocal();
+                }
+            } catch (e) {
+                warn('restoreCamera', e);
+            }
+            send({ type: 'screen-share', sharing: false });
+        },
+
+        /** Switches the camera by id, unlike [switchCamera]'s blind next-one. */
+        async setCameraDevice(deviceId) {
+            try {
+                if (camTrack && deviceId) { await camTrack.setDevice(deviceId); }
+            } catch (e) {
+                warn('setCameraDevice', e);
+            }
+            reportDevices();
+        },
 
         /** Identity and shape for the tiles. Liveness stays this page's job. */
         setStage(json) {
