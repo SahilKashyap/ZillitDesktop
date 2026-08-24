@@ -78,9 +78,9 @@ internal fun callVideoSurface(ready: AppGraph.Ready): (@Composable () -> Unit)? 
             // parks the component in a window of its own between calls, and a
             // browser component left with no parent at all is a browser that
             // will not work for the next call.
-            // The claim is taken as this host mounts and handed back as it
-            // leaves, so a host that has already been superseded cannot park a
-            // component the next one is holding. See [KcefCallEngine.releaseSurface].
+            // Taken as this host mounts and handed back as it leaves, so a
+            // host that has already been superseded cannot park a component
+            // the next one is holding. See [KcefCallEngine.hostSurface].
             DisposableEffect(awtComponent) {
                 val lease = engine.hostSurface()
                 onDispose { lease.release() }
