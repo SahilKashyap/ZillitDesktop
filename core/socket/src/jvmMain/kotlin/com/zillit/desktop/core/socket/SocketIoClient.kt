@@ -175,6 +175,15 @@ class SocketIoClient(
     private val anyIncomingListener = Emitter.Listener { args ->
         val name = args.firstOrNull() as? String ?: return@Listener
         val payload = args.getOrNull(1)?.toJsonElement()
+
+        // The event name only, never the payload: these carry message bodies,
+        // call participants and crew names. Without this line a socket that
+        // connects and then receives nothing is indistinguishable from one
+        // that is working — the connect log says "connected" either way, and
+        // every realtime feature (presence, call status, the notifications
+        // raised from these events) fails silently and identically.
+        ZillitLog.d(TAG) { "<- $name" }
+
         scope.launch { _messages.emit(SocketMessage(SocketEventName(name), payload)) }
     }
 

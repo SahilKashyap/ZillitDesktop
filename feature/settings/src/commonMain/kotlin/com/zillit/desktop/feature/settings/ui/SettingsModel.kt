@@ -36,6 +36,7 @@ data class SettingsUiState(
     val notifyMail: Boolean = true,
     val notifyUpdates: Boolean = true,
     val notifyCalls: Boolean = true,
+    val notifyActivity: Boolean = true,
     val unit: UnitSelection = UnitSelection(),
     /** Asked before signing out — it drops the local cache with it. */
     val isConfirmingSignOut: Boolean = false,
@@ -136,6 +137,7 @@ sealed interface SettingsEvent {
     data class NotifyMailChanged(val on: Boolean) : SettingsEvent
     data class NotifyUpdatesChanged(val on: Boolean) : SettingsEvent
     data class NotifyCallsChanged(val on: Boolean) : SettingsEvent
+    data class NotifyActivityChanged(val on: Boolean) : SettingsEvent
 
     /** Attaches the user to a different production unit. */
     data class UnitChanged(val unitId: String) : SettingsEvent
@@ -210,9 +212,11 @@ class NotificationSettings(
     val mail: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val updates: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val calls: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+    val activity: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val setMuted: (Boolean) -> Unit = {},
     val setMessages: (Boolean) -> Unit = {},
     val setMail: (Boolean) -> Unit = {},
     val setUpdates: (Boolean) -> Unit = {},
     val setCalls: (Boolean) -> Unit = {},
+    val setActivity: (Boolean) -> Unit = {},
 )

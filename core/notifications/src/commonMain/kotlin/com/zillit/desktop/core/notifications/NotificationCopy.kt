@@ -95,6 +95,19 @@ object NotificationCopy {
         )
     }
 
+    /**
+     * General production activity — the bell-list rows the phones banner via
+     * push and the desktop banners straight off the socket.
+     *
+     * [area] is the decoded path ("Tools : Call Sheet"), which is the only
+     * title the wire can offer: the record itself carries no headline, and on
+     * the phones the server composes one into the push instead.
+     */
+    fun activity(area: String, body: String): DesktopNotification = DesktopNotification(
+        title = area.ifBlank { "Zillit" },
+        body = body,
+    )
+
     /** Words if there are any, otherwise the file that came instead of them. */
     private fun bodyOrAttachment(body: String, attachmentName: String?): String {
         val text = body.trim()

@@ -203,12 +203,57 @@ if (jbrFrameworks.isDirectory) {
      * Moving the copy before `createDistributable` would avoid 2-4 and is not
      * available: that is the cycle noted below.
      */
+    /*
+     * The notification helper.
+     *
+     * Compose posts notifications through `java.awt.TrayIcon.displayMessage`,
+     * which the JDK implements on macOS with `NSUserNotificationCenter` —
+     * deprecated in 10.14 and inert since. Nothing throws and nothing arrives,
+     * which is why the Windows build notifies (AWT calls `Shell_NotifyIcon`
+     * there) and this one does not. `ZillitNotify.swift` is the same job on the
+     * API that replaced it; TrayNotifier runs it instead.
+     *
+     * Compiled into `Contents/MacOS/` because a binary there inherits the app's
+     * bundle identity, which `UNUserNotificationCenter` requires and which also
+     * decides whose name appears on the banner.
+     *
+     * Skipped when there is no Swift compiler, rather than failing the build: a
+     * machine without Xcode can still produce a DMG, and TrayNotifier falls
+     * back to the tray path when the helper is absent.
+     */
+    val notifyHelperSource = project.file("src/main/native/ZillitNotify.swift")
+    val swiftCompiler = File("/usr/bin/swiftc")
+
+    val notifyHelper = if (swiftCompiler.canExecute() && notifyHelperSource.isFile) {
+        tasks.register<Exec>("compileNotifyHelper") {
+            dependsOn("createDistributable")
+            description = "Compiles the macOS notification helper into the app bundle."
+
+            val destination = layout.buildDirectory
+                .dir("compose/binaries/main/app/Zillit.app/Contents/MacOS")
+                .get().asFile
+
+            commandLine(
+                swiftCompiler.absolutePath,
+                "-O",
+                "-o", File(destination, "zillit-notify").absolutePath,
+                notifyHelperSource.absolutePath,
+                "-framework", "UserNotifications",
+                "-framework", "AppKit",
+            )
+        }
+    } else {
+        logger.lifecycle("No Swift compiler; packaging without the notification helper")
+        null
+    }
+
     val resignIdentity = providers.gradleProperty("zillitSigningIdentity")
 
     // Unsigned builds keep the old graph exactly — nothing to sign.
     val distributableReady = if (resignIdentity.isPresent) {
         tasks.register<Exec>("resignWithFrameworks") {
             dependsOn(copyCefFrameworks)
+            notifyHelper?.let { dependsOn(it) }
             description = "Signs what createDistributable missed, then re-seals the bundle."
 
             val app = layout.buildDirectory
@@ -250,6 +295,16 @@ if (jbrFrameworks.isDirectory) {
                     codesign --force --deep --options runtime --timestamp \
                         --entitlements "${'$'}entitlements" --sign "${'$'}identity" "${'$'}bundle"
                 done
+
+                # Signed under the app's own identifier, not its own: the
+                # notification daemon checks the caller's code identity against
+                # the bundle whose identity it claims, and refuses the request
+                # outright when they disagree.
+                helper="${'$'}app/Contents/MacOS/zillit-notify"
+                if [ -f "${'$'}helper" ]; then
+                    codesign --force --identifier com.zillit.desktop --options runtime \
+                        --timestamp --sign "${'$'}identity" "${'$'}helper"
+                fi
 
                 codesign --force --options runtime --timestamp \
                     --entitlements "${'$'}entitlements" --sign "${'$'}identity" "${'$'}app/Contents/runtime"

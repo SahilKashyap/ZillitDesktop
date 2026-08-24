@@ -2591,6 +2591,7 @@ private fun buildSettings(
             mail = preferences.observe(ZillitPreferences.NotifyMail),
             updates = preferences.observe(ZillitPreferences.NotifyUpdates),
             calls = preferences.observe(ZillitPreferences.NotifyCalls),
+            activity = preferences.observe(ZillitPreferences.NotifyActivity),
             setMuted = { muted ->
                 scope.launch { preferences.set(ZillitPreferences.MuteNotifications, muted) }
             },
@@ -2602,6 +2603,9 @@ private fun buildSettings(
                 scope.launch { preferences.set(ZillitPreferences.NotifyUpdates, on) }
             },
             setCalls = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyCalls, on) } },
+            setActivity = { on ->
+                scope.launch { preferences.set(ZillitPreferences.NotifyActivity, on) }
+            },
         ),
         // Clears the encrypted cache with the session — the dialog says so.
         signOut = { ready?.authRepository?.signOut() },

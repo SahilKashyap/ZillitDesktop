@@ -64,6 +64,7 @@ class SettingsViewModel(
         launch { notifications.mail.collect { on -> setState { copy(notifyMail = on) } } }
         launch { notifications.updates.collect { on -> setState { copy(notifyUpdates = on) } } }
         launch { notifications.calls.collect { on -> setState { copy(notifyCalls = on) } } }
+        launch { notifications.activity.collect { on -> setState { copy(notifyActivity = on) } } }
         launch { unitContext.collect(::onUnitContext) }
         // Only once there is something to show. The profile loads after the
         // window does, and an empty summary arriving first would blank a card
@@ -131,6 +132,10 @@ class SettingsViewModel(
             is SettingsEvent.NotifyCallsChanged -> {
                 setState { copy(notifyCalls = event.on) }
                 notifications.setCalls(event.on)
+            }
+            is SettingsEvent.NotifyActivityChanged -> {
+                setState { copy(notifyActivity = event.on) }
+                notifications.setActivity(event.on)
             }
 
             is SettingsEvent.UnitChanged -> changeUnit(event.unitId)

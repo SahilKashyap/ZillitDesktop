@@ -88,6 +88,7 @@ import com.zillit.desktop.feature.calls.data.FirestoreCallStatusPlane
 import com.zillit.desktop.feature.calls.data.NoopCallStatusPlane
 import com.zillit.desktop.feature.calls.domain.NoopCallEngine
 import com.zillit.desktop.core.socket.SocketIoClient
+import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.home.data.BadgeSourceImpl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -268,6 +269,52 @@ private suspend fun awsKeyPair(remoteConfig: RemoteConfigRepository): Pair<Strin
  * signing them out for it would be the app's worst behaviour at exactly the
  * wrong moment.
  */
+/**
+ * Tells the server who just connected.
+ *
+ * The handshake authenticates the socket; it does not put it in a room. The
+ * server learns which user and production a connection belongs to from an
+ * explicit `user:join`, and marks presence from `mark_online` — the pair iOS
+ * sends from its own connect handler (`ChatSocketHelper.emitUserJoinEvent`,
+ * then `emitForUserOnline`). Without them a socket connects, is acknowledged,
+ * and then receives nothing: chat arrivals, call invites, presence and every
+ * notification raised from them fail together, silently and with no error to
+ * point at.
+ *
+ * Sent on every Connected rather than once. A reconnect is a new socket as far
+ * as the server is concerned, with no memory of the rooms the old one joined,
+ * and this app reconnects on its own schedule (see ReconnectPolicy).
+ *
+ * `user:join` carries an empty payload — identity comes from the handshake
+ * headers, and iOS sends `[]` here too. `mark_online` carries the production,
+ * matching iOS's `["project_id": pId]`.
+ */
+private fun CoroutineScope.announceSelfOnSocketConnect(
+    socketClient: SocketIoClient,
+    activeProject: MutableStateFlow<com.zillit.desktop.feature.auth.domain.Project?>,
+) = launch {
+    socketClient.connectionState.collect { state ->
+        if (state !is SocketConnectionState.Connected) return@collect
+
+        // No production open means nothing to join; the next open reconnects.
+        val projectId = activeProject.value?.id ?: return@collect
+
+        socketClient.emit(
+            ZillitSocketEvents.Session.JoinUser,
+            kotlinx.serialization.json.JsonArray(emptyList()),
+            kotlinx.serialization.json.JsonArray.serializer(),
+        )
+        socketClient.emit(
+            ZillitSocketEvents.Session.MarkOnline,
+            kotlinx.serialization.json.buildJsonObject {
+                put("project_id", kotlinx.serialization.json.JsonPrimitive(projectId))
+            },
+            kotlinx.serialization.json.JsonObject.serializer(),
+        )
+        ZillitLog.i("Socket") { "announced user:join + mark_online" }
+    }
+}
+
 private fun CoroutineScope.reportSocketRejections(
     socketClient: SocketIoClient,
     sessionExpired: MutableSharedFlow<Unit>,
@@ -786,6 +833,10 @@ sealed interface AppGraph {
             // Rights are per-production and per-person, so the admin flag is
             // read at call time from whichever production is open.
             val activeProject = MutableStateFlow<com.zillit.desktop.feature.auth.domain.Project?>(null)
+
+            // Needs the production, so it waits for activeProject rather than
+            // sitting with the other socket wiring above.
+            appScope.announceSelfOnSocketConnect(socketClient, activeProject)
             val toolsRepository = ToolsRepositoryImpl(
                 apiClient = apiClient,
                 config = config,

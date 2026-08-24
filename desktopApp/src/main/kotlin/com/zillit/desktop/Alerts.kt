@@ -4,12 +4,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.window.TrayState
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.ZillitPreferences
 import com.zillit.desktop.core.notifications.DesktopNotification
 import com.zillit.desktop.core.notifications.NotificationCopy
 import com.zillit.desktop.core.notifications.Notifier
+import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.ui.ChatViewModel
@@ -55,6 +57,7 @@ fun IncomingAlerts(
     EditAlerts(ready, preferences, notifier, frame, chat, crewName)
     UpdateAlerts(ready, preferences, notifier, crewName)
     CallAlerts(ready, preferences, notifier)
+    ActivityAlerts(ready, preferences, notifier)
 }
 
 /**
@@ -246,3 +249,74 @@ private suspend fun com.zillit.desktop.feature.email.domain.EmailRepository.inbo
         ?.data
         ?.firstOrNull { it.name.equals(EmailFolder.INBOX, ignoreCase = true) }
         ?.unreadCount
+
+/**
+ * Everything else the production did — the phones' bell list, as banners: a
+ * purchase order approved, a document shared, an SOS raised.
+ *
+ * On the phones and the web these banners are FCM pushes; the socket's
+ * `notification:save` only feeds badges there. The desktop has no push channel
+ * (plan risk 15), so the same record is decoded off the socket instead — the
+ * banner that on every other platform the server composes remotely.
+ *
+ * Sections a dedicated alert above already covers are left out, or one chat
+ * message would banner twice — once from `private_chat`, once from its
+ * bell-list record. Not focus-suppressed, for UpdateAlerts' reason: there is
+ * no one screen that marks this activity "already seen".
+ */
+@Composable
+private fun ActivityAlerts(
+    ready: AppGraph.Ready,
+    preferences: PreferenceStore,
+    notifier: Notifier,
+) {
+    LaunchedEffect(ready) {
+        // A reconnect can replay a frame the socket already delivered; iOS
+        // dedupes the same way (a 60-second id memory in willPresent).
+        val recent = ArrayDeque<String>()
+
+        ready.socketEvents.on(ZillitSocketEvents.Badges.Save).collect { message ->
+            if (!preferences.get(ZillitPreferences.NotifyActivity)) return@collect
+
+            val banner = ready.notificationsRepository.banner(message.payload) ?: return@collect
+            if (banner.section in SECTIONS_WITH_OWN_ALERTS) {
+                ZillitLog.d(ACTIVITY_TAG) { "left to the ${banner.section} alert" }
+                return@collect
+            }
+            if (banner.id in recent) {
+                ZillitLog.d(ACTIVITY_TAG) { "duplicate frame for ${banner.section}" }
+                return@collect
+            }
+
+            recent.addLast(banner.id)
+            if (recent.size > RECENT_ACTIVITY_IDS) recent.removeFirst()
+
+            ZillitLog.i(ACTIVITY_TAG) { "posting a ${banner.section} banner" }
+            notifier.post(NotificationCopy.activity(area = banner.area, body = banner.body))
+        }
+    }
+}
+
+/**
+ * The wire sections whose banners already come from a dedicated alert above:
+ * chat and calls ride `cnc_label`, mail `email_label`, notice boards
+ * `home_label` — and the two budget sections, because a budget chat message
+ * travels the same `private_chat`/`group_chat` events MessageAlerts banners
+ * (iOS handles budget tools inside its private_chat handler, and its bell
+ * records for them carry these sections), so letting them through here would
+ * banner one message twice. `group_refresh` is the server's own refresh
+ * marker, not an event anyone needs told about.
+ */
+private val SECTIONS_WITH_OWN_ALERTS = setOf(
+    "cnc_label",
+    "email_label",
+    "home_label",
+    "group_refresh",
+    "main_budget_label",
+    "department_budget_label",
+)
+
+/** Enough ids to outlive any reconnect replay without growing forever. */
+private const val RECENT_ACTIVITY_IDS = 64
+
+private const val ACTIVITY_TAG = "ActivityAlerts"

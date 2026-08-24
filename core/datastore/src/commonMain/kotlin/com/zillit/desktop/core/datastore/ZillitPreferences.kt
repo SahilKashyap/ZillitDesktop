@@ -103,6 +103,14 @@ object ZillitPreferences {
     val NotifyCalls = PreferenceKey.BooleanKey("notify.calls", true, PreferenceScope.User)
 
     /**
+     * Everything else the production did — the phones' bell list, as banners:
+     * a purchase order approved, a document shared, an SOS raised. Chat, mail,
+     * notices and calls stay on their own switches above; this one covers the
+     * sections none of them owns.
+     */
+    val NotifyActivity = PreferenceKey.BooleanKey("notify.activity", true, PreferenceScope.User)
+
+    /**
      * Calendar occurrences already reminded about, so restarting the app inside
      * a reminder's grace window does not deliver it twice. Pruned on write.
      */
@@ -154,7 +162,7 @@ object ZillitPreferences {
         WorkspaceLayoutMode, RestoreWorkspaceOnLaunch,
         AppLockEnabled, IdleLockMinutes,
         MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired,
-        NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls,
+        NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity,
         LastProjectId, LastUnitId,
         BoxScheduleView, BoxScheduleCalendarMode, BoxScheduleListMode,
         EmailTrailingEnabled, ToolGroupOrder, RecentMentions, ChatFavourites,

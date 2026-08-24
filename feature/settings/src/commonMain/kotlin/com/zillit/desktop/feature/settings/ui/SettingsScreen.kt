@@ -339,6 +339,19 @@ private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent
         }
 
         SettingRow(
+            title = "Production activity",
+            detail = "A banner for everything else the production did — a " +
+                "purchase order approved, a document shared, an SOS raised. " +
+                "The bell list's rows, as they happen.",
+        ) {
+            ZillitCheckbox(
+                checked = state.notifyActivity,
+                onCheckedChange = { onEvent(SettingsEvent.NotifyActivityChanged(it)) },
+                label = if (state.notifyActivity) "On" else "Off",
+            )
+        }
+
+        SettingRow(
             title = "Calls",
             // Says plainly that this one outranks the mute above, because a
             // missed call is the one notification with someone waiting on it.

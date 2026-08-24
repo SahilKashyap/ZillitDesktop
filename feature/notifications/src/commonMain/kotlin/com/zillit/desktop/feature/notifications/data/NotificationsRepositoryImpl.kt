@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.notifications.data
 
 import com.zillit.desktop.core.common.MessageElement
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
@@ -11,12 +12,14 @@ import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.feature.notifications.domain.ActivityBanner
 import com.zillit.desktop.feature.notifications.domain.NotificationDecoder
 import com.zillit.desktop.feature.notifications.domain.NotificationTarget
 import com.zillit.desktop.feature.notifications.domain.NotificationWireText
 import com.zillit.desktop.feature.notifications.domain.NotificationsRepository
 import com.zillit.desktop.feature.notifications.domain.ProjectNotification
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -139,12 +142,58 @@ class NotificationsRepositoryImpl(
                 }
         }
 
+    override fun banner(payload: JsonElement?): ActivityBanner? = bannerFrom(payload, decoder)
+
     private fun rejected(envelope: ApiEnvelope): ZillitError =
         ZillitError.Http(status = HTTP_OK, serverMessage = envelope.message ?: "something_went_wrong")
 
     private companion object {
         const val HTTP_OK = 200
     }
+}
+
+/**
+ * One `notification:save` frame to the banner it asks for, or null.
+ *
+ * Top-level like [readNotification], and for the same reason: the wire
+ * contract is the part worth pinning in tests, and it needs no transport.
+ *
+ * The record's own reasons to stay quiet come first. iOS's socket handler
+ * drops `ignore` and `self` (ProjectObserver.swift:6787-6791); the `silent`
+ * drop lives on its banner paths instead (AppDelegate.swift:1620 and the
+ * notification extension's shouldCountForBadge), and banners are what this
+ * feeds — so all three apply. `is_global` is deliberately not consulted: it
+ * places a row on the global bell page, while the phones banner every
+ * non-silent push regardless of it.
+ */
+internal fun bannerFrom(payload: JsonElement?, decoder: NotificationDecoder): ActivityBanner? {
+    val row = payload?.unwrapRecord() ?: return dropped("no record in the envelope", section = null)
+    val section = row.text("section")
+
+    // Every drop is named, because a suppressed banner and a broken pipeline
+    // look identical from the outside — that ambiguity has already cost a
+    // debugging day. The section is a label key and safe to log; the payload
+    // is not (plan §8.4).
+    if (row.bool("silent")) return dropped("silent", section)
+    val reference = row["reference_data"] as? JsonObject
+    if (reference?.bool("ignore") == true) return dropped("flagged ignore", section)
+    if (reference?.bool("self") == true) return dropped("own action", section)
+
+    val record = readNotification(row, decoder) ?: return dropped("no _id", section)
+    if (record.text.isBlank()) return dropped("no words after decoding", section)
+
+    return ActivityBanner(
+        id = record.id,
+        section = record.target.section,
+        area = record.pathLabel,
+        body = record.text,
+    )
+}
+
+private fun dropped(reason: String, section: String?): ActivityBanner? {
+    val where = section?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
+    ZillitLog.d("Notifications") { "notification:save stays quiet: $reason$where" }
+    return null
 }
 
 /**
@@ -211,3 +260,29 @@ internal fun JsonObject.long(name: String): Long? =
 
 internal fun JsonObject.bool(name: String): Boolean =
     (field(name) as? JsonPrimitive)?.content.equals("true", ignoreCase = true)
+
+/**
+ * Digs the record out of the socket envelope.
+ *
+ * The same tolerance as Home's `unwrapData` (`HomeRealtimeSource.kt`), which
+ * cannot be shared across the module boundary: the record itself, `{"data":
+ * {...}}`, the data as a JSON **string** (the server does send that), or an
+ * array's first record. Generosity here is cheaper than a banner that simply
+ * never appears.
+ */
+private fun JsonElement.unwrapRecord(): JsonObject? {
+    // A record that arrived bare wins outright — before preferring "data",
+    // which a record is free to carry as an ordinary field. (Home's helper
+    // has the opposite order; for board events the envelope always wraps.)
+    if (this is JsonObject && containsKey("_id")) return this
+
+    val inner = (this as? JsonObject)?.get("data") ?: this
+    return when (inner) {
+        is JsonObject -> if (inner.containsKey("_id")) inner else inner["data"]?.unwrapRecord()
+        is JsonArray -> inner.firstOrNull()?.unwrapRecord()
+        is JsonPrimitive ->
+            if (!inner.isString) null
+            else runCatching { Json.parseToJsonElement(inner.content) }.getOrNull()?.unwrapRecord()
+        else -> null
+    }
+}

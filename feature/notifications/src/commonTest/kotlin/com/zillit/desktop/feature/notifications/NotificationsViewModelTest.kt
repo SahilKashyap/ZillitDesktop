@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.notifications
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.notifications.domain.ActivityBanner
 import com.zillit.desktop.feature.notifications.domain.NotificationTarget
 import com.zillit.desktop.feature.notifications.domain.NotificationsRepository
 import com.zillit.desktop.feature.notifications.domain.ProjectNotification
@@ -45,6 +46,9 @@ class NotificationsViewModelTest {
         var deletedAll = false
         var pageSize = 50
         var failDelete = false
+
+        // The list screen under test never decodes socket frames.
+        override fun banner(payload: kotlinx.serialization.json.JsonElement?): ActivityBanner? = null
 
         override suspend fun page(beforeMillis: Long, newest: Boolean): ZillitResult<List<ProjectNotification>> {
             pageCursors += beforeMillis
