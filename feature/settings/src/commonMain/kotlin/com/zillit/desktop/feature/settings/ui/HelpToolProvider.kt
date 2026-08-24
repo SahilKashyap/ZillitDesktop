@@ -2,11 +2,8 @@ package com.zillit.desktop.feature.settings.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpSize
@@ -16,6 +13,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -68,12 +66,11 @@ internal val HELP_ENTRIES: List<HelpEntry> = listOf(
 
 @Composable
 internal fun HelpScreen(onOpenExternal: (String) -> Unit, onContactSupport: () -> Unit) {
-    Column(
+    ZillitScrollColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(ZillitTheme.colors.canvas)
-            .verticalScroll(rememberScrollState())
-            .padding(ZillitTheme.spacing.xl),
+            .background(ZillitTheme.colors.canvas),
+        contentPadding = PaddingValues(ZillitTheme.spacing.xl),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitPageHeader(

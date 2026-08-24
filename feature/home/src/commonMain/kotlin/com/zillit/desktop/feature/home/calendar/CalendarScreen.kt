@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -36,7 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
@@ -564,9 +563,8 @@ private fun DayColumn(state: CalendarUiState, date: LocalDate) {
         }
 
         val agendaState = rememberLazyListState()
-        LazyColumn(
+        ZillitLazyColumn(
             state = agendaState,
-            modifier = Modifier.then(rememberWheelScroll(agendaState)),
             contentPadding = PaddingValues(horizontal = PAGE_PADDING),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {

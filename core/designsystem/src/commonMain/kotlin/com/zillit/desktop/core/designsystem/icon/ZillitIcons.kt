@@ -319,6 +319,10 @@ object ZillitIcons {
         curveTo(16f, 14f, 20f, 16f, 20f, 21f)
     }
 
+    val ChevronUp: ImageVector = stroked("ChevronUp") {
+        moveTo(6f, 15f); lineTo(12f, 9f); lineTo(18f, 15f)
+    }
+
     val ChevronDown: ImageVector = stroked("ChevronDown") {
         moveTo(6f, 9f); lineTo(12f, 15f); lineTo(18f, 9f)
     }

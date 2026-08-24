@@ -13,9 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
@@ -33,8 +31,9 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
+import com.zillit.desktop.core.designsystem.component.ZillitLazyVerticalGrid
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.home.domain.LibraryEntry
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
@@ -136,10 +135,10 @@ private fun MediaTab(
         return
     }
     val grid = rememberLazyGridState()
-    LazyVerticalGrid(
+    ZillitLazyVerticalGrid(
         columns = GridCells.Fixed(MEDIA_COLUMNS),
         state = grid,
-        modifier = Modifier.fillMaxSize().then(rememberWheelScroll(grid)),
+        modifier = Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
@@ -203,7 +202,7 @@ private fun DocsTab(entries: List<LibraryEntry.Document>, onOpen: (noticeId: Str
         return
     }
     val list = rememberLazyListState()
-    LazyColumn(state = list, modifier = Modifier.fillMaxSize().then(rememberWheelScroll(list))) {
+    ZillitLazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
         items(entries, key = { it.notice.id }) { entry ->
             val kind = fileKindOf(entry.attachment.fileName, entry.attachment.contentSubtype)
             LibraryRow(
@@ -239,7 +238,7 @@ private fun LinksTab(
         return
     }
     val list = rememberLazyListState()
-    LazyColumn(state = list, modifier = Modifier.fillMaxSize().then(rememberWheelScroll(list))) {
+    ZillitLazyColumn(state = list, modifier = Modifier.fillMaxSize()) {
         items(entries, key = { it.notice.id }) { entry ->
             val author = resolveAuthor(entry.notice.authorId) ?: entry.notice.authorName
             LibraryRow(

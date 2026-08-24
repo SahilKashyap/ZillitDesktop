@@ -27,13 +27,13 @@ import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.accounthub.domain.Companies
 import com.zillit.desktop.feature.accounthub.domain.IsoDate
@@ -109,8 +109,8 @@ fun ProductionSetupPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> 
             },
         )
 
-        Column(
-            modifier = Modifier.fillMaxWidth().weight(1f).zillitVerticalScroll(),
+        ZillitScrollColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
             when (setup.tab) {

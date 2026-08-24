@@ -32,6 +32,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitFileBadge
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
@@ -39,7 +40,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.textColumn
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.drive.domain.DriveAction
 import com.zillit.desktop.feature.drive.domain.DriveGrouping
@@ -349,7 +349,7 @@ private fun ColumnScope.GridView(state: DriveUiState, onEvent: (DriveEvent) -> U
         // and a lazy grid inside it would be measured against an infinite
         // constraint, which Compose refuses outright. Card counts here are one
         // page, not the whole drive.
-        Column(modifier = Modifier.fillMaxSize().zillitVerticalScroll()) {
+        ZillitScrollColumn(modifier = Modifier.fillMaxSize()) {
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),

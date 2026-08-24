@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
@@ -60,7 +59,7 @@ import androidx.compose.ui.draw.rotate
 import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
+import com.zillit.desktop.core.designsystem.component.ZillitLazyVerticalGrid
 import com.zillit.desktop.feature.home.domain.ToolGroup
 import com.zillit.desktop.feature.home.domain.ToolPresentation
 
@@ -464,15 +463,13 @@ private fun ToolGrid(
 ) {
     val gridState = rememberLazyGridState()
 
-    LazyVerticalGrid(
+    ZillitLazyVerticalGrid(
         // Adaptive rather than a fixed column count: this is a desktop window
         // that can be a third of a screen or all of it, and a fixed grid would
         // be either cramped or a row of stamps.
         columns = GridCells.Adaptive(minSize = TILE_MIN),
         state = gridState,
-        // A production can switch on forty tools, and at the platform's default
-        // wheel distance the bottom of that grid is eighty notches away.
-        modifier = Modifier.fillMaxSize().then(rememberWheelScroll(gridState)),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(PAGE_PADDING),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),

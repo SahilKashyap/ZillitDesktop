@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -24,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.feature.calls.domain.CallCrewEntry
@@ -84,7 +84,7 @@ internal fun CallAddPeoplePanel(
                 )
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            ZillitLazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 items(shown, key = CallCrewEntry::userId) { entry ->
                     CrewRow(entry, onPick)
                 }

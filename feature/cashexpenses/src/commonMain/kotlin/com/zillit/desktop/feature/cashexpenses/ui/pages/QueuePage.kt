@@ -2,19 +2,18 @@ package com.zillit.desktop.feature.cashexpenses.ui.pages
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ColumnWidth
@@ -179,11 +178,9 @@ private fun QueueHeader(state: CashUiState, count: Int, onEvent: (CashEvent) -> 
 @Suppress("LongMethod") // One batch, top to bottom; the order is the reading order.
 @Composable
 private fun BatchDetail(state: CashUiState, batch: ClaimBatch, onEvent: (CashEvent) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .zillitVerticalScroll()
-            .padding(ZillitTheme.spacing.lg),
+    ZillitScrollColumn(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(ZillitTheme.spacing.lg),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

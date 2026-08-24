@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -22,7 +23,6 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ColumnWidth
@@ -37,6 +37,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitErrorState
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
@@ -133,11 +134,9 @@ private fun OverviewPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val committed = state.committedByCurrency
     val open = state.orders.count { !it.status.isFinished }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .zillitVerticalScroll()
-            .padding(ZillitTheme.spacing.xl),
+    ZillitScrollColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(ZillitTheme.spacing.xl),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
@@ -317,11 +316,9 @@ private fun OrdersPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
 @Suppress("LongMethod") // One order, top to bottom; the order is the reading order.
 @Composable
 private fun OrderDetail(state: PoUiState, order: PurchaseOrder, onEvent: (PoEvent) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .zillitVerticalScroll()
-            .padding(ZillitTheme.spacing.lg),
+    ZillitScrollColumn(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(ZillitTheme.spacing.lg),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -518,11 +515,9 @@ private fun OrderActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEve
 private fun RaisePage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val draft = state.draft
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .zillitVerticalScroll()
-            .padding(ZillitTheme.spacing.xl),
+    ZillitScrollColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(ZillitTheme.spacing.xl),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
     ) {
         ZillitSectionCard(title = "Who and what", icon = ZillitIcons.File) {

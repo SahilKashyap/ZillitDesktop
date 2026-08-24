@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -28,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ColumnWidth
@@ -43,6 +43,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitErrorState
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
@@ -146,11 +147,9 @@ fun DealMemoScreen(
 private fun MyDealPage(state: DealUiState, onEvent: (DealEvent) -> Unit) {
     val deal = state.myDeal
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .zillitVerticalScroll()
-            .padding(ZillitTheme.spacing.xl),
+    ZillitScrollColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(ZillitTheme.spacing.xl),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
     ) {
         if (deal == null) {
@@ -159,7 +158,7 @@ private fun MyDealPage(state: DealUiState, onEvent: (DealEvent) -> Unit) {
                 message = "Your terms appear here once the production office writes them up.",
                 icon = ZillitIcons.File,
             )
-            return@Column
+            return@ZillitScrollColumn
         }
 
         if (deal.awaitingReacknowledgement) {
@@ -334,11 +333,9 @@ private fun DealsPage(state: DealUiState, onEvent: (DealEvent) -> Unit) {
 @Suppress("LongMethod") // One deal, top to bottom; the order is the reading order.
 @Composable
 private fun DealDetail(state: DealUiState, deal: Deal, onEvent: (DealEvent) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .zillitVerticalScroll()
-            .padding(ZillitTheme.spacing.lg),
+    ZillitScrollColumn(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(ZillitTheme.spacing.lg),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -423,11 +420,9 @@ private fun DealDetail(state: DealUiState, deal: Deal, onEvent: (DealEvent) -> U
 private fun CreatePage(state: DealUiState, onEvent: (DealEvent) -> Unit) {
     val draft = state.draft
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .zillitVerticalScroll()
-            .padding(ZillitTheme.spacing.xl),
+    ZillitScrollColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(ZillitTheme.spacing.xl),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
     ) {
         ZillitSectionCard(title = "Who the deal is for", icon = ZillitIcons.Users) {

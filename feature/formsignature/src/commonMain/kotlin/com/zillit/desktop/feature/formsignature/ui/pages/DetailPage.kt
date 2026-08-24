@@ -6,7 +6,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -28,9 +27,9 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.formsignature.domain.PdfPageImage
 import com.zillit.desktop.feature.formsignature.domain.SignSpot
@@ -118,8 +117,8 @@ private fun DetailBody(detail: DetailState, onEvent: (FormSignatureEvent) -> Uni
 
         detail.loadingPages -> ZillitSpinner()
 
-        else -> Column(
-            modifier = Modifier.fillMaxWidth().zillitVerticalScroll(),
+        else -> ZillitScrollColumn(
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {

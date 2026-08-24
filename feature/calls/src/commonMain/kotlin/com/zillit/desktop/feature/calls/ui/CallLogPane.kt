@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,6 +35,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -196,7 +196,7 @@ private fun CallLogList(
     nameFor: (String) -> String?,
     nowMillis: Long,
 ) {
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+    ZillitLazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         items(shown, key = CallLogEntry::callUuid) { entry ->
             CallLogRow(
                 entry = entry,

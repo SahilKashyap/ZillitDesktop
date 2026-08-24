@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -38,7 +37,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
 import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
@@ -51,6 +49,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -484,9 +483,8 @@ private fun RecentsList(
 
     val nowMillis = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
     val roomsState = rememberLazyListState()
-    LazyColumn(
+    ZillitLazyColumn(
         state = roomsState,
-        modifier = Modifier.then(rememberWheelScroll(roomsState)),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
         items(rows, key = RecentRow::id) { row ->
@@ -662,9 +660,8 @@ private fun CrewList(
     onToggleFavourite: (String) -> Unit,
 ) {
     val crewState = rememberLazyListState()
-    LazyColumn(
+    ZillitLazyColumn(
         state = crewState,
-        modifier = Modifier.then(rememberWheelScroll(crewState)),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
         items(crew.sortedBy { it.fullName.lowercase() }, key = CrewContact::userId) { contact ->

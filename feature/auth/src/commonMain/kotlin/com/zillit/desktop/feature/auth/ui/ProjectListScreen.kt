@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
@@ -44,7 +43,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ThemeMode
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
 import com.zillit.desktop.core.localization.LabelDictionary
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -54,6 +52,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitLazyVerticalGrid
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
@@ -309,10 +308,10 @@ private fun FilterBar(state: AuthUiState, onEvent: (AuthEvent) -> Unit) {
 @Composable
 private fun ProjectGrid(state: AuthUiState, onEvent: (AuthEvent) -> Unit) {
     val gridState = rememberLazyGridState()
-    LazyVerticalGrid(
+    ZillitLazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = CARD_MIN_WIDTH),
         state = gridState,
-        modifier = Modifier.fillMaxSize().then(rememberWheelScroll(gridState)),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
             start = PAGE_PADDING,
             end = PAGE_PADDING,

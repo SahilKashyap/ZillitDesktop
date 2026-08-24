@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
@@ -50,7 +49,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitFileBadge
@@ -580,12 +579,11 @@ private fun Messages(
         if (index >= 0) scope.launch { listState.animateScrollToItem(index) }
     }
 
-    LazyColumn(
+    ZillitLazyColumn(
         state = listState,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = ZillitTheme.spacing.md)
-            .then(rememberWheelScroll(listState)),
+            .padding(horizontal = ZillitTheme.spacing.md),
         // Newest at index 0, pinned to the visual bottom — see the note on
         // FollowLatestReversed above. The rows are built reversed to match.
         reverseLayout = true,

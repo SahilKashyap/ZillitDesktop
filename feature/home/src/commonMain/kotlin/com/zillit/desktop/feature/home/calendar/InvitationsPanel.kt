@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -27,7 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
@@ -71,11 +70,9 @@ internal fun InvitationsPanel(state: CalendarUiState, onEvent: (CalendarEvent2Ev
             state.invitations.isEmpty() -> EmptyLine(state.invitationStatus.emptyLine())
             else -> {
                 val inviteState = rememberLazyListState()
-                LazyColumn(
+                ZillitLazyColumn(
                     state = inviteState,
-                    modifier = Modifier
-                        .heightIn(max = PANEL_LIST_HEIGHT)
-                        .then(rememberWheelScroll(inviteState)),
+                    modifier = Modifier.heightIn(max = PANEL_LIST_HEIGHT),
                     verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 ) {
                     items(state.invitations, key = EventInvitation::id) { invitation ->

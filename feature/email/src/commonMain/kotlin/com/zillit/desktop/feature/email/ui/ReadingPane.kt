@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Spacer
@@ -36,11 +35,11 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitFileBadge
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -141,9 +140,9 @@ private fun MessageTrail(
     DetailToolbar(newest, state, onEvent)
 
     val paneState = rememberLazyListState()
-    LazyColumn(
+    ZillitLazyColumn(
         state = paneState,
-        modifier = Modifier.fillMaxSize().then(rememberWheelScroll(paneState)),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(PANE_PADDING),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {

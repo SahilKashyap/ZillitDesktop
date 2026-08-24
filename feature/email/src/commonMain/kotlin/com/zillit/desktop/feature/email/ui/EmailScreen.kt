@@ -21,12 +21,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
@@ -47,8 +44,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -56,6 +51,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPaneSplitter
@@ -235,13 +232,12 @@ private fun FolderSidebar(
 ) {
     val colors = ZillitTheme.colors
 
-    Column(
+    ZillitScrollColumn(
         modifier = Modifier
             .width(SIDEBAR_WIDTH)
             .fillMaxHeight()
-            .background(colors.surfaceSunken)
-            .zillitVerticalScroll()
-            .padding(vertical = ZillitTheme.spacing.sm),
+            .background(colors.surfaceSunken),
+        contentPadding = PaddingValues(vertical = ZillitTheme.spacing.sm),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
         // The web's one filled control: "New Email" behind a pencil
@@ -693,9 +689,9 @@ private fun MessageList(
         contentKey = state.selectedFolder,
     )
 
-    LazyColumn(
+    ZillitLazyColumn(
         state = messageState,
-        modifier = Modifier.fillMaxSize().then(rememberWheelScroll(messageState)),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = ZillitTheme.spacing.xs),
     ) {
 

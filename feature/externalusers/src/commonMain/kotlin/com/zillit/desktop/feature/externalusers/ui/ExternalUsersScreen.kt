@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
@@ -34,12 +33,12 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.externalusers.domain.CREW_TYPE
@@ -150,9 +149,9 @@ private fun Roster(state: ExternalUsersUiState, onEvent: (ExternalUsersEvent) ->
 private fun UserRows(state: ExternalUsersUiState, onEvent: (ExternalUsersEvent) -> Unit) {
     val listState = rememberLazyListState()
 
-    LazyColumn(
+    ZillitLazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize().then(rememberWheelScroll(listState)),
+        modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         items(state.visible, key = ExternalUser::id) { user ->

@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
@@ -21,11 +20,11 @@ import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.settings.admin.domain.AccessType
 import com.zillit.desktop.feature.settings.admin.domain.CrewMember
@@ -75,9 +74,9 @@ fun CrewPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> U
 
             else -> {
                 val listState = rememberLazyListState()
-                LazyColumn(
+                ZillitLazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxWidth().then(rememberWheelScroll(listState)),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 ) {
                     items(rows, key = { it.userId }) { person ->
@@ -180,7 +179,7 @@ private fun CrewPicker(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modif
         }
 
         val listState = rememberLazyListState()
-        LazyColumn(state = listState, modifier = Modifier.then(rememberWheelScroll(listState))) {
+        ZillitLazyColumn(state = listState) {
             items(rows, key = { it.userId }) { person ->
                 SelectableRow(
                     selected = person.userId == state.selection.userId,
@@ -234,9 +233,9 @@ private fun RightsPanel(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modi
     }
 
     val listState = rememberLazyListState()
-    LazyColumn(
+    ZillitLazyColumn(
         state = listState,
-        modifier = modifier.then(rememberWheelScroll(listState)),
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         RightsSection.entries.forEach { section ->

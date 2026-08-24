@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -160,15 +161,18 @@ private fun ColumnScope.ShellBody(
     scrollable: Boolean,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f, fill = false)
-            .then(if (scrollable) Modifier.zillitVerticalScroll() else Modifier)
-            .padding(ZillitTheme.spacing.lg),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        content = content,
-    )
+    val scroll = rememberScrollState()
+    Box(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (scrollable) Modifier.zillitVerticalScroll(scroll) else Modifier)
+                .padding(ZillitTheme.spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            content = content,
+        )
+        if (scrollable) ZillitScrollRail(scroll, Modifier.align(Alignment.CenterEnd))
+    }
 }
 
 /** The pinned action row and its rule. See the `actions` parameter. */

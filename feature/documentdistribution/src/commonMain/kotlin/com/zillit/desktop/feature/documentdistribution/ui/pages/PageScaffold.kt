@@ -3,12 +3,13 @@ package com.zillit.desktop.feature.documentdistribution.ui.pages
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 
 /**
  * A page whose own content scrolls — a listing, a table.
@@ -35,11 +36,9 @@ fun ScrollingPage(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .zillitVerticalScroll()
-            .padding(ZillitTheme.spacing.xl),
+    ZillitScrollColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(ZillitTheme.spacing.xl),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         content = content,
     )

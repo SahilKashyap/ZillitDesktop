@@ -13,10 +13,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
@@ -34,12 +34,12 @@ import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.assetreport.domain.AssetCategory
 import com.zillit.desktop.feature.assetreport.domain.AssetLine
@@ -83,9 +83,9 @@ private fun TablePage(state: AssetUiState, onEvent: (AssetEvent) -> Unit) {
             state.visible.isEmpty() -> Centred("No assets match your filters.")
             else -> {
                 val listState = rememberLazyListState()
-                LazyColumn(
+                ZillitLazyColumn(
                     state = listState,
-                    modifier = Modifier.weight(1f).then(rememberWheelScroll(listState)),
+                    modifier = Modifier.weight(1f),
                 ) {
                     items(state.visible, key = AssetLine::lineItemId) { line ->
                         LineRow(line, state) { onEvent(AssetEvent.Open(line.lineItemId)) }
@@ -311,11 +311,9 @@ private fun DetailPage(detail: AssetDetail, state: AssetUiState, onEvent: (Asset
     val colors = ZillitTheme.colors
     val line = detail.line
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .zillitVerticalScroll()
-            .padding(ZillitTheme.spacing.md),
+    ZillitScrollColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         DetailHeading(detail, state, onEvent)

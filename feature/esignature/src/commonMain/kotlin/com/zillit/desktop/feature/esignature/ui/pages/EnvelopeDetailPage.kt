@@ -29,13 +29,13 @@ import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
-import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.esignature.domain.EnvelopeField
 import com.zillit.desktop.feature.esignature.domain.EnvelopeStatus
@@ -97,8 +97,8 @@ internal fun EnvelopeDetailPage(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
     ) {
-        Column(
-            modifier = Modifier.weight(1f).zillitVerticalScroll(),
+        ZillitScrollColumn(
+            modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -235,8 +235,8 @@ private fun TrackerRail(
     onEvent: (EsignEvent) -> Unit,
 ) {
     val envelope = detail.envelope
-    Column(
-        modifier = Modifier.width(RAIL_WIDTH.dp).zillitVerticalScroll(),
+    ZillitScrollColumn(
+        modifier = Modifier.width(RAIL_WIDTH.dp),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
     ) {
         ZillitSectionCard(title = "Status", icon = ZillitIcons.Info) {

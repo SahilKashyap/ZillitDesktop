@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
@@ -43,7 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.zillitHorizontalScroll
 import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
@@ -701,11 +700,9 @@ private fun ReadByContent(
                 )
             } else {
                 val readByState = rememberLazyListState()
-                LazyColumn(
+                ZillitLazyColumn(
                     state = readByState,
-                    modifier = Modifier
-                        .heightIn(max = READ_BY_LIST_HEIGHT)
-                        .then(rememberWheelScroll(readByState)),
+                    modifier = Modifier.heightIn(max = READ_BY_LIST_HEIGHT),
                 ) {
                     items(rows, key = { it.userId }) { receipt ->
                         ReceiptRow(receipt, resolveAuthor, loadAvatar)
@@ -1562,9 +1559,9 @@ private fun NoticeBoard(
         if (index >= 0) listState.animateScrollToItem(index)
     }
 
-    LazyColumn(
+    ZillitLazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize().then(rememberWheelScroll(listState)),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(PAGE_PADDING),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {

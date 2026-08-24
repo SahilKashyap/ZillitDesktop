@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
@@ -28,10 +27,10 @@ import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.distribution.domain.DistributionSection
 import com.zillit.desktop.feature.distribution.domain.DistributionUnit
@@ -103,9 +102,9 @@ private fun Roster(state: DistributionUiState, onEvent: (DistributionEvent) -> U
             )
         }
 
-        LazyColumn(
+        ZillitLazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().then(rememberWheelScroll(listState)),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
         ) {
             items(state.listed, key = DistributionUser::userId) { user ->
@@ -181,9 +180,9 @@ private fun AccessPanel(state: DistributionUiState, onEvent: (DistributionEvent)
         }
 
         val listState = rememberLazyListState()
-        LazyColumn(
+        ZillitLazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().then(rememberWheelScroll(listState)),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
         ) {
             items(rows, key = DistributionUnit::unitId) { unit ->
