@@ -235,7 +235,7 @@ if (jbrFrameworks.isDirectory) {
             description = "Compiles the macOS notification helper into the app bundle."
 
             val destination = layout.buildDirectory
-                .dir("compose/binaries/main/app/Zillit.app/Contents/MacOS")
+                .dir("compose/binaries/main/app/$desktopPackageName.app/Contents/MacOS")
                 .get().asFile
 
             commandLine(

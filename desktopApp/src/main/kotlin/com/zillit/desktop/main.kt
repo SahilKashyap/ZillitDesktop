@@ -1949,6 +1949,8 @@ private fun rememberAppViewModels(
             chat = ready?.let {
                 ChatViewModel(
                     repository = it.chatRepository,
+                    presence = it.chatPresence,
+                    presenceProjectId = { it.projectContext?.context?.value?.project?.projectId },
                     nowMillis = System::currentTimeMillis,
                     newUniqueId = { UUID.randomUUID().toString() },
                     offline = it.offlineSupport,

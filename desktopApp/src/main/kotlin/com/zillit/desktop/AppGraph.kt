@@ -443,6 +443,8 @@ sealed interface AppGraph {
          */
         val noticeDecryptor: NoticeDecryptor,
         val chatRepository: ChatRepository,
+        /** The chat header's green-dot feed; null without Firebase configuration. */
+        val chatPresence: com.zillit.desktop.feature.chat.data.DevicePresenceSource?,
         /** The notification list's source — see `NotificationsToolProvider`. */
         val notificationsRepository: NotificationsRepository,
         val homeRealtime: HomeRealtimeSource,
@@ -883,6 +885,18 @@ sealed interface AppGraph {
 
             // Direct messages: history over REST on the chat host, live
             // traffic on the same socket, bodies AES-encrypted like notices.
+            // The chat header's presence feed. The RTDB address follows the
+            // Firebase project the same way both web configs do
+            // (`<project>-default-rtdb.firebaseio.com`), so the existing pair
+            // in zillit.properties is all the configuration it needs. Rides
+            // the plain client: Google must never see the Zillit headers.
+            val chatPresence = config.firebase?.let { fb ->
+                com.zillit.desktop.feature.chat.data.DevicePresenceSource(
+                    httpClient = storageClient,
+                    databaseUrl = "https://${fb.projectId}-default-rtdb.firebaseio.com",
+                )
+            }
+
             val chatRepository = ChatRepositoryImpl(
                 apiClient = apiClient,
                 config = config,
@@ -994,6 +1008,7 @@ sealed interface AppGraph {
                 notificationsRepository = notificationsRepository,
                 noticeDecryptor = noticeDecryptor,
                 chatRepository = chatRepository,
+                chatPresence = chatPresence,
                 homeRealtime = homeRealtime,
                 emailRealtime = EmailRealtimeSource(socketEvents),
                 calendarRepository = calendarRepository,

@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.chat.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -261,13 +262,31 @@ private fun ChatReplyBar(parent: ChatMessage, authorLabel: String, onCancel: () 
 }
 
 /**
- * Who the thread is with: face, name, where they sit — and the two calls.
- *
- * The face is the loaded avatar, not initials: the header is this pane's one
- * fixed landmark, and it should look like the person. The call buttons are
- * tinted discs rather than bare glyphs — they are the header's two actions,
- * and the close beside them is not one.
+ * Green dot and the word, under the name — the same signal iOS's chat header
+ * shows as green "Online" text and the web's shows as a green avatar dot.
+ * Silent when offline or unknown: the header already carries a last-entry
+ * line elsewhere, and a grey "offline" would just be furniture.
  */
+@Composable
+private fun OnlineLine(state: ChatUiState) {
+    if (!state.peerOnline || state.peerIsGroup) return
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        Box(
+            Modifier
+                .size(ONLINE_DOT)
+                .background(ZillitTheme.colors.success, CircleShape),
+        )
+        ZillitText(
+            text = "Online",
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.success,
+        )
+    }
+}
+
 /**
  * "Disconnected", in red, under a peer who left the production. Their
  * history stays readable, but the composer below is gone — Android's
@@ -284,6 +303,14 @@ private fun DisconnectedLine(state: ChatUiState, peer: com.zillit.desktop.featur
     }
 }
 
+/**
+ * Who the thread is with: face, name, where they sit — and the two calls.
+ *
+ * The face is the loaded avatar, not initials: the header is this pane's one
+ * fixed landmark, and it should look like the person. The call buttons are
+ * tinted discs rather than bare glyphs — they are the header's two actions,
+ * and the close beside them is not one.
+ */
 @Composable
 private fun ThreadHeader(
     state: ChatUiState,
@@ -308,6 +335,7 @@ private fun ThreadHeader(
         ZillitAvatar(name = peer.fullName, image = face, size = HEADER_AVATAR)
         Column(Modifier.weight(1f)) {
             ZillitText(text = peer.fullName, style = ZillitTheme.typography.titleSmall)
+            OnlineLine(state)
             DisconnectedLine(state, peer)
             // Department and role together — the same line their crew card
             // leads with, so the header answers "which Sam is this".
@@ -1557,6 +1585,7 @@ private val BUBBLE_MAX_WIDTH = 420.dp
 private val BUBBLE_RADIUS = 16.dp
 private val BUBBLE_TAIL = 4.dp
 private val HEADER_AVATAR = 40.dp
+private val ONLINE_DOT = 8.dp
 private val EMPTY_GLYPH = 28.dp
 private val TYPING_DOT = 6.dp
 private val TYPING_DOT_GAP = 4.dp

@@ -9,6 +9,7 @@ import com.zillit.desktop.core.sync.NewOperation
 import com.zillit.desktop.core.sync.OfflineSupport
 import com.zillit.desktop.core.sync.SyncState
 import com.zillit.desktop.feature.chat.data.CHAT_SEND_KIND
+import com.zillit.desktop.feature.chat.data.PresenceSource
 import com.zillit.desktop.feature.chat.data.QueuedChatSend
 import com.zillit.desktop.feature.chat.data.toQueuedBubble
 import kotlinx.serialization.Serializable
@@ -39,6 +40,12 @@ data class ChatUiState(
     val recents: List<String> = emptyList(),
     /** The open peer is writing right now. */
     val peerTyping: Boolean = false,
+    /**
+     * The open 1:1 peer's device is online right now — the header's green dot.
+     * Read from the same Firebase node iOS and web watch; always false for
+     * groups and for crew with no registered device.
+     */
+    val peerOnline: Boolean = false,
     /** Seconds on the open microphone; null when not recording. */
     val recordingSeconds: Int? = null,
     /** The open thread is a group room; sends ride `group_chat`. */
@@ -214,7 +221,21 @@ class ChatViewModel(
      * keeps sends live-only, as before.
      */
     private val offline: OfflineSupport? = null,
+    /**
+     * The green-dot feed. Null — no Firebase configuration, or a host that
+     * does not care — leaves headers exactly as they were.
+     */
+    private val presence: PresenceSource? = null,
+    /** The production the presence node is scoped by; null while none is open. */
+    private val presenceProjectId: () -> String? = { null },
 ) : ZillitViewModel<ChatUiState, ChatEvent, Nothing>(ChatUiState()) {
+
+    /**
+     * One watcher, replaced on every thread open — iOS keeps exactly one RTDB
+     * observer the same way. Cancelling on switch is what stops a burst of
+     * chat-hopping from accumulating a poller per visited thread.
+     */
+    private var presenceJob: kotlinx.coroutines.Job? = null
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -277,7 +298,10 @@ class ChatViewModel(
                 CrewContact(userId = event.room.id, fullName = event.room.name),
                 isGroup = true,
             )
-            ChatEvent.CloseThread -> setState { copy(peer = null, messages = emptyList()) }
+            ChatEvent.CloseThread -> {
+                stopPresence()
+                setState { copy(peer = null, messages = emptyList(), peerOnline = false) }
+            }
             is ChatEvent.DraftChanged -> {
                 // The transition is the signal: empty→writing says "start",
                 // writing→empty says "end". Every keystroke would be noise.
@@ -445,6 +469,48 @@ class ChatViewModel(
         split?.let { fresh -> setState { copy(sectionBadges = fresh) } }
     }
 
+    /** The watcher has three exits — replace, close, project switch — and one off switch. */
+    private fun stopPresence() {
+        presenceJob?.cancel()
+        presenceJob = null
+    }
+
+    /**
+     * Follows the open peer's `devices/{deviceId}/{projectId}` node while the
+     * thread is on screen. Groups have no single device to be online, and a
+     * peer with no registered device simply never gets the dot.
+     */
+    private fun watchPresence(contact: CrewContact, isGroup: Boolean) {
+        stopPresence()
+
+        // Each exit says which one it took. A header with no dot has five
+        // possible causes and they are indistinguishable on screen; that
+        // ambiguity has already cost this feature a debugging round.
+        val source = presence ?: run {
+            ZillitLog.d(PRESENCE_TAG) { "no presence source wired" }
+            return
+        }
+        if (isGroup) return
+        val deviceId = contact.deviceId ?: run {
+            ZillitLog.d(PRESENCE_TAG) { "peer has no registered device; no dot possible" }
+            return
+        }
+        val projectId = presenceProjectId() ?: run {
+            ZillitLog.d(PRESENCE_TAG) { "no production resolved yet; opening again will retry" }
+            return
+        }
+
+        presenceJob = launch {
+            ZillitLog.d(PRESENCE_TAG) { "watching device $deviceId on $projectId" }
+            source.watch(deviceId, projectId).collect { online ->
+                ZillitLog.d(PRESENCE_TAG) { "device $deviceId online=$online" }
+                // Guarded by peer, not by job identity: a stale collection's
+                // last emission must not paint the next thread's header.
+                setState { if (peer?.userId == contact.userId) copy(peerOnline = online) else this }
+            }
+        }
+    }
+
     private fun openThread(contact: CrewContact, isGroup: Boolean = false) {
         // The session cache answers instantly; the fetch refreshes behind it.
         val known = repository.cached(contact.userId)
@@ -455,6 +521,7 @@ class ChatViewModel(
                 messages = known.orEmpty(),
                 isLoading = known == null,
                 peerTyping = false,
+                peerOnline = false,
                 replyTo = null,
                 pendingPreview = null,
                 hasOlder = false,
@@ -469,6 +536,7 @@ class ChatViewModel(
         // connecting, and a join is idempotent while a missed one costs
         // delivery for the whole session.
         launch { repository.join() }
+        watchPresence(contact, isGroup)
         launchResult(
             block = { repository.history(contact.userId, nowMillis(), isGroup) },
             onSuccess = { rows ->
@@ -914,6 +982,9 @@ class ChatViewModel(
         }.filterValues { it > 0 }
 
     private fun startFreshProject() {
+        // Or the poller keeps asking Firebase about the previous production's
+        // peer for as long as the app stays open — both reviewers' finding.
+        stopPresence()
         serverUnread.clear()
         serverActivity.clear()
         unsentMedia.clear()
@@ -1218,3 +1289,5 @@ private const val CHAT_PAGE = 50
 /** The states this device assigns itself; the server's own words never yield to the outbox. */
 private fun ChatSendState.isOurs(): Boolean =
     this == ChatSendState.Sending || this == ChatSendState.Queued || this == ChatSendState.Failed
+
+private const val PRESENCE_TAG = "Presence"
