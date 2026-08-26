@@ -16,6 +16,7 @@ import com.zillit.desktop.feature.calls.domain.CallJoin
 import com.zillit.desktop.feature.calls.domain.CallProvider
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -265,6 +266,67 @@ class MediasoupSessionTest {
             "a rejoin must not make an existing peer look like somebody new",
         )
     }
+
+    @Test
+    fun `a join a redial has superseded stays quiet when it finally fails`() =
+        runTest(StandardTestDispatcher()) {
+            val signalling = FakeSignalling()
+            // Never answers, so the join hangs exactly as it does when the
+            // socket drops part-way through the sequence.
+            val peer = ProtooPeer(backgroundScope, send = { })
+            val events = mutableListOf<CallEngineEvent>()
+            val session = MediasoupSession(
+                backgroundScope, peer, signalling, FakePage(),
+                turn = { TurnCredentials(emptyList(), 600) },
+                emit = { events += it },
+            )
+
+            val stale = launch { session.join("Vivek", "", withVideo = false) }
+            runCurrent()
+
+            // The redial retires it and takes ownership of the call.
+            session.resetForRejoin()
+            runCurrent()
+
+            // Now the abandoned waiter's own timeout finally fires.
+            advanceTimeBy(30_000)
+            runCurrent()
+            stale.join()
+
+            // It must not end a call that has already come back. Reporting
+            // here is the worst answer available: the user watches a working
+            // call die for a reason that expired while it was recovering.
+            assertTrue(
+                events.none { it is CallEngineEvent.Failed },
+                "a superseded join ended the call: $events",
+            )
+        }
+
+    @Test
+    fun `the join that owns the call still reports its own failure`() =
+        runTest(StandardTestDispatcher()) {
+            val signalling = FakeSignalling()
+            val peer = ProtooPeer(backgroundScope, send = { })
+            val events = mutableListOf<CallEngineEvent>()
+            val session = MediasoupSession(
+                backgroundScope, peer, signalling, FakePage(),
+                turn = { TurnCredentials(emptyList(), 600) },
+                emit = { events += it },
+            )
+
+            val only = launch { session.join("Vivek", "", withVideo = false) }
+            runCurrent()
+            advanceTimeBy(30_000)
+            runCurrent()
+            only.join()
+
+            // The guard must silence only the superseded ones — a call that
+            // genuinely cannot join still has to say so.
+            assertTrue(
+                events.any { it is CallEngineEvent.Failed },
+                "the current join went silent: $events",
+            )
+        }
 }
 
 /**

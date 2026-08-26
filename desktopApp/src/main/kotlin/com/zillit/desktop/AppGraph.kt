@@ -992,7 +992,15 @@ sealed interface AppGraph {
             // want relay credentials, and they must be in hand before a
             // transport exists rather than after.
             val callEngine = buildCallEngine(config, appScope) {
-                callApi.turnCredentials(projectContext?.context?.value?.project?.projectId)
+                callApi.turnCredentials(
+                    projectId = projectContext?.context?.value?.project?.projectId,
+                    // Paired with the project deliberately: a project id sent
+                    // with the ambient user id is a pairing the server cannot
+                    // place. Both come from the same context here, so this is
+                    // the open production and unchanged in practice — it is
+                    // the pairing that is being made explicit.
+                    userId = projectContext?.context?.value?.profile?.userId,
+                )
             }
             val callCoordinator = buildCallCoordinator(
                 callEngine, callApi, config, socketEvents, appScope,

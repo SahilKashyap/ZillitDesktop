@@ -52,6 +52,16 @@ sealed interface PlaneEvent {
          * the exact case that used to render a live participant as "Guest".
          */
         val userName: String = "",
+        /**
+         * Their microphone and camera, as their own client last recorded them.
+         *
+         * A seed rather than the truth: on the Agora line it is the only mute
+         * signal that exists for someone who was already muted before this
+         * device joined, because the engine reports mute as a change and never
+         * as a standing state. Whatever the media stack says afterwards wins.
+         */
+        val muted: Boolean = false,
+        val hasVideo: Boolean = false,
     ) : PlaneEvent
 
     /** The call document's global status became `End Call`. */

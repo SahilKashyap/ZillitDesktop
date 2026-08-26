@@ -26,6 +26,15 @@ class ReconnectWatchdog(
 ) {
     private var timer: Job? = null
 
+    /**
+     * True while this call is riding out a media outage.
+     *
+     * Read by anything that would otherwise mistake a reconnection for an
+     * ending: during an outage the roster and the media count both go quiet,
+     * which looks exactly like everybody having left.
+     */
+    val isArmed: Boolean get() = timer?.isActive == true
+
     fun onConnectionChanged(state: EngineConnection) {
         when (state) {
             EngineConnection.Connected -> cancel()

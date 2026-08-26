@@ -125,12 +125,23 @@ class MediasoupSession(
      * exercised without a live server.
      */
     suspend fun resetForRejoin() {
+        // Retires whatever join is still in flight. See [joinGeneration].
+        joinGeneration++
         joined = false
         deviceCaps = null
         sctpCaps = null
         consumersById.clear()
         page.leave()
     }
+
+    /**
+     * Which join attempt owns the call.
+     *
+     * Bumped by every [resetForRejoin], and captured by each [join] so a join
+     * that a redial has already superseded can recognise itself and stay
+     * quiet. Without it the loser of that race gets the last word.
+     */
+    private var joinGeneration = 0
 
     /**
      * The join sequence, once the socket is up.
@@ -142,6 +153,7 @@ class MediasoupSession(
     suspend fun join(displayName: String, microphoneId: String, withVideo: Boolean) {
         if (joined) return
         joined = true
+        val generation = joinGeneration
         try {
             val caps = step("router capabilities") {
                 peer.request(MediasoupJoin.GET_ROUTER_CAPABILITIES)
@@ -186,6 +198,17 @@ class MediasoupSession(
             // `agora_uid` where every other platform treats it as Agora's.
             emit(CallEngineEvent.Joined(channel = roomId, uid = 0))
         } catch (error: ProtooError) {
+            // A join abandoned by a redial must not speak. The socket dropping
+            // mid-join leaves this coroutine suspended on a request nobody will
+            // ever answer; the redial resets and starts a join that can — and
+            // succeed it often does, before this one's ten-second timer gives
+            // up. Reporting then would end a call that is already back, which
+            // is the worst possible answer: the user watches a working call
+            // die for a reason that has expired.
+            if (generation != joinGeneration) {
+                ZillitLog.i(TAG) { "join $generation abandoned (${error.reason}); a later one owns the call" }
+                return
+            }
             ZillitLog.w(TAG) { "join failed: ${error.code} ${error.reason}" }
             emit(CallEngineEvent.Failed(error.reason.ifBlank { "could not join the call" }))
         }

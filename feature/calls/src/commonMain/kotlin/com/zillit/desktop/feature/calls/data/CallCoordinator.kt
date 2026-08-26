@@ -45,6 +45,34 @@ import kotlinx.serialization.json.JsonObject
  */
 enum class CallEndReason { Hungup, RemoteEnded, Declined, Busy, Timeout, PickedElsewhere, Error }
 
+/**
+ * Whether everybody who was ever really on this call has since left it.
+ *
+ * [everConnected] is deliberately monotonic — the people who at some point
+ * genuinely answered, never pruned. Asking "is anyone connected right now"
+ * instead would be true of a call that has not been answered yet and of one
+ * riding out a reconnection, and ending either of those is worse than the bug
+ * this closes.
+ *
+ * Empty means nobody ever answered, which is a ring rather than an ending, so
+ * it is never a reason to hang up. [livePeerCount] is the media side's own
+ * count and has to agree: a roster row can lag, and a peer still sending
+ * audio is still on the call whatever their row says.
+ */
+internal fun allOthersGone(
+    participants: List<CallParticipant>,
+    everConnected: Set<String>,
+    livePeerCount: Int,
+): Boolean {
+    if (everConnected.isEmpty() || livePeerCount > 0) return false
+    val stillHere = participants
+        .filter { it.status.isConnected }
+        .flatMap { listOf(it.userId, it.deviceId) }
+        .filter(String::isNotBlank)
+        .toSet()
+    return everConnected.none { it in stillHere }
+}
+
 /** One entry for the "call ended" toast: what happened and to whom. */
 data class CallEndEvent(val session: CallSession, val reason: CallEndReason)
 
@@ -181,6 +209,16 @@ class CallCoordinator(
     val selfDisplayName: String get() = selfName().orEmpty()
 
     private var ringTimeout: Job? = null
+
+    /**
+     * Everyone who ever genuinely answered this call, never pruned.
+     *
+     * See [allOthersGone] for why it is monotonic. Cleared with the call.
+     */
+    private val everConnected = mutableSetOf<String>()
+
+    /** The pending "is anyone still here?" re-check, if one is armed. */
+    private var emptyRoomCheck: Job? = null
 
     /** Runs only while the media link is down; cancelled the moment it returns. */
     /** Ends a call the media stack never brought back. */
@@ -336,6 +374,12 @@ class CallCoordinator(
             // Already busy. Tell the caller so their screen stops ringing —
             // and scope the response to the RINGING call's ids, not the
             // active call's.
+            // Two channels, on their own coroutines so neither waits for the
+            // other: the REST response is what a Line 1 caller hears, and the
+            // roster row is the only thing a Line 2 caller is watching — the
+            // response is inert there. Sequencing them would put the write
+            // that matters on Agora behind a request that does nothing for it.
+            // Both are scoped to the RINGING call's ids, never the live one's.
             scope.launch {
                 api.sendCallResponse(
                     roomId = invite.roomId.ifBlank { invite.callUuid },
@@ -344,6 +388,7 @@ class CallCoordinator(
                     projectId = invite.projectId.takeIf(String::isNotBlank),
                 )
             }
+            scope.launch { plane.announceSelf(invite, CallStatus.Declined) }
             return
         }
 
@@ -452,6 +497,22 @@ class CallCoordinator(
             ),
         )
         scope.launch {
+            // Seeded before the invite goes out, the way the phones do it: on
+            // Line 1 the backend writes no roster row for an added person (the
+            // Agora side seeds one itself), so until their device rings and
+            // writes its own, nobody else on the call knows an invite is
+            // pending. Someone who never rings — offline, no push — is
+            // otherwise invisible, and the room re-invites them.
+            plane.updateUserFields(
+                current,
+                deviceId.ifBlank { userId },
+                mapOf(
+                    FIELD_CURRENT_STATUS to STATUS_ADD_IN_CALL,
+                    FIELD_USER_NAME to name,
+                    FIELD_USER_ID to userId,
+                    FIELD_DEVICE_ID to deviceId,
+                ),
+            )
             api.invite(current, userId, deviceId).onFailure { error ->
                 ZillitLog.w(TAG) { "add-user failed: ${error.technical ?: error.userMessage}" }
             }
@@ -614,12 +675,68 @@ class CallCoordinator(
             participants = current.participants.withStatus(change.userId, change.status),
         )
 
+        rememberIfConnected(change.userId, status = change.status)
+
         when (change.status) {
             CallStatus.InCall -> onSomeoneAnswered()
             CallStatus.Declined, CallStatus.NotAnswered, CallStatus.Left ->
                 onSomeoneUnavailable(change.status)
             else -> Unit
         }
+        checkRoomStillOccupied()
+    }
+
+    /** Adds someone to the monotonic answered set. See [allOthersGone]. */
+    private fun rememberIfConnected(vararg keys: String, status: CallStatus) {
+        if (!status.isConnected) return
+        keys.filter(String::isNotBlank).forEach(everConnected::add)
+    }
+
+    /**
+     * Ends a call everybody else has walked out of.
+     *
+     * Nothing did this before: a 1:1 desktop-to-desktop call whose other end
+     * hung up left this side sitting in an empty room with the timer still
+     * running and the microphone still live, until the user noticed. The
+     * phones end it from four different places; this is the one that covers
+     * the case the desktop can actually observe.
+     *
+     * Re-checked after a pause rather than acted on at once, because a roster
+     * row and the media side do not move together — a peer can read as gone
+     * for a moment in the middle of their own reconnection. Skipped entirely
+     * while our own reconnect is in flight, which is the other way to see an
+     * empty room that is not empty.
+     */
+    private fun checkRoomStillOccupied() {
+        if (!roomLooksEmpty()) {
+            emptyRoomCheck?.cancel()
+            emptyRoomCheck = null
+            return
+        }
+        if (emptyRoomCheck?.isActive == true) return
+        emptyRoomCheck = scope.launch {
+            delay(EMPTY_ROOM_GRACE_MILLIS)
+            // Asked a second time, and only the second answer is acted on.
+            if (!roomLooksEmpty()) return@launch
+            val session = _session.value ?: return@launch
+            ZillitLog.i(TAG) { "everyone else left ${session.callUuid}; ending" }
+            engine.leave()
+            finish(session, CallEndReason.RemoteEnded)
+        }
+    }
+
+    /**
+     * Whether this device appears to be the last one on a call it is still in.
+     *
+     * False while our own media is reconnecting: an outage silences the roster
+     * and the peer count together, which is indistinguishable from everybody
+     * having walked out and is not it.
+     */
+    private fun roomLooksEmpty(): Boolean {
+        if (_phase.value != CallPhase.InCall) return false
+        if (reconnect.isArmed) return false
+        val current = _session.value ?: return false
+        return allOthersGone(current.participants, everConnected, _media.value.peers.size)
     }
 
     private fun onSomeoneAnswered() {
@@ -733,6 +850,16 @@ class CallCoordinator(
         }
         if (uid != 0) {
             _media.value = _media.value.reduce(CallEngineEvent.PeerScreenShare(uid, event.sharing))
+            // Mute and camera ride the same row, and on the Agora line the row
+            // is the only place they exist for someone who was already muted
+            // when this device joined: the SDK reports mute by publishing and
+            // unpublishing, which is a change, so a standing state produces no
+            // event at all. Folded in through the same reducer the engine
+            // uses, so a live event simply overwrites this the moment one
+            // arrives — the row seeds, it does not govern.
+            _media.value = _media.value
+                .reduce(CallEngineEvent.PeerAudioMuted(uid, event.muted))
+                .reduce(CallEngineEvent.PeerVideoMuted(uid, !event.hasVideo))
         }
 
         val updated = session.participants
@@ -752,6 +879,7 @@ class CallCoordinator(
     }
 
     private fun onPlaneStatus(current: CallSession, event: PlaneEvent.UserStatus) {
+        rememberIfConnected(event.userId, event.deviceId, status = event.status)
         // Our own row, written by another platform: the same person answered
         // or declined on their phone. Stop this ring quietly.
         val self = event.deviceId == selfDeviceId() ||
@@ -809,6 +937,11 @@ class CallCoordinator(
                 }
                 is CallEngineEvent.Devices -> audio.onEngineDevices(event)
                 is CallEngineEvent.Failed -> fail(event.message)
+                // A peer's media going away is the other half of "is anyone
+                // still here": the roster can lag, and on Line 1 a departure
+                // reaches this side as a closed consumer well before any row
+                // moves.
+                is CallEngineEvent.PeerLeft -> checkRoomStillOccupied()
                 is CallEngineEvent.Degraded -> onDegraded(event)
                 is CallEngineEvent.PeerHand -> onPeerHand(event)
                 is CallEngineEvent.PeerRecording -> onPeerRecording(event)
@@ -921,11 +1054,15 @@ class CallCoordinator(
             plane.announceSelf(
                 session,
                 CallStatus.InCall,
-                // A STRING, not the Int it is. iOS declares `agoraUID: String?`
-                // and writes it as "\(agoraID)", and it decodes each row with
-                // JSONDecoder — so a numeric `agora_uid` throws typeMismatch
-                // and iOS discards the WHOLE row, losing this device's status,
-                // raised hand and screen share along with it.
+                // A STRING, because that is what iOS writes ("\(agoraID)")
+                // and what the fleet is therefore full of. It is NOT the
+                // catastrophe an earlier comment here claimed: iOS's live
+                // reader is a tolerant dictionary parser that accepts String,
+                // Int64, Int and NSNumber alike, and the strict `AgoraUserModel`
+                // it cited is a legacy stub that never decodes Firestore. So a
+                // numeric value would be read correctly too — this is written
+                // as a string for consistency with the other clients, not to
+                // avoid a row being discarded.
                 mapOf("agora_uid" to session.localUid.toString()),
             )
         }
@@ -1115,6 +1252,9 @@ class CallCoordinator(
         _phase.value = CallPhase.Idle
         _micMuted.value = false
         _cameraOn.value = false
+        emptyRoomCheck?.cancel()
+        emptyRoomCheck = null
+        everConnected.clear()
         // A hand does not carry into the next call; neither does a recording.
         _handRaised.value = false
         recorder.reset()
@@ -1184,14 +1324,41 @@ class CallCoordinator(
          * ceiling a permanently dropped call never ends at all.
          */
         /**
-         * The spelling every other client reads: iOS's row model is
-         * `case screenShare = "screen_share"`. The desktop used to write the
-         * camelCase form, which nothing on the phones looks at, so a shared
-         * screen was simply never flagged there.
+         * The spelling to write. iOS reads BOTH — its row is hand-decoded,
+         * `(dict["screenShare"] as? Bool) ?? (dict["screen_share"] as? Bool)`
+         * — and the web reads only this one, so this is the form that reaches
+         * everybody. (An earlier comment here credited iOS with a
+         * `case screenShare = "screen_share"` coding key; there is no such
+         * enum, and the claim has since generated two false audit findings.)
          */
         const val FIELD_SHARING_WIRE = "screen_share"
 
+        /** The row fields an added person's seed carries. iOS's spellings. */
+        const val FIELD_CURRENT_STATUS = "current_status"
+        const val FIELD_USER_NAME = "user_name"
+        const val FIELD_USER_ID = "user_id"
+        const val FIELD_DEVICE_ID = "device_id"
+
+        /**
+         * What an invited-but-not-yet-ringing person's row says.
+         *
+         * A literal rather than a [CallStatus]: the enum degrades anything it
+         * does not know to Ringing, which reads correctly here, and giving it
+         * a member would mean revisiting every `when` that matches on it for a
+         * state only ever written, never branched on.
+         */
+        const val STATUS_ADD_IN_CALL = "add_in_call"
+
         const val RECONNECT_GRACE_MILLIS = 45_000L
+
+        /**
+         * How long an apparently empty room gets to prove it.
+         *
+         * The roster and the media side do not move together, and a peer
+         * mid-reconnection can read as gone for a moment. The phones use the
+         * same couple of seconds for the same reason.
+         */
+        const val EMPTY_ROOM_GRACE_MILLIS = 2_000L
 
 
     }

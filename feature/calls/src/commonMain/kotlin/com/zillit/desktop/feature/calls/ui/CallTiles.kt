@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.calls.ui
 
 import com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf
 import com.zillit.desktop.feature.calls.domain.CallMedia
+import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallParticipant
 import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallSession
@@ -60,9 +61,17 @@ fun buildTiles(
         .filter { it.userId != session.selfUserId && it.status in ON_STAGE }
     val bound = bindUids(session, roster, media, selfUid)
     val claimed = bound.values.toSet() + selfUid
+    // On a 1:1 the invite names the other person even when their roster row
+    // does not — it is the name already on the call's own header, so a tile
+    // reading "Guest" beside a window titled "Samsung Device" is this client
+    // knowing the answer and not using it. Line 1 is where it shows: nothing
+    // there writes `user_name` onto the row for the healer to adopt.
+    val theOtherPerson = session.displayName
+        .takeIf { session.mode == CallMode.Private && roster.size == 1 }
+        .orEmpty()
     return buildList {
         add(selfTile(session, media, selfName, micMuted, cameraOn, selfUid, selfHand))
-        roster.forEach { add(rosterTile(it, media, bound[it.userId] ?: 0)) }
+        roster.forEach { add(rosterTile(it, media, bound[it.userId] ?: 0, theOtherPerson)) }
         media.peers.keys.filter { it != 0 && it !in claimed }.sorted()
             .forEach { add(guestTile(it, media)) }
     }
@@ -101,12 +110,24 @@ private fun bindUids(
     }
 }
 
-private fun rosterTile(person: CallParticipant, media: CallMedia, uid: Int): CallTile =
+/**
+ * One person from the roster.
+ *
+ * [fallbackName] is what the call itself knows about them when their row does
+ * not say — blank unless this is a 1:1, where there is exactly one candidate
+ * and no chance of putting the wrong name on a face.
+ */
+private fun rosterTile(
+    person: CallParticipant,
+    media: CallMedia,
+    uid: Int,
+    fallbackName: String = "",
+): CallTile =
     CallTile(
         // Keyed by user id, so a late `agora_uid` from the call-dump merge is
         // ADOPTED by the existing tile instead of appearing as a new arrival.
         key = person.userId.ifBlank { "uid:$uid" },
-        name = person.name.ifBlank { UNNAMED },
+        name = person.name.ifBlank { fallbackName }.ifBlank { UNNAMED },
         userId = person.userId,
         uid = uid,
         presence = person.status,

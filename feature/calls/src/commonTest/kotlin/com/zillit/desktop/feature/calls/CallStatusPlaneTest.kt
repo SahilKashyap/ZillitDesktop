@@ -24,6 +24,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -203,6 +204,72 @@ class CallStatusPlaneTest {
 
             val flags = events.filterIsInstance<PlaneEvent.UserFlags>().single()
             assertTrue(flags.sharing)
+        }
+
+    @Test
+    fun `a peer's mute and camera are read off their row`() =
+        runTest(StandardTestDispatcher()) {
+            // On the Agora line this row is the only mute signal that exists
+            // for somebody who was already muted before this device joined:
+            // the SDK reports mute by publishing and unpublishing, which is a
+            // change and never a standing state.
+            val users = """{"documents":[
+                {"fields":{
+                    "device_id":{"stringValue":"peer-dev"},
+                    "current_status":{"stringValue":"in_call"},
+                    "isMute":{"booleanValue":true},
+                    "has_video":{"booleanValue":false}}}]}"""
+            val engine = MockEngine { request ->
+                if (request.url.encodedPath.endsWith("/call_users")) {
+                    respond(users, HttpStatusCode.OK)
+                } else {
+                    respond("""{"fields":{}}""", HttpStatusCode.OK)
+                }
+            }
+
+            val events = mutableListOf<PlaneEvent>()
+            val job = launch { plane(engine).watch(session).take(2).toList(events) }
+            advanceTimeBy(3_000)
+            runCurrent()
+            job.join()
+
+            val flags = events.filterIsInstance<PlaneEvent.UserFlags>().single()
+            assertTrue(flags.muted)
+            assertFalse(flags.hasVideo)
+        }
+
+    @Test
+    fun `a row whose only change is the mute flag is still reported`() =
+        runTest(StandardTestDispatcher()) {
+            // The poller only emits when its diff key changes, so a flag left
+            // out of that key is a flag that moves silently. Mute flipping on
+            // its own is exactly the case the Agora line depends on.
+            var polls = 0
+            val engine = MockEngine { request ->
+                if (request.url.encodedPath.endsWith("/call_users")) {
+                    polls++
+                    val muted = if (polls > 1) "true" else "false"
+                    respond(
+                        """{"documents":[
+                            {"fields":{
+                                "device_id":{"stringValue":"peer-dev"},
+                                "current_status":{"stringValue":"in_call"},
+                                "isMute":{"booleanValue":$muted}}}]}""",
+                        HttpStatusCode.OK,
+                    )
+                } else {
+                    respond("""{"fields":{}}""", HttpStatusCode.OK)
+                }
+            }
+
+            val events = mutableListOf<PlaneEvent>()
+            val job = launch { plane(engine).watch(session).take(3).toList(events) }
+            advanceTimeBy(6_000)
+            runCurrent()
+            job.join()
+
+            val flags = events.filterIsInstance<PlaneEvent.UserFlags>()
+            assertEquals(listOf(false, true), flags.map { it.muted })
         }
 
     @Test

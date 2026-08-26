@@ -4,6 +4,7 @@ import com.zillit.desktop.feature.calls.data.protoo.CLOSE_REPLACED_BY_OTHER_DEVI
 import com.zillit.desktop.feature.calls.data.protoo.CLOSE_SERVER_SHUTDOWN
 import com.zillit.desktop.feature.calls.data.protoo.RETRY_MAX_MILLIS
 import com.zillit.desktop.feature.calls.data.protoo.RETRY_MIN_MILLIS
+import com.zillit.desktop.feature.calls.data.protoo.isRecoverableProtooClose
 import com.zillit.desktop.feature.calls.data.protoo.isTerminalProtooClose
 import com.zillit.desktop.feature.calls.data.protoo.normaliseSfuHost
 import com.zillit.desktop.feature.calls.data.protoo.protooDialUrl
@@ -50,10 +51,20 @@ class ProtooDialTest {
         assertTrue(withToken.endsWith("&token=abc123"), withToken)
     }
 
+    /**
+     * Only the eviction is terminal.
+     *
+     * This reverses an earlier rule that also treated 4000 as terminal. A bare
+     * 4000 is protoo-server closing one peer on purpose — a deploy, a session
+     * being recycled — and never the other-device eviction; iOS says so
+     * outright, from a production room where reading it that way tore down
+     * live calls. Ending on it cost the user a working call that a redial
+     * would have recovered.
+     */
     @Test
-    fun `the two terminal close codes end the session`() {
-        assertTrue(isTerminalProtooClose(CLOSE_SERVER_SHUTDOWN, ""))
+    fun `only the other-device eviction is terminal`() {
         assertTrue(isTerminalProtooClose(CLOSE_REPLACED_BY_OTHER_DEVICE, ""))
+        assertFalse(isTerminalProtooClose(CLOSE_SERVER_SHUTDOWN, ""))
     }
 
     /**
@@ -61,24 +72,48 @@ class ProtooDialTest {
      * 4000-range codes away — so the reason text has to carry the same fact.
      */
     @Test
-    fun `a terminal close is recognised from its reason when the code is lost`() {
+    fun `the eviction is recognised from its reason when the code is lost`() {
+        assertTrue(isTerminalProtooClose(1000, "replaced-by-other-device"))
+        assertTrue(
+            isTerminalProtooClose(1000, "REPLACED-BY-OTHER-DEVICE"),
+            "must be case-insensitive",
+        )
+    }
+
+    @Test
+    fun `a recycled peer is recoverable, not terminal`() {
+        assertTrue(isRecoverableProtooClose(CLOSE_SERVER_SHUTDOWN, ""))
         for (reason in listOf(
             "closed by protoo-server",
             "session replaced",
             "duplicate session",
             "peer reconnected",
-            "replaced-by-other-device",
         )) {
-            assertTrue(isTerminalProtooClose(1000, reason), reason)
-            assertTrue(isTerminalProtooClose(1000, reason.uppercase()), "must be case-insensitive: $reason")
+            assertTrue(isRecoverableProtooClose(1000, reason), reason)
+            assertTrue(
+                isRecoverableProtooClose(1000, reason.uppercase()),
+                "must be case-insensitive: $reason",
+            )
+            assertFalse(isTerminalProtooClose(1000, reason), "no longer terminal: $reason")
         }
     }
 
     @Test
-    fun `an ordinary drop is not terminal and invites a reconnect`() {
+    fun `an eviction is never also recoverable`() {
+        // The two questions must not both answer yes, or the caller's order of
+        // asking would decide whether this device fights its own other one.
+        assertFalse(isRecoverableProtooClose(CLOSE_REPLACED_BY_OTHER_DEVICE, ""))
+        assertFalse(isRecoverableProtooClose(1000, "replaced-by-other-device"))
+    }
+
+    @Test
+    fun `an ordinary drop is neither terminal nor a named recovery`() {
         assertFalse(isTerminalProtooClose(1006, "abnormal closure"))
         assertFalse(isTerminalProtooClose(1001, "going away"))
         assertFalse(isTerminalProtooClose(0, ""))
+        // Not "recoverable" in the named sense — an abrupt drop retries by the
+        // ordinary backoff path, which is a different question.
+        assertFalse(isRecoverableProtooClose(1006, "abnormal closure"))
     }
 
     @Test

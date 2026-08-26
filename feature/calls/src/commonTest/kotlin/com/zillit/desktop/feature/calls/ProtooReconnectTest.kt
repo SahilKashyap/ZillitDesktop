@@ -59,29 +59,57 @@ class ProtooReconnectTest {
         assertTrue(byReason is ProtooNextStep.Stop, "the reason alone must stop it, got $byReason")
     }
 
+    /**
+     * Reverses an earlier rule that ended the call here.
+     *
+     * protoo-server sends 4000 whenever it closes a peer on purpose, including
+     * during a deploy. It is not the other-device eviction — iOS is explicit
+     * about that, from a production room where confusing the two tore down
+     * live calls — and the way back is the redial, which already mints a fresh
+     * peer id.
+     */
     @Test
-    fun `a deliberate server shutdown is terminal`() {
-        val step = ProtooReconnect().onAbruptClose(CLOSE_SERVER_SHUTDOWN, "closed by protoo-server")
-        assertTrue(step is ProtooNextStep.Stop, "got $step")
+    fun `a deliberate server shutdown is recovered from, not fatal`() {
+        val abrupt = ProtooReconnect().onAbruptClose(CLOSE_SERVER_SHUTDOWN, "closed by protoo-server")
+        assertTrue(abrupt is ProtooNextStep.Retry, "got $abrupt")
+
+        // And as a clean close frame, which is how it actually arrives.
+        val clean = ProtooReconnect().onCleanClose(CLOSE_SERVER_SHUTDOWN, "closed by protoo-server")
+        assertTrue(clean is ProtooNextStep.Retry, "got $clean")
     }
 
     /**
-     * A clean close is the server's decision, whatever the code. Matching the
+     * An ordinary clean close is still the server's decision. Matching the
      * phones here is deliberate: a rolling deploy that closes cleanly should
-     * not be met with every client stampeding back at once.
+     * not be met with every client stampeding back at once. Only the protoo
+     * closes that name a recycled peer are exempt.
      */
     @Test
-    fun `a clean close never retries, even for an ordinary code`() {
-        for (code in listOf(1000, 1001, CLOSE_SERVER_SHUTDOWN, CLOSE_REPLACED_BY_OTHER_DEVICE)) {
+    fun `an ordinary clean close still never retries`() {
+        for (code in listOf(1000, 1001, CLOSE_REPLACED_BY_OTHER_DEVICE)) {
             val step = ProtooReconnect().onCleanClose(code, "")
             assertTrue(step is ProtooNextStep.Stop, "clean close $code must not retry, got $step")
         }
     }
 
     @Test
+    fun `a recovered close still gives up eventually`() {
+        // Recovery must not become an infinite redial against a server that
+        // keeps recycling us.
+        val policy = ProtooReconnect(maxRetries = 2)
+        assertTrue(policy.onCleanClose(CLOSE_SERVER_SHUTDOWN, "") is ProtooNextStep.Retry)
+        assertTrue(policy.onCleanClose(CLOSE_SERVER_SHUTDOWN, "") is ProtooNextStep.Retry)
+        assertTrue(
+            policy.onCleanClose(CLOSE_SERVER_SHUTDOWN, "") is ProtooNextStep.Stop,
+            "a server recycling us forever must not be redialled forever",
+        )
+    }
+
+    @Test
     fun `the reason survives into the stop so the call can say why it ended`() {
-        val step = ProtooReconnect().onAbruptClose(1006, "session replaced") as ProtooNextStep.Stop
-        assertEquals("session replaced", step.reason)
+        val step = ProtooReconnect()
+            .onAbruptClose(1006, "replaced-by-other-device") as ProtooNextStep.Stop
+        assertEquals("replaced-by-other-device", step.reason)
 
         val blank = ProtooReconnect().onCleanClose(1001, "") as ProtooNextStep.Stop
         assertTrue(blank.reason.isNotBlank(), "an unexplained close still needs something in the log")

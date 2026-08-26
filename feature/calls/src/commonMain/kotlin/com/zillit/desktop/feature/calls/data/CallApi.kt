@@ -108,6 +108,8 @@ class CallApi(
         receiverDeviceId: String,
         type: CallType,
         projectId: String?,
+        /** Our id in the call's production. See [send]. */
+        callerUserId: String? = null,
     ) = put(
         "call/add-user",
         buildJsonObject {
@@ -119,6 +121,7 @@ class CallApi(
             put("line", CallProvider.Agora.wire)
         },
         projectId,
+        userId = callerUserId,
     )
 
     /**
@@ -146,6 +149,9 @@ class CallApi(
             put("callerId", callerUserId)
         },
         projectId,
+        // The same id the body names, in the header too: this endpoint refuses
+        // a caller it cannot place in the production.
+        userId = callerUserId,
     )
 
     /**
@@ -168,6 +174,9 @@ class CallApi(
             "mediasoup-call/call-response",
             callResponseEnvelope(roomId, status, fromUserId),
             projectId,
+            // The responder's own id in the call's production — the same
+            // pairing iOS sends here.
+            userId = fromUserId,
         ).map { }
     }
 
@@ -256,12 +265,12 @@ class CallApi(
      * most networks connect without a relay, and refusing to dial because the
      * relay list could not be fetched would be the worse of the two failures.
      */
-    suspend fun turnCredentials(projectId: String?): TurnCredentials =
+    suspend fun turnCredentials(projectId: String?, userId: String? = null): TurnCredentials =
         apiClient.envelope(
             verb = HttpVerb.Get,
             url = "$base$TURN_CREDENTIALS_PATH",
             module = RequestModule.ProjectUser,
-            options = CallOptions(projectId = projectId),
+            options = CallOptions(projectId = projectId, userId = userId?.takeIf(String::isNotBlank)),
         ).map { envelope -> readTurnCredentials(envelope.data as? JsonObject) }
             .getOrElse(TurnCredentials(emptyList(), TurnCredentials.DEFAULT_TTL_SECONDS))
 
@@ -364,24 +373,44 @@ class CallApi(
         put("line", provider.wire)
     }
 
-    private suspend fun post(path: String, body: JsonObject, projectId: String?) =
-        send(HttpVerb.Post, path, body, projectId)
+    private suspend fun post(
+        path: String,
+        body: JsonObject,
+        projectId: String?,
+        userId: String? = null,
+    ) = send(HttpVerb.Post, path, body, projectId, userId)
 
-    private suspend fun put(path: String, body: JsonObject, projectId: String?) =
-        send(HttpVerb.Put, path, body, projectId)
+    private suspend fun put(
+        path: String,
+        body: JsonObject,
+        projectId: String?,
+        userId: String? = null,
+    ) = send(HttpVerb.Put, path, body, projectId, userId)
 
+    /**
+     * [userId] is the caller's id ON [projectId], for a call about a
+     * production that is not the open one.
+     *
+     * User ids are project-scoped, and the header's project and user are set
+     * together from the ACTIVE production — so overriding only the project
+     * ships a valid project paired with a user id that does not exist in it,
+     * and the server refuses the write. Blank means "use the ambient pair",
+     * which is right for a call in the open production and is what every one
+     * of these did before; an empty string is never sent.
+     */
     private suspend fun send(
         verb: HttpVerb,
         path: String,
         body: JsonObject,
         projectId: String?,
+        userId: String? = null,
     ): ZillitResult<JsonElement?> =
         apiClient.envelope(
             verb = verb,
             url = "$base$path",
             module = RequestModule.ProjectUser,
             body = body,
-            options = CallOptions(projectId = projectId),
+            options = CallOptions(projectId = projectId, userId = userId?.takeIf(String::isNotBlank)),
         ).map { it.data }
 }
 
@@ -485,6 +514,9 @@ internal suspend fun CallApi.invite(
             receiverDeviceId = deviceId,
             type = session.type,
             projectId = projectId,
+            // Pinned from the ring's `receiver_user_id`, which is our id in
+            // the call's production rather than in whichever one is open.
+            callerUserId = session.selfUserId,
         )
     }
 }

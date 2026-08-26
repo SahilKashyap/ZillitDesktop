@@ -13,12 +13,17 @@ import kotlin.test.assertTrue
 /**
  * The types of the row this device writes into `calls/{uuid}/call_users`.
  *
- * iOS decodes every row with `JSONDecoder().decode(AgoraUserModel.self, …)`,
- * and Swift's Codable is strict: a JSON number arriving where the model
- * declares `String?` throws `typeMismatch` and the WHOLE row is discarded —
- * not just that field. So a desktop that wrote `agora_uid` as an integer was
- * invisible on the phones in every respect at once: no status, no raised hand,
- * no screen share. It looked like several unrelated features being broken.
+ * These pin the shapes the other clients write, so the fleet's rows stay one
+ * shape rather than several.
+ *
+ * An earlier version of this comment justified them with a strict Swift
+ * `JSONDecoder` that would discard a whole row on a type mismatch. That is not
+ * how iOS reads these: the live path is a tolerant dictionary parser that
+ * accepts String, Int64, Int and NSNumber for `agora_uid`, and the strict
+ * model it named never decodes Firestore at all. The types below are still
+ * worth pinning — one shape across the fleet is worth having, and the web
+ * writes Int64 — but nothing catastrophic hinges on them, and the overstated
+ * version of this note has since produced repeated false audit findings.
  *
  * These pin the shape rather than the behaviour, because the behaviour lives in
  * another codebase and only shows up on somebody else's handset.

@@ -411,9 +411,15 @@
                 if (enabled) { camProducer.resume(); } else { camProducer.pause(); }
                 ask(enabled ? 'resumeProducer' : 'pauseProducer', { producerId: camProducer.id })
                     .catch(function () {});
-                // Not while sharing: the self tile is showing the screen,
-                // and the camera going on or off must not steal it back.
-                if (!screenProducer) {
+                // Sharing keeps the tile, but the choice still has to stick:
+                // the latch is what `stopScreen` consults to decide whether to
+                // put the camera back, so a camera turned off mid-share must
+                // move it. Without this the camera comes back on when the
+                // share ends, live to the room, while this end's button reads
+                // off and the roster row says has_video:false.
+                if (screenProducer) {
+                    camPausedByShare = enabled
+                } else {
                     showLocally(enabled && camStream ? camStream : null);
                 }
             } catch (e) { warn('set-cam', e); }

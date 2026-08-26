@@ -135,6 +135,8 @@ class FirestoreCallStatusPlane(
                             handRaised = flags.handRaised,
                             recording = flags.recording,
                             userName = flags.userName,
+                            muted = flags.muted,
+                            hasVideo = flags.hasVideo,
                         ),
                     )
                 }
@@ -161,8 +163,11 @@ class FirestoreCallStatusPlane(
         val agoraUid: Int,
         val recording: Boolean,
         val userName: String,
+        val muted: Boolean,
+        val hasVideo: Boolean,
     ) {
-        val key: String get() = "$sharing/$handRaised/$agoraUid/$recording/$userName"
+        val key: String
+            get() = "$sharing/$handRaised/$agoraUid/$recording/$userName/$muted/$hasVideo"
     }
 
     private fun JsonObject.flags(): UserFlags = UserFlags(
@@ -171,6 +176,8 @@ class FirestoreCallStatusPlane(
         agoraUid = value(FIELD_AGORA_UID)?.toIntOrNull() ?: 0,
         recording = value(FIELD_IS_RECORDING)?.toBoolean() ?: false,
         userName = value(FIELD_USER_NAME).orEmpty(),
+        muted = value(FIELD_IS_MUTE)?.toBoolean() ?: false,
+        hasVideo = value(FIELD_HAS_VIDEO)?.toBoolean() ?: false,
     )
 
     // ── Firestore REST ──────────────────────────────────────────────────
@@ -280,6 +287,20 @@ class FirestoreCallStatusPlane(
 
         /** The self-healing display name every platform stamps on its row. */
         const val FIELD_USER_NAME = "user_name"
+
+        /**
+         * Mute and camera, as the row records them.
+         *
+         * Read because on the Agora line the row is the fleet's only mute
+         * channel: iOS has no engine-level mute signal there at all, and this
+         * client's own signal is `user-published`/`user-unpublished`, which
+         * fires on a change and never on the state that was already true. So
+         * someone who muted before this device joined was shown unmuted until
+         * they happened to toggle it. A seed and a fallback — the engine's own
+         * events still win whenever they arrive.
+         */
+        const val FIELD_IS_MUTE = "isMute"
+        const val FIELD_HAS_VIDEO = "has_video"
         const val FIELD_CALL_STATUS = "status"
         const val FIELD_DEVICE_ID = "device_id"
         const val FIELD_USER_ID = "user_id"

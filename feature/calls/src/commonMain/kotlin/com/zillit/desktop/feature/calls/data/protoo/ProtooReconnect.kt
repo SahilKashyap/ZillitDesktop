@@ -41,15 +41,24 @@ class ProtooReconnect(
     /**
      * The socket closed with a close frame — the server said goodbye.
      *
-     * Always final, whatever the code. This is deliberate and matches the
-     * phones: a server that closes cleanly during a rolling deploy ends the
-     * call rather than having every client stampede back at once.
+     * Final by default, which matches the phones: a server closing cleanly
+     * during a rolling deploy should not have every client stampede back at
+     * once. The exception is protoo recycling this one peer — a 4000, or a
+     * reason naming a replaced session — which is a close we are meant to come
+     * back from, and which used to end the call instead. See
+     * [isRecoverableProtooClose].
      */
-    fun onCleanClose(code: Int, reason: String): ProtooNextStep =
-        ProtooNextStep.Stop(
-            if (isTerminalProtooClose(code, reason)) reason.ifBlank { "closed by server ($code)" }
-            else "closed by server ($code)",
-        )
+    fun onCleanClose(code: Int, reason: String): ProtooNextStep {
+        if (isTerminalProtooClose(code, reason)) {
+            return ProtooNextStep.Stop(reason.ifBlank { "closed by server ($code)" })
+        }
+        if (isRecoverableProtooClose(code, reason) && attempt < maxRetries) {
+            val delay = protooRetryDelayMillis(attempt)
+            attempt++
+            return ProtooNextStep.Retry(attempt, delay)
+        }
+        return ProtooNextStep.Stop("closed by server ($code)")
+    }
 
     /**
      * The socket died without a close frame, or a close frame we can still

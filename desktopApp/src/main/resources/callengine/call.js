@@ -847,6 +847,19 @@
             try {
                 if (micTrack) { micTrack.close(); micTrack = null; }
                 if (camTrack) { camTrack.close(); camTrack = null; }
+                // The share too, and unconditionally — `client.leave()` does
+                // not stop a capture, which is why the mic and camera are
+                // closed by hand a line above. Leaving this open outlives the
+                // call: the page is never rebuilt, so ScreenCaptureKit keeps
+                // running with the macOS recording indicator lit, the next
+                // `startScreenShare` silently no-ops on `screenTrack` still
+                // being set, and the next call's self tile shows the last
+                // call's screen. No unpublish — that throws once the client
+                // is gone, and the server has forgotten us regardless.
+                if (screenTrack) {
+                    try { screenTrack.close(); } catch (e2) { /* already closed */ }
+                    screenTrack = null;
+                }
                 clearLocal();
                 videoTracks.clear();
                 playingIn.clear();

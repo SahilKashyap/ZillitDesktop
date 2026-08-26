@@ -6,6 +6,8 @@ import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.LinkQuality
 import com.zillit.desktop.feature.calls.domain.MediaPeer
+import com.zillit.desktop.feature.calls.domain.CallMode
+import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.ui.buildTiles
 import com.zillit.desktop.feature.calls.ui.columnsFor
 import kotlin.test.Test
@@ -173,5 +175,61 @@ class CallTilesTest {
         val media = CallMedia(selfUid = 5, speaking = setOf(5))
         val tiles = buildTiles(session(), media, "Me", micMuted = true, cameraOn = false)
         assertFalse(tiles.first().media?.speaking == true)
+    }
+
+    @Test
+    fun `a nameless 1 to 1 peer is named from the call, not called Guest`() {
+        // Line 1 is where this bites: nothing writes `user_name` onto the
+        // roster row, so the tile read "Guest" beside a call window titled
+        // with the very name it was missing.
+        val session = CallSession(
+            callUuid = "u1",
+            selfUserId = "me",
+            mode = CallMode.Private,
+            direction = CallDirection.Outgoing,
+            title = "Samsung Device",
+            participants = listOf(CallParticipant(userId = "them", name = "", status = CallStatus.InCall)),
+        )
+
+        val tiles = buildTiles(session, CallMedia(), "Vivek", micMuted = false, cameraOn = false)
+
+        assertEquals("Samsung Device", tiles.last().name)
+    }
+
+    @Test
+    fun `a named peer keeps their own name`() {
+        val session = CallSession(
+            callUuid = "u1",
+            selfUserId = "me",
+            mode = CallMode.Private,
+            direction = CallDirection.Outgoing,
+            title = "Samsung Device",
+            participants = listOf(CallParticipant(userId = "them", name = "Asha", status = CallStatus.InCall)),
+        )
+
+        val tiles = buildTiles(session, CallMedia(), "Vivek", micMuted = false, cameraOn = false)
+
+        assertEquals("Asha", tiles.last().name)
+    }
+
+    @Test
+    fun `a group call never borrows the call's name for a nameless row`() {
+        // With more than one candidate the call's title is one person's name,
+        // and putting it on an arbitrary face is worse than admitting we do
+        // not know.
+        val session = CallSession(
+            callUuid = "u1",
+            selfUserId = "me",
+            mode = CallMode.Group,
+            title = "Crew standup",
+            participants = listOf(
+                CallParticipant(userId = "a", name = "", status = CallStatus.InCall),
+                CallParticipant(userId = "b", name = "", status = CallStatus.InCall),
+            ),
+        )
+
+        val tiles = buildTiles(session, CallMedia(), "Vivek", micMuted = false, cameraOn = false)
+
+        assertTrue(tiles.drop(1).all { it.name == "Guest" }, tiles.map { it.name }.toString())
     }
 }

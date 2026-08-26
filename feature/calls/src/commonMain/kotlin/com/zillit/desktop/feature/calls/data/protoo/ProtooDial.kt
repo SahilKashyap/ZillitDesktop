@@ -47,31 +47,50 @@ fun protooDialUrl(host: String, roomId: String, peerId: String, sfuToken: String
 /**
  * Whether a close ends the session for good rather than inviting a reconnect.
  *
- * Two codes and five phrases, because the reason text survives where the code
- * does not: some platforms normalise custom 4000-range codes away, so the same
- * fact has to be recognisable from either side.
+ * ONE code and one phrase. 4409 means this user's *other* device took the
+ * call: reconnecting would fight it in a loop neither device wins, and the
+ * phrase is carried as well as the code because some platforms normalise
+ * custom 4000-range codes away.
  *
- * 4409 is the one that matters most — it means this user's *other* device took
- * the call, and reconnecting would fight it in a loop neither device wins.
+ * 4000 used to be in here and was wrong. protoo-server sends it whenever it
+ * closes a peer deliberately — a rolling deploy, a session it is recycling —
+ * and iOS is explicit that a bare 4000 is never another device (a production
+ * room where treating it as one tore down live calls). It belongs in
+ * [isRecoverableProtooClose], where a fresh peer id gets the call back.
  */
-fun isTerminalProtooClose(code: Int, reason: String): Boolean {
-    if (code == CLOSE_SERVER_SHUTDOWN || code == CLOSE_REPLACED_BY_OTHER_DEVICE) return true
+fun isTerminalProtooClose(code: Int, reason: String): Boolean =
+    code == CLOSE_REPLACED_BY_OTHER_DEVICE ||
+        REPLACED_BY_OTHER_DEVICE in reason.lowercase()
+
+/**
+ * A close the server made on purpose that we are meant to come back from.
+ *
+ * Distinct from an ordinary clean close, which stays final: a server saying
+ * goodbye during a deploy should not have every client stampede back at once,
+ * and iOS treats a plain close frame as terminal too. These particular
+ * closes are protoo recycling one peer, and the way back is a redial with a
+ * fresh peer id — which every dial already mints.
+ */
+fun isRecoverableProtooClose(code: Int, reason: String): Boolean {
+    if (isTerminalProtooClose(code, reason)) return false
+    if (code == CLOSE_SERVER_SHUTDOWN) return true
     val text = reason.lowercase()
-    return TERMINAL_CLOSE_REASONS.any { it in text }
+    return RECOVERABLE_CLOSE_REASONS.any { it in text }
 }
 
-/** protoo-server closing us deliberately. */
+/** protoo-server closing us deliberately. Recoverable, not terminal. */
 const val CLOSE_SERVER_SHUTDOWN = 4000
 
 /** This user's other device joined and evicted this one. */
 const val CLOSE_REPLACED_BY_OTHER_DEVICE = 4409
 
-private val TERMINAL_CLOSE_REASONS = listOf(
+private const val REPLACED_BY_OTHER_DEVICE = "replaced-by-other-device"
+
+private val RECOVERABLE_CLOSE_REASONS = listOf(
     "closed by protoo-server",
     "session replaced",
     "duplicate session",
     "peer reconnected",
-    "replaced-by-other-device",
 )
 
 /**
