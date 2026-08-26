@@ -10,10 +10,12 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.transportation.domain.PermanentDraft
 import com.zillit.desktop.feature.transportation.domain.PermanentStatus
 import com.zillit.desktop.feature.transportation.domain.PermanentTrip
 import com.zillit.desktop.feature.transportation.domain.TransportRepository
+import com.zillit.desktop.feature.transportation.domain.TransportSyncKind
 import com.zillit.desktop.feature.transportation.domain.TransportUser
 import com.zillit.desktop.feature.transportation.domain.TripDraft
 import com.zillit.desktop.feature.transportation.domain.TripRequest
@@ -21,6 +23,10 @@ import com.zillit.desktop.feature.transportation.domain.TripStatus
 import com.zillit.desktop.feature.transportation.domain.TripUpdate
 import com.zillit.desktop.feature.transportation.domain.Vehicle
 import com.zillit.desktop.feature.transportation.domain.VehicleDraft
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -43,9 +49,23 @@ import kotlinx.serialization.json.put
 class TransportRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    private val bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : TransportRepository {
 
     private val base = config.apiV2(ZillitService.Transportation).trimEnd('/') + "/transportation"
+
+    /**
+     * See [TransportRepository.refreshes]. Another production's frame is
+     * dropped when both sides can name a project, as every web handler
+     * does; the event name picks the kind via [TRANSPORT_SYNC_KINDS].
+     */
+    override val refreshes: Flow<TransportSyncKind> =
+        bus?.onAny(TRANSPORT_SYNC_EVENTS)
+            ?.filter { message -> message.payload.matchesProject(currentProjectId()) }
+            ?.mapNotNull { message -> TRANSPORT_SYNC_KINDS[message.event] }
+            ?: emptyFlow()
 
     /** `project/users` on the core host — the driver flags live there. */
     private val users = config.apiV2() + "project/users"

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.cardexpenses.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -703,7 +704,7 @@ class CardExpensesViewModel(
 
                 is ZillitResult.Failure -> {
                     setState { copy(busy = false) }
-                    sendEffect(CardEffect.Failed(result.error.userMessage))
+                    sendEffect(CardEffect.Failed(result.error.localised()))
                 }
             }
         }
@@ -763,7 +764,7 @@ class CardExpensesViewModel(
 
                 is ZillitResult.Failure -> {
                     setState { copy(busy = false) }
-                    sendEffect(CardEffect.Failed(saved.error.userMessage))
+                    sendEffect(CardEffect.Failed(saved.error.localised()))
                 }
             }
         }
@@ -906,7 +907,7 @@ class CardExpensesViewModel(
 
             is ZillitResult.Failure -> {
                 setState { copy(busy = false) }
-                sendEffect(CardEffect.Failed(result.error.userMessage))
+                sendEffect(CardEffect.Failed(result.error.localised()))
             }
         }
     }

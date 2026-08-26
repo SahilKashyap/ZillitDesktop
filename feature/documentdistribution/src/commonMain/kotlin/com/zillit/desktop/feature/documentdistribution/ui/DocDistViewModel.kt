@@ -1,10 +1,12 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistRefresh
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistRepository
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
@@ -72,7 +74,37 @@ class DocDistViewModel(
             copy(viewer = identity, destination = DocDistDestination.landing(identity))
         }
         if (!identity.isBlocked) load(currentState.destination)
+        listenOnce()
     }
+
+    /**
+     * Reloads a destination when the socket says another client changed its
+     * listing, and only while that destination is on screen — the web
+     * screens' own silent refetches, ported as a targeted reload (opening
+     * a destination loads it anyway, so an event missed while elsewhere is
+     * corrected on arrival). Guarded separately from [started]: a project
+     * switch resets [started] but must not stack a second collector.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.collect { kind ->
+                val here = currentState.destination
+                if (kind.destination == here && !currentState.viewer.isBlocked) load(here)
+            }
+        }
+    }
+
+    private var listening = false
+
+    private val DocDistRefresh.destination: DocDistDestination
+        get() = when (this) {
+            DocDistRefresh.Library -> DocDistDestination.Library
+            DocDistRefresh.History -> DocDistDestination.History
+            DocDistRefresh.Lists -> DocDistDestination.Lists
+            DocDistRefresh.Templates -> DocDistDestination.Templates
+        }
 
     /** Re-reads rights when the open production changes. */
     fun onProjectChanged() {
@@ -402,7 +434,7 @@ class DocDistViewModel(
             when (val result = block()) {
                 is ZillitResult.Success -> setState { apply(result.data).copy(loading = false) }
                 is ZillitResult.Failure -> setState {
-                    copy(loading = false, error = result.error.userMessage)
+                    copy(loading = false, error = result.error.localised())
                 }
             }
         }
@@ -626,7 +658,7 @@ class DocDistViewModel(
         setState { copy(composer = composer.reducer()) }
 
     private fun report(error: ZillitError) {
-        sendEffect(DocDistEffect.Failed(error.userMessage))
+        sendEffect(DocDistEffect.Failed(error.localised()))
     }
 }
 

@@ -22,6 +22,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.Money
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -108,7 +109,7 @@ fun PurchaseOrderScreen(
             val error = state.error
             when {
                 error != null -> ZillitErrorState(
-                    message = error.userMessage,
+                    message = error.localised(),
                     onRetry = { onEvent(PoEvent.Refresh) },
                 )
 

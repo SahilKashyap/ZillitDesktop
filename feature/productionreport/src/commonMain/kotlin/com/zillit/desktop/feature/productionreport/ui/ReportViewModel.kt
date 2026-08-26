@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.productionreport.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.productionreport.domain.ReportDelivery
@@ -19,6 +20,7 @@ import com.zillit.desktop.feature.productionreport.domain.firstUntitledSystemCel
 import com.zillit.desktop.feature.productionreport.domain.normalised
 import com.zillit.desktop.feature.productionreport.domain.withAddedLine
 import com.zillit.desktop.feature.productionreport.domain.withValue
+import kotlinx.coroutines.flow.conflate
 
 /**
  * Production report creation and review.
@@ -55,7 +57,26 @@ class ReportViewModel(
             )
         }
         refresh()
+        listenOnce()
     }
+
+    /**
+     * Reloads the open list when the socket says a report moved through the
+     * workflow on another client — the web's `handleSocketReportUpdate`
+     * (`ProductionReportApp.jsx:958-1048`) reloads the lists the new status
+     * touches; this client's refresh already scopes to the open destination
+     * and bucket. Guarded so a second start (the window reopening) does not
+     * stack collectors; `conflate()` folds a burst into one reload.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.conflate().collect { refresh() }
+        }
+    }
+
+    private var listening = false
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
     override fun onEvent(event: ReportEvent) {
@@ -200,7 +221,7 @@ class ReportViewModel(
     private suspend fun <T> load(block: suspend () -> ZillitResult<T>) {
         when (val result = block()) {
             is ZillitResult.Success -> Unit
-            is ZillitResult.Failure -> setState { copy(error = result.error.userMessage) }
+            is ZillitResult.Failure -> setState { copy(error = result.error.localised()) }
         }
     }
 
@@ -278,7 +299,7 @@ class ReportViewModel(
                     }
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = result.error.userMessage)
+                    copy(busy = false, error = result.error.localised())
                 }
             }
         }
@@ -329,7 +350,7 @@ class ReportViewModel(
                 }
                 is ZillitResult.Failure -> {
                     updateEditor { copy(saving = false) }
-                    setState { copy(error = result.error.userMessage) }
+                    setState { copy(error = result.error.localised()) }
                 }
             }
         }
@@ -381,7 +402,7 @@ class ReportViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = result.error.userMessage)
+                    copy(busy = false, error = result.error.localised())
                 }
             }
         }
@@ -398,7 +419,7 @@ class ReportViewModel(
             val detail = when (val result = repository.sheet(sheetId)) {
                 is ZillitResult.Success -> result.data
                 is ZillitResult.Failure -> {
-                    setState { copy(busy = false, error = result.error.userMessage) }
+                    setState { copy(busy = false, error = result.error.localised()) }
                     return@launch
                 }
             }
@@ -427,7 +448,7 @@ class ReportViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = result.error.userMessage)
+                    copy(busy = false, error = result.error.localised())
                 }
             }
         }
@@ -453,7 +474,7 @@ class ReportViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = published.error.userMessage)
+                    copy(busy = false, error = published.error.localised())
                 }
             }
         }
@@ -487,12 +508,12 @@ class ReportViewModel(
                             copy(pdf = pdf?.copy(loading = false, pages = pages.data))
                         }
                         is ZillitResult.Failure -> setState {
-                            copy(pdf = null, error = pages.error.userMessage)
+                            copy(pdf = null, error = pages.error.localised())
                         }
                     }
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(pdf = null, error = bytes.error.userMessage)
+                    copy(pdf = null, error = bytes.error.localised())
                 }
             }
         }
@@ -508,7 +529,7 @@ class ReportViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = result.error.userMessage)
+                    copy(busy = false, error = result.error.localised())
                 }
             }
         }

@@ -56,6 +56,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.locationpicker.LocalLocationPicker
+import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.media.PreviewResult
 import com.zillit.desktop.core.media.PreviewItem
 import com.zillit.desktop.core.media.MediaPreviewDialog
@@ -104,7 +106,9 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -852,15 +856,15 @@ private fun Composer(
             EditBar(onCancel = { onEvent(HomeFeedEvent.CancelEditComment) })
         }
 
-        draft.media?.let { picked ->
+        // A drafted location shows as the place, never as its map image: the
+        // PNG is something this app fetched, not something the user picked,
+        // and "location-map.png" tells them nothing about where they chose.
+        draft.media?.takeIf { draft.location == null }?.let { picked ->
             AttachedChip(picked, onRemove = { onEvent(HomeFeedEvent.RemoveAttachment) })
         }
 
-        if (draft.media == null && draft.location != null) {
-            LocationChip(
-                point = draft.location ?: return@Column,
-                onRemove = { onEvent(HomeFeedEvent.RemoveAttachment) },
-            )
+        draft.location?.let { point ->
+            LocationChip(point, onRemove = { onEvent(HomeFeedEvent.RemoveAttachment) })
         }
 
         val picker = remember { MentionPickerState() }
@@ -1027,9 +1031,64 @@ private fun MediaButtons(enabled: Boolean, documentsOnly: Boolean, onEvent: (Hom
     LocationButton(enabled, onEvent)
 }
 
-/** The pin, and the picker it opens: paste coordinates or a Maps link. */
+/**
+ * "Share location" — the pin in the composer's attach row.
+ *
+ * Opens the app's shared map picker (`core:locationpicker`), which is the
+ * same surface the calendar's Location field uses, so a crew member picks a
+ * place the one way this app picks places. The picked name and address travel
+ * with the point; see [GeoPoint] for where they live on a wire that has no
+ * name field.
+ *
+ * With **no picker in scope** — a host that wires none, or a render test —
+ * the pin falls back to the typed form below rather than disappearing: a
+ * pasted Maps link is still a location worth sharing, and a button that does
+ * nothing is worse than a plainer one that works.
+ */
 @Composable
 private fun LocationButton(enabled: Boolean, onEvent: (HomeFeedEvent) -> Unit) {
+    val picker = LocalLocationPicker.current
+    val scope = rememberCoroutineScope()
+    if (picker != null) {
+        ZillitIconButton(
+            icon = ZillitIcons.Pin,
+            contentDescription = "Share a location",
+            onClick = {
+                scope.launch {
+                    // The rights gate is the view model's, on the event —
+                    // the state that enabled this button can be stale by the
+                    // time the picker closes, which on a map is a while.
+                    picker.pick(title = "Share a location")
+                        ?.let { onEvent(HomeFeedEvent.AttachLocation(it.toGeoPoint())) }
+                }
+            },
+            enabled = enabled,
+        )
+        return
+    }
+    TypedLocationButton(enabled, onEvent)
+}
+
+/**
+ * The one line a picked place reads as, and the point under it.
+ *
+ * Joined exactly as the calendar's field joins it, because [GeoPoint.name]
+ * splits it back apart on the far side.
+ */
+private fun PickedLocation.toGeoPoint(): GeoPoint = GeoPoint(
+    lat = lat,
+    long = lng,
+    address = when {
+        name.isBlank() -> address
+        address.isBlank() -> name
+        address.startsWith(name, ignoreCase = true) -> address
+        else -> "$name, $address"
+    },
+)
+
+/** The pin without a map behind it: paste coordinates or a Maps link. */
+@Composable
+private fun TypedLocationButton(enabled: Boolean, onEvent: (HomeFeedEvent) -> Unit) {
     var open by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
     val parsed = remember(input) { parseGeoInput(input) }
@@ -1163,8 +1222,10 @@ private fun LocationChip(point: GeoPoint, onRemove: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
+        // The address the picker gave back, when it gave one — a crew member
+        // recognises "Aria Hotel" and cannot check a decimal.
         ZillitText(
-            text = "📍 ${point.lat}, ${point.long}",
+            text = "📍 " + point.address.ifBlank { point.coordinates },
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textPrimary,
         )
@@ -1663,7 +1724,7 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
 
         NoticeAttachment(notice.id, notice.kind, notice.attachment, notice.location, ui)
 
-        if (notice.body.isNotBlank()) {
+        if (notice.showsBody) {
             ZillitText(
                 text = highlighted(notice.body, ui.highlightQuery, ui.crewNames),
                 style = ZillitTheme.typography.bodyMedium,
@@ -2257,7 +2318,7 @@ private fun CommentBubble(parentId: String, comment: NoticeComment, ui: BoardUi)
 
         NoticeAttachment(parentId, comment.kind, comment.attachment, comment.location, ui)
 
-        if (comment.body.isNotBlank()) {
+        if (comment.showsBody) {
             ZillitText(
                 text = highlighted(comment.body, ui.highlightQuery, ui.crewNames),
                 style = ZillitTheme.typography.bodySmall,

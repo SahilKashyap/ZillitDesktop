@@ -52,6 +52,18 @@ internal fun eventBody(draft: EventDraft, times: EventTimes, zone: TimeZone): Js
         put("full_day", draft.isAllDay)
         put("description", draft.description.trim())
         put("location_description", draft.location.trim())
+        // The point beside the words, exactly as the web sends it — note the
+        // wire's `long`, not `lng` (`AddCalendarEvent.jsx:433-438`). Omitted
+        // entirely for a typed location: half a point is worse than none.
+        if (draft.locationLat != null && draft.locationLng != null) {
+            put(
+                "location",
+                buildJsonObject {
+                    put("lat", draft.locationLat)
+                    put("long", draft.locationLng)
+                },
+            )
+        }
         put("notify", draft.reminderMinutes)
         // The web sends white when the user picked nothing.
         put("color", draft.colorHex.ifBlank { "#ffffff" })

@@ -110,6 +110,24 @@ PROD_FIREBASE_PROJECT_ID=
 PROD_FIREBASE_API_KEY=
 
 # ---------------------------------------------------------------------------
+# Update notices (Firebase Remote Config)
+#
+# FIREBASE_APP_ID is Android's `mobilesdk_app_id` from the same
+# google-services.json — `1:1234567890:android:abcdef`. It is optional and
+# affects nothing but the update banner: Remote Config's client-fetch REST body
+# requires an appId, and without one core:appupdate stays switched off (no
+# banner, no error). The Firestore call mirror and chat presence need only the
+# two keys above.
+#
+# The console must publish, on the same Firebase project:
+#   desktop_latest_version   e.g. 1.2.0   — newest published desktop build
+#   desktop_min_version      e.g. 1.1.0   — below this, updating is mandatory
+#   desktop_download_url     https://…    — optional; falls back to the Zillit
+#                                           configuration's app_download_url
+# ---------------------------------------------------------------------------
+PROD_FIREBASE_APP_ID=
+
+# ---------------------------------------------------------------------------
 # QA  — same keys with a QA_ prefix
 # Develop — same keys with an STG_ prefix
 # ---------------------------------------------------------------------------

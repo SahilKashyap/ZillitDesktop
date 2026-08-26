@@ -1,3 +1,8 @@
+// The composition root: one builder per collaborator the app assembles, plus
+// the small helpers those builders need. A cap on how many things a graph may
+// wire is a cap on how many parts the app may have.
+@file:Suppress("TooManyFunctions")
+
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitResult
@@ -163,6 +168,7 @@ import com.zillit.desktop.feature.home.data.ToolsRepositoryImpl
 import com.zillit.desktop.feature.home.domain.HomeFeedRepository
 import com.zillit.desktop.feature.home.domain.ToolsRepository
 import com.zillit.desktop.feature.auth.domain.ProjectRepository
+import com.zillit.desktop.core.appupdate.AppUpdateChecker
 import com.zillit.desktop.core.remoteconfig.RemoteConfigRepository
 import com.zillit.desktop.core.remoteconfig.RemoteConfigRepositoryImpl
 import com.zillit.desktop.feature.auth.domain.QrLoginRepository
@@ -445,6 +451,8 @@ sealed interface AppGraph {
         val chatRepository: ChatRepository,
         /** The chat header's green-dot feed; null without Firebase configuration. */
         val chatPresence: com.zillit.desktop.feature.chat.data.DevicePresenceSource?,
+        /** Whether a newer desktop build exists. Never throws; never nags on doubt. */
+        val appUpdateChecker: AppUpdateChecker,
         /** The notification list's source — see `NotificationsToolProvider`. */
         val notificationsRepository: NotificationsRepository,
         val homeRealtime: HomeRealtimeSource,
@@ -514,6 +522,18 @@ sealed interface AppGraph {
         val callApi: CallApi,
         /** The media stack behind it — the host embeds its video surface. */
         val callEngine: com.zillit.desktop.feature.calls.domain.CallEngine,
+        /**
+         * The Maps tool's canvas — embedded Chromium drawing Google's map.
+         * Idle until the tool first opens; its surface is embedded by
+         * [mapCanvasSurface].
+         */
+        val mapCanvas: com.zillit.desktop.feature.maps.domain.MapCanvasHost,
+        /**
+         * The map-backed place picker behind every `ZillitLocationField`.
+         * Its own Chromium instance, separate from [mapCanvas] — see
+         * [KcefLocationPickerHost]. Mounted by `LocationPickerMount`.
+         */
+        val locationPicker: KcefLocationPickerHost,
         val remoteConfigRepository: RemoteConfigRepository,
         val apiKeySetup: ApiKeySetup,
         /**
@@ -687,10 +707,20 @@ sealed interface AppGraph {
 
             // The finance repositories, built here because the offline
             // handlers below send through them.
-            val purchaseOrderRepository = PurchaseOrderRepositoryImpl(apiClient, config)
+            val purchaseOrderRepository = PurchaseOrderRepositoryImpl(
+                apiClient,
+                config,
+                bus = socketEvents,
+                currentProjectId = { headerContext.value.projectId },
+            )
             // Timecards are served by the payroll host even though the tool
             // is its own surface — see TimecardRepositoryImpl.
-            val timecardRepository = TimecardRepositoryImpl(apiClient, config)
+            val timecardRepository = TimecardRepositoryImpl(
+                apiClient,
+                config,
+                bus = socketEvents,
+                currentProjectId = { headerContext.value.projectId },
+            )
 
             val syncDatabase = openSyncDatabase(secureStore)
             // What can be sent later: an operation of a kind nobody here
@@ -897,6 +927,20 @@ sealed interface AppGraph {
                 )
             }
 
+            // "A newer build exists", from Firebase Remote Config. Rides the
+            // plain client for the same reason chatPresence does: Google must
+            // never see the Zillit headers. Off entirely without
+            // <ENV>_FIREBASE_APP_ID, and off under `:desktopApp:run`.
+            val appUpdateChecker = AppUpdateChecker(
+                httpClient = storageClient,
+                firebase = config.firebase,
+                // jpackage writes `-Djpackage.app-version` into the bundle's
+                // .cfg; absent unpackaged, which the checker reads as "unknown".
+                installedVersion = { System.getProperty("jpackage.app-version") },
+                instanceId = { updateInstanceId(preferences) },
+                fallbackDownloadUrl = { remoteConfigRepository.current()?.appDownloadUrl },
+            )
+
             val chatRepository = ChatRepositoryImpl(
                 apiClient = apiClient,
                 config = config,
@@ -920,6 +964,22 @@ sealed interface AppGraph {
                 ),
             )
 
+            // The Maps tool's canvas. Constructing it costs nothing — Chromium
+            // work begins on the tool's first open, and the runtime is shared
+            // with the call engine (one CefApp, separate clients). The key
+            // closure hands over remote config's already-decrypted Maps key;
+            // the engine never logs or persists it.
+            val mapCanvas = KcefMapEngine(
+                googleMapsKey = { remoteConfigRepository.current()?.googleMapsKey },
+                scope = appScope,
+            ).also(Shutdown::mapEngine)
+            // The place picker's own Chromium, kept apart from the Maps tool's
+            // so the tool does not go blank behind the dialog. Idle until the
+            // first "Pick on map"; same key closure, same never-logged key.
+            val locationPicker = KcefLocationPickerHost(
+                googleMapsKey = { remoteConfigRepository.current()?.googleMapsKey },
+                scope = appScope,
+            ).also(Shutdown::locationPicker)
             // One instance, shared: the coordinator and the call-log list are
             // the same surface talking to the same production.
             val callApi = CallApi(apiClient, config)
@@ -1015,6 +1075,7 @@ sealed interface AppGraph {
                 noticeDecryptor = noticeDecryptor,
                 chatRepository = chatRepository,
                 chatPresence = chatPresence,
+                appUpdateChecker = appUpdateChecker,
                 homeRealtime = homeRealtime,
                 emailRealtime = EmailRealtimeSource(socketEvents),
                 calendarRepository = calendarRepository,
@@ -1053,8 +1114,18 @@ sealed interface AppGraph {
                 cardRepository = CardRepositoryImpl(apiClient, config),
                 purchaseOrderRepository = purchaseOrderRepository,
                 timecardRepository = timecardRepository,
-                payrollRepository = PayrollRepositoryImpl(apiClient, config),
-                dealMemoRepository = DealMemoRepositoryImpl(apiClient, config),
+                payrollRepository = PayrollRepositoryImpl(
+                    apiClient,
+                    config,
+                    bus = socketEvents,
+                    currentProjectId = { headerContext.value.projectId },
+                ),
+                dealMemoRepository = DealMemoRepositoryImpl(
+                    apiClient,
+                    config,
+                    bus = socketEvents,
+                    currentProjectId = { headerContext.value.projectId },
+                ),
                 // Each on its own service host. Document Distribution also
                 // reaches the *email* service for open status — the pixel log
                 // lives with whoever sent the copy, not with doc-dist.
@@ -1062,7 +1133,7 @@ sealed interface AppGraph {
                 // `/vendors` (which is also the hub, despite the path), and the
                 // core service for the shared currency and tax catalogues.
                 accountHubRepository = AccountHubRepositoryImpl(apiClient, config),
-                docDistRepository = DocDistRepositoryImpl(apiClient, config),
+                docDistRepository = DocDistRepositoryImpl(apiClient, config, bus = socketEvents),
                 driveRepository = DriveRepositoryImpl(
                     apiClient = apiClient,
                     config = config,
@@ -1073,6 +1144,7 @@ sealed interface AppGraph {
                     resolveUserName = { userId ->
                         projectContext.context.value.user(userId)?.fullName
                     },
+                    bus = socketEvents,
                 ),
                 httpClient = storageClient,
                 badgeStore = badgeStore,
@@ -1083,6 +1155,8 @@ sealed interface AppGraph {
                 callCoordinator = callCoordinator,
                 callApi = callApi,
                 callEngine = callEngine,
+                mapCanvas = mapCanvas,
+                locationPicker = locationPicker,
                 remoteConfigRepository = remoteConfigRepository,
                 apiKeySetup = apiKeySetup,
                 hasApiKeys = hasApiKeys,
@@ -1326,3 +1400,22 @@ internal suspend fun AppGraph.Ready.crewPresets(): ZillitResult<CrewPresets> {
 
 /** `project_type` for a personal production, which runs no mail. */
 private const val PERSONAL_PRODUCTION = "personal"
+
+/**
+ * A stable per-install id for Firebase Remote Config.
+ *
+ * Generated once and persisted: Firebase buckets percentage rollouts by this
+ * value, so a fresh id each launch would make one machine look like a stream
+ * of new installs and skew every staged rollout the console runs. Device
+ * scoped, so it survives sign-out — it identifies a copy of the app, never a
+ * person.
+ */
+private suspend fun updateInstanceId(preferences: PreferenceStore): String {
+    preferences.get(ZillitPreferences.UpdateInstanceId)
+        .takeIf { it.isNotBlank() }
+        ?.let { return it }
+
+    val minted = java.util.UUID.randomUUID().toString()
+    preferences.set(ZillitPreferences.UpdateInstanceId, minted)
+    return minted
+}

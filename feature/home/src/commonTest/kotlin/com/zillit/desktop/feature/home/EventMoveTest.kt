@@ -115,12 +115,29 @@ class EventMoveTest {
     )
 
     @Test
-    fun `a day-and-minutes drag saves the shifted times and keeps the event's body`() =
+    fun `a drag only proposes - nothing saves until the organiser confirms`() =
         runTest(dispatcher) {
             val repository = FakeCalendar()
             val model = viewModel(repository, userId = "me")
 
             model.onEvent(CalendarEvent2Event.MoveEvent(event, dayDelta = 1, minuteDelta = 30))
+            advanceUntilIdle()
+
+            // The drop is a question now, not a save.
+            assertTrue(repository.saved.isEmpty())
+            val pending = model.state.value.pendingReschedule
+            assertEquals(event.startMillis + 86_400_000 + 1_800_000, pending?.newStart)
+            assertEquals((pending?.newStart ?: 0) + 3_600_000, pending?.newEnd)
+        }
+
+    @Test
+    fun `confirming the drop saves the shifted times and keeps the event's body`() =
+        runTest(dispatcher) {
+            val repository = FakeCalendar()
+            val model = viewModel(repository, userId = "me")
+
+            model.onEvent(CalendarEvent2Event.MoveEvent(event, dayDelta = 1, minuteDelta = 30))
+            model.onEvent(CalendarEvent2Event.ConfirmReschedule)
             advanceUntilIdle()
 
             val (draft, times) = repository.saved.single()
@@ -129,6 +146,22 @@ class EventMoveTest {
             // One day plus thirty minutes later, duration intact.
             assertEquals(event.startMillis + 86_400_000 + 1_800_000, times.startMillis)
             assertEquals(times.startMillis + 3_600_000, times.endMillis)
+            // The question is answered and gone.
+            assertEquals(null, model.state.value.pendingReschedule)
+        }
+
+    @Test
+    fun `cancelling the drop saves nothing and the event stays put`() =
+        runTest(dispatcher) {
+            val repository = FakeCalendar()
+            val model = viewModel(repository, userId = "me")
+
+            model.onEvent(CalendarEvent2Event.MoveEvent(event, dayDelta = 2, minuteDelta = 0))
+            model.onEvent(CalendarEvent2Event.CancelReschedule)
+            advanceUntilIdle()
+
+            assertTrue(repository.saved.isEmpty())
+            assertEquals(null, model.state.value.pendingReschedule)
         }
 
     @Test
@@ -176,6 +209,7 @@ class EventMoveTest {
         val model = viewModel(repository, userId = "me")
 
         model.onEvent(CalendarEvent2Event.ResizeEvent(event, minuteDelta = 30))
+        model.onEvent(CalendarEvent2Event.ConfirmReschedule)
         advanceUntilIdle()
 
         val (draft, times) = repository.saved.single()
@@ -191,6 +225,7 @@ class EventMoveTest {
 
         // The event is an hour long; dragging up two hours pins at 15 min.
         model.onEvent(CalendarEvent2Event.ResizeEvent(event, minuteDelta = -120))
+        model.onEvent(CalendarEvent2Event.ConfirmReschedule)
         advanceUntilIdle()
 
         val (_, times) = repository.saved.single()

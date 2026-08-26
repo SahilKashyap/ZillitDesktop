@@ -10,6 +10,8 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":core:common"))
             implementation(project(":core:designsystem"))
+            // The rendezvous and every stop pick their address on a map.
+            implementation(project(":core:locationpicker"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:config"))
             implementation(project(":core:network"))

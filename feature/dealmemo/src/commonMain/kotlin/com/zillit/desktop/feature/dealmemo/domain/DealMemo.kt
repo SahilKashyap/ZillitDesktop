@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.dealmemo.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * A deal memo: the agreed terms of one crew member's engagement.
@@ -31,24 +33,62 @@ data class Deal(
     val amendedAt: Long?,
     val acknowledgedAt: Long?,
     val createdAt: Long?,
+    /**
+     * Where a live amendment stands with the crew member — the wire's
+     * `amendment_ack.status` (`DMDealPreviewPage.jsx:1427,1433`). [amendedAt]
+     * and [acknowledgedAt] are the pre-port timestamps, kept as a fallback for
+     * rows that carry them.
+     */
+    val amendmentAck: AmendmentAck = AmendmentAck.None,
+    /**
+     * The stored `crew_details.designation_identifier`, kept raw so a re-send
+     * writes back the identifier the row already carries — [designation] is
+     * the display string and must never reach the wire.
+     */
+    val designationIdentifier: String? = null,
 ) {
     /**
      * Whether the crew member has confirmed the terms as they stand now.
      *
-     * An amendment after an acknowledgement invalidates it — the person agreed
-     * to different terms — which is why this compares the two timestamps
-     * rather than reading a boolean the server might not have re-cleared.
+     * The server's `amendment_ack.status` is the source
+     * (`api/deal-memo/deal-memo.js:88-112`); the timestamp comparison is kept
+     * for rows that predate it — an amendment after an acknowledgement
+     * invalidates it, because the person agreed to different terms.
      */
     val acknowledged: Boolean
-        get() {
-            val confirmed = acknowledgedAt ?: return false
-            val amended = amendedAt ?: return true
-            return confirmed >= amended
+        get() = when (amendmentAck) {
+            AmendmentAck.Acknowledged -> true
+            AmendmentAck.Pending -> false
+            AmendmentAck.None -> {
+                val confirmed = acknowledgedAt
+                val amended = amendedAt
+                confirmed != null && (amended == null || confirmed >= amended)
+            }
         }
 
     /** Terms changed and nobody has re-confirmed them. */
     val awaitingReacknowledgement: Boolean
-        get() = acknowledgedAt != null && !acknowledged
+        get() = amendmentAck == AmendmentAck.Pending ||
+            (amendmentAck == AmendmentAck.None && acknowledgedAt != null && !acknowledged)
+}
+
+/**
+ * The `amendment_ack.status` enum: an accountant amended a live deal's pay
+ * rules in place, and the crew member has or has not confirmed the change
+ * (`DMDealPreviewPage.jsx:1427`, `api/deal-memo/deal-memo.js:88-91`).
+ */
+enum class AmendmentAck(val wire: String) {
+    None("none"),
+    Pending("pending"),
+    Acknowledged("acknowledged"),
+    ;
+
+    companion object {
+        fun from(wire: String?): AmendmentAck {
+            val value = wire?.trim()?.lowercase().orEmpty()
+            return entries.firstOrNull { it.wire == value } ?: None
+        }
+    }
 }
 
 /**
@@ -84,23 +124,38 @@ data class DealRates(
         }
 }
 
-/** Where a deal is. */
+/**
+ * Where a deal is — the server's status set and lifecycle order, exactly as
+ * the web's single source of truth publishes them (`dealStatus.js:18-36`,
+ * `STATUS_ORDER` at `dealStatus.js:62-72`):
+ * draft → issued → awaiting_approval → approved → active → completed, with
+ * rejected / cancelled / deactivated as branch states.
+ */
 enum class DealStatus(val wire: String, val label: String) {
     Draft("draft", "Draft"),
-    Sent("sent", "Sent to crew"),
-    Acknowledged("acknowledged", "Acknowledged"),
-    Amended("amended", "Amended"),
+
+    /** Issued to the crew member, waiting on their details (`dealStatus.js:24`). */
+    Issued("issued", "Issued"),
+    AwaitingApproval("awaiting_approval", "Awaiting Approval"),
+    Approved("approved", "Approved"),
+    Rejected("rejected", "Rejected"),
     Active("active", "Active"),
-    Expired("expired", "Expired"),
-    Terminated("terminated", "Terminated"),
+    Completed("completed", "Completed"),
+    Cancelled("cancelled", "Cancelled"),
+
+    /** Crew let go mid-engagement — terminal (`dealStatus.js:31-35`). */
+    Deactivated("deactivated", "Deactivated"),
     Unknown("", "Unknown"),
     ;
 
     /** Terms may still be changed without an amendment trail. */
     val isEditable: Boolean get() = this == Draft
 
-    /** The deal is in force and downstream tools should read it. */
-    val isLive: Boolean get() = this == Active || this == Acknowledged || this == Amended
+    /**
+     * The deal is in force and downstream tools should read it — the web's
+     * timecard reads `active` deals only (`deal-memo.js:50-53`).
+     */
+    val isLive: Boolean get() = this == Active
 
     companion object {
         fun from(wire: String?): DealStatus {
@@ -127,30 +182,42 @@ data class DealViewer(
     val departmentIdentifier: String?,
     val designationIdentifier: String?,
     val enteredAsTool: Boolean = false,
+    /**
+     * `posting_access` on the deal-memo tool, admin override applied — the
+     * other half of the web's write gate (`useDealMemoRights.js:48-66`).
+     */
+    val hasPostingRights: Boolean = false,
 ) {
     val isAccountant: Boolean
         get() = !enteredAsTool && departmentIdentifier?.contains(ACCOUNTS, ignoreCase = true) == true
 
     /**
-     * Whether this person may write deals.
-     *
-     * Production accountants and financial controllers, who set terms. Everyone
-     * else sees their own deal and nothing more — a crew member browsing the
-     * production's pay rates is exactly what this tool must not allow.
+     * Whether this person may write deals — the web's gate, exactly
+     * (`useDealMemoRights.js:48-66`): posting rights on the deal-memo tool
+     * OR any accounts-department member; admins fold in through the rights
+     * override. No designation filter — an earlier port restricted this to
+     * senior accountants, which hid Create from assistant accountants the
+     * web shows it to. Everyone else sees their own deal and nothing more —
+     * a crew member browsing the production's pay rates is exactly what
+     * this tool must not allow.
      */
     val canWriteDeals: Boolean
-        get() = isAccountant && designationIdentifier.orEmpty().lowercase()
-            .map { if (it.isLetterOrDigit()) it else ' ' }
-            .joinToString("")
-            .let { value -> SENIOR.any { value.contains(it) } }
+        get() = isAccountant || (!enteredAsTool && hasPostingRights)
 
     private companion object {
         const val ACCOUNTS = "accounts"
-        val SENIOR = setOf("production accountant", "financial controller")
     }
 }
 
-/** A deal as the form filled it in. */
+/**
+ * A deal as the form filled it in.
+ *
+ * [departmentId] and [designation] carry the rate-card *identifiers*
+ * ("department_camera", "designation_gaffer_…") — the authoritative columns
+ * the wire stores them under (`crew_details.department_identifier` /
+ * `designation_identifier`, `toDealMemoPayload.js:796-800`), not Zillit-master
+ * Mongo ids.
+ */
 data class NewDeal(
     val userId: String,
     val crewName: String,
@@ -188,6 +255,14 @@ data class DealHistoryEntry(
 
 /** Everything the deal memo tool asks the server for. */
 interface DealMemoRepository {
+
+    /**
+     * Socket announcements that a deal changed somewhere — another client's
+     * create, decision or termination, answered with a reload of whatever
+     * page is open rather than an in-place patch (the web's `ah:deal_memo:*`
+     * refetch pattern). Defaulted empty for tests and hosts without a socket.
+     */
+    val refreshes: Flow<Unit> get() = emptyFlow()
 
     /** Every deal on the production. Requires write access. */
     suspend fun deals(status: DealStatus?): ZillitResult<List<Deal>>

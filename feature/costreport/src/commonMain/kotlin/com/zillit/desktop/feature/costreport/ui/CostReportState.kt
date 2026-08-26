@@ -126,6 +126,14 @@ data class CostReportUiState(
     val posted: PostedCrs = PostedCrs(),
     val snapshot: SnapshotView? = null,
     val ledger: LedgerView? = null,
+    /**
+     * A feeder tool approved or posted something elsewhere, so the actuals
+     * and committed columns may be stale. Deliberately a flag rather than an
+     * auto-refresh — the worksheet recompute is heavy, and the web makes the
+     * same call (`CostReportWorksheetModule.jsx:5606-5615`): the Refresh
+     * button turns into a pill until pressed.
+     */
+    val sourceStale: Boolean = false,
 ) {
     /** The project list first, the preset catalogue when the project has none, then the static table. */
     fun symbolFor(code: String?): String {

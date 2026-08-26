@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.pagedistribution.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * The schedule-distribution / script-distribution services, both `/api/v2`,
@@ -8,6 +10,16 @@ import com.zillit.desktop.core.common.ZillitResult
  * tools.
  */
 interface DistributionRepository {
+
+    /**
+     * A pulse per upload/replace/move/delete another client announced for
+     * [tool] — each web page refetches its visible list on its own family
+     * (`RenderScript.jsx:1415-1521`, `ScheduleDistributionMain.jsx:1636-1717`,
+     * `DoD.jsx:1114-1154`). Per tool because the repository serves three
+     * tools and a script upload must not reload an open D.O.D. Defaulted
+     * empty for tests and hosts without a socket.
+     */
+    fun refreshes(tool: DistributionTool): Flow<Unit> = emptyFlow()
 
     /** A single-list tab's documents; history includes replaced ones. */
     suspend fun documents(tab: DistributionTab, mode: ListMode): ZillitResult<List<DistDocument>>

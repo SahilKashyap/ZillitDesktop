@@ -54,6 +54,12 @@ class ChatToolProvider(
     private val deleteRoom: (
         suspend (roomId: String) -> com.zillit.desktop.core.common.ZillitResult<Unit>
     )? = null,
+    /**
+     * The app's guarded external-URL launcher — `main.kt`'s `openInBrowser`,
+     * the same one the Maps, Sides and Document Distribution providers take.
+     * Behind "Open in Maps" on a shared-location bubble; null hides it.
+     */
+    private val onOpenUrl: ((String) -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = "/cnc"
@@ -71,6 +77,7 @@ class ChatToolProvider(
                 canDownload = canDownload,
                 clipboard = clipboard,
                 loadFullImage = loadFullImage,
+                onOpenUrl = onOpenUrl,
             ),
         ) {
             ChatScreen(

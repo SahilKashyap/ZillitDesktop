@@ -20,6 +20,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.zIndex
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +62,9 @@ internal fun TimeGrid(
     onResizeEvent: (CalendarEvent, Int) -> Unit = { _, _ -> },
 ) {
     val colors = ZillitTheme.colors
+    // The day whose block is mid-drag rides above its neighbours; without
+    // the lift a cross-column drag slides UNDER every later-drawn column.
+    var draggingDate by remember { mutableStateOf<LocalDate?>(null) }
 
     Column(modifier.fillMaxSize()) {
         // All-day events have no position on a time axis, so they sit above the
@@ -72,11 +79,15 @@ internal fun TimeGrid(
                     Modifier
                         .weight(1f)
                         .height(GRID_HEIGHT)
+                        .zIndex(if (date == draggingDate) 1f else 0f)
                         .background(colors.canvas)
                         .clickable { onSelectDay(date) },
                 ) {
                     HourLines()
-                    DayEvents(state, date, onOpenEvent, onMoveEvent, onResizeEvent)
+                    DayEvents(
+                        state, date, onOpenEvent, onMoveEvent, onResizeEvent,
+                        onDragging = { active -> draggingDate = if (active) date else null },
+                    )
                     if (date == state.today) {
                         CurrentTimeLine(state.zone)
                     }
@@ -162,12 +173,14 @@ private fun HourLines() {
  * know how wide a column is, which is what keeps it testable.
  */
 @Composable
+@Suppress("LongParameterList") // One drag seam per gesture, one each.
 private fun DayEvents(
     state: CalendarUiState,
     date: LocalDate,
     onOpenEvent: (CalendarEvent) -> Unit,
     onMoveEvent: (CalendarEvent, Int, Int) -> Unit,
     onResizeEvent: (CalendarEvent, Int) -> Unit,
+    onDragging: (Boolean) -> Unit = {},
 ) {
     val dayStart = date.startOfDayMillis(state.zone)
     val dayEnd = date.plusDays(1).startOfDayMillis(state.zone)
@@ -187,6 +200,7 @@ private fun DayEvents(
             }
         }
 
+        var draggingId by remember { mutableStateOf<String?>(null) }
         placed.forEach { positioned ->
             Box(
                 Modifier
@@ -196,7 +210,16 @@ private fun DayEvents(
                     )
                     .width(width * positioned.widthFraction)
                     .height(height * positioned.height)
-                    .draggableEvent(positioned.event, geometry) { days, minutes ->
+                    // Above its overlapping neighbours too, not just other columns.
+                    .zIndex(if (positioned.event.id == draggingId) 1f else 0f)
+                    .draggableEvent(
+                        positioned.event,
+                        geometry,
+                        onDragging = { active ->
+                            draggingId = if (active) positioned.event.id else null
+                            onDragging(active)
+                        },
+                    ) { days, minutes ->
                         onMoveEvent(positioned.event, days, minutes)
                     }
                     // Inset so touching blocks read as two, not one.

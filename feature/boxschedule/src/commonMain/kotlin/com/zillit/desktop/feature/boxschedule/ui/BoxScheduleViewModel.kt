@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.boxschedule.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.boxschedule.domain.BlockDraft
@@ -17,6 +18,7 @@ import com.zillit.desktop.feature.boxschedule.domain.MainCalendarLookup
 import com.zillit.desktop.feature.boxschedule.domain.RecurrenceScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.conflate
 
 /**
  * The production diary.
@@ -36,7 +38,27 @@ class BoxScheduleViewModel(
     fun start() {
         setState { copy(viewer = resolveViewer()) }
         refresh()
+        listenOnce()
     }
+
+    /**
+     * Re-runs the one big load when the socket says another client changed
+     * the diary — the web's three `BoxScheduleSocketRefresh` mounts
+     * (`boxScheduleV2/index.jsx:1538-1554`) collapse into this refresh,
+     * which already refetches types, blocks, events, and the calendar
+     * merge. Guarded so a second start (the window reopening) does not
+     * stack collectors; `conflate()` folds a burst into one reload — the
+     * web debounces ~300ms for the same reason.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.conflate().collect { refresh() }
+        }
+    }
+
+    private var listening = false
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
     override fun onEvent(event: BoxScheduleEvent) {
@@ -87,6 +109,18 @@ class BoxScheduleViewModel(
                         startText = event.startText ?: diaryEditor.startText,
                         endText = event.endText ?: diaryEditor.endText,
                         location = event.location ?: diaryEditor.location,
+                        // Typing a location clears the coordinates it no longer
+                        // describes; picking one sets both together.
+                        locationLat = if (event.location != null && event.locationLat == null) {
+                            null
+                        } else {
+                            event.locationLat ?: diaryEditor.locationLat
+                        },
+                        locationLng = if (event.location != null && event.locationLng == null) {
+                            null
+                        } else {
+                            event.locationLng ?: diaryEditor.locationLng
+                        },
                         color = event.color ?: diaryEditor.color,
                         noteType = event.noteType ?: diaryEditor.noteType,
                         repeatStatus = event.repeatStatus ?: diaryEditor.repeatStatus,
@@ -158,7 +192,7 @@ class BoxScheduleViewModel(
     private fun <T> ZillitResult<T>.orError(): T? = when (this) {
         is ZillitResult.Success -> data
         is ZillitResult.Failure -> {
-            val message = this.error.userMessage
+            val message = this.error.localised()
             setState { copy(error = message) }
             null
         }
@@ -173,7 +207,7 @@ class BoxScheduleViewModel(
                     sendEffect(BoxScheduleEffect.Notice(notice))
                     refresh()
                 }
-                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.localised()) }
             }
         }
     }
@@ -244,7 +278,7 @@ class BoxScheduleViewModel(
                     }
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(blockEditor = blockEditor?.copy(saving = false), error = result.error.userMessage)
+                    copy(blockEditor = blockEditor?.copy(saving = false), error = result.error.localised())
                 }
             }
         }
@@ -319,7 +353,7 @@ class BoxScheduleViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(diaryEditor = diaryEditor?.copy(saving = false), error = result.error.userMessage)
+                    copy(diaryEditor = diaryEditor?.copy(saving = false), error = result.error.localised())
                 }
             }
         }
@@ -361,7 +395,7 @@ class BoxScheduleViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(typeEditor = typeEditor?.copy(saving = false), error = result.error.userMessage)
+                    copy(typeEditor = typeEditor?.copy(saving = false), error = result.error.localised())
                 }
             }
         }

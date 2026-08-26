@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -95,7 +96,7 @@ fun PayrollScreen(
             val error = state.error
             if (error != null) {
                 ZillitErrorState(
-                    message = error.userMessage,
+                    message = error.localised(),
                     onRetry = { onEvent(PayrollEvent.Refresh) },
                 )
             } else {

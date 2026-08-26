@@ -99,6 +99,9 @@ data class EventDraft(
     val endText: String = "",
     val isAllDay: Boolean = false,
     val location: String = "",
+    /** Set only by the map picker; typing a location clears them. */
+    val locationLat: Double? = null,
+    val locationLng: Double? = null,
     val description: String = "",
     val reminderMinutes: Int = 0,
     /** Project user ids to invite. */
@@ -288,6 +291,8 @@ fun CalendarEvent.toDraft(zone: TimeZone): EventDraft {
         endText = if (isAllDay) "" else end.time.hhmmText(),
         isAllDay = isAllDay,
         location = location.orEmpty(),
+        locationLat = locationLat,
+        locationLng = locationLng,
         description = description.orEmpty(),
         reminderMinutes = reminderMinutes,
         inviteeIds = inviteeIds,

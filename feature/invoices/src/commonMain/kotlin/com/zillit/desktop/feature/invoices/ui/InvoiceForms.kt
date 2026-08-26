@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.invoices.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
 import com.zillit.desktop.feature.invoices.domain.InvoiceExtraction
@@ -30,7 +31,7 @@ internal class InvoiceForms(private val vm: InvoicesViewModel) {
             vm.update { copy(upload = UploadFlow(file)) }
             when (val up = vm.upload(file)) {
                 is ZillitResult.Failure -> vm.update {
-                    copy(upload = null, error = "Upload failed: ${up.error.userMessage}")
+                    copy(upload = null, error = "Upload failed: ${up.error.localised()}")
                 }
                 is ZillitResult.Success -> {
                     vm.update { copy(upload = upload?.copy(stage = UploadStage.Extracting, attachment = up.data)) }
@@ -57,7 +58,7 @@ internal class InvoiceForms(private val vm: InvoicesViewModel) {
         vm.run {
             when (val r = vm.repo.createFromUpload(vm.departmentUpload(flow))) {
                 is ZillitResult.Failure -> vm.update {
-                    copy(upload = upload?.copy(sending = false), error = r.error.userMessage)
+                    copy(upload = upload?.copy(sending = false), error = r.error.localised())
                 }
                 is ZillitResult.Success -> {
                     vm.update { copy(upload = null) }
@@ -98,7 +99,7 @@ internal class InvoiceForms(private val vm: InvoicesViewModel) {
             vm.update { copy(enter = enter?.copy(file = file, attachment = null, uploading = true, error = null)) }
             when (val up = vm.upload(file)) {
                 is ZillitResult.Failure -> vm.update {
-                    copy(enter = enter?.copy(uploading = false, error = up.error.userMessage))
+                    copy(enter = enter?.copy(uploading = false, error = up.error.localised()))
                 }
                 is ZillitResult.Success -> {
                     vm.update { copy(enter = enter?.copy(uploading = false, attachment = up.data)) }
@@ -182,7 +183,7 @@ internal class InvoiceForms(private val vm: InvoicesViewModel) {
         vm.run {
             when (val r = vm.repo.createEntered(entered)) {
                 is ZillitResult.Failure -> vm.update {
-                    copy(enter = enter?.copy(saving = false, error = r.error.userMessage))
+                    copy(enter = enter?.copy(saving = false, error = r.error.localised()))
                 }
                 is ZillitResult.Success -> {
                     vm.update { copy(enter = null) }

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.drive.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /** A file or folder named by id and kind — what every bulk route takes. */
 data class DriveRef(val id: String, val kind: DriveItemKind)
@@ -27,6 +29,16 @@ data class UploadRequest(
  */
 @Suppress("TooManyFunctions") // One suspend fun per server operation; see detekt.yml.
 interface DriveRepository {
+
+    /**
+     * A pulse per delete another client announced — file, folder or bulk
+     * (`DriveManagement.jsx:1591-1596`, which refetches the current view;
+     * deletes run even before its own-events guard, ZL-18490). The listener
+     * reloads the open destination so a row the user can no longer see, or
+     * a corrected trash count, lands without a manual refresh. Defaulted
+     * empty for tests and hosts without a socket.
+     */
+    val refreshes: Flow<Unit> get() = emptyFlow()
 
     // -- browsing ----------------------------------------------------------
 

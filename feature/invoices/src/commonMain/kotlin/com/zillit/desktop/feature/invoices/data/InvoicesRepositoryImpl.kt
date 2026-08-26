@@ -10,6 +10,7 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.invoices.domain.ApprovalStatus
 import com.zillit.desktop.feature.invoices.domain.ApprovalTierConfig
 import com.zillit.desktop.feature.invoices.domain.BankAccount
@@ -20,10 +21,14 @@ import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
 import com.zillit.desktop.feature.invoices.domain.InvoiceExtraction
 import com.zillit.desktop.feature.invoices.domain.InvoiceQuery
+import com.zillit.desktop.feature.invoices.domain.InvoiceRefresh
 import com.zillit.desktop.feature.invoices.domain.InvoiceSettings
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.InvoicesRepository
 import com.zillit.desktop.feature.invoices.domain.Vendor
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -39,10 +44,25 @@ import kotlinx.serialization.json.buildJsonObject
 class InvoicesRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : InvoicesRepository {
 
     private val base = config.apiV2(ZillitService.Invoices).trimEnd('/') + "/invoices"
     private val hub = config.apiV2(ZillitService.AccountHub).trimEnd('/') + "/"
+
+    /**
+     * See [InvoicesRepository.refreshes]. Another production's frame is
+     * dropped when both sides can name a project — the same cross-project
+     * gate the web's account-hub wrapper applies before any handler runs.
+     */
+    override val refreshes: Flow<InvoiceRefresh> =
+        bus?.onAny(INVOICE_SYNC_EVENTS, InvoiceSyncEnvelope.serializer())
+            ?.mapNotNull { (event, envelope) ->
+                invoiceRefreshFor(event).takeIf { envelope.inProject(currentProjectId()) }
+            }
+            ?: emptyFlow()
 
     override suspend fun list(query: InvoiceQuery): ZillitResult<List<Invoice>> = get(
         base,

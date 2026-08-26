@@ -2,29 +2,83 @@
 
 package com.zillit.desktop.feature.maps.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.maps.domain.Geo
 import com.zillit.desktop.feature.maps.domain.LocationDraft
+import com.zillit.desktop.feature.maps.domain.MapCanvasEvent
+import com.zillit.desktop.feature.maps.domain.MapCanvasHost
+import com.zillit.desktop.feature.maps.domain.MapPinMarker
 import com.zillit.desktop.feature.maps.domain.MapRepository
 import com.zillit.desktop.feature.maps.domain.MapViewer
 import com.zillit.desktop.feature.maps.domain.ZoneDraft
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.conflate
 
 /**
- * The map tool without a map: cities, typed pins, studio zones — created and
- * edited with typed coordinates, opened in the system's maps app.
+ * The map tool: cities, typed pins, studio zones — drawn on the host's map
+ * canvas when one is provided, and always editable as a typed list.
  */
 class MapViewModel(
     private val repository: MapRepository,
     private val resolveViewer: () -> MapViewer,
+    /** The map surface, or null on hosts without one (tests, no browser). */
+    private val canvas: MapCanvasHost? = null,
 ) : ZillitViewModel<MapUiState, MapEvent, MapEffect>(MapUiState()) {
 
     fun start() {
         setState { copy(viewer = resolveViewer()) }
         refresh()
+        listenOnce()
+        listenCanvasOnce()
     }
+
+    /**
+     * Re-lists the pins when the socket says another client added, edited,
+     * or removed one — the web's `map_location_*` handlers splice in place;
+     * this client's edit path already re-lists, so the sync does too.
+     * Guarded so a second start (the window reopening) does not stack
+     * collectors; `conflate()` folds a burst into one re-list.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.conflate().collect { loadPins() }
+        }
+    }
+
+    private var listening = false
+
+    /**
+     * The canvas's clicks, folded back into the same acts the list performs:
+     * a marker opens that pin's editor (the web opens its info card,
+     * `GoogleMapComponent.jsx:1049`), an empty-map click proposes a new pin
+     * at that point (`GoogleMapComponent.jsx:532`), and a failure becomes a
+     * readable error instead of a silently grey map.
+     */
+    private fun listenCanvasOnce() {
+        val host = canvas ?: return
+        if (canvasListening) return
+        canvasListening = true
+        launch {
+            host.events.collect { event ->
+                when (event) {
+                    MapCanvasEvent.Ready -> {
+                        pushPins()
+                        centerOnCity()
+                    }
+                    is MapCanvasEvent.MarkerClicked -> openPin(event.id)
+                    is MapCanvasEvent.MapClicked -> proposePin(event.lat, event.lng)
+                    is MapCanvasEvent.Failed -> setState { copy(canvasError = event.message) }
+                }
+            }
+        }
+    }
+
+    private var canvasListening = false
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
     override fun onEvent(event: MapEvent) {
@@ -33,8 +87,12 @@ class MapViewModel(
             is MapEvent.SelectCity -> {
                 setState { copy(selectedCityId = event.cityId) }
                 loadPins()
+                centerOnCity()
             }
-            is MapEvent.FilterType -> setState { copy(typeFilter = event.type) }
+            is MapEvent.FilterType -> {
+                setState { copy(typeFilter = event.type) }
+                pushPins()
+            }
             is MapEvent.NewPin -> setState {
                 copy(
                     pinEditor = PinEditor(
@@ -116,13 +174,71 @@ class MapViewModel(
         launch {
             val pins = repository.locations(state.value.selectedCityId).orError()
             setState { copy(loading = false, pins = pins ?: this.pins) }
+            pushPins()
+        }
+    }
+
+    /**
+     * The drawable pins, pushed whole — the canvas clears and redraws, so a
+     * removed pin disappears and a burst of refreshes converges. Zones ride
+     * along as circles; the type filter applies exactly as it does to the
+     * list, so the two views never disagree.
+     */
+    private fun pushPins() {
+        val host = canvas ?: return
+        val current = state.value
+        val markers = (current.zones + current.locations).mapNotNull { pin ->
+            val lat = pin.lat ?: return@mapNotNull null
+            val lng = pin.lng ?: return@mapNotNull null
+            MapPinMarker(
+                id = pin.id,
+                name = pin.name,
+                label = pin.type,
+                lat = lat,
+                lng = lng,
+                isZone = pin.isStudioZone,
+                radiusMiles = pin.radiusMiles,
+            )
+        }
+        host.setPins(markers)
+    }
+
+    /** Pans to the selected city — the web's default centre is the city's. */
+    private fun centerOnCity() {
+        val host = canvas ?: return
+        val city = state.value.selectedCity ?: return
+        val lat = city.lat ?: return
+        val lng = city.lng ?: return
+        host.center(lat, lng, CITY_ZOOM)
+    }
+
+    /**
+     * An empty-map click proposes a pin there: the editor opens prefilled
+     * with the clicked coordinates, as the web opens its location form at
+     * the click (`GoogleMapComponent.jsx:532-565`). Ignored while an editor
+     * is already open (`:536` — click disabled when the form is up) and for
+     * viewers who cannot post.
+     */
+    private fun proposePin(lat: Double, lng: Double) {
+        val current = state.value
+        if (!current.viewer.mayEdit) return
+        if (current.pinEditor != null || current.cityEditor != null) return
+        setState {
+            copy(
+                pinEditor = PinEditor(
+                    cityId = selectedCityId ?: cities.firstOrNull()?.id.orEmpty(),
+                    type = types.firstOrNull()?.name.orEmpty(),
+                    latText = lat.toString(),
+                    lngText = lng.toString(),
+                ),
+            )
         }
     }
 
     private fun <T> ZillitResult<T>.orError(): T? = when (this) {
         is ZillitResult.Success -> data
         is ZillitResult.Failure -> {
-            val message = this.error.userMessage
+            val message = this.error.localised()
             setState { copy(error = message) }
             null
         }
@@ -137,13 +253,17 @@ class MapViewModel(
                     sendEffect(MapEffect.Notice(notice))
                     loadPins()
                 }
-                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.localised()) }
             }
         }
     }
 
     private fun openPin(id: String) {
         val pin = state.value.pins.firstOrNull { it.id == id } ?: return
+        // Selecting a pin — from the list or its marker — recentres the map
+        // on it, as the web pans on a coordinate change
+        // (`GoogleMapComponent.jsx:587-594`, zoom 15).
+        pin.lat?.let { lat -> pin.lng?.let { lng -> canvas?.center(lat, lng, PIN_ZOOM) } }
         setState {
             copy(
                 pinEditor = PinEditor(
@@ -187,7 +307,7 @@ class MapViewModel(
                     loadPins()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(pinEditor = pinEditor?.copy(saving = false), error = result.error.userMessage)
+                    copy(pinEditor = pinEditor?.copy(saving = false), error = result.error.localised())
                 }
             }
         }
@@ -274,7 +394,7 @@ class MapViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(cityEditor = cityEditor?.copy(saving = false), error = result.error.userMessage)
+                    copy(cityEditor = cityEditor?.copy(saving = false), error = result.error.localised())
                 }
             }
         }
@@ -283,5 +403,11 @@ class MapViewModel(
     private companion object {
         const val MAX_LAT = 90.0
         const val MAX_LNG = 180.0
+
+        /** The web's zoom on selecting a point (`GoogleMapComponent.jsx:589`). */
+        const val PIN_ZOOM = 15
+
+        /** Wide enough to see a city's pins together; the web starts at the city too. */
+        const val CITY_ZOOM = 11
     }
 }

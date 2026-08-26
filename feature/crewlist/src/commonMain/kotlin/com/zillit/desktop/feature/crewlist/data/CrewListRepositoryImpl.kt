@@ -9,11 +9,16 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.crewlist.domain.CrewDepartment
 import com.zillit.desktop.feature.crewlist.domain.CrewListPdf
 import com.zillit.desktop.feature.crewlist.domain.CrewListRepository
 import com.zillit.desktop.feature.crewlist.domain.CrewMember
 import com.zillit.desktop.feature.crewlist.domain.CrewUnit
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -29,7 +34,20 @@ import kotlinx.serialization.json.put
 class CrewListRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    private val bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : CrewListRepository {
+
+    /**
+     * See [CrewListRepository.refreshes]. Another production's frame is
+     * dropped when both sides can name a project, as the web handler does.
+     */
+    override val refreshes: Flow<Unit> =
+        bus?.onAny(CREW_LIST_SYNC_EVENTS)
+            ?.filter { message -> message.payload.matchesProject(currentProjectId()) }
+            ?.map { }
+            ?: emptyFlow()
 
     override suspend fun roster(): ZillitResult<List<CrewUnit>> =
         apiClient.request(

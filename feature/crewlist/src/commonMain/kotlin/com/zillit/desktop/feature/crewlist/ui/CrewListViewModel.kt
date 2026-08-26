@@ -1,10 +1,12 @@
 package com.zillit.desktop.feature.crewlist.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.crewlist.domain.CrewListRepository
 import com.zillit.desktop.feature.crewlist.domain.CrewListTransfer
 import com.zillit.desktop.feature.crewlist.domain.CrewListViewer
 import com.zillit.desktop.feature.crewlist.domain.CrewUnit
+import kotlinx.coroutines.flow.conflate
 
 data class CrewListUiState(
     val units: List<CrewUnit> = emptyList(),
@@ -51,7 +53,25 @@ class CrewListViewModel(
     fun start() {
         setState { copy(viewer = resolveViewer()) }
         refresh()
+        listenOnce()
     }
+
+    /**
+     * Reloads the roster when the socket says a department was reordered
+     * elsewhere — the web's `department_reordered` handler refetches the
+     * users (`NewCrewList.jsx:244`). Guarded so a second start (the window
+     * reopening) does not stack collectors; `conflate()` folds a burst
+     * into one reload.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.conflate().collect { refresh() }
+        }
+    }
+
+    private var listening = false
 
     override fun onEvent(event: CrewListEvent) {
         when (event) {
@@ -97,7 +117,7 @@ class CrewListViewModel(
         launchResult(
             block = { repository.roster() },
             onSuccess = { rows -> setState { copy(units = rows, isLoading = false) } },
-            onError = { error -> setState { copy(isLoading = false, error = error.userMessage) } },
+            onError = { error -> setState { copy(isLoading = false, error = error.localised()) } },
         )
     }
 
@@ -115,12 +135,12 @@ class CrewListViewModel(
                         sendEffect(CrewListEffect.Notice("Crew list saved to Downloads."))
                     },
                     onError = { error ->
-                        setState { copy(generating = null, error = error.userMessage) }
+                        setState { copy(generating = null, error = error.localised()) }
                     },
                 )
             },
             onError = { error ->
-                setState { copy(generating = null, error = error.userMessage) }
+                setState { copy(generating = null, error = error.localised()) }
             },
         )
     }

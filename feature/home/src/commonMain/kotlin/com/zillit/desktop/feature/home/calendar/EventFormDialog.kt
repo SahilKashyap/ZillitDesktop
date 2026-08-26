@@ -42,14 +42,17 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.rememberWheelScroll
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.oneLine
+import com.zillit.desktop.core.locationpicker.ZillitLocationField
 
 /**
  * Creating and editing an event.
  *
  * A port of the web's `calendarV3` `EventForm`, field for field and rule for
- * rule. The one thing not carried over is the map: the web picks a location on
- * a map and sends coordinates alongside the description, and this sends the
- * description alone until the calendar has a map picker of its own.
+ * rule. The location is picked on a map, as the web picks it, and its
+ * coordinates travel with it (`AddCalendarEvent.jsx:433-438`) — see
+ * [MeetingSection].
  */
 @Composable
 internal fun EventFormDialog(
@@ -312,9 +315,14 @@ private fun MeetingSection(form: EventFormState, change: (EventDraft) -> Unit) {
         }
     }
 
-    ZillitTextField(
-        value = draft.location,
-        onValueChange = { change(draft.copy(location = it)) },
+    // Picked on a map, as the web picks it, and the point travels with the
+    // words: `eventBody` sends `location: {lat, long}` beside
+    // `location_description`, the shape `AddCalendarEvent.jsx:433-438` sends.
+    ZillitLocationField(
+        text = draft.location,
+        // Typing replaces a picked place, so its coordinates go with it.
+        onTextChange = { change(draft.copy(location = it, locationLat = null, locationLng = null)) },
+        onPicked = { change(draft.copy(location = it.oneLine(), locationLat = it.lat, locationLng = it.lng)) },
         label = if (draft.callType?.needsLocation == true) "Location — required" else "Location",
         placeholder = "Where to meet",
         errorText = form.errors.messageFor(EventFieldError.LocationMissing),
@@ -741,6 +749,8 @@ private fun ErrorLine(text: String) {
         color = ZillitTheme.colors.danger,
     )
 }
+
+/** The one line a picked place reads as: its name, then its address. */
 
 /** The chip style for a choice that is on. */
 private fun chosen(selected: Boolean): ButtonVariant =

@@ -41,6 +41,19 @@ data class Notice(
 ) {
     val commentCount: Int get() = comments.size
 
+    /**
+     * Whether the bubble draws [body] as its own paragraph.
+     *
+     * A bare location share posts its address *as* the body — every client
+     * does, because that is the only field iOS and the web read a label out
+     * of (see [GeoPoint]). The location card already shows that address, so
+     * drawing the body underneath prints the same line twice. A location post
+     * with a real caption keeps it: the caption is what someone chose to say
+     * beyond the address.
+     */
+    val showsBody: Boolean
+        get() = body.isNotBlank() && !(kind == NoticeKind.Location && body.trim() == location?.address)
+
     /** Never prints the body — a notice can carry production-confidential text. */
     override fun toString(): String =
         "Notice(id=$id, author=$authorName, chars=${body.length}, kind=$kind)"
@@ -63,19 +76,89 @@ data class NoticeComment(
     val location: GeoPoint? = null,
     val isEdited: Boolean = false,
 ) {
+    /** The same body-is-the-address rule as a post's — see [Notice.showsBody]. */
+    val showsBody: Boolean
+        get() = body.isNotBlank() && !(kind == NoticeKind.Location && body.trim() == location?.address)
+
     /** Never prints the body. */
     override fun toString(): String = "NoticeComment(id=$id, chars=${body.length}, kind=$kind)"
 }
 
 /**
- * A point on the earth, as a location post names one.
+ * A place a location post names: where it is, and what it is called.
  *
  * The wire calls the second half `long` — not `lng` — and both arrive as
  * whatever JSON type the sending client felt like that day.
+ *
+ * ## Why [address] is stored and [name] is derived
+ *
+ * The board's `location` object is **not** a rich place record. The three
+ * clients agree on exactly two keys and disagree past them:
+ *
+ * - Android declares `LocationInfo(lat, long, address, imageLink, height,
+ *   width)` (`bottomNav/home/models/HomeChatRequest.kt:228-239`) — the only
+ *   client that writes a human string into the object at all, as `address`.
+ * - iOS declares `LocationCoordinates(lat, long)` and nothing else
+ *   (`Controller/Home/Production/model/ChatAPIModel.swift:184-197`).
+ * - The web sends `location: { lat, long }`
+ *   (`components/unit-chat/UnitChatMessageBox.jsx:1013-1016`) and renders only
+ *   the map image and the link (`message-types/LocationMessage.jsx`).
+ *
+ * **There is no `name` key on this wire.** Inventing one would post a field
+ * the server has no column for — the shape of failure this project has been
+ * bitten by before (a 200 that stores nothing). So the label travels in the
+ * two places every client already reads: `location.address`, and the post's
+ * own body — which is where both phones put it (Android's
+ * `HomeVm.getLocationAttachment` encrypts the address into `message` *and*
+ * `message_translation`, `bottomNav/home/viewmodel/HomeVm.kt:919-928`; the
+ * Catering board does the identical thing at
+ * `bottomNav/tools/viewmodel/CateringVm.kt:697-706`).
+ *
+ * [name] and [detail] then split that one line the way the picker joined it —
+ * the place's own name, then the rest of the address — so a card can show a
+ * title and a second line without a field to carry them.
  */
-data class GeoPoint(val lat: Double, val long: Double) {
-    /** Where a click goes — the web links exactly this. */
+data class GeoPoint(
+    val lat: Double,
+    val long: Double,
+    /**
+     * The one line this place reads as, `"Aria Hotel, 12 Marine Drive"`.
+     *
+     * Blank when the sender was the web or iOS and the post's body was empty
+     * too — the point alone is still a place worth pinning, which is why this
+     * defaults rather than being required.
+     */
+    val address: String = "",
+) {
+    /** Where a click goes — the web links exactly this (`LocationMessage.jsx:42`). */
     val mapsUrl: String get() = "https://www.google.com/maps?q=$lat,$long"
+
+    /**
+     * The card's title: the place's own name.
+     *
+     * The first segment of [address], because that is precisely what the
+     * picker put there — `PickedLocation.name` is "the Places result's own
+     * name when there was one, and otherwise the first line of the address"
+     * (`core:locationpicker`, `LocationPicker.kt:16-19`), and the composer
+     * joins it as `"$name, $address"`. Splitting on the first comma is the
+     * inverse of that join, and on an address the picker never touched it
+     * still yields a readable street line.
+     */
+    val name: String get() = address.substringBefore(',').trim()
+
+    /** The rest of the address, under the title. Blank when there is no rest. */
+    val detail: String get() = address.substringAfter(',', missingDelimiterValue = "").trim()
+
+    /** The point itself, for the crew member who wants to type it into anything. */
+    val coordinates: String get() = "$lat, $long"
+
+    /**
+     * The same point, labelled — used when a post carried its address in the
+     * body rather than in the location object (every web and iOS post).
+     * Never overwrites an address the wire did supply.
+     */
+    fun labelledWith(fallback: String): GeoPoint =
+        if (address.isNotBlank() || fallback.isBlank()) this else copy(address = fallback.trim())
 }
 
 /**

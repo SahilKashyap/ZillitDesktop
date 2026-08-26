@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<!--
+  The map host page for the Zillit Desktop Maps tool.
+
+  Loaded into embedded Chromium (KCEF) from a local file, mirroring the web's
+  map page (src/components/map_components/GoogleMapComponent.jsx): pins as
+  labelled markers, studio zones as circles, a click on empty map proposing a
+  pin there. Kotlin drives it through `window.zillitMap.*` and hears back over
+  the CEF message router as one-line JSON — the contract lives in
+  MapCanvasWire.kt; change either side only with the other.
+
+  The Google Maps key is NOT in this file. The page loads without it, announces
+  `{"type":"ready"}`, and Kotlin answers with `zillitMap.boot(key)` — the key
+  exists only in the page runtime, never in the extracted file.
+-->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Zillit Map</title>
+    <style>
+        html, body, #map {
+            margin: 0;
+            height: 100%;
+            width: 100%;
+            background: #e5e3df; /* Google's own map-loading grey */
+        }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+    'use strict';
+
+    /* JS → Kotlin: one-line JSON over the CEF message router. */
+    function send(payload) {
+        if (window.cefQuery) {
+            window.cefQuery({ request: JSON.stringify(payload) });
+        }
+    }
+
+    var map = null;
+    var drawn = [];            /* live Marker/Circle objects, replaced whole */
+    var pendingPins = null;    /* setPins arriving before the map exists */
+    var pendingCenter = null;
+    var booted = false;
+
+    /* The web's Circle radius unit conversion (GoogleMapComponent.jsx:43). */
+    var MILES_TO_METERS = 1609.344;
+
+    /* Google's global hook for a refused key — a bad key, or a
+       referrer-restricted key rejecting this file:// origin. Without it the
+       map is a silent grey slab; with it Kotlin shows a readable error. */
+    window.gm_authFailure = function () {
+        send({ type: 'auth-failed' });
+    };
+
+    /* Called by Google's script once it has loaded. */
+    window.__zmInit = function () {
+        /* The web's map options (GoogleMapComponent.jsx:929-948) and its
+           fallback centre (:108-111). */
+        map = new google.maps.Map(document.getElementById('map'), {
+            center: { lat: 28.5355, lng: 77.391 },
+            zoom: 15,
+            streetViewControl: false,
+            fullscreenControl: false,
+            clickableIcons: false,
+            mapTypeControl: false
+        });
+        map.addListener('click', function (e) {
+            if (!e.latLng) { return; }
+            var p = e.latLng.toJSON();
+            send({ type: 'map-click', lat: p.lat, lng: p.lng });
+        });
+        send({ type: 'map-ready' });
+        if (pendingPins !== null) {
+            var pins = pendingPins;
+            pendingPins = null;
+            window.zillitMap.setPins(pins);
+        }
+        if (pendingCenter !== null) {
+            var c = pendingCenter;
+            pendingCenter = null;
+            window.zillitMap.center(c.lat, c.lng, c.zoom);
+        }
+    };
+
+    window.zillitMap = {
+        /* Kotlin hands the decrypted key down; the page injects Google's
+           script itself. Idempotent — a second boot is a no-op. */
+        boot: function (key) {
+            if (booted) { return; }
+            booted = true;
+            var tag = document.createElement('script');
+            tag.src = 'https://maps.googleapis.com/maps/api/js?key='
+                + encodeURIComponent(key) + '&v=weekly&callback=__zmInit';
+            tag.onerror = function () {
+                send({ type: 'error', message: 'The Google Maps script could not load.' });
+            };
+            document.head.appendChild(tag);
+        },
+
+        /* The whole marker set as one JSON string: clear, then redraw.
+           Zones become circles (GoogleMapComponent.jsx:1007-1023), pins
+           become markers labelled with their type (:1026-1067). */
+        setPins: function (jsonText) {
+            if (!map) { pendingPins = jsonText; return; }
+            drawn.forEach(function (o) { o.setMap(null); });
+            drawn = [];
+            JSON.parse(jsonText).forEach(function (pin) {
+                if (pin.isZone) {
+                    var circle = new google.maps.Circle({
+                        map: map,
+                        center: { lat: pin.lat, lng: pin.lng },
+                        radius: Number(pin.radiusMiles) * MILES_TO_METERS,
+                        strokeColor: '#2563EB',
+                        strokeOpacity: 0.9,
+                        strokeWeight: 2,
+                        fillColor: '#2563EB',
+                        fillOpacity: 0.12
+                    });
+                    /* The web routes a circle click to the map-click path
+                       (GoogleMapComponent.jsx:1011) — a zone is placeable-on. */
+                    circle.addListener('click', function (e) {
+                        if (!e.latLng) { return; }
+                        var p = e.latLng.toJSON();
+                        send({ type: 'map-click', lat: p.lat, lng: p.lng });
+                    });
+                    drawn.push(circle);
+                } else {
+                    var marker = new google.maps.Marker({
+                        map: map,
+                        position: { lat: pin.lat, lng: pin.lng },
+                        title: pin.name,
+                        label: pin.label
+                            ? { text: pin.label, fontSize: '11px', fontWeight: '600' }
+                            : null
+                    });
+                    marker.addListener('click', function () {
+                        send({ type: 'marker-click', id: pin.id });
+                    });
+                    drawn.push(marker);
+                }
+            });
+        },
+
+        /* Pan-and-zoom, as the web does on selection
+           (GoogleMapComponent.jsx:587-594). */
+        center: function (lat, lng, zoom) {
+            if (!map) { pendingCenter = { lat: lat, lng: lng, zoom: zoom }; return; }
+            map.setZoom(zoom);
+            map.panTo({ lat: lat, lng: lng });
+        }
+    };
+
+    /* The shell is up and waiting for its key. */
+    send({ type: 'ready' });
+</script>
+</body>
+</html>

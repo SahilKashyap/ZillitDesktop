@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.chat.data.ChatRepository
 import com.zillit.desktop.feature.chat.data.ConversationBacklog
 import com.zillit.desktop.feature.chat.data.ReadReceipt
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
+import com.zillit.desktop.feature.chat.domain.ChatLocation
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import com.zillit.desktop.feature.chat.domain.CrewContact
@@ -218,6 +219,10 @@ internal class FakeChatRepository(
         isGroup: Boolean,
     ): ZillitResult<List<ChatMessage>> = ZillitResult.Success(emptyList())
 
+    /** Every message this fake accepted, in order — the location tests read it. */
+    val delivered = mutableListOf<ChatMessage>()
+
+    @Suppress("LongParameterList") // Mirrors ChatRepository.send exactly.
     override suspend fun send(
         receiverId: String,
         body: String,
@@ -225,24 +230,26 @@ internal class FakeChatRepository(
         nowMillis: Long,
         isGroup: Boolean,
         attachment: ChatAttachment?,
+        location: ChatLocation?,
     ): ZillitResult<Unit> {
         if (sendFails) return ZillitResult.Failure(ZillitError.Unknown("refused"))
         sendError?.let { return ZillitResult.Failure(it) }
         if (socketDown) return ZillitResult.Failure(ZillitError.NoConnection("socket is not connected"))
         sent += uniqueId
-        rememberArrival(
-            ChatMessage(
-                id = uniqueId,
-                uniqueId = uniqueId,
-                senderId = "me",
-                receiverId = receiverId,
-                body = body,
-                timestampMillis = nowMillis,
-                isMine = true,
-                sendState = ChatSendState.Sent,
-                attachment = attachment,
-            ),
+        val saved = ChatMessage(
+            id = uniqueId,
+            uniqueId = uniqueId,
+            senderId = "me",
+            receiverId = receiverId,
+            body = body,
+            timestampMillis = nowMillis,
+            isMine = true,
+            sendState = ChatSendState.Sent,
+            attachment = attachment,
+            location = location,
         )
+        delivered += saved
+        rememberArrival(saved)
         return ZillitResult.Success(Unit)
     }
 

@@ -533,7 +533,11 @@ class HomeFeedViewModel(
             HomeFeedEvent.ProjectChanged -> forgetProject()
             HomeFeedEvent.Refresh -> currentState.selectedUnit?.let { loadNotices(it) }
             is HomeFeedEvent.DraftChanged -> setState {
-                copy(draft = NoticeDraft(event.text, draft.media), error = null)
+                // `copy`, not a fresh draft: rebuilding it dropped whatever
+                // was attached beside the media — a shared place lost its
+                // pin the moment a caption was typed and posted as a plain
+                // map picture (seen live, 2026-08-25).
+                copy(draft = draft.copy(text = event.text), error = null)
             }
             HomeFeedEvent.Send -> send()
             is HomeFeedEvent.Retry -> retry(event.localId)
@@ -1441,7 +1445,16 @@ class HomeFeedViewModel(
                 }
                 // A media post whose file went missing must fail loudly, not
                 // post its empty caption — the blank card the tester saw.
-                if (uploaded == null && optimistic.kind != NoticeKind.Text) {
+                //
+                // A **location** post is exempt: it is a place, not a file.
+                // Its map image is decoration the production may not even be
+                // able to make — `staticMap` answers null with no Google key
+                // in the production's configuration, or with Maps unreachable
+                // — and the point is the post. Without this exemption every
+                // location shared on a keyless production died on
+                // "The file is no longer attached", which is not what
+                // happened and not something the user can act on.
+                if (uploaded == null && optimistic.kind != NoticeKind.Text && location == null) {
                     return@launchResult ZillitResult.Failure(
                         ZillitError.Storage(
                             technical = "media post retried with no file to upload",
@@ -1696,7 +1709,10 @@ private fun noPostingRights(unit: HomeUnit): String =
 /** The card shown before the server answers — the send's own local echo. */
 private fun optimisticNotice(localId: String, draft: NoticeDraft, now: Long): Notice = Notice(
     id = localId,
-    body = draft.trimmed,
+    // A bare location share posts its address as the body — the card here has
+    // to say the same thing the server will echo back, or the address appears
+    // the moment the echo replaces this card. See `HomeFeedRepositoryImpl`.
+    body = draft.trimmed.ifBlank { draft.location?.address.orEmpty() },
     authorName = "You",
     createdAtMillis = now,
     kind = when {

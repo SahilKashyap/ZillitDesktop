@@ -42,7 +42,12 @@ internal fun AppGraph.Ready.costReportUser(userId: String): String? =
     }
 
 internal fun AppGraph.Ready.buildCostReport(permissions: () -> ProjectPermissions) = CostReportViewModel(
-    repository = CostReportRepositoryImpl(apiClient, config),
+    repository = CostReportRepositoryImpl(
+        apiClient,
+        config,
+        bus = socketEvents,
+        currentProjectId = { projectContext?.context?.value?.project?.projectId },
+    ),
     exporter = costReportExporter(),
     files = costReportFiles(),
     resolveViewer = {

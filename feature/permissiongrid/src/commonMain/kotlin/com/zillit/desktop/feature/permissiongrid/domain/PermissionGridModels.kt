@@ -85,6 +85,21 @@ data class GridCell(
         AccessKind.Post -> copy(canPost = enable)
         AccessKind.Download -> copy(canDownload = enable)
     }
+
+    /**
+     * This cell as the sync event leaves it: present flags land, absent ones
+     * keep their value, and the busy flag clears — the server's ack is the
+     * authoritative state the in-flight write was waiting for.
+     */
+    fun syncedWith(sync: RightsSync): GridCell = copy(
+        canView = sync.view ?: canView,
+        canPost = sync.post ?: canPost,
+        canDownload = sync.download ?: canDownload,
+        viewLocked = sync.viewUnlocked?.not() ?: viewLocked,
+        postLocked = sync.postUnlocked?.not() ?: postLocked,
+        downloadLocked = sync.downloadUnlocked?.not() ?: downloadLocked,
+        busy = false,
+    )
 }
 
 /** One row: a subject and its cells, keyed by the tool's `unit_name`. */
@@ -105,7 +120,42 @@ data class GridPage(
     val rows: List<GridRow>,
     val total: Int,
 ) {
+    /**
+     * The page with one server-announced change folded in — the web's
+     * `handleAccessGridSync` (`AccessGrid.jsx`, ZL-17812). Rows are matched
+     * by the subject's id, which the event names as `user_id`: on the
+     * department and designation axes nothing matches and the page is
+     * returned untouched, exactly as the web's row filter behaves.
+     */
+    fun syncedWith(sync: RightsSync): GridPage {
+        val merged = rows.map { row ->
+            if (row.subject.id != sync.userId) return@map row
+            val cell = row.cells[sync.unitName] ?: return@map row
+            row.copy(cells = row.cells + (sync.unitName to cell.syncedWith(sync)))
+        }
+        return if (merged == rows) this else copy(rows = merged)
+    }
+
     companion object {
         val Empty = GridPage(emptyList(), emptyList(), 0)
     }
 }
+
+/**
+ * One `access-grid:*-rights:update:sync` event: the server's word on one
+ * subject's rights for one tool. Every flag is nullable because the payload
+ * carries only what changed — absence keeps the cell's current value, the
+ * web's `pick` helper.
+ */
+data class RightsSync(
+    val projectId: String? = null,
+    val userId: String,
+    val unitName: String,
+    val view: Boolean? = null,
+    val post: Boolean? = null,
+    val download: Boolean? = null,
+    /** `viewingUpdatable` and siblings — true means the right is editable. */
+    val viewUnlocked: Boolean? = null,
+    val postUnlocked: Boolean? = null,
+    val downloadUnlocked: Boolean? = null,
+)

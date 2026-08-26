@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.pagedistribution.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -42,6 +43,50 @@ class DistributionViewModel(
     fun start() {
         setState { copy(viewer = resolveViewer()) }
         loadTab()
+        listenOnce()
+    }
+
+    /**
+     * Refetches what is on screen when the socket announces this tool's
+     * uploads, replaces, moves or deletes from another client — the web
+     * pages' own refetch handlers (`RenderScript.jsx:1415-1521`,
+     * `ScheduleDistributionMain.jsx:1636-1717`, `DoD.jsx:1114-1154`) as a
+     * targeted reload. Guarded so a second Start (the window reopening)
+     * does not stack collectors.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes(tool).collect {
+                val open = state.value.openFolder
+                if (open == null) loadTab() else reloadOpenFolder(open)
+            }
+        }
+    }
+
+    private var listening = false
+
+    /** First page again, keeping the folder open — the web refetches in place. */
+    private fun reloadOpenFolder(open: OpenFolder) {
+        val tab = state.value.activeTab
+        launch {
+            val rows = repository.folderDocuments(
+                tab,
+                open.folder.key,
+                nowMillis(),
+                next = false,
+                mode = state.value.mode,
+            ).orError()
+            setState {
+                copy(
+                    openFolder = openFolder?.copy(
+                        documents = rows ?: openFolder.documents,
+                        exhausted = rows.isNullOrEmpty(),
+                    ),
+                )
+            }
+        }
     }
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
@@ -280,7 +325,7 @@ class DistributionViewModel(
             }
             when (outcome) {
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, upload = editor.copy(saving = false), error = outcome.error.userMessage)
+                    copy(busy = false, upload = editor.copy(saving = false), error = outcome.error.localised())
                 }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, upload = null) }
@@ -333,7 +378,7 @@ class DistributionViewModel(
                 is ZillitResult.Success -> transfer.renderPages(bytes.data, VIEWER_WIDTH_PX)
             }
             when (pages) {
-                is ZillitResult.Failure -> setState { copy(pdf = null, error = pages.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(pdf = null, error = pages.error.localised()) }
                 is ZillitResult.Success -> setState { copy(pdf = pdf?.copy(pages = pages.data, loading = false)) }
             }
         }
@@ -358,7 +403,7 @@ class DistributionViewModel(
                 }
             }
             when (outcome) {
-                is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
                     sendEffect(DistributionEffect.Notice("Saved to Downloads"))
@@ -378,7 +423,7 @@ class DistributionViewModel(
         launch {
             when (val result = repository.delete(tab, document.id)) {
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, confirmDelete = null, error = result.error.userMessage)
+                    copy(busy = false, confirmDelete = null, error = result.error.localised())
                 }
                 is ZillitResult.Success -> {
                     setState {
@@ -415,7 +460,7 @@ class DistributionViewModel(
         launch {
             when (val result = repository.move(tab, editor.document.id, target.key)) {
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, move = editor.copy(saving = false), error = result.error.userMessage)
+                    copy(busy = false, move = editor.copy(saving = false), error = result.error.localised())
                 }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, move = null, openFolder = null) }
@@ -436,7 +481,7 @@ class DistributionViewModel(
             val fresh = repository.document(tab, document.id, ReadAction.None, state.value.mode).orError() ?: document
             when (val result = repository.publish(tool, tab, fresh, ymd(nowMillis()))) {
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, confirmPublish = null, error = result.error.userMessage)
+                    copy(busy = false, confirmPublish = null, error = result.error.localised())
                 }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, confirmPublish = null) }
@@ -457,7 +502,7 @@ class DistributionViewModel(
     private fun <T> ZillitResult<T>.orError(): T? = when (this) {
         is ZillitResult.Success -> data
         is ZillitResult.Failure -> {
-            val message = this.error.userMessage
+            val message = this.error.localised()
             setState { copy(error = message) }
             null
         }

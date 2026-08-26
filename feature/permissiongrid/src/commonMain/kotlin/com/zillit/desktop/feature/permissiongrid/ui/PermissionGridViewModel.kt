@@ -8,6 +8,7 @@ import com.zillit.desktop.feature.permissiongrid.domain.GridPage
 import com.zillit.desktop.feature.permissiongrid.domain.GridRow
 import com.zillit.desktop.feature.permissiongrid.domain.GridSection
 import com.zillit.desktop.feature.permissiongrid.domain.PermissionGridRepository
+import com.zillit.desktop.feature.permissiongrid.domain.RightsSync
 import com.zillit.desktop.feature.permissiongrid.domain.PermissionGridViewer
 
 data class PermissionGridUiState(
@@ -95,6 +96,7 @@ class PermissionGridViewModel(
                 val first = currentState.grid.rows.isEmpty()
                 setState { copy(viewer = event.viewer) }
                 if (event.viewer.canView && first) load()
+                listenOnce()
             }
 
             PermissionGridEvent.Reload -> load()
@@ -132,6 +134,24 @@ class PermissionGridViewModel(
     fun onProjectChanged() {
         setState { PermissionGridUiState() }
     }
+
+    /**
+     * Folds the socket's rights-sync events into whatever page is on screen —
+     * the web's `handleAccessGridSync` (ZL-17812): an edit made on another
+     * client, or the backend's own cascade, lands without a reload. Guarded
+     * so a second Start (the window reopening) does not stack collectors.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.syncs.collect { sync ->
+                setState { copy(grid = grid.syncedWith(sync)) }
+            }
+        }
+    }
+
+    private var listening = false
 
     private fun load() {
         val state = currentState

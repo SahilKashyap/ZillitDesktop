@@ -183,6 +183,26 @@ class TimecardOfflineTest {
     }
 
     @Test
+    fun `a changed note posts once through the notes endpoint, never in the save body`() = runTest(dispatcher) {
+        val repository = FakeWeeks(mine = listOf(week()))
+        val vm = viewModel(repository, support())
+        vm.onEvent(TimecardEvent.Open(TimecardDestination.Edit))
+        runCurrent()
+
+        vm.onEvent(TimecardEvent.EditNotes("wrap ran late"))
+        vm.onEvent(TimecardEvent.SaveDraft)
+        runCurrent()
+        assertEquals(listOf("tc-1" to "wrap ran late"), repository.notes, "the note follows the saved id")
+
+        // Saving again without touching the field must not stack a duplicate
+        // note — the server's array is append-only (timecards.js:114-126).
+        vm.onEvent(TimecardEvent.SaveDraft)
+        runCurrent()
+        assertEquals(1, repository.notes.size)
+        assertEquals(2, repository.saves, "the week itself saved both times")
+    }
+
+    @Test
     fun `the week is kept on disk as it is typed and comes back on reopen`() = runTest(dispatcher) {
         val support = support()
         val first = viewModel(FakeWeeks(), support)
@@ -290,11 +310,12 @@ class TimecardOfflineTest {
     private class FakeWeeks(
         var mine: List<Timecard> = emptyList(),
         private val mineAnswer: ZillitResult<List<Timecard>>? = null,
-        private val saveAnswer: ZillitResult<Unit> = ZillitResult.Success(Unit),
+        private val saveAnswer: ZillitResult<String?>? = null,
     ) : TimecardRepository {
         var saves = 0
         val savedIds = mutableListOf<String?>()
         val submitted = mutableListOf<String>()
+        val notes = mutableListOf<Pair<String, String>>()
         var onSave: (TimecardDraft) -> Unit = {}
 
         override suspend fun metadata(): ZillitResult<TimecardMetadata> = when (mineAnswer) {
@@ -304,11 +325,19 @@ class TimecardOfflineTest {
 
         override suspend fun myTimecards(): ZillitResult<List<Timecard>> = mineAnswer ?: ZillitResult.Success(mine)
 
-        override suspend fun save(draft: TimecardDraft): ZillitResult<Unit> {
+        // A PATCH answers the id it was given; a POST's id arrives through
+        // the re-list, as the real repository's create-response read would.
+        override suspend fun save(draft: TimecardDraft): ZillitResult<String?> {
             saves++
             savedIds += draft.timecardId
-            if (saveAnswer is ZillitResult.Success) onSave(draft)
-            return saveAnswer
+            val answer = saveAnswer ?: ZillitResult.Success(draft.timecardId)
+            if (answer is ZillitResult.Success) onSave(draft)
+            return answer
+        }
+
+        override suspend fun addNote(id: String, note: String): ZillitResult<Unit> {
+            notes += id to note
+            return ZillitResult.Success(Unit)
         }
 
         override suspend fun submit(id: String): ZillitResult<Unit> {
@@ -318,7 +347,7 @@ class TimecardOfflineTest {
 
         override suspend fun allowanceTypes(): ZillitResult<List<AllowanceType>> = ZillitResult.Success(emptyList())
         override suspend fun approvalQueue(): ZillitResult<List<Timecard>> = ZillitResult.Success(emptyList())
-        override suspend fun payrollProcessing(weekStarting: String): ZillitResult<List<Timecard>> = myTimecards()
+        override suspend fun payrollProcessing(weekStarting: Long): ZillitResult<List<Timecard>> = myTimecards()
         override suspend fun outstanding(): ZillitResult<List<Timecard>> = ZillitResult.Success(emptyList())
         override suspend fun timecard(id: String): ZillitResult<Timecard> = unsupported()
         override suspend fun history(id: String): ZillitResult<List<TimecardHistoryEntry>> =
@@ -333,7 +362,7 @@ class TimecardOfflineTest {
             id: String,
             label: String,
             amount: Double,
-            reason: String?,
+            nominalCode: String?,
         ): ZillitResult<Unit> = unsupported()
         override suspend fun removeDeduction(id: String, deductionId: String): ZillitResult<Unit> = unsupported()
         override suspend fun approveAll(ids: List<String>): ZillitResult<Unit> = unsupported()

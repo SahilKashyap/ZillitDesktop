@@ -143,6 +143,13 @@ interface ChatRepository {
         nowMillis: Long,
         isGroup: Boolean = false,
         attachment: com.zillit.desktop.feature.chat.domain.ChatAttachment? = null,
+        /**
+         * A shared place, which makes this a `message_type: "location"`
+         * message. Independent of [attachment]: the phones send both (the
+         * place, and the map screenshot they uploaded), this client sends the
+         * place alone — see `sendEnvelope`.
+         */
+        location: com.zillit.desktop.feature.chat.domain.ChatLocation? = null,
     ): ZillitResult<Unit>
 
     /** The production's group rooms. */
@@ -600,9 +607,11 @@ class ChatRepositoryImpl(
         isGroup: Boolean,
         attachment: com.zillit.desktop.feature.chat.domain.ChatAttachment?,
         replyTo: com.zillit.desktop.feature.chat.domain.ChatReplyRef,
+        location: com.zillit.desktop.feature.chat.domain.ChatLocation?,
     ): ZillitResult<Unit> = sendInternal(
         receiverId, body, uniqueId, nowMillis, isGroup, attachment,
         replyToId = replyTo.messageId,
+        location = location,
     )
 
     override suspend fun send(
@@ -612,9 +621,11 @@ class ChatRepositoryImpl(
         nowMillis: Long,
         isGroup: Boolean,
         attachment: com.zillit.desktop.feature.chat.domain.ChatAttachment?,
-    ): ZillitResult<Unit> = sendInternal(receiverId, body, uniqueId, nowMillis, isGroup, attachment, replyToId = null)
+        location: com.zillit.desktop.feature.chat.domain.ChatLocation?,
+    ): ZillitResult<Unit> =
+        sendInternal(receiverId, body, uniqueId, nowMillis, isGroup, attachment, replyToId = null, location = location)
 
-    @Suppress("LongParameterList") // One optional reply object beyond send()'s own list.
+    @Suppress("LongParameterList") // One optional reply id and one place beyond send()'s own list.
     private suspend fun sendInternal(
         receiverId: String,
         body: String,
@@ -623,6 +634,7 @@ class ChatRepositoryImpl(
         isGroup: Boolean,
         attachment: com.zillit.desktop.feature.chat.domain.ChatAttachment?,
         replyToId: String?,
+        location: com.zillit.desktop.feature.chat.domain.ChatLocation?,
     ): ZillitResult<Unit> {
         val me = myUserId() ?: return ZillitResult.Failure(
             com.zillit.desktop.core.common.ZillitError.Unauthorized("no signed-in user"),
@@ -650,6 +662,7 @@ class ChatRepositoryImpl(
                 isGroup = isGroup,
                 attachment = attachment,
                 replyToId = replyToId,
+                location = location,
             ),
             JsonElement.serializer(),
         ).flatMap { ack ->
@@ -673,6 +686,7 @@ class ChatRepositoryImpl(
                     bodyCipher = cipher,
                     isGroup = isGroup,
                     attachment = attachment,
+                    location = location,
                 )
                 // The ack carries the row as saved — its `_id` above all.
                 // Kept with our own unique id and words (the server's copy

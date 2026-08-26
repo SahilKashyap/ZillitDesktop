@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.recce.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.units.ProductionUnit
@@ -152,7 +153,7 @@ class RecceViewModel(
             val outcome = if (id == null) repository.create(draft) else repository.update(id, draft).map { id }
             when (outcome) {
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, editor = editor.copy(saving = null), error = outcome.error.userMessage)
+                    copy(busy = false, editor = editor.copy(saving = null), error = outcome.error.localised())
                 }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, editor = null) }
@@ -182,7 +183,7 @@ class RecceViewModel(
         launch {
             when (val result = repository.delete(id)) {
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, confirmDelete = null, error = result.error.userMessage)
+                    copy(busy = false, confirmDelete = null, error = result.error.localised())
                 }
                 is ZillitResult.Success -> {
                     setState {
@@ -216,7 +217,7 @@ class RecceViewModel(
                 is ZillitResult.Success -> transfer.openReport(report.data)
             }
             when (outcome) {
-                is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
                     sendEffect(RecceEffect.Notice("PDF generated"))
@@ -240,7 +241,7 @@ class RecceViewModel(
     private fun <T> ZillitResult<T>.orError(): T? = when (this) {
         is ZillitResult.Success -> data
         is ZillitResult.Failure -> {
-            val message = this.error.userMessage
+            val message = this.error.localised()
             setState { copy(error = message) }
             null
         }

@@ -36,6 +36,12 @@ data class MapUiState(
     val loading: Boolean = false,
     val busy: Boolean = false,
     val error: String? = null,
+    /**
+     * Why the map canvas cannot draw — a rejected or missing Google key, or
+     * no embedded browser. Shown over the canvas pane instead of a grey map;
+     * null when the canvas is fine (or absent).
+     */
+    val canvasError: String? = null,
     val cities: List<MapCity> = emptyList(),
     val selectedCityId: String? = null,
     val types: List<LocationType> = emptyList(),

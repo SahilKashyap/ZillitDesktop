@@ -7,6 +7,7 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.productionreport.domain.ApprovalRequest
 import com.zillit.desktop.feature.productionreport.domain.ReportDetail
 import com.zillit.desktop.feature.productionreport.domain.ReportRepository
@@ -15,6 +16,10 @@ import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.InternalApprover
 import com.zillit.desktop.feature.productionreport.domain.SheetMetadata
 import com.zillit.desktop.feature.productionreport.domain.SheetPayload
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -40,9 +45,22 @@ import kotlinx.serialization.json.put
 class ReportRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    private val bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : ReportRepository {
 
     private val base = config.apiV2(ZillitService.ProductionReport).trimEnd('/')
+
+    /**
+     * See [ReportRepository.refreshes]. Another production's frame is
+     * dropped when both sides can name a project.
+     */
+    override val refreshes: Flow<Unit> =
+        bus?.onAny(PRODUCTION_REPORT_SYNC_EVENTS)
+            ?.filter { message -> message.payload.matchesProject(currentProjectId()) }
+            ?.map { }
+            ?: emptyFlow()
 
     override suspend fun metadata(projectId: String): ZillitResult<SheetMetadata> = apiClient.request(
         verb = HttpVerb.Get,

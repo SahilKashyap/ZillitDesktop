@@ -8,7 +8,10 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.sync.NewOperation
 import com.zillit.desktop.core.sync.OfflineSupport
 import com.zillit.desktop.core.sync.SyncState
+import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.oneLine
 import com.zillit.desktop.feature.chat.data.CHAT_SEND_KIND
+import com.zillit.desktop.feature.chat.data.LOCATION_KIND
 import com.zillit.desktop.feature.chat.data.PresenceSource
 import com.zillit.desktop.feature.chat.data.QueuedChatSend
 import com.zillit.desktop.feature.chat.data.toQueuedBubble
@@ -19,6 +22,7 @@ import kotlinx.serialization.json.Json
 import com.zillit.desktop.core.media.PreviewResult
 import com.zillit.desktop.feature.chat.data.ChatRepository
 import com.zillit.desktop.feature.chat.data.ReplyAwareChatRepository
+import com.zillit.desktop.feature.chat.domain.ChatLocation
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.ChatReplyRef
 import com.zillit.desktop.feature.chat.domain.ChatSendState
@@ -130,6 +134,18 @@ sealed interface ChatEvent {
     /** The paperclip: pick a file and open the preview over the thread. */
     data object AttachFile : ChatEvent
 
+    /**
+     * The composer's pin, after the shared map picker answered: send this
+     * place as a `message_type: "location"` message.
+     *
+     * The picked value arrives with the event rather than being fetched by
+     * this class, because the picker is a composition-local service installed
+     * at the app root (`core:locationpicker`'s `LocalLocationPicker`) — the
+     * composer is where it is in scope. Cancelling the picker sends nothing:
+     * no event is raised at all.
+     */
+    data class ShareLocation(val place: PickedLocation) : ChatEvent
+
     /** Cmd+V with a picture on the clipboard: preview it like a picked file. */
     class ImagePasted(val name: String, val contentType: String, val bytes: ByteArray) : ChatEvent
 
@@ -196,6 +212,15 @@ class ChatViewModel(
         bytes: ByteArray,
         onProgress: (Int) -> Unit,
     ) -> ChatAttachment? = { _, _, _, _ -> null },
+    /**
+     * A picture of a shared place — Google Static Maps, the same image the
+     * boards already post. The phones snapshot their own map and upload it
+     * beside the location (`mapView/MapsActivity.kt:205-224`), and their
+     * bubbles draw that picture; a location sent without one arrives on
+     * Android and the web as an empty image frame. Null bytes are fine —
+     * the place still sends, with the pin card the receivers fall back to.
+     */
+    private val staticMap: suspend (lat: Double, lng: Double) -> ByteArray? = { _, _ -> null },
     /** The microphone, already wired to the uploader; null hides the mic. */
     private val voice: ChatVoice? = null,
     /** The starred set's home between sessions; hosts wire preferences. */
@@ -238,6 +263,20 @@ class ChatViewModel(
     private var presenceJob: kotlinx.coroutines.Job? = null
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    /**
+     * The media that has not reached the wire, by unique id.
+     *
+     * Declared ABOVE `init` and not beside its own functions, because
+     * property initialisers run in source order: `init` collects
+     * `support.online`, a StateFlow that replays its current value into a
+     * `Dispatchers.Main.immediate` collector — synchronously, during
+     * construction. With the declaration below `init`, that first emission
+     * reached [retryUnsentMedia] while this map was still null and the app
+     * died on the AWT thread before drawing a frame (seen live,
+     * 2026-08-25: `NullPointerException … "$this$filterValues$iv" is null`).
+     */
+    private val unsentMedia = linkedMapOf<String, UnsentMedia>()
 
     init {
         launch {
@@ -322,6 +361,7 @@ class ChatViewModel(
                 }
             }
             ChatEvent.AttachFile -> launch { pickForPreview() }
+            is ChatEvent.ShareLocation -> shareLocation(event.place)
             is ChatEvent.ImagePasted -> imagePasted(event)
             is ChatEvent.PreviewSend -> sendMedia(event.result, event.caption)
             ChatEvent.PreviewCancelled -> setState { copy(pendingPreview = null) }
@@ -591,7 +631,49 @@ class ChatViewModel(
         )
     }
 
-    private fun send(attachment: ChatAttachment? = null) {
+    /**
+     * The composer's pin, resolved.
+     *
+     * The body follows the phones': their picker offers a description field
+     * that defaults to the place's address, and whatever it holds becomes the
+     * message's encrypted body (`utils/MediaExtension.kt:308-322` builds the
+     * item with `description = address`; `ChatAndGroupVM.kt:605-615` passes it
+     * as `mMessage`). Here the composer's draft IS that description field — a
+     * line already typed rides along as the label — and an empty one falls
+     * back to the place's own name, then its address, so the bubble always
+     * has something to say above the pin.
+     */
+    private fun shareLocation(place: PickedLocation) {
+        // The label carries the WHOLE place — name and street — because the
+        // server keeps only `lat`/`long` from the location object and drops
+        // its `address` (seen live, 2026-08-25: a shared studio came back
+        // from history as a name and two numbers). The encrypted body is the
+        // one part of a location message that survives the round trip, so a
+        // place shared here still reads as a place tomorrow. A typed caption
+        // still wins — that is the sender's own word for where this is.
+        val label = currentState.draft.trim()
+            .ifBlank { place.oneLine().trim() }
+            .ifBlank { place.address.trim() }
+        val where = ChatLocation(address = place.address.trim(), lat = place.lat, lng = place.lng)
+
+        // The picture is best-effort and must never hold the place hostage:
+        // no key, no network, a refused upload — the location goes anyway,
+        // exactly as it did before there was a picture at all.
+        launch {
+            val map = runCatching { staticMap(place.lat, place.lng) }.getOrNull()
+            val picture = map?.let {
+                runCatching { uploadMedia(LOCATION_MAP_NAME, LOCATION_MAP_TYPE, it) { } }.getOrNull()
+            }
+            send(attachment = picture, location = where, bodyOverride = label)
+        }
+    }
+
+    private fun send(
+        attachment: ChatAttachment? = null,
+        location: ChatLocation? = null,
+        /** The body when it does not come from the composer — a shared place's label. */
+        bodyOverride: String? = null,
+    ) {
         val peer = currentState.peer ?: return
         // The composer is gone for a left peer, but the guard holds anyway:
         // a keyboard shortcut or a stale event must not message someone who
@@ -600,31 +682,34 @@ class ChatViewModel(
             setState { copy(error = "This person is no longer on the production.") }
             return
         }
-        val body = currentState.draft.trim().ifEmpty { if (attachment == null) return else "" }
+        val typed = currentState.draft.trim()
+        val body = bodyOverride
+            ?: typed.ifEmpty { if (attachment == null) return else "" }
         val reply = currentState.replyTo?.asReplyRef()
-        val optimistic = appendOptimistic(peer, body, attachment, reply)
+        val optimistic = appendOptimistic(peer, body, attachment, reply, location)
         setState { copy(draft = "", replyTo = null) }
         val isGroup = currentState.peerIsGroup
 
         // No network and no file to upload: straight to the outbox, no
-        // round trip to fail first. (The outbox carries no reply reference —
-        // a reply queued offline goes out as a plain line.)
+        // round trip to fail first. A place has nothing to upload, so it
+        // queues like words. (The outbox carries no reply reference — a reply
+        // queued offline goes out as a plain line.)
         val support = offline
         if (support != null && support.isOffline && attachment == null) {
-            launch { queue(support, peer.userId, body, optimistic, isGroup) }
+            launch { queue(support, peer.userId, body, optimistic, isGroup, location) }
             return
         }
 
         launchResult(
             block = {
-                sendOnWire(peer.userId, body, optimistic, isGroup, attachment, reply)
+                sendOnWire(peer.userId, body, optimistic, isGroup, attachment, reply, location)
             },
             onSuccess = { setSendState(optimistic.uniqueId, ChatSendState.Sent) },
             onError = { error ->
                 // The message never left this machine (socket down, no
                 // network): keep it and send it later rather than fail it.
                 if (support != null && attachment == null && error is ZillitError.NoConnection) {
-                    launch { queue(support, peer.userId, body, optimistic, isGroup) }
+                    launch { queue(support, peer.userId, body, optimistic, isGroup, location) }
                 } else {
                     setSendState(optimistic.uniqueId, ChatSendState.Failed)
                     setState { copy(error = error.localised()) }
@@ -640,6 +725,7 @@ class ChatViewModel(
      * [ReplyAwareChatRepository], a reply still sends — as a plain line whose
      * quote lives only on this screen's bubble.
      */
+    @Suppress("LongParameterList") // One send: its addressee, its content, and how it is framed.
     private suspend fun sendOnWire(
         receiverId: String,
         body: String,
@@ -647,18 +733,20 @@ class ChatViewModel(
         isGroup: Boolean,
         attachment: ChatAttachment?,
         reply: ChatReplyRef?,
+        location: ChatLocation?,
     ): ZillitResult<Unit> {
         val capable = repository as? ReplyAwareChatRepository
         return if (reply != null && capable != null) {
             capable.sendWithReply(
                 receiverId, body, optimistic.uniqueId, optimistic.timestampMillis,
-                isGroup, attachment, reply,
+                isGroup, attachment, reply, location,
             )
         } else {
             repository.send(
                 receiverId, body, optimistic.uniqueId, optimistic.timestampMillis,
                 isGroup = isGroup,
                 attachment = attachment,
+                location = location,
             )
         }
     }
@@ -673,18 +761,24 @@ class ChatViewModel(
         // Our own optimistic rows carry the placeholder sender "me".
         senderId = if (isMine) repository.selfId() ?: senderId else senderId,
         body = body,
-        kind = attachment?.kind ?: "text",
+        // The parent's own `message_type`. Location wins over the attachment
+        // for the same reason it does on the way out: a phone-sent place has
+        // a map screenshot attached, and quoting it as "image" would draw the
+        // wrong glyph on every client that reads the quote.
+        kind = if (location != null) LOCATION_KIND else attachment?.kind ?: "text",
         attachmentName = attachment?.name.orEmpty(),
     )
 
     // -- offline: the outbox -----------------------------------------------------
 
+    @Suppress("LongParameterList") // The queued payload's own fields, one each.
     private suspend fun queue(
         support: OfflineSupport,
         receiverId: String,
         body: String,
         optimistic: ChatMessage,
         isGroup: Boolean,
+        location: ChatLocation? = null,
     ) {
         val payload = QueuedChatSend(
             receiverId = receiverId,
@@ -692,6 +786,7 @@ class ChatViewModel(
             uniqueId = optimistic.uniqueId,
             timestampMillis = optimistic.timestampMillis,
             isGroup = isGroup,
+            location = location,
         )
         val enqueued = support.engine.enqueue(
             NewOperation(
@@ -740,6 +835,7 @@ class ChatViewModel(
         body: String,
         attachment: ChatAttachment?,
         replyTo: ChatReplyRef? = null,
+        location: ChatLocation? = null,
     ): ChatMessage {
         val uniqueId = newUniqueId()
         val optimistic = ChatMessage(
@@ -752,6 +848,7 @@ class ChatViewModel(
             isMine = true,
             sendState = ChatSendState.Sending,
             attachment = attachment,
+            location = location,
             replyTo = replyTo,
         )
         setState {
@@ -794,8 +891,6 @@ class ChatViewModel(
         val upload: suspend (ByteArray, (Int) -> Unit) -> ChatAttachment?,
         var stored: ChatAttachment? = null,
     )
-
-    private val unsentMedia = linkedMapOf<String, UnsentMedia>()
 
     /** The paperclip: the pick goes to the preview, not straight to the wire. */
     private suspend fun pickForPreview() {
@@ -1067,7 +1162,7 @@ class ChatViewModel(
         launch {
             when (val started = mic.start()) {
                 is com.zillit.desktop.core.common.ZillitResult.Failure ->
-                    setState { copy(error = started.error.userMessage) }
+                    setState { copy(error = started.error.localised()) }
                 is com.zillit.desktop.core.common.ZillitResult.Success -> {
                     setState { copy(recordingSeconds = 0, error = null) }
                     recordingTicker = launch {
@@ -1099,7 +1194,7 @@ class ChatViewModel(
         launch {
             when (val file = mic.stop()) {
                 is com.zillit.desktop.core.common.ZillitResult.Failure ->
-                    setState { copy(error = file.error.userMessage) }
+                    setState { copy(error = file.error.localised()) }
                 is com.zillit.desktop.core.common.ZillitResult.Success ->
                     send(attachment = file.data)
             }
@@ -1118,10 +1213,22 @@ class ChatViewModel(
 
     private fun previewsFor(ids: List<String>): Map<String, String> =
         ids.mapNotNull { id ->
-            repository.lastMessageOf(id)?.let { last ->
-                id to (last.attachment?.let { "📎 ${it.name}" } ?: last.body)
-            }
+            repository.lastMessageOf(id)?.let { last -> id to previewLine(last) }
         }.toMap()
+
+    /**
+     * One line for the shelf. The location branch comes FIRST because a
+     * phone-sent place carries a map screenshot as its attachment, and the
+     * paperclip rule would have shown the row as "📎 1758…png". Android's own
+     * listing marks a location with a pin
+     * (`utils/Extensions.kt:295-317`, `provideEmojiContentTypeWise`).
+     */
+    private fun previewLine(message: ChatMessage): String = when {
+        message.location != null ->
+            "📍 " + message.body.ifBlank { message.location.address }.ifBlank { "Location" }
+        message.attachment != null -> "📎 ${message.attachment.name}"
+        else -> message.body
+    }
 
     /**
      * A read-untill receipt covers the whole thread, not one message: every
@@ -1226,8 +1333,7 @@ class ChatViewModel(
         message: ChatMessage,
     ): Map<String, String> {
         if (peerId.isBlank()) return previews
-        val line = message.attachment?.let { "📎 ${it.name}" } ?: message.body
-        return previews + (peerId to line)
+        return previews + (peerId to previewLine(message))
     }
 
     /** The echo of our own send replaces its optimistic bubble by unique id. */
@@ -1291,3 +1397,7 @@ private fun ChatSendState.isOurs(): Boolean =
     this == ChatSendState.Sending || this == ChatSendState.Queued || this == ChatSendState.Failed
 
 private const val PRESENCE_TAG = "Presence"
+
+/** The shared-place picture's file name and type, as the phones name theirs. */
+private const val LOCATION_MAP_NAME = "location-map.png"
+private const val LOCATION_MAP_TYPE = "image/png"

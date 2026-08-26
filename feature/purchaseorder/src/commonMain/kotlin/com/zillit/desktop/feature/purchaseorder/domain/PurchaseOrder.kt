@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.purchaseorder.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.Serializable
 
 /**
@@ -239,9 +241,27 @@ data class PoHistoryEntry(
     val at: Long?,
 )
 
+/**
+ * Which of the tool's reads a socket announcement invalidates.
+ *
+ * Only two: every order event stales whichever list is on screen, and the
+ * vendor events stale the picker. Nothing is patched in place — the wire says
+ * *that* something changed, the reload learns *what*.
+ */
+enum class PoRefresh { Orders, Vendors }
+
 /** Everything the purchase order tool asks the server for. */
 @Suppress("TooManyFunctions") // One suspend fun per server operation; see detekt.yml.
 interface PurchaseOrderRepository {
+
+    /**
+     * Socket announcements that this viewer's lists are stale — another
+     * client's raise, decision or post, refetched rather than patched, which
+     * is the web's own pattern (`accountHubListeners.js` bridges every
+     * `po:*` event to a parameterless refetch). Defaulted empty for tests and
+     * hosts without a socket.
+     */
+    val refreshes: Flow<PoRefresh> get() = emptyFlow()
 
     /** Every order this viewer may see, newest first. */
     suspend fun orders(status: PoStatus?): ZillitResult<List<PurchaseOrder>>

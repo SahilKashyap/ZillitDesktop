@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.callsheet.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /** An internal (comments-round) reviewer, as `submit-for-internal-approval` wants them. */
 data class InternalApprover(
@@ -14,6 +16,15 @@ data class InternalApprover(
  * segment; this service is the exception to the shared prefix.
  */
 interface CallSheetRepository {
+
+    /**
+     * A pulse per call-sheet workflow event from another client — the web's
+     * `handleSocketSheetUpdate` (`CallSheetApp.jsx:1631-1694`) answers each
+     * with targeted list reloads. The ViewModel re-runs its load for the
+     * open destination. Empty by default: tests, and hosts without a
+     * socket.
+     */
+    val refreshes: Flow<Unit> get() = emptyFlow()
 
     suspend fun metadata(projectId: String): ZillitResult<SheetMetadata>
 

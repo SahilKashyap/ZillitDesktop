@@ -1,3 +1,4 @@
+import org.jetbrains.compose.ExperimentalComposeLibrary
 plugins {
     id("zillit.compose.library")
     alias(libs.plugins.kotlinSerialization)
@@ -23,6 +24,10 @@ kotlin {
             implementation(libs.ktor.client.mock)
             implementation(libs.ktor.client.core)
             implementation(libs.kotlinx.coroutines.test)
+            // Composes the real picker in tests, as core:designsystem does.
+            implementation(compose.desktop.currentOs)
+            @OptIn(ExperimentalComposeLibrary::class)
+            implementation(compose.uiTest)
         }
     }
 }

@@ -27,6 +27,11 @@ import com.zillit.desktop.feature.drive.domain.StorageUsage
 import com.zillit.desktop.feature.drive.domain.UploadPart
 import com.zillit.desktop.feature.drive.domain.UploadRequest
 import com.zillit.desktop.feature.drive.domain.UploadSession
+import com.zillit.desktop.core.socket.SocketEventBus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -85,7 +90,16 @@ class DriveRepositoryImpl(
      * so it can browse one drive while the main window is on another.
      */
     private val callOptions: () -> CallOptions = { CallOptions() },
+    /** Null keeps the drive socket-less — tests, and hosts without a bus. */
+    bus: SocketEventBus? = null,
 ) : DriveRepository {
+
+    /**
+     * See [DriveRepository.refreshes]. Conflated: a bulk delete emits one
+     * event per item plus the bulk event and one refetch answers all.
+     */
+    override val refreshes: Flow<Unit> =
+        bus?.onAny(DRIVE_SYNC_EVENTS)?.map { }?.conflate() ?: emptyFlow()
 
     private val base = "${config.baseUrl(ZillitService.Drive)}/api/v2/drive"
 
