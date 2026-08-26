@@ -49,6 +49,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.oneLine
+import com.zillit.desktop.core.locationpicker.ZillitLocationField
 import com.zillit.desktop.feature.location.domain.GroupBy
 import com.zillit.desktop.feature.location.domain.LocationFolder
 import com.zillit.desktop.feature.location.domain.LocationMedia
@@ -513,8 +516,19 @@ private fun EditorDialog(state: LocationUiState, onEvent: (LocationEvent) -> Uni
                 ZillitTextField(value = editor.link, onValueChange = { change(editor.copy(link = it)) },
                     label = "Link", placeholder = "https://…", modifier = Modifier.fillMaxWidth())
             }
-            ZillitTextField(value = editor.address, onValueChange = { change(editor.copy(address = it)) },
-                label = "Address", modifier = Modifier.fillMaxWidth())
+            // Picked on a map, stored as text. This tool's body is address and
+            // nothing else — `putBase` in LocationWire.kt:88, the web's
+            // `createModal` (`commonFunctionForFilmTools.js:296-311`) the same
+            // — so the pick's coordinates are dropped rather than sent under
+            // invented keys. (The 406-on-null-lat/lng trap belongs to
+            // Transportation, not here.)
+            ZillitLocationField(
+                text = editor.address,
+                onTextChange = { change(editor.copy(address = it)) },
+                onPicked = { change(editor.copy(address = it.oneLine())) },
+                label = "Address",
+                modifier = Modifier.fillMaxWidth(),
+            )
             ZillitTextField(value = editor.description, onValueChange = { change(editor.copy(description = it)) },
                 label = "Description", singleLine = false, modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
@@ -530,6 +544,8 @@ private fun EditorDialog(state: LocationUiState, onEvent: (LocationEvent) -> Uni
         }
     }
 }
+
+/** The one line a picked place reads as: its name, then its address. */
 
 private val SEARCH_WIDTH = 280.dp
 private val FOLDER_MIN_WIDTH = 240.dp

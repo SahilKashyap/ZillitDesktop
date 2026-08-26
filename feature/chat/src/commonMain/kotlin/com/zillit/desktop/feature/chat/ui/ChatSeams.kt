@@ -30,6 +30,17 @@ class ChatSeams(
      * Null falls back to the thumbnail.
      */
     val loadFullImage: (suspend (ChatAttachment) -> ImageBitmap?)? = null,
+    /**
+     * The app's guarded external-URL launcher (`main.kt`'s `openInBrowser`),
+     * behind "Open in Maps" on a shared place. Null hides that affordance
+     * rather than offering a dead one — the thread's own rule for the call
+     * buttons and the group Delete.
+     *
+     * A seam rather than `java.awt.Desktop` reached for here: this module is
+     * common code, and the host is the one place that decides what may leave
+     * the app.
+     */
+    val onOpenUrl: ((String) -> Unit)? = null,
 )
 
 internal val LocalChatSeams = staticCompositionLocalOf { ChatSeams() }

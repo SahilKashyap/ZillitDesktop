@@ -8,8 +8,13 @@ plugins {
 kotlin {
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":core:socket"))
             implementation(project(":core:common"))
             implementation(project(":core:designsystem"))
+            // The pin editor's Address field searches a place by name, which
+            // the canvas's click-to-place cannot do — and which a host with no
+            // canvas has no other way to do at all.
+            implementation(project(":core:locationpicker"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:config"))
             implementation(project(":core:network"))

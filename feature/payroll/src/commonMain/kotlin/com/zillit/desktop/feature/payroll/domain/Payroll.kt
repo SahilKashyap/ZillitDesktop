@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.payroll.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * One pay-period week's timecards, as payroll works them.
@@ -268,6 +270,15 @@ data class PayrollViewer(
 
 /** Everything the payroll tool asks the server for. */
 interface PayrollRepository {
+
+    /**
+     * Socket announcements that the week's rows changed somewhere — a final
+     * approval unlocking a timecard for payroll, or another client's lock,
+     * paid, unpaid or post landing — answered with a reload of the week on
+     * screen rather than an in-place patch (the web's `ah:payroll:list`
+     * refetch pattern). Defaulted empty for tests and hosts without a socket.
+     */
+    val refreshes: Flow<Unit> get() = emptyFlow()
 
     /**
      * Every timecard for one week, full documents.

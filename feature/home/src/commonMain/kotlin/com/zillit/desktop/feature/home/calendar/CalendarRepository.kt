@@ -321,7 +321,12 @@ internal fun readEvent(row: JsonElement): CalendarEvent? {
         startMillis = start,
         endMillis = row.millis("end_datetime"),
         isAllDay = row.bool("full_day"),
+        // `location` is a STRING on older rows and the web's `{lat, long}`
+        // object on rows written with a picked place — `str` yields null for
+        // the object, so the description is the label either way.
         location = row.str("location") ?: row.str("location_description"),
+        locationLat = row.point("location")?.first,
+        locationLng = row.point("location")?.second,
         description = row.str("description"),
         colorHex = row.str("color"),
         timezone = row.str("timezone"),
@@ -341,6 +346,14 @@ internal fun readEvent(row: JsonElement): CalendarEvent? {
 }
 
 internal fun JsonObject.prim(key: String) = this[key] as? JsonPrimitive
+
+/** The web's `location: {lat, long}` — note the wire's `long`, not `lng`. */
+internal fun JsonObject.point(key: String): Pair<Double, Double>? {
+    val obj = this[key] as? JsonObject ?: return null
+    val lat = (obj["lat"] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return null
+    val lng = (obj["long"] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return null
+    return lat to lng
+}
 
 internal fun JsonObject.str(key: String): String? =
     prim(key)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }

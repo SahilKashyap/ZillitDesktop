@@ -660,7 +660,21 @@ private fun List<com.zillit.desktop.feature.accounthub.domain.ApprovalTier>.toJs
                             tier.rules.forEach { rule ->
                                 add(
                                     buildJsonObject {
-                                        put("type", JsonPrimitive(rule.type))
+                                        // The validator's whole vocabulary is
+                                        // `default` and `amount` (the web's
+                                        // ApproversModule.jsx:1699; refusal:
+                                        // "tiers[0].rules[0].type must be one
+                                        // of [default, amount]") — anything
+                                        // else loses the save.
+                                        // Blank means the picker was never
+                                        // touched — the wire's own default.
+                                        put("type", JsonPrimitive(rule.type.ifBlank { "default" }))
+                                        if (rule.type == "amount") {
+                                            put(
+                                                "amount_threshold",
+                                                JsonPrimitive(rule.amountThreshold ?: 0.0),
+                                            )
+                                        }
                                         put(
                                             "user_ids",
                                             buildJsonArray {

@@ -12,6 +12,7 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.timecard.domain.Allowance
 import com.zillit.desktop.feature.timecard.domain.AllowanceBasis
 import com.zillit.desktop.feature.timecard.domain.AllowanceScope
@@ -25,14 +26,21 @@ import com.zillit.desktop.feature.timecard.domain.TimecardHistoryEntry
 import com.zillit.desktop.feature.timecard.domain.TimecardMetadata
 import com.zillit.desktop.feature.timecard.domain.TimecardRepository
 import com.zillit.desktop.feature.timecard.domain.TimecardStatus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.datetime.TimeZone
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * Every `/api/v2/payroll/timecards` route, on the payroll service.
@@ -44,10 +52,28 @@ import kotlinx.serialization.json.buildJsonObject
 class TimecardRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : TimecardRepository {
 
     private val base = "${config.baseUrl(ZillitService.Payroll)}/api/v2/payroll/timecards/weekly"
     private val metadataUrl = "${config.baseUrl(ZillitService.Payroll)}/api/v2/payroll/timecards/metadata"
+
+    /** The payroll-approvers allowlist read (`payroll-metadata.js:22-27`). */
+    private val payrollMetadataUrl = "${config.baseUrl(ZillitService.Payroll)}/api/v2/payroll/metadata"
+
+    /**
+     * See [TimecardRepository.refreshes]. Another production's frame is
+     * dropped when both sides can name a project — the same cross-project
+     * gate the web's account-hub wrapper applies before any handler runs.
+     */
+    override val refreshes: Flow<Unit> =
+        bus?.onAny(TIMECARD_SYNC_EVENTS, TimecardSyncEnvelope.serializer())
+            ?.mapNotNull { (_, envelope) ->
+                Unit.takeIf { envelope.inProject(currentProjectId()) }
+            }
+            ?: emptyFlow()
     // The allowance catalogue is a production setting, not a payroll one: the
     // deal-memo wizard seeds it and the timecard spends it, so it lives with
     // the rest of the project settings on the account hub. The payroll
@@ -56,12 +82,28 @@ class TimecardRepositoryImpl(
     private val allowancesUrl =
         "${config.baseUrl(ZillitService.AccountHub)}/api/v2/account-hub/project-settings/allowances-rentals"
 
+    /**
+     * Two endpoints, one answer — the split the web keeps between
+     * `TimecardMetadataContext` (the timecard `/metadata`: approver /
+     * accountant / completer flags plus `pay_period`) and `usePayrollMetadata`
+     * (`/payroll/metadata`, the only source of `is_final_approver` —
+     * `usePayrollMetadata.js:54-75`). The payroll read fails soft: a payroll
+     * outage must not take the crew's own timecard pages down with it.
+     */
     override suspend fun metadata(): ZillitResult<TimecardMetadata> = apiClient.request(
         verb = HttpVerb.Get,
         url = metadataUrl,
         serializer = TimecardMetadataDto.serializer(),
         module = RequestModule.ProjectUser,
-    ).map { it.toDomain() }
+    ).map { dto ->
+        val payroll = apiClient.request(
+            verb = HttpVerb.Get,
+            url = payrollMetadataUrl,
+            serializer = PayrollApproverDto.serializer(),
+            module = RequestModule.ProjectUser,
+        ).getOrNull()
+        dto.toDomain(isFinalApprover = payroll?.isFinalApprover == true)
+    }
 
     /**
      * My weeks.
@@ -69,18 +111,21 @@ class TimecardRepositoryImpl(
      * Alone among the list routes this one answers an object rather than an
      * array — `{ weeks, current_week, days_worked }` — and the cards inside it
      * are the slim projection: an id, a week, a status and the week's totals,
-     * with no days. Opening one calls [timecard] for the full card.
+     * with no days **and no user id** (`MyTimecardsModule.jsx:126-167` reads
+     * nothing about the owner). Every row is the caller's by construction —
+     * the route is scoped server-side — so they are marked as owned here
+     * rather than left to a userId comparison that can never match.
      */
     override suspend fun myTimecards(): ZillitResult<List<Timecard>> = apiClient.request(
         verb = HttpVerb.Get,
         url = "$base/my-summary",
         serializer = MySummaryDto.serializer(),
         module = RequestModule.ProjectUser,
-    ).map { summary -> summary.weeks.orEmpty().mapNotNull { it.toDomain() } }
+    ).map { summary -> summary.ownedWeeks() }
 
     override suspend fun approvalQueue(): ZillitResult<List<Timecard>> = list("$base/approval")
 
-    override suspend fun payrollProcessing(weekStarting: String): ZillitResult<List<Timecard>> =
+    override suspend fun payrollProcessing(weekStarting: Long): ZillitResult<List<Timecard>> =
         list("$base/payroll-processing/$weekStarting")
 
     override suspend fun outstanding(): ZillitResult<List<Timecard>> =
@@ -105,67 +150,70 @@ class TimecardRepositoryImpl(
         ).map { rows -> rows.map { it.toDomain() } }
 
     /**
-     * Creates or updates a week.
-     *
-     * One method for both because the screen is the same either way: an
-     * unsaved week has no id and a saved one does, and making the caller pick
-     * the verb pushes that distinction into every call site.
+     * Creates or updates a week, the web's `ensureTimecardId` + `update` two
+     * step (`WeeklyTimecardModule.jsx:4778-4816`, `:4855-4860`): the week's
+     * id is resolved first — an exact-`week_starting` list, then a skeleton
+     * CREATE on miss — and the typed week always lands as a PATCH of the
+     * `buildSavePayload` shape. Answers the resolved id, which a queued
+     * submit or a note rides on.
      */
-    override suspend fun save(draft: TimecardDraft): ZillitResult<Unit> {
-        val body = buildJsonObject {
-            draft.weekStarting?.let { put("week_starting", JsonPrimitive(it)) }
-            putIfPresent("notes", draft.notes)
-            put(
-                "days",
-                buildJsonArray {
-                    draft.days.forEach { day ->
-                        add(
-                            buildJsonObject {
-                                day.date?.let { put("date", JsonPrimitive(it)) }
-                                put("day_type", JsonPrimitive(day.dayType.wire))
-                                putIfPresent("call_time", day.callTime)
-                                putIfPresent("wrap_time", day.wrapTime)
-                                put("break_minutes", JsonPrimitive(day.breakMinutes))
-                                put("worked_hours", JsonPrimitive(day.workedHours))
-                                put("overtime_hours", JsonPrimitive(day.overtimeHours))
-                                putIfPresent("note", day.note)
-                                put(
-                                    "allowances",
-                                    buildJsonArray {
-                                        day.allowances.forEach { allowance ->
-                                            add(
-                                                buildJsonObject {
-                                                    put("code", JsonPrimitive(allowance.code))
-                                                    put("label", JsonPrimitive(allowance.label))
-                                                    put("amount", JsonPrimitive(allowance.amount))
-                                                    put("quantity", JsonPrimitive(allowance.quantity))
-                                                },
-                                            )
-                                        }
-                                    },
-                                )
-                            },
-                        )
-                    }
-                },
-            )
+    override suspend fun save(draft: TimecardDraft): ZillitResult<String?> {
+        val id = when (val resolved = resolveWeekId(draft)) {
+            is ZillitResult.Failure -> return resolved
+            is ZillitResult.Success -> resolved.data
         }
-        return if (draft.timecardId == null) {
-            apiClient.envelope(HttpVerb.Post, base, RequestModule.ProjectUser, body).map { }
-        } else {
-            apiClient.envelope(
-                HttpVerb.Patch,
-                "$base/${draft.timecardId}",
-                RequestModule.ProjectUser,
-                body,
-            ).map { }
+        return apiClient.envelope(
+            HttpVerb.Patch,
+            "$base/$id",
+            RequestModule.ProjectUser,
+            draft.updateBody(),
+        ).map { id }
+    }
+
+    /**
+     * The web resolves a week by EXACT `week_starting` before ever creating
+     * one — `timecardsApi.list({week_starting})`, the server holding one
+     * timecard per (user, week) pair (`WeeklyTimecardModule.jsx:3992-4046`).
+     */
+    private suspend fun resolveWeekId(draft: TimecardDraft): ZillitResult<String> {
+        draft.timecardId?.let { return ZillitResult.Success(it) }
+        val listed = apiClient.request(
+            verb = HttpVerb.Get,
+            url = base,
+            serializer = ListSerializer(TimecardDto.serializer()),
+            module = RequestModule.ProjectUser,
+            queryParameters = mapOf("week_starting" to draft.weekStarting),
+        )
+        when (listed) {
+            is ZillitResult.Failure -> return listed
+            is ZillitResult.Success ->
+                listed.data.firstOrNull()?.toDomain()?.id?.let { return ZillitResult.Success(it) }
+        }
+        val created = apiClient.request(
+            verb = HttpVerb.Post,
+            url = base,
+            serializer = TimecardDto.serializer(),
+            module = RequestModule.ProjectUser,
+            body = draft.createBody(timezone = TimeZone.currentSystemDefault().id),
+        )
+        return when (created) {
+            is ZillitResult.Failure -> created
+            is ZillitResult.Success -> created.data.toDomain()?.id?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Serialization("the created week came back without an id"))
         }
     }
 
-    override suspend fun submit(id: String): ZillitResult<Unit> = post("$base/$id/submit", null)
+    override suspend fun addNote(id: String, note: String): ZillitResult<Unit> =
+        post("$base/$id/notes", buildJsonObject { put("note", JsonPrimitive(note)) })
 
+    // Submit takes an optional payload batching the latest save; the web
+    // sends `data || {}`, never an empty request (timecards.js:165-170).
+    override suspend fun submit(id: String): ZillitResult<Unit> = post("$base/$id/submit", EMPTY_BODY)
+
+    // The web's approve is bodiless — `approve(id)` with a `{}` default
+    // (ApproveTimeCardsPage.jsx:557, timecards.js:172-175).
     override suspend fun approve(id: String, note: String?): ZillitResult<Unit> =
-        post("$base/$id/approve", noteBody(note))
+        post("$base/$id/approve", noteBody(note) ?: EMPTY_BODY)
 
     override suspend fun reject(id: String, reason: String): ZillitResult<Unit> =
         post("$base/$id/reject", buildJsonObject { put("reason", JsonPrimitive(reason)) })
@@ -180,17 +228,25 @@ class TimecardRepositoryImpl(
 
     override suspend fun markPaid(id: String): ZillitResult<Unit> = post("$base/$id/mark-paid", null)
 
+    /**
+     * The deduction wire takes a rate, never an amount: `{label, rate_type,
+     * rate_amount, nominal_code}`, the server computing `actual_amount` and
+     * stamping `added_at`/`added_by` itself (`timecards.js:138-151`,
+     * `AddDeductionModal.jsx:127-132`). A flat rate's actual amount IS the
+     * rate, so the screen's amount goes out as `rate_amount`.
+     */
     override suspend fun addDeduction(
         id: String,
         label: String,
         amount: Double,
-        reason: String?,
+        nominalCode: String?,
     ): ZillitResult<Unit> = post(
         "$base/$id/add-deduction",
         buildJsonObject {
             put("label", JsonPrimitive(label))
-            put("amount", JsonPrimitive(amount))
-            putIfPresent("reason", reason)
+            put("rate_type", JsonPrimitive("flat"))
+            put("rate_amount", JsonPrimitive(amount))
+            put("nominal_code", JsonPrimitive(nominalCode?.trim().orEmpty()))
         },
     )
 
@@ -199,6 +255,8 @@ class TimecardRepositoryImpl(
         buildJsonObject { put("deduction_id", JsonPrimitive(deductionId)) },
     )
 
+    // Batch bodies carry `{ids}` — not `{timecard_ids}`, which the server
+    // reads as an empty batch (timecards.js:216-219, :254-258).
     override suspend fun approveAll(ids: List<String>): ZillitResult<Unit> =
         post("$base/batch/approve", idsBody(ids))
 
@@ -232,7 +290,12 @@ class TimecardRepositoryImpl(
         note?.takeIf { it.isNotBlank() }?.let { buildJsonObject { put("note", JsonPrimitive(it)) } }
 
     private fun idsBody(ids: List<String>) = buildJsonObject {
-        put("timecard_ids", buildJsonArray { ids.forEach { add(JsonPrimitive(it)) } })
+        put("ids", buildJsonArray { ids.forEach { add(JsonPrimitive(it)) } })
+    }
+
+    private companion object {
+        /** What the web sends where axios defaults a body to `{}`. */
+        val EMPTY_BODY = JsonObject(emptyMap())
     }
 }
 
@@ -257,7 +320,12 @@ internal data class TimecardDto(
     @SerialName("deductions") val deductions: List<DeductionDto>? = null,
     @SerialName("total_pay") val totalPay: String? = null,
     @SerialName("total_days") val totalDays: String? = null,
-    @SerialName("notes") val notes: String? = null,
+    /**
+     * `[{note, added_at}]` on the full document (`timecards.js:114-123`);
+     * older desktop-written rows carried a bare string. Read as raw JSON so
+     * either shape decodes, and resolved in [notesText].
+     */
+    @SerialName("notes") val notes: JsonElement? = null,
     @SerialName("query_notes") val queryNotes: String? = null,
     @SerialName("rejection_reason") val rejectionReason: String? = null,
     @SerialName("last_approved_by") val lastApprovedBy: String? = null,
@@ -288,7 +356,7 @@ internal data class TimecardDto(
             deductions = deductions.orEmpty().map { it.toDomain() },
             totalPay = totalPay.toAmount(),
             totalDays = totalDays.toAmount(),
-            notes = notes,
+            notes = notesText(),
             queryNote = queryNotes,
             rejectionReason = rejectionReason,
             lastApprovedBy = lastApprovedBy,
@@ -299,60 +367,123 @@ internal data class TimecardDto(
             locked = locked == true || status == TimecardStatus.Locked || status.isPaid,
         )
     }
+
+    /** The newest note's text — the array is append-only, so the last row is it. */
+    private fun notesText(): String? = when (notes) {
+        null, is JsonNull -> null
+        is JsonPrimitive -> notes.contentOrNull?.takeIf { it.isNotBlank() }
+        is JsonArray -> ((notes.lastOrNull() as? JsonObject)?.get("note") as? JsonPrimitive)
+            ?.contentOrNull?.takeIf { it.isNotBlank() }
+
+        else -> null
+    }
 }
 
+/**
+ * One saved day (`serializeDayToServer`'s output read back). Worked times are
+ * epoch millis pinned to UTC wall-clock, hours live in `minutes_worked`, and
+ * pay lines in `rates_ots[]`; the retired desktop spellings (`worked_hours`,
+ * string times) are still read for rows this port itself saved before the fix.
+ */
 @Serializable
 internal data class DayDto(
     @SerialName("date") val date: String? = null,
     @SerialName("day_type") val dayType: String? = null,
     @SerialName("call_time") val callTime: String? = null,
     @SerialName("wrap_time") val wrapTime: String? = null,
-    @SerialName("break_minutes") val breakMinutes: Int? = null,
-    @SerialName("worked_hours") val workedHours: String? = null,
-    @SerialName("overtime_hours") val overtimeHours: String? = null,
+    @SerialName("basic_hours") val basicHours: String? = null,
+    @SerialName("minutes_worked") val minutesWorked: String? = null,
+    @SerialName("worked_hours") val legacyWorkedHours: String? = null,
+    @SerialName("rates_ots") val ratesOts: List<RateLineDto>? = null,
     @SerialName("allowances") val allowances: List<AllowanceDto>? = null,
     @SerialName("note") val note: String? = null,
 ) {
     fun toDomain() = TimecardDay(
         date = date.toEpochMillisOrNull(),
         dayType = DayType.from(dayType),
-        callTime = callTime,
-        wrapTime = wrapTime,
-        breakMinutes = breakMinutes ?: 0,
-        workedHours = workedHours.toAmount(),
-        overtimeHours = overtimeHours.toAmount(),
+        callTime = wireTimeOfDay(callTime),
+        wrapTime = wireTimeOfDay(wrapTime),
+        workedHours = workedHours(),
+        overtimeHours = overtimeHours(),
         allowances = allowances.orEmpty().map { it.toDomain() },
         note = note,
     )
+
+    /** `minutes_worked` first (the web's Hours column), then the older shapes. */
+    private fun workedHours(): Double {
+        val minutes = minutesWorked.toAmountOrNull()
+        if (minutes != null && minutes > 0) return minutes / WIRE_MINUTES_PER_HOUR
+        return basicHours.toAmountOrNull() ?: legacyWorkedHours.toAmount()
+    }
+
+    /**
+     * The OT lines' clocked minutes: every non-basic `rates_ots` row with an
+     * hourly basis carries its minutes in `work_duration`
+     * (`WeeklyTimecardModule.jsx:760-770` — `basis: "hour"`, `work_duration:
+     * line.minutes`). Money stays on the row; only the hours are surfaced.
+     */
+    private fun overtimeHours(): Double = ratesOts.orEmpty()
+        .filter { it.identifier != "basic" && it.basis == "hour" }
+        .sumOf { it.workDuration.toAmount() } / WIRE_MINUTES_PER_HOUR
 }
 
+private const val WIRE_MINUTES_PER_HOUR = 60.0
+
+/** One `rates_ots[]` pay line — only what the day reader needs from it. */
+@Serializable
+internal data class RateLineDto(
+    @SerialName("identifier") val identifier: String? = null,
+    @SerialName("basis") val basis: String? = null,
+    @SerialName("work_duration") val workDuration: String? = null,
+)
+
+/**
+ * A day-level claim. The wire names are `rateEntrySchema`'s — `identifier` /
+ * `rate_amount` / `qty` (`WeeklyTimecardModule.jsx:586-619`); `code` /
+ * `amount` / `quantity` are the retired desktop spellings, still read for
+ * rows this port saved before the fix.
+ */
 @Serializable
 internal data class AllowanceDto(
-    @SerialName("code") val code: String? = null,
+    @SerialName("identifier") val identifier: String? = null,
+    @SerialName("code") val legacyCode: String? = null,
     @SerialName("label") val label: String? = null,
-    @SerialName("amount") val amount: String? = null,
-    @SerialName("quantity") val quantity: String? = null,
+    @SerialName("rate_amount") val rateAmount: String? = null,
+    @SerialName("amount") val legacyAmount: String? = null,
+    @SerialName("qty") val qty: String? = null,
+    @SerialName("quantity") val legacyQuantity: String? = null,
 ) {
-    fun toDomain() = Allowance(
-        code = code.orEmpty(),
-        label = label?.takeIf { it.isNotBlank() } ?: code.orEmpty(),
-        amount = amount.toAmount(),
-        // An allowance with no quantity is claimed once, not zero times.
-        quantity = quantity.toAmountOrNull() ?: 1.0,
-    )
+    fun toDomain(): Allowance {
+        val code = (identifier ?: legacyCode).orEmpty()
+        return Allowance(
+            code = code,
+            label = label?.takeIf { it.isNotBlank() } ?: code,
+            amount = (rateAmount ?: legacyAmount).toAmount(),
+            // An allowance with no quantity is claimed once, not zero times.
+            quantity = (qty ?: legacyQuantity).toAmountOrNull() ?: 1.0,
+        )
+    }
 }
 
+/**
+ * One deduction row: `_id` keys the remove call, and the server-computed
+ * `actual_amount` is the money (falling back to `rate_amount`, which equals
+ * it for flat rows — `timecards.js:138-158`).
+ */
 @Serializable
 internal data class DeductionDto(
+    @SerialName("_id") val underscoreId: String? = null,
     @SerialName("id") val id: String? = null,
     @SerialName("label") val label: String? = null,
-    @SerialName("amount") val amount: String? = null,
+    @SerialName("actual_amount") val actualAmount: String? = null,
+    @SerialName("rate_amount") val rateAmount: String? = null,
+    @SerialName("amount") val legacyAmount: String? = null,
     @SerialName("reason") val reason: String? = null,
 ) {
     fun toDomain() = Deduction(
-        id = id,
+        id = underscoreId ?: id,
         label = label.orEmpty(),
-        amount = amount.toAmount(),
+        amount = (actualAmount ?: rateAmount ?: legacyAmount).toAmount(),
         reason = reason,
     )
 }
@@ -368,7 +499,16 @@ internal data class DeductionDto(
 @Serializable
 internal data class MySummaryDto(
     @SerialName("weeks") val weeks: List<TimecardDto>? = null,
-)
+) {
+    /**
+     * Every row is the caller's by construction — the route is scoped
+     * server-side and the slim projection carries no owner field at all
+     * (`MyTimecardsModule.jsx:126-167`) — so ownership is stamped here, not
+     * left to a userId comparison that can never match.
+     */
+    fun ownedWeeks(): List<Timecard> =
+        weeks.orEmpty().mapNotNull { it.toDomain()?.copy(ownedByViewer = true) }
+}
 
 /**
  * The allowances-and-rentals project-settings slice.
@@ -433,22 +573,48 @@ internal data class AllowanceTypeDto(
     }
 }
 
+/**
+ * `GET payroll/timecards/metadata` — the flags the web's
+ * `TimecardMetadataContext` defaults document (`TimecardMetadataContext.jsx:
+ * 25-43`): `is_approver`, `is_accountant`, `is_completer` and `pay_period`.
+ * `is_final_approver` never rides this route; it is merged in from the
+ * payroll metadata read.
+ */
 @Serializable
 internal data class TimecardMetadataDto(
     @SerialName("is_approver") val isApprover: Boolean? = null,
-    @SerialName("is_final_approver") val isFinalApprover: Boolean? = null,
+    @SerialName("is_accountant") val isAccountant: Boolean? = null,
     @SerialName("is_completer") val isCompleter: Boolean? = null,
+    @SerialName("pay_period") val payPeriod: PayPeriodDto? = null,
     @SerialName("requires_final_approval") val requiresFinalApproval: Boolean? = null,
     @SerialName("disputes_enabled") val disputesEnabled: Boolean? = null,
 ) {
-    fun toDomain() = TimecardMetadata(
+    fun toDomain(isFinalApprover: Boolean) = TimecardMetadata(
         isApprover = isApprover == true,
-        isFinalApprover = isFinalApprover == true,
+        isFinalApprover = isFinalApprover,
         isCompleter = isCompleter == true,
+        isAccountant = isAccountant == true,
+        payPeriodStartDay = payPeriod?.startDayOfWeek ?: 1,
         requiresFinalApproval = requiresFinalApproval == true,
         disputesEnabled = disputesEnabled == true,
     )
 }
+
+/** `{start_day_of_week, end_day_of_week}` — ISO 1=Mon … 7=Sun. */
+@Serializable
+internal data class PayPeriodDto(
+    @SerialName("start_day_of_week") val startDayOfWeek: Int? = null,
+)
+
+/**
+ * The slice of `GET /api/v2/payroll/metadata` this tool needs: whether the
+ * production's payroll-approvers allowlist names the caller
+ * (`usePayrollMetadata.js:54-75`, `payroll-metadata.js:22-27`).
+ */
+@Serializable
+internal data class PayrollApproverDto(
+    @SerialName("is_final_approver") val isFinalApprover: Boolean? = null,
+)
 
 @Serializable
 internal data class TimecardHistoryDto(
@@ -466,8 +632,3 @@ internal data class TimecardHistoryDto(
     )
 }
 
-/** Adds [key] only when [value] has something in it. */
-internal fun JsonObjectBuilder.putIfPresent(key: String, value: String?) {
-    val trimmed = value?.trim()
-    if (!trimmed.isNullOrEmpty()) put(key, JsonPrimitive(trimmed))
-}

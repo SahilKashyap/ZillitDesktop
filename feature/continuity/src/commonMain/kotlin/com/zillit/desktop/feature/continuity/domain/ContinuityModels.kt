@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.continuity.domain
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * The two boards. "My Department" (intra) is where a crew member uploads;
@@ -136,6 +138,16 @@ data class ContinuityViewer(
 
 /** Everything the board asks `/api/v2/continuity` for. */
 interface ContinuityRepository {
+    /**
+     * A pulse per continuity event on the socket — scenes created, a scene
+     * updated, deleted or forwarded (`listenerSocket.js:862-873`). Every
+     * web surface refetches on these (`ContinuityModal.jsx:242-295/488`,
+     * `IntraDepartment.jsx:576-658`), so the listener reloads the folder
+     * grid and whatever folder is open. Defaulted empty for tests and
+     * hosts without a socket.
+     */
+    val refreshes: Flow<Unit> get() = emptyFlow()
+
     /** The scene folders — leading numbers — that have media on [tab]. */
     suspend fun folders(tab: ContinuityTab): ZillitResult<List<String>>
 

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.settings.approvals
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.units.ProductionUnit
@@ -364,7 +365,7 @@ class ApprovalsViewModel(
                     copy(
                         isLoading = false,
                         hasLoaded = true,
-                        error = result.error.userMessage,
+                        error = result.error.localised(),
                     )
                 }
             }
@@ -399,7 +400,7 @@ class ApprovalsViewModel(
                         // message.
                         copy(
                             deciding = deciding - request.id,
-                            error = "${request.displayName}: ${result.error.userMessage}",
+                            error = "${request.displayName}: ${result.error.localised()}",
                         )
                     }
                     // Said on the form too, when it is the form waiting: an
@@ -408,7 +409,7 @@ class ApprovalsViewModel(
                     setState {
                         copy(
                             review = review?.takeIf { it.request.id == request.id }
-                                ?.copy(error = result.error.userMessage)
+                                ?.copy(error = result.error.localised())
                                 ?: review,
                         )
                     }

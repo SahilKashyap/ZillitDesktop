@@ -91,11 +91,35 @@ fun AppShell(
      * counts live in one store and every surface reads through it.
      */
     badgeFor: (WorkspaceRoute) -> Int = { 0 },
+    /**
+     * A newer build exists; null renders nothing.
+     *
+     * A frame-level value rather than a tool, because it is a fact about the
+     * application rather than about the production, and because the one place
+     * every window already shares is the strip under the top bar. The app maps
+     * `core:appupdate`'s `UpdateStatus` onto this — `Unknown` and `UpToDate`
+     * both become null.
+     */
+    updateNotice: UpdateNotice? = null,
+    /**
+     * Opens the download page. Supplied as a lambda so the URL passes through
+     * the app's guarded https-only launcher (`BrowserLauncher.openInBrowser`)
+     * rather than anything this module could reach.
+     */
+    onDownloadUpdate: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
     // The rail asks; the frame confirms. A dialog composed inside the rail is
     // laid out inside a 60pt column — see [SignOutDialog].
     var confirmingSignOut by remember { mutableStateOf(false) }
+
+    // Dismissal is per version and per session, held here rather than
+    // persisted. Per version, because dismissing 1.2.0 must not also silence
+    // 1.3.0 — a preference keyed on nothing but "seen" is how an update notice
+    // becomes permanently invisible. Per session, because a strip this cheap
+    // does not need to survive a restart to be worth showing again.
+    var dismissedVersion by remember { mutableStateOf<String?>(null) }
+    val notice = updateNotice?.takeIf { it.mandatory || it.latestVersion != dismissedVersion }
 
     Surface(modifier = Modifier.fillMaxSize(), color = ZillitTheme.colors.canvas) {
         Box(Modifier.fillMaxSize()) {
@@ -111,6 +135,17 @@ fun AppShell(
                     notificationBadge = notificationBadge,
                 )
                 HorizontalDivider(color = ZillitTheme.colors.divider)
+
+                // Under the bar and above everything else: it is about the
+                // application, not about whichever window happens to be open.
+                // It takes a strip of height and blocks nothing.
+                notice?.let {
+                    UpdateBanner(
+                        notice = it,
+                        onDownload = onDownloadUpdate,
+                        onDismiss = { dismissedVersion = it.latestVersion },
+                    )
+                }
 
                 RailAndWorkspace(
                     viewModel = viewModel,
@@ -212,22 +247,12 @@ private fun TopBar(
             ProjectSwitcher(projectName = projectName, onClick = onSwitchProject)
         }
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        ) {
-            ThemeToggle(themeMode = themeMode, onChange = onThemeModeChange)
-            ZillitIconButton(
-                icon = ZillitIcons.Search,
-                contentDescription = "Search",
-                onClick = { },
-            )
-            ZillitIconButton(
-                icon = ZillitIcons.User,
-                contentDescription = "Profile",
-                onClick = { },
-            )
-        }
+        // The theme toggle alone. Search and Profile stood here doing
+        // nothing — a magnifier that searched nothing and a person that
+        // opened nobody. Search lives in each tool that has something to
+        // search, and the account is in Settings; two dead controls in the
+        // app's most-looked-at corner taught people the bar is decorative.
+        ThemeToggle(themeMode = themeMode, onChange = onThemeModeChange)
     }
 }
 
@@ -397,6 +422,29 @@ data class StatusAction(
     val text: String,
     val attention: Boolean,
     val onClick: () -> Unit,
+)
+
+/**
+ * What the frame is told about a newer build.
+ *
+ * Deliberately *not* `core:appupdate`'s `UpdateStatus`. The shell renders a
+ * frame; it has no business knowing about Firebase, and `core:appupdate` has no
+ * business depending on Compose. The app maps one onto the other in one place,
+ * which also collapses the two silent states (`Unknown`, `UpToDate`) into the
+ * single thing the frame cares about: null, meaning "render nothing".
+ *
+ * @param latestVersion shown verbatim, so a build called `1.2.0-rc3` reads as
+ *   `1.2.0-rc3` and not as whatever this module thought it should be called.
+ * @param mandatory the installed build is below `desktop_min_version`. Removes
+ *   the dismiss control and changes the wording — see [UpdateBanner].
+ * @param downloadUrl null when nothing published a usable https URL. The banner
+ *   still appears; it simply has no button, because "a newer version exists" is
+ *   worth knowing even when we cannot say where to get it.
+ */
+data class UpdateNotice(
+    val latestVersion: String,
+    val mandatory: Boolean,
+    val downloadUrl: String?,
 )
 
 private val SWITCHER_CHEVRON = 14.dp

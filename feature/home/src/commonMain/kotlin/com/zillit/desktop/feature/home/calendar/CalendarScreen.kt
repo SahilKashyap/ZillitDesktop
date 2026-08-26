@@ -31,6 +31,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -46,6 +47,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
 /**
@@ -106,6 +108,7 @@ internal fun CalendarScreen(
 
         // Always composed so its exit can play; the flag drives visibility.
         DeleteEventDialog(state.detail, onEvent)
+        RescheduleDialog(state, onEvent)
 
         // Last, so it covers whichever surface asked for the decline — the
         // invitations panel or the detail popover.
@@ -165,6 +168,54 @@ private fun DeleteEventDialog(detail: EventDetailState?, onEvent: (CalendarEvent
             )
         }
     }
+}
+
+/**
+ * The question a drag-drop asks before it moves anything: the event by name,
+ * the times it holds now, and the times the drop proposes. Kept composed
+ * with `visible` driven, as [ZillitDialogShell] asks; the last pending drop
+ * is retained so the words do not blank during the fade-out.
+ */
+@Composable
+private fun RescheduleDialog(state: CalendarUiState, onEvent: (CalendarEvent2Event) -> Unit) {
+    val shown = remember { mutableStateOf<PendingReschedule?>(null) }
+    state.pendingReschedule?.let { shown.value = it }
+    val current = shown.value
+
+    ZillitDialogShell(
+        title = "Move \"${current?.event?.title ?: "this event"}\"?",
+        subtitle = current?.let { rescheduleLine(it, state.zone) },
+        visible = state.pendingReschedule != null,
+        onDismiss = { onEvent(CalendarEvent2Event.CancelReschedule) },
+        width = DIALOG_WIDTH,
+    ) {
+        ZillitText(
+            text = "Everyone invited sees the new time.",
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textSecondary,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
+        ) {
+            ZillitButton(
+                text = "Cancel",
+                variant = ButtonVariant.Tertiary,
+                onClick = { onEvent(CalendarEvent2Event.CancelReschedule) },
+            )
+            ZillitButton(
+                text = "Move event",
+                onClick = { onEvent(CalendarEvent2Event.ConfirmReschedule) },
+            )
+        }
+    }
+}
+
+/** "Tue 25 Aug, 10:00 – 11:00 → Wed 26 Aug, 10:30 – 11:30" — the whole change in one line. */
+private fun rescheduleLine(pending: PendingReschedule, zone: TimeZone): String {
+    val from = pending.event.copy()
+    val to = pending.event.copy(startMillis = pending.newStart, endMillis = pending.newEnd)
+    return "${from.dayAndTimeLabel(zone)}  →  ${to.dayAndTimeLabel(zone)}"
 }
 
 /** A dead calendar with a way back — not a message and a shrug. */
@@ -264,6 +315,9 @@ private fun ToolbarActions(state: CalendarUiState, onEvent: (CalendarEvent2Event
 private fun MonthView(state: CalendarUiState, onEvent: (CalendarEvent2Event) -> Unit) {
     var gridSize by remember { mutableStateOf(IntSize.Zero) }
     val weekCount = state.grid.weeks.size
+    // The day whose event is mid-drag: its cell and row ride above the
+    // rest, or the dragged chip slides UNDER every later-drawn cell.
+    var draggingDate by remember { mutableStateOf<LocalDate?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         WeekdayHeader(state)
@@ -279,7 +333,10 @@ private fun MonthView(state: CalendarUiState, onEvent: (CalendarEvent2Event) -> 
         ) {
             state.grid.weeks.forEach { week ->
                 Row(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .zIndex(if (week.any { it.date == draggingDate }) 1f else 0f),
                     horizontalArrangement = Arrangement.spacedBy(GRID_GAP),
                 ) {
                     week.forEach { day ->
@@ -288,7 +345,13 @@ private fun MonthView(state: CalendarUiState, onEvent: (CalendarEvent2Event) -> 
                             date = day.date,
                             dimmed = !day.inMonth,
                             onEvent = onEvent,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            onDragging = { active ->
+                                draggingDate = if (active) day.date else null
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .zIndex(if (day.date == draggingDate) 1f else 0f),
                             dragGrid = {
                                 DragGrid(
                                     dayWidthPx = gridSize.width / DAYS_IN_WEEK.toFloat(),
@@ -414,6 +477,7 @@ private fun DayCell(
     onEvent: (CalendarEvent2Event) -> Unit,
     modifier: Modifier = Modifier,
     dragGrid: () -> DragGrid = { DragGrid(0f, 0f, 0) },
+    onDragging: (Boolean) -> Unit = {},
 ) {
     val colors = ZillitTheme.colors
     val events = state.eventsOn(date)
@@ -441,7 +505,7 @@ private fun DayCell(
             verticalArrangement = Arrangement.spacedBy(1.dp)
         ) {
             events.take(MAX_CHIPS).forEach { event ->
-                EventChip(event, state, dragGrid, onEvent)
+                EventChip(event, state, dragGrid, onEvent, onDragging)
             }
             if (events.size > MAX_CHIPS) {
                 ZillitText(
@@ -488,13 +552,14 @@ private fun EventChip(
     state: CalendarUiState,
     dragGrid: () -> DragGrid,
     onEvent: (CalendarEvent2Event) -> Unit,
+    onDragging: (Boolean) -> Unit = {},
 ) {
     val tint = event.tint()
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .draggableEvent(event, dragGrid) { days, _ ->
+            .draggableEvent(event, dragGrid, onDragging) { days, _ ->
                 onEvent(CalendarEvent2Event.MoveEvent(event, days, minuteDelta = 0))
             }
             .clip(ZillitTheme.shapes.small)

@@ -14,6 +14,11 @@ import com.zillit.desktop.feature.permissiongrid.domain.GridAxis
 import com.zillit.desktop.feature.permissiongrid.domain.GridPage
 import com.zillit.desktop.feature.permissiongrid.domain.GridSection
 import com.zillit.desktop.feature.permissiongrid.domain.PermissionGridRepository
+import com.zillit.desktop.feature.permissiongrid.domain.RightsSync
+import com.zillit.desktop.core.socket.SocketEventBus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.mapNotNull
 
 /**
  * `permissions/{axis}/{section}/access` — the production's rights spreadsheet.
@@ -30,9 +35,26 @@ class PermissionGridRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
     private val currentUserId: () -> String?,
+    /** Null keeps the grid socket-less — tests, and hosts without a bus. */
+    private val bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : PermissionGridRepository {
 
     private val base = config.apiV2()
+
+    /**
+     * See [PermissionGridRepository.syncs]. Another production's event is
+     * dropped when both sides can name a project — the socket reconnects per
+     * production, but a stale frame can straddle a switch.
+     */
+    override val syncs: Flow<RightsSync> =
+        bus?.onAny(RIGHTS_SYNC_EVENTS, RightsSyncDto.serializer())
+            ?.mapNotNull { (_, dto) -> dto.toDomain() }
+            ?.mapNotNull { sync ->
+                val here = currentProjectId()
+                if (sync.projectId != null && here != null && sync.projectId != here) null else sync
+            }
+            ?: emptyFlow()
 
     private fun accessUrl(axis: GridAxis, section: GridSection) =
         "${base}permissions/${axis.wire}/${section.wire}/access"

@@ -7,7 +7,9 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.formsignature.domain.DocumentSigner
+import com.zillit.desktop.feature.formsignature.domain.FormSignRefresh
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureRepository
 import com.zillit.desktop.feature.formsignature.domain.HistoryEntry
 import com.zillit.desktop.feature.formsignature.domain.SignDocument
@@ -17,6 +19,10 @@ import com.zillit.desktop.feature.formsignature.domain.SignerOption
 import com.zillit.desktop.feature.formsignature.domain.StandardForm
 import com.zillit.desktop.feature.formsignature.domain.StandardFormType
 import com.zillit.desktop.feature.formsignature.domain.StoredDocument
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.transform
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -46,12 +52,26 @@ import kotlinx.serialization.json.put
 class FormSignatureRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    private val bus: SocketEventBus? = null,
 ) : FormSignatureRepository {
 
     // `api/v2`, not `v2`: the documents service routes under the `/api`
     // prefix (bare `/v2/...` answers `route_not_found`) — verified against
     // develop, 2026-08-13.
     private val base = config.apiV2(ZillitService.Forms).trimEnd('/')
+
+    /**
+     * See [FormSignatureRepository.refreshes]. `signed`/`counter:signed`
+     * fan out to both kinds, as both web lists refetch on them. Conflated:
+     * a signing emits several of these back to back and one refetch per
+     * list answers all.
+     */
+    override val refreshes: Flow<FormSignRefresh> =
+        bus?.onAny(FORM_SIGN_SYNC_EVENTS)
+            ?.transform { message -> refreshKindsFor(message.event).forEach { emit(it) } }
+            ?.conflate()
+            ?: emptyFlow()
 
     override suspend fun standardForms(selfAssigned: Boolean): ZillitResult<List<StandardForm>> =
         apiClient.request(

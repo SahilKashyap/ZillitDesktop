@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.esignature.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * The envelope service's REST surface — the slice of the web's DocuSign
@@ -17,6 +19,16 @@ import com.zillit.desktop.core.common.ZillitResult
  *    the combined form, so neither does this.
  */
 interface EsignRepository {
+
+    /**
+     * A pulse per envelope-lifecycle event on the socket — delivered,
+     * signed, declined, completed, voided, updated, deleted (the web's
+     * `DocuSignObservers.jsx:42-52`, fed by `listenerSocket.js:27-33`).
+     * The listener refetches the visible list rather than patching rows:
+     * the wire's envelope shapes vary by event and the refetch cannot go
+     * stale. Defaulted empty for tests and hosts without a socket.
+     */
+    val refreshes: Flow<Unit> get() = emptyFlow()
 
     /**
      * [userId] rides as a query parameter on the received scope — the web's

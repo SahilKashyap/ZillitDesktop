@@ -6,6 +6,7 @@ plugins {
 kotlin {
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":core:localization"))
             implementation(project(":core:common"))
             implementation(project(":core:designsystem"))
             implementation(project(":core:mvvm"))

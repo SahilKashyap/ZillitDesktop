@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.distribution.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.distribution.domain.DistributionRepository
 import com.zillit.desktop.feature.distribution.domain.DistributionSection
@@ -85,7 +86,7 @@ class DistributionViewModel(
         launchResult(
             block = { repository.allAccess() },
             onSuccess = { rows -> setState { copy(users = rows, isLoading = false) } },
-            onError = { error -> setState { copy(isLoading = false, error = error.userMessage) } },
+            onError = { error -> setState { copy(isLoading = false, error = error.localised()) } },
         )
     }
 
@@ -121,7 +122,7 @@ class DistributionViewModel(
                     copy(
                         pending = pending - cell,
                         users = users.withCell(event.userId, event.unitId, !event.enabled),
-                        error = error.userMessage,
+                        error = error.localised(),
                     )
                 }
             },

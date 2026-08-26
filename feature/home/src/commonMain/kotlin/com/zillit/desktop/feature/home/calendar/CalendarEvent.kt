@@ -22,6 +22,13 @@ data class CalendarEvent(
     val endMillis: Long,
     val isAllDay: Boolean = false,
     val location: String? = null,
+    /**
+     * Where the location actually is — the web sends these beside the
+     * description (`AddCalendarEvent.jsx:433-438`); null when the location
+     * was typed rather than picked on the map.
+     */
+    val locationLat: Double? = null,
+    val locationLng: Double? = null,
     val description: String? = null,
     val colorHex: String? = null,
     val timezone: String? = null,
@@ -151,6 +158,20 @@ fun CalendarEvent.timeLabel(zone: TimeZone): String {
         .toLocalDateTime(zone)
     return "${start.hhmm()} – ${end.hhmm()}"
 }
+
+/** The time label with its day in front — what a reschedule question needs. */
+fun CalendarEvent.dayAndTimeLabel(zone: TimeZone): String {
+    val start = Instant.fromEpochMilliseconds(startMillis).toLocalDateTime(zone)
+    val weekday = start.date.dayOfWeek.name.abbreviated()
+    val month = start.date.month.name.abbreviated()
+    return "$weekday ${start.date.day} $month, ${timeLabel(zone)}"
+}
+
+/** "MONDAY" → "Mon" — the three-letter shape every calendar prints. */
+private fun String.abbreviated(): String =
+    take(DAY_ABBREVIATION).lowercase().replaceFirstChar { it.uppercase() }
+
+private const val DAY_ABBREVIATION = 3
 
 private fun LocalDateTime.hhmm(): String = "${hour.pad()}:${minute.pad()}"
 

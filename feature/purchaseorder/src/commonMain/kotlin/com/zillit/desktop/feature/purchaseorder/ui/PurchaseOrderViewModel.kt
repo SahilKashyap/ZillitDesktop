@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.purchaseorder.ui
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.sync.NewOperation
 import com.zillit.desktop.core.sync.OfflineSupport
@@ -12,6 +13,7 @@ import com.zillit.desktop.feature.purchaseorder.data.toLocalOrder
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PoHistoryEntry
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
+import com.zillit.desktop.feature.purchaseorder.domain.PoRefresh
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.domain.PoViewer
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
@@ -224,8 +226,38 @@ class PurchaseOrderViewModel(
         launch { loadVendors() }
         launch { restoreDraft() }
         watchSync()
+        listenOnce()
         load(currentState.destination)
     }
+
+    /**
+     * Folds the socket's announcements into the screen: another client's
+     * raise, decision or vendor edit lands as a reload of whatever is open —
+     * the web's own port shape (every `po:*` frame becomes a parameterless
+     * refetch). Guarded so a project switch restarting the tool does not
+     * stack collectors, and debounced per kind because the backend fans one
+     * action into several frames — the web coalesces the same way
+     * (`accountHubListeners.js` `DEBOUNCE_MS = 500`).
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.collect { kind ->
+                syncJobs.remove(kind)?.cancel()
+                syncJobs[kind] = launch {
+                    delay(SYNC_DEBOUNCE_MILLIS)
+                    when (kind) {
+                        PoRefresh.Orders -> load(currentState.destination)
+                        PoRefresh.Vendors -> loadVendors()
+                    }
+                }
+            }
+        }
+    }
+
+    private var listening = false
+    private val syncJobs = mutableMapOf<PoRefresh, Job>()
 
     fun onProjectChanged() {
         started = false
@@ -436,7 +468,7 @@ class PurchaseOrderViewModel(
                         queueOrder(support, request)
                     } else {
                         setState { copy(busy = false) }
-                        sendEffect(PoEffect.Failed(result.error.userMessage))
+                        sendEffect(PoEffect.Failed(result.error.localised()))
                     }
                 }
             }
@@ -554,7 +586,7 @@ class PurchaseOrderViewModel(
 
             is ZillitResult.Failure -> {
                 setState { copy(busy = false) }
-                sendEffect(PoEffect.Failed(result.error.userMessage))
+                sendEffect(PoEffect.Failed(result.error.localised()))
             }
         }
     }
@@ -578,6 +610,8 @@ class PurchaseOrderViewModel(
         const val VENDORS_CACHE = "po.vendors"
         const val QUEUED_NOTICE = "Saved on this computer — it will be raised when you're back online."
         private const val DRAFT_SAVE_DEBOUNCE_MILLIS = 400L
+        /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
+        const val SYNC_DEBOUNCE_MILLIS = 500L
         private const val LABEL_MAX = 80
     }
 }

@@ -29,6 +29,8 @@ interface ReplyAwareChatRepository {
         isGroup: Boolean,
         attachment: ChatAttachment?,
         replyTo: ChatReplyRef,
+        /** A shared place, exactly as [ChatRepository.send] carries one. */
+        location: com.zillit.desktop.feature.chat.domain.ChatLocation? = null,
     ): ZillitResult<Unit>
 }
 

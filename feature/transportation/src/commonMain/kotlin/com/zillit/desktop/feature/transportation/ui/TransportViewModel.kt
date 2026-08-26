@@ -2,10 +2,12 @@
 
 package com.zillit.desktop.feature.transportation.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.transportation.domain.PermanentStatus
 import com.zillit.desktop.feature.transportation.domain.TransportRepository
+import com.zillit.desktop.feature.transportation.domain.TransportSyncKind
 import com.zillit.desktop.feature.transportation.domain.TransportViewer
 import com.zillit.desktop.feature.transportation.domain.TripAction
 import com.zillit.desktop.feature.transportation.domain.TripPassenger
@@ -14,6 +16,7 @@ import com.zillit.desktop.feature.transportation.domain.TripUpdate
 import com.zillit.desktop.feature.transportation.domain.Vehicle
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.conflate
 
 /**
  * Transportation: pickup requests, vehicles, permanent allocations, drivers,
@@ -31,7 +34,40 @@ class TransportViewModel(
     fun start() {
         setState { copy(viewer = resolveViewer()) }
         refresh()
+        listenOnce()
     }
+
+    /**
+     * Re-runs the load a socket frame touches, as the web's handlers do:
+     * Fleet reloads crew and vehicles (they back every section's pickers),
+     * Trips reloads whichever request list is on screen, and Permanent
+     * reloads the allocations plus the crew — the web refetches ALL users
+     * on a permanent request too (ZL-13708). Guarded so a second start
+     * (the window reopening) does not stack collectors; `conflate()` folds
+     * a burst into one reload.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.conflate().collect { kind ->
+                when (kind) {
+                    TransportSyncKind.Fleet -> reloadCrewAndVehicles()
+                    TransportSyncKind.Trips -> when (state.value.section) {
+                        TransportSection.Requests -> loadTrips()
+                        TransportSection.MyAssignments -> loadMine()
+                        else -> Unit
+                    }
+                    TransportSyncKind.Permanent -> {
+                        reloadCrewAndVehicles()
+                        if (state.value.section == TransportSection.Permanent) loadPermanent()
+                    }
+                }
+            }
+        }
+    }
+
+    private var listening = false
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
     override fun onEvent(event: TransportEvent) {
@@ -264,7 +300,7 @@ class TransportViewModel(
         launch {
             when (val result = repository.raiseTrip(editor.toDraft(), coordinator)) {
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, raise = editor.copy(saving = false), error = result.error.userMessage)
+                    copy(busy = false, raise = editor.copy(saving = false), error = result.error.localised())
                 }
                 is ZillitResult.Success -> {
                     setState {
@@ -303,7 +339,7 @@ class TransportViewModel(
             )
             when (val result = repository.updateTrip(update, nowMillis())) {
                 is ZillitResult.Failure -> setState { copy(openTrip = open.copy(busy = false),
-                    error = result.error.userMessage) }
+                    error = result.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(openTrip = null) }
                     sendEffect(TransportEffect.Notice(action.notice()))
@@ -344,7 +380,7 @@ class TransportViewModel(
             val result = if (id == null) repository.addVehicle(draft) else repository.updateVehicle(id, draft)
             when (result) {
                 is ZillitResult.Failure -> setState { copy(busy = false, vehicleEditor = editor.copy(saving = false),
-                    error = result.error.userMessage) }
+                    error = result.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, vehicleEditor = null) }
                     sendEffect(TransportEffect.Notice(if (id == null) "Vehicle added" else "Vehicle updated"))
@@ -384,7 +420,7 @@ class TransportViewModel(
                 status)
             when (result) {
                 is ZillitResult.Failure -> setState { copy(busy = false, permanentEditor = editor.copy(saving = false),
-                    error = result.error.userMessage) }
+                    error = result.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, permanentEditor = null, permanentTab = status) }
                     sendEffect(TransportEffect.Notice(if (asDraft) "Draft saved" else "Allocation saved"))
@@ -401,7 +437,7 @@ class TransportViewModel(
         setState { copy(busy = true) }
         launch {
             when (val result = block()) {
-                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
                     sendEffect(TransportEffect.Notice(notice))
@@ -415,7 +451,7 @@ class TransportViewModel(
     private fun <T> ZillitResult<T>.orError(): T? = when (this) {
         is ZillitResult.Success -> data
         is ZillitResult.Failure -> {
-            val message = this.error.userMessage
+            val message = this.error.localised()
             setState { copy(error = message) }
             null
         }

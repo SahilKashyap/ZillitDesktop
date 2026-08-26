@@ -33,6 +33,8 @@ data class DiaryEditor(
     val startText: String = "",
     val endText: String = "",
     val location: String = "",
+    val locationLat: Double? = null,
+    val locationLng: Double? = null,
     val color: String = "#3498DB",
     val scheduleDayId: String = "",
     val noteType: String = "general",
@@ -107,6 +109,9 @@ sealed interface BoxScheduleEvent {
         val startText: String? = null,
         val endText: String? = null,
         val location: String? = null,
+        /** Sent together with [location] when a place is picked on the map. */
+        val locationLat: Double? = null,
+        val locationLng: Double? = null,
         val color: String? = null,
         val noteType: String? = null,
         val repeatStatus: String? = null,

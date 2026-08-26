@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -27,6 +31,10 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.locationpicker.LocalLocationPicker
+import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.oneLine
+import com.zillit.desktop.core.locationpicker.ZillitLocationField
 import com.zillit.desktop.feature.transportation.domain.PermanentPassenger
 import com.zillit.desktop.feature.transportation.domain.TransportUser
 import com.zillit.desktop.feature.transportation.domain.TripAction
@@ -298,51 +306,25 @@ private fun RaiseDialog(state: TransportUiState, onEvent: (TransportEvent) -> Un
                 ZillitTextField(value = pe.time, onValueChange = { change(pe.copy(time = it)) }, label = "Time",
                     placeholder = "HH:mm", modifier = Modifier.width(SMALL))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitTextField(
-                    value = pe.pickupAddress,
-                    onValueChange = { typed ->
-                        val at = MapsLink.parseLatLng(typed)
-                        change(
-                            if (at == null) pe.copy(pickupAddress = typed)
-                            else pe.copy(
-                                pickupAddress = typed,
-                                pickupLat = at.first.toString(),
-                                pickupLng = at.second.toString(),
-                            ),
-                        )
-                    },
-                    label = "Pickup address",
-                    helperText = "Lat/Lng required — paste a Google Maps link to fill them",
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitTextField(value = pe.pickupLat, onValueChange = { change(pe.copy(pickupLat = it)) },
-                    label = "Lat", modifier = Modifier.width(SMALL))
-                ZillitTextField(value = pe.pickupLng, onValueChange = { change(pe.copy(pickupLng = it)) },
-                    label = "Lng", modifier = Modifier.width(SMALL))
+            PlaceField(
+                label = "Pickup address",
+                address = pe.pickupAddress,
+                lat = pe.pickupLat,
+                lng = pe.pickupLng,
+            ) { address, lat, lng ->
+                change(pe.copy(pickupAddress = address, pickupLat = lat, pickupLng = lng))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 verticalAlignment = Alignment.Bottom) {
-                ZillitTextField(
-                    value = pe.dropAddress,
-                    onValueChange = { typed ->
-                        val at = MapsLink.parseLatLng(typed)
-                        change(
-                            if (at == null) pe.copy(dropAddress = typed)
-                            else pe.copy(
-                                dropAddress = typed,
-                                dropLat = at.first.toString(),
-                                dropLng = at.second.toString(),
-                            ),
-                        )
-                    },
+                PlaceField(
                     label = "Drop-off address",
+                    address = pe.dropAddress,
+                    lat = pe.dropLat,
+                    lng = pe.dropLng,
                     modifier = Modifier.weight(1f),
-                )
-                ZillitTextField(value = pe.dropLat, onValueChange = { change(pe.copy(dropLat = it)) }, label = "Lat",
-                    modifier = Modifier.width(SMALL))
-                ZillitTextField(value = pe.dropLng, onValueChange = { change(pe.copy(dropLng = it)) }, label = "Lng",
-                    modifier = Modifier.width(SMALL))
+                ) { address, lat, lng ->
+                    change(pe.copy(dropAddress = address, dropLat = lat, dropLng = lng))
+                }
                 ZillitButton(text = "Add passenger", onClick = { onEvent(TransportEvent.AddPassenger) },
                     variant = ButtonVariant.Secondary)
             }
@@ -364,6 +346,86 @@ private fun RaiseDialog(state: TransportUiState, onEvent: (TransportEvent) -> Un
         }
     }
 }
+
+/**
+ * One end of a ride: its address, and the coordinates the server refuses to do
+ * without — `POST request` answers 406 `trip_request_passengers_required` when
+ * a passenger's pickup or drop-off carries `lat`/`long: null`, which
+ * [com.zillit.desktop.feature.transportation.ui.TransportViewModel]'s
+ * `passengerProblem` checks before the trip is ever sent.
+ *
+ * The web never has to ask: its field IS a map
+ * (`transportationHub/common/LocationPicker.jsx`, whose `toLongLat` hands the
+ * chosen place's coordinates to the payload). The map picker does the same here
+ * — one pick fills the address and both numbers.
+ *
+ * Typing still works, and so do both fallbacks the desktop needed while it had
+ * no map: a pasted Google Maps link fills the coordinates through
+ * [MapsLink.parseLatLng], and the two small fields the trio used to show all
+ * the time are still reachable. They open by themselves when no picker is
+ * wired — offline, or a host without a maps key — so the only workflow that
+ * ever existed here never becomes unreachable.
+ */
+@Composable
+private fun PlaceField(
+    label: String,
+    address: String,
+    lat: String,
+    lng: String,
+    modifier: Modifier = Modifier,
+    onChange: (address: String, lat: String, lng: String) -> Unit,
+) {
+    var manual by remember { mutableStateOf(false) }
+    val hasPicker = LocalLocationPicker.current != null
+    val known = lat.isNotBlank() && lng.isNotBlank()
+    val colors = ZillitTheme.colors
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        ZillitLocationField(
+            text = address,
+            onTextChange = { typed ->
+                val at = MapsLink.parseLatLng(typed)
+                if (at == null) onChange(typed, lat, lng)
+                else onChange(typed, at.first.toString(), at.second.toString())
+            },
+            onPicked = { onChange(it.oneLine(), it.lat.toString(), it.lng.toString()) },
+            label = label,
+            // The coordinates read back as text once they are known, rather
+            // than as two more inputs: they are a result here, not a question.
+            helperText = if (known) "$lat, $lng" else "Pick on the map, or paste a Google Maps link",
+            initial = pickedAt(address, lat, lng),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (hasPicker && !manual) {
+            ZillitButton(
+                text = "Enter coordinates",
+                onClick = { manual = true },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+            )
+        }
+        if (manual || !hasPicker) {
+            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+                ZillitTextField(value = lat, onValueChange = { onChange(address, it, lng) }, label = "Lat",
+                    modifier = Modifier.width(SMALL))
+                ZillitTextField(value = lng, onValueChange = { onChange(address, lat, it) }, label = "Lng",
+                    modifier = Modifier.width(SMALL))
+                if (!hasPicker) {
+                    ZillitText(text = "No map here — paste a Google Maps link or type the numbers",
+                        style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
+                }
+            }
+        }
+    }
+}
+
+/** Where the map should open: where this place already is, when it has one. */
+private fun pickedAt(address: String, lat: String, lng: String): PickedLocation? {
+    val at = lat.trim().toDoubleOrNull() ?: return null
+    val to = lng.trim().toDoubleOrNull() ?: return null
+    return PickedLocation(name = "", address = address, lat = at, lng = to)
+}
+
+/** The one line a picked place reads as: its name, then its address. */
 
 @Composable
 private fun CcPicker(state: TransportUiState, chosen: List<String>, onToggle: (String) -> Unit) {

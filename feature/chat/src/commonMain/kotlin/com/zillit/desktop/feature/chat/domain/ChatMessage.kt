@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.chat.domain
 
+import kotlinx.serialization.Serializable
+
 /** One direct message, decrypted and ready to draw. */
 data class ChatMessage(
     val id: String,
@@ -17,11 +19,83 @@ data class ChatMessage(
     /** Every reaction on this message, one row per person. */
     val reactions: List<ChatReaction> = emptyList(),
     val attachment: ChatAttachment? = null,
+    /**
+     * The place this message shares, when its `message_type` is `location`;
+     * null for every other kind. Rides the envelope beside [attachment], not
+     * inside it — see [ChatLocation].
+     */
+    val location: ChatLocation? = null,
     /** Changed after delivery — the bubble says so beside the time. */
     val isEdited: Boolean = false,
     /** The line this one quotes, when it is a reply; null for a plain message. */
     val replyTo: ChatReplyRef? = null,
 )
+
+/**
+ * A shared place — the wire's own `location` object, field for field.
+ *
+ * ## Where it rides
+ *
+ * TOP LEVEL on the message, a sibling of `attachment`, never inside it:
+ * Android's `ChatAndGroupModel.location: LocationInfo?`
+ * (`chatAndGroupChat/model/ChatAndGroupRequestModelHandler.kt:42`), set from
+ * the `location` parameter of `postDataInChat`
+ * (`baseUtils/CommonApis.kt:1878,1889` and the top-level twin at `:2366,:2377`).
+ * The web builds the same key at `pages/cnc_latest/cncUtil.js:312-315`.
+ *
+ * ## The field names
+ *
+ * `LocationInfo` (`bottomNav/home/models/HomeChatRequest.kt:228-239`) is
+ * `{lat, long, address, imageLink, height, width}` — the longitude is spelled
+ * **`long`**, Zillit's habit, and the web agrees (`cncUtil.js:314`
+ * `long: location?.lng`). `imageLink/height/width` describe the map
+ * SCREENSHOT the phones take (`mapView/MapsActivity.kt:205-224`) and upload as
+ * the message's attachment; this desktop has no map raster to take, so it
+ * carries the three fields that describe the place itself and nothing else.
+ *
+ * ## The message body
+ *
+ * A location message DOES carry an encrypted body like any other — the phones
+ * send the picked place's description, which defaults to its address
+ * (`utils/MediaExtension.kt:308-322` builds the gallery item with
+ * `description = address`, and `ChatAndGroupVM.uploadingDataMapper` passes it
+ * as `mMessage` at `ChatAndGroupVM.kt:605-615`, encrypted at `:399-404`). Both
+ * phones then HIDE that body when they draw the bubble
+ * (`viewholders/HoldersViewhandler.kt:359,371`), and the web's caption is
+ * commented out (`components/sendMessage/RenderLocation.jsx:98-103`) — so the
+ * body is the label this desktop is free to show, and the address in
+ * [address] is the durable truth about the place.
+ *
+ * `@Serializable` for one reason: a location written with no network waits in
+ * the outbox as JSON (`QueuedChatSend`).
+ */
+@Serializable
+data class ChatLocation(
+    /**
+     * The place's address as the sender's picker resolved it. Optional on the
+     * wire — the web sends `{lat, long}` alone (`cncUtil.js:312-315`), so a
+     * message from a browser arrives with nothing but the pin.
+     */
+    val address: String = "",
+    val lat: Double,
+    /**
+     * The longitude. Named `lng` here because that is what the shared picker
+     * answers (`core:locationpicker`'s `PickedLocation`); the rename to the
+     * wire's `long` happens once, in `ChatWire`, where every other wire
+     * spelling lives.
+     */
+    val lng: Double,
+) {
+    /**
+     * Where "Open in Maps" goes — the URL every reference client builds from
+     * the pair: web `pages/cnc_latest/Util.jsx:27` and
+     * `components/unit-chat/message-types/LocationMessage.jsx:43`
+     * (`https://www.google.com/maps?q=lat,long`), Android's
+     * `openLocationFromCoordinates` off the same two fields
+     * (`viewholders/HoldersViewhandler.kt:306-318`).
+     */
+    val mapsUrl: String get() = "https://www.google.com/maps?q=$lat,$lng"
+}
 
 /**
  * The quoted parent a reply carries — Android's `Reply_chat`

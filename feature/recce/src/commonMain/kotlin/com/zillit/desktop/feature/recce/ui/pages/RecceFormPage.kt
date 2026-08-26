@@ -31,6 +31,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.ZillitLocationField
 import com.zillit.desktop.core.units.ProductionUnit
 import com.zillit.desktop.feature.recce.domain.RecceCrewMember
 import com.zillit.desktop.feature.recce.domain.RecceStatus
@@ -45,8 +47,9 @@ import com.zillit.desktop.feature.recce.ui.StopEditor
 
 /**
  * The create/edit form: the web's three numbered sections and its sticky
- * footer. Coordinates are typed — there is no map — and a pasted Google
- * Maps link fills them, exactly as the web's link box does.
+ * footer. Coordinates come from the address field's map picker, as the web's
+ * `RecceLocationField.jsx` does; they stay typeable, and a pasted Google Maps
+ * link still fills them for a host with no map of its own.
  */
 @Composable
 internal fun RecceFormPage(state: RecceUiState, onEvent: (RecceEvent) -> Unit, editing: Boolean) {
@@ -198,8 +201,19 @@ private fun WeatherFields(weather: Weather, onChange: (Weather) -> Unit) {
 }
 
 /**
- * A place: name, address, W3W, and typed coordinates. A pasted Google Maps
- * link fills the coordinates — the web's own trick for a map-less entry.
+ * A place: name, address, W3W, and coordinates.
+ *
+ * The address is a map picker, and one pick fills all three — the recce wire
+ * carries the numbers (`lat` and, longitude spelled `long`, on the rendezvous
+ * and on every itinerary stop: web `recce/RecceForm.jsx:298-317`, ours
+ * `RecceRepositoryImpl.kt:159-176`), so they are persisted rather than merely
+ * displayed. The picked venue's name fills the place only when it is still
+ * empty — the web's own `place: name || place`
+ * (`recce/RecceLocationField.jsx:84-87`) — so a stop already called "Unit
+ * base" is never renamed by looking up its address.
+ *
+ * Typing still works, and both map-less paths stay: the coordinate fields are
+ * editable, and a pasted Google Maps link fills them — the web's own trick.
  */
 @Composable
 private fun LocationFields(label: String, stop: StopEditor, onChange: (StopEditor) -> Unit) {
@@ -211,10 +225,21 @@ private fun LocationFields(label: String, stop: StopEditor, onChange: (StopEdito
                 label = label,
                 modifier = Modifier.weight(1f),
             )
-            ZillitTextField(
-                value = stop.address,
-                onValueChange = { onChange(stop.copy(address = it)) },
+            ZillitLocationField(
+                text = stop.address,
+                onTextChange = { onChange(stop.copy(address = it)) },
+                onPicked = { picked ->
+                    onChange(
+                        stop.copy(
+                            place = stop.place.ifBlank { picked.name },
+                            address = picked.address.ifBlank { picked.name },
+                            latText = picked.lat.toString(),
+                            lngText = picked.lng.toString(),
+                        ),
+                    )
+                },
                 label = "Address",
+                initial = stop.pickedAt(),
                 modifier = Modifier.weight(TITLE_WEIGHT),
             )
         }
@@ -457,6 +482,13 @@ private fun PersonRow(index: Int, person: PersonEditor, onEvent: (RecceEvent) ->
 
 /** The web's `parseLatLngFromUrl`, shared with Transportation. */
 internal fun parseLatLngFromUrl(url: String): Pair<Double, Double>? = MapsLink.parseLatLng(url)
+
+/** Where the map should open: where this stop already is, when it has been placed. */
+private fun StopEditor.pickedAt(): PickedLocation? {
+    val at = latText.trim().toDoubleOrNull() ?: return null
+    val to = lngText.trim().toDoubleOrNull() ?: return null
+    return PickedLocation(name = place, address = address, lat = at, lng = to)
+}
 
 private val NUMBER_WIDTH = 96.dp
 private val UNIT_WIDTH = 80.dp

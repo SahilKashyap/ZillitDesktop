@@ -124,7 +124,12 @@ internal fun AppGraph.Ready.buildInvoices(
 ): InvoicesViewModel {
     val reference = InvoiceReferenceData(this, scope)
     return InvoicesViewModel(
-        repository = InvoicesRepositoryImpl(apiClient, config),
+        repository = InvoicesRepositoryImpl(
+            apiClient,
+            config,
+            bus = socketEvents,
+            currentProjectId = { projectContext?.context?.value?.project?.projectId },
+        ),
         files = invoiceFiles(),
         resolveViewer = {
             val context = projectContext?.context?.value

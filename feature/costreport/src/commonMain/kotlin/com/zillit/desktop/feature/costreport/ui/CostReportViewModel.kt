@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.costreport.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.costreport.domain.BudgetVersion
@@ -9,6 +10,7 @@ import com.zillit.desktop.feature.costreport.domain.CoaRow
 import com.zillit.desktop.feature.costreport.domain.CostReportExporter
 import com.zillit.desktop.feature.costreport.domain.CostReportFiles
 import com.zillit.desktop.feature.costreport.domain.CostReportRepository
+import com.zillit.desktop.feature.costreport.domain.CostReportSync
 import com.zillit.desktop.feature.costreport.domain.CostReportTab
 import com.zillit.desktop.feature.costreport.domain.CostReportViewer
 import com.zillit.desktop.feature.costreport.domain.CrColumn
@@ -26,6 +28,7 @@ import com.zillit.desktop.feature.costreport.domain.priorVarianceByKey
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
@@ -48,8 +51,44 @@ class CostReportViewModel(
 
     fun start() {
         setState { copy(viewer = resolveViewer(), projectName = projectName()) }
+        listenOnce()
         loadReference()
     }
+
+    /**
+     * Folds the socket's announcements into the screen. A `Report` sync — the
+     * report locked or posted elsewhere — re-pulls whatever tab is open (and
+     * the posted timeline if it has been fetched, since a post grows it); a
+     * `Source` sync only raises the stale pill, exactly as the web does —
+     * see [CostReportSync]. Guarded so reopening the window does not stack
+     * collectors, and the reload debounced because a post emits both events
+     * back to back (the web coalesces at `accountHubListeners.js`
+     * `DEBOUNCE_MS = 500`).
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.syncs.collect { sync ->
+                when (sync) {
+                    CostReportSync.Source -> setState { copy(sourceStale = true) }
+                    CostReportSync.Report -> {
+                        syncJob?.cancel()
+                        syncJob = launch {
+                            delay(SYNC_DEBOUNCE_MILLIS)
+                            refresh()
+                            if (currentState.tab != CostReportTab.Posted && currentState.posted.loadedOnce) {
+                                loadPosted()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var listening = false
+    private var syncJob: Job? = null
 
     @Suppress("CyclomaticComplexMethod") // Event fan-out.
     override fun onEvent(event: CostReportEvent) {
@@ -103,6 +142,8 @@ class CostReportViewModel(
     }
 
     private fun refresh() {
+        // Any full re-pull answers the stale pill, whoever pressed it.
+        setState { copy(sourceStale = false) }
         when (state.value.tab) {
             CostReportTab.Current -> {
                 val current = state.value.current
@@ -205,7 +246,7 @@ class CostReportViewModel(
             when (result) {
                 is ZillitResult.Failure -> {
                     prior.cancel()
-                    setState { copy(current = this.current.copy(phase = null, error = result.error.userMessage)) }
+                    setState { copy(current = this.current.copy(phase = null, error = result.error.localised())) }
                 }
                 is ZillitResult.Success -> {
                     val (variance, hasPrior) = prior.await()
@@ -243,7 +284,7 @@ class CostReportViewModel(
         launch {
             when (val result = repository.snapshots(null)) {
                 is ZillitResult.Failure -> setState {
-                    copy(posted = posted.copy(loading = false, loadedOnce = true, error = result.error.userMessage))
+                    copy(posted = posted.copy(loading = false, loadedOnce = true, error = result.error.localised()))
                 }
                 is ZillitResult.Success -> setState {
                     copy(posted = posted.copy(loading = false, loadedOnce = true, rows = result.data))
@@ -260,7 +301,7 @@ class CostReportViewModel(
             when (val result = repository.snapshot(header.id)) {
                 is ZillitResult.Failure -> setState {
                     val open = snapshot?.takeIf { it.header.id == header.id } ?: return@setState this
-                    copy(snapshot = open.copy(loading = false, error = result.error.userMessage))
+                    copy(snapshot = open.copy(loading = false, error = result.error.localised()))
                 }
                 is ZillitResult.Success -> setState {
                     val open = snapshot?.takeIf { it.header.id == header.id } ?: return@setState this
@@ -329,7 +370,7 @@ class CostReportViewModel(
                 val open = ledger?.takeIf { it.nominal.identity == nominal.identity } ?: return@setState this
                 when (result) {
                     is ZillitResult.Failure ->
-                        copy(ledger = open.copy(loading = false, error = result.error.userMessage))
+                        copy(ledger = open.copy(loading = false, error = result.error.localised()))
                     is ZillitResult.Success ->
                         copy(ledger = open.copy(loading = false, result = result.data))
                 }
@@ -344,10 +385,13 @@ class CostReportViewModel(
         val currencies: ZillitResult<CurrencyOptions>,
     )
 
-    private companion object {
-        const val PHASE_INIT = "Loading…"
-        const val PHASE_LIVE = "Computing live report"
-        const val PHASE_REFRESH = "Refreshing live report…"
+    companion object {
+        private const val PHASE_INIT = "Loading…"
+        private const val PHASE_LIVE = "Computing live report"
+        private const val PHASE_REFRESH = "Refreshing live report…"
+
+        /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
+        const val SYNC_DEBOUNCE_MILLIS = 500L
     }
 }
 

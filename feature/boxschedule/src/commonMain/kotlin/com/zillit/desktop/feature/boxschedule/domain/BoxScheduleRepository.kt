@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.boxschedule.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /** The result of writing a block: it landed, or the server reported collisions. */
 sealed interface BlockWrite {
@@ -13,6 +15,16 @@ sealed interface BlockWrite {
  * pre-and-production host.
  */
 interface BoxScheduleRepository {
+
+    /**
+     * A pulse per diary wire event from another client — the web page's
+     * `refreshAll` / `fetchTypes` / `loadStandaloneEvents` wiring
+     * (`boxScheduleV2/index.jsx:1538-1554`). One flow serves all three:
+     * this client's one refresh refetches types, blocks, events, and the
+     * calendar merge together. Empty by default: tests, and hosts without
+     * a socket.
+     */
+    val refreshes: Flow<Unit> get() = emptyFlow()
 
     suspend fun types(): ZillitResult<List<ScheduleType>>
     suspend fun createType(title: String, color: String): ZillitResult<Unit>

@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.continuity.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.continuity.domain.ContinuityDepartment
@@ -35,7 +36,28 @@ class ContinuityViewModel(
             copy(viewer = viewer, departmentNames = if (mine != null) departmentNames + mine else departmentNames)
         }
         refresh()
+        listenOnce()
     }
+
+    /**
+     * Refetches what is on screen when the socket announces another
+     * client's continuity change — the web refetches its folder grid and
+     * open scene list on the same four events (`ContinuityModal.jsx:242-295`,
+     * `IntraDepartment.jsx:576-658`). Guarded so a second Start (the window
+     * reopening) does not stack collectors.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.collect {
+                refresh()
+                state.value.open?.let(::load)
+            }
+        }
+    }
+
+    private var listening = false
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out.
     override fun onEvent(event: ContinuityEvent) {
@@ -112,7 +134,7 @@ class ContinuityViewModel(
         setState { copy(loading = true) }
         launch {
             when (val result = repository.folders(tab)) {
-                is ZillitResult.Failure -> setState { copy(loading = false, error = result.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(loading = false, error = result.error.localised()) }
                 is ZillitResult.Success -> setState { copy(loading = false, folders = result.data.distinct()) }
             }
         }
@@ -124,7 +146,7 @@ class ContinuityViewModel(
             setState { copy(pick = DepartmentPick(sceneFolder, emptyList(), loading = true)) }
             launch {
                 when (val result = repository.departments(sceneFolder)) {
-                    is ZillitResult.Failure -> setState { copy(pick = null, error = result.error.userMessage) }
+                    is ZillitResult.Failure -> setState { copy(pick = null, error = result.error.localised()) }
                     is ZillitResult.Success -> {
                         val names = result.data.associate { it.id to (departmentName(it.id) ?: it.name) }
                         setState {
@@ -157,7 +179,7 @@ class ContinuityViewModel(
                 when (result) {
                     is ZillitResult.Failure -> copy(
                         open = open?.copy(loading = false),
-                        error = result.error.userMessage,
+                        error = result.error.localised(),
                     )
                     is ZillitResult.Success -> copy(
                         open = open?.copy(
@@ -183,7 +205,7 @@ class ContinuityViewModel(
                 when (result) {
                     is ZillitResult.Failure -> copy(
                         open = current.copy(loadingMore = false),
-                        error = result.error.userMessage,
+                        error = result.error.localised(),
                     )
                     is ZillitResult.Success -> {
                         val known = current.scenes.map { it.id }.toSet()
@@ -217,7 +239,7 @@ class ContinuityViewModel(
         setState { copy(confirmForward = false, busy = true) }
         launch {
             when (val result = repository.share(ids, open.sceneFolder)) {
-                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, open = this.open?.copy(selecting = false, selected = emptySet())) }
                     sendEffect(ContinuityEffect.Notice("Forwarded to All Departments"))
@@ -233,7 +255,7 @@ class ContinuityViewModel(
         setState { copy(confirmDelete = null, busy = true) }
         launch {
             when (val result = repository.delete(open.tab, scene.id)) {
-                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.localised()) }
                 is ZillitResult.Success -> {
                     setState {
                         val remaining = this.open?.scenes.orEmpty().filterNot { it.id == scene.id }
@@ -262,7 +284,7 @@ class ContinuityViewModel(
                 is ZillitResult.Success -> transfer.saveAndOpen(attachment.name.ifBlank { "continuity" }, bytes.data)
             }
             when (outcome) {
-                is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
                     sendEffect(ContinuityEffect.Notice("Saved to Downloads"))
@@ -299,7 +321,7 @@ class ContinuityViewModel(
             if (id != null) {
                 when (val result = repository.update(id, editor.draft)) {
                     is ZillitResult.Failure -> setState {
-                        copy(busy = false, editor = editor.copy(saving = false), error = result.error.userMessage)
+                        copy(busy = false, editor = editor.copy(saving = false), error = result.error.localised())
                     }
                     is ZillitResult.Success -> {
                         setState { copy(busy = false, editor = null) }
@@ -333,7 +355,7 @@ class ContinuityViewModel(
         for (file in editor.files) {
             val stored = when (val up = transfer.upload(file)) {
                 is ZillitResult.Failure -> {
-                    setState { copy(busy = false, editor = editor.copy(saving = false), error = up.error.userMessage) }
+                    setState { copy(busy = false, editor = editor.copy(saving = false), error = up.error.localised()) }
                     return
                 }
                 is ZillitResult.Success -> up.data
@@ -341,7 +363,7 @@ class ContinuityViewModel(
             when (val created = repository.create(editor.draft, stored, newUniqueId())) {
                 is ZillitResult.Failure -> {
                     setState {
-                        copy(busy = false, editor = editor.copy(saving = false), error = created.error.userMessage)
+                        copy(busy = false, editor = editor.copy(saving = false), error = created.error.localised())
                     }
                     return
                 }

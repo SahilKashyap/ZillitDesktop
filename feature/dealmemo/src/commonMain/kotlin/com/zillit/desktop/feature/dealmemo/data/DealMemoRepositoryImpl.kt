@@ -12,7 +12,9 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.dealmemo.domain.Agreement
+import com.zillit.desktop.feature.dealmemo.domain.AmendmentAck
 import com.zillit.desktop.feature.dealmemo.domain.BasicRateDetails
 import com.zillit.desktop.feature.dealmemo.domain.RateCardEntry
 import com.zillit.desktop.feature.dealmemo.domain.RateTier
@@ -23,21 +25,36 @@ import com.zillit.desktop.feature.dealmemo.domain.DealRates
 import com.zillit.desktop.feature.dealmemo.domain.DealStatus
 import com.zillit.desktop.feature.dealmemo.domain.NewDeal
 import com.zillit.desktop.feature.dealmemo.domain.Union
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonObjectBuilder
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
 /** Every `/api/v2/deal-memo` route. */
 class DealMemoRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : DealMemoRepository {
 
     private val base = "${config.baseUrl(ZillitService.DealMemo)}/api/v2/deal-memo"
+
+    /**
+     * See [DealMemoRepository.refreshes]. Another production's frame is
+     * dropped when both sides can name a project — the same cross-project
+     * gate the web's account-hub wrapper applies before any handler runs.
+     */
+    override val refreshes: Flow<Unit> =
+        bus?.onAny(DEAL_SYNC_EVENTS, DealSyncEnvelope.serializer())
+            ?.mapNotNull { (_, envelope) ->
+                Unit.takeIf { envelope.inProject(currentProjectId()) }
+            }
+            ?: emptyFlow()
 
     private companion object {
         /** The whole card in one call — it is browsed, not paged. */
@@ -83,15 +100,22 @@ class DealMemoRepositoryImpl(
         module = RequestModule.ProjectUser,
     ).map { rows -> rows.map { it.toDomain() } }
 
+    /**
+     * The body is the web's step-wise payload with a client-minted 24-hex
+     * `_id` — see [createBody]. The backend spreads it straight into its
+     * Mongo document, so any other shape "saves" a row every read path
+     * ignores while still answering success.
+     */
     override suspend fun create(deal: NewDeal, notify: Boolean): ZillitResult<Unit> =
         apiClient.envelope(
             verb = HttpVerb.Post,
             url = "$base/deals",
             module = RequestModule.ProjectUser,
-            body = deal.body(),
+            body = deal.createBody(newClientDealId()),
             // Whether the crew member is emailed is the caller's decision, not
             // a side effect of saving: a correction typed twice should not
-            // notify twice.
+            // notify twice. The server reads it off the query string only
+            // (`deal-memo.js:129-137`).
             queryParameters = mapOf("notify" to notify),
         ).map { }
 
@@ -100,15 +124,23 @@ class DealMemoRepositoryImpl(
             verb = HttpVerb.Patch,
             url = "$base/deals/$id",
             module = RequestModule.ProjectUser,
-            body = deal.body(),
+            // A full snapshot minus `status` and `_id` — the web's PATCH shape
+            // (`DMCreatePage.jsx:1503-1506`, `useDealAutosave.js:23-27`).
+            body = deal.updateBody(),
             queryParameters = mapOf("notify" to notify),
         ).map { }
 
+    /**
+     * The web posts an empty body — the server resolves the caller's own
+     * deal from the auth headers, no URL id, no body (`deal-memo.js:108-113`),
+     * so [id] never reaches the wire. Kept on the signature because the
+     * caller names which deal it believes it is confirming.
+     */
     override suspend fun acknowledge(id: String): ZillitResult<Unit> = apiClient.envelope(
         verb = HttpVerb.Post,
         url = "$base/deal/acknowledge-amendment",
         module = RequestModule.ProjectUser,
-        body = buildJsonObject { put("deal_id", JsonPrimitive(id)) },
+        body = buildJsonObject { },
     ).map { }
 
     override suspend fun unions(): ZillitResult<List<Union>> = apiClient.request(
@@ -178,39 +210,40 @@ class DealMemoRepositoryImpl(
             module = RequestModule.ProjectUser,
         ).map { it.basicRateDetails?.toDomain() }
 
-    private fun NewDeal.body(): JsonObject = buildJsonObject {
-        put("user_id", JsonPrimitive(userId))
-        putIfPresent("department_id", departmentId)
-        putIfPresent("designation", designation)
-        putIfPresent("currency", currency)
-        putIfPresent("union_id", unionId)
-        putIfPresent("agreement_id", agreementId)
-        putIfPresent("nominal_code", nominalCode)
-        putIfPresent("notes", notes)
-        startDate?.let { put("start_date", JsonPrimitive(it)) }
-        endDate?.let { put("end_date", JsonPrimitive(it)) }
-        put("weekly_rate", JsonPrimitive(rates.weeklyRate))
-        put("daily_rate", JsonPrimitive(rates.dailyRate))
-        put("hourly_rate", JsonPrimitive(rates.hourlyRate))
-        put("overtime_rate", JsonPrimitive(rates.overtimeRate))
-        put("standard_hours", JsonPrimitive(rates.standardHours))
-        put("days_per_week", JsonPrimitive(rates.daysPerWeek))
-        put("box_rental", JsonPrimitive(rates.boxRental))
-        put("vehicle_allowance", JsonPrimitive(rates.vehicleAllowance))
-    }
 }
 
+/**
+ * A stored deal, in the schema the web reads back.
+ *
+ * The nested step-wise blocks are the source — crew name from
+ * `crew_details.crew_name` (`DMDealsPage.jsx:362,375`; `dealCrew.js:57-58`),
+ * rates from `rates.daily.rate` / `rates.weekly.rate` / `hr_rate`
+ * (`DMDealsPage.jsx:493`, `DMDealPreviewPage.jsx:1522,2954`), dates from
+ * `deal.start_date` / `deal.end_date` (`DMDealsPage.jsx:491-492`), status
+ * top-level (`DMDealsPage.jsx:490`). The old flat keys stay as fallbacks
+ * because they cost nothing to keep reading.
+ */
 @Serializable
 internal data class DealDto(
+    @SerialName("_id") val mongoId: String? = null,
     @SerialName("id") val id: String? = null,
     @SerialName("user_id") val userId: String? = null,
+    @SerialName("status") val status: String? = null,
+    @SerialName("crew_details") val crewDetails: CrewDetailsDto? = null,
+    @SerialName("territory_union") val territoryUnion: TerritoryUnionDto? = null,
+    @SerialName("deal") val terms: DealTermsDto? = null,
+    @SerialName("rates") val rateBlock: RatesDto? = null,
+    @SerialName("allowances") val allowances: List<EntitlementDto>? = null,
+    @SerialName("rentals") val rentals: List<EntitlementDto>? = null,
+    @SerialName("amendment_ack") val amendmentAck: AmendmentAckDto? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    // -- legacy flat keys, fallback only --------------------------------
     @SerialName("crew_name") val crewName: String? = null,
     @SerialName("full_name") val fullName: String? = null,
     @SerialName("email") val email: String? = null,
     @SerialName("department_id") val departmentId: String? = null,
     @SerialName("department_name") val departmentName: String? = null,
     @SerialName("designation") val designation: String? = null,
-    @SerialName("status") val status: String? = null,
     @SerialName("currency") val currency: String? = null,
     @SerialName("weekly_rate") val weeklyRate: String? = null,
     @SerialName("daily_rate") val dailyRate: String? = null,
@@ -228,42 +261,132 @@ internal data class DealDto(
     @SerialName("notes") val notes: String? = null,
     @SerialName("amended_at") val amendedAt: String? = null,
     @SerialName("acknowledged_at") val acknowledgedAt: String? = null,
-    @SerialName("created_at") val createdAt: String? = null,
 ) {
+    @Suppress("LongMethod", "CyclomaticComplexMethod") // One fallback chain per field, listed once.
     fun toDomain(): Deal? {
-        val identifier = id?.takeIf { it.isNotBlank() } ?: return null
+        val identifier = (mongoId ?: id)?.takeIf { it.isNotBlank() } ?: return null
+        val cd = crewDetails
+        val rt = rateBlock
         return Deal(
             id = identifier,
             userId = userId.orEmpty(),
-            crewName = crewName?.takeIf { it.isNotBlank() } ?: fullName.orEmpty(),
-            email = email,
-            departmentId = departmentId,
-            departmentName = departmentName,
-            designation = designation,
-            status = DealStatus.from(status),
-            currency = currency,
-            rates = DealRates(
-                weeklyRate = weeklyRate.toAmount(),
-                dailyRate = dailyRate.toAmount(),
-                hourlyRate = hourlyRate.toAmount(),
-                overtimeRate = overtimeRate.toAmount(),
-                standardHours = standardHours.toAmount(),
-                daysPerWeek = daysPerWeek.toAmount(),
-                boxRental = boxRental.toAmount(),
-                vehicleAllowance = vehicleAllowance.toAmount(),
+            crewName = firstFilled(cd?.crewName, cd?.fullLegalName, crewName, fullName).orEmpty(),
+            email = firstFilled(cd?.email, email),
+            // The identifier is the authoritative column (`dealCrew.js:61-63`
+            // reads `cd.department_identifier || cd.department_id`, then the
+            // deal's top-level id).
+            departmentId = firstFilled(cd?.departmentIdentifier, cd?.departmentId, departmentId),
+            departmentName = firstFilled(
+                humanisedIdentifier(cd?.departmentIdentifier, "department_"),
+                departmentName,
             ),
-            startDate = startDate.toEpochMillisOrNull(),
-            endDate = endDate.toEpochMillisOrNull(),
-            unionName = unionName,
-            agreementName = agreementName,
-            nominalCode = nominalCode,
-            notes = notes,
+            // Custom free-text designation wins, then the identifier
+            // humanised the way the web's fallback does (`dealCrew.js:65-67`,
+            // `data/utils.js:88`).
+            designation = firstFilled(
+                cd?.customDesignation,
+                humanisedIdentifier(cd?.designationIdentifier, "designation_"),
+                cd?.designationId,
+                designation,
+            ),
+            status = DealStatus.from(status),
+            currency = firstFilled(rt?.contractCurrency, currency),
+            rates = DealRates(
+                weeklyRate = (rt?.weekly?.rate ?: weeklyRate).toAmount(),
+                dailyRate = (rt?.daily?.rate ?: dailyRate).toAmount(),
+                hourlyRate = (rt?.hrRate ?: hourlyRate).toAmount(),
+                overtimeRate = overtimeRate.toAmount(),
+                standardHours = (rt?.daily?.hrs ?: standardHours).toAmount(),
+                daysPerWeek = daysPerWeek.toAmount(),
+                boxRental = rentals.entitlementAmount("box") ?: boxRental.toAmount(),
+                vehicleAllowance = allowances.entitlementAmount("vehicle") ?: vehicleAllowance.toAmount(),
+            ),
+            startDate = (terms?.startDate ?: startDate).toEpochMillisOrNull(),
+            endDate = (terms?.endDate ?: endDate).toEpochMillisOrNull(),
+            unionName = firstFilled(territoryUnion?.unionIdentifier, unionName),
+            agreementName = firstFilled(territoryUnion?.agreementIdentifier, agreementName),
+            nominalCode = firstFilled(rt?.nominalCode, nominalCode),
+            notes = firstFilled(terms?.additionalNotes, notes),
             amendedAt = amendedAt.toEpochMillisOrNull(),
             acknowledgedAt = acknowledgedAt.toEpochMillisOrNull(),
             createdAt = createdAt.toEpochMillisOrNull(),
+            amendmentAck = AmendmentAck.from(amendmentAck?.status),
+            designationIdentifier = firstFilled(cd?.designationIdentifier),
         )
     }
 }
+
+/** The first candidate with something in it. */
+private fun firstFilled(vararg candidates: String?): String? =
+    candidates.firstOrNull { !it.isNullOrBlank() }
+
+/** The enabled row whose id or name mentions [keyword], if the deal carries one. */
+private fun List<EntitlementDto>?.entitlementAmount(keyword: String): Double? = this
+    ?.firstOrNull { row ->
+        row.enable != false &&
+            (row.id.orEmpty().contains(keyword, ignoreCase = true) ||
+                row.name.orEmpty().contains(keyword, ignoreCase = true))
+    }
+    ?.amount?.toAmountOrNull()
+
+/** `crew_details` — the write shape at `toDealMemoPayload.js:783-869`. */
+@Serializable
+internal data class CrewDetailsDto(
+    @SerialName("crew_name") val crewName: String? = null,
+    @SerialName("full_legal_name") val fullLegalName: String? = null,
+    @SerialName("department_identifier") val departmentIdentifier: String? = null,
+    @SerialName("department_id") val departmentId: String? = null,
+    @SerialName("designation_identifier") val designationIdentifier: String? = null,
+    @SerialName("designation_id") val designationId: String? = null,
+    @SerialName("custom_designation") val customDesignation: String? = null,
+    @SerialName("email") val email: String? = null,
+)
+
+/** `territory_union` — identifiers only; the port shows them as written. */
+@Serializable
+internal data class TerritoryUnionDto(
+    @SerialName("union_identifier") val unionIdentifier: String? = null,
+    @SerialName("agreement_identifier") val agreementIdentifier: String? = null,
+)
+
+/** The `deal` block — dates as epoch millis (`toDealMemoPayload.js:346-354`). */
+@Serializable
+internal data class DealTermsDto(
+    @SerialName("start_date") val startDate: String? = null,
+    @SerialName("end_date") val endDate: String? = null,
+    @SerialName("additional_notes") val additionalNotes: String? = null,
+)
+
+/** The `rates` block (`toDealMemoPayload.js:930-968`). */
+@Serializable
+internal data class RatesDto(
+    @SerialName("contract_currency") val contractCurrency: String? = null,
+    @SerialName("daily") val daily: RateAndHoursDto? = null,
+    @SerialName("weekly") val weekly: RateAndHoursDto? = null,
+    @SerialName("hr_rate") val hrRate: String? = null,
+    @SerialName("nominal_code") val nominalCode: String? = null,
+)
+
+@Serializable
+internal data class RateAndHoursDto(
+    @SerialName("rate") val rate: String? = null,
+    @SerialName("hrs") val hrs: String? = null,
+)
+
+/** One allowance/rental row — the slice this port reads of `mapEntitlement`'s shape. */
+@Serializable
+internal data class EntitlementDto(
+    @SerialName("id") val id: String? = null,
+    @SerialName("name") val name: String? = null,
+    @SerialName("amount") val amount: String? = null,
+    @SerialName("enable") val enable: Boolean? = null,
+)
+
+/** `amendment_ack` — 'none' | 'pending' | 'acknowledged' (`DMDealPreviewPage.jsx:1427`). */
+@Serializable
+internal data class AmendmentAckDto(
+    @SerialName("status") val status: String? = null,
+)
 
 @Serializable
 internal data class RateEntryDto(
@@ -384,24 +507,26 @@ internal data class AgreementDto(
     }
 }
 
+/**
+ * One audit-trail row: `{ action, action_by, action_at, note }` — the shape
+ * the history endpoint returns (`deal-memo.js:117-119`) and the shared
+ * HistoryPanel reads (`ui/HistoryPanel.jsx:169,224-239`). The old
+ * `user_id`/`created_at` spellings stay as fallbacks.
+ */
 @Serializable
 internal data class DealHistoryDto(
     @SerialName("action") val action: String? = null,
     @SerialName("status") val status: String? = null,
+    @SerialName("action_by") val actionBy: String? = null,
     @SerialName("user_id") val userId: String? = null,
     @SerialName("note") val note: String? = null,
+    @SerialName("action_at") val actionAt: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
 ) {
     fun toDomain() = DealHistoryEntry(
         action = action ?: status.orEmpty(),
-        userId = userId,
+        userId = actionBy ?: userId,
         note = note,
-        at = createdAt.toEpochMillisOrNull(),
+        at = (actionAt ?: createdAt).toEpochMillisOrNull(),
     )
-}
-
-/** Adds [key] only when [value] has something in it. */
-internal fun JsonObjectBuilder.putIfPresent(key: String, value: String?) {
-    val trimmed = value?.trim()
-    if (!trimmed.isNullOrEmpty()) put(key, JsonPrimitive(trimmed))
 }

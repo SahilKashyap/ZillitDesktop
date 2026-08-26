@@ -169,25 +169,33 @@ class NotificationsRepositoryImpl(
 internal fun bannerFrom(payload: JsonElement?, decoder: NotificationDecoder): ActivityBanner? {
     val row = payload?.unwrapRecord() ?: return dropped("no record in the envelope", section = null)
     val section = row.text("section")
-
-    // Every drop is named, because a suppressed banner and a broken pipeline
-    // look identical from the outside — that ambiguity has already cost a
-    // debugging day. The section is a label key and safe to log; the payload
-    // is not (plan §8.4).
-    if (row.bool("silent")) return dropped("silent", section)
-    val reference = row["reference_data"] as? JsonObject
-    if (reference?.bool("ignore") == true) return dropped("flagged ignore", section)
-    if (reference?.bool("self") == true) return dropped("own action", section)
+    quietReason(row)?.let { return dropped(it, section) }
 
     val record = readNotification(row, decoder) ?: return dropped("no _id", section)
-    if (record.text.isBlank()) return dropped("no words after decoding", section)
+    return if (record.text.isBlank()) {
+        dropped("no words after decoding", section)
+    } else {
+        ActivityBanner(
+            id = record.id,
+            section = record.target.section,
+            area = record.pathLabel,
+            body = record.text,
+        )
+    }
+}
 
-    return ActivityBanner(
-        id = record.id,
-        section = record.target.section,
-        area = record.pathLabel,
-        body = record.text,
-    )
+/**
+ * Why a record stays quiet, or null to banner it. Every drop is named,
+ * because a suppressed banner and a broken pipeline look identical from the
+ * outside — that ambiguity has already cost a debugging day. The section is
+ * a label key and safe to log; the payload is not (plan §8.4).
+ */
+private fun quietReason(row: JsonObject): String? {
+    if (row.bool("silent")) return "silent"
+    val reference = row["reference_data"] as? JsonObject
+    if (reference?.bool("ignore") == true) return "flagged ignore"
+    if (reference?.bool("self") == true) return "own action"
+    return null
 }
 
 private fun dropped(reason: String, section: String?): ActivityBanner? {

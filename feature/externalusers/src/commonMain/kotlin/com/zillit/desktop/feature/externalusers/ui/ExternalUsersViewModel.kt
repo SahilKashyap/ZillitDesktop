@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.externalusers.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.externalusers.domain.CREW_TYPE
 import com.zillit.desktop.feature.externalusers.domain.ExternalUser
@@ -232,7 +233,7 @@ class ExternalUsersViewModel(
             },
             onError = { error ->
                 if (stamp != rosterGeneration) return@launchResult
-                setState { copy(isLoading = false, error = error.userMessage) }
+                setState { copy(isLoading = false, error = error.localised()) }
             },
         )
     }
@@ -256,7 +257,7 @@ class ExternalUsersViewModel(
             },
             onError = { error ->
                 if (stamp != rosterGeneration) return@launchResult
-                setState { copy(isLoading = false, error = error.userMessage) }
+                setState { copy(isLoading = false, error = error.localised()) }
             },
         )
     }
@@ -287,7 +288,7 @@ class ExternalUsersViewModel(
             },
             onError = { error ->
                 setState {
-                    copy(isSaving = false, editing = editing.copy(errors = mapOf("submit" to error.userMessage)))
+                    copy(isSaving = false, editing = editing.copy(errors = mapOf("submit" to error.localised())))
                 }
             },
         )
@@ -303,7 +304,7 @@ class ExternalUsersViewModel(
                 setState { copy(isSaving = false) }
                 refresh()
             },
-            onError = { error -> setState { copy(isSaving = false, error = error.userMessage) } },
+            onError = { error -> setState { copy(isSaving = false, error = error.localised()) } },
         )
     }
 }

@@ -81,27 +81,35 @@ internal fun UserSnapshot.hasJoined(): Boolean =
  * failure; the location still sends, and the receivers' pin fallback
  * carries it.
  */
-internal suspend fun fetchStaticMap(ready: AppGraph.Ready, point: GeoPoint): PickedMedia? {
+internal suspend fun fetchStaticMap(ready: AppGraph.Ready, point: GeoPoint): PickedMedia? =
+    fetchStaticMapBytes(ready, point.lat, point.long)?.let { bytes ->
+        PickedMedia(name = STATIC_MAP_NAME, contentType = STATIC_MAP_TYPE, bytes = bytes)
+    }
+
+/**
+ * The same picture as bytes, for callers that upload it themselves — chat
+ * hands these to its own routed uploader rather than the board's.
+ *
+ * The key never leaves this function: it rides the query string Google
+ * requires and is never logged (the URL is not printed, and `httpClient`
+ * is the plain client with body logging off).
+ */
+internal suspend fun fetchStaticMapBytes(ready: AppGraph.Ready, lat: Double, lng: Double): ByteArray? {
     val key = ready.remoteConfigRepository.credentials.value?.googleMapsKey
         ?.takeIf { it.isNotBlank() }
         ?: return null
 
     return runCatching {
         val url = "https://maps.googleapis.com/maps/api/staticmap" +
-            "?center=${point.lat},${point.long}&zoom=15&size=600x400" +
-            "&markers=color:red%7C${point.lat},${point.long}&key=$key"
+            "?center=$lat,$lng&zoom=15&size=600x400" +
+            "&markers=color:red%7C$lat,$lng&key=$key"
         val response = ready.httpClient.get(url)
-        if (response.status.isSuccess()) {
-            PickedMedia(
-                name = "location-map.png",
-                contentType = "image/png",
-                bytes = response.readRawBytes(),
-            )
-        } else {
-            null
-        }
+        if (response.status.isSuccess()) response.readRawBytes() else null
     }.getOrNull()
 }
+
+private const val STATIC_MAP_NAME = "location-map.png"
+private const val STATIC_MAP_TYPE = "image/png"
 
 /** What the composer can capture: picker, uploader, microphone, poster frames. */
 internal fun homeMediaCapture(ready: AppGraph.Ready) = MediaCapture(

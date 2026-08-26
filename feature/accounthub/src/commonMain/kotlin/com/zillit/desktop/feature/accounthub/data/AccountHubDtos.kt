@@ -452,10 +452,12 @@ data class ApprovalTierDto(
 data class ApprovalRuleDto(
     @SerialName("type") val type: String? = null,
     @SerialName("user_ids") val userIds: List<String>? = null,
+    @SerialName("amount_threshold") val amountThreshold: Double? = null,
 ) {
     fun toDomain(): ApprovalRule = ApprovalRule(
         type = type.orEmpty(),
         userIds = userIds.orEmpty().filter { it.isNotBlank() },
+        amountThreshold = amountThreshold,
     )
 }
 

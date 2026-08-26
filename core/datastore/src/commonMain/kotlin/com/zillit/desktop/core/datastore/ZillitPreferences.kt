@@ -120,6 +120,24 @@ object ZillitPreferences {
     /** Android's `ignoreBanner`. */
     val IgnoreUpdateBanner = PreferenceKey.BooleanKey("notify.ignoreUpdateBanner", false, PreferenceScope.User)
 
+    // -- update notices (device-scoped) ------------------------------------
+
+    /**
+     * A random id identifying this *install* to Firebase Remote Config, empty
+     * until first generated.
+     *
+     * Device-scoped, so it survives sign-out: Firebase buckets percentage
+     * rollouts by this value, and an id that changed whenever somebody logged
+     * out would make one machine look like a stream of new installs and skew
+     * every staged rollout the console runs. It identifies a copy of the app,
+     * never a person — which is also why it belongs here and not in
+     * `core:security` beside the real device id.
+     *
+     * Written once by `AppGraph`; read by `AppUpdateChecker`'s instance-id
+     * provider.
+     */
+    val UpdateInstanceId = PreferenceKey.StringKey("update.instanceId", "", PreferenceScope.Device)
+
     // -- last-used context (user-scoped) -----------------------------------
 
     val LastProjectId = PreferenceKey.StringKey("session.lastProjectId", "", PreferenceScope.User)
@@ -161,7 +179,7 @@ object ZillitPreferences {
         WindowWidth, WindowHeight, WindowX, WindowY, WindowMaximized,
         WorkspaceLayoutMode, RestoreWorkspaceOnLaunch,
         AppLockEnabled, IdleLockMinutes,
-        MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired,
+        MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired, UpdateInstanceId,
         NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity,
         LastProjectId, LastUnitId,
         BoxScheduleView, BoxScheduleCalendarMode, BoxScheduleListMode,

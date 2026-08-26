@@ -110,10 +110,18 @@ class TimecardTest {
 
     @Test
     fun `payable statuses are the ones a run can draw on`() {
-        listOf(TimecardStatus.FinalApproved, TimecardStatus.Locked, TimecardStatus.SentToPayroll).forEach {
+        // final_approved → locked is the run's intake; there is no
+        // `sent_to_payroll` status on the wire (timecardStatus.js:12-51).
+        listOf(TimecardStatus.FinalApproved, TimecardStatus.Locked).forEach {
             assertTrue(it.isPayable, "$it should be payable")
         }
-        listOf(TimecardStatus.Draft, TimecardStatus.Submitted, TimecardStatus.Approved).forEach {
+        listOf(
+            TimecardStatus.Draft,
+            TimecardStatus.Submitted,
+            TimecardStatus.Pending,
+            TimecardStatus.Approved,
+            TimecardStatus.Paid,
+        ).forEach {
             assertFalse(it.isPayable, "$it should not be payable")
         }
     }
@@ -168,7 +176,8 @@ class TimecardTest {
     @Test
     fun `unknown statuses and day types degrade rather than throw`() {
         assertEquals(TimecardStatus.Unknown, TimecardStatus.from("brand_new"))
-        assertEquals(DayType.Unknown, DayType.from(null))
+        assertEquals(DayType.NotWorked, DayType.from(null), "an untouched day has no type at all")
+        assertEquals(DayType.Unknown, DayType.from("Prep"), "web-only vocabulary degrades, never mislabels")
         assertEquals(TimecardStatus.FinalApproved, TimecardStatus.from("FINAL_APPROVED"))
     }
 }

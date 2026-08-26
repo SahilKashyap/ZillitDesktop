@@ -20,6 +20,11 @@ import com.zillit.desktop.feature.esignature.domain.NewField
 import com.zillit.desktop.feature.esignature.domain.SavedSignature
 import com.zillit.desktop.feature.esignature.domain.SignedField
 import com.zillit.desktop.feature.esignature.domain.StoredFile
+import com.zillit.desktop.core.socket.SocketEventBus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -51,10 +56,20 @@ class EsignRepositoryImpl(
     config: AppConfig,
     /** Today, for `dateSigned` defaults — injected for tests. */
     private val today: () -> String,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    private val bus: SocketEventBus? = null,
 ) : EsignRepository {
 
     private val base = "${config.apiV2(ZillitService.ESignature).trimEnd('/')}/docusign"
     private val json = Json { ignoreUnknownKeys = true }
+
+    /**
+     * See [EsignRepository.refreshes]. Conflated: the backend fires several
+     * of these per state change (a completing signature emits `signed`,
+     * `updated` and `completed` back to back) and one refetch answers all.
+     */
+    override val refreshes: Flow<Unit> =
+        bus?.onAny(ESIGN_SYNC_EVENTS)?.map { }?.conflate() ?: emptyFlow()
 
     override suspend fun envelopes(
         scope: EnvelopeScope,

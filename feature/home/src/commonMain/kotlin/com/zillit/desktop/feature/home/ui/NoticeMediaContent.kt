@@ -67,9 +67,11 @@ internal fun AttachmentContent(
     location: GeoPoint? = null,
     onOpenLocation: (GeoPoint) -> Unit = {},
 ) {
-    // A location can arrive without its screenshot; the pin still works.
-    if (kind == NoticeKind.Location && attachment == null) {
-        location?.let { point -> LocationLink(point, onOpenLocation) }
+    // A location can arrive without its screenshot — every desktop post does,
+    // and the phones' only survives if their static-map fetch worked. The
+    // card carries the place either way; the map is decoration.
+    if (kind == NoticeKind.Location && location != null) {
+        LocationCard(location, attachment, media, onOpenLocation)
         return
     }
     if (attachment == null) return
@@ -99,15 +101,14 @@ internal fun AttachmentContent(
         // and hand to the OS.
         NoticeKind.Document -> DocumentContent(attachment, media, onOpen)
 
-        // The attachment is the map screenshot; the click goes to the map
-        // itself when coordinates came through, as the web links it.
+        // Only reachable for a location post whose point failed to read — a
+        // row from a client that sent the map image and nothing else. The
+        // screenshot is then all there is, and opening it is all that is left.
         NoticeKind.Location -> MediaThumbnail(
             attachment = attachment,
             media = media,
             overlay = { LocationBadge() },
-            onClick = {
-                location?.let(onOpenLocation) ?: onOpen(attachment)
-            },
+            onClick = { onOpen(attachment) },
         )
 
         NoticeKind.Text -> Unit
@@ -408,23 +409,104 @@ private fun LocationBadge() {
     }
 }
 
-/** A location with no screenshot: the pin alone still opens the map. */
+/**
+ * A shared place: its map picture when one came, then its name, its address
+ * and the point itself, over one way out to Maps.
+ *
+ * The whole card is the affordance rather than a button inside it — a nested
+ * clickable in a bubble that already carries a context menu and a long-press
+ * is one press target too many, and the labelled line below says where the
+ * click goes. [onOpenLocation] is the board's guarded external-URL launcher,
+ * the same one the Links library uses; nothing here reaches for a browser.
+ */
 @Composable
-private fun LocationLink(point: GeoPoint, onOpenLocation: (GeoPoint) -> Unit) {
+private fun LocationCard(
+    point: GeoPoint,
+    attachment: NoticeAttachment?,
+    media: NoticeMediaSource?,
+    onOpenLocation: (GeoPoint) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        if (attachment != null) {
+            MediaThumbnail(
+                attachment = attachment,
+                media = media,
+                overlay = { LocationBadge() },
+                onClick = { onOpenLocation(point) },
+                // The card below already names the place; a failed map is a
+                // missing picture, not a missing location.
+                fallback = {},
+            )
+        }
+        LocationDetails(point, onOpenLocation)
+    }
+}
+
+/** The place in words: title, address, coordinates, and the way out. */
+@Composable
+private fun LocationDetails(point: GeoPoint, onOpenLocation: (GeoPoint) -> Unit) {
     Row(
         modifier = Modifier
+            .width(MEDIA_WIDTH)
             .clip(ZillitTheme.shapes.medium)
-            .background(Color.White.copy(alpha = CHIP_ALPHA))
+            // Sunken surface and the page's own ink, for the reason FileChip
+            // carries the same note: white-on-white-at-12% vanished the moment
+            // the card stopped being dark.
+            .background(ZillitTheme.colors.surfaceSunken)
             .clickable { onOpenLocation(point) }
             .padding(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitText(
-            text = "📍 Shared location — open in Maps",
-            style = ZillitTheme.typography.labelSmall,
-            color = Color.White,
-        )
+        Box(
+            modifier = Modifier
+                .size(CHIP_TILE)
+                .clip(ZillitTheme.shapes.small)
+                .background(ZillitTheme.colors.accent.copy(alpha = TILE_WASH)),
+            contentAlignment = Alignment.Center,
+        ) {
+            ZillitIcon(
+                icon = ZillitIcons.Pin,
+                contentDescription = "Location",
+                tint = ZillitTheme.colors.accent,
+                size = CHIP_ICON,
+            )
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        ) {
+            // Nameless is ordinary: the web and iOS send the point alone, and
+            // a post from either arrives with nothing to title it.
+            ZillitText(
+                text = point.name.ifBlank { "Shared location" },
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textPrimary,
+                maxLines = 2,
+            )
+            if (point.detail.isNotBlank()) {
+                ZillitText(
+                    text = point.detail,
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textMuted,
+                    maxLines = ADDRESS_LINES,
+                )
+            }
+            // The numbers stay visible: a unit driver types coordinates into
+            // whatever their own navigation is, and cannot retype a hyperlink.
+            ZillitText(
+                text = point.coordinates,
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+                maxLines = 1,
+            )
+            ZillitText(
+                text = "Open in Maps",
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.accentText,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -603,6 +685,8 @@ private val CHIP_TILE = 30.dp
 private val PLACEHOLDER_GLYPH = 44.dp
 private const val PLACEHOLDER_ALPHA = 0.45f
 private const val TILE_WASH = 0.14f
+/** A street address runs long; two lines is a doorway, three is a paragraph. */
+private const val ADDRESS_LINES = 3
 private val LIGHTBOX_PADDING = 32.dp
 private const val PLAY_SCRIM = 0.55f
 private const val CHIP_ALPHA = 0.12f

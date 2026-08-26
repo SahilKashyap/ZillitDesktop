@@ -60,9 +60,10 @@ class ChatReplyTest {
             isGroup: Boolean,
             attachment: ChatAttachment?,
             replyTo: ChatReplyRef,
+            location: com.zillit.desktop.feature.chat.domain.ChatLocation?,
         ): ZillitResult<Unit> {
             replies += replyTo
-            return base.send(receiverId, body, uniqueId, nowMillis, isGroup, attachment)
+            return base.send(receiverId, body, uniqueId, nowMillis, isGroup, attachment, location)
         }
     }
 

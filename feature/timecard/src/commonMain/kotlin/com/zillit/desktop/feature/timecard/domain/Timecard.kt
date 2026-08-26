@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.timecard.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.Serializable
 
 /**
@@ -36,6 +38,14 @@ data class Timecard(
     val paidAt: Long?,
     val updatedAt: Long?,
     val locked: Boolean = false,
+    /**
+     * True when this row came from a route that only ever answers with the
+     * caller's own weeks. The `my-summary` projection carries **no user id at
+     * all** (the web's `toWeekRow` reads `_id`, `week_starting`, totals and
+     * status and nothing about the owner — `MyTimecardsModule.jsx:126-167`),
+     * so ownership there is by construction, not by comparing ids.
+     */
+    val ownedByViewer: Boolean = false,
     /**
      * Set when this week exists only on this computer so far — saved while
      * offline and waiting in the outbox. It has no server id ([id] is the
@@ -92,26 +102,60 @@ data class TimecardDay(
     val note: String?,
 )
 
-/** What kind of day this was, which decides how it is paid. */
+/**
+ * What kind of day this was, which decides how it is paid.
+ *
+ * The wire vocabulary is the web's, where day types fall into three
+ * categories (`timecardDayCalc.js:32-57`): shoot days (`SWD`/`CWD`/`SCWD`),
+ * flat-pay days (`Travel`, `Prep`, …) and non-paid days (`REST`, `Holiday`,
+ * `Sick`). On top of those, eight timecard-only types travel as codes while
+ * the web UI keeps their labels (`dayTypeWire.js:16-25` — `IDLE_DAY`,
+ * `SICK_PAID`, `BANK_HOLIDAY`, …). An untouched day has **no** type at all:
+ * the web's create skeleton sends `day_type: null`
+ * (`WeeklyTimecardModule.jsx:4796`), which is what [NotWorked] serialises to.
+ */
 @Serializable
-enum class DayType(val wire: String, val label: String) {
-    Worked("worked", "Worked"),
-    Travel("travel", "Travel"),
-    Holiday("holiday", "Holiday"),
-    Rest("rest", "Rest day"),
-    Sick("sick", "Sick"),
-    Idle("idle", "Idle"),
-    NotWorked("not_worked", "Not worked"),
-    Unknown("", "—"),
+enum class DayType(val wire: String?, val label: String) {
+    /** A standard working (shoot) day — the web's `SWD`. */
+    Worked("SWD", "Worked"),
+    Travel("Travel", "Travel"),
+    Holiday("Holiday", "Holiday"),
+    Rest("REST", "Rest day"),
+    Sick("Sick", "Sick"),
+    /** The timecard-only `IDLE_DAY` code (`dayTypeWire.js:18`). */
+    Idle("IDLE_DAY", "Idle"),
+    /** No type picked: the day exists in the grid but says nothing yet. */
+    NotWorked(null, "Not worked"),
+    Unknown(null, "—"),
     ;
 
     /** Whether hours entered on this day count towards pay. */
     val isPaidWork: Boolean get() = this == Worked || this == Travel
 
     companion object {
+        /**
+         * Reads codes and legacy labels alike: the wire carries codes for the
+         * eight timecard-only types and pass-through labels for everything
+         * else (`dayTypeWire.js:10-13`), and older rows saved label-first.
+         * Web-only vocabulary this port has no bucket for — the flat-pay
+         * `Prep`/`Wrap`/`Post` family, custom deal codes — degrades to
+         * [Unknown] rather than mislabelling the day.
+         */
         fun from(wire: String?): DayType {
-            val value = wire?.trim()?.lowercase().orEmpty()
-            return entries.firstOrNull { it.wire == value && it != Unknown } ?: Unknown
+            val value = wire?.trim()?.uppercase().orEmpty()
+            if (value.isEmpty()) return NotWorked
+            return when (value) {
+                "SWD", "CWD", "SCWD", "HALF_DAY", "HALF DAY" -> Worked
+                "TRAVEL" -> Travel
+                "HOLIDAY", "BANK_HOLIDAY", "BANK HOLIDAY", "PUBLIC_HOLIDAY", "PUBLIC HOLIDAY" -> Holiday
+                "REST" -> Rest
+                "SICK", "SICK_PAID", "SICK_UNPAID", "SICK_SSP",
+                "SICK (PAID)", "SICK (UNPAID)", "SICK (SSP)",
+                -> Sick
+
+                "IDLE_DAY", "IDLE DAY", "IDLE" -> Idle
+                else -> Unknown
+            }
         }
     }
 }
@@ -212,28 +256,43 @@ data class Deduction(
     val reason: String?,
 )
 
-/** Where a timecard is in the approval chain. */
+/**
+ * Where a timecard is in the approval chain.
+ *
+ * The wire vocabulary is the server enum the web's status maps are keyed on
+ * (`lib/timecardStatus.js:12-51`): draft → awaiting_approval / submitted /
+ * pending → queried / rejected → approved → final_approved → locked → paid →
+ * unpaid / posted. There is no `sent_to_payroll` status — the web's
+ * send-to-payroll-run action flips the week to `approved`
+ * (`timecards.js:194-212`).
+ */
 @Serializable
 enum class TimecardStatus(val wire: String, val label: String) {
     Draft("draft", "Draft"),
     Submitted("submitted", "Submitted"),
     AwaitingApproval("awaiting_approval", "Awaiting approval"),
+    /** The submitted/awaiting bucket some surfaces roll up to (`timecardStatus.js:20-22`). */
+    Pending("pending", "Pending"),
     Approved("approved", "Approved"),
+    /** The web renders this "ACCT Approved"; the wire enum stays `final_approved`. */
     FinalApproved("final_approved", "Final approved"),
     Queried("queried", "Queried"),
     Rejected("rejected", "Rejected"),
     Locked("locked", "Locked"),
-    SentToPayroll("sent_to_payroll", "With payroll"),
     Paid("paid", "Paid"),
+    /** A previously paid week whose payment was reversed (`timecardStatus.js:34`). */
+    Unpaid("unpaid", "Unpaid"),
+    /** Journal entries written to the General Ledger — terminal (`timecardStatus.js:35-39`). */
+    Posted("posted", "Posted"),
     Unknown("", "Unknown"),
     ;
 
     val isEditable: Boolean get() = this == Draft || this == Queried || this == Rejected
 
     /** Cleared every gate and is ready for a payroll run. */
-    val isPayable: Boolean get() = this == FinalApproved || this == Locked || this == SentToPayroll
+    val isPayable: Boolean get() = this == FinalApproved || this == Locked
 
-    val isPaid: Boolean get() = this == Paid
+    val isPaid: Boolean get() = this == Paid || this == Posted
 
     companion object {
         fun from(wire: String?): TimecardStatus {
@@ -251,8 +310,15 @@ data class TimecardViewer(
     val metadata: TimecardMetadata = TimecardMetadata(),
     val enteredAsTool: Boolean = false,
 ) {
+    /**
+     * The department guess OR-ed with the server's own `is_accountant` flag,
+     * the way the web merges its auth signal with `timecards/metadata`
+     * (`TimecardMetadataContext.jsx:96-99`). Entering from the tools grid
+     * still means acting as crew, whatever either source says.
+     */
     val isAccountant: Boolean
-        get() = !enteredAsTool && departmentIdentifier?.contains(ACCOUNTS, ignoreCase = true) == true
+        get() = !enteredAsTool &&
+            (departmentIdentifier?.contains(ACCOUNTS, ignoreCase = true) == true || metadata.isAccountant)
 
     /** A head of department, who approves their department's weeks. */
     val isApprover: Boolean get() = metadata.isApprover
@@ -265,12 +331,29 @@ data class TimecardViewer(
     }
 }
 
-/** What the server says this viewer may do, per `GET timecards/metadata`. */
+/**
+ * What the server says this viewer may do.
+ *
+ * Merged from two reads the way the web spreads them across
+ * `TimecardMetadataContext` and `usePayrollMetadata`: `GET
+ * payroll/timecards/metadata` carries `is_approver` / `is_accountant` /
+ * `is_completer` and `pay_period` (`TimecardMetadataContext.jsx:25-43`), while
+ * `is_final_approver` — the payroll-approvers allowlist — only ever comes from
+ * `GET payroll/metadata` (`usePayrollMetadata.js:54-75`).
+ */
 @Serializable
 data class TimecardMetadata(
     val isApprover: Boolean = false,
     val isFinalApprover: Boolean = false,
     val isCompleter: Boolean = false,
+    /** The server's own accountant flag, OR-ed into [TimecardViewer.isAccountant]. */
+    val isAccountant: Boolean = false,
+    /**
+     * The production's pay-period start day, ISO 1=Mon … 7=Sun
+     * (`pay_period.start_day_of_week`, defaulted exactly as the web defaults
+     * it — `TimecardMetadataContext.jsx:41-43`, `usePayrollMetadata.js:172-175`).
+     */
+    val payPeriodStartDay: Int = 1,
     /** Whether the production requires a second, final approval at all. */
     val requiresFinalApproval: Boolean = false,
     val disputesEnabled: Boolean = false,
@@ -285,6 +368,13 @@ data class TimecardDraft(
     val weekStarting: Long?,
     val days: List<TimecardDay>,
     val notes: String = "",
+    /**
+     * The owner's department, sent on CREATE only: the web stamps
+     * `department_id` so department-scoped approval tiers resolve
+     * (`WeeklyTimecardModule.jsx:4788-4791`). Null is the web's own case for
+     * a user without one.
+     */
+    val departmentId: String? = null,
 ) {
     val workedHours: Double get() = days.sumOf { it.workedHours }
 
@@ -327,6 +417,14 @@ data class TimecardHistoryEntry(
 @Suppress("TooManyFunctions") // One suspend fun per server operation; see detekt.yml.
 interface TimecardRepository {
 
+    /**
+     * Socket announcements that a week changed somewhere — another client's
+     * submit, decision, lock or payment, answered with a reload of whatever
+     * page is open rather than an in-place patch (the web's `ah:timecard:*`
+     * refetch pattern). Defaulted empty for tests and hosts without a socket.
+     */
+    val refreshes: Flow<Unit> get() = emptyFlow()
+
     suspend fun metadata(): ZillitResult<TimecardMetadata>
 
     /** This viewer's own weeks. */
@@ -335,8 +433,15 @@ interface TimecardRepository {
     /** Weeks routed to this viewer to approve. */
     suspend fun approvalQueue(): ZillitResult<List<Timecard>>
 
-    /** Every week payroll is processing for [weekStarting]. */
-    suspend fun payrollProcessing(weekStarting: String): ZillitResult<List<Timecard>>
+    /**
+     * Every week payroll is processing for [weekStarting] — **epoch millis**
+     * of the pay-period start's midnight in the caller's zone, exactly the
+     * value the web puts in the path (`timecards.js:68-70`, computed via
+     * `startOfPeriodTz(now, browserTz(), payPeriodStartDay)` —
+     * `AccountantPayrollModule.jsx:949-969`). An ISO date string here is
+     * refused as `timecard_invalid_week_starting`.
+     */
+    suspend fun payrollProcessing(weekStarting: Long): ZillitResult<List<Timecard>>
 
     /** Weeks that have not been filed at all — the chase list. */
     suspend fun outstanding(): ZillitResult<List<Timecard>>
@@ -345,7 +450,18 @@ interface TimecardRepository {
 
     suspend fun history(id: String): ZillitResult<List<TimecardHistoryEntry>>
 
-    suspend fun save(draft: TimecardDraft): ZillitResult<Unit>
+    /**
+     * Creates or updates a week; answers the server id of the saved week when
+     * it is known, so a queued submit — or a note — can follow it.
+     */
+    suspend fun save(draft: TimecardDraft): ZillitResult<String?>
+
+    /**
+     * Appends one note to a week (`POST /weekly/:id/notes`, body `{note}` —
+     * `timecards.js:114-126`). Owner-only server-side; notes never ride the
+     * save body.
+     */
+    suspend fun addNote(id: String, note: String): ZillitResult<Unit>
 
     suspend fun submit(id: String): ZillitResult<Unit>
 
@@ -363,7 +479,13 @@ interface TimecardRepository {
 
     suspend fun markPaid(id: String): ZillitResult<Unit>
 
-    suspend fun addDeduction(id: String, label: String, amount: Double, reason: String?): ZillitResult<Unit>
+    /**
+     * Adds one deduction row. The wire takes a rate, not an amount —
+     * `{label, rate_type, rate_amount, nominal_code}` — and the server
+     * computes `actual_amount` from it (`timecards.js:138-151`,
+     * `AddDeductionModal.jsx:127-132`). There is no reason field.
+     */
+    suspend fun addDeduction(id: String, label: String, amount: Double, nominalCode: String?): ZillitResult<Unit>
 
     suspend fun removeDeduction(id: String, deductionId: String): ZillitResult<Unit>
 

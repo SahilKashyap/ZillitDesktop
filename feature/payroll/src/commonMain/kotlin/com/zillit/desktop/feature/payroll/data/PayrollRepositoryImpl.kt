@@ -8,6 +8,7 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.payroll.domain.BankAccount
 import com.zillit.desktop.feature.payroll.domain.NominalAllocation
 import com.zillit.desktop.feature.payroll.domain.PayrollLine
@@ -17,6 +18,9 @@ import com.zillit.desktop.feature.payroll.domain.PostOutcome
 import com.zillit.desktop.feature.payroll.domain.Payslip
 import com.zillit.desktop.feature.payroll.domain.PayslipLine
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -44,7 +48,22 @@ import kotlinx.serialization.json.buildJsonObject
 class PayrollRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : PayrollRepository {
+
+    /**
+     * See [PayrollRepository.refreshes]. Another production's frame is
+     * dropped when both sides can name a project — the same cross-project
+     * gate the web's account-hub wrapper applies before any handler runs.
+     */
+    override val refreshes: Flow<Unit> =
+        bus?.onAny(PAYROLL_SYNC_EVENTS, PayrollSyncEnvelope.serializer())
+            ?.mapNotNull { (_, envelope) ->
+                Unit.takeIf { envelope.inProject(currentProjectId()) }
+            }
+            ?: emptyFlow()
 
     private val payrollHost = config.baseUrl(ZillitService.Payroll)
     private val weeklyBase = "$payrollHost/api/v2/payroll/weekly"

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.assetreport.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.assetreport.domain.AssetCategory
 import com.zillit.desktop.feature.assetreport.domain.AssetExport
@@ -141,7 +142,7 @@ class AssetViewModel(
         launchResult(
             block = { repository.lines() },
             onSuccess = { rows -> setState { copy(lines = rows, isLoading = false) } },
-            onError = { error -> setState { copy(isLoading = false, error = error.userMessage) } },
+            onError = { error -> setState { copy(isLoading = false, error = error.localised()) } },
         )
         launchResult(
             block = { repository.vendors() },
@@ -176,7 +177,7 @@ class AssetViewModel(
             onError = { error ->
                 // Retry stays possible: the failure is not remembered.
                 if (currentState.detail?.line?.lineItemId == lineItemId) {
-                    setState { copy(detail = null, error = error.userMessage) }
+                    setState { copy(detail = null, error = error.localised()) }
                 }
             },
         )
@@ -241,7 +242,7 @@ class AssetViewModel(
             },
             onError = { error ->
                 setState {
-                    copy(detail = currentState.detail?.copy(isSaving = false), error = error.userMessage)
+                    copy(detail = currentState.detail?.copy(isSaving = false), error = error.localised())
                 }
             },
         )
@@ -260,7 +261,7 @@ class AssetViewModel(
                 setState { copy(isExporting = false) }
                 sendEffect(AssetEffect.Notice("Export saved to Downloads."))
             },
-            onError = { error -> setState { copy(isExporting = false, error = error.userMessage) } },
+            onError = { error -> setState { copy(isExporting = false, error = error.localised()) } },
         )
     }
 }

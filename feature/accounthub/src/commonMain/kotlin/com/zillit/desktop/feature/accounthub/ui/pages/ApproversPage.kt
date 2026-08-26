@@ -296,7 +296,10 @@ private fun LevelEditor(
     onChange: (ApprovalTier) -> Unit,
     onRemove: () -> Unit,
 ) {
-    val rule = tier.rules.firstOrNull() ?: ApprovalRule()
+    // A fresh rule is born wire-legal: the select SHOWS "Default" for a
+    // blank type, but the state must carry it too — a save with `type: ""`
+    // is refused ("must be one of [default, amount]").
+    val rule = tier.rules.firstOrNull() ?: ApprovalRule(type = "default")
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -325,9 +328,23 @@ private fun LevelEditor(
             value = rule.type.ifBlank { RULE_TYPES.first() },
             options = RULE_TYPES,
             onSelect = { type -> onChange(tier.copy(rules = listOf(rule.copy(type = type)))) },
-            label = { it.replace('_', ' ').replaceFirstChar(Char::uppercase) },
+            // The wire's two words, said the way the web says them
+            // (ApproversModule.jsx:943): Default, or a spend gate.
+            label = { if (it == "amount") "Amount greater than" else "Default" },
             modifier = Modifier.fillMaxWidth(),
         )
+        if (rule.type == "amount") {
+            ZillitTextField(
+                value = rule.amountThreshold?.toString().orEmpty(),
+                onValueChange = { text ->
+                    onChange(
+                        tier.copy(rules = listOf(rule.copy(amountThreshold = text.toDoubleOrNull()))),
+                    )
+                },
+                label = "Amount threshold",
+                placeholder = "This level signs off spends above this",
+            )
+        }
         ZillitTextField(
             value = rule.userIds.joinToString(", "),
             onValueChange = { text ->
@@ -340,5 +357,9 @@ private fun LevelEditor(
     }
 }
 
-/** The rule kinds the server accepts on a level. */
-private val RULE_TYPES = listOf("user", "department_head", "any_of")
+/**
+ * The rule kinds the server accepts on a level — its validator's exact
+ * vocabulary, nothing else ("must be one of [default, amount]"). An earlier
+ * port invented user/department_head/any_of here, and every save was refused.
+ */
+private val RULE_TYPES = listOf("default", "amount")

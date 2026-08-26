@@ -19,6 +19,8 @@ kotlin {
             implementation(project(":core:notifications"))
             implementation(project(":core:socket"))
             implementation(project(":core:designsystem"))
+            // The calendar event's Location field is a map picker.
+            implementation(project(":core:locationpicker"))
             // The picked-media preview and the pen editor behind the image reply.
             implementation(project(":core:media"))
             implementation(project(":core:mvvm"))

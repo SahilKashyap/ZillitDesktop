@@ -117,12 +117,12 @@ class DealRatesTest {
 class DealAccessTest {
 
     @Test
-    fun `only senior accountants may write deals`() {
-        assertTrue(
-            DealViewer("u", "department_accounts", "designation_production_accountant_accounts").canWriteDeals,
-        )
-        assertTrue(DealViewer("u", "department_accounts", "Financial Controller").canWriteDeals)
-        assertFalse(DealViewer("u", "department_accounts", "Assistant Accountant").canWriteDeals)
+    fun `any accountant or posting-rights holder may write deals`() {
+        // The web's gate (`useDealMemoRights.js:48-66`): accounts department
+        // OR deal-memo posting rights — designations play no part.
+        assertTrue(DealViewer("u", "department_accounts", "Assistant Accountant").canWriteDeals)
+        assertTrue(DealViewer("u", "department_accounts", null).canWriteDeals)
+        assertTrue(DealViewer("u", "department_camera", null, hasPostingRights = true).canWriteDeals)
         assertFalse(DealViewer("u", "department_camera", "Financial Controller").canWriteDeals)
     }
 
@@ -138,7 +138,10 @@ class DealAccessTest {
 
     @Test
     fun `entering from the tools grid closes the production list`() {
-        val fromGrid = DealViewer("u", "department_accounts", "Financial Controller", enteredAsTool = true)
+        val fromGrid = DealViewer(
+            "u", "department_accounts", "Financial Controller",
+            enteredAsTool = true, hasPostingRights = true,
+        )
 
         assertFalse(fromGrid.canWriteDeals)
         assertFalse(DealDestination.AllDeals.visibleTo(fromGrid))
@@ -165,11 +168,18 @@ class DealAccessTest {
     }
 
     @Test
-    fun `unknown statuses degrade rather than throw`() {
+    fun `statuses are the server's own set and unknown ones degrade`() {
+        // The wire set is dealStatus.js:18-36 — the pre-port sent/acknowledged/
+        // amended/expired/terminated spellings never existed server-side.
         assertEquals(DealStatus.Unknown, DealStatus.from("brand_new"))
-        assertEquals(DealStatus.Acknowledged, DealStatus.from("ACKNOWLEDGED"))
+        assertEquals(DealStatus.Unknown, DealStatus.from("terminated"))
+        assertEquals(DealStatus.AwaitingApproval, DealStatus.from("AWAITING_APPROVAL"))
+        assertEquals(DealStatus.Issued, DealStatus.from("issued"))
+        assertEquals(DealStatus.Deactivated, DealStatus.from("deactivated"))
         assertTrue(DealStatus.Active.isLive)
+        assertFalse(DealStatus.Approved.isLive, "the timecard reads active deals only")
         assertFalse(DealStatus.Draft.isLive)
         assertTrue(DealStatus.Draft.isEditable)
+        assertFalse(DealStatus.Issued.isEditable)
     }
 }

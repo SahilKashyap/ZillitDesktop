@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.draft.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.draft.data.ScreenplayCodec
@@ -357,7 +358,7 @@ class DraftViewModel(
                 ExportFormat.Fountain -> Fountain.write(screenplay).encodeToByteArray()
             }
             when (val out = host.export(fileNameFor(screenplay, format), bytes)) {
-                is ZillitResult.Failure -> setState { copy(busy = false, error = out.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = out.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
                     sendEffect(DraftEffect.Notice("Exported ${format.label}"))
@@ -373,7 +374,7 @@ class DraftViewModel(
             persist()
             val screenplay = state.value.open?.screenplay ?: open.screenplay
             when (val out = host.sendToDrive(fileNameFor(screenplay, ExportFormat.Pdf), renderer.pdf(screenplay))) {
-                is ZillitResult.Failure -> setState { copy(busy = false, error = out.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = out.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
                     sendEffect(DraftEffect.Notice("Sent to Drive"))

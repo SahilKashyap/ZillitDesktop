@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.Money
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -113,7 +114,7 @@ fun TimecardScreen(
             val error = state.error
             when {
                 error != null -> ZillitErrorState(
-                    message = error.userMessage,
+                    message = error.localised(),
                     onRetry = { onEvent(TimecardEvent.Refresh) },
                 )
 
@@ -416,7 +417,10 @@ private fun TimecardActions(state: TimecardUiState, card: Timecard, onEvent: (Ti
     // its save — once — and nothing else; the outbox owns retry and discard.
     if (card.local.blocksActions()) return
     val actions = buildList {
-        if (card.userId == state.viewer.userId && card.isEditable) {
+        // Own weeks from `my-summary` carry no user id at all (the slim
+        // projection has no owner field — MyTimecardsModule.jsx:126-167), so
+        // ownership rides the route they came from, not an id comparison.
+        if ((card.ownedByViewer || card.userId == state.viewer.userId) && card.isEditable) {
             add(
                 Triple("Submit", ButtonVariant.Primary) {
                     TimecardPrompt.Confirm(
@@ -806,10 +810,12 @@ private fun TimecardPromptDialog(prompt: TimecardPrompt?, onEvent: (TimecardEven
                     keyboardType = KeyboardType.Decimal,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // The web modal's third field is the GL code, not a reason —
+                // the deduction wire has no reason (AddDeductionModal.jsx:127-132).
                 ZillitTextField(
-                    value = shown.reason,
-                    onValueChange = { onEvent(TimecardEvent.UpdatePrompt(shown.copy(reason = it))) },
-                    label = "Reason (optional)",
+                    value = shown.nominalCode,
+                    onValueChange = { onEvent(TimecardEvent.UpdatePrompt(shown.copy(nominalCode = it))) },
+                    label = "Nominal code (optional)",
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -847,12 +853,12 @@ private fun TimecardPrompt?.isDestructive(): Boolean = when (this) {
 internal val TimecardStatus.tone: StatusTone
     get() = when (this) {
         TimecardStatus.Draft, TimecardStatus.Unknown -> StatusTone.Neutral
-        TimecardStatus.Submitted, TimecardStatus.AwaitingApproval -> StatusTone.Pending
+        TimecardStatus.Submitted, TimecardStatus.AwaitingApproval, TimecardStatus.Pending -> StatusTone.Pending
         TimecardStatus.Approved -> StatusTone.Progress
         TimecardStatus.FinalApproved -> StatusTone.Ready
-        TimecardStatus.Locked, TimecardStatus.SentToPayroll -> StatusTone.InTransit
-        TimecardStatus.Paid -> StatusTone.Done
-        TimecardStatus.Queried -> StatusTone.Pending
+        TimecardStatus.Locked -> StatusTone.InTransit
+        TimecardStatus.Paid, TimecardStatus.Posted -> StatusTone.Done
+        TimecardStatus.Queried, TimecardStatus.Unpaid -> StatusTone.Pending
         TimecardStatus.Rejected -> StatusTone.Rejected
     }
 

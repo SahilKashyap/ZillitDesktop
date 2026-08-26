@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.esignature.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -51,7 +52,24 @@ class EsignViewModel(
         }
         refresh()
         loadMarks()
+        listenOnce()
     }
+
+    /**
+     * Refetches the visible envelope list when the socket announces an
+     * envelope change — the web's `DocuSignObservers` upsert, as a targeted
+     * reload. Guarded so a second Start (the window reopening) does not
+     * stack collectors.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.collect { refresh() }
+        }
+    }
+
+    private var listening = false
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
     override fun onEvent(event: EsignEvent) {
@@ -139,7 +157,7 @@ class EsignViewModel(
             onSuccess = { rows -> setState { copy(manage = manage.copy(rows = rows, loading = false)) } },
             onError = { error ->
                 setState { copy(manage = manage.copy(loading = false)) }
-                sendEffect(EsignEffect.Failed(error.userMessage))
+                sendEffect(EsignEffect.Failed(error.localised()))
             },
         )
     }
@@ -159,7 +177,7 @@ class EsignViewModel(
             },
             onError = { error ->
                 setState { copy(signList = signList.copy(loading = false)) }
-                sendEffect(EsignEffect.Failed(error.userMessage))
+                sendEffect(EsignEffect.Failed(error.localised()))
             },
         )
     }
@@ -198,7 +216,7 @@ class EsignViewModel(
             when (val full = repository.envelope(row.id)) {
                 is ZillitResult.Failure -> {
                     setState { copy(detail = detail?.copy(loadingPages = false)) }
-                    sendEffect(EsignEffect.Failed(full.error.userMessage))
+                    sendEffect(EsignEffect.Failed(full.error.localised()))
                 }
                 is ZillitResult.Success -> {
                     val envelope = full.data
@@ -237,7 +255,7 @@ class EsignViewModel(
         when (val bytes = transfer.fetch(stored)) {
             is ZillitResult.Failure -> {
                 setState { copy(detail = detail?.copy(loadingPages = false)) }
-                sendEffect(EsignEffect.Failed(bytes.error.userMessage))
+                sendEffect(EsignEffect.Failed(bytes.error.localised()))
             }
             is ZillitResult.Success ->
                 when (val pages = pdf.renderPages(bytes.data, PAGE_RENDER_WIDTH)) {
@@ -270,13 +288,13 @@ class EsignViewModel(
             when (val fields = answersFor(detail)) {
                 is ZillitResult.Failure -> {
                     setState { copy(detail = currentState.detail?.copy(signing = false)) }
-                    sendEffect(EsignEffect.Failed(fields.error.userMessage))
+                    sendEffect(EsignEffect.Failed(fields.error.localised()))
                 }
                 is ZillitResult.Success -> {
                     when (val signed = repository.sign(detail.envelope.id, fields.data)) {
                         is ZillitResult.Failure -> {
                             setState { copy(detail = currentState.detail?.copy(signing = false)) }
-                            sendEffect(EsignEffect.Failed(signed.error.userMessage))
+                            sendEffect(EsignEffect.Failed(signed.error.localised()))
                         }
                         is ZillitResult.Success -> {
                             setState { copy(detail = null) }
@@ -436,7 +454,7 @@ class EsignViewModel(
             when (stored) {
                 is ZillitResult.Failure -> {
                     setState { copy(compose = currentState.compose?.copy(sending = false)) }
-                    sendEffect(EsignEffect.Failed(stored.error.userMessage))
+                    sendEffect(EsignEffect.Failed(stored.error.localised()))
                 }
                 is ZillitResult.Success -> createAndSend(compose, stored.data, fileName)
             }
@@ -484,14 +502,14 @@ class EsignViewModel(
         ) {
             is ZillitResult.Failure -> {
                 setState { copy(compose = currentState.compose?.copy(sending = false)) }
-                sendEffect(EsignEffect.Failed(created.error.userMessage))
+                sendEffect(EsignEffect.Failed(created.error.localised()))
             }
             is ZillitResult.Success -> when (val sent = repository.send(created.data.id)) {
                 is ZillitResult.Failure -> {
                     setState { copy(compose = currentState.compose?.copy(sending = false)) }
                     sendEffect(
                         EsignEffect.Failed(
-                            "Created as a draft, but sending failed: ${sent.error.userMessage}",
+                            "Created as a draft, but sending failed: ${sent.error.localised()}",
                         ),
                     )
                 }
@@ -519,7 +537,7 @@ class EsignViewModel(
             ) {
                 is ZillitResult.Failure -> {
                     setState { copy(marks = marks.copy(drawing = marks.drawing?.copy(saving = false))) }
-                    sendEffect(EsignEffect.Failed(raster.error.userMessage))
+                    sendEffect(EsignEffect.Failed(raster.error.localised()))
                     return@launch
                 }
                 is ZillitResult.Success -> raster.data
@@ -528,7 +546,7 @@ class EsignViewModel(
             when (stored) {
                 is ZillitResult.Failure -> {
                     setState { copy(marks = marks.copy(drawing = marks.drawing?.copy(saving = false))) }
-                    sendEffect(EsignEffect.Failed(stored.error.userMessage))
+                    sendEffect(EsignEffect.Failed(stored.error.localised()))
                 }
                 is ZillitResult.Success -> {
                     when (repository.saveSignature(drawing.isSignature, stored.data)) {

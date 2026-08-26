@@ -299,68 +299,56 @@ private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent
             )
         }
 
-        SettingRow(
+        BannerToggleRow(
             title = "Chat messages",
             detail = "A banner when someone messages you and you are looking " +
                 "elsewhere. Never for the conversation already on screen.",
-        ) {
-            ZillitCheckbox(
-                checked = state.notifyMessages,
-                onCheckedChange = { onEvent(SettingsEvent.NotifyMessagesChanged(it)) },
-                label = if (state.notifyMessages) "On" else "Off",
-            )
-        }
-
-        SettingRow(
+            checked = state.notifyMessages,
+        ) { onEvent(SettingsEvent.NotifyMessagesChanged(it)) }
+        BannerToggleRow(
             title = "Updates",
             detail = "A banner when someone posts to a notice board you can see. " +
                 "Your own posts never notify you.",
-        ) {
-            ZillitCheckbox(
-                checked = state.notifyUpdates,
-                onCheckedChange = { onEvent(SettingsEvent.NotifyUpdatesChanged(it)) },
-                label = if (state.notifyUpdates) "On" else "Off",
-            )
-        }
-
-        SettingRow(
+            checked = state.notifyUpdates,
+        ) { onEvent(SettingsEvent.NotifyUpdatesChanged(it)) }
+        BannerToggleRow(
             title = "Email",
             detail = "A banner when mail lands in your inbox. Moving or " +
                 "deleting mail elsewhere does not count as arriving.",
-        ) {
-            ZillitCheckbox(
-                checked = state.notifyMail,
-                onCheckedChange = { onEvent(SettingsEvent.NotifyMailChanged(it)) },
-                label = if (state.notifyMail) "On" else "Off",
-            )
-        }
-
-        SettingRow(
+            checked = state.notifyMail,
+        ) { onEvent(SettingsEvent.NotifyMailChanged(it)) }
+        BannerToggleRow(
             title = "Production activity",
             detail = "A banner for everything else the production did — a " +
                 "purchase order approved, a document shared, an SOS raised. " +
                 "The bell list's rows, as they happen.",
-        ) {
-            ZillitCheckbox(
-                checked = state.notifyActivity,
-                onCheckedChange = { onEvent(SettingsEvent.NotifyActivityChanged(it)) },
-                label = if (state.notifyActivity) "On" else "Off",
-            )
-        }
-
-        SettingRow(
+            checked = state.notifyActivity,
+        ) { onEvent(SettingsEvent.NotifyActivityChanged(it)) }
+        // Calls outrank the mute above, because a missed call is the one
+        // notification with someone waiting on it.
+        BannerToggleRow(
             title = "Calls",
-            // Says plainly that this one outranks the mute above, because a
-            // missed call is the one notification with someone waiting on it.
             detail = "A banner when a call rings this device. Muting everything " +
                 "above does not silence calls — this switch does.",
-        ) {
-            ZillitCheckbox(
-                checked = state.notifyCalls,
-                onCheckedChange = { onEvent(SettingsEvent.NotifyCallsChanged(it)) },
-                label = if (state.notifyCalls) "On" else "Off",
-            )
-        }
+            checked = state.notifyCalls,
+        ) { onEvent(SettingsEvent.NotifyCallsChanged(it)) }
+    }
+}
+
+/** One banner switch: a titled row whose checkbox reads On/Off. */
+@Composable
+private fun BannerToggleRow(
+    title: String,
+    detail: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    SettingRow(title = title, detail = detail) {
+        ZillitCheckbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            label = if (checked) "On" else "Off",
+        )
     }
 }
 

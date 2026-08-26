@@ -214,6 +214,7 @@ fun readChatMessage(
         isGroup = isGroup,
         sendState = ChatSendState.ofWire((obj["status"] as? JsonPrimitive)?.intOrNull),
         attachment = readAttachment(obj),
+        location = readLocation(obj),
         reactions = readReactions(obj),
         // A timestamp on the wire (Android's `edited: Long?`), tolerated as a
         // literal flag from any client that sends one.
@@ -341,17 +342,43 @@ fun sendEnvelope(
      * with `cnc_invalid_message_id` (found live, 2026-08-22).
      */
     replyToId: String? = null,
+    /**
+     * A shared place. Its presence is what makes the message a location, and
+     * it wins over any attachment — Android decides the same way and in the
+     * same order (`baseUtils/CommonApis.kt:1886`:
+     * `if (location != null) "".messageTypeOrContentTypeProvider(true) else …`,
+     * whose `true` branch returns the literal `LOCATION`, `"location"` —
+     * `mediaHandler/imageeditor/utils/Extension.kt:602-609` and
+     * `utils/Constants.kt:713`). See [LOCATION_KIND].
+     */
+    location: com.zillit.desktop.feature.chat.domain.ChatLocation? = null,
 ): JsonObject = buildJsonObject {
     put("project_id", projectId)
     put("unique_id", uniqueId)
     put("type", if (isGroup) "group" else "private")
     put("deleted", 0)
     put("messageUniqueId", receiverId)
-    put("message_type", attachment?.kind ?: "text")
+    put("message_type", if (location != null) LOCATION_KIND else attachment?.kind ?: "text")
     put("chat_tool", "cnc_section")
     put("sender", senderId)
     put("receiver", receiverId)
     put("message", cipherBody)
+    if (location != null) {
+        // `LocationInfo`'s three place fields, top level beside `attachment`.
+        // The longitude is `long`, not `lng` (HomeChatRequest.kt:231-232, web
+        // `cncUtil.js:314`). Its `imageLink/height/width` describe the map
+        // SCREENSHOT the phones upload with the message; this client takes no
+        // raster, so it sends the place and leaves those out rather than
+        // inventing empties for a picture that does not exist.
+        put(
+            "location",
+            buildJsonObject {
+                put("lat", location.lat)
+                put("long", location.lng)
+                put("address", location.address)
+            },
+        )
+    }
     // The parent's id under "reply" — the server builds the Reply_chat
     // object itself and returns it expanded (web `cncUtil.js:197`).
     if (replyToId != null) put("reply", replyToId)

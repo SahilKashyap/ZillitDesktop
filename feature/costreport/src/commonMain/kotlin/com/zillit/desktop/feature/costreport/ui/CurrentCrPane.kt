@@ -179,10 +179,14 @@ private fun TitleRow(state: CostReportUiState, onEvent: (CostReportEvent) -> Uni
             placeholder = "Find code or name",
             modifier = Modifier.width(SEARCH_WIDTH),
         )
+        // A feeder tool approved or posted something elsewhere: the button
+        // becomes a pill rather than the screen reloading itself — the
+        // worksheet recompute is heavy, so the reader chooses the moment
+        // (the web's `sourceStale` flag, CostReportWorksheetModule.jsx:5606).
         ZillitButton(
-            text = "Refresh",
+            text = if (state.sourceStale) "Refresh — figures changed" else "Refresh",
             onClick = { onEvent(CostReportEvent.Refresh) },
-            variant = ButtonVariant.Tertiary,
+            variant = if (state.sourceStale) ButtonVariant.Primary else ButtonVariant.Tertiary,
             size = ButtonSize.Small,
             leadingIcon = ZillitIcons.Reload,
             loading = current.phase != null && current.loaded,

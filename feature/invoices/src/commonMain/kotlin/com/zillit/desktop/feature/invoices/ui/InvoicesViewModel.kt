@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.invoices.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.invoices.domain.ApprovalChain
@@ -11,11 +12,14 @@ import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceFiles
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceQuery
+import com.zillit.desktop.feature.invoices.domain.InvoiceRefresh
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.InvoiceViewer
 import com.zillit.desktop.feature.invoices.domain.InvoicesRepository
 import com.zillit.desktop.feature.invoices.domain.PickedInvoiceFile
 import com.zillit.desktop.feature.invoices.domain.ResolvedTier
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 
 /**
  * Invoices (Accounts Payable): the department view — my uploads, my
@@ -49,8 +53,41 @@ class InvoicesViewModel(
             )
         }
         loadReference()
+        listenOnce()
         refresh()
     }
+
+    /**
+     * Folds the socket's announcements into the screen: another client's
+     * upload, decision or payment lands as a refetch of whatever tab is open
+     * (and a re-read of an open detail), and vendor / tier / settings changes
+     * re-pull the reference data — the web's `ah:invoice:*` refetch pattern.
+     * Guarded so reopening the window does not stack collectors, and debounced
+     * per kind because one action fans into several frames (the web coalesces
+     * at `accountHubListeners.js` `DEBOUNCE_MS = 500`).
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.collect { kind ->
+                syncJobs.remove(kind)?.cancel()
+                syncJobs[kind] = launch {
+                    delay(SYNC_DEBOUNCE_MILLIS)
+                    when (kind) {
+                        InvoiceRefresh.Rows -> {
+                            refresh()
+                            state.value.detail?.invoice?.id?.let(::refreshDetail)
+                        }
+                        InvoiceRefresh.Reference -> loadReference()
+                    }
+                }
+            }
+        }
+    }
+
+    private var listening = false
+    private val syncJobs = mutableMapOf<InvoiceRefresh, Job>()
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out.
     override fun onEvent(event: InvoicesEvent) {
@@ -126,7 +163,7 @@ class InvoicesViewModel(
         launch {
             when (val r = repository.approvalTiers()) {
                 is ZillitResult.Failure -> setState {
-                    copy(error = "Could not load approval tiers: ${r.error.userMessage}")
+                    copy(error = "Could not load approval tiers: ${r.error.localised()}")
                 }
                 is ZillitResult.Success -> setState { copy(tierConfigs = r.data) }
             }
@@ -164,7 +201,7 @@ class InvoicesViewModel(
             }
             if (token != loadToken) return@launch
             when (result) {
-                is ZillitResult.Failure -> setState { copy(loading = false, error = result.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(loading = false, error = result.error.localised()) }
                 is ZillitResult.Success -> setState {
                     val ids = result.data.map { it.id }.toSet()
                     copy(
@@ -189,7 +226,7 @@ class InvoicesViewModel(
         launch {
             when (val r = repository.invoice(invoice.id)) {
                 is ZillitResult.Failure -> setState {
-                    copy(detail = detail?.copy(loading = false), error = r.error.userMessage)
+                    copy(detail = detail?.copy(loading = false), error = r.error.localised())
                 }
                 is ZillitResult.Success -> {
                     setState {
@@ -258,7 +295,7 @@ class InvoicesViewModel(
         launch {
             when (val r = repository.history(d.invoice.id)) {
                 is ZillitResult.Failure -> setState {
-                    copy(detail = detail?.copy(historyLoading = false), error = r.error.userMessage)
+                    copy(detail = detail?.copy(historyLoading = false), error = r.error.localised())
                 }
                 is ZillitResult.Success -> setState {
                     val current = detail?.takeIf { it.invoice.id == d.invoice.id } ?: return@setState this
@@ -351,5 +388,8 @@ class InvoicesViewModel(
         val UPLOAD_EXTENSIONS = setOf("pdf", "jpg", "jpeg", "png")
         val ENTER_EXTENSIONS = UPLOAD_EXTENSIONS + setOf("doc", "docx")
         private const val DEFAULT_TERMS_MS = 30L * 86_400_000L
+
+        /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
+        const val SYNC_DEBOUNCE_MILLIS = 500L
     }
 }

@@ -78,9 +78,23 @@ internal object KcefPage {
                 if (level == CefSettings.LogSeverity.LOGSEVERITY_ERROR ||
                     level == CefSettings.LogSeverity.LOGSEVERITY_WARNING
                 ) {
-                    onConsole("${message.orEmpty()} (${source?.substringAfterLast('/')}:$line)")
+                    val where = redactKeys(source?.substringAfterLast('/').orEmpty())
+                    onConsole("${redactKeys(message.orEmpty())} ($where:$line)")
                 }
                 return false
             }
         }
+
+    /**
+     * Strips API keys out of anything on its way to the log.
+     *
+     * The map and picker pages inject Google's script as
+     * `…/maps/api/js?key=<the production's key>&…`, and that URL is what
+     * Chromium names as the *source* of any console message the script emits.
+     * Without this, one warning from Google's own SDK writes a live key into
+     * the app log — which the engines take care never to do themselves.
+     */
+    private fun redactKeys(text: String): String = KEY_IN_URL.replace(text, "key=<redacted>")
+
+    private val KEY_IN_URL = Regex("""(?i)\bkey=[^&\s"')]+""")
 }

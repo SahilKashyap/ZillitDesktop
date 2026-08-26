@@ -310,6 +310,49 @@ private fun DisconnectedLine(state: ChatUiState, peer: com.zillit.desktop.featur
  * tinted discs rather than bare glyphs — they are the header's two actions,
  * and the close beside them is not one.
  */
+/** Name, presence, role and address — the header's who-is-this column. */
+@Composable
+private fun HeaderIdentity(
+    state: ChatUiState,
+    peer: com.zillit.desktop.feature.chat.domain.CrewContact,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        ZillitText(text = peer.fullName, style = ZillitTheme.typography.titleSmall)
+        OnlineLine(state)
+        DisconnectedLine(state, peer)
+        // Department and role together — the same line their crew card
+        // leads with, so the header answers "which Sam is this".
+        val role = listOfNotNull(
+            peer.department?.takeIf { it.isNotBlank() },
+            peer.designationLabel(),
+        ).joinToString(" · ") { it.localised() }
+        if (role.isNotBlank()) {
+            ZillitText(
+                text = role,
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+                maxLines = 1,
+            )
+        }
+        // A line of its own rather than a third item on the role line: an
+        // address is long, and appended there it would be the first thing
+        // truncated — which is the same as not showing it.
+        //
+        // This is the one thing the contact card carried that the header
+        // did not, and the card is no longer on the way to a conversation.
+        // Groups have no address, so the null check is the whole guard.
+        peer.email?.takeIf { it.isNotBlank() }?.let { address ->
+            ZillitText(
+                text = address,
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
 @Composable
 private fun ThreadHeader(
     state: ChatUiState,
@@ -332,40 +375,7 @@ private fun ThreadHeader(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitAvatar(name = peer.fullName, image = face, size = HEADER_AVATAR)
-        Column(Modifier.weight(1f)) {
-            ZillitText(text = peer.fullName, style = ZillitTheme.typography.titleSmall)
-            OnlineLine(state)
-            DisconnectedLine(state, peer)
-            // Department and role together — the same line their crew card
-            // leads with, so the header answers "which Sam is this".
-            val role = listOfNotNull(
-                peer.department?.takeIf { it.isNotBlank() },
-                peer.designationLabel(),
-            ).joinToString(" · ") { it.localised() }
-            if (role.isNotBlank()) {
-                ZillitText(
-                    text = role,
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                    maxLines = 1,
-                )
-            }
-            // A line of its own rather than a third item on the role line: an
-            // address is long, and appended there it would be the first thing
-            // truncated — which is the same as not showing it.
-            //
-            // This is the one thing the contact card carried that the header
-            // did not, and the card is no longer on the way to a conversation.
-            // Groups have no address, so the null check is the whole guard.
-            peer.email?.takeIf { it.isNotBlank() }?.let { address ->
-                ZillitText(
-                    text = address,
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                    maxLines = 1,
-                )
-            }
-        }
+        HeaderIdentity(state, peer, Modifier.weight(1f))
         // Callable when the peer has a device to ring (groups always do —
         // the room is the address). No device, no buttons: a call button
         // that fails on press is worse than none.
@@ -908,10 +918,19 @@ private fun QuotedLine(
                 color = ZillitTheme.colors.accentText,
                 maxLines = 1,
             )
+            // A quoted place reads as a place, not as the map screenshot's
+            // file name — the web's quote block draws a pin and the word
+            // "Location" for `reply.message_type === 'location'`
+            // (SenderMessage.jsx:532-538). Here the pin leads and the
+            // parent's own label (its address) follows when it has one.
+            val isPlace = quoted.kind == com.zillit.desktop.feature.chat.data.LOCATION_KIND
             // A wordless quote names the file, as Android's does
             // (HoldersViewhandler.kt:792-795).
-            val snippet = quoted.body.ifBlank {
-                quoted.attachmentName.ifBlank { quoted.kind.replaceFirstChar(Char::uppercase) }
+            val snippet = when {
+                isPlace -> "📍 " + quoted.body.ifBlank { "Location" }
+                else -> quoted.body.ifBlank {
+                    quoted.attachmentName.ifBlank { quoted.kind.replaceFirstChar(Char::uppercase) }
+                }
             }
             ZillitText(
                 text = snippet,
@@ -1067,26 +1086,16 @@ private fun BubbleBody(
         message.replyTo?.let { quoted ->
             QuotedLine(quoted, resolveName) { onJumpTo(quoted.messageId) }
         }
-        message.attachment?.let { file ->
-            // Anything with a picture shows the picture; a voice note
-            // shows its player; the chip is the fallback for the rest —
-            // unless the file is still climbing to storage, which is its
-            // own look: the name over a live bar.
-            when {
-                uploadPercent != null -> UploadingFile(file.name, uploadPercent)
-                file.kind == "audio" -> VoiceBubble(file, media)
-                // A picture opens the in-app viewer; saving stays gated
-                // behind its Download (QA #11).
-                file.kind == "image" -> MediaThumb(file, media.loadThumbnail, media.onView)
-                file.thumbnail.isNotBlank() ->
-                    MediaThumb(
-                        file,
-                        media.loadThumbnail,
-                        media.onOpen,
-                        playBadge = file.kind == "video",
-                    )
-                else -> FileChip(file, media.onOpen)
-            }
+        // A shared place takes the whole bubble: its attachment is the
+        // sender's map screenshot, which belongs inside the card rather than
+        // as a second picture beside it, and its body is the card's label
+        // rather than a line of words below — the phones hide that body
+        // outright (HoldersViewhandler.kt:359,371).
+        val place = message.location
+        if (place != null) {
+            LocationCard(place, message.body, message.attachment, media)
+        } else {
+            message.attachment?.let { file -> AttachmentBody(file, media, uploadPercent) }
         }
         if (senderName != null) {
             ZillitText(
@@ -1097,11 +1106,41 @@ private fun BubbleBody(
                 color = com.zillit.desktop.core.designsystem.component.avatarHue(senderName),
             )
         }
-        if (message.body.isNotBlank()) {
+        if (place == null && message.body.isNotBlank()) {
             MentionedBody(message.body, mentions)
         }
         BubbleFooter(message)
         ReactionChips(message, onReact, resolveName)
+    }
+}
+
+/**
+ * The file a message carries, drawn as what it is.
+ *
+ * Anything with a picture shows the picture; a voice note shows its player;
+ * the chip is the fallback for the rest — unless the file is still climbing to
+ * storage, which is its own look: the name over a live bar.
+ */
+@Composable
+private fun AttachmentBody(
+    file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
+    media: BubbleMedia,
+    uploadPercent: Int?,
+) {
+    when {
+        uploadPercent != null -> UploadingFile(file.name, uploadPercent)
+        file.kind == "audio" -> VoiceBubble(file, media)
+        // A picture opens the in-app viewer; saving stays gated behind its
+        // Download (QA #11).
+        file.kind == "image" -> MediaThumb(file, media.loadThumbnail, media.onView)
+        file.thumbnail.isNotBlank() ->
+            MediaThumb(
+                file,
+                media.loadThumbnail,
+                media.onOpen,
+                playBadge = file.kind == "video",
+            )
+        else -> FileChip(file, media.onOpen)
     }
 }
 
@@ -1191,6 +1230,14 @@ private fun androidx.compose.foundation.layout.ColumnScope.ReactionChips(
  * words, Copy image and Download for a file, Delete for our own delivered
  * lines — the phones' long-press sheet reduced to what this client can do
  * (no forward, edit or translate here yet).
+ *
+ * A shared place loses the two file actions; see the note at that branch.
+ * Copy stays, because it is gated on the body being non-empty and Android
+ * gates its own the same way regardless of kind
+ * (`ChatAndGroupPage.kt:2426` `showCopy = !chat.message.isNullOrEmpty()`) —
+ * for a location that body is the address, which is a thing worth copying.
+ * The web's Copy is text-only (`SenderMessage.jsx:201-215`); this follows the
+ * wire authority rather than the browser there.
  */
 @Composable
 @Suppress("LongParameterList", "LongMethod") // The sheet is a flat list of its actions.
@@ -1251,7 +1298,16 @@ private fun BubbleMenu(
                 com.zillit.desktop.core.designsystem.component.copyTextToClipboard(message.body)
             }
         }
-        message.attachment?.let { file ->
+        // A shared place gets NEITHER file action, even though a phone-sent
+        // one carries a map screenshot. Both web menus strip Save/Download
+        // for `message_type === 'location'` — `MyMessage.jsx:503-508` and
+        // `SenderMessage.jsx:292-295` drop key '10', and `DropDown.jsx:271`
+        // gates SAVE_TO_DEVICE on `!isLocationMessage` — as does Android
+        // (`ChatAndGroupPage.kt:2418` showSave, `:2432` showPrint, `:2438`
+        // imageReply). Reply, Forward and Delete stay everywhere; Edit is
+        // stripped too (`DropDown.jsx:233`, `ChatAndGroupPage.kt:2445`), and
+        // this client has no Edit or Forward to strip.
+        message.attachment?.takeIf { message.location == null }?.let { file ->
             // A received picture back onto the clipboard — the seam's write
             // half (AWT Transferable under the hood on the JVM).
             val clipboard = seams.clipboard
@@ -1340,7 +1396,7 @@ private fun ReactAffordance(
     }
 }
 
-/** The plus, the microphone and the emoji palette — the board's own three. */
+/** The plus, the microphone, the pin and the emoji palette. */
 @Composable
 private fun ComposerActions(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
     var emojiOpen by androidx.compose.runtime.remember {
@@ -1356,6 +1412,7 @@ private fun ComposerActions(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
         contentDescription = "Record a voice message",
         onClick = { onEvent(ChatEvent.StartRecording) },
     )
+    ShareLocationAction(onEvent)
     Box {
         ZillitIconButton(
             icon = ZillitIcons.Smiley,
@@ -1369,6 +1426,124 @@ private fun ComposerActions(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
             com.zillit.desktop.core.designsystem.component.ZillitEmojiPicker(
                 onPick = { emoji -> onEvent(ChatEvent.DraftChanged(state.draft + emoji)) },
                 modifier = Modifier.padding(ZillitTheme.spacing.sm),
+            )
+        }
+    }
+}
+
+/**
+ * The pin beside the paperclip: opens the shared map picker and, when the user
+ * settles on a place, sends it as a `message_type: "location"` message — the
+ * phones' own attach-sheet item (`PICKER_ITEM_LOCATION`,
+ * `utils/MediaExtension.kt:40,58`; the CNC composer offers it at
+ * `chatAndGroupChat/ChatAndGroupPage.kt:2369`).
+ *
+ * Absent when no picker is installed, exactly as `ZillitLocationField` hides
+ * its own map button (`core:locationpicker/ZillitLocationField.kt:48`): a
+ * button whose dialog can never open is worse than no button.
+ *
+ * The `pick` is launched from the composition's scope rather than the view
+ * model because the picker is a composition-local service installed at the app
+ * root, and the view model has no composition to read it from. Cancelling
+ * answers null and raises no event at all.
+ */
+@Composable
+private fun ShareLocationAction(onEvent: (ChatEvent) -> Unit) {
+    val picker = com.zillit.desktop.core.locationpicker.LocalLocationPicker.current ?: return
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    ZillitIconButton(
+        icon = ZillitIcons.Pin,
+        contentDescription = "Share location",
+        onClick = {
+            scope.launch {
+                picker.pick(title = "Share a location")?.let { place ->
+                    onEvent(ChatEvent.ShareLocation(place))
+                }
+            }
+        },
+    )
+}
+
+/**
+ * A shared place, as a card: the map raster when the sender uploaded one, the
+ * label, the address, the coordinates, and the way out to a real map.
+ *
+ * ## Why a card and not just the picture
+ *
+ * The phones draw ONLY the picture — a screenshot of their own map, taken at
+ * send time (`mapView/MapsActivity.kt:205-224`) and uploaded as the message's
+ * attachment — and hide the body entirely
+ * (`viewholders/HoldersViewhandler.kt:359,371`); the web does the same and has
+ * its caption commented out (`components/sendMessage/RenderLocation.jsx:98-103`).
+ * This client takes no raster, so a place it sent would be a blank bubble
+ * under that rule. The card says where the pin is in words instead, and still
+ * shows the raster when one arrived from a phone.
+ *
+ * The coordinates are shown for the reason the picker's own summary shows them
+ * (`desktopApp/LocationPickerWiring.kt:157-207`, after the web's
+ * `PlacePicker.jsx:249-289`): two places can share a name, and the pair is
+ * what can be read out to a driver.
+ */
+@Composable
+private fun LocationCard(
+    location: com.zillit.desktop.feature.chat.domain.ChatLocation,
+    label: String,
+    file: com.zillit.desktop.feature.chat.domain.ChatAttachment?,
+    media: BubbleMedia,
+) {
+    val open = LocalChatSeams.current.onOpenUrl
+    val headline = label.ifBlank { location.address }.ifBlank { "Shared location" }
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        // The sender's own map picture, where there is one. Its click opens
+        // the map rather than the lightbox — Android's location branch in
+        // `handleImageClickListener` (HoldersViewhandler.kt:306-318) does the
+        // same, and a screenshot is not something to look at closely.
+        if (file != null && file.media.isNotBlank() && open != null) {
+            MediaThumb(file, media.loadThumbnail, onOpen = { open(location.mapsUrl) })
+        }
+        Row(
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            ZillitIcon(
+                icon = ZillitIcons.Pin,
+                contentDescription = null,
+                tint = ZillitTheme.colors.accentText,
+                size = LOCATION_PIN,
+            )
+            Column {
+                ZillitText(
+                    text = headline,
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = ZillitTheme.colors.textPrimary,
+                    maxLines = 2,
+                )
+                // Only when it adds something: a place picked with no name of
+                // its own has the address as its label already.
+                if (location.address.isNotBlank() && location.address != headline) {
+                    ZillitText(
+                        text = location.address,
+                        style = ZillitTheme.typography.bodySmall,
+                        color = ZillitTheme.colors.textSecondary,
+                        maxLines = 2,
+                    )
+                }
+                ZillitText(
+                    text = "${location.lat}, ${location.lng}",
+                    style = ZillitTheme.typography.labelSmall,
+                    color = ZillitTheme.colors.textMuted,
+                )
+            }
+        }
+        if (open != null) {
+            ZillitText(
+                text = "Open in Maps",
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.accentText,
+                modifier = Modifier
+                    .clip(ZillitTheme.shapes.small)
+                    .clickable { open(location.mapsUrl) }
+                    .padding(horizontal = ZillitTheme.spacing.xs, vertical = ZillitTheme.spacing.xxs),
             )
         }
     }
@@ -1601,6 +1776,7 @@ private val REACT_BUTTON = 24.dp
 private val REACT_MENU_WIDTH = 232.dp
 private val UPLOAD_BAR_WIDTH = 220.dp
 private val QUOTE_BAR = 3.dp
+private val LOCATION_PIN = 16.dp
 private const val PERCENT_FULL = 100f
 
 // The shortlist every client leads with; the thread is not an emoji keyboard.

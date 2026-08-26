@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.accounthub.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -767,7 +768,7 @@ class AccountHubViewModel(
     }
 
     private fun report(error: ZillitError) {
-        sendEffect(AccountHubEffect.Failed(error.userMessage))
+        sendEffect(AccountHubEffect.Failed(error.localised()))
     }
 
     private fun newLocalId(prefix: String): String = "$prefix-${localIdCounter++}"

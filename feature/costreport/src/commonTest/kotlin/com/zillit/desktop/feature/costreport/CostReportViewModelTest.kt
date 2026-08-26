@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.costreport
 
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.costreport.domain.BudgetVersion
 import com.zillit.desktop.feature.costreport.domain.CoaRow
@@ -252,7 +253,9 @@ class CostReportViewModelTest {
         model.start()
         advanceUntilIdle()
         val current = model.state.value.current
-        assertEquals("cr_live_failed", current.error)
+        // The state carries display text now — the key run through the
+        // dictionary (a miss humanises), never the raw wire key.
+        assertEquals(ZillitError.Http(200, "cr_live_failed").localised(), current.error)
         assertFalse(current.loaded)
         assertNull(current.phase)
         assertEquals("v1", current.budgetKey)

@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.crewlist.domain
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * The Crew List: the production's roster grouped Unit → Department → People,
@@ -75,6 +77,15 @@ data class CrewListViewer(
 }
 
 interface CrewListRepository {
+
+    /**
+     * A pulse per socket frame saying a department was reordered elsewhere
+     * — the wire's `department:reordered`, whose web handler refetches the
+     * roster (`NewCrewList.jsx:244`). The ViewModel answers with a roster
+     * reload. Empty by default: tests, and hosts without a socket.
+     */
+    val refreshes: Flow<Unit> get() = emptyFlow()
+
     /** `GET crewlist/list` on the units host — the grouped roster. */
     suspend fun roster(): ZillitResult<List<CrewUnit>>
 

@@ -8,6 +8,7 @@ import com.zillit.desktop.core.sync.SyncHandler
 import com.zillit.desktop.core.sync.SyncOperation
 import com.zillit.desktop.core.sync.SyncOutcome
 import com.zillit.desktop.core.sync.SyncState
+import com.zillit.desktop.feature.chat.domain.ChatLocation
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import kotlinx.serialization.Serializable
@@ -17,9 +18,13 @@ import kotlinx.serialization.json.Json
 const val CHAT_SEND_KIND = "chat.send"
 
 /**
- * What the outbox carries for a queued message: everything `send` needs. Text
- * only — a file needs uploading first, which is its own port; a captioned
- * attachment written offline still fails the way it did.
+ * What the outbox carries for a queued message: everything `send` needs.
+ *
+ * No FILE — a file needs uploading first, which is its own port; a captioned
+ * attachment written offline still fails the way it did. A shared PLACE does
+ * queue: it is three JSON fields with nothing to upload, so a location written
+ * on a plane goes by itself when the network is back, like any line of words.
+ * Absent from payloads a previous build wrote, hence the default.
  */
 @Serializable
 data class QueuedChatSend(
@@ -28,6 +33,7 @@ data class QueuedChatSend(
     val uniqueId: String,
     val timestampMillis: Long,
     val isGroup: Boolean,
+    val location: ChatLocation? = null,
 )
 
 /**
@@ -60,6 +66,7 @@ class ChatSendHandler(
                 nowMillis = queued.timestampMillis,
                 isGroup = queued.isGroup,
                 attachment = null,
+                location = queued.location,
             )
         ) {
             is ZillitResult.Success -> SyncOutcome.Done(result = queued.uniqueId)
@@ -104,5 +111,8 @@ fun SyncOperation.toQueuedBubble(peerId: String, json: Json = Json { ignoreUnkno
         isMine = true,
         sendState = if (state == SyncState.Failed) ChatSendState.Failed else ChatSendState.Queued,
         isGroup = queued.isGroup,
+        // Without this a queued location came back from the outbox as a bare
+        // line of words: the map card is drawn off this field alone.
+        location = queued.location,
     )
 }

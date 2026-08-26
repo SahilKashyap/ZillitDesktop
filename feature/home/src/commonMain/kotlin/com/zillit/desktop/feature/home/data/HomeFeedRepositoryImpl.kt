@@ -179,7 +179,13 @@ class HomeFeedRepositoryImpl(
     ): ZillitResult<Notice> {
         // Captions are encrypted exactly like message bodies — the web's
         // `generate-message-payload` runs both through `encryptMessage`.
-        val encrypted = when (val result = decrypt.encryptToHex(text)) {
+        // A bare location share posts its address as the body, exactly as both
+        // phones do (`HomeVm.kt:919-928`, `CateringVm.kt:697-706`): it is the
+        // only field iOS and the web read a label out of, so a post without it
+        // reads as an unnamed pin on those clients. A typed caption wins —
+        // the crew member said something more specific than the address.
+        val label = text.ifBlank { location?.address.orEmpty() }
+        val encrypted = when (val result = decrypt.encryptToHex(label)) {
             is ZillitResult.Success -> result.data
             is ZillitResult.Failure -> return result
         }
@@ -205,7 +211,7 @@ class HomeFeedRepositoryImpl(
                     uniqueId = localId,
                     messageGroup = nowMillis(),
                     attachment = attachment?.toDto(),
-                    location = location?.let { LocationDto(it.lat, it.long) },
+                    location = location?.toDto(),
                     replacePreviousChats = replacePrevious,
                 ),
             ),
@@ -251,7 +257,7 @@ class HomeFeedRepositoryImpl(
                     uniqueId = localId,
                     messageGroup = nowMillis(),
                     attachment = notice.attachment?.toForwardDto(notice.kind),
-                    location = notice.location?.let { LocationDto(it.lat, it.long) },
+                    location = notice.location?.toDto(),
                 ),
             ),
         ).map { }
@@ -495,7 +501,7 @@ internal data class NewNoticeDto(
     @SerialName("message_group") val messageGroup: Long,
     /** Omitted for text posts — absent and null differ on this endpoint. */
     @SerialName("attachment") val attachment: AttachmentDto? = null,
-    /** `{lat, long}` — the wire's spelling, as the web sends it. */
+    /** `{lat, long, address}` — the wire's spelling, as the phones send it. */
     @SerialName("location") val location: LocationDto? = null,
     /**
      * The call sheet's "New" (true) or "Continuation" (false); omitted
@@ -505,11 +511,27 @@ internal data class NewNoticeDto(
     @SerialName("replacePreviousChats") val replacePreviousChats: Boolean? = null,
 )
 
+/**
+ * `LocationInfo` on Android (`bottomNav/home/models/HomeChatRequest.kt:228-239`).
+ *
+ * Three of its six fields are Android's own map-snapshot bookkeeping —
+ * `imageLink`, `height`, `width` describe the PNG it screenshots and uploads,
+ * and the desktop has no such file — so only the point and its label are sent.
+ * [address] is omitted when blank (`explicitNulls = false`), which is what iOS
+ * and the web put on the wire (`ChatAPIModel.swift:184-197`,
+ * `UnitChatMessageBox.jsx:1013-1016`); a null there would be a field claiming
+ * the place has no name rather than one that was never asked.
+ */
 @Serializable
 internal data class LocationDto(
     @SerialName("lat") val lat: Double,
     @SerialName("long") val long: Double,
+    @SerialName("address") val address: String? = null,
 )
+
+/** The wire object for a point, with a blank label left off entirely. */
+internal fun GeoPoint.toDto(): LocationDto =
+    LocationDto(lat = lat, long = long, address = address.takeIf { it.isNotBlank() })
 
 /** The notify-unread body — the web's `notifyUsers` payload, one key. */
 @Serializable
@@ -660,10 +682,11 @@ internal fun readNotice(row: JsonElement, decryptBody: (String) -> String): Noti
     if (row.bool("deleted")) return null
 
     val id = row.string("_id")?.takeIf { it.isNotBlank() } ?: return null
+    val body = decryptBody(row.string("message").orEmpty())
 
     return Notice(
         id = id,
-        body = decryptBody(row.string("message").orEmpty()),
+        body = body,
         // Blank, not "Unknown": system rows (project invites) name nobody, and
         // the screen hides a blank author line rather than labelling it.
         authorName = row.string("name")?.takeIf { it.isNotBlank() }.orEmpty(),
@@ -678,20 +701,30 @@ internal fun readNotice(row: JsonElement, decryptBody: (String) -> String): Noti
         isPinned = row.epochMillis("pinned") > 0,
         kind = NoticeKind.of(row.string("message_type")),
         attachment = row.attachmentObject()?.toAttachment(),
-        location = (row["location"] as? JsonObject)?.toGeoPoint(),
+        // The body doubles as the address on every post the web or iOS wrote —
+        // neither puts a string inside `location` — so it is the fallback
+        // label. See [GeoPoint].
+        location = (row["location"] as? JsonObject)?.toGeoPoint()?.labelledWith(body),
         comments = row.readComments(decryptBody),
     )
 }
 
 /**
- * `{lat, long}` — read leniently because coordinates arrive as numbers from
- * one client and quoted strings from another, and a post pinning the crew
- * park must not lose its pin to a type.
+ * `{lat, long, address}` — read leniently because coordinates arrive as
+ * numbers from one client and quoted strings from another, and a post pinning
+ * the crew park must not lose its pin to a type.
+ *
+ * `address` is Android's field (`bottomNav/home/models/HomeChatRequest.kt:233-234`)
+ * and the desktop's own echo carries it back; the web and iOS send neither it
+ * nor anything else beyond the point, so blank here is ordinary rather than a
+ * fault — [GeoPoint.labelledWith] then reaches for the body. `lng` is read as
+ * an alias for `long` for the same reason the numbers are read loosely: it
+ * costs one line and saves a pin.
  */
 internal fun JsonObject.toGeoPoint(): GeoPoint? {
     val lat = number("lat") ?: return null
     val long = number("long") ?: number("lng") ?: return null
-    return GeoPoint(lat, long)
+    return GeoPoint(lat, long, address = string("address").orEmpty().trim())
 }
 
 private fun JsonObject.number(key: String): Double? =
@@ -712,15 +745,17 @@ internal fun JsonObject.readComments(decryptBody: (String) -> String): List<Noti
 
 private fun JsonObject.readComment(decryptBody: (String) -> String): NoticeComment? {
     val id = string("_id")?.takeIf { it.isNotBlank() } ?: return null
+    val body = decryptBody(string("message").orEmpty())
 
     return NoticeComment(
         id = id,
-        body = decryptBody(string("message").orEmpty()),
+        body = body,
         authorId = string("sender"),
         createdAtMillis = epochMillis("created"),
         kind = NoticeKind.of(string("message_type")),
         attachment = attachmentObject()?.toAttachment(),
-        location = (this["location"] as? JsonObject)?.toGeoPoint(),
+        // Same body-as-address fallback as the post's — see readNotice.
+        location = (this["location"] as? JsonObject)?.toGeoPoint()?.labelledWith(body),
         // A timestamp, like the post's own — see readNotice.
         isEdited = bool("edited") || epochMillis("edited") > 0,
     )

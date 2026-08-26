@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.settings.account
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.settings.approvals.ApprovalPresets
@@ -381,7 +382,7 @@ class AccountViewModel(
                     copy(
                         profile = profile.copy(
                             isSaving = false,
-                            error = "Could not save your profile. ${saved.error.userMessage}",
+                            error = "Could not save your profile. ${saved.error.localised()}",
                         ),
                     )
                 }
@@ -405,7 +406,7 @@ class AccountViewModel(
                     copy(
                         recovery = recovery.copy(
                             isSaving = false,
-                            error = "Could not save that address. ${saved.error.userMessage}",
+                            error = "Could not save that address. ${saved.error.localised()}",
                         ),
                     )
                 }
@@ -424,7 +425,7 @@ class AccountViewModel(
                 }
 
                 is ZillitResult.Failure -> setState {
-                    copy(devices = devices.copy(isLoading = false, error = loaded.error.userMessage))
+                    copy(devices = devices.copy(isLoading = false, error = loaded.error.localised()))
                 }
             }
         }
@@ -464,7 +465,7 @@ class AccountViewModel(
                     copy(
                         devices = devices.copy(
                             unlinkingId = null,
-                            error = "Could not sign that device out. ${done.error.userMessage}",
+                            error = "Could not sign that device out. ${done.error.localised()}",
                         ),
                     )
                 }
@@ -488,7 +489,7 @@ class AccountViewModel(
                     copy(
                         leave = leave.copy(
                             isLeaving = false,
-                            error = "Could not leave this production. ${left.error.userMessage}",
+                            error = "Could not leave this production. ${left.error.localised()}",
                         ),
                     )
                 }

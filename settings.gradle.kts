@@ -63,6 +63,13 @@ include(":core:workspace")
 include(":core:sync")
 
 // ---------------------------------------------------------------------------
+// core:appupdate — "a newer build exists", read from Firebase Remote Config.
+// Deliberately NOT part of core:remoteconfig: that module is the *Zillit*
+// `api/v2/configuration` endpoint. Two remote configs, two owners, two hosts.
+// ---------------------------------------------------------------------------
+include(":core:appupdate")
+
+// ---------------------------------------------------------------------------
 // feature — one module per product area. `shell` is the app frame that hosts
 // the workspace; the rest arrive per roadmap phase.
 // ---------------------------------------------------------------------------
@@ -111,3 +118,10 @@ include(":feature:shell")
 include(":core:media")
 include(":feature:notifications")
 include(":feature:sos")
+
+// ---------------------------------------------------------------------------
+// core:locationpicker — the map-backed place field. Any form that stores a
+// place (a ride's pickup, a calendar event's venue) uses it instead of asking
+// for latitude and longitude in two number boxes.
+// ---------------------------------------------------------------------------
+include(":core:locationpicker")

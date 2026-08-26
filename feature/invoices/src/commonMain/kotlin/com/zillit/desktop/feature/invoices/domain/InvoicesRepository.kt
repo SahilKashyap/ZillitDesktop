@@ -1,6 +1,18 @@
 package com.zillit.desktop.feature.invoices.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+
+/**
+ * Which of the tool's reads a socket announcement invalidates.
+ *
+ * [Rows] is every invoice lifecycle event — the open list and any open detail
+ * refetch. [Reference] is the slower-moving margin: vendors, approval tiers
+ * and the settings document, reloaded together because that is one
+ * `loadReference` on this side and separate refetch keys on the web.
+ */
+enum class InvoiceRefresh { Rows, Reference }
 
 /** The `GET /` filters this port uses. Empty/blank values are not sent. */
 data class InvoiceQuery(
@@ -48,6 +60,14 @@ data class EnteredInvoice(
 
 /** Everything the screens ask the invoices service (and its two neighbours) for. */
 interface InvoicesRepository {
+    /**
+     * Socket announcements that what is on screen is stale — another client's
+     * upload, decision or payment, answered with a refetch rather than an
+     * in-place patch (the web's `ah:invoice:*` refetch pattern). Defaulted
+     * empty for tests and hosts without a socket.
+     */
+    val refreshes: Flow<InvoiceRefresh> get() = emptyFlow()
+
     /** `GET /` with filters. */
     suspend fun list(query: InvoiceQuery): ZillitResult<List<Invoice>>
 
