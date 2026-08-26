@@ -6,6 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -81,22 +82,43 @@ fun CallTileView(
             )
         }
 
-        if (!ringing && media?.quality?.isTrouble == true) {
-            NetworkPip(
-                quality = media.quality,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(ZillitTheme.spacing.sm),
-            )
+        if (!ringing) {
+            TileCornerChips(tile)
         }
+    }
+}
 
-        if (!ringing && media?.sharing == true) {
-            SharingChip(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(ZillitTheme.spacing.sm),
-            )
-        }
+/**
+ * The tile's corner chips — link trouble, sharing, and a raised hand.
+ *
+ * The hand sits under the sharing chip's corner, but they rarely coexist: a
+ * hand up marks the face on the grid the way the banner names it in prose.
+ */
+@Composable
+private fun BoxScope.TileCornerChips(tile: CallTile) {
+    val media = tile.media
+    if (media?.quality?.isTrouble == true) {
+        NetworkPip(
+            quality = media.quality,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(ZillitTheme.spacing.sm),
+        )
+    }
+    if (media?.sharing == true) {
+        SharingChip(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(ZillitTheme.spacing.sm),
+        )
+    }
+    if (tile.hand) {
+        HandChip(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(ZillitTheme.spacing.sm)
+                .padding(top = if (media?.sharing == true) HAND_BELOW_SHARING else 0.dp),
+        )
     }
 }
 
@@ -171,6 +193,24 @@ private fun NameChip(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun HandChip(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(BADGE_SIZE + 4.dp)
+            .clip(CircleShape)
+            .background(ZillitTheme.colors.warning),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitIcon(
+            icon = ZillitIcons.Hand,
+            contentDescription = "Hand raised",
+            tint = Color.White,
+            size = BADGE_ICON + 2.dp,
+        )
+    }
+}
+
+@Composable
 private fun SharingChip(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
@@ -205,3 +245,4 @@ private const val RING_OUT_MS = 480
 private const val HALO_GROWTH = 0.12f
 private const val HALO_ALPHA = 0.32f
 private const val BADGE_INSET = 0.02f
+private val HAND_BELOW_SHARING = 28.dp

@@ -136,6 +136,7 @@ import com.zillit.desktop.feature.home.ui.decodeImageBitmap
 import com.zillit.desktop.feature.chat.ui.ChatEvent
 import com.zillit.desktop.feature.chat.ui.ChatToolProvider
 import com.zillit.desktop.feature.calls.domain.CallMode
+import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallType
 import com.zillit.desktop.feature.calls.ui.CallEvent
 import com.zillit.desktop.feature.calls.ui.CallOverlay
@@ -1564,7 +1565,7 @@ private fun chatProvider(
     loadAvatar = { userId -> fetchAvatar(ready, userId)?.let(::decodeImageBitmap) },
     viewModel = viewModel,
     onCall = calls?.let { vm ->
-        { peer, isGroup, video ->
+        { peer, isGroup, video, mediasoup ->
             vm.onEvent(
                 CallEvent.Place(
                     // A group is rung by its room; a person by their device.
@@ -1573,6 +1574,12 @@ private fun chatProvider(
                     mode = if (isGroup) CallMode.Group else CallMode.Private,
                     type = if (video) CallType.Video else CallType.Audio,
                     displayName = peer.fullName,
+                    provider = if (mediasoup) CallProvider.Mediasoup else CallProvider.Agora,
+                    // Line 1 rings a person rather than one of their devices
+                    // — and a group has no person to name. For a group `peer`
+                    // IS the room, so passing its id here would put a room id
+                    // in a list of user ids and ring nobody, silently.
+                    receiverUserId = if (isGroup) "" else peer.userId,
                 ),
             )
         }

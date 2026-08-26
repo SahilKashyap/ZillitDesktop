@@ -137,6 +137,15 @@
         mute.innerHTML = MUTE_SVG;
         tile.appendChild(mute);
 
+        // A raised hand, in the tile's corner. The banner names people; this
+        // marks the face, which is what a busy grid is scanned by.
+        if (model.hand) {
+            const hand = document.createElement('div');
+            hand.className = 'hand';
+            hand.textContent = '✋';
+            tile.appendChild(hand);
+        }
+
         cells.set(model.uid, { root: tile, mount: mount, model: model });
         return tile;
     }
@@ -188,6 +197,7 @@
             playingIn.set(uid, cell.mount);
         });
         mountLocal();
+        line1Mount();
     }
 
     /**
@@ -276,6 +286,10 @@
                         applySpeaker(user.audioTrack);
                         user.audioTrack.play();
                         trace('playing remote audio uid=' + user.uid);
+                        // A voice arriving mid-recording joins the mix.
+                        if (user.audioTrack.getMediaStreamTrack) {
+                            recorderAdd(user.audioTrack.getMediaStreamTrack());
+                        }
                     } else {
                         trace('NO audioTrack after subscribe uid=' + user.uid);
                     }
@@ -384,7 +398,238 @@
         }
     }
 
+    /*
+     * The call recorder.
+     *
+     * Audio only, mixed here because the page is the one place every voice on
+     * either line actually flows through: the local microphone and each remote
+     * track feed one AudioContext destination, and a MediaRecorder writes the
+     * mix. Tracks that arrive mid-recording are added through recorderAdd from
+     * the same handlers that start them playing. The finished file crosses the
+     * bridge in base64 slices; Kotlin reassembles and saves it.
+     */
+    let recorder = null;
+    let recorderCtx = null;
+    let recorderDest = null;
+    let recorderBlobs = [];
+
+    function recorderAdd(streamOrTrack) {
+        if (!recorderCtx || !recorderDest || !streamOrTrack) { return; }
+        try {
+            const stream = (typeof MediaStream !== 'undefined' && streamOrTrack instanceof MediaStream)
+                ? streamOrTrack
+                : new MediaStream([streamOrTrack]);
+            if (!stream.getAudioTracks().length) { return; }
+            recorderCtx.createMediaStreamSource(stream).connect(recorderDest);
+        } catch (e) {
+            warn('recorderAdd', e);
+        }
+    }
+
+    function deliverRecording() {
+        const blob = new Blob(recorderBlobs, { type: 'audio/webm' });
+        recorderBlobs = [];
+        recorder = null;
+        if (recorderCtx) { try { recorderCtx.close(); } catch (e) { /* already closed */ } }
+        recorderCtx = null;
+        recorderDest = null;
+        if (!blob.size) { return; }
+        const reader = new FileReader();
+        reader.onload = function () {
+            const base64 = String(reader.result).split(',')[1] || '';
+            const SLICE = 262144;
+            for (let i = 0; i < base64.length; i += SLICE) {
+                send({ type: 'recording-chunk', data: base64.slice(i, i + SLICE) });
+            }
+            send({ type: 'recording-done' });
+        };
+        reader.readAsDataURL(blob);
+    }
+
+    /** Enough lanes that simultaneous reactions do not stack on one line. */
+    const REACTION_LANES = 7;
+    const REACTION_LANE_WIDTH = 26;
+    const MAX_REACTIONS = 24;
+
+    /** A stable horizontal offset for an id — same reaction, same path. */
+    function hashLane(key) {
+        let h = 0;
+        for (let i = 0; i < key.length; i++) { h = (h * 31 + key.charCodeAt(i)) | 0; }
+        const lane = Math.abs(h) % REACTION_LANES - Math.floor(REACTION_LANES / 2);
+        return lane * REACTION_LANE_WIDTH;
+    }
+
+    /*
+     * Line 1's media sink.
+     *
+     * Agora hands this page track objects with a `play(element)` of their own;
+     * mediasoup hands it a bare MediaStream, which has to be bound to a real
+     * media element or Chromium renders and plays nothing at all. There was no
+     * such element path here, so every consumed track was being discarded at
+     * this boundary and Line 1 calls were silent while reporting themselves
+     * healthy.
+     *
+     * Audio gets a detached <audio autoplay>: it needs no layout, only a sink.
+     * Video is bound into the tile the grid already draws for that peer — and
+     * re-bound after every render(), because render() rebuilds each cell and a
+     * video element left in a discarded node is a picture nobody sees.
+     */
+    const line1Media = new Map();   // consumerId -> { peerId, kind, stream, element }
+
+    /** The local camera on Line 1, previewed in the self tile. */
+    let line1Local = null;          // { stream, element } or null
+
+    /**
+     * The tile for one Line 1 peer id.
+     *
+     * Peer ids are `userId:deviceId` (with a rejoin suffix after a redial);
+     * the stage model's `peerId` carries the USER id — the identity half is
+     * what survives rejoins, so it is the only stable key.
+     */
+    function line1Tile(peerId) {
+        const identity = String(peerId || '').split(':')[0];
+        for (const cell of cells.values()) {
+            if (!cell.model) { continue; }
+            if (cell.model.peerId === identity || cell.model.peerId === peerId ||
+                String(cell.model.uid) === peerId) {
+                return cell;
+            }
+        }
+        return null;
+    }
+
+    function line1VideoElement(stream) {
+        const video = document.createElement('video');
+        video.autoplay = true;
+        video.playsInline = true;
+        video.muted = true;          // the audio arrives on its own consumer
+        video.style.width = '100%';
+        video.style.height = '100%';
+        video.style.objectFit = 'cover';
+        video.srcObject = stream;
+        return video;
+    }
+
+    /** Puts every Line 1 video into its (possibly rebuilt) cell. */
+    function line1Mount() {
+        line1Media.forEach((entry) => {
+            if (entry.kind !== 'video') { return; }
+            const cell = line1Tile(entry.peerId);
+            if (!cell) { return; }
+            if (entry.element && entry.element.parentNode === cell.mount) { return; }
+            if (!entry.element) { entry.element = line1VideoElement(entry.stream); }
+            cell.mount.innerHTML = '';
+            cell.mount.appendChild(entry.element);
+        });
+        if (line1Local) {
+            const cell = selfCell();
+            if (cell && (!line1Local.element || line1Local.element.parentNode !== cell.mount)) {
+                if (!line1Local.element) { line1Local.element = line1VideoElement(line1Local.stream); }
+                cell.mount.innerHTML = '';
+                cell.mount.appendChild(line1Local.element);
+            }
+        }
+    }
+
     window.zillitCall = {
+
+        /** Binds one consumed remote track so it is actually heard or seen. */
+        attachRemote(consumerId, peerId, kind, stream) {
+            try {
+                this.detachRemote(consumerId);
+                if (kind === 'audio') {
+                    const sink = document.createElement('audio');
+                    sink.autoplay = true;
+                    sink.srcObject = stream;
+                    // Detached from the document on purpose: an audio element
+                    // needs no layout, and appending it to the grid would take
+                    // space from the picture.
+                    line1Media.set(consumerId, { peerId: peerId, kind: kind, stream: stream, element: sink });
+                    const played = sink.play();
+                    if (played && played.catch) { played.catch(function () { /* autoplay policy */ }); }
+                    recorderAdd(stream);
+                    return;
+                }
+                line1Media.set(consumerId, { peerId: peerId, kind: kind, stream: stream, element: null });
+                line1Mount();
+            } catch (e) {
+                warn('attachRemote', e);
+            }
+        },
+
+        /** Releases one consumer's element so a closed track stops holding it. */
+        detachRemote(consumerId) {
+            const entry = line1Media.get(consumerId);
+            if (!entry) { return; }
+            line1Media.delete(consumerId);
+            try {
+                if (entry.element) {
+                    entry.element.srcObject = null;
+                    if (entry.element.parentNode) { entry.element.parentNode.removeChild(entry.element); }
+                }
+            } catch (e) {
+                warn('detachRemote', e);
+            }
+        },
+
+        /** Starts recording the call's mixed audio. No-op while one runs. */
+        startRecording() {
+            if (recorder) { return; }
+            try {
+                recorderCtx = new AudioContext();
+                recorderDest = recorderCtx.createMediaStreamDestination();
+                // Our own voice, whichever line carries it.
+                if (micTrack && micTrack.getMediaStreamTrack) {
+                    recorderAdd(micTrack.getMediaStreamTrack());
+                }
+                if (window.zillitMs && window.zillitMs.getLocalAudioTrack) {
+                    recorderAdd(window.zillitMs.getLocalAudioTrack());
+                }
+                // Everyone already talking; later arrivals join via recorderAdd.
+                remoteAudio.forEach(track => {
+                    if (track.getMediaStreamTrack) { recorderAdd(track.getMediaStreamTrack()); }
+                });
+                line1Media.forEach(entry => {
+                    if (entry.kind === 'audio') { recorderAdd(entry.stream); }
+                });
+                recorderBlobs = [];
+                recorder = new MediaRecorder(recorderDest.stream, { mimeType: 'audio/webm;codecs=opus' });
+                recorder.ondataavailable = e => {
+                    if (e.data && e.data.size) { recorderBlobs.push(e.data); }
+                };
+                recorder.onstop = deliverRecording;
+                recorder.start(1000);
+            } catch (e) {
+                recorder = null;
+                if (recorderCtx) { try { recorderCtx.close(); } catch (e2) { /* already closed */ } }
+                recorderCtx = null;
+                recorderDest = null;
+                warn('startRecording', e);
+            }
+        },
+
+        /** Stops the recorder; the file is delivered from its onstop. */
+        stopRecording() {
+            if (!recorder) { return; }
+            try { recorder.stop(); } catch (e) { warn('stopRecording', e); }
+        },
+
+        /** The local Line 1 camera, previewed in the self tile. */
+        attachLocalPreview(stream) {
+            line1Local = { stream: stream, element: null };
+            line1Mount();
+        },
+
+        clearLocalPreview() {
+            const held = line1Local;
+            line1Local = null;
+            if (held && held.element && held.element.parentNode) {
+                held.element.srcObject = null;
+                held.element.parentNode.removeChild(held.element);
+            }
+            render();
+        },
+
         async join(appId, channel, token, uid, withVideo) {
             if (client) { await this.leave(); }
             const gen = ++joinGeneration;
@@ -615,6 +860,56 @@
                 });
             } catch (e) {
                 warn('setTheme', e);
+            }
+        },
+
+        /**
+         * Floats one emoji up over the picture.
+         *
+         * Drawn here and not by the app, because this page owns every pixel
+         * inside its rectangle: the surface is a heavyweight native component
+         * and Compose layers over it are never painted. The app still draws
+         * reactions itself on calls with no video, where there is no surface
+         * to lose them behind.
+         *
+         * The element removes itself when its animation ends, so nothing
+         * accumulates over a long call; the cap is a floor under that in case
+         * animationend never fires (a backgrounded window can skip it).
+         */
+        showReaction(json) {
+            try {
+                const data = JSON.parse(json) || {};
+                if (!data.emoji) { return; }
+                const layer = document.getElementById('reactions');
+                if (!layer) { return; }
+
+                while (layer.childElementCount >= MAX_REACTIONS) {
+                    layer.removeChild(layer.firstElementChild);
+                }
+
+                const node = document.createElement('div');
+                node.className = 'reaction';
+                // Spread across the middle of the picture, derived from the id
+                // so the same reaction always takes the same path.
+                const lane = hashLane(String(data.id || data.emoji));
+                node.style.left = `calc(50% + ${lane}px)`;
+
+                const face = document.createElement('div');
+                face.className = 'face';
+                face.textContent = data.emoji;
+                node.appendChild(face);
+
+                if (data.name) {
+                    const who = document.createElement('div');
+                    who.className = 'who';
+                    who.textContent = data.name;
+                    node.appendChild(who);
+                }
+
+                node.addEventListener('animationend', () => node.remove());
+                layer.appendChild(node);
+            } catch (e) {
+                warn('showReaction', e);
             }
         },
 

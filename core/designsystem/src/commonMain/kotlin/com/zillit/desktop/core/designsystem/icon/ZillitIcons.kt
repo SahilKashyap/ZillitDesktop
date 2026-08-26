@@ -117,6 +117,22 @@ object ZillitIcons {
         moveTo(5f, 16f); lineTo(5f, 5f); lineTo(16f, 5f)
     }
 
+    /** A recording dot inside its ring — the universal REC mark. */
+    val Record: ImageVector = stroked("Record") {
+        moveTo(21f, 12f)
+        curveTo(21f, 16.97f, 16.97f, 21f, 12f, 21f)
+        curveTo(7.03f, 21f, 3f, 16.97f, 3f, 12f)
+        curveTo(3f, 7.03f, 7.03f, 3f, 12f, 3f)
+        curveTo(16.97f, 3f, 21f, 7.03f, 21f, 12f)
+        close()
+        moveTo(15.5f, 12f)
+        curveTo(15.5f, 13.93f, 13.93f, 15.5f, 12f, 15.5f)
+        curveTo(10.07f, 15.5f, 8.5f, 13.93f, 8.5f, 12f)
+        curveTo(8.5f, 10.07f, 10.07f, 8.5f, 12f, 8.5f)
+        curveTo(13.93f, 8.5f, 15.5f, 10.07f, 15.5f, 12f)
+        close()
+    }
+
     /** A raised hand: three fingers, a thumb, and a palm. */
     val Hand: ImageVector = stroked("Hand") {
         moveTo(9f, 11f); lineTo(9f, 4.5f)

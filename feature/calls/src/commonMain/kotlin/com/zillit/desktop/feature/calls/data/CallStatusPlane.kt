@@ -42,6 +42,16 @@ sealed interface PlaneEvent {
         val agoraUid: Int,
         val sharing: Boolean,
         val handRaised: Boolean,
+        /** They are recording the call — the row's `isRecording`. */
+        val recording: Boolean = false,
+        /**
+         * The name their own client stamped on the row (`user_name`).
+         *
+         * Every platform writes it to self-heal call documents, and it is the
+         * one name source that exists for a caller the invite never named —
+         * the exact case that used to render a live participant as "Guest".
+         */
+        val userName: String = "",
     ) : PlaneEvent
 
     /** The call document's global status became `End Call`. */
@@ -68,6 +78,15 @@ interface CallStatusPlane {
 
     /** Declares the whole call over on the call document. */
     suspend fun announceCallEnded(session: CallSession)
+
+    /**
+     * Writes onto ANOTHER participant's row.
+     *
+     * Only the recording announcement needs this: the phones stamp
+     * `call_is_being_recorded`/`recording_by` on every row so each client
+     * finds the fact on its own row without scanning the roster.
+     */
+    suspend fun updateUserFields(session: CallSession, deviceId: String, fields: Map<String, Any>) {}
 
     /**
      * Watches the call while collected: the roster's mirrored statuses and

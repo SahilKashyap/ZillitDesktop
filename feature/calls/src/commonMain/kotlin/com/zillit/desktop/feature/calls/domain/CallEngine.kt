@@ -40,6 +40,22 @@ sealed interface CallEngineEvent {
     /** A remote participant started or stopped sharing their screen. */
     data class PeerScreenShare(val uid: Int, val sharing: Boolean) : CallEngineEvent
 
+    /**
+     * A remote participant raised or lowered their hand, by USER id.
+     *
+     * Line 1 only: the SFU broadcasts `peerRaisedHand`/`peerLoweredHand` with
+     * the composite peer id, and the user half is the identity the roster
+     * knows. Line 2 has no media-side signal for this — the Firestore row's
+     * `raise_hand` is the whole transport there.
+     */
+    data class PeerHand(val userId: String, val raised: Boolean) : CallEngineEvent
+
+    /** A remote participant started or stopped recording the call, by USER id. */
+    data class PeerRecording(val userId: String, val recording: Boolean) : CallEngineEvent
+
+    /** A finished local recording landed on disk. */
+    data class RecordingSaved(val path: String) : CallEngineEvent
+
     /** The transport dropped, recovered, or gave up. */
     data class ConnectionChanged(val state: EngineConnection, val reason: String? = null) :
         CallEngineEvent
@@ -106,6 +122,44 @@ enum class EngineConnection { Connecting, Connected, Reconnecting, Disconnected,
 /** Which piece of hardware [CallEngine.setDevice] is choosing. */
 enum class CallDeviceKind { Microphone, Speaker, Camera }
 
+/**
+ * Everything an engine needs to join, whichever line it is.
+ *
+ * One object rather than a parameter list because the two lines need disjoint
+ * things — Agora joins a channel with a token and a numeric uid, mediasoup
+ * dials a host and announces a peer id — and a signature carrying both as
+ * positional arguments is one where half are always blank and nobody can tell
+ * which half is meaningful.
+ */
+data class CallJoin(
+    val provider: CallProvider,
+
+    /**
+     * Settled before joining: Agora decides whether to open the camera at join
+     * time, and an audio call that joins with video enabled lights the user's
+     * camera indicator for no reason.
+     */
+    val hasVideo: Boolean,
+
+    // ── Line 2 (Agora) ──────────────────────────────────────────────────
+    val channel: String = "",
+    /** Channel credential. Never logged. */
+    val token: String = "",
+    val uid: Int = 0,
+
+    // ── Line 1 (mediasoup) ──────────────────────────────────────────────
+    /** Bare host, already stripped of any scheme or path. */
+    val sfuHost: String = "",
+    /** The room on that SFU, elected from invite code, room id or call uuid. */
+    val roomId: String = "",
+    /** `userId:deviceId`. Both halves do work — see `mediasoupPeerId`. */
+    val peerId: String = "",
+    /** The SFU's own credential. Empty is a legitimate tokenless dial. */
+    val sfuToken: String = "",
+    /** What other peers see against this tile. */
+    val displayName: String = "",
+)
+
 interface CallEngine {
 
     /** Everything the stack reports. Replayed to nobody — subscribe first. */
@@ -124,7 +178,7 @@ interface CallEngine {
      * the camera at join time, and an audio call that joins with video enabled
      * lights the user's camera indicator for no reason.
      */
-    suspend fun join(channel: String, token: String, uid: Int, hasVideo: Boolean)
+    suspend fun join(params: CallJoin)
 
     /** Leaves the channel. Safe to call when not in one. */
     suspend fun leave()
@@ -156,6 +210,24 @@ interface CallEngine {
     suspend fun stopScreenShare() {}
 
     /**
+     * Tells the media side this user's hand moved.
+     *
+     * Line 1 turns it into the protoo `toggleHandRaise` request the phones
+     * send; Line 2 needs nothing here — the coordinator's Firestore mirror is
+     * the transport there, exactly as it is on the phones.
+     */
+    fun setHandRaised(raised: Boolean) {}
+
+    /**
+     * Starts recording the call's audio — every voice, ours included — on this
+     * machine. False when the host cannot record. The finished file arrives
+     * later as [CallEngineEvent.RecordingSaved].
+     */
+    suspend fun startAudioRecording(): Boolean = false
+
+    suspend fun stopAudioRecording() {}
+
+    /**
      * Hands the engine the computed stage model.
      *
      * An engine that renders its own surface — embedded Chromium does — needs
@@ -169,6 +241,15 @@ interface CallEngine {
 
     /** Collapses the engine's surface to one tile, for the minimised pill. */
     fun setCompact(compact: Boolean) {}
+
+    /**
+     * Asks the engine's own surface to float a reaction.
+     *
+     * Only the surface can draw inside its own rectangle — it is a heavyweight
+     * native component and app-drawn layers over it are never painted — so a
+     * video call's reactions go through here instead.
+     */
+    fun showReaction(json: String) {}
 
     /** Releases the stack. The engine is unusable afterwards. */
     suspend fun destroy()
@@ -197,10 +278,10 @@ class NoopCallEngine : CallEngine {
         return true
     }
 
-    override suspend fun join(channel: String, token: String, uid: Int, hasVideo: Boolean) {
-        joined = channel
+    override suspend fun join(params: CallJoin) {
+        joined = params.channel
         _events.emit(CallEngineEvent.ConnectionChanged(EngineConnection.Connected))
-        _events.emit(CallEngineEvent.Joined(channel, uid))
+        _events.emit(CallEngineEvent.Joined(params.channel, params.uid))
     }
 
     override suspend fun leave() {

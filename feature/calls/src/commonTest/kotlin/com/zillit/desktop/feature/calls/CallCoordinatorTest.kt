@@ -15,6 +15,7 @@ import com.zillit.desktop.feature.calls.data.CallStatusPlane
 import com.zillit.desktop.feature.calls.data.InCallData
 import com.zillit.desktop.feature.calls.data.PlaneEvent
 import com.zillit.desktop.feature.calls.domain.CallEngine
+import com.zillit.desktop.feature.calls.domain.CallJoin
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
 import com.zillit.desktop.feature.calls.domain.EngineConnection
 import com.zillit.desktop.feature.calls.domain.CallPhase
@@ -118,8 +119,8 @@ class CallCoordinatorTest {
         override val events: Flow<CallEngineEvent> = _events.asSharedFlow()
         override val isReady: Boolean = true
         override suspend fun initialize(): Boolean = true
-        override suspend fun join(channel: String, token: String, uid: Int, hasVideo: Boolean) {
-            _events.emit(CallEngineEvent.Joined(channel, issued))
+        override suspend fun join(params: CallJoin) {
+            _events.emit(CallEngineEvent.Joined(params.channel, issued))
         }
 
         override suspend fun leave() = Unit
@@ -140,8 +141,8 @@ class CallCoordinatorTest {
             private set
 
         override suspend fun initialize(): Boolean = true
-        override suspend fun join(channel: String, token: String, uid: Int, hasVideo: Boolean) {
-            _events.emit(CallEngineEvent.Joined(channel, 42))
+        override suspend fun join(params: CallJoin) {
+            _events.emit(CallEngineEvent.Joined(params.channel, 42))
         }
 
         suspend fun push(event: CallEngineEvent) = _events.emit(event)
@@ -160,7 +161,7 @@ class CallCoordinatorTest {
         override val events: Flow<CallEngineEvent> = _events.asSharedFlow()
         override val isReady: Boolean = false
         override suspend fun initialize(): Boolean = false
-        override suspend fun join(channel: String, token: String, uid: Int, hasVideo: Boolean) = Unit
+        override suspend fun join(params: CallJoin) = Unit
         override suspend fun leave() = Unit
         override fun setMicrophoneMuted(muted: Boolean) = Unit
         override fun setCameraEnabled(enabled: Boolean) = Unit
@@ -259,8 +260,12 @@ class CallCoordinatorTest {
             // The invite named no uid, so the session carried 0 until the
             // engine reported the one Agora actually issued.
             assertEquals(ISSUED_UID, coordinator.session.value?.localUid)
+            // As a STRING on the wire, deliberately. iOS declares
+            // `agoraUID: String?` and decodes rows with a strict JSONDecoder,
+            // so a numeric uid throws typeMismatch and costs iOS the whole
+            // row — status, raised hand and screen share with it.
             assertEquals(
-                ISSUED_UID,
+                ISSUED_UID.toString(),
                 plane.extras.mapNotNull { it["agora_uid"] }.lastOrNull(),
             )
         }

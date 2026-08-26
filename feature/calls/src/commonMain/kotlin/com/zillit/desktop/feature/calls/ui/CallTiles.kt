@@ -1,7 +1,9 @@
 package com.zillit.desktop.feature.calls.ui
 
+import com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallParticipant
+import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.LinkQuality
@@ -31,6 +33,8 @@ data class CallTile(
     val isSelf: Boolean = false,
     val presence: CallStatus = CallStatus.InCall,
     val media: TileMedia? = null,
+    /** Their hand is up — drawn on the tile as well as said in the banner. */
+    val hand: Boolean = false,
 )
 
 private val ON_STAGE = setOf(CallStatus.Caller, CallStatus.Ringing, CallStatus.InCall)
@@ -48,15 +52,16 @@ fun buildTiles(
     selfName: String,
     micMuted: Boolean,
     cameraOn: Boolean,
+    selfHand: Boolean = false,
 ): List<CallTile> {
     session ?: return emptyList()
     val selfUid = media.selfUid.takeIf { it != 0 } ?: session.localUid
     val roster = session.participants
         .filter { it.userId != session.selfUserId && it.status in ON_STAGE }
-    val bound = bindUids(roster, media, selfUid)
+    val bound = bindUids(session, roster, media, selfUid)
     val claimed = bound.values.toSet() + selfUid
     return buildList {
-        add(selfTile(session, media, selfName, micMuted, cameraOn, selfUid))
+        add(selfTile(session, media, selfName, micMuted, cameraOn, selfUid, selfHand))
         roster.forEach { add(rosterTile(it, media, bound[it.userId] ?: 0)) }
         media.peers.keys.filter { it != 0 && it !in claimed }.sorted()
             .forEach { add(guestTile(it, media)) }
@@ -66,18 +71,26 @@ fun buildTiles(
 /**
  * Roster row → engine uid.
  *
- * `agora_uid` is what every platform maps by, and it is often absent from the
- * invite: the desktop then joins with uid 0 and Agora issues one, so even our
- * own number is not the number in the payload. Where exactly one row and
- * exactly one stream are left over they must be each other — beyond that this
- * refuses to guess, because a wrong binding puts one person's speaking ring on
- * another person's face.
+ * Line 1 needs no guessing: nobody issues a uid there, the desktop numbers
+ * peers by a stable hash of their user id, and the same derivation applied to
+ * the roster binds every row deterministically.
+ *
+ * On Line 2, `agora_uid` is what every platform maps by, and it is often
+ * absent from the invite: the desktop then joins with uid 0 and Agora issues
+ * one, so even our own number is not the number in the payload. Where exactly
+ * one row and exactly one stream are left over they must be each other —
+ * beyond that this refuses to guess, because a wrong binding puts one
+ * person's speaking ring on another person's face.
  */
 private fun bindUids(
+    session: CallSession,
     roster: List<CallParticipant>,
     media: CallMedia,
     selfUid: Int,
 ): Map<String, Int> {
+    if (session.provider == CallProvider.Mediasoup) {
+        return roster.associate { it.userId to mediasoupUidOf(it.userId) }
+    }
     val known = roster.filter { it.numericUid != 0 }.associate { it.userId to it.numericUid }
     val unbound = roster.filter { it.status == CallStatus.InCall && it.numericUid == 0 }
     val orphan = media.peers.keys.filter { it != selfUid && it !in known.values }
@@ -101,6 +114,7 @@ private fun rosterTile(person: CallParticipant, media: CallMedia, uid: Int): Cal
         media = media.peers[uid]?.let {
             TileMedia(uid in media.speaking, it.audioMuted, it.videoOn, it.sharing, it.quality)
         },
+        hand = person.handRaised,
     )
 
 private fun selfTile(
@@ -110,6 +124,7 @@ private fun selfTile(
     micMuted: Boolean,
     cameraOn: Boolean,
     selfUid: Int,
+    selfHand: Boolean,
 ): CallTile = CallTile(
     key = SELF_KEY,
     name = selfName.ifBlank { "You" },
@@ -125,6 +140,7 @@ private fun selfTile(
         videoOn = cameraOn,
         quality = media.selfQuality,
     ),
+    hand = selfHand,
 )
 
 /**

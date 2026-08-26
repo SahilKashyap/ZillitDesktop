@@ -10,6 +10,7 @@ import com.zillit.desktop.feature.calls.data.InCallData
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallPhase
+import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.CallType
@@ -105,6 +106,10 @@ data class CallUiState(
     val addableCrew: List<com.zillit.desktop.feature.calls.domain.CallCrewEntry> = emptyList(),
     /** This user's hand is up. */
     val handRaised: Boolean = false,
+    /** This machine is recording the call. */
+    val recording: Boolean = false,
+    /** Someone else is — their name, or blank for nobody. */
+    val recordedBy: String = "",
     /** The audio picker, and the hardware it offers. */
     val audioPickerOpen: Boolean = false,
     val devices: com.zillit.desktop.feature.calls.domain.CallDevices =
@@ -122,6 +127,35 @@ data class CallUiState(
     val chatUnread: Int = 0,
 ) {
     val stage: CallStageKind get() = if (videoSeen) CallStageKind.Video else CallStageKind.Avatars
+
+    /**
+     * Which line this call is on, as the phones label it.
+     *
+     * Worth showing rather than hiding: the two lines fail differently, and
+     * the first question about any call problem is which one it was on.
+     */
+    val lineLabel: String
+        get() = when (session?.provider) {
+            CallProvider.Mediasoup -> "Line 1"
+            CallProvider.Agora -> "Line 2"
+            else -> ""
+        }
+
+    /**
+     * Whether the engine's page should draw its shrunken layout.
+     *
+     * The page has one compact mode — a single tile, no name chips, no mute
+     * badges — and it is right for exactly two things: the always-on-top
+     * thumbnail, and the pill inside the main window.
+     *
+     * [expanded] alone cannot answer this any more. It describes the MAIN
+     * window only, and a call that has its own window always draws the full
+     * stage there whatever it says. Reading it unqualified put a 960x640 call
+     * window into compact mode after a detach — one tile, everyone else
+     * hidden, and no control inside that window able to undo it.
+     */
+    val pageCompact: Boolean
+        get() = pipCompact || (!expanded && !pipOpen)
 
     /** One mount per call: true from the first video until the call is over. */
     val videoMounted: Boolean
@@ -169,6 +203,14 @@ sealed interface CallEvent {
         val type: CallType,
         /** Who is being rung, for the outgoing card — the server won't say. */
         val displayName: String = "",
+        /**
+         * Which line to place it on. The two are different call plumbing on
+         * the server — a separate endpoint each — so this is a real choice and
+         * not a preference applied afterwards.
+         */
+        val provider: CallProvider = CallProvider.Agora,
+        /** Line 1 rings a person; Line 2 rings one of their devices. */
+        val receiverUserId: String = "",
     ) : CallEvent
 
     data object Accept : CallEvent
@@ -196,6 +238,9 @@ sealed interface CallEvent {
     data object ToggleScreenShare : CallEvent
 
     data object ToggleHand : CallEvent
+
+    /** Starts or stops recording the call's audio on this machine. */
+    data object ToggleRecording : CallEvent
 
     /** Opens the microphone/speaker picker, re-reading the hardware as it opens. */
     data object ToggleAudioPicker : CallEvent
@@ -258,6 +303,11 @@ class CallViewModel(
         // folding it into the media projection would redraw the stage for it.
         launch { coordinator.devices.collect { list -> setState { copy(devices = list) } } }
         launch { coordinator.handRaised.collect { up -> setState { copy(handRaised = up) } } }
+        launch { coordinator.recording.collect { on -> setState { copy(recording = on) } } }
+        launch { coordinator.recordedBy.collect { name -> setState { copy(recordedBy = name) } } }
+        // The parting-notice bar doubles as the in-call toast: "recording
+        // saved to…" is exactly the class of message it exists for.
+        launch { coordinator.toasts.collect { text -> setState { copy(endedNotice = text) } } }
         launch { coordinator.inCallData.collect(::receiveInCallData) }
         // One collector, not four: the tile list is a function of all of them
         // together, and projecting on each separately would publish states
@@ -300,7 +350,17 @@ class CallViewModel(
                 copy(
                     addPeopleOpen = true,
                     addableCrew = crew()
-                        .filter { it.deviceId.isNotBlank() && it.userId !in onCall }
+                        // A device id is Line 2's addressing. On Line 1 a
+                        // person with no registered device is still reachable,
+                        // so filtering them out hides a valid invitee.
+                        .filter { entry ->
+                            val addressable = if (session?.provider == CallProvider.Mediasoup) {
+                                entry.userId.isNotBlank()
+                            } else {
+                                entry.deviceId.isNotBlank()
+                            }
+                            addressable && entry.userId !in onCall
+                        }
                         .sortedBy { it.name.lowercase() },
                 )
             }
@@ -365,16 +425,18 @@ class CallViewModel(
     @Suppress("CyclomaticComplexMethod")
     override fun onEvent(event: CallEvent) {
         when (event) {
-            is CallEvent.Place -> coordinator.placeCall(
-                event.chatRoomId, event.receiverDeviceId, event.mode, event.type, event.displayName,
-            )
+            is CallEvent.Place -> place(event)
             CallEvent.Accept -> coordinator.accept()
             CallEvent.Decline -> coordinator.decline()
             CallEvent.HangUp -> coordinator.hangUp()
             CallEvent.ToggleMic -> coordinator.toggleMicrophone()
             CallEvent.ToggleCamera -> coordinator.toggleCamera()
             CallEvent.DismissNotice -> setState { copy(endedNotice = null) }
-            CallEvent.ToggleStage -> setState { copy(expanded = !expanded) }
+            // `expanded` describes the main window. While the call has its own
+            // window there is nothing here to expand — the pill IS how the main
+            // window represents it — so the flag is left alone rather than
+            // moved somewhere nothing reads it back.
+            CallEvent.ToggleStage -> setState { if (pipOpen) this else copy(expanded = !expanded) }
             // Leaving PiP restores the stage: the user asked to see the
             // video, and the pill is where it was hiding, not where it goes.
             CallEvent.TogglePip -> setState {
@@ -393,6 +455,7 @@ class CallViewModel(
             CallEvent.ToggleRoster -> setState { copy(rosterOpen = !rosterOpen) }
             CallEvent.ToggleScreenShare -> coordinator.toggleScreenShare()
             CallEvent.ToggleHand -> coordinator.toggleHand()
+            CallEvent.ToggleRecording -> coordinator.toggleRecording()
             CallEvent.ToggleAudioPicker -> {
                 // Re-read on open: a headset plugged in while the menu was
                 // shut is otherwise invisible until the SDK happens to notice.
@@ -425,6 +488,16 @@ class CallViewModel(
         }
     }
 
+    private fun place(event: CallEvent.Place) = coordinator.placeCall(
+        chatRoomId = event.chatRoomId,
+        receiverDeviceId = event.receiverDeviceId,
+        mode = event.mode,
+        type = event.type,
+        displayName = event.displayName,
+        provider = event.provider,
+        receiverUserId = event.receiverUserId,
+    )
+
     /** Everything a call leaves behind, cleared in one place. */
     private fun CallUiState.atRest(phase: CallPhase) = copy(
         phase = phase,
@@ -442,6 +515,8 @@ class CallViewModel(
         pillOffsetY = 0f,
         rosterOpen = false,
         videoSeen = false,
+        recording = false,
+        recordedBy = "",
         // Nothing said in a call outlives it. There is no store behind these
         // lists, and re-showing the last call's chat in the next one would be
         // the one thing every other client promises not to do.

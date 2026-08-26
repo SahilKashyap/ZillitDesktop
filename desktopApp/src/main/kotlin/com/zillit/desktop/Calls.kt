@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.graphics.ImageBitmap
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.ui.CallEvent
@@ -19,6 +21,7 @@ import com.zillit.desktop.feature.calls.ui.CallOverlay
 import com.zillit.desktop.feature.calls.ui.displayTitle
 import com.zillit.desktop.feature.calls.domain.CallCrewEntry
 import com.zillit.desktop.feature.calls.ui.CallViewModel
+import com.zillit.desktop.feature.calls.ui.reactionJson
 import com.zillit.desktop.feature.calls.ui.themeJson
 import com.zillit.desktop.feature.home.ui.decodeImageBitmap
 
@@ -42,12 +45,26 @@ internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?) {
     val theme = themeJson(ZillitTheme.colors)
     LaunchedEffect(engine, theme) { engine.setTheme(theme) }
     LaunchedEffect(engine, callState.stageJson) { engine.setStage(callState.stageJson) }
-    // Two ways to be small: minimised to the pill inside this window, or
-    // shrunk to the always-on-top thumbnail. The page has one compact mode and
-    // both must reach it — keying on `expanded` alone left the thumbnail
-    // drawing the full multi-tile grid at 360x204.
-    LaunchedEffect(engine, callState.expanded, callState.pipCompact) {
-        engine.setCompact(!callState.expanded || callState.pipCompact)
+    // See CallUiState.pageCompact for which states are actually small — it is
+    // not simply `!expanded`, and getting that wrong hides every participant
+    // but one.
+    LaunchedEffect(engine, callState.pageCompact) { engine.setCompact(callState.pageCompact) }
+
+    /*
+     * Reactions go to the page as they arrive, and each one only once.
+     *
+     * A video call's picture is a heavyweight surface, so the Compose layer
+     * that draws these on an audio call would rise *behind* the video and never
+     * be seen; the page draws them itself instead. Keyed on the list, and the
+     * already-sent set is what stops a recomposition replaying every emoji
+     * still in flight.
+     */
+    var sentReactions by remember { mutableStateOf(emptySet<String>()) }
+    LaunchedEffect(engine, callState.reactions) {
+        callState.reactions
+            .filterNot { it.key in sentReactions }
+            .forEach { engine.showReaction(reactionJson(it)) }
+        sentReactions = callState.reactions.mapTo(mutableSetOf()) { it.key }
     }
 
     CallOverlay(

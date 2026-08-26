@@ -7,6 +7,8 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.calls.domain.CallDirection
+import com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf
+import com.zillit.desktop.feature.calls.data.protoo.toJoin
 import com.zillit.desktop.feature.calls.domain.CallEngine
 import com.zillit.desktop.feature.calls.domain.CallDevices
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
@@ -16,6 +18,7 @@ import com.zillit.desktop.feature.calls.domain.reduce
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallParticipant
 import com.zillit.desktop.feature.calls.domain.CallPhase
+import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.CallTimeouts
@@ -55,7 +58,15 @@ data class CallEndEvent(val session: CallSession, val reason: CallEndReason)
  * The socket work runs on [scope], which the host ties to the signed-in
  * session: sign-out cancels it and the machine goes quiet.
  */
-@Suppress("TooManyFunctions", "LongParameterList")
+/*
+ * LargeClass: the size IS the design — one phase machine owning every call
+ * fact, which is the whole argument of the class comment above. What shares
+ * nothing with the phase machine is already outside it (InCallDataChannel,
+ * CallAudioDevices, CallRecordingControl, ReconnectWatchdog, CallRoster's
+ * reducers); what remains reads or moves the phase, and splitting that is how
+ * Android got two booleans describing different calls.
+ */
+@Suppress("TooManyFunctions", "LongParameterList", "LargeClass")
 class CallCoordinator(
     private val api: CallApi,
     private val bus: SocketEventBus,
@@ -123,6 +134,24 @@ class CallCoordinator(
     private val _handRaised = MutableStateFlow(false)
     val handRaised: StateFlow<Boolean> = _handRaised.asStateFlow()
 
+    /** Recording, a collaborator for the same reason [inCall] is. */
+    private val recorder = CallRecordingControl(
+        engine = engine,
+        plane = plane,
+        scope = scope,
+        selfDeviceId = selfDeviceId,
+    )
+
+    /** This machine is recording the call. */
+    val recording: StateFlow<Boolean> get() = recorder.recording
+
+    /** Who else is recording — their display name, or blank for nobody. */
+    val recordedBy: StateFlow<String> get() = recorder.recordedBy
+
+    /** One-line notices worth showing mid-call — "recording saved to…". */
+    private val _toasts = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val toasts: SharedFlow<String> = _toasts.asSharedFlow()
+
     /** The machine's audio/video hardware, as the engine last reported it. */
     /** The machine's audio hardware and this user's standing choice of it. */
     private val audio = CallAudioDevices(
@@ -183,6 +212,16 @@ class CallCoordinator(
         mode: CallMode,
         type: CallType,
         displayName: String = "",
+        /**
+         * Which line to place it on.
+         *
+         * The caller chooses, because the two lines are separate call plumbing
+         * on the server — a different endpoint each — rather than two settings
+         * of one thing. [receiverUserId] is what Line 1 needs: it rings a
+         * person across their devices, where Line 2 rings one device.
+         */
+        provider: CallProvider = CallProvider.Agora,
+        receiverUserId: String = "",
     ) {
         if (_phase.value != CallPhase.Idle) return
         _phase.value = CallPhase.Outgoing
@@ -197,6 +236,9 @@ class CallCoordinator(
             // so a provisional session cannot post a status for no call.
             callUuid = "",
             direction = CallDirection.Outgoing,
+            // Named now so the outgoing card can say which line it is on
+            // before the server answers.
+            provider = provider,
             mode = mode,
             type = type,
             hasVideo = type == CallType.Video,
@@ -208,14 +250,17 @@ class CallCoordinator(
         )
         _cameraOn.value = type == CallType.Video
         scope.launch {
-            api.createCall(
-                chatRoomId = chatRoomId,
-                receiverDeviceId = receiverDeviceId,
-                mode = mode,
-                type = type,
-                selfUserId = selfUserId().orEmpty(),
-                selfDeviceId = selfDeviceId().orEmpty(),
-                projectId = null,
+            api.createOnLine(
+                NewCall(
+                    provider = provider,
+                    chatRoomId = chatRoomId,
+                    receiverDeviceId = receiverDeviceId,
+                    receiverUserId = receiverUserId,
+                    mode = mode,
+                    type = type,
+                    selfUserId = selfUserId().orEmpty(),
+                    selfDeviceId = selfDeviceId().orEmpty(),
+                ),
             ).onSuccess { session ->
                 if (session == null) {
                     fail("the server did not return a call")
@@ -228,6 +273,7 @@ class CallCoordinator(
                         callUuid = session.callUuid,
                         deviceId = selfDeviceId().orEmpty(),
                         projectId = session.projectId.takeIf(String::isNotBlank),
+                        provider = session.provider,
                     )
                 } else {
                     // The response describes the caller — us. The callee's
@@ -242,7 +288,7 @@ class CallCoordinator(
                     // like any other, and iOS/web read the roster to know who is on
                     // the call. Without this the desktop was missing from the call
                     // it had just placed.
-                    scope.launch { plane.announceSelf(session, CallStatus.Caller) }
+                    scope.launch { announceCaller(session) }
                     watchPlane(session)
                     joinMedia(session)
                 }
@@ -333,6 +379,17 @@ class CallCoordinator(
         scope.launch { joinMedia(current) }
     }
 
+    /**
+     * The caller's row, name included: the row is the one place every platform
+     * looks for a caller the invite never named — the "Guest" tile, from the
+     * other side.
+     */
+    private suspend fun announceCaller(session: CallSession) {
+        val named = selfName()?.takeIf(String::isNotBlank)
+            ?.let { mapOf("user_name" to it as Any) }.orEmpty()
+        plane.announceSelf(session, CallStatus.Caller, named)
+    }
+
     /** Android's accept-time write: status, uid, video, and the doc-healing name. */
     private suspend fun announceJoined(session: CallSession) {
         val extra = buildMap<String, Any> {
@@ -369,7 +426,7 @@ class CallCoordinator(
     fun addUser(userId: String, deviceId: String, name: String) {
         val current = _session.value ?: return
         if (_phase.value != CallPhase.InCall || current.is247Call) return
-        if (deviceId.isBlank()) return
+        if (!current.canInvite(userId, deviceId)) return
         if (current.participants.any { it.userId == userId }) return
 
         _session.value = current.copy(
@@ -381,12 +438,7 @@ class CallCoordinator(
             ),
         )
         scope.launch {
-            api.addUser(
-                callUuid = current.callUuid,
-                receiverDeviceId = deviceId,
-                type = current.type,
-                projectId = current.projectId.takeIf(String::isNotBlank),
-            ).onFailure { error ->
+            api.invite(current, userId, deviceId).onFailure { error ->
                 ZillitLog.w(TAG) { "add-user failed: ${error.technical ?: error.userMessage}" }
             }
         }
@@ -424,6 +476,9 @@ class CallCoordinator(
         val raised = !_handRaised.value
         _handRaised.value = raised
         mirrorMediaState(mapOf("raise_hand" to raised))
+        // Line 1 additionally announces it over protoo — the phones there
+        // learn hands from `peerRaisedHand` broadcasts, not only the mirror.
+        engine.setHandRaised(raised)
     }
 
     fun toggleScreenShare() {
@@ -432,6 +487,13 @@ class CallCoordinator(
         scope.launch {
             if (sharing) engine.stopScreenShare() else engine.startScreenShare()
         }
+    }
+
+    /** Starts or stops recording the call's audio on this machine. */
+    fun toggleRecording() {
+        if (_phase.value != CallPhase.InCall) return
+        val session = _session.value ?: return
+        recorder.toggle(session)
     }
 
     fun toggleCamera() {
@@ -487,6 +549,7 @@ class CallCoordinator(
                     callUuid = current.callUuid,
                     deviceId = selfDeviceId().orEmpty(),
                     projectId = current.projectId.takeIf(String::isNotBlank),
+                    provider = current.provider,
                 )
             }
             sendFinalStatus(current, CallStatus.Left)
@@ -634,17 +697,33 @@ class CallCoordinator(
         if (event.deviceId == selfDeviceId()) return
 
         // The uid on the row is what ties a roster entry to a picture. Zero
-        // means they have not joined media yet, so there is no tile to mark.
-        if (event.agoraUid != 0) {
-            _media.value = _media.value.reduce(
-                CallEngineEvent.PeerScreenShare(event.agoraUid, event.sharing),
-            )
+        // means they have not joined media yet — except on Line 1, where no
+        // server issues one and the desktop numbers peers by a stable hash of
+        // their user id; derive the same number so the flag finds its tile.
+        val uid = when {
+            event.agoraUid != 0 -> event.agoraUid
+            session.provider == CallProvider.Mediasoup && event.userId.isNotBlank() ->
+                mediasoupUidOf(event.userId)
+            else -> 0
+        }
+        if (uid != 0) {
+            _media.value = _media.value.reduce(CallEngineEvent.PeerScreenShare(uid, event.sharing))
         }
 
-        val updated = session.participants.withHand(event.deviceId, event.handRaised)
+        val updated = session.participants
+            .withHand(event.deviceId, event.handRaised)
+            .healedFromPlane(event.deviceId, event.userId, event.userName, event.agoraUid)
         if (updated != session.participants) {
             _session.value = _session.value?.copy(participants = updated)
         }
+
+        recorder.onRemoteFlag(
+            key = event.deviceId,
+            recording = event.recording,
+            name = event.userName.ifBlank {
+                updated.firstOrNull { it.deviceId == event.deviceId }?.name.orEmpty()
+            },
+        )
     }
 
     private fun onPlaneStatus(current: CallSession, event: PlaneEvent.UserStatus) {
@@ -701,10 +780,25 @@ class CallCoordinator(
                     // badge the sharer and pin their tile; mirrored only once
                     // the engine confirms, so a cancelled picker publishes
                     // nothing.
-                    mirrorMediaState(mapOf("screenShare" to event.sharing))
+                    mirrorMediaState(mapOf(FIELD_SHARING_WIRE to event.sharing))
                 }
                 is CallEngineEvent.Devices -> audio.onEngineDevices(event)
                 is CallEngineEvent.Failed -> fail(event.message)
+                is CallEngineEvent.PeerHand -> {
+                    val current = _session.value ?: return@collect
+                    val updated = current.participants.withHandByUser(event.userId, event.raised)
+                    if (updated != current.participants) {
+                        _session.value = current.copy(participants = updated)
+                    }
+                }
+                is CallEngineEvent.PeerRecording -> recorder.onRemoteFlag(
+                    key = event.userId,
+                    recording = event.recording,
+                    name = _session.value?.participants
+                        ?.firstOrNull { it.userId == event.userId }?.name.orEmpty(),
+                )
+                is CallEngineEvent.RecordingSaved ->
+                    _toasts.tryEmit("Recording saved to ${event.path}")
                 else -> Unit
             }
         }
@@ -774,7 +868,12 @@ class CallCoordinator(
             plane.announceSelf(
                 session,
                 CallStatus.InCall,
-                mapOf("agora_uid" to session.localUid),
+                // A STRING, not the Int it is. iOS declares `agoraUID: String?`
+                // and writes it as "\(agoraID)", and it decodes each row with
+                // JSONDecoder — so a numeric `agora_uid` throws typeMismatch
+                // and iOS discards the WHOLE row, losing this device's status,
+                // raised hand and screen share along with it.
+                mapOf("agora_uid" to session.localUid.toString()),
             )
         }
     }
@@ -800,7 +899,10 @@ class CallCoordinator(
         if (joining) return
         joining = true
         if (!session.isJoinable) {
-            ZillitLog.w(TAG) { "call ${session.callUuid} has no channel/token; staying signalling-only" }
+            ZillitLog.w(TAG) {
+                "call ${session.callUuid} on ${session.provider.wire} cannot be joined " +
+                    "with what the invite carried; staying signalling-only"
+            }
             // An attempted join is not an in-flight one: holding the latch
             // would refuse the retry once a token or the engine does arrive.
             joining = false
@@ -816,12 +918,7 @@ class CallCoordinator(
         }
         audio.restoreBeforeJoin()
 
-        engine.join(
-            channel = session.channelName,
-            token = session.token,
-            uid = session.localUid,
-            hasVideo = session.hasVideo,
-        )
+        engine.join(session.toJoin(selfDeviceId().orEmpty(), selfName().orEmpty()))
         // Publishes the lists so a picker opened mid-call has something to
         // draw without waiting for a hot-plug event.
         audio.refresh()
@@ -884,15 +981,12 @@ class CallCoordinator(
                     ?.let(::listOf)
                     .orEmpty()
             }
-            when {
-                ids.isEmpty() -> Unit
-                ids.size == 1 -> api.logMissedCall(current.callUuid, ids.first(), projectId)
-                else -> api.logMissedCalls(current.callUuid, ids, projectId)
-            }
+            api.logMissed(current, ids, projectId)
             api.endCall(
                 callUuid = current.callUuid,
                 deviceId = selfDeviceId().orEmpty(),
                 projectId = current.projectId.takeIf(String::isNotBlank),
+                provider = current.provider,
             )
             finish(current, CallEndReason.Timeout)
         }
@@ -968,8 +1062,9 @@ class CallCoordinator(
         _phase.value = CallPhase.Idle
         _micMuted.value = false
         _cameraOn.value = false
-        // A hand does not carry into the next call.
+        // A hand does not carry into the next call; neither does a recording.
         _handRaised.value = false
+        recorder.reset()
         // Reactions and lines never outlive the call that carried them.
         inCall.reset()
         _media.value = CallMedia()
@@ -977,6 +1072,17 @@ class CallCoordinator(
     }
 
     /** Room ids and uuids are used interchangeably by different emitters. */
+    /**
+     * Whether this person is addressable on the call's line.
+     *
+     * Line 2 rings a device and cannot invite without one. Line 1 rings a
+     * person, so requiring a device id there refuses invitations the endpoint
+     * would have accepted — and the user just sees a shorter list with no
+     * reason given.
+     */
+    private fun CallSession.canInvite(userId: String, deviceId: String): Boolean =
+        if (provider == CallProvider.Mediasoup) userId.isNotBlank() else deviceId.isNotBlank()
+
     private fun String.matches(session: CallSession): Boolean =
         isNotBlank() && (this == session.roomId || this == session.callUuid)
 
@@ -994,6 +1100,14 @@ class CallCoordinator(
          * them. The SDK retries for as long as it is allowed, so without a
          * ceiling a permanently dropped call never ends at all.
          */
+        /**
+         * The spelling every other client reads: iOS's row model is
+         * `case screenShare = "screen_share"`. The desktop used to write the
+         * camelCase form, which nothing on the phones looks at, so a shared
+         * screen was simply never flagged there.
+         */
+        const val FIELD_SHARING_WIRE = "screen_share"
+
         const val RECONNECT_GRACE_MILLIS = 45_000L
 
 

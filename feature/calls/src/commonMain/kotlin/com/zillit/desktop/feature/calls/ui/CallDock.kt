@@ -49,7 +49,6 @@ fun CallDock(
     modifier: Modifier = Modifier,
 ) {
     val colors = ZillitTheme.colors
-    val showCamera = state.session?.hasVideo == true || state.stage == CallStageKind.Video
     Row(
         modifier = modifier
             .shadow(DOCK_ELEVATION, CircleShape)
@@ -59,7 +58,7 @@ fun CallDock(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        MediaControls(state = state, onEvent = onEvent, showCamera = showCamera)
+        MediaControls(state = state, onEvent = onEvent)
         SayingSomething(state = state, onEvent = onEvent)
         // Between the media toggles and the room controls: it belongs with
         // the things that change what the user hears, not who is present.
@@ -79,7 +78,7 @@ fun CallDock(
 
 /** Mute, camera, hand and share — everything that changes what others get. */
 @Composable
-private fun MediaControls(state: CallUiState, onEvent: (CallEvent) -> Unit, showCamera: Boolean) {
+private fun MediaControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val colors = ZillitTheme.colors
         RoundAction(
             icon = if (state.micMuted) ZillitIcons.MicOff else ZillitIcons.Mic,
@@ -89,16 +88,17 @@ private fun MediaControls(state: CallUiState, onEvent: (CallEvent) -> Unit, show
             size = DOCK_BUTTON,
             onClick = { onEvent(CallEvent.ToggleMic) },
         )
-        if (showCamera) {
-            RoundAction(
-                icon = if (state.cameraOn) ZillitIcons.Camera else ZillitIcons.CameraOff,
-                label = if (state.cameraOn) "Turn camera off" else "Turn camera on",
-                background = if (state.cameraOn) colors.surfaceHover else colors.danger,
-                tint = if (state.cameraOn) colors.textPrimary else Color.White,
-                size = DOCK_BUTTON,
-                onClick = { onEvent(CallEvent.ToggleCamera) },
-            )
-        }
+        // Always offered, audio calls included: enabling video mid-call is
+        // how the phones work, and a call that joined as audio is exactly the
+        // one where the user reaches for this button.
+        RoundAction(
+            icon = if (state.cameraOn) ZillitIcons.Camera else ZillitIcons.CameraOff,
+            label = if (state.cameraOn) "Turn camera off" else "Turn camera on",
+            background = if (state.cameraOn) colors.surfaceHover else colors.danger,
+            tint = if (state.cameraOn) colors.textPrimary else Color.White,
+            size = DOCK_BUTTON,
+            onClick = { onEvent(CallEvent.ToggleCamera) },
+        )
         HandAndShare(state = state, onEvent = onEvent)
 }
 
@@ -126,6 +126,18 @@ private fun HandAndShare(state: CallUiState, onEvent: (CallEvent) -> Unit) {
         size = SMALL_BUTTON,
         onClick = { onEvent(CallEvent.ToggleScreenShare) },
     )
+    // One recording per call is the rule every platform enforces, so while
+    // somebody else holds it the button steps aside and the banner explains.
+    if (state.recordedBy.isBlank() || state.recording) {
+        RoundAction(
+            icon = ZillitIcons.Record,
+            label = if (state.recording) "Stop recording" else "Record call",
+            background = if (state.recording) colors.danger else colors.surfaceHover,
+            tint = if (state.recording) Color.White else colors.textPrimary,
+            size = SMALL_BUTTON,
+            onClick = { onEvent(CallEvent.ToggleRecording) },
+        )
+    }
 }
 
 /** Who is here and who else could be. */

@@ -88,6 +88,9 @@ enum class CallStatus(val wire: String) {
  * rather than choosing: a client that joins the wrong stack does not fail
  * loudly, it just sits in a channel nobody else is in.
  */
+/** The `connection_type` value that rules out a direct connection. */
+const val CONNECTION_TYPE_SFU = "sfu"
+
 enum class CallProvider(val wire: String) {
     /** "Line 2" — Agora, joined with a channel name, token and numeric uid. */
     Agora("agora"),
@@ -101,9 +104,12 @@ enum class CallProvider(val wire: String) {
 
     companion object {
         /**
-         * Absent or unknown resolves to [Agora] — the desktop client only
-         * implements Line 2, so an unreadable line is better treated as the
-         * one we can actually join than dropped on the floor.
+         * Absent or unknown resolves to [Agora].
+         *
+         * Not a preference so much as the safer of two failures: a line we
+         * cannot name is more likely to be a spelling we have not seen than a
+         * stack we do not implement, and Agora is the one every payload has
+         * carried historically.
          */
         fun ofWire(raw: String?): CallProvider {
             val value = raw?.trim()?.lowercase().orEmpty()
@@ -187,6 +193,41 @@ data class CallSession(
     /** This device's numeric uid in the channel, assigned by the server. */
     val localUid: Int = 0,
     val inviteCode: String = "",
+
+    // ── Line 1 (mediasoup) ──────────────────────────────────────────────
+
+    /**
+     * Where the SFU lives, as the server elected it.
+     *
+     * `mediasoup_server_url` is canonical and `sfu_url` is its older alias;
+     * the phones prefer the first and fall back to the second. A blank value
+     * on a mediasoup call means the server did not elect a host, and there is
+     * nothing to dial.
+     */
+    val sfuHost: String = "",
+
+    /**
+     * The SFU's own credential, appended to the dial URL as `token`.
+     *
+     * Empty is legitimate, not missing: the deployed backend still accepts a
+     * tokenless dial, and iOS documents that as the backward-safe case.
+     */
+    val sfuToken: String = "",
+
+    /**
+     * `sfu` or `p2p` — but not the field to branch on. See [isPeerToPeer].
+     */
+    val connectionType: String = "",
+
+    /**
+     * The server's verdict that this call can go peer-to-peer.
+     *
+     * This, not [connectionType], is authoritative: the deployed backend
+     * signals P2P eligibility here and sends no top-level `connection_type`
+     * at all on the initiate response, so a client that branches on the
+     * latter treats every elected P2P call as an SFU call.
+     */
+    val p2pEligible: Boolean = false,
     val callerUserId: String = "",
     val callerDeviceId: String = "",
     val callerName: String = "",
@@ -224,7 +265,50 @@ data class CallSession(
      * device rather than no call at all.
      */
     val isJoinable: Boolean
-        get() = provider == CallProvider.Agora && channelName.isNotBlank() && token.isNotBlank()
+        get() = when (provider) {
+            CallProvider.Agora -> channelName.isNotBlank() && token.isNotBlank()
+            // A dial needs a host and a room; the SFU's own token may be
+            // empty, which is the backward-safe tokenless case rather than a
+            // missing credential.
+            CallProvider.Mediasoup -> sfuHost.isNotBlank() && sfuRoomId.isNotBlank()
+            CallProvider.LiveKit -> false
+        }
+
+    /**
+     * Which room this session names on the SFU.
+     *
+     * Three candidates in a fixed order, because the server populates
+     * whichever it has: the phones read `invite_code || room_id || call_uuid`
+     * and the desktop keeps the first two in separate fields. Collapsing this
+     * to two puts the desktop in a different room from everyone else on any
+     * payload that carries `room_id` without an `invite_code` — a call that
+     * connects, reports itself healthy, and is silent.
+     */
+    val sfuRoomId: String
+        get() = inviteCode.ifBlank { roomId }.ifBlank { callUuid }
+
+    /**
+     * Which room the `mediasoup-call` REST endpoints mean.
+     *
+     * NOT the same election as [sfuRoomId], which is why it has its own name.
+     * The SFU dial prefers the invite code; the REST family never does — every
+     * one of them takes the room or the call uuid, and the phones do the same.
+     * The two look interchangeable and are not: sending the dial's answer to a
+     * REST handler asks about a room it does not know, and `mediasoup-call`
+     * answers that with HTTP 200 and `success: false`, so the mistake is
+     * invisible.
+     */
+    val restRoomId: String
+        get() = roomId.ifBlank { callUuid }
+
+    /**
+     * True when the server elected a direct connection rather than the SFU.
+     *
+     * Eligibility is the signal; `connection_type` is advisory and often
+     * absent. A call is only NOT peer-to-peer when the server says `sfu`.
+     */
+    val isPeerToPeer: Boolean
+        get() = p2pEligible && connectionType != CONNECTION_TYPE_SFU
 
     /** Participants with media, us included. */
     val connected: List<CallParticipant> get() = participants.filter { it.status.isConnected }

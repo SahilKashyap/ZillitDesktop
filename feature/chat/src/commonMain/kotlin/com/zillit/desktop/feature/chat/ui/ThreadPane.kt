@@ -28,6 +28,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.collectAsState
@@ -96,7 +100,7 @@ internal fun ThreadPane(
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) ->
     androidx.compose.ui.graphics.ImageBitmap? = { null },
     /** Rings the open thread. Null hides the call buttons entirely. */
-    onCall: ((video: Boolean) -> Unit)? = null,
+    onCall: ((video: Boolean, mediasoup: Boolean) -> Unit)? = null,
     /** The one shared speaker; null renders voice notes as plain chips. */
     player: com.zillit.desktop.core.designsystem.component.AudioPlayer? = null,
     /** Fetches a voice note's bytes for decoding. Null disables playback. */
@@ -361,7 +365,7 @@ private fun ThreadHeader(
     state: ChatUiState,
     peer: com.zillit.desktop.feature.chat.domain.CrewContact,
     loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap?,
-    onCall: ((video: Boolean) -> Unit)?,
+    onCall: ((video: Boolean, mediasoup: Boolean) -> Unit)?,
     onEvent: (ChatEvent) -> Unit,
 ) {
     val face = androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(
@@ -383,17 +387,17 @@ private fun ThreadHeader(
         // the room is the address). No device, no buttons: a call button
         // that fails on press is worse than none.
         if (onCall != null && (state.peerIsGroup || peer.deviceId != null)) {
-            ZillitIconButton(
+            CallLineButton(
                 icon = ZillitIcons.Phone,
-                contentDescription = "Start call",
-                onClick = { onCall(false) },
+                label = "Start call",
                 tint = ZillitTheme.colors.success,
+                onPick = { mediasoup -> onCall(false, mediasoup) },
             )
-            ZillitIconButton(
+            CallLineButton(
                 icon = ZillitIcons.Camera,
-                contentDescription = "Start video call",
-                onClick = { onCall(true) },
+                label = "Start video call",
                 tint = ZillitTheme.colors.accentText,
+                onPick = { mediasoup -> onCall(true, mediasoup) },
             )
         }
         ZillitIconButton(
@@ -403,6 +407,76 @@ private fun ThreadHeader(
         )
     }
 }
+
+/**
+ * A call button that asks which line first.
+ *
+ * The two lines are separate call plumbing on the server — a different
+ * endpoint each, different media stacks, different failure modes — so this is
+ * a real choice rather than a preference. It is offered here, at the moment of
+ * calling, because that is where the phones offer it and because the answer
+ * can reasonably differ call to call while one line is being rolled out.
+ *
+ * Line 2 is listed first and is what a plain Return picks: it is the line
+ * every deployment has, and the one the desktop has carried longest.
+ */
+@Composable
+private fun CallLineButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: androidx.compose.ui.graphics.Color,
+    onPick: (mediasoup: Boolean) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ZillitIconButton(
+            icon = icon,
+            contentDescription = label,
+            onClick = { open = true },
+            tint = tint,
+        )
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            modifier = Modifier.background(
+                ZillitTheme.colors.surfaceRaised,
+                RoundedCornerShape(LINE_MENU_RADIUS),
+            ),
+        ) {
+            CallLineRow("Line 2", "Agora") { open = false; onPick(false) }
+            CallLineRow("Line 1", "Mediasoup") { open = false; onPick(true) }
+        }
+    }
+}
+
+@Composable
+private fun CallLineRow(title: String, detail: String, onClick: () -> Unit) {
+    DropdownMenuItem(
+        onClick = onClick,
+        modifier = Modifier.background(ZillitTheme.colors.surfaceRaised),
+        text = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                ZillitText(
+                    text = title,
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = ZillitTheme.colors.textPrimary,
+                )
+                // The stack's name, because "Line 1" alone means nothing to
+                // anyone who has not read the calling code.
+                ZillitText(
+                    text = detail,
+                    style = ZillitTheme.typography.labelSmall,
+                    color = ZillitTheme.colors.textMuted,
+                )
+            }
+        },
+    )
+}
+
+private val LINE_MENU_RADIUS = 12.dp
 
 /**
  * Three breathing dots in a bubble-shaped pill, then the words.

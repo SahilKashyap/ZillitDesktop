@@ -87,6 +87,11 @@ fun CallMedia.reduce(event: CallEngineEvent): CallMedia = when (event) {
     is CallEngineEvent.ScreenShare -> copy(selfSharing = event.sharing)
     is CallEngineEvent.Devices -> this
     is CallEngineEvent.Failed -> this
+    // Hands and recording are roster facts keyed by user, not media facts
+    // keyed by uid — the coordinator folds them into the participant list.
+    is CallEngineEvent.PeerHand -> this
+    is CallEngineEvent.PeerRecording -> this
+    is CallEngineEvent.RecordingSaved -> this
 }
 
 /** Upsert, never ignore: an event for an unseen uid creates that peer. */

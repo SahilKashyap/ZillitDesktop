@@ -1,0 +1,14 @@
+{
+  "name": "zillit-callengine-mediasoup",
+  "private": true,
+  "description": "Builds the mediasoup-client bundle the call page loads for Line 1. Only the media half: protoo signalling runs in Kotlin, because the browser WebSocket API cannot send the ping frames that detect a half-open socket.",
+  "scripts": {
+    "build": "esbuild entry.js --bundle --minify --format=iife --global-name=zillitMediasoup --target=chrome111 --outfile=../../desktopApp/src/main/resources/callengine/mediasoup-client.js"
+  },
+  "dependencies": {
+    "mediasoup-client": "3.18.7"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.0"
+  }
+}

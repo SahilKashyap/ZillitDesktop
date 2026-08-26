@@ -85,6 +85,15 @@ class FirestoreCallStatusPlane(
         patch("calls/${session.callUuid}", mapOf(FIELD_CALL_STATUS to CallStatus.Ended.wire))
     }
 
+    override suspend fun updateUserFields(
+        session: CallSession,
+        deviceId: String,
+        fields: Map<String, Any>,
+    ) {
+        if (deviceId.isBlank() || session.callUuid.isEmpty() || fields.isEmpty()) return
+        patch("calls/${session.callUuid}/call_users/$deviceId", fields)
+    }
+
     override fun watch(session: CallSession): Flow<PlaneEvent> = flow {
         var lastStatuses = emptyMap<String, String>()
         var lastFlags = emptyMap<String, String>()
@@ -124,6 +133,8 @@ class FirestoreCallStatusPlane(
                             agoraUid = flags.agoraUid,
                             sharing = flags.sharing,
                             handRaised = flags.handRaised,
+                            recording = flags.recording,
+                            userName = flags.userName,
                         ),
                     )
                 }
@@ -148,14 +159,18 @@ class FirestoreCallStatusPlane(
         val sharing: Boolean,
         val handRaised: Boolean,
         val agoraUid: Int,
+        val recording: Boolean,
+        val userName: String,
     ) {
-        val key: String get() = "$sharing/$handRaised/$agoraUid"
+        val key: String get() = "$sharing/$handRaised/$agoraUid/$recording/$userName"
     }
 
     private fun JsonObject.flags(): UserFlags = UserFlags(
-        sharing = value(FIELD_SHARING)?.toBoolean() ?: value(FIELD_SHARING_WEB)?.toBoolean() ?: false,
+        sharing = value(FIELD_SHARING)?.toBoolean() ?: value(FIELD_SHARING_LEGACY)?.toBoolean() ?: false,
         handRaised = value(FIELD_HAND)?.toBoolean() ?: false,
         agoraUid = value(FIELD_AGORA_UID)?.toIntOrNull() ?: 0,
+        recording = value(FIELD_IS_RECORDING)?.toBoolean() ?: false,
+        userName = value(FIELD_USER_NAME).orEmpty(),
     )
 
     // ── Firestore REST ──────────────────────────────────────────────────
@@ -195,7 +210,7 @@ class FirestoreCallStatusPlane(
                 parameter("key", apiKey)
                 fields.keys.forEach { parameter("updateMask.fieldPaths", it) }
                 contentType(ContentType.Application.Json)
-                setBody(json.encodeToString(JsonObject.serializer(), encode(fields)))
+                setBody(json.encodeToString(JsonObject.serializer(), encodeFirestoreFields(fields)))
             }
         }
         if (ok != null) ZillitLog.i(TAG) { "mirrored $path" }
@@ -236,21 +251,6 @@ class FirestoreCallStatusPlane(
 
     // ── Firestore's typed-value encoding ────────────────────────────────
 
-    private fun encode(fields: Map<String, Any>): JsonObject = buildJsonObject {
-        putJsonObject("fields") {
-            fields.forEach { (name, value) ->
-                putJsonObject(name) {
-                    when (value) {
-                        is Boolean -> put("booleanValue", value)
-                        is Int -> put("integerValue", value.toString())
-                        is Long -> put("integerValue", value.toString())
-                        else -> put("stringValue", value.toString())
-                    }
-                }
-            }
-        }
-    }
-
     /** A typed Firestore value, flattened back to the string it holds. */
     private fun JsonObject.value(name: String): String? {
         val wrapper = this[name] as? JsonObject ?: return null
@@ -259,19 +259,27 @@ class FirestoreCallStatusPlane(
             ?: (wrapper["booleanValue"] as? JsonPrimitive)?.booleanOrNull?.toString()
     }
 
-    private companion object {
+    internal companion object {
         const val TAG = "CallStatusPlane"
 
         /** What this client writes into `updated_from`, beside `Android`/`web`. */
         const val PLATFORM = "Desktop"
 
         const val FIELD_STATUS = "current_status"
-        const val FIELD_SHARING = "screenShare"
+        /** What iOS and the web write and read. Canonical. */
+        const val FIELD_SHARING = "screen_share"
 
-        /** The web writes the same fact under a snake_case name. */
-        const val FIELD_SHARING_WEB = "screen_share"
+        /** Tolerated on read only — an older desktop wrote this spelling. */
+        const val FIELD_SHARING_LEGACY = "screenShare"
+
         const val FIELD_HAND = "raise_hand"
         const val FIELD_AGORA_UID = "agora_uid"
+
+        /** The recorder's own row says so; iOS reads and writes this key. */
+        const val FIELD_IS_RECORDING = "isRecording"
+
+        /** The self-healing display name every platform stamps on its row. */
+        const val FIELD_USER_NAME = "user_name"
         const val FIELD_CALL_STATUS = "status"
         const val FIELD_DEVICE_ID = "device_id"
         const val FIELD_USER_ID = "user_id"
@@ -281,5 +289,28 @@ class FirestoreCallStatusPlane(
         const val CALL_USERS_PAGE = 50
 
         val json = Json { ignoreUnknownKeys = true }
+    }
+}
+
+/**
+ * Kotlin values as Firestore REST typed values.
+ *
+ * The type chosen here is a wire contract, not an implementation detail: iOS
+ * decodes each row with a strict `JSONDecoder`, so a value of the wrong JSON
+ * type throws `typeMismatch` and discards the entire row rather than that one
+ * field. See CallRowWireTest.
+ */
+internal fun encodeFirestoreFields(fields: Map<String, Any>): JsonObject = buildJsonObject {
+    putJsonObject("fields") {
+        fields.forEach { (name, value) ->
+            putJsonObject(name) {
+                when (value) {
+                    is Boolean -> put("booleanValue", value)
+                    is Int -> put("integerValue", value.toString())
+                    is Long -> put("integerValue", value.toString())
+                    else -> put("stringValue", value.toString())
+                }
+            }
+        }
     }
 }

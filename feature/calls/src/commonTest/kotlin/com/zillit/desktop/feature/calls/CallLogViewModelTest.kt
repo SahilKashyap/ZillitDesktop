@@ -212,7 +212,10 @@ class CallLogViewModelTest {
 
         model.onEvent(CallLogEvent.DeleteAll)
         model.onEvent(CallLogEvent.ConfirmDeleteAll)
-        settle { !model.currentState.isDeleting && !model.currentState.confirmingDelete }
+        // Settling on `isDeleting` is not enough here: the view model clears
+        // that flag and THEN re-reads, so waiting on it lets the assertion run
+        // in the gap before the refresh is issued. Wait for the re-read itself.
+        settle { seen.count { it.startsWith("GET") } > getsBefore }
 
         assertNotNull(model.currentState.error)
         assertEquals(3, model.currentState.entries.size, "the server's rows stand, not a guess")

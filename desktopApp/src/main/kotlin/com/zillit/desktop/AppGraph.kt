@@ -920,10 +920,15 @@ sealed interface AppGraph {
                 ),
             )
 
-            val callEngine = buildCallEngine(config, appScope)
             // One instance, shared: the coordinator and the call-log list are
             // the same surface talking to the same production.
             val callApi = CallApi(apiClient, config)
+            // Built after the API because Line 1 needs it: the SFU transports
+            // want relay credentials, and they must be in hand before a
+            // transport exists rather than after.
+            val callEngine = buildCallEngine(config, appScope) {
+                callApi.turnCredentials(projectContext?.context?.value?.project?.projectId)
+            }
             val callCoordinator = buildCallCoordinator(
                 callEngine, callApi, config, socketEvents, appScope,
                 // Firestore rides the plain client: it is not the Zillit API,
@@ -1244,15 +1249,19 @@ private fun buildCallCoordinator(
 private fun buildCallEngine(
     config: AppConfig,
     appScope: kotlinx.coroutines.CoroutineScope,
+    turn: suspend () -> com.zillit.desktop.feature.calls.data.protoo.TurnCredentials,
 ): com.zillit.desktop.feature.calls.domain.CallEngine {
     val appId = config.agoraAppId
     if (appId == null) {
+        // Line 1 does not need an Agora app id, but the page it runs in is
+        // built alongside Agora's, so this switch still takes both lines out.
+        // Worth revisiting if a deployment ever ships mediasoup-only.
         ZillitLog.i("Calls") { "media engine off — no AGORA_APP_ID for this env" }
         return NoopCallEngine()
     }
-    ZillitLog.i("Calls") { "media engine on (KCEF + Agora Web SDK)" }
+    ZillitLog.i("Calls") { "media engine on (KCEF; Agora line 2, mediasoup line 1)" }
     // Handed to the shutdown path so its parking window cannot outlive the app.
-    return KcefCallEngine(appId, appScope).also(Shutdown::engine)
+    return KcefCallEngine(appId, appScope, turn).also(Shutdown::engine)
 }
 
 /** The Firestore mirror when the file names a project; socket-only otherwise. */

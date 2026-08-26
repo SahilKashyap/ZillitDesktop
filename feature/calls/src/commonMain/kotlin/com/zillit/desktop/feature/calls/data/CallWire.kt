@@ -73,6 +73,17 @@ private fun JsonObject.uid(vararg keys: String): String =
  * assume otherwise, because every self-comparison downstream then fails and
  * the user appears to be a stranger in their own call.
  */
+/**
+ * Whether the server elected a direct connection for this call.
+ *
+ * Nested under `p2p` rather than a top-level flag, and its absence means "no"
+ * — the field only appears on backends that can elect P2P at all.
+ */
+private fun readP2pEligible(obj: JsonObject): Boolean {
+    val envelope = obj["p2p"] as? JsonObject ?: return false
+    return envelope.bool("eligible")
+}
+
 fun readCallSession(
     payload: JsonElement,
     selfUserId: String,
@@ -80,7 +91,14 @@ fun readCallSession(
     direction: CallDirection = CallDirection.Incoming,
 ): CallSession? {
     val obj = unwrap(payload) ?: return null
-    val uuid = obj.str("call_uuid", "callUuid") ?: return null
+    // Line 1's initiate RESPONSE does not always carry a `call_uuid` — it
+    // names the call by its room instead, and dropping it loses the call
+    // outright. An incoming ring is different: it always carries one, so a
+    // ring without it is malformed and must still be refused rather than
+    // adopted under a room id that may name something else entirely.
+    val uuid = obj.str("call_uuid", "callUuid")
+        ?: obj.str("room_id", "roomId")?.takeIf { direction == CallDirection.Outgoing }
+        ?: return null
     val participants = readParticipants(obj["call_users"])
     val mine = participants.firstOrNull { it.deviceId == selfDeviceId && selfDeviceId.isNotBlank() }
     return CallSession(
@@ -97,6 +115,12 @@ fun readCallSession(
         token = obj.str("agora_token", "agoraToken").orEmpty(),
         localUid = mine?.numericUid ?: 0,
         inviteCode = obj.str("invite_code", "inviteCode").orEmpty(),
+        // Line 1. `mediasoup_server_url` is canonical; `sfu_url` is the older
+        // alias the phones still accept.
+        sfuHost = obj.str("mediasoup_server_url", "mediasoupServerUrl", "sfu_url", "sfuUrl").orEmpty(),
+        sfuToken = obj.str("sfu_token", "sfuToken").orEmpty(),
+        connectionType = obj.str("connection_type", "connectionType").orEmpty(),
+        p2pEligible = readP2pEligible(obj),
         callerUserId = obj.str("sender_user_id", "senderUserId", "user_id").orEmpty(),
         callerDeviceId = obj.str("sender_device_id", "senderDeviceId", "caller_device_id").orEmpty(),
         callerName = obj.str("caller_name", "callerName", "name").orEmpty(),
@@ -138,7 +162,12 @@ fun readParticipants(element: JsonElement?): List<CallParticipant> =
             userId = userId,
             deviceId = row.str("device_id", "deviceId").orEmpty(),
             agoraUid = row.uid("agora_uid", "agoraUid"),
-            name = row.str("name", "full_name", "fullName").orEmpty(),
+            // Four spellings for one name: invites say `name`/`full_name`,
+            // the call-dump rows `display_name`, and the Firestore-shaped
+            // ones `user_name`. Reading only the first pair left dump-fed
+            // rosters nameless, which the tiles rendered as "Guest".
+            name = row.str("name", "full_name", "fullName", "display_name", "displayName", "user_name")
+                .orEmpty(),
             image = row.str("image", "profile_image").orEmpty(),
             status = CallStatus.ofWire(row.str("current_status", "currentStatus", "status")),
             missedCall = row.bool("missed_call", "missedCall"),

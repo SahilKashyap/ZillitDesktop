@@ -24,6 +24,12 @@ import kotlinx.serialization.json.intOrNull
  * Event shapes are the contract with `call.js`; change either side only with
  * the other, and keep `EngineBridgeTest` as the pin.
  */
+/*
+ * One function per page API, which is what the count is measuring. Splitting
+ * the bridge would put half the page's surface in one file and half in
+ * another, with nothing to say which half anything belongs to.
+ */
+@Suppress("TooManyFunctions")
 object EngineBridge {
 
     /** The page announced itself. Not a [CallEngineEvent]; the engine gates on it. */
@@ -120,6 +126,28 @@ object EngineBridge {
     const val START_SCREEN_SHARE_SCRIPT = "zillitCall.startScreenShare()"
     const val STOP_SCREEN_SHARE_SCRIPT = "zillitCall.stopScreenShare()"
 
+    const val START_RECORDING_SCRIPT = "zillitCall.startRecording()"
+    const val STOP_RECORDING_SCRIPT = "zillitCall.stopRecording()"
+
+    /**
+     * One slice of a finished recording, or null when [message] is not one.
+     *
+     * The file crosses the bridge in base64 slices because the router carries
+     * strings, and one message holding a whole call's audio would be tens of
+     * megabytes through a channel sized for events.
+     */
+    fun recordingChunk(message: String): String? {
+        val obj = runCatching { json.parseToJsonElement(message) as? JsonObject }
+            .getOrNull() ?: return null
+        if (obj.str("type") != "recording-chunk") return null
+        return obj.str("data")
+    }
+
+    /** True when [message] closes a recording's chunk stream. */
+    fun isRecordingDone(message: String): Boolean =
+        runCatching { (json.parseToJsonElement(message) as? JsonObject)?.str("type") }
+            .getOrNull() == "recording-done"
+
     /**
      * Device ids are opaque strings from the browser, so they are passed as
      * JSON rather than spliced raw — the same reasoning as the stage model.
@@ -147,6 +175,9 @@ object EngineBridge {
     fun themeScript(json: String): String = "zillitCall.setTheme(${quote(json)})"
 
     fun compactScript(compact: Boolean): String = "zillitCall.setCompact($compact)"
+
+    /** Floats one emoji over the page's own picture. See `showReaction` in call.js. */
+    fun reactionScript(json: String): String = "zillitCall.showReaction(${quote(json)})"
 
     /**
      * A JS string literal that cannot break out of itself.
