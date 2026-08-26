@@ -994,7 +994,6 @@ sealed interface AppGraph {
                 ),
             )
 
-            val callEngine = buildCallEngine(config, appScope)
             // The Maps tool's canvas. Constructing it costs nothing — Chromium
             // work begins on the tool's first open, and the runtime is shared
             // with the call engine (one CefApp, separate clients). The key
@@ -1011,9 +1010,28 @@ sealed interface AppGraph {
                 googleMapsKey = { remoteConfigRepository.current()?.googleMapsKey },
                 scope = appScope,
             ).also(Shutdown::locationPicker)
+            // Hoisted above the call coordinator, which needs it: a finished
+            // call recording is posted into chat through the same storage
+            // every other attachment uses.
+            val attachmentUploader =
+                uploader(storageClient, apiClient, config, remoteConfigRepository, projectContext)
             // One instance, shared: the coordinator and the call-log list are
             // the same surface talking to the same production.
             val callApi = CallApi(apiClient, config)
+            // Built after the API because Line 1 needs it: the SFU transports
+            // want relay credentials, and they must be in hand before a
+            // transport exists rather than after.
+            val callEngine = buildCallEngine(config, appScope) {
+                callApi.turnCredentials(
+                    projectId = projectContext?.context?.value?.project?.projectId,
+                    // Paired with the project deliberately: a project id sent
+                    // with the ambient user id is a pairing the server cannot
+                    // place. Both come from the same context here, so this is
+                    // the open production and unchanged in practice — it is
+                    // the pairing that is being made explicit.
+                    userId = projectContext?.context?.value?.profile?.userId,
+                )
+            }
             val callCoordinator = buildCallCoordinator(
                 callEngine, callApi, config, socketEvents, appScope,
                 // Firestore rides the plain client: it is not the Zillit API,
@@ -1023,6 +1041,9 @@ sealed interface AppGraph {
                 selfDeviceId = { headerContext.value.deviceId.takeIf(String::isNotBlank) },
                 selfName = { projectContext?.context?.value?.profile?.fullName },
                 preferences = preferences,
+                // What the phones and the web do when a recording stops: the
+                // file goes to the conversation, not only to this disk.
+                share = callRecordingShare(attachmentUploader, chatRepository),
             )
 
             com.zillit.desktop.feature.calls.data.CallRinger(callCoordinator, appScope)
@@ -1110,7 +1131,7 @@ sealed interface AppGraph {
                 contactRepository = ContactRepositoryImpl(apiClient, config),
                 signatureRepository = SignatureRepositoryImpl(apiClient, config),
                 folderRepository = FolderRepositoryImpl(apiClient, config),
-                attachmentUploader = uploader(storageClient, apiClient, config, remoteConfigRepository, projectContext),
+                attachmentUploader = attachmentUploader,
                 noticeMedia = S3NoticeMediaSource(
                     httpClient = storageClient,
                     credentials = { awsKeyPair(remoteConfigRepository) },
@@ -1321,6 +1342,7 @@ private fun buildCallCoordinator(
     selfDeviceId: () -> String?,
     selfName: () -> String?,
     preferences: PreferenceStore,
+    share: com.zillit.desktop.feature.calls.domain.CallRecordingShare,
 ): CallCoordinator = CallCoordinator(
     api = callApi,
     bus = socketEvents,
@@ -1330,6 +1352,7 @@ private fun buildCallCoordinator(
     selfDeviceId = selfDeviceId,
     plane = buildStatusPlane(config, planeClient, selfDeviceId),
     selfName = selfName,
+    share = share,
     // Device-scoped: the headset belongs to the machine, so the choice
     // survives sign-out and the next person to use this computer.
     loadAudioDevices = {
@@ -1349,15 +1372,19 @@ private fun buildCallCoordinator(
 private fun buildCallEngine(
     config: AppConfig,
     appScope: kotlinx.coroutines.CoroutineScope,
+    turn: suspend () -> com.zillit.desktop.feature.calls.data.protoo.TurnCredentials,
 ): com.zillit.desktop.feature.calls.domain.CallEngine {
     val appId = config.agoraAppId
     if (appId == null) {
+        // Line 1 does not need an Agora app id, but the page it runs in is
+        // built alongside Agora's, so this switch still takes both lines out.
+        // Worth revisiting if a deployment ever ships mediasoup-only.
         ZillitLog.i("Calls") { "media engine off — no AGORA_APP_ID for this env" }
         return NoopCallEngine()
     }
-    ZillitLog.i("Calls") { "media engine on (KCEF + Agora Web SDK)" }
+    ZillitLog.i("Calls") { "media engine on (KCEF; Agora line 2, mediasoup line 1)" }
     // Handed to the shutdown path so its parking window cannot outlive the app.
-    return KcefCallEngine(appId, appScope).also(Shutdown::engine)
+    return KcefCallEngine(appId, appScope, turn).also(Shutdown::engine)
 }
 
 /** The Firestore mirror when the file names a project; socket-only otherwise. */

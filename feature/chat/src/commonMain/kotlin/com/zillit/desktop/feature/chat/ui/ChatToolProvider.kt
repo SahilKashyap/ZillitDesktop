@@ -23,7 +23,7 @@ class ChatToolProvider(
     private val onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit = {},
     private val loadThumbnail:
     suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap? = { null },
-    private val onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean) -> Unit)? = null,
+    private val onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)? = null,
     /** The one shared speaker; null renders voice notes as plain chips. */
     private val player: com.zillit.desktop.core.designsystem.component.AudioPlayer? = null,
     private val loadAudio:

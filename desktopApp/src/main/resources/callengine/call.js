@@ -53,17 +53,53 @@
         send({ type: 'error', message: describe(context, error) });
     }
 
-    /** Degraded but alive: a missing camera must not end an audio call. */
+    /**
+     * Degraded but alive: a missing camera must not end an audio call.
+     *
+     * The step is sent as its own field as well as being folded into the
+     * message. Kotlin branches on `where` to decide which warnings are worth
+     * telling the user about, and reading that out of prose would be fragile —
+     * while sending no `where` at all, as this used to, meant every Agora
+     * warning was unattributable and a failed screen share said nothing.
+     */
     function warn(context, error) {
-        send({ type: 'warning', message: describe(context, error) });
+        send({ type: 'warning', where: context, message: describe(context, error) });
     }
 
     const MUTE_SVG =
         '<svg viewBox="0 0 24 24"><path d="M3 3l18 18-1.4 1.4L3 4.4 4.4 3 3 3zm9 12a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v.9l6 6V12a3 3 0 0 1-3 3zm-7-3a7 7 0 0 0 10.6 6l-1.5-1.5A5 5 0 0 1 7 12H5z"/></svg>';
 
+    /**
+     * Profile pictures, by user id, as data URIs.
+     *
+     * Pushed from Kotlin rather than fetched here: the pictures live behind
+     * signed storage URLs the app already knows how to fetch, and the page has
+     * neither the credentials nor any business holding them. Empty until they
+     * arrive, and a tile with no entry keeps its initials — which is what
+     * every tile did before, and is still the answer for someone whose
+     * picture has not loaded or who has none.
+     */
+    const avatars = new Map();
+
     function initials(name) {
         const parts = String(name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
         return parts.length ? parts.map(p => p[0].toUpperCase()).join('') : '?';
+    }
+
+    /**
+     * What fills a tile's disc: their picture, or their initials.
+     *
+     * The picture is what the rest of the app shows for a person — an audio
+     * call's grid draws it — so a video call whose camera is off should not
+     * fall back to something plainer than the audio call it just was.
+     */
+    function face(model) {
+        const uri = avatars.get(model.peerId);
+        if (!uri) { return initials(model.name); }
+        // The alt text is deliberately empty: the name is already on the
+        // tile's chip, and a broken picture should leave the disc plain
+        // rather than printing the name twice.
+        return '<img src="' + uri + '" alt="">';
     }
 
     /**
@@ -124,7 +160,7 @@
             '<div class="ring" style="width:' + ringSize + 'px;height:' + ringSize + 'px"></div>' +
             '<div class="disc" style="width:' + disc + 'px;height:' + disc + 'px;background:' +
             (model.hue || '#5f6368') + ';font-size:' + Math.round(disc / 2.6) + 'px">' +
-            initials(model.name) + '</div>';
+            face(model) + '</div>';
         tile.appendChild(mount);
 
         const chip = document.createElement('div');
@@ -136,6 +172,15 @@
         mute.className = 'mute';
         mute.innerHTML = MUTE_SVG;
         tile.appendChild(mute);
+
+        // A raised hand, in the tile's corner. The banner names people; this
+        // marks the face, which is what a busy grid is scanned by.
+        if (model.hand) {
+            const hand = document.createElement('div');
+            hand.className = 'hand';
+            hand.textContent = '✋';
+            tile.appendChild(hand);
+        }
 
         cells.set(model.uid, { root: tile, mount: mount, model: model });
         return tile;
@@ -149,17 +194,74 @@
         return null;
     }
 
+    /**
+     * Shows [track] in the self tile.
+     *
+     * Keyed on the cell AND the track. The cell alone is not enough: starting
+     * a share swaps the camera for the screen inside the same mount, so a
+     * cell-only guard decided the slot was already up to date and the sharer
+     * went on watching their own camera for the whole share. The guard itself
+     * has to stay — see `playingIn` — it just has to notice both things that
+     * can change.
+     */
     function playLocal(track) {
         const cell = selfCell();
         if (!cell || !track) { return; }
-        if (playingIn.get(SELF) === cell.mount) { return; }
+        if (playingIn.get(SELF) === cell.mount && playingTrack.get(SELF) === track) { return; }
         track.play(cell.mount);
         playingIn.set(SELF, cell.mount);
+        playingTrack.set(SELF, track);
+    }
+
+    /** Whatever this device is publishing right now, or null for neither. */
+    function localPreviewTrack() {
+        if (screenTrack) { return screenTrack; }
+        return camTrack && desiredCamEnabled ? camTrack : null;
+    }
+
+    /**
+     * Re-derives the self tile from what is actually being published.
+     *
+     * Called wherever that can change, rather than each of those places
+     * deciding for itself: `render()` clears the played-in map wholesale, so
+     * any stage push — someone muting, someone joining — used to drop a live
+     * screen preview back to the initials disc, because the only thing that
+     * re-mounted the local slot knew about the camera and nothing else.
+     */
+    function syncLocalPreview() {
+        const track = localPreviewTrack();
+        if (track) { playLocal(track); } else { forgetLocal(); }
+    }
+
+    /**
+     * Same, for callers OUTSIDE the render pass.
+     *
+     * The difference is the repaint, and it is the whole reason these are two
+     * functions: [syncLocalPreview] is called from `mountTracks`, which
+     * `render` calls, so re-rendering from there recurses until the stack
+     * gives out — `RangeError: Maximum call stack size exceeded`, on every
+     * call with the camera off, which is most of them. Event handlers are not
+     * inside a render and do need the disc painted back.
+     */
+    function refreshLocalPreview() {
+        const track = localPreviewTrack();
+        if (track) { playLocal(track); return; }
+        // Only when something was actually torn down: an unconditional render
+        // here would repaint the whole stage on every camera toggle.
+        if (forgetLocal()) { render(); }
+    }
+
+    /** Drops the local slot. True when something was playing in it. */
+    function forgetLocal() {
+        const had = playingIn.has(SELF);
+        playingIn.delete(SELF);
+        playingTrack.delete(SELF);
+        return had;
     }
 
     /** Puts the initials disc back where the stopped preview was. */
     function clearLocal() {
-        playingIn.delete(SELF);
+        forgetLocal();
         render();
     }
 
@@ -175,6 +277,9 @@
      */
     const playingIn = new Map(); // uid -> element
 
+    /** What is playing there, so a swap inside one cell is not mistaken for a no-op. */
+    const playingTrack = new Map(); // uid -> track
+
     /** Our own preview shares the mechanism; SELF is its key in `playingIn`. */
     const SELF = 'self';
 
@@ -187,22 +292,11 @@
             track.play(cell.mount);
             playingIn.set(uid, cell.mount);
         });
-        mountLocal();
-    }
-
-    /**
-     * The local preview, into whichever cell is ours.
-     *
-     * Re-mounted after a re-layout for the same reason the remote tracks are:
-     * render() replaces every element, so whatever was playing is playing into
-     * a node that is no longer on the page.
-     */
-    function mountLocal() {
-        const cell = selfCell();
-        if (!cell || !camTrack || !desiredCamEnabled) { return; }
-        if (playingIn.get(SELF) === cell.mount) { return; }
-        camTrack.play(cell.mount);
-        playingIn.set(SELF, cell.mount);
+        // Re-derived rather than re-mounted from the camera: after a
+        // re-layout the local slot has to come back as whatever is being
+        // published, which during a share is the screen.
+        syncLocalPreview();
+        line1Mount();
     }
 
     /** The live half: speaking and mute. Class toggles only — never play(). */
@@ -276,6 +370,10 @@
                         applySpeaker(user.audioTrack);
                         user.audioTrack.play();
                         trace('playing remote audio uid=' + user.uid);
+                        // A voice arriving mid-recording joins the mix.
+                        if (user.audioTrack.getMediaStreamTrack) {
+                            recorderAdd(user.audioTrack.getMediaStreamTrack());
+                        }
                     } else {
                         trace('NO audioTrack after subscribe uid=' + user.uid);
                     }
@@ -384,7 +482,312 @@
         }
     }
 
+    /*
+     * The container the recorder writes.
+     *
+     * MP4/AAC first, because a finished recording is not only saved here — it
+     * is posted into the call's chat, and the players that must open it are
+     * the phones'. iOS cannot decode WebM/Opus at all, so a WebM recording
+     * arrives there as an audio message nobody can play. Chromium only muxes
+     * MP4 where the platform hands it an AAC encoder, which is why the choice
+     * is probed rather than assumed; WebM stays as the fallback that at least
+     * plays here and on the web.
+     */
+    const RECORDER_TYPES = [
+        { mime: 'audio/mp4;codecs=mp4a.40.2', ext: 'm4a' },
+        { mime: 'audio/mp4', ext: 'm4a' },
+        { mime: 'audio/webm;codecs=opus', ext: 'webm' },
+        { mime: 'audio/webm', ext: 'webm' }
+    ];
+
+    /** The first container this build can actually write. */
+    function recorderType() {
+        for (let i = 0; i < RECORDER_TYPES.length; i += 1) {
+            try {
+                if (MediaRecorder.isTypeSupported(RECORDER_TYPES[i].mime)) { return RECORDER_TYPES[i]; }
+            } catch (e) {
+                // Some builds throw on an unknown type instead of answering false.
+            }
+        }
+        return RECORDER_TYPES[RECORDER_TYPES.length - 1];
+    }
+
+    /*
+     * The call recorder.
+     *
+     * Audio only, mixed here because the page is the one place every voice on
+     * either line actually flows through: the local microphone and each remote
+     * track feed one AudioContext destination, and a MediaRecorder writes the
+     * mix. Tracks that arrive mid-recording are added through recorderAdd from
+     * the same handlers that start them playing. The finished file crosses the
+     * bridge in base64 slices; Kotlin reassembles and saves it.
+     */
+    let recorder = null;
+    let recorderCtx = null;
+    let recorderDest = null;
+    let recorderBlobs = [];
+    let recorderChosen = RECORDER_TYPES[RECORDER_TYPES.length - 1];
+    let recorderStartedAt = 0;
+
+    function recorderAdd(streamOrTrack) {
+        if (!recorderCtx || !recorderDest || !streamOrTrack) { return; }
+        try {
+            const stream = (typeof MediaStream !== 'undefined' && streamOrTrack instanceof MediaStream)
+                ? streamOrTrack
+                : new MediaStream([streamOrTrack]);
+            if (!stream.getAudioTracks().length) { return; }
+            recorderCtx.createMediaStreamSource(stream).connect(recorderDest);
+        } catch (e) {
+            warn('recorderAdd', e);
+        }
+    }
+
+    function deliverRecording() {
+        const chosen = recorderChosen;
+        // Wall clock rather than the blob: the mixed stream has no timeline of
+        // its own, and the chat bubble's clock is the only consumer.
+        const millis = recorderStartedAt ? Math.max(0, Date.now() - recorderStartedAt) : 0;
+        recorderStartedAt = 0;
+        const blob = new Blob(recorderBlobs, { type: chosen.mime });
+        recorderBlobs = [];
+        recorder = null;
+        if (recorderCtx) { try { recorderCtx.close(); } catch (e) { /* already closed */ } }
+        recorderCtx = null;
+        recorderDest = null;
+        if (!blob.size) { return; }
+        const reader = new FileReader();
+        reader.onload = function () {
+            const base64 = String(reader.result).split(',')[1] || '';
+            const SLICE = 262144;
+            for (let i = 0; i < base64.length; i += SLICE) {
+                send({ type: 'recording-chunk', data: base64.slice(i, i + SLICE) });
+            }
+            send({ type: 'recording-done', mime: chosen.mime, ext: chosen.ext, duration: millis });
+        };
+        reader.readAsDataURL(blob);
+    }
+
+    /**
+     * A video track for one chosen screen or window.
+     *
+     * `getDisplayMedia` cannot be told which source to take — that is what the
+     * browser's own picker is for, and there isn't one here. Chromium's older
+     * constraint form can, and this build still parses it, so the app's picker
+     * names the source and the SDK is handed the finished track rather than
+     * being asked to find one.
+     */
+    async function captureChosenSource(sourceId) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: sourceId,
+                    maxWidth: 1920,
+                    maxHeight: 1080,
+                },
+            },
+        });
+        const track = stream.getVideoTracks()[0];
+        if (!track) { throw new Error('the chosen source produced no video'); }
+        return AgoraRTC.createCustomVideoTrack({ mediaStreamTrack: track });
+    }
+
+    /** Enough lanes that simultaneous reactions do not stack on one line. */
+    const REACTION_LANES = 7;
+    const REACTION_LANE_WIDTH = 26;
+    const MAX_REACTIONS = 24;
+
+    /** A stable horizontal offset for an id — same reaction, same path. */
+    function hashLane(key) {
+        let h = 0;
+        for (let i = 0; i < key.length; i++) { h = (h * 31 + key.charCodeAt(i)) | 0; }
+        const lane = Math.abs(h) % REACTION_LANES - Math.floor(REACTION_LANES / 2);
+        return lane * REACTION_LANE_WIDTH;
+    }
+
+    /*
+     * Line 1's media sink.
+     *
+     * Agora hands this page track objects with a `play(element)` of their own;
+     * mediasoup hands it a bare MediaStream, which has to be bound to a real
+     * media element or Chromium renders and plays nothing at all. There was no
+     * such element path here, so every consumed track was being discarded at
+     * this boundary and Line 1 calls were silent while reporting themselves
+     * healthy.
+     *
+     * Audio gets a detached <audio autoplay>: it needs no layout, only a sink.
+     * Video is bound into the tile the grid already draws for that peer — and
+     * re-bound after every render(), because render() rebuilds each cell and a
+     * video element left in a discarded node is a picture nobody sees.
+     */
+    const line1Media = new Map();   // consumerId -> { peerId, kind, stream, element }
+
+    /** The local camera on Line 1, previewed in the self tile. */
+    let line1Local = null;          // { stream, element } or null
+
+    /**
+     * The tile for one Line 1 peer id.
+     *
+     * Peer ids are `userId:deviceId` (with a rejoin suffix after a redial);
+     * the stage model's `peerId` carries the USER id — the identity half is
+     * what survives rejoins, so it is the only stable key.
+     */
+    function line1Tile(peerId) {
+        const identity = String(peerId || '').split(':')[0];
+        for (const cell of cells.values()) {
+            if (!cell.model) { continue; }
+            if (cell.model.peerId === identity || cell.model.peerId === peerId ||
+                String(cell.model.uid) === peerId) {
+                return cell;
+            }
+        }
+        return null;
+    }
+
+    function line1VideoElement(stream) {
+        const video = document.createElement('video');
+        video.autoplay = true;
+        video.playsInline = true;
+        video.muted = true;          // the audio arrives on its own consumer
+        video.style.width = '100%';
+        video.style.height = '100%';
+        video.style.objectFit = 'cover';
+        video.srcObject = stream;
+        return video;
+    }
+
+    /** Puts every Line 1 video into its (possibly rebuilt) cell. */
+    function line1Mount() {
+        line1Media.forEach((entry) => {
+            if (entry.kind !== 'video') { return; }
+            const cell = line1Tile(entry.peerId);
+            if (!cell) { return; }
+            if (entry.element && entry.element.parentNode === cell.mount) { return; }
+            if (!entry.element) { entry.element = line1VideoElement(entry.stream); }
+            cell.mount.innerHTML = '';
+            cell.mount.appendChild(entry.element);
+        });
+        if (line1Local) {
+            const cell = selfCell();
+            if (cell && (!line1Local.element || line1Local.element.parentNode !== cell.mount)) {
+                if (!line1Local.element) { line1Local.element = line1VideoElement(line1Local.stream); }
+                cell.mount.innerHTML = '';
+                cell.mount.appendChild(line1Local.element);
+            }
+        }
+    }
+
     window.zillitCall = {
+
+        /** Binds one consumed remote track so it is actually heard or seen. */
+        attachRemote(consumerId, peerId, kind, stream) {
+            try {
+                this.detachRemote(consumerId);
+                if (kind === 'audio') {
+                    const sink = document.createElement('audio');
+                    sink.autoplay = true;
+                    sink.srcObject = stream;
+                    // Detached from the document on purpose: an audio element
+                    // needs no layout, and appending it to the grid would take
+                    // space from the picture.
+                    line1Media.set(consumerId, { peerId: peerId, kind: kind, stream: stream, element: sink });
+                    const played = sink.play();
+                    if (played && played.catch) { played.catch(function () { /* autoplay policy */ }); }
+                    recorderAdd(stream);
+                    return;
+                }
+                line1Media.set(consumerId, { peerId: peerId, kind: kind, stream: stream, element: null });
+                line1Mount();
+            } catch (e) {
+                warn('attachRemote', e);
+            }
+        },
+
+        /** Releases one consumer's element so a closed track stops holding it. */
+        detachRemote(consumerId) {
+            const entry = line1Media.get(consumerId);
+            if (!entry) { return; }
+            line1Media.delete(consumerId);
+            try {
+                if (entry.element) {
+                    entry.element.srcObject = null;
+                    if (entry.element.parentNode) { entry.element.parentNode.removeChild(entry.element); }
+                }
+            } catch (e) {
+                warn('detachRemote', e);
+            }
+        },
+
+        /** Starts recording the call's mixed audio. No-op while one runs. */
+        startRecording() {
+            if (recorder) { return; }
+            try {
+                recorderCtx = new AudioContext();
+                recorderDest = recorderCtx.createMediaStreamDestination();
+                // Our own voice, whichever line carries it.
+                if (micTrack && micTrack.getMediaStreamTrack) {
+                    recorderAdd(micTrack.getMediaStreamTrack());
+                }
+                if (window.zillitMs && window.zillitMs.getLocalAudioTrack) {
+                    recorderAdd(window.zillitMs.getLocalAudioTrack());
+                }
+                // Everyone already talking; later arrivals join via recorderAdd.
+                remoteAudio.forEach(track => {
+                    if (track.getMediaStreamTrack) { recorderAdd(track.getMediaStreamTrack()); }
+                });
+                line1Media.forEach(entry => {
+                    if (entry.kind === 'audio') { recorderAdd(entry.stream); }
+                });
+                recorderBlobs = [];
+                recorderChosen = recorderType();
+                recorderStartedAt = Date.now();
+                recorder = new MediaRecorder(recorderDest.stream, { mimeType: recorderChosen.mime });
+                recorder.ondataavailable = e => {
+                    if (e.data && e.data.size) { recorderBlobs.push(e.data); }
+                };
+                recorder.onstop = deliverRecording;
+                recorder.start(1000);
+            } catch (e) {
+                recorder = null;
+                if (recorderCtx) { try { recorderCtx.close(); } catch (e2) { /* already closed */ } }
+                recorderCtx = null;
+                recorderDest = null;
+                warn('startRecording', e);
+            }
+        },
+
+        /** Stops the recorder; the file is delivered from its onstop. */
+        stopRecording() {
+            if (!recorder) { return; }
+            try { recorder.stop(); } catch (e) { warn('stopRecording', e); }
+        },
+
+        /** The local Line 1 camera, previewed in the self tile. */
+        attachLocalPreview(stream) {
+            // Released before it is replaced. Line 1 now re-points this at
+            // every share start and stop, and an element left bound to a
+            // stream keeps a sink alive on a track nobody is watching.
+            const held = line1Local;
+            if (held && held.element) {
+                try {
+                    held.element.srcObject = null;
+                    if (held.element.parentNode) { held.element.parentNode.removeChild(held.element); }
+                } catch (e) { warn('attachLocalPreview', e); }
+            }
+            line1Local = { stream: stream, element: null };
+            line1Mount();
+        },
+
+        clearLocalPreview() {
+            const held = line1Local;
+            line1Local = null;
+            if (held && held.element && held.element.parentNode) {
+                held.element.srcObject = null;
+                held.element.parentNode.removeChild(held.element);
+            }
+            render();
+        },
+
         async join(appId, channel, token, uid, withVideo) {
             if (client) { await this.leave(); }
             const gen = ++joinGeneration;
@@ -444,6 +847,19 @@
             try {
                 if (micTrack) { micTrack.close(); micTrack = null; }
                 if (camTrack) { camTrack.close(); camTrack = null; }
+                // The share too, and unconditionally — `client.leave()` does
+                // not stop a capture, which is why the mic and camera are
+                // closed by hand a line above. Leaving this open outlives the
+                // call: the page is never rebuilt, so ScreenCaptureKit keeps
+                // running with the macOS recording indicator lit, the next
+                // `startScreenShare` silently no-ops on `screenTrack` still
+                // being set, and the next call's self tile shows the last
+                // call's screen. No unpublish — that throws once the client
+                // is gone, and the server has forgotten us regardless.
+                if (screenTrack) {
+                    try { screenTrack.close(); } catch (e2) { /* already closed */ }
+                    screenTrack = null;
+                }
                 clearLocal();
                 videoTracks.clear();
                 playingIn.clear();
@@ -473,12 +889,13 @@
             try {
                 if (enabled && !camTrack && client) {
                     camTrack = await AgoraRTC.createCameraVideoTrack();
-                    playLocal(camTrack);
                     await client.publish(camTrack);
                 } else if (camTrack) {
                     await camTrack.setEnabled(enabled);
-                    if (enabled) { playLocal(camTrack); } else { clearLocal(); }
                 }
+                // One rule for what the self tile shows, so turning the camera
+                // on or off while sharing cannot steal the tile from the share.
+                refreshLocalPreview();
             } catch (e) {
                 warn('camera', e);
             }
@@ -534,18 +951,22 @@
          * unpublished first and restored on stop — the same trade the phones
          * make (they suppress camera-flip while sharing for this reason).
          *
-         * Chromium picks the source itself: an embedded browser has nowhere
-         * to draw the picker, so the runtime is launched with
-         * --auto-select-desktop-capture-source. The whole screen is shared,
-         * not a chosen window.
+         * [sourceId] is a Chromium DesktopMediaID the app's own picker chose —
+         * `screen:<display>:0` or `window:<id>:0`. Embedded Chromium draws no
+         * picker of its own, so without one the browser hands back the whole
+         * desktop; with one, the capture is built here from the legacy
+         * constraint form, which this build still honours and which is the
+         * only way to name a specific source from inside the page.
          */
-        async startScreenShare() {
+        async startScreenShare(sourceId) {
             if (!client || screenTrack) { return; }
             try {
-                screenTrack = await AgoraRTC.createScreenVideoTrack({}, 'disable');
+                screenTrack = sourceId
+                    ? await captureChosenSource(sourceId)
+                    : await AgoraRTC.createScreenVideoTrack({}, 'disable');
                 if (camTrack) { await client.unpublish(camTrack); }
                 await client.publish(screenTrack);
-                playLocal(screenTrack);
+                refreshLocalPreview();
                 // The browser's own "Stop sharing" bar ends the track without
                 // telling us; without this the UI would still claim to share.
                 screenTrack.on('track-ended', () => { window.zillitCall.stopScreenShare(); });
@@ -553,7 +974,30 @@
             } catch (e) {
                 // A cancelled picker is a decision, not a failure.
                 warn('startScreenShare', e);
+                // Close before dropping: the track may already own a live
+                // capture — publish is the step most likely to have thrown,
+                // and by then getUserMedia has succeeded. Letting it go
+                // unclosed leaves ScreenCaptureKit running, and the macOS
+                // recording indicator lit, on a share we just reported as
+                // stopped.
+                if (screenTrack) {
+                    try { screenTrack.close(); } catch (e2) { /* already closed */ }
+                }
                 screenTrack = null;
+                // The camera was unpublished a line before the publish that
+                // failed, and nothing else republishes it: setCam only toggles
+                // a track that is already published, and stopScreenShare
+                // returns early with no screenTrack. Without this the peers
+                // see a black tile for the rest of the call while this end
+                // still shows the camera as on.
+                try {
+                    if (camTrack && desiredCamEnabled) {
+                        await client.publish(camTrack);
+                    }
+                } catch (e3) {
+                    warn('restoreCamera', e3);
+                }
+                refreshLocalPreview();
                 send({ type: 'screen-share', sharing: false });
             }
         },
@@ -570,13 +1014,12 @@
             try {
                 if (camTrack && desiredCamEnabled) {
                     await client.publish(camTrack);
-                    playLocal(camTrack);
-                } else {
-                    clearLocal();
                 }
             } catch (e) {
                 warn('restoreCamera', e);
             }
+            // Null already, so this lands on the camera or the initials disc.
+            refreshLocalPreview();
             send({ type: 'screen-share', sharing: false });
         },
 
@@ -601,6 +1044,19 @@
             render();
         },
 
+        /**
+         * One person's profile picture, as a data URI.
+         *
+         * Sent one at a time as the app finishes fetching each: a call can
+         * start before any of them have arrived, and waiting for the slowest
+         * would leave every tile plain until then.
+         */
+        setAvatar(peerId, dataUri) {
+            if (!peerId) { return; }
+            if (dataUri) { avatars.set(peerId, dataUri); } else { avatars.delete(peerId); }
+            render();
+        },
+
         /** The app's palette, so this surface is not a foreign slab. */
         setTheme(json) {
             try {
@@ -615,6 +1071,56 @@
                 });
             } catch (e) {
                 warn('setTheme', e);
+            }
+        },
+
+        /**
+         * Floats one emoji up over the picture.
+         *
+         * Drawn here and not by the app, because this page owns every pixel
+         * inside its rectangle: the surface is a heavyweight native component
+         * and Compose layers over it are never painted. The app still draws
+         * reactions itself on calls with no video, where there is no surface
+         * to lose them behind.
+         *
+         * The element removes itself when its animation ends, so nothing
+         * accumulates over a long call; the cap is a floor under that in case
+         * animationend never fires (a backgrounded window can skip it).
+         */
+        showReaction(json) {
+            try {
+                const data = JSON.parse(json) || {};
+                if (!data.emoji) { return; }
+                const layer = document.getElementById('reactions');
+                if (!layer) { return; }
+
+                while (layer.childElementCount >= MAX_REACTIONS) {
+                    layer.removeChild(layer.firstElementChild);
+                }
+
+                const node = document.createElement('div');
+                node.className = 'reaction';
+                // Spread across the middle of the picture, derived from the id
+                // so the same reaction always takes the same path.
+                const lane = hashLane(String(data.id || data.emoji));
+                node.style.left = `calc(50% + ${lane}px)`;
+
+                const face = document.createElement('div');
+                face.className = 'face';
+                face.textContent = data.emoji;
+                node.appendChild(face);
+
+                if (data.name) {
+                    const who = document.createElement('div');
+                    who.className = 'who';
+                    who.textContent = data.name;
+                    node.appendChild(who);
+                }
+
+                node.addEventListener('animationend', () => node.remove());
+                layer.appendChild(node);
+            } catch (e) {
+                warn('showReaction', e);
             }
         },
 

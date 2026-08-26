@@ -17,6 +17,11 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
         }
+        jvmMain.dependencies {
+            // Line 1's protoo signalling. See the catalog entry for why the
+            // WebSocket is OkHttp's rather than Ktor's or the call page's.
+            implementation(libs.okhttp)
+        }
         commonTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)
             implementation(libs.ktor.client.mock)

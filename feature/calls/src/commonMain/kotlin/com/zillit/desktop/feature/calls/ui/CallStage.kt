@@ -1,9 +1,7 @@
 package com.zillit.desktop.feature.calls.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,11 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.input.pointer.pointerInput
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,32 +59,17 @@ fun CallStage(
     val colors = ZillitTheme.colors
     val showsVideo = state.stage == CallStageKind.Video && videoAvailable
 
-    // Bumped by any pointer event, which is what wakes the controls back up.
-    var wakeTick by remember { mutableStateOf(0) }
-    val controlsVisible = rememberControlsVisible(wakeTick, showsVideo)
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.scrim)
-            .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        awaitPointerEvent()
-                        wakeTick++
-                    }
-                }
-            },
-    ) {
+    Box(modifier = Modifier.fillMaxSize().background(colors.scrim)) {
         Column(
             modifier = Modifier.fillMaxSize().padding(ZillitTheme.spacing.lg),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            AnimatedVisibility(controlsVisible, enter = fadeIn(), exit = fadeOut()) {
-                CallStageHeader(state, onEvent)
-            }
+            CallStageHeader(state, onEvent)
             ConnectionBanner(state, videoAvailable)
+            RecordingBanner(state)
             HandRaisedBanner(state)
+            NoticeBanner(state, onEvent)
             StageBody(
                 state = state,
                 onEvent = onEvent,
@@ -99,35 +78,38 @@ fun CallStage(
                 onSlot = onSlot,
                 modifier = Modifier.weight(1f),
             )
+            /*
+             * A row of its own, never a float over the picture.
+             *
+             * The video is a heavyweight AWT component — Chromium painting
+             * straight onto its own native surface — and it sits above every
+             * Compose layer regardless of z-order. A control bar floated over
+             * it is not dimmed or behind: it is simply not drawn, and the only
+             * buttons that survive are the ones hanging off the edge of the
+             * video rectangle. That is what a call looked like the moment
+             * anybody turned their camera on.
+             *
+             * So the bar takes real space and the picture gets what is left.
+             * It also stays put when somebody enables video mid-call, rather
+             * than the whole layout jumping between two arrangements.
+             */
+            StageControls(state = state, onEvent = onEvent)
         }
 
         /*
-         * Above everything, including the controls.
+         * Reactions, on the Compose side, for calls with no picture.
          *
-         * Reactions rise from the dock and past it, so this has to be the last
-         * thing composed in the Box. It takes no pointer input — it is drawn
-         * over the End call button for part of its flight, and an emoji must
-         * never be what a click lands on.
+         * Same heavyweight rule: nothing composed here survives inside the
+         * video rectangle, so on a video call the emoji are drawn by the page
+         * itself (see the reaction push in `CallSurface`) and this layer stands
+         * down rather than animating something nobody can see.
          */
-        CallReactionLayer(
-            reactions = state.reactions,
-            onExpired = { onEvent(CallEvent.ExpireReaction(it)) },
-            modifier = Modifier.fillMaxSize(),
-        )
-
-        // Overlaid rather than stacked: a control bar that reserves a row
-        // shrinks the picture it belongs to, and every call app of the last
-        // decade floats it. Removed from composition when hidden, so an
-        // invisible bar cannot swallow a click meant for the video.
-        AnimatedVisibility(
-            visible = controlsVisible,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = ZillitTheme.spacing.lg),
-        ) {
-            StageControls(state = state, onEvent = onEvent)
+        if (!showsVideo) {
+            CallReactionLayer(
+                reactions = state.reactions,
+                onExpired = { onEvent(CallEvent.ExpireReaction(it)) },
+                modifier = Modifier.fillMaxSize(),
+            )
         }
     }
 }
@@ -184,6 +166,14 @@ private fun StageBody(
                 modifier = Modifier.width(ROSTER_WIDTH).fillMaxSize(),
             )
         }
+        if (state.audioPickerOpen) {
+            CallDevicePanel(
+                devices = state.devices,
+                onChooseMicrophone = { onEvent(CallEvent.ChooseMicrophone(it)) },
+                onChooseSpeaker = { onEvent(CallEvent.ChooseSpeaker(it)) },
+                modifier = Modifier.width(ROSTER_WIDTH).fillMaxSize(),
+            )
+        }
         if (state.chatOpen) {
             CallChatPanel(
                 lines = state.chat,
@@ -209,6 +199,16 @@ private fun CallStageHeader(state: CallUiState, onEvent: (CallEvent) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitAvatar(name = state.headerTitle, size = HEADER_AVATAR)
+        // Which line, as the phones label it. The two fail differently, and
+        // the first question about any call problem is which one it was on —
+        // so it is on the surface rather than in a log.
+        if (state.lineLabel.isNotBlank()) {
+            ZillitText(
+                text = state.lineLabel,
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+            )
+        }
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
                 text = state.headerTitle,
@@ -253,26 +253,6 @@ private fun StageControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
         }
         CallDock(state = state, onEvent = onEvent)
     }
-}
-
-/**
- * Whether the control bar is currently up.
- *
- * Re-arms on every [wakeTick], so any pointer event brings the bar back — the
- * behaviour every video app has trained people to expect. On an audio call it
- * never hides: there is nothing behind it to reveal, and a bar that vanished
- * over a static avatar would be hiding the whole interface.
- */
-@Composable
-private fun rememberControlsVisible(wakeTick: Int, showsVideo: Boolean): Boolean {
-    var visible by remember { mutableStateOf(true) }
-    LaunchedEffect(wakeTick, showsVideo) {
-        visible = true
-        if (!showsVideo) return@LaunchedEffect
-        delay(CONTROLS_IDLE_MILLIS)
-        visible = false
-    }
-    return visible
 }
 
 /**
@@ -342,6 +322,69 @@ private fun WindowControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
  * dock button already shows it, but a hand raised five minutes ago is exactly
  * the thing people forget they are still holding up.
  */
+/**
+ * Recording is the one call fact nobody may miss, so it is a standing banner
+ * rather than a badge: whoever holds the recorder, everybody on the call is
+ * told by name — the phones announce it the same way.
+ */
+@Composable
+private fun RecordingBanner(state: CallUiState) {
+    val colors = ZillitTheme.colors
+    val text = when {
+        state.recording -> "You are recording this call"
+        state.recordedBy.isNotBlank() -> "${state.recordedBy} is recording this call"
+        else -> return
+    }
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(BANNER_CORNER))
+            .background(colors.dangerSoft)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Box(modifier = Modifier.size(BANNER_DOT).clip(CircleShape).background(colors.danger))
+        ZillitText(
+            text = text,
+            style = ZillitTheme.typography.bodySmall,
+            color = colors.danger,
+        )
+    }
+}
+
+/**
+ * One line about something that did not work, with a way to dismiss it.
+ *
+ * In the Column with the other banners rather than floating: it has to be
+ * outside the video rectangle to be drawn at all.
+ */
+@Composable
+private fun NoticeBanner(state: CallUiState, onEvent: (CallEvent) -> Unit) {
+    val text = state.notice ?: return
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(BANNER_CORNER))
+            .background(colors.warningSoft)
+            .clickable { onEvent(CallEvent.DismissNotice) }
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitIcon(icon = ZillitIcons.Warning, contentDescription = null, tint = colors.warning)
+        ZillitText(
+            text = text,
+            style = ZillitTheme.typography.bodySmall,
+            color = colors.warning,
+        )
+        ZillitText(
+            text = "Dismiss",
+            style = ZillitTheme.typography.labelSmall,
+            color = colors.textMuted,
+        )
+    }
+}
+
 @Composable
 private fun HandRaisedBanner(state: CallUiState) {
     val colors = ZillitTheme.colors
@@ -429,4 +472,3 @@ private val PANEL_CORNER = 16.dp
 private val HAIRLINE = 1.dp
 
 /** How long the picture goes untouched before the chrome steps aside. */
-private const val CONTROLS_IDLE_MILLIS = 3_500L

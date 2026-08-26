@@ -9,8 +9,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
+import java.awt.BorderLayout
+import javax.swing.JPanel
 import androidx.compose.ui.graphics.ImageBitmap
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.ui.CallEvent
@@ -20,6 +24,7 @@ import com.zillit.desktop.feature.calls.ui.CallOverlay
 import com.zillit.desktop.feature.calls.ui.displayTitle
 import com.zillit.desktop.feature.calls.domain.CallCrewEntry
 import com.zillit.desktop.feature.calls.ui.CallViewModel
+import com.zillit.desktop.feature.calls.ui.reactionJson
 import com.zillit.desktop.feature.calls.ui.themeJson
 import com.zillit.desktop.feature.home.ui.decodeImageBitmap
 
@@ -35,6 +40,12 @@ internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?) {
     val callState by calls.state.collectAsState()
     val engine = ready.callEngine
 
+    // Its own window, so the call's heavyweight browser surface cannot paint
+    // over it. See ShareSourceWindow.
+    callState.sharePicker?.let { picker ->
+        ShareSourceWindow(picker = picker, onEvent = calls::onEvent)
+    }
+
     // The page draws the chrome for its own video tiles, because a heavyweight
     // browser surface owns every pixel inside its rectangle and nothing Compose
     // paints there survives. These three pushes are that model: the palette so
@@ -43,12 +54,52 @@ internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?) {
     val theme = themeJson(ZillitTheme.colors)
     LaunchedEffect(engine, theme) { engine.setTheme(theme) }
     LaunchedEffect(engine, callState.stageJson) { engine.setStage(callState.stageJson) }
-    // Two ways to be small: minimised to the pill inside this window, or
-    // shrunk to the always-on-top thumbnail. The page has one compact mode and
-    // both must reach it — keying on `expanded` alone left the thumbnail
-    // drawing the full multi-tile grid at 360x204.
-    LaunchedEffect(engine, callState.expanded, callState.pipCompact) {
-        engine.setCompact(!callState.expanded || callState.pipCompact)
+    // See CallUiState.pageCompact for which states are actually small — it is
+    // not simply `!expanded`, and getting that wrong hides every participant
+    // but one.
+    LaunchedEffect(engine, callState.pageCompact) { engine.setCompact(callState.pageCompact) }
+
+    /*
+     * Reactions go to the page as they arrive, and each one only once.
+     *
+     * A video call's picture is a heavyweight surface, so the Compose layer
+     * that draws these on an audio call would rise *behind* the video and never
+     * be seen; the page draws them itself instead. Keyed on the list, and the
+     * already-sent set is what stops a recomposition replaying every emoji
+     * still in flight.
+     */
+    var sentReactions by remember { mutableStateOf(emptySet<String>()) }
+    LaunchedEffect(engine, callState.reactions) {
+        callState.reactions
+            .filterNot { it.key in sentReactions }
+            .forEach { engine.showReaction(reactionJson(it)) }
+        sentReactions = callState.reactions.mapTo(mutableSetOf()) { it.key }
+    }
+
+    /*
+     * Faces for the page's own tiles, fetched once each.
+     *
+     * The page draws the tile chrome — it has to, since a heavyweight browser
+     * surface paints over anything Compose puts inside its rectangle — so a
+     * tile whose camera is off falls back to whatever the PAGE can draw. That
+     * used to be initials, which made a video call with the camera off look
+     * plainer than the audio call it had just been, where Compose draws the
+     * real photograph. Handing the same picture over closes that gap.
+     *
+     * Keyed on the tiles' people, and the fetched set is what stops a
+     * recomposition re-fetching a face that is already on the page. Someone
+     * with no picture is remembered as attempted, so a missing avatar costs
+     * one request per call rather than one per recomposition.
+     */
+    var fetchedFaces by remember { mutableStateOf(emptySet<String>()) }
+    val faceOwners = callState.tiles.map { it.userId }.filter { it.isNotBlank() }
+    LaunchedEffect(engine, faceOwners) {
+        faceOwners.filterNot { it in fetchedFaces }.forEach { userId ->
+            fetchedFaces = fetchedFaces + userId
+            fetchAvatar(ready, userId)?.let { bytes ->
+                engine.setAvatar(userId, dataUri(bytes))
+            }
+        }
     }
 
     CallOverlay(
@@ -58,6 +109,16 @@ internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?) {
         videoSurface = callVideoSurface(ready),
     )
 }
+
+/**
+ * Image bytes as a `data:` URI the page can put in an `<img>`.
+ *
+ * The type is declared as PNG regardless of what the bytes actually are:
+ * browsers sniff image data and ignore the declared type, and the storage
+ * layer does not tell us which format it handed back.
+ */
+private fun dataUri(bytes: ByteArray): String =
+    "data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(bytes)
 
 /**
  * The Chromium call page as a composable, when the media engine is real.
@@ -75,19 +136,48 @@ internal fun callVideoSurface(ready: AppGraph.Ready): (@Composable () -> Unit)? 
     return {
         val component by engine.surface.collectAsState()
         component?.let { awtComponent ->
-            // Handed back when the call surface leaves the screen: the engine
-            // parks the component in a window of its own between calls, and a
-            // browser component left with no parent at all is a browser that
-            // will not work for the next call.
+            /*
+             * A holder of this host's own, with the browser inside it.
+             *
+             * Handing the shared browser component straight to SwingPanel
+             * makes it that panel's only child, so moving it to another host
+             * leaves an empty interop group behind — and Compose measures that
+             * group while the losing window is being disposed:
+             *
+             *     ArrayIndexOutOfBoundsException: Index 0 out of bounds for length 0
+             *       at SwingInteropViewGroup.getPreferredSize
+             *       ... ComposeWindow.dispose ... Recomposer.runRecomposeAndApplyChanges
+             *
+             * That throw escapes into the recomposer, which stops the whole UI
+             * updating — the call is still connected, still audible, and there
+             * is no longer any way back to it. It is what happens when the call
+             * window is shrunk or re-homed mid-call, and a screen share is when
+             * users actually do that.
+             *
+             * With a holder, each host's interop group always has exactly one
+             * child of its own and the contested re-parenting happens a level
+             * down, where nothing measures. Correct whichever way the two
+             * SwingPanels' disposal happens to interleave, which is why it is
+             * preferred to depending on that order.
+             */
+            val holder = remember(awtComponent) { JPanel(BorderLayout()) }
             // Taken as this host mounts and handed back as it leaves, so a
             // host that has already been superseded cannot park a component
             // the next one is holding. See [KcefCallEngine.hostSurface].
             DisposableEffect(awtComponent) {
+                holder.add(awtComponent, BorderLayout.CENTER)
                 val lease = engine.hostSurface()
-                onDispose { lease.release() }
+                onDispose {
+                    // Out of the holder first: the engine parks the component
+                    // in a window of its own between calls, and a browser left
+                    // with no parent at all is one that will not work for the
+                    // next call.
+                    holder.remove(awtComponent)
+                    lease.release()
+                }
             }
             SwingPanel(
-                factory = { awtComponent },
+                factory = { holder },
                 modifier = Modifier.fillMaxSize(),
             )
         }

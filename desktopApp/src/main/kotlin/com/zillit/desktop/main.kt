@@ -147,6 +147,7 @@ import com.zillit.desktop.feature.home.ui.decodeImageBitmap
 import com.zillit.desktop.feature.chat.ui.ChatEvent
 import com.zillit.desktop.feature.chat.ui.ChatToolProvider
 import com.zillit.desktop.feature.calls.domain.CallMode
+import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallType
 import com.zillit.desktop.feature.calls.ui.CallEvent
 import com.zillit.desktop.feature.calls.ui.CallOverlay
@@ -480,6 +481,7 @@ private fun runZillit(openDriveWidget: Boolean) = application {
             onClose = { driveWidgetOpen = false },
             showMain = { showMainWindow(mainFrame, windowState) },
         ),
+        showMain = { showMainWindow(mainFrame, windowState) },
         onFrame = { mainFrame = it },
     )
 }
@@ -544,6 +546,8 @@ private fun ApplicationScope.ZillitWindows(
     viewModel: WorkspaceViewModel,
     authViewModel: AuthViewModel?,
     driveWidget: DriveWidgetMount,
+    /** Raises and focuses the main frame. See [showMainWindow]. */
+    showMain: () -> Unit,
     onFrame: (ComposeWindow) -> Unit,
 ) {
     val workspace by viewModel.state.collectAsState()
@@ -619,6 +623,35 @@ private fun ApplicationScope.ZillitWindows(
     // same reason — it must outlive being behind the main frame.
     (graph as? AppGraph.Ready)?.let { ready ->
         CallWindow(ready = ready, calls = viewModels.calls, darkTheme = isDark)
+    }
+
+    /*
+     * Bringing the call home has to actually show it.
+     *
+     * "Move the call into the Zillit window" closes the call's own window and
+     * re-homes the call into the main one — but nothing raised the main
+     * window, so on a machine where it was behind something the call simply
+     * disappeared. The one moment anybody reaches for that control is during a
+     * screen share, when the main window is guaranteed to be behind the thing
+     * being shared, which is why this read as "unable to get back to the call".
+     *
+     * Only on the transition, and only while a call is actually running:
+     * raising on recomposition would steal focus continuously, and raising
+     * when a call merely ends would yank the user out of whatever they moved
+     * on to.
+     */
+    viewModels.calls?.let { calls ->
+        val callState by calls.state.collectAsState()
+        var wasPoppedOut by remember { mutableStateOf(false) }
+        LaunchedEffect(callState.pipOpen, callState.phase) {
+            if (wasPoppedOut &&
+                !callState.pipOpen &&
+                callState.phase == com.zillit.desktop.feature.calls.domain.CallPhase.InCall
+            ) {
+                showMain()
+            }
+            wasPoppedOut = callState.pipOpen
+        }
     }
 
     // The Drive widget: the desktop's own small window onto one production's
@@ -1652,7 +1685,7 @@ private fun chatProvider(
     loadAvatar = { userId -> fetchAvatar(ready, userId)?.let(::decodeImageBitmap) },
     viewModel = viewModel,
     onCall = calls?.let { vm ->
-        { peer, isGroup, video ->
+        { peer, isGroup, video, mediasoup ->
             vm.onEvent(
                 CallEvent.Place(
                     // A group is rung by its room; a person by their device.
@@ -1661,6 +1694,12 @@ private fun chatProvider(
                     mode = if (isGroup) CallMode.Group else CallMode.Private,
                     type = if (video) CallType.Video else CallType.Audio,
                     displayName = peer.fullName,
+                    provider = if (mediasoup) CallProvider.Mediasoup else CallProvider.Agora,
+                    // Line 1 rings a person rather than one of their devices
+                    // — and a group has no person to name. For a group `peer`
+                    // IS the room, so passing its id here would put a room id
+                    // in a list of user ids and ring nobody, silently.
+                    receiverUserId = if (isGroup) "" else peer.userId,
                 ),
             )
         }
@@ -2223,6 +2262,9 @@ private fun rememberAppViewModels(
                 CallViewModel(
                     coordinator = graph.callCoordinator,
                     crew = { graph.callableCrew() },
+                    // Null in a dev run: the helper only exists in a packaged
+                    // bundle, and without it Share sends the whole screen.
+                    screenSources = macCaptureHelper()?.let(::MacScreenSources),
                 )
             },
             cashExpenses = ready?.let { graph ->

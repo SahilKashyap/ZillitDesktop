@@ -99,7 +99,7 @@ fun ChatScreen(
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap? =
         { null },
     /** Rings the open thread; null hides the call buttons. */
-    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean) -> Unit)? = null,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)? = null,
     /** The call history pane; null hides the Calls tab. */
     callLog: (@Composable () -> Unit)? = null,
     /**
@@ -202,7 +202,7 @@ private fun DetailPane(
     onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap?,
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?,
-    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean) -> Unit)?,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)?,
     player: com.zillit.desktop.core.designsystem.component.AudioPlayer?,
     loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray?,
 ) {
@@ -234,7 +234,7 @@ private fun OpenThread(
     onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap?,
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?,
-    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean) -> Unit)?,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)?,
     player: com.zillit.desktop.core.designsystem.component.AudioPlayer? = null,
     loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray? =
         { null },
@@ -261,9 +261,9 @@ private fun OpenThread(
         player = player,
         loadAudio = loadAudio,
         onCall = onCall?.let { ring ->
-            { video ->
+            { video, mediasoup ->
                 chatState.peer?.let { open ->
-                    ring(open, chatState.peerIsGroup, video)
+                    ring(open, chatState.peerIsGroup, video, mediasoup)
                 }
                 Unit
             }

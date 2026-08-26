@@ -4,12 +4,14 @@ import org.cef.CefSettings
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.browser.CefMessageRouter
+import org.cef.callback.CefMediaAccessCallback
 import org.cef.callback.CefQueryCallback
 import org.cef.handler.CefDisplayHandler
 import org.cef.handler.CefDisplayHandlerAdapter
 import org.cef.handler.CefLoadHandler
 import org.cef.handler.CefLoadHandlerAdapter
 import org.cef.handler.CefMessageRouterHandlerAdapter
+import org.cef.handler.CefPermissionHandler
 
 /**
  * The CEF handlers the call page is wired with.
@@ -60,6 +62,43 @@ internal object KcefPage {
                 failedUrl: String?,
             ) {
                 onNote("page load failed: $errorCode ${errorText.orEmpty()}")
+            }
+        }
+
+    /**
+     * Answers Chromium's camera, microphone and screen-capture requests.
+     *
+     * Required, not optional: with no handler CEF denies every media request
+     * outright and the page sees `NotAllowedError` for all three. The obvious
+     * shortcut — `--use-fake-ui-for-media-stream` — is what this replaces, and
+     * it must not come back. That switch does not merely auto-answer the
+     * prompt: for a display-capture request it answers *instead of* the
+     * browser's own path, handing Chromium the placeholder source id
+     * `screen:0:0`. Zero is not a real `CGDirectDisplayID`, so ScreenCaptureKit
+     * finds no display to attach to and fails before a stream exists — which
+     * the page then reports as `NotReadableError: Could not start video
+     * source`. That was every failed screen share this app has ever had; it
+     * had nothing to do with macOS permission, which is granted and separate.
+     *
+     * The granted permissions are the requested ones echoed back, never a
+     * constant: CEF asserts that a `getUserMedia` response matches what was
+     * asked for, and the bit values are not exposed to Java to hard-code.
+     */
+    fun permissionHandler(onNote: (String) -> Unit): CefPermissionHandler =
+        object : CefPermissionHandler {
+            override fun onRequestMediaAccessPermission(
+                browser: CefBrowser?,
+                frame: CefFrame?,
+                requestingUrl: String?,
+                requestedPermissions: Int,
+                callback: CefMediaAccessCallback?,
+            ): Boolean {
+                // The page is our own file:// bundle, so there is no third
+                // party here to gate — the consent that matters is the OS's,
+                // which macOS asks for separately and we cannot answer.
+                onNote("media access granted (bits $requestedPermissions)")
+                callback?.Continue(requestedPermissions)
+                return true
             }
         }
 

@@ -40,6 +40,32 @@ sealed interface CallEngineEvent {
     /** A remote participant started or stopped sharing their screen. */
     data class PeerScreenShare(val uid: Int, val sharing: Boolean) : CallEngineEvent
 
+    /**
+     * A remote participant raised or lowered their hand, by USER id.
+     *
+     * Line 1 only: the SFU broadcasts `peerRaisedHand`/`peerLoweredHand` with
+     * the composite peer id, and the user half is the identity the roster
+     * knows. Line 2 has no media-side signal for this — the Firestore row's
+     * `raise_hand` is the whole transport there.
+     */
+    data class PeerHand(val userId: String, val raised: Boolean) : CallEngineEvent
+
+    /** A remote participant started or stopped recording the call, by USER id. */
+    data class PeerRecording(val userId: String, val recording: Boolean) : CallEngineEvent
+
+    /**
+     * A finished local recording landed on disk.
+     *
+     * Carries its type and length as well as its path, because the file does
+     * not only stay here: it is posted into the call's chat, and an audio
+     * message needs both to be a playable row rather than an unnamed blob.
+     */
+    data class RecordingSaved(
+        val path: String,
+        val contentType: String = "audio/webm",
+        val durationMillis: Long = 0L,
+    ) : CallEngineEvent
+
     /** The transport dropped, recovered, or gave up. */
     data class ConnectionChanged(val state: EngineConnection, val reason: String? = null) :
         CallEngineEvent
@@ -51,6 +77,15 @@ sealed interface CallEngineEvent {
      * usefully do with an SDK error code except show it.
      */
     data class Failed(val message: String) : CallEngineEvent
+
+    /**
+     * Something went wrong that must NOT end the call.
+     *
+     * A refused screen share is the case this exists for: the call is fine,
+     * one action did not happen, and the user is owed an explanation rather
+     * than a button that quietly does nothing.
+     */
+    data class Degraded(val message: String) : CallEngineEvent
 
     /**
      * The machine's audio and video hardware, as the page currently sees it.
@@ -106,6 +141,54 @@ enum class EngineConnection { Connecting, Connected, Reconnecting, Disconnected,
 /** Which piece of hardware [CallEngine.setDevice] is choosing. */
 enum class CallDeviceKind { Microphone, Speaker, Camera }
 
+/**
+ * Everything an engine needs to join, whichever line it is.
+ *
+ * One object rather than a parameter list because the two lines need disjoint
+ * things — Agora joins a channel with a token and a numeric uid, mediasoup
+ * dials a host and announces a peer id — and a signature carrying both as
+ * positional arguments is one where half are always blank and nobody can tell
+ * which half is meaningful.
+ */
+data class CallJoin(
+    val provider: CallProvider,
+
+    /**
+     * Settled before joining: Agora decides whether to open the camera at join
+     * time, and an audio call that joins with video enabled lights the user's
+     * camera indicator for no reason.
+     */
+    val hasVideo: Boolean,
+
+    // ── Line 2 (Agora) ──────────────────────────────────────────────────
+    val channel: String = "",
+    /** Channel credential. Never logged. */
+    val token: String = "",
+    val uid: Int = 0,
+
+    // ── Line 1 (mediasoup) ──────────────────────────────────────────────
+    /** Bare host, already stripped of any scheme or path. */
+    val sfuHost: String = "",
+    /** The room on that SFU, elected from invite code, room id or call uuid. */
+    val roomId: String = "",
+    /** `userId:deviceId`. Both halves do work — see `mediasoupPeerId`. */
+    val peerId: String = "",
+    /** The SFU's own credential. Empty is a legitimate tokenless dial. */
+    val sfuToken: String = "",
+    /** What other peers see against this tile. */
+    val displayName: String = "",
+)
+
+/*
+ * TooManyFunctions: one method per capability the media stack exposes, and the
+ * capabilities are the interface. Splitting it — media here, page-chrome there
+ * — would mean two objects that must be the same object, since every one of
+ * them is served by the one browser page and several are only correct in
+ * relation to the others (a stage push and an avatar push both describe the
+ * same tile). The no-op defaults keep the cost of a new one at zero for the
+ * implementations that do not care.
+ */
+@Suppress("TooManyFunctions")
 interface CallEngine {
 
     /** Everything the stack reports. Replayed to nobody — subscribe first. */
@@ -124,7 +207,7 @@ interface CallEngine {
      * the camera at join time, and an audio call that joins with video enabled
      * lights the user's camera indicator for no reason.
      */
-    suspend fun join(channel: String, token: String, uid: Int, hasVideo: Boolean)
+    suspend fun join(params: CallJoin)
 
     /** Leaves the channel. Safe to call when not in one. */
     suspend fun leave()
@@ -150,10 +233,36 @@ interface CallEngine {
     /** Cycles to the next capture device, where the host has more than one. */
     fun switchCamera()
 
-    /** Starts sharing a screen or window. False when the host cannot. */
-    suspend fun startScreenShare(): Boolean = false
+    /**
+     * Starts sharing a screen or window. False when the host cannot.
+     *
+     * [sourceId] is what the app's own picker chose, in Chromium's
+     * DesktopMediaID spelling. Null means "whatever the host would pick",
+     * which on embedded Chromium is the whole desktop — the behaviour before
+     * there was a picker, and the fallback when the source list cannot be
+     * built.
+     */
+    suspend fun startScreenShare(sourceId: String? = null): Boolean = false
 
     suspend fun stopScreenShare() {}
+
+    /**
+     * Tells the media side this user's hand moved.
+     *
+     * Line 1 turns it into the protoo `toggleHandRaise` request the phones
+     * send; Line 2 needs nothing here — the coordinator's Firestore mirror is
+     * the transport there, exactly as it is on the phones.
+     */
+    fun setHandRaised(raised: Boolean) {}
+
+    /**
+     * Starts recording the call's audio — every voice, ours included — on this
+     * machine. False when the host cannot record. The finished file arrives
+     * later as [CallEngineEvent.RecordingSaved].
+     */
+    suspend fun startAudioRecording(): Boolean = false
+
+    suspend fun stopAudioRecording() {}
 
     /**
      * Hands the engine the computed stage model.
@@ -167,8 +276,27 @@ interface CallEngine {
     /** Hands the engine the app's colours, so its surface is not a foreign slab. */
     fun setTheme(json: String) {}
 
+    /**
+     * Gives the page one person's profile picture, as a data URI.
+     *
+     * The page draws its own tile chrome — a heavyweight surface owns every
+     * pixel inside its rectangle — so a face Compose has fetched has to be
+     * handed over rather than drawn on top. Without it a camera-off tile shows
+     * initials while the same person on an audio call shows their photograph.
+     */
+    fun setAvatar(userId: String, dataUri: String) {}
+
     /** Collapses the engine's surface to one tile, for the minimised pill. */
     fun setCompact(compact: Boolean) {}
+
+    /**
+     * Asks the engine's own surface to float a reaction.
+     *
+     * Only the surface can draw inside its own rectangle — it is a heavyweight
+     * native component and app-drawn layers over it are never painted — so a
+     * video call's reactions go through here instead.
+     */
+    fun showReaction(json: String) {}
 
     /** Releases the stack. The engine is unusable afterwards. */
     suspend fun destroy()
@@ -197,10 +325,10 @@ class NoopCallEngine : CallEngine {
         return true
     }
 
-    override suspend fun join(channel: String, token: String, uid: Int, hasVideo: Boolean) {
-        joined = channel
+    override suspend fun join(params: CallJoin) {
+        joined = params.channel
         _events.emit(CallEngineEvent.ConnectionChanged(EngineConnection.Connected))
-        _events.emit(CallEngineEvent.Joined(channel, uid))
+        _events.emit(CallEngineEvent.Joined(params.channel, params.uid))
     }
 
     override suspend fun leave() {

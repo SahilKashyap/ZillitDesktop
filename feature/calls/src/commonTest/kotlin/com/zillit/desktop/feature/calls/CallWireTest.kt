@@ -115,6 +115,8 @@ class CallWireTest {
         // Both carry credentials Agora cannot use. Answering one used to
         // reach AgoraRTC.join with an empty channel, throw, and end the call
         // as "Call failed" — the far side ringing all the while.
+        // No SFU host elected, so there is nothing to dial — a mediasoup
+        // session is joinable on a host and a room, not on an invite code.
         val mediasoup = readCallSession(
             parse("""{"call_uuid":"u","line":"mediasoup","invite_code":"inv-1"}"""), "me", "d",
         )

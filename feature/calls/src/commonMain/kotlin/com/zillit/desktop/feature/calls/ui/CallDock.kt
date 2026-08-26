@@ -12,12 +12,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -33,7 +29,6 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.feature.calls.domain.MediaDevice
 
 /**
  * The call's verbs, gathered in one pill.
@@ -49,7 +44,6 @@ fun CallDock(
     modifier: Modifier = Modifier,
 ) {
     val colors = ZillitTheme.colors
-    val showCamera = state.session?.hasVideo == true || state.stage == CallStageKind.Video
     Row(
         modifier = modifier
             .shadow(DOCK_ELEVATION, CircleShape)
@@ -59,7 +53,7 @@ fun CallDock(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        MediaControls(state = state, onEvent = onEvent, showCamera = showCamera)
+        MediaControls(state = state, onEvent = onEvent)
         SayingSomething(state = state, onEvent = onEvent)
         // Between the media toggles and the room controls: it belongs with
         // the things that change what the user hears, not who is present.
@@ -79,7 +73,7 @@ fun CallDock(
 
 /** Mute, camera, hand and share — everything that changes what others get. */
 @Composable
-private fun MediaControls(state: CallUiState, onEvent: (CallEvent) -> Unit, showCamera: Boolean) {
+private fun MediaControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val colors = ZillitTheme.colors
         RoundAction(
             icon = if (state.micMuted) ZillitIcons.MicOff else ZillitIcons.Mic,
@@ -89,16 +83,17 @@ private fun MediaControls(state: CallUiState, onEvent: (CallEvent) -> Unit, show
             size = DOCK_BUTTON,
             onClick = { onEvent(CallEvent.ToggleMic) },
         )
-        if (showCamera) {
-            RoundAction(
-                icon = if (state.cameraOn) ZillitIcons.Camera else ZillitIcons.CameraOff,
-                label = if (state.cameraOn) "Turn camera off" else "Turn camera on",
-                background = if (state.cameraOn) colors.surfaceHover else colors.danger,
-                tint = if (state.cameraOn) colors.textPrimary else Color.White,
-                size = DOCK_BUTTON,
-                onClick = { onEvent(CallEvent.ToggleCamera) },
-            )
-        }
+        // Always offered, audio calls included: enabling video mid-call is
+        // how the phones work, and a call that joined as audio is exactly the
+        // one where the user reaches for this button.
+        RoundAction(
+            icon = if (state.cameraOn) ZillitIcons.Camera else ZillitIcons.CameraOff,
+            label = if (state.cameraOn) "Turn camera off" else "Turn camera on",
+            background = if (state.cameraOn) colors.surfaceHover else colors.danger,
+            tint = if (state.cameraOn) colors.textPrimary else Color.White,
+            size = DOCK_BUTTON,
+            onClick = { onEvent(CallEvent.ToggleCamera) },
+        )
         HandAndShare(state = state, onEvent = onEvent)
 }
 
@@ -126,6 +121,18 @@ private fun HandAndShare(state: CallUiState, onEvent: (CallEvent) -> Unit) {
         size = SMALL_BUTTON,
         onClick = { onEvent(CallEvent.ToggleScreenShare) },
     )
+    // One recording per call is the rule every platform enforces, so while
+    // somebody else holds it the button steps aside and the banner explains.
+    if (state.recordedBy.isBlank() || state.recording) {
+        RoundAction(
+            icon = ZillitIcons.Record,
+            label = if (state.recording) "Stop recording" else "Record call",
+            background = if (state.recording) colors.danger else colors.surfaceHover,
+            tint = if (state.recording) Color.White else colors.textPrimary,
+            size = SMALL_BUTTON,
+            onClick = { onEvent(CallEvent.ToggleRecording) },
+        )
+    }
 }
 
 /** Who is here and who else could be. */
@@ -209,104 +216,18 @@ private fun SayingSomething(state: CallUiState, onEvent: (CallEvent) -> Unit) {
 @Composable
 private fun AudioDevicePicker(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val colors = ZillitTheme.colors
-    val devices = state.devices
-    // Absent hardware is not a reason to hide the button while a call is
-    // live: labels arrive with media permission, which can land after the
-    // first frame, so an empty list now may be populated a moment later.
-    if (!devices.hasChoice && !state.audioPickerOpen) {
-        RoundAction(
-            icon = ZillitIcons.Settings,
-            label = "Audio devices",
-            background = colors.surfaceHover,
-            tint = colors.textPrimary,
-            size = SMALL_BUTTON,
-            onClick = { onEvent(CallEvent.ToggleAudioPicker) },
-        )
-        return
-    }
-
-    Box {
-        RoundAction(
-            icon = ZillitIcons.Settings,
-            label = "Audio devices",
-            background = if (state.audioPickerOpen) colors.surfaceSelected else colors.surfaceHover,
-            tint = colors.textPrimary,
-            size = SMALL_BUTTON,
-            onClick = { onEvent(CallEvent.ToggleAudioPicker) },
-        )
-
-        DropdownMenu(
-            expanded = state.audioPickerOpen,
-            onDismissRequest = { onEvent(CallEvent.ToggleAudioPicker) },
-            modifier = Modifier.background(colors.surfaceRaised, RoundedCornerShape(MENU_RADIUS)),
-        ) {
-            DeviceGroup(
-                title = "Microphone",
-                devices = devices.microphones,
-                chosenId = devices.microphoneId,
-                onChoose = { onEvent(CallEvent.ChooseMicrophone(it)) },
-            )
-            DeviceGroup(
-                title = "Speaker",
-                devices = devices.speakers,
-                chosenId = devices.speakerId,
-                onChoose = { onEvent(CallEvent.ChooseSpeaker(it)) },
-            )
-        }
-    }
-}
-
-/**
- * One labelled list. An empty id is the OS default and is always offered:
- * it is the only way back after choosing a device that has since been
- * unplugged.
- */
-@Composable
-private fun DeviceGroup(
-    title: String,
-    devices: List<MediaDevice>,
-    chosenId: String,
-    onChoose: (String) -> Unit,
-) {
-    val colors = ZillitTheme.colors
-    ZillitText(
-        text = title,
-        style = ZillitTheme.typography.labelSmall,
-        color = colors.textSecondary,
-        modifier = Modifier.padding(
-            horizontal = ZillitTheme.spacing.md,
-            vertical = ZillitTheme.spacing.xs,
-        ),
-    )
-    DeviceRow("System default", chosenId.isBlank()) { onChoose("") }
-    devices.forEach { device ->
-        DeviceRow(device.displayName, device.id == chosenId) { onChoose(device.id) }
-    }
-}
-
-@Composable
-private fun DeviceRow(label: String, selected: Boolean, onClick: () -> Unit) {
-    val colors = ZillitTheme.colors
-    DropdownMenuItem(
-        onClick = onClick,
-        modifier = Modifier.background(if (selected) colors.surfaceSelected else colors.surfaceRaised),
-        text = {
-            ZillitText(
-                text = label,
-                style = ZillitTheme.typography.bodyMedium,
-                color = if (selected) colors.accentText else colors.textPrimary,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        },
+    // Just the button. The list itself is a panel beside the picture — see
+    // CallDevicePanel for why it cannot be a menu anchored here.
+    RoundAction(
+        icon = ZillitIcons.Settings,
+        label = "Audio devices",
+        background = if (state.audioPickerOpen) colors.surfaceSelected else colors.surfaceHover,
+        tint = colors.textPrimary,
+        size = SMALL_BUTTON,
+        onClick = { onEvent(CallEvent.ToggleAudioPicker) },
     )
 }
 
-/**
- * A circular control.
- *
- * Shared by the dock, the ring card and the pill so the three surfaces cannot
- * drift apart on size, hover or hit area.
- */
 @Composable
 fun RoundAction(
     icon: ImageVector,
@@ -361,7 +282,6 @@ private val DOCK_BUTTON = 52.dp
 private val SMALL_BUTTON = 44.dp
 
 /** Matches ZillitSelect's popup, so the two menus are the same object. */
-private val MENU_RADIUS = 12.dp
 private val END_BUTTON = 60.dp
 
 /** A dot, not a number: on a control bar, "someone said something" is the message. */

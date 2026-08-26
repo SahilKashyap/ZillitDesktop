@@ -32,6 +32,11 @@ fun stageJson(tiles: List<CallTile>, columns: Int): String = buildJsonObject {
                 put("muted", tile.media?.audioMuted ?: false)
                 put("known", tile.media != null)
                 put("ringing", tile.presence == CallStatus.Ringing)
+                put("hand", tile.hand)
+                // The Line 1 identity this tile answers to: the page binds a
+                // consumed stream to a tile by the peer id's user half, and a
+                // model without it strands every remote video in "no tile".
+                put("peerId", tile.userId)
             }
         }
     }
@@ -43,6 +48,20 @@ fun stageJson(tiles: List<CallTile>, columns: Int): String = buildJsonObject {
  * Without it the video stage is a foreign slab in the middle of the window —
  * the one place the user is most likely to be looking.
  */
+/**
+ * One reaction, for the page to float over its own picture.
+ *
+ * Same reason as [stageJson]: on a video call the surface is a heavyweight
+ * native component, and an emoji drawn on the Compose side would rise behind
+ * it and never be seen. [id] travels so the page can pick a stable path for it
+ * rather than a random one that jumps on every frame.
+ */
+fun reactionJson(reaction: CallReaction): String = buildJsonObject {
+    put("emoji", reaction.emoji)
+    put("name", reaction.name)
+    put("id", reaction.key)
+}.toString()
+
 fun themeJson(colors: ZillitColors): String = buildJsonObject {
     put("bg", hex(colors.canvas))
     put("tile", hex(colors.surface))
