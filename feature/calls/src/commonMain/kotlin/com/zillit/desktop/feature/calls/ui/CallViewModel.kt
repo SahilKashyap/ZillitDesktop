@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallSession
+import com.zillit.desktop.feature.calls.domain.ShareSource
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.CallType
 import kotlinx.coroutines.delay
@@ -57,6 +58,28 @@ data class CallChatLine(
  * coordinator has no business owning: the running timer, the parting notice,
  * and which of the two stage layouts is up.
  */
+/**
+ * What the "choose what to share" dialog is showing.
+ *
+ * Embedded Chromium draws no picker of its own — Chrome's lives in the
+ * browser shell, not the content layer — so this is the app's replacement for
+ * it, and the list behind it is a signed helper's work rather than the
+ * browser's.
+ */
+data class SharePicker(
+    val sources: List<ShareSource> = emptyList(),
+    /** Which tile is selected; blank until the user picks one. */
+    val chosenId: String = "",
+    /** True until the first list arrives, so the dialog can say it is looking. */
+    val loading: Boolean = true,
+) {
+    val screens: List<ShareSource> get() = sources.filter { it.isScreen }
+    val windows: List<ShareSource> get() = sources.filterNot { it.isScreen }
+
+    /** Nothing to choose from — the helper is missing or the OS refused it. */
+    val isEmpty: Boolean get() = !loading && sources.isEmpty()
+}
+
 data class CallUiState(
     val phase: CallPhase = CallPhase.Idle,
     val session: CallSession? = null,
@@ -66,7 +89,21 @@ data class CallUiState(
     val elapsedSeconds: Long = -1,
     /** The parting message, shown briefly after a call ends. */
     val endedNotice: String? = null,
+    /**
+     * Something that did not work while the call carried on — a screen share
+     * the OS refused, most often. Dismissible, because it is information
+     * rather than a failure the call cannot continue past.
+     */
+    val notice: String? = null,
     val media: CallMedia = CallMedia(),
+    /**
+     * The share picker, while it is open.
+     *
+     * Null is closed. Open-but-empty is the loading state: the helper lists
+     * its sources in one go and its pictures afterwards, so the dialog appears
+     * immediately rather than after the slowest capture.
+     */
+    val sharePicker: SharePicker? = null,
     val tiles: List<CallTile> = emptyList(),
     /** The page's copy of the model. Empty when there is nothing to push. */
     val stageJson: String = "",
@@ -237,6 +274,14 @@ sealed interface CallEvent {
 
     data object ToggleScreenShare : CallEvent
 
+    /** Highlights one source in the picker without starting the share. */
+    data class ChooseShareSource(val id: String) : CallEvent
+
+    /** Shares whatever the picker has selected, and closes it. */
+    data object ConfirmShareSource : CallEvent
+
+    data object DismissSharePicker : CallEvent
+
     data object ToggleHand : CallEvent
 
     /** Starts or stops recording the call's audio on this machine. */
@@ -270,6 +315,12 @@ class CallViewModel(
     private val coordinator: CallCoordinator,
     /** The production's crew, for the add-people picker. Host-supplied. */
     private val crew: () -> List<com.zillit.desktop.feature.calls.domain.CallCrewEntry> = { emptyList() },
+    /**
+     * The screens and windows on this machine. Null on a host that cannot
+     * enumerate them, where pressing Share sends the whole desktop — what the
+     * app did before it had a picker.
+     */
+    private val screenSources: com.zillit.desktop.feature.calls.domain.ScreenSources? = null,
 ) : ZillitViewModel<CallUiState, CallEvent, Nothing>(CallUiState()) {
 
     init {
@@ -309,6 +360,7 @@ class CallViewModel(
         // saved to…" is exactly the class of message it exists for.
         launch { coordinator.toasts.collect { text -> setState { copy(endedNotice = text) } } }
         launch { coordinator.inCallData.collect(::receiveInCallData) }
+        launch { coordinator.notices.collect { text -> setState { copy(notice = text) } } }
         // One collector, not four: the tile list is a function of all of them
         // together, and projecting on each separately would publish states
         // where the roster and the media picture disagree.
@@ -375,6 +427,63 @@ class CallViewModel(
      * through here too — one path in, so the sender's view and everyone
      * else's are built the same way.
      */
+    /**
+     * Share pressed: stop if we are already sharing, otherwise ask what to
+     * share.
+     *
+     * The question is new. Chromium used to answer it by itself — badly, as it
+     * turned out — and a browser embedded with no chrome has no dialog of its
+     * own to offer, so the app asks instead. A host with no source list skips
+     * straight to sharing the whole desktop rather than opening a dialog with
+     * nothing in it.
+     */
+    /**
+     * Shares what the picker has selected.
+     *
+     * A picker open with nothing chosen shares the whole desktop: that is what
+     * Share means when the list could not be built at all, and it is never the
+     * wrong answer to pressing a button labelled Share.
+     */
+    private fun onConfirmShareSource() {
+        val chosen = currentState.sharePicker?.chosenId?.takeIf(String::isNotBlank)
+        coordinator.startScreenShare(chosen)
+        setState { copy(sharePicker = null) }
+    }
+
+    private fun onToggleScreenShare() {
+        if (currentState.media.selfSharing) {
+            coordinator.stopScreenShare()
+            return
+        }
+        if (currentState.sharePicker != null) return
+        val sources = screenSources ?: run {
+            coordinator.startScreenShare(null)
+            return
+        }
+        setState { copy(sharePicker = SharePicker()) }
+        launch {
+            sources.list().collect { listed ->
+                setState {
+                    // Dropped if the user closed the dialog while the helper
+                    // was still working: a picker that reappears because a
+                    // late preview arrived is a ghost.
+                    val open = sharePicker ?: return@setState this
+                    copy(
+                        sharePicker = open.copy(
+                            sources = listed,
+                            loading = false,
+                            // The screen is preselected so Share means
+                            // something the instant the dialog appears.
+                            chosenId = open.chosenId.ifBlank {
+                                listed.firstOrNull { source -> source.isScreen }?.id.orEmpty()
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
     private fun receiveInCallData(data: InCallData) {
         val mine = data.fromUserId.isNotBlank() && data.fromUserId == coordinator.session.value?.selfUserId
         val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
@@ -431,7 +540,7 @@ class CallViewModel(
             CallEvent.HangUp -> coordinator.hangUp()
             CallEvent.ToggleMic -> coordinator.toggleMicrophone()
             CallEvent.ToggleCamera -> coordinator.toggleCamera()
-            CallEvent.DismissNotice -> setState { copy(endedNotice = null) }
+            CallEvent.DismissNotice -> setState { copy(endedNotice = null, notice = null) }
             // `expanded` describes the main window. While the call has its own
             // window there is nothing here to expand — the pill IS how the main
             // window represents it — so the flag is left alone rather than
@@ -453,7 +562,12 @@ class CallViewModel(
                 copy(pillOffsetX = pillOffsetX + event.dx, pillOffsetY = pillOffsetY + event.dy)
             }
             CallEvent.ToggleRoster -> setState { copy(rosterOpen = !rosterOpen) }
-            CallEvent.ToggleScreenShare -> coordinator.toggleScreenShare()
+            CallEvent.ToggleScreenShare -> onToggleScreenShare()
+            is CallEvent.ChooseShareSource -> setState {
+                copy(sharePicker = sharePicker?.copy(chosenId = event.id))
+            }
+            CallEvent.ConfirmShareSource -> onConfirmShareSource()
+            CallEvent.DismissSharePicker -> setState { copy(sharePicker = null) }
             CallEvent.ToggleHand -> coordinator.toggleHand()
             CallEvent.ToggleRecording -> coordinator.toggleRecording()
             CallEvent.ToggleAudioPicker -> {
@@ -500,6 +614,13 @@ class CallViewModel(
 
     /** Everything a call leaves behind, cleared in one place. */
     private fun CallUiState.atRest(phase: CallPhase) = copy(
+        // The picker is a window of its own, so a call that ends while it is
+        // open would otherwise leave it floating over the workspace with
+        // nothing behind it — and its source ids frozen at the moment that
+        // call ended. Carried into the next call, Share would either capture
+        // a window the user never picked or do nothing at all, since
+        // onToggleScreenShare returns early while a picker is open.
+        sharePicker = null,
         phase = phase,
         session = null,
         media = CallMedia(),
@@ -525,6 +646,7 @@ class CallViewModel(
         chat = emptyList(),
         chatOpen = false,
         chatUnread = 0,
+        notice = null,
     )
 
     /**

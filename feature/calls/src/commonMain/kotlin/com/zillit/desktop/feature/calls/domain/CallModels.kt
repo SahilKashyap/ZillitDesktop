@@ -243,6 +243,17 @@ data class CallSession(
      * rather than against the caller's own device.
      */
     val receiverDeviceId: String = "",
+    /**
+     * Who we rang, when we were the one ringing.
+     *
+     * Kept beside [receiverDeviceId] because a device id is not addressable
+     * anywhere but the call: chat, in particular, silently discards a message
+     * sent to one. On a 1:1 mediasoup call the server hands back a roster row
+     * with only a device id on it, so without this there is no user id for the
+     * other end anywhere in the session — which is exactly the hole iOS
+     * documents in its own recording-share path.
+     */
+    val receiverUserId: String = "",
     val title: String = "",
     val participants: List<CallParticipant> = emptyList(),
     val isRandomCall: Boolean = false,

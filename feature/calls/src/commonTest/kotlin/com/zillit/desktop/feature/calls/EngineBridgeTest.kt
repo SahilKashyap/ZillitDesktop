@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.calls
 
 import com.zillit.desktop.feature.calls.data.EngineBridge
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
 import com.zillit.desktop.feature.calls.domain.EngineConnection
 import kotlin.test.Test
@@ -111,5 +113,79 @@ class EngineBridgeTest {
         // Labels are withheld until media permission is granted, so a blank
         // one is a normal state rather than a broken device.
         assertEquals("Unnamed device", event.microphones.single().displayName)
+    }
+
+    @Test
+    fun `a finished recording names its container and its length`() {
+        val done = EngineBridge.recordingDone(
+            """{"type":"recording-done","mime":"audio/mp4;codecs=mp4a.40.2","ext":"m4a","duration":91500}""",
+        )
+
+        assertEquals("m4a", done?.extension)
+        assertEquals(91_500L, done?.durationMillis)
+        // The codec parameters are the recorder's business; `content_type` on
+        // the chat wire is what receivers match, and they match the type alone.
+        assertEquals("audio/mp4", done?.contentType)
+    }
+
+    @Test
+    fun `a bare done frame is read as the WebM it would have been`() {
+        // Pages older than the MP4 negotiation sent the frame with no fields.
+        // Guessing MP4 there would name a WebM file `.m4a` and post it as one.
+        val done = EngineBridge.recordingDone("""{"type":"recording-done"}""")
+
+        assertEquals("audio/webm", done?.contentType)
+        assertEquals("webm", done?.extension)
+        assertEquals(0L, done?.durationMillis)
+    }
+
+    @Test
+    fun `a chunk is not a completion`() {
+        assertNull(EngineBridge.recordingDone("""{"type":"recording-chunk","data":"AAAA"}"""))
+        assertEquals("AAAA", EngineBridge.recordingChunk("""{"type":"recording-chunk","data":"AAAA"}"""))
+    }
+
+    @Test
+    fun `a chosen share source rides across as a quoted string`() {
+        assertEquals(
+            """zillitCall.startScreenShare("window:187:0")""",
+            EngineBridge.startScreenShareScript("window:187:0"),
+        )
+        // No choice is the whole desktop, which is what the page does with a
+        // null — not the string "null", which would be a source id that
+        // matches nothing.
+        assertEquals("zillitCall.startScreenShare(null)", EngineBridge.startScreenShareScript(null))
+    }
+
+    @Test
+    fun `a source id cannot break out of its own string`() {
+        // Source ids come from outside this process. One containing a quote
+        // must arrive as that text rather than becoming an injection into our
+        // own page — so the argument has to survive a round trip unchanged.
+        val hostile = """screen:1:0"); alert("x"""
+        val script = EngineBridge.startScreenShareScript(hostile)
+
+        val argument = script.removePrefix("zillitCall.startScreenShare(").removeSuffix(")")
+        assertEquals(hostile, Json.decodeFromString(String.serializer(), argument))
+    }
+
+    @Test
+    fun `a page warning names the step it came from`() {
+        // Kotlin decides which warnings are worth a banner by matching this
+        // field. call.js used to send only prose, so every Agora warning was
+        // unattributable and a failed screen share on the default line told
+        // the user nothing at all.
+        val frame = """{"type":"warning","where":"startScreenShare","message":"boom"}"""
+
+        assertEquals("startScreenShare", EngineBridge.warningWhere(frame))
+        assertEquals("boom", EngineBridge.warning(frame))
+    }
+
+    @Test
+    fun `a warning with no step is still a warning`() {
+        val frame = """{"type":"warning","message":"boom"}"""
+
+        assertEquals("boom", EngineBridge.warning(frame))
+        assertNull(EngineBridge.warningWhere(frame))
     }
 }

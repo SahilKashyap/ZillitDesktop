@@ -37,6 +37,12 @@ internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?) {
     val callState by calls.state.collectAsState()
     val engine = ready.callEngine
 
+    // Its own window, so the call's heavyweight browser surface cannot paint
+    // over it. See ShareSourceWindow.
+    callState.sharePicker?.let { picker ->
+        ShareSourceWindow(picker = picker, onEvent = calls::onEvent)
+    }
+
     // The page draws the chrome for its own video tiles, because a heavyweight
     // browser surface owns every pixel inside its rectangle and nothing Compose
     // paints there survives. These three pushes are that model: the palette so

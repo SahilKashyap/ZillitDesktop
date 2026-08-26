@@ -53,8 +53,18 @@ sealed interface CallEngineEvent {
     /** A remote participant started or stopped recording the call, by USER id. */
     data class PeerRecording(val userId: String, val recording: Boolean) : CallEngineEvent
 
-    /** A finished local recording landed on disk. */
-    data class RecordingSaved(val path: String) : CallEngineEvent
+    /**
+     * A finished local recording landed on disk.
+     *
+     * Carries its type and length as well as its path, because the file does
+     * not only stay here: it is posted into the call's chat, and an audio
+     * message needs both to be a playable row rather than an unnamed blob.
+     */
+    data class RecordingSaved(
+        val path: String,
+        val contentType: String = "audio/webm",
+        val durationMillis: Long = 0L,
+    ) : CallEngineEvent
 
     /** The transport dropped, recovered, or gave up. */
     data class ConnectionChanged(val state: EngineConnection, val reason: String? = null) :
@@ -67,6 +77,15 @@ sealed interface CallEngineEvent {
      * usefully do with an SDK error code except show it.
      */
     data class Failed(val message: String) : CallEngineEvent
+
+    /**
+     * Something went wrong that must NOT end the call.
+     *
+     * A refused screen share is the case this exists for: the call is fine,
+     * one action did not happen, and the user is owed an explanation rather
+     * than a button that quietly does nothing.
+     */
+    data class Degraded(val message: String) : CallEngineEvent
 
     /**
      * The machine's audio and video hardware, as the page currently sees it.
@@ -204,8 +223,16 @@ interface CallEngine {
     /** Cycles to the next capture device, where the host has more than one. */
     fun switchCamera()
 
-    /** Starts sharing a screen or window. False when the host cannot. */
-    suspend fun startScreenShare(): Boolean = false
+    /**
+     * Starts sharing a screen or window. False when the host cannot.
+     *
+     * [sourceId] is what the app's own picker chose, in Chromium's
+     * DesktopMediaID spelling. Null means "whatever the host would pick",
+     * which on embedded Chromium is the whole desktop — the behaviour before
+     * there was a picker, and the fallback when the source list cannot be
+     * built.
+     */
+    suspend fun startScreenShare(sourceId: String? = null): Boolean = false
 
     suspend fun stopScreenShare() {}
 

@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.calls.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,6 +69,7 @@ fun CallStage(
             ConnectionBanner(state, videoAvailable)
             RecordingBanner(state)
             HandRaisedBanner(state)
+            NoticeBanner(state, onEvent)
             StageBody(
                 state = state,
                 onEvent = onEvent,
@@ -161,6 +163,14 @@ private fun StageBody(
             CallAddPeoplePanel(
                 crew = state.addableCrew,
                 onPick = { onEvent(CallEvent.AddPerson(it)) },
+                modifier = Modifier.width(ROSTER_WIDTH).fillMaxSize(),
+            )
+        }
+        if (state.audioPickerOpen) {
+            CallDevicePanel(
+                devices = state.devices,
+                onChooseMicrophone = { onEvent(CallEvent.ChooseMicrophone(it)) },
+                onChooseSpeaker = { onEvent(CallEvent.ChooseSpeaker(it)) },
                 modifier = Modifier.width(ROSTER_WIDTH).fillMaxSize(),
             )
         }
@@ -338,6 +348,39 @@ private fun RecordingBanner(state: CallUiState) {
             text = text,
             style = ZillitTheme.typography.bodySmall,
             color = colors.danger,
+        )
+    }
+}
+
+/**
+ * One line about something that did not work, with a way to dismiss it.
+ *
+ * In the Column with the other banners rather than floating: it has to be
+ * outside the video rectangle to be drawn at all.
+ */
+@Composable
+private fun NoticeBanner(state: CallUiState, onEvent: (CallEvent) -> Unit) {
+    val text = state.notice ?: return
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(BANNER_CORNER))
+            .background(colors.warningSoft)
+            .clickable { onEvent(CallEvent.DismissNotice) }
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitIcon(icon = ZillitIcons.Warning, contentDescription = null, tint = colors.warning)
+        ZillitText(
+            text = text,
+            style = ZillitTheme.typography.bodySmall,
+            color = colors.warning,
+        )
+        ZillitText(
+            text = "Dismiss",
+            style = ZillitTheme.typography.labelSmall,
+            color = colors.textMuted,
         )
     }
 }

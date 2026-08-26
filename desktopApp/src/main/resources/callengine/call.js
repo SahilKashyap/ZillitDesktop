@@ -53,9 +53,17 @@
         send({ type: 'error', message: describe(context, error) });
     }
 
-    /** Degraded but alive: a missing camera must not end an audio call. */
+    /**
+     * Degraded but alive: a missing camera must not end an audio call.
+     *
+     * The step is sent as its own field as well as being folded into the
+     * message. Kotlin branches on `where` to decide which warnings are worth
+     * telling the user about, and reading that out of prose would be fragile —
+     * while sending no `where` at all, as this used to, meant every Agora
+     * warning was unattributable and a failed screen share said nothing.
+     */
     function warn(context, error) {
-        send({ type: 'warning', message: describe(context, error) });
+        send({ type: 'warning', where: context, message: describe(context, error) });
     }
 
     const MUTE_SVG =
@@ -399,6 +407,36 @@
     }
 
     /*
+     * The container the recorder writes.
+     *
+     * MP4/AAC first, because a finished recording is not only saved here — it
+     * is posted into the call's chat, and the players that must open it are
+     * the phones'. iOS cannot decode WebM/Opus at all, so a WebM recording
+     * arrives there as an audio message nobody can play. Chromium only muxes
+     * MP4 where the platform hands it an AAC encoder, which is why the choice
+     * is probed rather than assumed; WebM stays as the fallback that at least
+     * plays here and on the web.
+     */
+    const RECORDER_TYPES = [
+        { mime: 'audio/mp4;codecs=mp4a.40.2', ext: 'm4a' },
+        { mime: 'audio/mp4', ext: 'm4a' },
+        { mime: 'audio/webm;codecs=opus', ext: 'webm' },
+        { mime: 'audio/webm', ext: 'webm' }
+    ];
+
+    /** The first container this build can actually write. */
+    function recorderType() {
+        for (let i = 0; i < RECORDER_TYPES.length; i += 1) {
+            try {
+                if (MediaRecorder.isTypeSupported(RECORDER_TYPES[i].mime)) { return RECORDER_TYPES[i]; }
+            } catch (e) {
+                // Some builds throw on an unknown type instead of answering false.
+            }
+        }
+        return RECORDER_TYPES[RECORDER_TYPES.length - 1];
+    }
+
+    /*
      * The call recorder.
      *
      * Audio only, mixed here because the page is the one place every voice on
@@ -412,6 +450,8 @@
     let recorderCtx = null;
     let recorderDest = null;
     let recorderBlobs = [];
+    let recorderChosen = RECORDER_TYPES[RECORDER_TYPES.length - 1];
+    let recorderStartedAt = 0;
 
     function recorderAdd(streamOrTrack) {
         if (!recorderCtx || !recorderDest || !streamOrTrack) { return; }
@@ -427,7 +467,12 @@
     }
 
     function deliverRecording() {
-        const blob = new Blob(recorderBlobs, { type: 'audio/webm' });
+        const chosen = recorderChosen;
+        // Wall clock rather than the blob: the mixed stream has no timeline of
+        // its own, and the chat bubble's clock is the only consumer.
+        const millis = recorderStartedAt ? Math.max(0, Date.now() - recorderStartedAt) : 0;
+        recorderStartedAt = 0;
+        const blob = new Blob(recorderBlobs, { type: chosen.mime });
         recorderBlobs = [];
         recorder = null;
         if (recorderCtx) { try { recorderCtx.close(); } catch (e) { /* already closed */ } }
@@ -441,9 +486,34 @@
             for (let i = 0; i < base64.length; i += SLICE) {
                 send({ type: 'recording-chunk', data: base64.slice(i, i + SLICE) });
             }
-            send({ type: 'recording-done' });
+            send({ type: 'recording-done', mime: chosen.mime, ext: chosen.ext, duration: millis });
         };
         reader.readAsDataURL(blob);
+    }
+
+    /**
+     * A video track for one chosen screen or window.
+     *
+     * `getDisplayMedia` cannot be told which source to take — that is what the
+     * browser's own picker is for, and there isn't one here. Chromium's older
+     * constraint form can, and this build still parses it, so the app's picker
+     * names the source and the SDK is handed the finished track rather than
+     * being asked to find one.
+     */
+    async function captureChosenSource(sourceId) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: sourceId,
+                    maxWidth: 1920,
+                    maxHeight: 1080,
+                },
+            },
+        });
+        const track = stream.getVideoTracks()[0];
+        if (!track) { throw new Error('the chosen source produced no video'); }
+        return AgoraRTC.createCustomVideoTrack({ mediaStreamTrack: track });
     }
 
     /** Enough lanes that simultaneous reactions do not stack on one line. */
@@ -593,7 +663,9 @@
                     if (entry.kind === 'audio') { recorderAdd(entry.stream); }
                 });
                 recorderBlobs = [];
-                recorder = new MediaRecorder(recorderDest.stream, { mimeType: 'audio/webm;codecs=opus' });
+                recorderChosen = recorderType();
+                recorderStartedAt = Date.now();
+                recorder = new MediaRecorder(recorderDest.stream, { mimeType: recorderChosen.mime });
                 recorder.ondataavailable = e => {
                     if (e.data && e.data.size) { recorderBlobs.push(e.data); }
                 };
@@ -779,15 +851,19 @@
          * unpublished first and restored on stop — the same trade the phones
          * make (they suppress camera-flip while sharing for this reason).
          *
-         * Chromium picks the source itself: an embedded browser has nowhere
-         * to draw the picker, so the runtime is launched with
-         * --auto-select-desktop-capture-source. The whole screen is shared,
-         * not a chosen window.
+         * [sourceId] is a Chromium DesktopMediaID the app's own picker chose —
+         * `screen:<display>:0` or `window:<id>:0`. Embedded Chromium draws no
+         * picker of its own, so without one the browser hands back the whole
+         * desktop; with one, the capture is built here from the legacy
+         * constraint form, which this build still honours and which is the
+         * only way to name a specific source from inside the page.
          */
-        async startScreenShare() {
+        async startScreenShare(sourceId) {
             if (!client || screenTrack) { return; }
             try {
-                screenTrack = await AgoraRTC.createScreenVideoTrack({}, 'disable');
+                screenTrack = sourceId
+                    ? await captureChosenSource(sourceId)
+                    : await AgoraRTC.createScreenVideoTrack({}, 'disable');
                 if (camTrack) { await client.unpublish(camTrack); }
                 await client.publish(screenTrack);
                 playLocal(screenTrack);
@@ -798,7 +874,30 @@
             } catch (e) {
                 // A cancelled picker is a decision, not a failure.
                 warn('startScreenShare', e);
+                // Close before dropping: the track may already own a live
+                // capture — publish is the step most likely to have thrown,
+                // and by then getUserMedia has succeeded. Letting it go
+                // unclosed leaves ScreenCaptureKit running, and the macOS
+                // recording indicator lit, on a share we just reported as
+                // stopped.
+                if (screenTrack) {
+                    try { screenTrack.close(); } catch (e2) { /* already closed */ }
+                }
                 screenTrack = null;
+                // The camera was unpublished a line before the publish that
+                // failed, and nothing else republishes it: setCam only toggles
+                // a track that is already published, and stopScreenShare
+                // returns early with no screenTrack. Without this the peers
+                // see a black tile for the rest of the call while this end
+                // still shows the camera as on.
+                try {
+                    if (camTrack && desiredCamEnabled) {
+                        await client.publish(camTrack);
+                        playLocal(camTrack);
+                    }
+                } catch (e3) {
+                    warn('restoreCamera', e3);
+                }
                 send({ type: 'screen-share', sharing: false });
             }
         },

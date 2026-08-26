@@ -9,6 +9,7 @@ import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf
 import com.zillit.desktop.feature.calls.data.protoo.toJoin
+import com.zillit.desktop.feature.calls.domain.CallChatTarget
 import com.zillit.desktop.feature.calls.domain.CallEngine
 import com.zillit.desktop.feature.calls.domain.CallDevices
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
@@ -19,6 +20,8 @@ import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallParticipant
 import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.calls.domain.CallProvider
+import com.zillit.desktop.feature.calls.domain.CallRecording
+import com.zillit.desktop.feature.calls.domain.CallRecordingShare
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.CallTimeouts
@@ -79,6 +82,11 @@ class CallCoordinator(
     /** Our display name, stamped on our Firestore row to self-heal docs. */
     private val selfName: () -> String? = { null },
     /**
+     * Where a finished recording is posted. Null keeps it a local file only,
+     * which is what a host without chat wiring can honestly offer.
+     */
+    private val share: CallRecordingShare? = null,
+    /**
      * The audio devices this machine chose last time, and where to put a new
      * choice. A headset picked during one call is still the headset the user
      * expects for the next one, so the selection outlives the call — the
@@ -119,6 +127,10 @@ class CallCoordinator(
 
     /** Sends one ephemeral line to everyone else on the call. */
     fun sendInCallMessage(text: String) = inCall.sendMessage(text)
+
+    /** Things that went wrong without ending the call. */
+    private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val notices: SharedFlow<String> = _notices.asSharedFlow()
 
     private val _ended = MutableSharedFlow<CallEndEvent>(extraBufferCapacity = 4)
     val ended: SharedFlow<CallEndEvent> = _ended.asSharedFlow()
@@ -245,6 +257,7 @@ class CallCoordinator(
             selfUserId = selfUserId().orEmpty(),
             selfDeviceId = selfDeviceId().orEmpty(),
             receiverDeviceId = receiverDeviceId,
+            receiverUserId = receiverUserId,
             chatRoomId = chatRoomId,
             title = displayName,
         )
@@ -281,6 +294,7 @@ class CallCoordinator(
                     _session.value = session.copy(
                         title = displayName.ifBlank { session.title },
                         receiverDeviceId = receiverDeviceId,
+                        receiverUserId = receiverUserId,
                     )
                     _cameraOn.value = session.hasVideo
                     startRingTimeout(CallTimeouts.OUTGOING_MS) { outgoingRangOut() }
@@ -481,12 +495,23 @@ class CallCoordinator(
         engine.setHandRaised(raised)
     }
 
-    fun toggleScreenShare() {
+    /**
+     * Starts sharing [sourceId], or the whole desktop when it is null.
+     *
+     * Split from stopping because starting now has a question in front of it —
+     * which screen or window — and the answer is the UI's to collect. The
+     * engine call is still fire-and-forget: what comes back is a
+     * `screen-share` event once the capture actually exists, and a share the
+     * user cancelled arrives the same way with `sharing = false`.
+     */
+    fun startScreenShare(sourceId: String? = null) {
         if (_phase.value != CallPhase.InCall) return
-        val sharing = _media.value.selfSharing
-        scope.launch {
-            if (sharing) engine.stopScreenShare() else engine.startScreenShare()
-        }
+        if (_media.value.selfSharing) return
+        scope.launch { engine.startScreenShare(sourceId) }
+    }
+
+    fun stopScreenShare() {
+        if (_media.value.selfSharing) scope.launch { engine.stopScreenShare() }
     }
 
     /** Starts or stops recording the call's audio on this machine. */
@@ -784,22 +809,50 @@ class CallCoordinator(
                 }
                 is CallEngineEvent.Devices -> audio.onEngineDevices(event)
                 is CallEngineEvent.Failed -> fail(event.message)
-                is CallEngineEvent.PeerHand -> {
-                    val current = _session.value ?: return@collect
-                    val updated = current.participants.withHandByUser(event.userId, event.raised)
-                    if (updated != current.participants) {
-                        _session.value = current.copy(participants = updated)
-                    }
-                }
-                is CallEngineEvent.PeerRecording -> recorder.onRemoteFlag(
-                    key = event.userId,
-                    recording = event.recording,
-                    name = _session.value?.participants
-                        ?.firstOrNull { it.userId == event.userId }?.name.orEmpty(),
-                )
-                is CallEngineEvent.RecordingSaved ->
-                    _toasts.tryEmit("Recording saved to ${event.path}")
+                is CallEngineEvent.Degraded -> onDegraded(event)
+                is CallEngineEvent.PeerHand -> onPeerHand(event)
+                is CallEngineEvent.PeerRecording -> onPeerRecording(event)
+                is CallEngineEvent.RecordingSaved -> onRecordingSaved(event)
                 else -> Unit
+            }
+        }
+    }
+
+    /**
+     * A finished recording: filed on this machine, and on its way to the
+     * conversation.
+     *
+     * Sending is the point — the phones and the web both post the recording
+     * into the call's chat when it stops, and a recording only the recorder
+     * can hear is not what a crew means by "record this call". The local file
+     * stays where it was saved: this is a desktop, and a file the user was
+     * just told the path of should still be there when they go looking.
+     */
+    private fun onRecordingSaved(event: CallEngineEvent.RecordingSaved) {
+        _toasts.tryEmit("Recording saved to ${event.path}")
+        val sender = share ?: return
+        // The call the recording belongs to, which by now may not be the live
+        // one — see CallRecordingControl.recordedSession.
+        val session = recorder.recordedSession ?: return
+        val targets = recordingTargets(session, selfUserId())
+        if (targets.isEmpty()) {
+            ZillitLog.w(TAG) { "recording not sent: no chat recipient on ${session.callUuid}" }
+            _toasts.tryEmit("Recording saved, but there was nobody to send it to.")
+            return
+        }
+        scope.launch {
+            sender.share(
+                CallRecording(
+                    path = event.path,
+                    contentType = event.contentType,
+                    durationMillis = event.durationMillis,
+                ),
+                targets,
+            ).onSuccess {
+                _toasts.tryEmit("Recording sent to chat.")
+            }.onFailure { error ->
+                ZillitLog.w(TAG) { "recording not sent: $error" }
+                _toasts.tryEmit("Recording saved, but sending it to chat failed.")
             }
         }
     }
@@ -1082,6 +1135,36 @@ class CallCoordinator(
      */
     private fun CallSession.canInvite(userId: String, deviceId: String): Boolean =
         if (provider == CallProvider.Mediasoup) userId.isNotBlank() else deviceId.isNotBlank()
+
+    /**
+     * Something did not work; the call still does.
+     *
+     * Surfaced rather than logged, because the user asked for the thing that
+     * failed and is otherwise left pressing a button that does nothing.
+     */
+    private suspend fun onDegraded(event: CallEngineEvent.Degraded) {
+        ZillitLog.w(TAG) { "degraded: ${event.message}" }
+        _notices.emit(event.message)
+    }
+
+    /** A remote hand, off the media line rather than the roster row. */
+    private fun onPeerHand(event: CallEngineEvent.PeerHand) {
+        val current = _session.value ?: return
+        val updated = current.participants.withHandByUser(event.userId, event.raised)
+        if (updated != current.participants) {
+            _session.value = current.copy(participants = updated)
+        }
+    }
+
+    /** Somebody else started or stopped recording; the banner names them. */
+    private fun onPeerRecording(event: CallEngineEvent.PeerRecording) {
+        recorder.onRemoteFlag(
+            key = event.userId,
+            recording = event.recording,
+            name = _session.value?.participants
+                ?.firstOrNull { it.userId == event.userId }?.name.orEmpty(),
+        )
+    }
 
     private fun String.matches(session: CallSession): Boolean =
         isNotBlank() && (this == session.roomId || this == session.callUuid)

@@ -980,6 +980,11 @@ sealed interface AppGraph {
                 googleMapsKey = { remoteConfigRepository.current()?.googleMapsKey },
                 scope = appScope,
             ).also(Shutdown::locationPicker)
+            // Hoisted above the call coordinator, which needs it: a finished
+            // call recording is posted into chat through the same storage
+            // every other attachment uses.
+            val attachmentUploader =
+                uploader(storageClient, apiClient, config, remoteConfigRepository, projectContext)
             // One instance, shared: the coordinator and the call-log list are
             // the same surface talking to the same production.
             val callApi = CallApi(apiClient, config)
@@ -998,6 +1003,9 @@ sealed interface AppGraph {
                 selfDeviceId = { headerContext.value.deviceId.takeIf(String::isNotBlank) },
                 selfName = { projectContext?.context?.value?.profile?.fullName },
                 preferences = preferences,
+                // What the phones and the web do when a recording stops: the
+                // file goes to the conversation, not only to this disk.
+                share = callRecordingShare(attachmentUploader, chatRepository),
             )
 
             com.zillit.desktop.feature.calls.data.CallRinger(callCoordinator, appScope)
@@ -1084,7 +1092,7 @@ sealed interface AppGraph {
                 contactRepository = ContactRepositoryImpl(apiClient, config),
                 signatureRepository = SignatureRepositoryImpl(apiClient, config),
                 folderRepository = FolderRepositoryImpl(apiClient, config),
-                attachmentUploader = uploader(storageClient, apiClient, config, remoteConfigRepository, projectContext),
+                attachmentUploader = attachmentUploader,
                 noticeMedia = S3NoticeMediaSource(
                     httpClient = storageClient,
                     credentials = { awsKeyPair(remoteConfigRepository) },
@@ -1295,6 +1303,7 @@ private fun buildCallCoordinator(
     selfDeviceId: () -> String?,
     selfName: () -> String?,
     preferences: PreferenceStore,
+    share: com.zillit.desktop.feature.calls.domain.CallRecordingShare,
 ): CallCoordinator = CallCoordinator(
     api = callApi,
     bus = socketEvents,
@@ -1304,6 +1313,7 @@ private fun buildCallCoordinator(
     selfDeviceId = selfDeviceId,
     plane = buildStatusPlane(config, planeClient, selfDeviceId),
     selfName = selfName,
+    share = share,
     // Device-scoped: the headset belongs to the machine, so the choice
     // survives sign-out and the next person to use this computer.
     loadAudioDevices = {

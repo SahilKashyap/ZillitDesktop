@@ -235,11 +235,25 @@
          * camera producer is paused while the share runs, matching the
          * one-picture-at-a-time behaviour of the other platforms.
          */
-        produceScreen: async function () {
+        produceScreen: async function (sourceId) {
             try {
                 if (screenProducer && !screenProducer.closed) { return; }
                 if (!sendTransport) { warn('produce-screen', 'no send transport yet'); return; }
-                var stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                // With a source the app's picker chose, the older constraint
+                // form is what names it — getDisplayMedia takes whatever the
+                // browser decides, and embedded Chromium decides "everything".
+                var stream = sourceId
+                    ? await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            mandatory: {
+                                chromeMediaSource: 'desktop',
+                                chromeMediaSourceId: sourceId,
+                                maxWidth: 1920,
+                                maxHeight: 1080,
+                            },
+                        },
+                    })
+                    : await navigator.mediaDevices.getDisplayMedia({ video: true });
                 var track = stream.getVideoTracks()[0];
                 screenProducer = await sendTransport.produce({
                     track: track,

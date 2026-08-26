@@ -17,6 +17,7 @@ import com.zillit.desktop.feature.calls.data.protoo.MediasoupPageEvent
 import com.zillit.desktop.feature.calls.data.protoo.parseMediasoupPageEvent
 import com.zillit.desktop.feature.calls.domain.CallEngine
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
+import com.zillit.desktop.feature.calls.domain.RecordedAudio
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -308,8 +309,40 @@ class KcefCallEngine(
     private fun handledAsWarning(message: String): Boolean {
         // Degraded, not dead — a missing camera on an audio call lands here.
         val text = EngineBridge.warning(message) ?: return false
-        ZillitLog.w(TAG) { "page warning: $text" }
+        val where = EngineBridge.warningWhere(message).orEmpty()
+        ZillitLog.w(TAG) { "page warning${if (where.isBlank()) "" else " ($where)"}: $text" }
+        // A screen share the user asked for and did not get is the one warning
+        // they need to see. Everything else stays in the log — a camera label
+        // arriving late is not worth a banner.
+        if (where in SHARE_WARNINGS) {
+            _events.tryEmit(CallEngineEvent.Degraded(shareFailureNotice(text)))
+        }
         return true
+    }
+
+    /**
+     * What to tell someone whose screen share did not start.
+     *
+     * Only a refusal the OS actually made names the OS. An earlier version
+     * mapped every unopenable source to "grant Screen Recording permission",
+     * and that message was wrong for the failure it fired on most: the source
+     * Chromium was handed did not exist, permission having been granted all
+     * along. Sending someone to System Settings to fix something that is
+     * already correct is worse than saying nothing, so the permission wording
+     * is reserved for the phrase macOS itself produces, and anything else is
+     * reported as what it was.
+     */
+    private fun shareFailureNotice(text: String): String = when {
+        text.contains("Permission denied by system", ignoreCase = true) ||
+            text.contains("NotAllowed", ignoreCase = true) ->
+            "Screen sharing needs Screen Recording permission for Zillit in " +
+                "System Settings → Privacy & Security, then a restart of the app."
+        // A window that closed between the pick and the capture. Nothing is
+        // broken; there is just nothing left to share.
+        text.contains("NotReadable", ignoreCase = true) ||
+            text.contains("video source", ignoreCase = true) ->
+            "That screen or window is no longer available. Try sharing again."
+        else -> "Screen sharing did not start: $text"
     }
 
     private fun handledAsRecording(message: String): Boolean {
@@ -317,8 +350,8 @@ class KcefCallEngine(
             recordingChunks.append(chunk)
             return true
         }
-        if (!EngineBridge.isRecordingDone(message)) return false
-        saveRecording()
+        val done = EngineBridge.recordingDone(message) ?: return false
+        saveRecording(done)
         return true
     }
 
@@ -550,11 +583,15 @@ class KcefCallEngine(
      * Line-branched like the microphone: the Agora function publishes an
      * Agora track, and on a mediasoup call it would silently share nothing.
      */
-    override suspend fun startScreenShare(): Boolean {
+    override suspend fun startScreenShare(sourceId: String?): Boolean {
         val target = browser ?: return false
         run(
             target,
-            if (mediasoup != null) MediasoupScripts.PRODUCE_SCREEN else EngineBridge.START_SCREEN_SHARE_SCRIPT,
+            if (mediasoup != null) {
+                MediasoupScripts.produceScreenScript(sourceId)
+            } else {
+                EngineBridge.startScreenShareScript(sourceId)
+            },
         )
         return true
     }
@@ -618,8 +655,13 @@ class KcefCallEngine(
     /**
      * Decodes the assembled slices and files them under Downloads, which is
      * where a desktop user goes looking for "the app saved something".
+     *
+     * The extension comes from [recorded] rather than a constant: what the
+     * page could write is what is in the bytes, and a `.webm` name on an MP4
+     * file is the kind of lie that only shows up when someone double-clicks
+     * it.
      */
-    private fun saveRecording() {
+    private fun saveRecording(recorded: RecordedAudio) {
         val encoded = recordingChunks.toString()
         recordingChunks.setLength(0)
         if (encoded.isEmpty()) return
@@ -630,12 +672,20 @@ class KcefCallEngine(
                     .format(java.util.Date())
                 val downloads = File(System.getProperty("user.home"), "Downloads")
                 val dir = if (downloads.isDirectory) downloads else File(System.getProperty("user.home"))
-                val file = File(dir, "Zillit call recording $stamp.webm")
+                val file = File(dir, "Zillit call recording $stamp.${recorded.extension}")
                 file.writeBytes(bytes)
                 file
             }.onSuccess { file ->
-                ZillitLog.i(TAG) { "call recording saved: ${file.absolutePath} (${file.length()} bytes)" }
-                _events.tryEmit(CallEngineEvent.RecordingSaved(file.absolutePath))
+                ZillitLog.i(TAG) {
+                    "call recording saved: ${file.absolutePath} (${file.length()} bytes, ${recorded.mimeType})"
+                }
+                _events.tryEmit(
+                    CallEngineEvent.RecordingSaved(
+                        path = file.absolutePath,
+                        contentType = recorded.contentType,
+                        durationMillis = recorded.durationMillis,
+                    ),
+                )
             }.onFailure { thrown ->
                 ZillitLog.w(TAG) { "call recording not saved: ${thrown.message}" }
             }
@@ -766,8 +816,31 @@ private fun buildBrowser(cefClient: CefClient, page: File, onMessage: (String) -
     cefClient.addDisplayHandler(
         KcefPage.displayHandler { note -> ZillitLog.w(BROWSER_TAG) { "console: $note" } },
     )
+    // Without this the page cannot reach a camera, a microphone or the screen
+    // at all — CEF denies media requests that nobody answers.
+    cefClient.addPermissionHandler(
+        KcefPage.permissionHandler { note -> ZillitLog.i(BROWSER_TAG) { note } },
+    )
     ZillitLog.i(BROWSER_TAG) { "call page loading from ${page.absolutePath}" }
     return cefClient.createBrowser("file://${page.absolutePath}", CefRendering.DEFAULT, false)
 }
+
+/**
+ * Page steps whose warnings the user is owed an explanation for.
+ *
+ * Deliberately a short list. Most page warnings are noise a user can do
+ * nothing about — a device label arriving late, a codec preference declined —
+ * and a banner for each would train people to ignore the banner.
+ */
+private val SHARE_WARNINGS = setOf("produce-screen", "startScreenShare")
+
+/*
+ * Exactly the two spellings the pages actually send, checked against them
+ * rather than guessed: `produce-screen` is mediasoup.js's, `startScreenShare`
+ * is call.js's own function name, which is what its warn() now reports. An
+ * earlier version of this set listed two steps that no page has ever emitted,
+ * so on the Agora line — the default — a failed share matched nothing and the
+ * user was told nothing.
+ */
 
 private const val BROWSER_TAG = "KcefCallEngine"

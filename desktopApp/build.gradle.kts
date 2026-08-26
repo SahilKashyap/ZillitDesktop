@@ -87,6 +87,9 @@ dependencies {
     // logic rather than wiring and worth pinning — particularly its behaviour
     // after a crash, which is the case a naive implementation gets wrong.
     testImplementation(kotlin("test"))
+    // The screen-source helper is a process and a flow; testing it needs a
+    // scheduler that does not actually sleep.
+    testImplementation(libs.kotlinx.coroutines.test)
 
     implementation(compose.desktop.currentOs)
     // Already on the runtime classpath transitively; declared so the Drive
@@ -254,6 +257,49 @@ if (jbrFrameworks.isDirectory) {
         null
     }
 
+    /*
+     * The screen-share source helper.
+     *
+     * The call page is embedded Chromium, and embedded Chromium has no
+     * "Choose what to share" dialog — that lives in the browser shell, not in
+     * the content layer. So the app draws its own picker, and a picker needs a
+     * list of screens and windows with pictures. ScreenCaptureKit is the only
+     * API that still provides them: `CGWindowListCreateImage`, which JNA could
+     * have reached, is gone from the macOS 26 SDK.
+     *
+     * In `Contents/MacOS/` for the same reason as the notification helper — a
+     * binary there inherits the app's bundle identity, so the Screen Recording
+     * permission it needs is asked for, and remembered, as Zillit's.
+     *
+     * Skipped without a Swift compiler, like the other one: the picker then
+     * has nothing to list and the app shares the whole screen, which is what
+     * it did before the picker existed.
+     */
+    val captureHelperSource = project.file("src/main/native/ZillitCapture.swift")
+
+    val captureHelper = if (swiftCompiler.canExecute() && captureHelperSource.isFile) {
+        tasks.register<Exec>("compileCaptureHelper") {
+            dependsOn("createDistributable")
+            description = "Compiles the macOS screen-share source helper into the app bundle."
+
+            val destination = layout.buildDirectory
+                .dir("compose/binaries/main/app/$desktopPackageName.app/Contents/MacOS")
+                .get().asFile
+
+            commandLine(
+                swiftCompiler.absolutePath,
+                "-O",
+                "-o", File(destination, "zillit-capture").absolutePath,
+                captureHelperSource.absolutePath,
+                "-framework", "ScreenCaptureKit",
+                "-framework", "AppKit",
+            )
+        }
+    } else {
+        logger.lifecycle("No Swift compiler; packaging without the screen-share source helper")
+        null
+    }
+
     val resignIdentity = providers.gradleProperty("zillitSigningIdentity")
 
     // Unsigned builds keep the old graph exactly — nothing to sign.
@@ -261,6 +307,7 @@ if (jbrFrameworks.isDirectory) {
         tasks.register<Exec>("resignWithFrameworks") {
             dependsOn(copyCefFrameworks)
             notifyHelper?.let { dependsOn(it) }
+            captureHelper?.let { dependsOn(it) }
             description = "Signs what createDistributable missed, then re-seals the bundle."
 
             val app = layout.buildDirectory
@@ -307,11 +354,19 @@ if (jbrFrameworks.isDirectory) {
                 # notification daemon checks the caller's code identity against
                 # the bundle whose identity it claims, and refuses the request
                 # outright when they disagree.
-                helper="${'$'}app/Contents/MacOS/zillit-notify"
-                if [ -f "${'$'}helper" ]; then
+                # Both are signed under the app's own identifier, not their
+                # own: a daemon checks the caller's code identity against the
+                # bundle whose identity it claims and refuses when they
+                # disagree. For zillit-notify that decides whether the banner
+                # is delivered; for zillit-capture it decides whether the
+                # Screen Recording grant the user gave Zillit counts as this
+                # helper's grant too.
+                for helper in zillit-notify zillit-capture; do
+                    path="${'$'}app/Contents/MacOS/${'$'}helper"
+                    [ -f "${'$'}path" ] || continue
                     codesign --force --identifier com.zillit.desktop --options runtime \
-                        --timestamp --sign "${'$'}identity" "${'$'}helper"
-                fi
+                        --timestamp --sign "${'$'}identity" "${'$'}path"
+                done
 
                 codesign --force --options runtime --timestamp \
                     --entitlements "${'$'}entitlements" --sign "${'$'}identity" "${'$'}app/Contents/runtime"

@@ -39,6 +39,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * The phase machine, driven purely over the fake socket.
@@ -147,6 +148,21 @@ class CallCoordinatorTest {
 
         suspend fun push(event: CallEngineEvent) = _events.emit(event)
 
+        /** Recording is available here; the file arrives when a test pushes it. */
+        override suspend fun startAudioRecording(): Boolean = true
+
+        /** The source the last share was asked for, or "" for none yet. */
+        var sharedSource: String? = null
+            private set
+        var shareStarts = 0
+            private set
+
+        override suspend fun startScreenShare(sourceId: String?): Boolean {
+            sharedSource = sourceId
+            shareStarts += 1
+            return true
+        }
+
         override suspend fun leave() { left = true }
         override fun setMicrophoneMuted(muted: Boolean) = Unit
         override fun setCameraEnabled(enabled: Boolean) = Unit
@@ -175,6 +191,7 @@ class CallCoordinatorTest {
         plane: FakePlane? = null,
         engine: CallEngine = NoopCallEngine(),
         now: () -> Long = { 1_000L },
+        share: com.zillit.desktop.feature.calls.domain.CallRecordingShare? = null,
     ): CallCoordinator {
         val bus = SocketEventBus(socket)
         // ApiClient with an unroutable base: every REST call fails as a
@@ -202,6 +219,7 @@ class CallCoordinatorTest {
             selfUserId = { "me" },
             selfDeviceId = { "my-device" },
             plane = plane ?: FakePlane(),
+            share = share,
             now = now,
         )
         coordinator.start()
@@ -684,6 +702,180 @@ class CallCoordinatorTest {
             advanceTimeBy(60_000)
             runCurrent()
             assertEquals(CallPhase.Idle, coordinator.phase.value)
+        }
+
+    /** Everything handed to the sender, so a test can read what was posted. */
+    private class RecordingSink : com.zillit.desktop.feature.calls.domain.CallRecordingShare {
+        val sent = mutableListOf<
+            Pair<
+                com.zillit.desktop.feature.calls.domain.CallRecording,
+                List<com.zillit.desktop.feature.calls.domain.CallChatTarget>,
+                >,
+            >()
+
+        override suspend fun share(
+            recording: com.zillit.desktop.feature.calls.domain.CallRecording,
+            targets: List<com.zillit.desktop.feature.calls.domain.CallChatTarget>,
+        ): ZillitResult<Unit> {
+            sent += recording to targets
+            return ZillitResult.Success(Unit)
+        }
+    }
+
+    @Test
+    fun `a finished recording is sent to the other person, not just saved`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val sink = RecordingSink()
+            val coordinator = coordinator(socket, engine = engine, share = sink)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+            coordinator.toggleRecording()
+            runCurrent()
+
+            engine.push(
+                CallEngineEvent.RecordingSaved(
+                    path = "/tmp/call.m4a",
+                    contentType = "audio/mp4",
+                    durationMillis = 12_000L,
+                ),
+            )
+            runCurrent()
+
+            val (recording, targets) = sink.sent.single()
+            assertEquals("/tmp/call.m4a", recording.path)
+            // Both ride along because a voice note without them is an
+            // unplayable row: the type is what marks it audio, the length is
+            // the bubble's clock.
+            assertEquals("audio/mp4", recording.contentType)
+            assertEquals(12_000L, recording.durationMillis)
+            assertEquals(
+                listOf(com.zillit.desktop.feature.calls.domain.CallChatTarget("caller", isGroup = false)),
+                targets,
+            )
+        }
+
+    @Test
+    fun `a recording that outlives its call still knows where it was going`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val sink = RecordingSink()
+            val coordinator = coordinator(socket, engine = engine, share = sink)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+            coordinator.toggleRecording()
+            runCurrent()
+
+            // The page is still writing the file when the call ends, and the
+            // finished recording lands afterwards. By then the live session is
+            // gone — reading the recipient off `session` here would send the
+            // recording to nobody.
+            socket.deliver(
+                ZillitSocketEvents.Calls.Ended,
+                """{"room_id":"r1","message":"Call has ended"}""",
+            )
+            runCurrent()
+            assertEquals(CallPhase.Idle, coordinator.phase.value)
+            assertNull(coordinator.session.value)
+
+            engine.push(CallEngineEvent.RecordingSaved("/tmp/call.m4a", "audio/mp4", 3_000L))
+            runCurrent()
+
+            assertEquals(
+                listOf(com.zillit.desktop.feature.calls.domain.CallChatTarget("caller", isGroup = false)),
+                sink.sent.single().second,
+            )
+        }
+
+    @Test
+    fun `no sender wired leaves the recording a local file`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = coordinator(socket, engine = engine, share = null)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            val toasts = mutableListOf<String>()
+            backgroundScope.launch { coordinator.toasts.collect { toasts += it } }
+            runCurrent()
+            engine.push(CallEngineEvent.RecordingSaved("/tmp/call.webm"))
+            runCurrent()
+
+            // The path is still announced: an unsendable recording that is
+            // silently discarded is worse than one the user can go and find.
+            assertEquals(listOf("Recording saved to /tmp/call.webm"), toasts)
+        }
+
+    @Test
+    fun `the picked screen is the one the engine is told to share`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = coordinator(socket, engine = engine)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            coordinator.startScreenShare("window:187:0")
+            runCurrent()
+
+            // The whole point of the picker: an id chosen up here has to reach
+            // the capture unaltered, because Chromium has no dialog of its own
+            // to ask with and will otherwise take the entire desktop.
+            assertEquals("window:187:0", engine.sharedSource)
+        }
+
+    @Test
+    fun `sharing with no choice asks for the default source`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = coordinator(socket, engine = engine)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            coordinator.startScreenShare(null)
+            runCurrent()
+
+            assertNull(engine.sharedSource)
+            assertEquals(1, engine.shareStarts)
+        }
+
+    @Test
+    fun `a second share while one runs is ignored`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val engine = ScriptableEngine()
+            val coordinator = coordinator(socket, engine = engine)
+            socket.deliver(ZillitSocketEvents.Calls.Incoming, ring)
+            runCurrent()
+            coordinator.accept()
+            runCurrent()
+
+            coordinator.startScreenShare("screen:1:0")
+            runCurrent()
+            // The engine confirms the capture exists.
+            engine.push(CallEngineEvent.ScreenShare(sharing = true))
+            runCurrent()
+            coordinator.startScreenShare("window:187:0")
+            runCurrent()
+
+            // Starting a second capture over a live one publishes a track the
+            // first one is still holding; the button stops instead.
+            assertEquals(1, engine.shareStarts)
+            assertEquals("screen:1:0", engine.sharedSource)
         }
 }
 

@@ -4,6 +4,7 @@ import com.zillit.desktop.feature.calls.domain.CallDeviceKind
 import com.zillit.desktop.feature.calls.domain.CallEngineEvent
 import com.zillit.desktop.feature.calls.domain.EngineConnection
 import com.zillit.desktop.feature.calls.domain.MediaDevice
+import com.zillit.desktop.feature.calls.domain.RecordedAudio
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -12,6 +13,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 
 /**
  * The wire between Kotlin and the call page (`callengine/call.js`).
@@ -86,6 +88,20 @@ object EngineBridge {
         return obj.str("message") ?: "unspecified page warning"
     }
 
+    /**
+     * Which step warned, when the page said.
+     *
+     * Kept apart from the text because the step is what code branches on and
+     * the text is only for a human — a screen share the OS refused needs to
+     * say something specific, and matching on prose would be fragile.
+     */
+    fun warningWhere(message: String): String? {
+        val obj = runCatching { json.parseToJsonElement(message) as? JsonObject }
+            .getOrNull() ?: return null
+        if (obj.str("type") != "warning") return null
+        return obj.str("where")
+    }
+
     /** True when [message] is the page's ready announcement. */
     fun isReady(message: String): Boolean =
         runCatching { (json.parseToJsonElement(message) as? JsonObject)?.str("type") }
@@ -123,7 +139,16 @@ object EngineBridge {
 
     const val LIST_DEVICES_SCRIPT = "zillitCall.listDevices()"
 
-    const val START_SCREEN_SHARE_SCRIPT = "zillitCall.startScreenShare()"
+    /**
+     * Starts the Agora line's share, on [sourceId] when the picker named one.
+     *
+     * The id is a Chromium DesktopMediaID and is spliced as a JSON string for
+     * the same reason tokens are: it is opaque text from outside, and a page
+     * that concatenates opaque text into a call is one quote away from being
+     * an injection into our own script.
+     */
+    fun startScreenShareScript(sourceId: String?): String =
+        "zillitCall.startScreenShare(${sourceId?.asJsString() ?: "null"})"
     const val STOP_SCREEN_SHARE_SCRIPT = "zillitCall.stopScreenShare()"
 
     const val START_RECORDING_SCRIPT = "zillitCall.startRecording()"
@@ -143,10 +168,27 @@ object EngineBridge {
         return obj.str("data")
     }
 
-    /** True when [message] closes a recording's chunk stream. */
-    fun isRecordingDone(message: String): Boolean =
-        runCatching { (json.parseToJsonElement(message) as? JsonObject)?.str("type") }
-            .getOrNull() == "recording-done"
+    /**
+     * The frame that closes a recording's chunk stream, or null for anything
+     * else.
+     *
+     * Carries what only the page knows: which container it managed to write
+     * (see `RECORDER_TYPES` in call.js — MP4 where this build can encode AAC,
+     * WebM otherwise) and how long the take ran. Both ride the last frame
+     * rather than the first because the recorder picks its container at start
+     * and its length is not known until stop.
+     */
+    fun recordingDone(message: String): RecordedAudio? {
+        val obj = runCatching { json.parseToJsonElement(message) as? JsonObject }
+            .getOrNull() ?: return null
+        if (obj.str("type") != "recording-done") return null
+        return RecordedAudio(
+            // Pre-MIME pages sent the frame bare; WebM is what they recorded.
+            mimeType = obj.str("mime")?.takeIf(String::isNotBlank) ?: "audio/webm",
+            extension = obj.str("ext")?.takeIf(String::isNotBlank) ?: "webm",
+            durationMillis = obj.long("duration"),
+        )
+    }
 
     /**
      * Device ids are opaque strings from the browser, so they are passed as
@@ -195,6 +237,10 @@ object EngineBridge {
     private fun JsonObject.int(key: String): Int =
         (this[key] as? JsonPrimitive)?.intOrNull
             ?: (this[key] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
+
+    private fun JsonObject.long(key: String): Long =
+        (this[key] as? JsonPrimitive)?.longOrNull
+            ?: (this[key] as? JsonPrimitive)?.contentOrNull?.toLongOrNull() ?: 0L
 
     private fun JsonObject.bool(key: String): Boolean =
         (this[key] as? JsonPrimitive)?.booleanOrNull ?: false

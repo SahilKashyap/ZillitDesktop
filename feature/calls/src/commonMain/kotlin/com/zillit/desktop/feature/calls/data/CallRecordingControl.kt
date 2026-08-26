@@ -1,7 +1,9 @@
 package com.zillit.desktop.feature.calls.data
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.feature.calls.domain.CallChatTarget
 import com.zillit.desktop.feature.calls.domain.CallEngine
+import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallParticipant
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
@@ -39,6 +41,18 @@ class CallRecordingControl(
     private var remoteRecorderKey: String = ""
 
     /**
+     * The call the running — or most recently finished — recording belongs to.
+     *
+     * Held because the file outlives the call. The page delivers it after the
+     * recorder has stopped, and a recording ended by hanging up arrives once
+     * the coordinator has already cleared the live session, so who the
+     * recording gets sent to must be read from here rather than from whatever
+     * call is live by then. Deliberately survives [reset] for that reason.
+     */
+    var recordedSession: CallSession? = null
+        private set
+
+    /**
      * Starts or stops recording on this machine.
      *
      * Refused while somebody else records: one recording per call is the rule
@@ -60,6 +74,7 @@ class CallRecordingControl(
                 ZillitLog.w(TAG) { "recording refused: engine cannot record" }
                 return@launch
             }
+            recordedSession = session
             _recording.value = true
             plane.announceSelf(session, CallStatus.InCall, mapOf(FIELD_IS_RECORDING to true))
             stampRoster(session, active = true)
@@ -89,6 +104,8 @@ class CallRecordingControl(
      * how the call ended.
      */
     fun reset() {
+        // recordedSession is NOT cleared here: see its own comment — the file
+        // it names is still in flight when a hung-up call resets.
         _recording.value = false
         _recordedBy.value = ""
         remoteRecorderKey = ""
@@ -114,4 +131,36 @@ class CallRecordingControl(
         const val FIELD_CALL_RECORDED = "call_is_being_recorded"
         const val FIELD_RECORDING_BY = "recording_by"
     }
+}
+
+/**
+ * The chat threads a finished recording is posted into.
+ *
+ * A group call has one thread — the room it was struck from — and one message
+ * goes there, which is what iOS does and what stops a ten-person call
+ * producing ten copies of the same file. A private call has no room, so the
+ * recording goes to each other person's own thread.
+ *
+ * Participants the server only ever named by device id are dropped rather than
+ * guessed at: the chat server silently discards a message addressed to a
+ * device id, so a "sent" recording would simply never arrive. The two
+ * fallbacks are for exactly that roster — who we rang on an outgoing call, and
+ * who rang us on an incoming one — which is the same pair of sources iOS
+ * reaches for when its own participant list has no user id to offer.
+ */
+internal fun recordingTargets(session: CallSession, selfUserId: String?): List<CallChatTarget> {
+    if (session.mode == CallMode.Group && session.chatRoomId.isNotBlank()) {
+        return listOf(CallChatTarget(receiverId = session.chatRoomId, isGroup = true))
+    }
+    val others = session.participants
+        .map(CallParticipant::userId)
+        .filter { it.isNotBlank() && it != selfUserId }
+        .distinct()
+    val recipients = others.ifEmpty {
+        listOf(session.receiverUserId, session.displayUserId)
+            .filter { it.isNotBlank() && it != selfUserId }
+            .distinct()
+            .take(1)
+    }
+    return recipients.map { CallChatTarget(receiverId = it, isGroup = false) }
 }

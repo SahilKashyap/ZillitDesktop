@@ -112,8 +112,15 @@ object MediasoupScripts {
 
     fun setCam(enabled: Boolean): String = "zillitMs.setCam($enabled)"
 
-    /** Publishes the screen as a second producer, marked in its appData. */
-    const val PRODUCE_SCREEN = "zillitMs.produceScreen()"
+    /**
+     * Publishes the screen as a second producer, marked in its appData.
+     *
+     * On [sourceId] when the app's picker chose one; the whole desktop
+     * otherwise. Quoted like every other opaque string that crosses into the
+     * page.
+     */
+    fun produceScreenScript(sourceId: String?): String =
+        "zillitMs.produceScreen(${sourceId?.let(::quote) ?: "null"})"
 
     const val STOP_SCREEN = "zillitMs.stopScreen()"
 

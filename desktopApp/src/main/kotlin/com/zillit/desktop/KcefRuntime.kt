@@ -108,21 +108,25 @@ internal object KcefRuntime {
     /**
      * Chromium switches the call page needs.
      *
-     * The fake-UI switch answers Chrome's own camera/microphone prompt, which
-     * has nowhere to appear in an embedded browser with no chrome. It does not
-     * bypass the OS: macOS still asks the user for microphone access the first
-     * time, as it should.
+     * Deliberately almost empty. Two switches used to live here and both are
+     * gone, because together they were the reason screen sharing never once
+     * worked in this app:
+     *
+     * `--use-fake-ui-for-media-stream` looked like it only auto-answered the
+     * camera prompt an embedded browser has nowhere to draw. It does more than
+     * that: for a display-capture request it answers in place of the browser's
+     * own path and substitutes the placeholder source id `screen:0:0`. Zero is
+     * not a `CGDirectDisplayID`, so ScreenCaptureKit matches no display and
+     * gives up before building a stream — surfacing in the page as
+     * `NotReadableError: Could not start video source`, which reads like a
+     * permission failure and is not one. [KcefPage.permissionHandler] answers
+     * those requests properly instead.
+     *
+     * `--auto-select-desktop-capture-source=Entire screen` was inert: the
+     * switch's only consumer is Chrome's own picker controller, which this
+     * framework does not build. It never selected anything.
      */
     private val MEDIA_ARGS = listOf(
-        "--use-fake-ui-for-media-stream",
         "--autoplay-policy=no-user-gesture-required",
-        // Screen capture has the same problem as the camera prompt and one
-        // more besides: an embedded browser has nowhere to draw Chromium's
-        // source picker, so there would be no way to choose and no way to
-        // cancel. This shares the whole screen without asking. macOS still
-        // gates it behind its own Screen Recording permission, which is the
-        // consent that matters; choosing a single window instead needs a
-        // native picker and a CEF media-access handler.
-        "--auto-select-desktop-capture-source=Entire screen",
     )
 }
