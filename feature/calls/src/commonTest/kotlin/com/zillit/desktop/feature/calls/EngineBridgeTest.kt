@@ -188,4 +188,22 @@ class EngineBridgeTest {
         assertEquals("boom", EngineBridge.warning(frame))
         assertNull(EngineBridge.warningWhere(frame))
     }
+
+    @Test
+    fun `a face crosses as two quoted strings`() {
+        val script = EngineBridge.avatarScript("u2", "data:image/png;base64,AAAA")
+
+        assertEquals("""zillitCall.setAvatar("u2", "data:image/png;base64,AAAA")""", script)
+    }
+
+    @Test
+    fun `a face cannot break out of its own string`() {
+        // Both halves come from outside: the id from the roster, the URI from
+        // storage. Either one carrying a quote must stay data.
+        val script = EngineBridge.avatarScript("""u2"); alert("x""", "data:image/png;base64,AA")
+        val arguments = script.removePrefix("zillitCall.setAvatar(").removeSuffix(")")
+        val id = arguments.substringBefore(", ")
+
+        assertEquals("""u2"); alert("x""", Json.decodeFromString(String.serializer(), id))
+    }
 }

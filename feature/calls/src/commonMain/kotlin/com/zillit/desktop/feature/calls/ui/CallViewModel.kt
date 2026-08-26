@@ -444,6 +444,50 @@ class CallViewModel(
      * Share means when the list could not be built at all, and it is never the
      * wrong answer to pressing a button labelled Share.
      */
+    /**
+     * Where the call is drawn: full window, thumbnail, or back inside Zillit.
+     *
+     * The three gestures are gathered because they are one decision with three
+     * doors, and because each of them needs the same log line — the last
+     * screen-share report could show the call window being disposed but not
+     * which control had asked for it.
+     */
+    private fun onWindowGesture(event: CallEvent) {
+        logWindowEvent(event::class.simpleName.orEmpty())
+        when (event) {
+            // Leaving PiP restores the stage: the user asked to see the
+            // video, and the pill is where it was hiding, not where it goes.
+            CallEvent.TogglePip -> setState {
+                if (pipOpen) {
+                    // Deliberate: remembered so the auto-open rule does not
+                    // immediately drag it back out.
+                    copy(pipOpen = false, expanded = true, windowDismissed = true, pipCompact = false)
+                } else {
+                    copy(pipOpen = true, expanded = false, windowDismissed = false)
+                }
+            }
+            CallEvent.ToggleCallCompact -> setState { copy(pipCompact = !pipCompact) }
+            CallEvent.ToggleStage -> setState { if (pipOpen) this else copy(expanded = !expanded) }
+            else -> Unit
+        }
+    }
+
+    /**
+     * One line per window gesture.
+     *
+     * Cheap, and the last screen-share report needed it badly: the log could
+     * show a call window being disposed and the UI dying with it, but not
+     * which control the user had pressed to get there, so working out what
+     * they had done took a full trace rather than a glance.
+     */
+    private fun logWindowEvent(name: String) {
+        val state = currentState
+        com.zillit.desktop.core.common.ZillitLog.i("CallWindowing") {
+            "$name: pip=${state.pipOpen} compact=${state.pipCompact} " +
+                "expanded=${state.expanded} sharing=${state.media.selfSharing}"
+        }
+    }
+
     private fun onConfirmShareSource() {
         val chosen = currentState.sharePicker?.chosenId?.takeIf(String::isNotBlank)
         coordinator.startScreenShare(chosen)
@@ -545,19 +589,9 @@ class CallViewModel(
             // window there is nothing here to expand — the pill IS how the main
             // window represents it — so the flag is left alone rather than
             // moved somewhere nothing reads it back.
-            CallEvent.ToggleStage -> setState { if (pipOpen) this else copy(expanded = !expanded) }
-            // Leaving PiP restores the stage: the user asked to see the
-            // video, and the pill is where it was hiding, not where it goes.
-            CallEvent.TogglePip -> setState {
-                if (pipOpen) {
-                    // Deliberate: remembered so the auto-open rule does not
-                    // immediately drag it back out.
-                    copy(pipOpen = false, expanded = true, windowDismissed = true, pipCompact = false)
-                } else {
-                    copy(pipOpen = true, expanded = false, windowDismissed = false)
-                }
-            }
-            CallEvent.ToggleCallCompact -> setState { copy(pipCompact = !pipCompact) }
+            CallEvent.ToggleStage -> onWindowGesture(event)
+            CallEvent.TogglePip -> onWindowGesture(event)
+            CallEvent.ToggleCallCompact -> onWindowGesture(event)
             is CallEvent.DragPill -> setState {
                 copy(pillOffsetX = pillOffsetX + event.dx, pillOffsetY = pillOffsetY + event.dy)
             }

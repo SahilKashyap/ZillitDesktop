@@ -137,44 +137,69 @@ private fun PipStrip(state: com.zillit.desktop.feature.calls.ui.CallUiState, cal
             color = colors.textMuted,
             maxLines = 1,
         )
-        // Compact hides the chat panel, so this is the only sign a line
-        // arrived. Growing the window is how it gets read.
-        if (state.chatUnread > 0) {
-            ZillitIconButton(
-                icon = ZillitIcons.Chat,
-                contentDescription = "${state.chatUnread} unread in call chat",
-                onClick = {
-                    // Grows the window *and* opens the panel: one click on an
-                    // unread badge should end with the message on screen.
-                    calls.onEvent(CallEvent.ToggleCallCompact)
-                    if (!state.chatOpen) calls.onEvent(CallEvent.ToggleChat)
-                },
-                tint = colors.accent,
-                size = PIP_BUTTON,
-            )
-        }
+        PipControls(state, calls)
+    }
+}
+
+/** The thumbnail strip's buttons — the ways back, and the two that end or mute. */
+@Composable
+private fun PipControls(state: com.zillit.desktop.feature.calls.ui.CallUiState, calls: CallViewModel) {
+    val colors = ZillitTheme.colors
+    // The way out of the thumbnail, always drawn.
+    //
+    // It used to appear only when there was unread chat, which made the
+    // shrunk window a one-way door for anyone not being messaged: the only
+    // other control that looked like a way back is Restore below, and that
+    // is a different destination — it re-homes the call into the main
+    // window rather than growing this one.
+    if (state.pipCompact) {
         ZillitIconButton(
-            icon = if (state.micMuted) ZillitIcons.MicOff else ZillitIcons.Mic,
-            contentDescription = if (state.micMuted) "Unmute" else "Mute",
-            onClick = { calls.onEvent(CallEvent.ToggleMic) },
-            tint = if (state.micMuted) colors.danger else colors.textPrimary,
-            size = PIP_BUTTON,
-        )
-        ZillitIconButton(
-            icon = ZillitIcons.PhoneDown,
-            contentDescription = "End call",
-            onClick = { calls.onEvent(CallEvent.HangUp) },
-            tint = colors.danger,
-            size = PIP_BUTTON,
-        )
-        ZillitIconButton(
-            icon = ZillitIcons.Restore,
-            contentDescription = "Bring the call back into Zillit",
-            onClick = { calls.onEvent(CallEvent.TogglePip) },
+            icon = ZillitIcons.Maximize,
+            contentDescription = "Back to the full call window",
+            onClick = { calls.onEvent(CallEvent.ToggleCallCompact) },
             tint = colors.textPrimary,
             size = PIP_BUTTON,
         )
     }
+    // Compact hides the chat panel, so this is the only sign a line
+    // arrived. Growing the window is how it gets read.
+    if (state.chatUnread > 0) {
+        ZillitIconButton(
+            icon = ZillitIcons.Chat,
+            contentDescription = "${state.chatUnread} unread in call chat",
+            onClick = {
+                // Grows the window *and* opens the panel: one click on an
+                // unread badge should end with the message on screen.
+                calls.onEvent(CallEvent.ToggleCallCompact)
+                if (!state.chatOpen) calls.onEvent(CallEvent.ToggleChat)
+            },
+            tint = colors.accent,
+            size = PIP_BUTTON,
+        )
+    }
+    ZillitIconButton(
+        icon = if (state.micMuted) ZillitIcons.MicOff else ZillitIcons.Mic,
+        contentDescription = if (state.micMuted) "Unmute" else "Mute",
+        onClick = { calls.onEvent(CallEvent.ToggleMic) },
+        tint = if (state.micMuted) colors.danger else colors.textPrimary,
+        size = PIP_BUTTON,
+    )
+    ZillitIconButton(
+        icon = ZillitIcons.PhoneDown,
+        contentDescription = "End call",
+        onClick = { calls.onEvent(CallEvent.HangUp) },
+        tint = colors.danger,
+        size = PIP_BUTTON,
+    )
+    ZillitIconButton(
+        icon = ZillitIcons.Restore,
+        // Named for where it goes, because the button above it also
+        // brings the call back and the two used to read identically.
+        contentDescription = "Move the call into the Zillit window",
+        onClick = { calls.onEvent(CallEvent.TogglePip) },
+        tint = colors.textPrimary,
+        size = PIP_BUTTON,
+    )
 }
 
 /**

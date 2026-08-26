@@ -69,9 +69,37 @@
     const MUTE_SVG =
         '<svg viewBox="0 0 24 24"><path d="M3 3l18 18-1.4 1.4L3 4.4 4.4 3 3 3zm9 12a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v.9l6 6V12a3 3 0 0 1-3 3zm-7-3a7 7 0 0 0 10.6 6l-1.5-1.5A5 5 0 0 1 7 12H5z"/></svg>';
 
+    /**
+     * Profile pictures, by user id, as data URIs.
+     *
+     * Pushed from Kotlin rather than fetched here: the pictures live behind
+     * signed storage URLs the app already knows how to fetch, and the page has
+     * neither the credentials nor any business holding them. Empty until they
+     * arrive, and a tile with no entry keeps its initials — which is what
+     * every tile did before, and is still the answer for someone whose
+     * picture has not loaded or who has none.
+     */
+    const avatars = new Map();
+
     function initials(name) {
         const parts = String(name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
         return parts.length ? parts.map(p => p[0].toUpperCase()).join('') : '?';
+    }
+
+    /**
+     * What fills a tile's disc: their picture, or their initials.
+     *
+     * The picture is what the rest of the app shows for a person — an audio
+     * call's grid draws it — so a video call whose camera is off should not
+     * fall back to something plainer than the audio call it just was.
+     */
+    function face(model) {
+        const uri = avatars.get(model.peerId);
+        if (!uri) { return initials(model.name); }
+        // The alt text is deliberately empty: the name is already on the
+        // tile's chip, and a broken picture should leave the disc plain
+        // rather than printing the name twice.
+        return '<img src="' + uri + '" alt="">';
     }
 
     /**
@@ -132,7 +160,7 @@
             '<div class="ring" style="width:' + ringSize + 'px;height:' + ringSize + 'px"></div>' +
             '<div class="disc" style="width:' + disc + 'px;height:' + disc + 'px;background:' +
             (model.hue || '#5f6368') + ';font-size:' + Math.round(disc / 2.6) + 'px">' +
-            initials(model.name) + '</div>';
+            face(model) + '</div>';
         tile.appendChild(mount);
 
         const chip = document.createElement('div');
@@ -166,17 +194,74 @@
         return null;
     }
 
+    /**
+     * Shows [track] in the self tile.
+     *
+     * Keyed on the cell AND the track. The cell alone is not enough: starting
+     * a share swaps the camera for the screen inside the same mount, so a
+     * cell-only guard decided the slot was already up to date and the sharer
+     * went on watching their own camera for the whole share. The guard itself
+     * has to stay — see `playingIn` — it just has to notice both things that
+     * can change.
+     */
     function playLocal(track) {
         const cell = selfCell();
         if (!cell || !track) { return; }
-        if (playingIn.get(SELF) === cell.mount) { return; }
+        if (playingIn.get(SELF) === cell.mount && playingTrack.get(SELF) === track) { return; }
         track.play(cell.mount);
         playingIn.set(SELF, cell.mount);
+        playingTrack.set(SELF, track);
+    }
+
+    /** Whatever this device is publishing right now, or null for neither. */
+    function localPreviewTrack() {
+        if (screenTrack) { return screenTrack; }
+        return camTrack && desiredCamEnabled ? camTrack : null;
+    }
+
+    /**
+     * Re-derives the self tile from what is actually being published.
+     *
+     * Called wherever that can change, rather than each of those places
+     * deciding for itself: `render()` clears the played-in map wholesale, so
+     * any stage push — someone muting, someone joining — used to drop a live
+     * screen preview back to the initials disc, because the only thing that
+     * re-mounted the local slot knew about the camera and nothing else.
+     */
+    function syncLocalPreview() {
+        const track = localPreviewTrack();
+        if (track) { playLocal(track); } else { forgetLocal(); }
+    }
+
+    /**
+     * Same, for callers OUTSIDE the render pass.
+     *
+     * The difference is the repaint, and it is the whole reason these are two
+     * functions: [syncLocalPreview] is called from `mountTracks`, which
+     * `render` calls, so re-rendering from there recurses until the stack
+     * gives out — `RangeError: Maximum call stack size exceeded`, on every
+     * call with the camera off, which is most of them. Event handlers are not
+     * inside a render and do need the disc painted back.
+     */
+    function refreshLocalPreview() {
+        const track = localPreviewTrack();
+        if (track) { playLocal(track); return; }
+        // Only when something was actually torn down: an unconditional render
+        // here would repaint the whole stage on every camera toggle.
+        if (forgetLocal()) { render(); }
+    }
+
+    /** Drops the local slot. True when something was playing in it. */
+    function forgetLocal() {
+        const had = playingIn.has(SELF);
+        playingIn.delete(SELF);
+        playingTrack.delete(SELF);
+        return had;
     }
 
     /** Puts the initials disc back where the stopped preview was. */
     function clearLocal() {
-        playingIn.delete(SELF);
+        forgetLocal();
         render();
     }
 
@@ -192,6 +277,9 @@
      */
     const playingIn = new Map(); // uid -> element
 
+    /** What is playing there, so a swap inside one cell is not mistaken for a no-op. */
+    const playingTrack = new Map(); // uid -> track
+
     /** Our own preview shares the mechanism; SELF is its key in `playingIn`. */
     const SELF = 'self';
 
@@ -204,23 +292,11 @@
             track.play(cell.mount);
             playingIn.set(uid, cell.mount);
         });
-        mountLocal();
+        // Re-derived rather than re-mounted from the camera: after a
+        // re-layout the local slot has to come back as whatever is being
+        // published, which during a share is the screen.
+        syncLocalPreview();
         line1Mount();
-    }
-
-    /**
-     * The local preview, into whichever cell is ours.
-     *
-     * Re-mounted after a re-layout for the same reason the remote tracks are:
-     * render() replaces every element, so whatever was playing is playing into
-     * a node that is no longer on the page.
-     */
-    function mountLocal() {
-        const cell = selfCell();
-        if (!cell || !camTrack || !desiredCamEnabled) { return; }
-        if (playingIn.get(SELF) === cell.mount) { return; }
-        camTrack.play(cell.mount);
-        playingIn.set(SELF, cell.mount);
     }
 
     /** The live half: speaking and mute. Class toggles only — never play(). */
@@ -688,6 +764,16 @@
 
         /** The local Line 1 camera, previewed in the self tile. */
         attachLocalPreview(stream) {
+            // Released before it is replaced. Line 1 now re-points this at
+            // every share start and stop, and an element left bound to a
+            // stream keeps a sink alive on a track nobody is watching.
+            const held = line1Local;
+            if (held && held.element) {
+                try {
+                    held.element.srcObject = null;
+                    if (held.element.parentNode) { held.element.parentNode.removeChild(held.element); }
+                } catch (e) { warn('attachLocalPreview', e); }
+            }
             line1Local = { stream: stream, element: null };
             line1Mount();
         },
@@ -790,12 +876,13 @@
             try {
                 if (enabled && !camTrack && client) {
                     camTrack = await AgoraRTC.createCameraVideoTrack();
-                    playLocal(camTrack);
                     await client.publish(camTrack);
                 } else if (camTrack) {
                     await camTrack.setEnabled(enabled);
-                    if (enabled) { playLocal(camTrack); } else { clearLocal(); }
                 }
+                // One rule for what the self tile shows, so turning the camera
+                // on or off while sharing cannot steal the tile from the share.
+                refreshLocalPreview();
             } catch (e) {
                 warn('camera', e);
             }
@@ -866,7 +953,7 @@
                     : await AgoraRTC.createScreenVideoTrack({}, 'disable');
                 if (camTrack) { await client.unpublish(camTrack); }
                 await client.publish(screenTrack);
-                playLocal(screenTrack);
+                refreshLocalPreview();
                 // The browser's own "Stop sharing" bar ends the track without
                 // telling us; without this the UI would still claim to share.
                 screenTrack.on('track-ended', () => { window.zillitCall.stopScreenShare(); });
@@ -893,11 +980,11 @@
                 try {
                     if (camTrack && desiredCamEnabled) {
                         await client.publish(camTrack);
-                        playLocal(camTrack);
                     }
                 } catch (e3) {
                     warn('restoreCamera', e3);
                 }
+                refreshLocalPreview();
                 send({ type: 'screen-share', sharing: false });
             }
         },
@@ -914,13 +1001,12 @@
             try {
                 if (camTrack && desiredCamEnabled) {
                     await client.publish(camTrack);
-                    playLocal(camTrack);
-                } else {
-                    clearLocal();
                 }
             } catch (e) {
                 warn('restoreCamera', e);
             }
+            // Null already, so this lands on the camera or the initials disc.
+            refreshLocalPreview();
             send({ type: 'screen-share', sharing: false });
         },
 
@@ -942,6 +1028,19 @@
                 warn('setStage', e);
                 return;
             }
+            render();
+        },
+
+        /**
+         * One person's profile picture, as a data URI.
+         *
+         * Sent one at a time as the app finishes fetching each: a call can
+         * start before any of them have arrived, and waiting for the slowest
+         * would leave every tile plain until then.
+         */
+        setAvatar(peerId, dataUri) {
+            if (!peerId) { return; }
+            if (dataUri) { avatars.set(peerId, dataUri); } else { avatars.delete(peerId); }
             render();
         },
 

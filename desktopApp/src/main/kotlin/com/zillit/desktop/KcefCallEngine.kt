@@ -107,6 +107,15 @@ class KcefCallEngine(
     @Volatile
     private var lastTheme: String? = null
 
+    /**
+     * The faces pushed so far, so a rebuilt page gets them back.
+     *
+     * Same reasoning as [lastTheme] and [lastStage]: the page is torn down and
+     * rebuilt between calls, and a face fetched during the last call must not
+     * have to be fetched again to be shown in the next one.
+     */
+    private val avatars = mutableMapOf<String, String>()
+
     override val isReady: Boolean get() = browser != null && pageReady.isCompleted
 
     /**
@@ -303,6 +312,9 @@ class KcefCallEngine(
         // slab with unlabelled tiles.
         lastTheme?.let { theme -> browser?.let { run(it, EngineBridge.themeScript(theme)) } }
         lastStage?.let { stage -> browser?.let { run(it, EngineBridge.stageScript(stage)) } }
+        avatars.forEach { (userId, uri) ->
+            browser?.let { run(it, EngineBridge.avatarScript(userId, uri)) }
+        }
         return true
     }
 
@@ -636,6 +648,12 @@ class KcefCallEngine(
         }
         lastStage = json
         browser?.let { run(it, EngineBridge.stageScript(json)) }
+    }
+
+    override fun setAvatar(userId: String, dataUri: String) {
+        if (userId.isBlank() || avatars[userId] == dataUri) return
+        avatars[userId] = dataUri
+        browser?.let { run(it, EngineBridge.avatarScript(userId, dataUri)) }
     }
 
     override fun setTheme(json: String) {

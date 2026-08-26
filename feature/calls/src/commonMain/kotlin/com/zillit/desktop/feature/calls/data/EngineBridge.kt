@@ -214,6 +214,16 @@ object EngineBridge {
      */
     fun stageScript(json: String): String = "zillitCall.setStage(${quote(json)})"
 
+    /**
+     * One person's picture for the page's tiles.
+     *
+     * A data URI rather than a URL: the pictures sit behind signed storage
+     * links the app fetches with its own credentials, and handing those to the
+     * page would put a credential in a place that logs its own console.
+     */
+    fun avatarScript(userId: String, dataUri: String): String =
+        "zillitCall.setAvatar(${userId.asJsString()}, ${dataUri.asJsString()})"
+
     fun themeScript(json: String): String = "zillitCall.setTheme(${quote(json)})"
 
     fun compactScript(compact: Boolean): String = "zillitCall.setCompact($compact)"

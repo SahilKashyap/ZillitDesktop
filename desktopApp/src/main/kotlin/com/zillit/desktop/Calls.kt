@@ -8,6 +8,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
+import java.awt.BorderLayout
+import javax.swing.JPanel
 import androidx.compose.ui.graphics.ImageBitmap
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import androidx.compose.runtime.mutableStateOf
@@ -73,6 +75,32 @@ internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?) {
         sentReactions = callState.reactions.mapTo(mutableSetOf()) { it.key }
     }
 
+    /*
+     * Faces for the page's own tiles, fetched once each.
+     *
+     * The page draws the tile chrome — it has to, since a heavyweight browser
+     * surface paints over anything Compose puts inside its rectangle — so a
+     * tile whose camera is off falls back to whatever the PAGE can draw. That
+     * used to be initials, which made a video call with the camera off look
+     * plainer than the audio call it had just been, where Compose draws the
+     * real photograph. Handing the same picture over closes that gap.
+     *
+     * Keyed on the tiles' people, and the fetched set is what stops a
+     * recomposition re-fetching a face that is already on the page. Someone
+     * with no picture is remembered as attempted, so a missing avatar costs
+     * one request per call rather than one per recomposition.
+     */
+    var fetchedFaces by remember { mutableStateOf(emptySet<String>()) }
+    val faceOwners = callState.tiles.map { it.userId }.filter { it.isNotBlank() }
+    LaunchedEffect(engine, faceOwners) {
+        faceOwners.filterNot { it in fetchedFaces }.forEach { userId ->
+            fetchedFaces = fetchedFaces + userId
+            fetchAvatar(ready, userId)?.let { bytes ->
+                engine.setAvatar(userId, dataUri(bytes))
+            }
+        }
+    }
+
     CallOverlay(
         state = callState,
         onEvent = calls::onEvent,
@@ -80,6 +108,16 @@ internal fun CallSurface(ready: AppGraph.Ready, calls: CallViewModel?) {
         videoSurface = callVideoSurface(ready),
     )
 }
+
+/**
+ * Image bytes as a `data:` URI the page can put in an `<img>`.
+ *
+ * The type is declared as PNG regardless of what the bytes actually are:
+ * browsers sniff image data and ignore the declared type, and the storage
+ * layer does not tell us which format it handed back.
+ */
+private fun dataUri(bytes: ByteArray): String =
+    "data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(bytes)
 
 /**
  * The Chromium call page as a composable, when the media engine is real.
@@ -97,19 +135,48 @@ internal fun callVideoSurface(ready: AppGraph.Ready): (@Composable () -> Unit)? 
     return {
         val component by engine.surface.collectAsState()
         component?.let { awtComponent ->
-            // Handed back when the call surface leaves the screen: the engine
-            // parks the component in a window of its own between calls, and a
-            // browser component left with no parent at all is a browser that
-            // will not work for the next call.
+            /*
+             * A holder of this host's own, with the browser inside it.
+             *
+             * Handing the shared browser component straight to SwingPanel
+             * makes it that panel's only child, so moving it to another host
+             * leaves an empty interop group behind — and Compose measures that
+             * group while the losing window is being disposed:
+             *
+             *     ArrayIndexOutOfBoundsException: Index 0 out of bounds for length 0
+             *       at SwingInteropViewGroup.getPreferredSize
+             *       ... ComposeWindow.dispose ... Recomposer.runRecomposeAndApplyChanges
+             *
+             * That throw escapes into the recomposer, which stops the whole UI
+             * updating — the call is still connected, still audible, and there
+             * is no longer any way back to it. It is what happens when the call
+             * window is shrunk or re-homed mid-call, and a screen share is when
+             * users actually do that.
+             *
+             * With a holder, each host's interop group always has exactly one
+             * child of its own and the contested re-parenting happens a level
+             * down, where nothing measures. Correct whichever way the two
+             * SwingPanels' disposal happens to interleave, which is why it is
+             * preferred to depending on that order.
+             */
+            val holder = remember(awtComponent) { JPanel(BorderLayout()) }
             // Taken as this host mounts and handed back as it leaves, so a
             // host that has already been superseded cannot park a component
             // the next one is holding. See [KcefCallEngine.hostSurface].
             DisposableEffect(awtComponent) {
+                holder.add(awtComponent, BorderLayout.CENTER)
                 val lease = engine.hostSurface()
-                onDispose { lease.release() }
+                onDispose {
+                    // Out of the holder first: the engine parks the component
+                    // in a window of its own between calls, and a browser left
+                    // with no parent at all is one that will not work for the
+                    // next call.
+                    holder.remove(awtComponent)
+                    lease.release()
+                }
             }
             SwingPanel(
-                factory = { awtComponent },
+                factory = { holder },
                 modifier = Modifier.fillMaxSize(),
             )
         }

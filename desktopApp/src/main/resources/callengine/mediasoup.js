@@ -32,9 +32,40 @@
     var consumers = {};
     var localStream = null;
     var camStream = null;
+    /**
+     * Whether the running share is what paused the camera.
+     *
+     * Only what we paused may be resumed. Without this, sharing on a call with
+     * the camera already off would switch the camera back on when the share
+     * stopped — `setCam(false)` pauses the producer rather than closing it, so
+     * an unconditional resume cannot tell the two apart.
+     */
+    var camPausedByShare = false;
 
     var pending = {};
     var nextAskId = 1;
+
+    /**
+     * Points the self tile at [stream], or back at the initials disc for null.
+     *
+     * One helper because the rule is one rule — the local preview shows
+     * whatever this device is currently publishing — and it was previously
+     * spelled out at each call site, which is how `produceScreen` came to be
+     * the one path that forgot it and left the sharer looking at a black
+     * rectangle.
+     */
+    function showLocally(stream) {
+        if (!window.zillitCall) { return; }
+        try {
+            if (stream && window.zillitCall.attachLocalPreview) {
+                window.zillitCall.attachLocalPreview(stream);
+            } else if (!stream && window.zillitCall.clearLocalPreview) {
+                window.zillitCall.clearLocalPreview();
+            }
+        } catch (e) {
+            warn('show-locally', e);
+        }
+    }
 
     function post(event) {
         try {
@@ -259,10 +290,24 @@
                     track: track,
                     appData: { share: true, screenShare: true, source: 'screen' },
                 });
+                // Remembered so the camera is only turned back on if WE were
+                // the ones who turned it off: a share started with the camera
+                // already off must not switch it on when it stops.
+                camPausedByShare = false;
                 if (camProducer && !camProducer.closed) {
+                    camPausedByShare = !camProducer.paused;
                     try { camProducer.pause(); } catch (e2) { warn('pause-cam', e2); }
                     ask('pauseProducer', { producerId: camProducer.id }).catch(function () {});
                 }
+                // The self tile has to follow what is actually being
+                // published, and pausing the camera producer is what makes
+                // that urgent: mediasoup pauses by setting `enabled = false`
+                // on the very track the preview element is bound to, and a
+                // disabled track keeps feeding its sink black frames. Leave it
+                // alone and the sharer's own tile goes black for the whole
+                // share — which is exactly what `setCam(false)` avoids a few
+                // lines down by clearing the preview when it pauses.
+                showLocally(stream);
                 // Chromium's own "Stop sharing" bar ends the track without
                 // telling us; without this the UI would still claim to share.
                 track.addEventListener('ended', function () { window.zillitMs.stopScreen(); });
@@ -286,10 +331,16 @@
                 // locally lingers server-side until the transport dies.
                 ask('closeProducer', { producerId: id }).catch(function () {});
             } catch (e) { warn('stop-screen', e); }
-            if (camProducer && !camProducer.closed) {
+            if (camPausedByShare && camProducer && !camProducer.closed) {
                 try { camProducer.resume(); } catch (e2) { warn('resume-cam', e2); }
                 ask('resumeProducer', { producerId: camProducer.id }).catch(function () {});
             }
+            // Back to whatever the camera is doing now — the live camera if it
+            // is on, the initials disc if it is not. Without this the tile
+            // keeps showing the last frame of a screen that is no longer being
+            // captured.
+            showLocally(camPausedByShare && camStream ? camStream : null);
+            camPausedByShare = false;
             emit('screen-share', { sharing: false });
         },
 
@@ -360,12 +411,10 @@
                 if (enabled) { camProducer.resume(); } else { camProducer.pause(); }
                 ask(enabled ? 'resumeProducer' : 'pauseProducer', { producerId: camProducer.id })
                     .catch(function () {});
-                if (window.zillitCall) {
-                    if (enabled && camStream && window.zillitCall.attachLocalPreview) {
-                        window.zillitCall.attachLocalPreview(camStream);
-                    } else if (!enabled && window.zillitCall.clearLocalPreview) {
-                        window.zillitCall.clearLocalPreview();
-                    }
+                // Not while sharing: the self tile is showing the screen,
+                // and the camera going on or off must not steal it back.
+                if (!screenProducer) {
+                    showLocally(enabled && camStream ? camStream : null);
                 }
             } catch (e) { warn('set-cam', e); }
         },

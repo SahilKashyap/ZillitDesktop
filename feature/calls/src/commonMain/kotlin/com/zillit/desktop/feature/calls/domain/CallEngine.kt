@@ -179,6 +179,16 @@ data class CallJoin(
     val displayName: String = "",
 )
 
+/*
+ * TooManyFunctions: one method per capability the media stack exposes, and the
+ * capabilities are the interface. Splitting it — media here, page-chrome there
+ * — would mean two objects that must be the same object, since every one of
+ * them is served by the one browser page and several are only correct in
+ * relation to the others (a stage push and an avatar push both describe the
+ * same tile). The no-op defaults keep the cost of a new one at zero for the
+ * implementations that do not care.
+ */
+@Suppress("TooManyFunctions")
 interface CallEngine {
 
     /** Everything the stack reports. Replayed to nobody — subscribe first. */
@@ -265,6 +275,16 @@ interface CallEngine {
 
     /** Hands the engine the app's colours, so its surface is not a foreign slab. */
     fun setTheme(json: String) {}
+
+    /**
+     * Gives the page one person's profile picture, as a data URI.
+     *
+     * The page draws its own tile chrome — a heavyweight surface owns every
+     * pixel inside its rectangle — so a face Compose has fetched has to be
+     * handed over rather than drawn on top. Without it a camera-off tile shows
+     * initials while the same person on an audio call shows their photograph.
+     */
+    fun setAvatar(userId: String, dataUri: String) {}
 
     /** Collapses the engine's surface to one tile, for the minimised pill. */
     fun setCompact(compact: Boolean) {}

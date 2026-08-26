@@ -137,6 +137,16 @@
             border-radius: 50%;
             color: #fff;
             font-weight: 600;
+            overflow: hidden;
+        }
+
+        /* A real face fills the disc it replaces, cropped square like the
+           avatars the rest of the app draws. */
+        .disc img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
         }
 
         /* Two rings: a solid one meaning "talking", and a slow halo that makes
