@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.sos.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.sos.data.SosEndpoints
@@ -127,7 +128,7 @@ class SosViewModel(
                 }
                 markRead()
             },
-            onError = { error -> setState { copy(loading = false, loaded = true, error = error.userMessage) } },
+            onError = { error -> setState { copy(loading = false, loaded = true, error = error.localised()) } },
         )
     }
 
@@ -156,7 +157,7 @@ class SosViewModel(
                 }
                 markRead()
             },
-            onError = { error -> setState { copy(loadingMore = false, error = error.userMessage) } },
+            onError = { error -> setState { copy(loadingMore = false, error = error.localised()) } },
         )
     }
 
@@ -204,7 +205,7 @@ class SosViewModel(
      */
     private fun applyConfirmed(confirm: SosConfirm, result: ZillitResult<Unit>) {
         if (result is ZillitResult.Failure) {
-            setState { copy(busy = false, contacts = contacts.copy(busy = false), error = result.error.userMessage) }
+            setState { copy(busy = false, contacts = contacts.copy(busy = false), error = result.error.localised()) }
             return
         }
         setState {
@@ -257,7 +258,7 @@ class SosViewModel(
             block = { repository.contacts(currentState.viewer.entryType) },
             onSuccess = { rows -> setState { copy(contacts = contacts.copy(loading = false, rows = rows)) } },
             onError = { error ->
-                setState { copy(contacts = contacts.copy(loading = false), error = error.userMessage) }
+                setState { copy(contacts = contacts.copy(loading = false), error = error.localised()) }
             },
         )
         if (currentState.contacts.relations.isEmpty()) {
@@ -325,7 +326,7 @@ class SosViewModel(
                 loadContacts()
             }
             is ZillitResult.Failure -> setState {
-                copy(contacts = contacts.copy(busy = false, formError = result.error.userMessage))
+                copy(contacts = contacts.copy(busy = false, formError = result.error.localised()))
             }
         }
     }

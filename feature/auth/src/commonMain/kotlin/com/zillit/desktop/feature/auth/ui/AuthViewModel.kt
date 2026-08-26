@@ -658,7 +658,7 @@ class AuthViewModel(
      * exception names and server internals that belong only in logs (plan §8.4).
      */
     private fun fail(error: ZillitError) = setState {
-        ZillitLog.w(TAG) { "auth step failed: ${error.technical ?: error.userMessage}" }
+        ZillitLog.w(TAG) { "auth step failed: ${error.technical ?: error.localised()}" }
         // A collapsed session fails several calls at once. The first has already
         // explained it in better words than the server's "Unauthorized", so the
         // stragglers must not talk over it.

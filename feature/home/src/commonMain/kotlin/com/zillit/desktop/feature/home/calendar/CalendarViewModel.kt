@@ -44,6 +44,12 @@ data class CalendarUiState(
     val pendingInvitations: Int = 0,
     /** The invitation a decline reason is being written for, or null. */
     val declining: EventInvitation? = null,
+    /**
+     * A drag-drop reschedule awaiting the organiser's yes. The drop no longer
+     * saves on its own — an event nudged by a stray drag moved a meeting
+     * nobody meant to move, silently.
+     */
+    val pendingReschedule: PendingReschedule? = null,
     val zone: TimeZone = TimeZone.currentSystemDefault(),
 ) {
     val grid: MonthGrid get() = monthGrid(anchor, weekStart)
@@ -58,6 +64,13 @@ data class CalendarUiState(
     val title: String
         get() = "${anchor.month.name.lowercase().replaceFirstChar { it.uppercase() }} ${anchor.year}"
 }
+
+/** One drop's proposal: the event as it was, and the times it would take. */
+data class PendingReschedule(
+    val event: CalendarEvent,
+    val newStart: Long,
+    val newEnd: Long,
+)
 
 /**
  * The open event, and what can be done with it.
@@ -165,6 +178,12 @@ sealed interface CalendarEvent2Event {
 
     /** A resize drag ended: stretch or shrink [event]'s end by minutes. */
     data class ResizeEvent(val event: CalendarEvent, val minuteDelta: Int) : CalendarEvent2Event
+
+    /** The confirmation's yes: apply the drop held in [CalendarUiState.pendingReschedule]. */
+    data object ConfirmReschedule : CalendarEvent2Event
+
+    /** The confirmation's no: the drop is forgotten and the event stays put. */
+    data object CancelReschedule : CalendarEvent2Event
 }
 
 /**
@@ -174,6 +193,7 @@ sealed interface CalendarEvent2Event {
  * whole weeks, so a month view genuinely displays days either side of the month
  * and fetching only the month would leave them blank.
  */
+@Suppress("TooManyFunctions") // One handler per user act, as every calendar has acts.
 class CalendarViewModel(
     private val repository: CalendarRepository,
     private val today: () -> LocalDate,
@@ -231,6 +251,8 @@ class CalendarViewModel(
             is CalendarEvent2Event.MoveEvent ->
                 moveEvent(event.event, event.dayDelta, event.minuteDelta)
             is CalendarEvent2Event.ResizeEvent -> resizeEvent(event.event, event.minuteDelta)
+            CalendarEvent2Event.ConfirmReschedule, CalendarEvent2Event.CancelReschedule ->
+                answerReschedule(confirmed = event == CalendarEvent2Event.ConfirmReschedule)
             is CalendarEvent2Event.Event -> onEventAction(event)
             else -> onInvitationEvent(event)
         }
@@ -530,7 +552,7 @@ class CalendarViewModel(
         ).toInstant(zone).toEpochMilliseconds()
         val duration = (event.endMillis - event.startMillis).coerceAtLeast(0)
 
-        applyNewTimes(event, newStart, newStart + duration)
+        setState { copy(pendingReschedule = PendingReschedule(event, newStart, newStart + duration)) }
     }
 
     /**
@@ -546,7 +568,7 @@ class CalendarViewModel(
             .coerceAtLeast(event.startMillis + MIN_EVENT_MILLIS)
         if (newEnd == event.endMillis) return
 
-        applyNewTimes(event, event.startMillis, newEnd)
+        setState { copy(pendingReschedule = PendingReschedule(event, event.startMillis, newEnd)) }
     }
 
     /** The shared rules: only the organiser, and never a recurring series. */
@@ -560,6 +582,13 @@ class CalendarViewModel(
             return false
         }
         return true
+    }
+
+    /** The question's answer: clear it either way, save only on a yes. */
+    private fun answerReschedule(confirmed: Boolean) {
+        val pending = currentState.pendingReschedule ?: return
+        setState { copy(pendingReschedule = null) }
+        if (confirmed) applyNewTimes(pending.event, pending.newStart, pending.newEnd)
     }
 
     /** Optimistic swap, then the full-bodied edit; a refusal reloads truth. */

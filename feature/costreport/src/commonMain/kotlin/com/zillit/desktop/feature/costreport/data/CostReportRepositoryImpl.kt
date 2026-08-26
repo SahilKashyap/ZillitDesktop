@@ -8,9 +8,11 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.costreport.domain.BudgetVersion
 import com.zillit.desktop.feature.costreport.domain.CoaRow
 import com.zillit.desktop.feature.costreport.domain.CostReportRepository
+import com.zillit.desktop.feature.costreport.domain.CostReportSync
 import com.zillit.desktop.feature.costreport.domain.CrCompany
 import com.zillit.desktop.feature.costreport.domain.CrCurrency
 import com.zillit.desktop.feature.costreport.domain.CurrencyOptions
@@ -20,6 +22,9 @@ import com.zillit.desktop.feature.costreport.domain.LiveReport
 import com.zillit.desktop.feature.costreport.domain.SnapshotCadence
 import com.zillit.desktop.feature.costreport.domain.SnapshotDetail
 import com.zillit.desktop.feature.costreport.domain.SnapshotHeader
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -33,11 +38,26 @@ import kotlinx.serialization.json.JsonElement
 class CostReportRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : CostReportRepository {
 
     private val base = config.apiV2(ZillitService.CostReport).trimEnd('/') + "/cost-reports"
     private val hubBase = config.apiV2(ZillitService.AccountHub).trimEnd('/') + "/account-hub"
     private val presetBase = config.apiV2(ZillitService.Core).trimEnd('/') + "/preset"
+
+    /**
+     * See [CostReportRepository.syncs]. Another production's frame is dropped
+     * when both sides can name a project — the same cross-project gate the
+     * web's account-hub wrapper applies before any handler runs.
+     */
+    override val syncs: Flow<CostReportSync> =
+        bus?.onAny(CR_SYNC_EVENTS, CrSyncEnvelope.serializer())
+            ?.mapNotNull { (event, envelope) ->
+                costReportSyncFor(event).takeIf { envelope.inProject(currentProjectId()) }
+            }
+            ?: emptyFlow()
 
     override suspend fun chartOfAccounts(): ZillitResult<List<CoaRow>> =
         get("$hubBase/chart-of-accounts", mapOf("active_only" to "false")).mapData(::parseCoaRows)

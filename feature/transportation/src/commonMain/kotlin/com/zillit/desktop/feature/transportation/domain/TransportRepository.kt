@@ -1,10 +1,27 @@
 package com.zillit.desktop.feature.transportation.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+
+/**
+ * What a transport wire event touches — the web splits its handlers the
+ * same three ways: vehicles-and-drivers, the trip-request lists, and the
+ * permanent allocations (which also refetch the users, ZL-13708).
+ */
+enum class TransportSyncKind { Fleet, Trips, Permanent }
 
 /** The transport service, `/api/v2/transportation`. */
 @Suppress("TooManyFunctions") // One seam per server route: vehicles, trips, permanents, drivers, users.
 interface TransportRepository {
+
+    /**
+     * A [TransportSyncKind] per socket frame from another client — the
+     * page-and-modal handlers on the web's `Transportation.jsx` and its
+     * `transportationComponents`. The ViewModel re-runs the matching load.
+     * Empty by default: tests, and hosts without a socket.
+     */
+    val refreshes: Flow<TransportSyncKind> get() = emptyFlow()
 
     // Vehicles ---------------------------------------------------------------
     suspend fun vehicles(): ZillitResult<List<Vehicle>>

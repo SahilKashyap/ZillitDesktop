@@ -73,6 +73,9 @@ data class DiaryEvent(
     val endDateTime: Long,
     val fullDay: Boolean,
     val location: String,
+    /** The picked place's coordinates; null when the location is typed text. */
+    val locationLat: Double? = null,
+    val locationLng: Double? = null,
     val color: String,
     val scheduleDayId: String,
     val noteType: String,
@@ -141,6 +144,9 @@ data class DiaryDraft(
     val endDateTime: Long,
     val fullDay: Boolean,
     val location: String = "",
+    /** Set when the location came from the map picker (web: `CreateEventModal.jsx:202-203`). */
+    val locationLat: Double? = null,
+    val locationLng: Double? = null,
     val color: String = DEFAULT_EVENT_COLOR,
     /** Blank means standalone — the key is OMITTED on the wire, never null. */
     val scheduleDayId: String = "",

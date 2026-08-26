@@ -5,7 +5,9 @@ package com.zillit.desktop.feature.maps.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -30,13 +32,26 @@ import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.ZillitLocationField
 import com.zillit.desktop.feature.maps.domain.DEFAULT_TYPE_GLYPHS
 import com.zillit.desktop.feature.maps.domain.MapCity
 import com.zillit.desktop.feature.maps.domain.MapLocation
 
-/** The map tool: a city picker, the city's pins and zones, and the editors. */
+/**
+ * The map tool: a city picker, the city's pins and zones, and the editors —
+ * beside a live map canvas when the host provides one.
+ *
+ * [canvas] is the map surface slot. Null (tests, hosts without an embedded
+ * browser) keeps the list-only layout; non-null takes the web's split — the
+ * map as the main pane with the pin list beside it.
+ */
 @Composable
-fun MapScreen(state: MapUiState, onEvent: (MapEvent) -> Unit) {
+fun MapScreen(
+    state: MapUiState,
+    onEvent: (MapEvent) -> Unit,
+    canvas: (@Composable () -> Unit)? = null,
+) {
     Box(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -44,31 +59,7 @@ fun MapScreen(state: MapUiState, onEvent: (MapEvent) -> Unit) {
                 .padding(ZillitTheme.spacing.lg),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            ZillitPageHeader(
-                title = "Map",
-                description = "Locations and studio zones by city — open any pin in your maps app.",
-                actions = {
-                    if (state.viewer.mayEdit) {
-                        ZillitButton(
-                            text = "Add city",
-                            onClick = { onEvent(MapEvent.NewCity) },
-                            variant = ButtonVariant.Tertiary,
-                        )
-                        ZillitButton(
-                            text = "Add zone",
-                            onClick = { onEvent(MapEvent.NewPin(isZone = true)) },
-                            variant = ButtonVariant.Secondary,
-                            enabled = state.selectedCityId != null,
-                        )
-                        ZillitButton(
-                            text = "Add location",
-                            onClick = { onEvent(MapEvent.NewPin(isZone = false)) },
-                            enabled = state.selectedCityId != null,
-                            loading = state.busy,
-                        )
-                    }
-                },
-            )
+            MapHeader(state = state, onEvent = onEvent)
             if (state.viewer.isBlocked) ZillitNotice(text = "You do not have access to the map tool.")
             state.error?.let { message ->
                 ZillitNotice(
@@ -84,35 +75,128 @@ fun MapScreen(state: MapUiState, onEvent: (MapEvent) -> Unit) {
                     },
                 )
             }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-            ) {
-                CityPicker(state = state, onEvent = onEvent)
-                if (state.types.isNotEmpty()) {
-                    ZillitSelect(
-                        value = state.typeFilter,
-                        options = listOf<String?>(null) + state.types.map { it.name },
-                        onSelect = { onEvent(MapEvent.FilterType(it)) },
-                        label = { it ?: "All types" },
-                        modifier = Modifier.width(SELECT_WIDTH),
-                    )
-                }
-            }
-            when {
-                state.loading && state.pins.isEmpty() ->
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { ZillitSpinner() }
-                state.cities.isEmpty() -> ZillitText(
-                    text = "No cities yet — add the first one to start pinning locations.",
-                    style = ZillitTheme.typography.bodyMedium,
-                    color = ZillitTheme.colors.textMuted,
-                )
-                else -> PinList(state = state, onEvent = onEvent)
+            if (canvas == null) {
+                ListOnlyBody(state = state, onEvent = onEvent)
+            } else {
+                SplitBody(state = state, onEvent = onEvent, canvas = canvas)
             }
         }
         state.pinEditor?.let { PinEditorDialog(state = state, editor = it, onEvent = onEvent) }
         state.cityEditor?.let { CityEditorDialog(editor = it, onEvent = onEvent) }
     }
+}
+
+@Composable
+private fun MapHeader(state: MapUiState, onEvent: (MapEvent) -> Unit) {
+    ZillitPageHeader(
+        title = "Map",
+        description = "Locations and studio zones by city — open any pin in your maps app.",
+        actions = {
+            if (state.viewer.mayEdit) {
+                ZillitButton(
+                    text = "Add city",
+                    onClick = { onEvent(MapEvent.NewCity) },
+                    variant = ButtonVariant.Tertiary,
+                )
+                ZillitButton(
+                    text = "Add zone",
+                    onClick = { onEvent(MapEvent.NewPin(isZone = true)) },
+                    variant = ButtonVariant.Secondary,
+                    enabled = state.selectedCityId != null,
+                )
+                ZillitButton(
+                    text = "Add location",
+                    onClick = { onEvent(MapEvent.NewPin(isZone = false)) },
+                    enabled = state.selectedCityId != null,
+                    loading = state.busy,
+                )
+            }
+        },
+    )
+}
+
+/** The original canvas-less layout: pickers in a row, the list below. */
+@Composable
+private fun ListOnlyBody(state: MapUiState, onEvent: (MapEvent) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        CityPicker(state = state, onEvent = onEvent)
+        TypeFilter(state = state, onEvent = onEvent)
+    }
+    ListContent(state = state, onEvent = onEvent)
+}
+
+/**
+ * The web's split (`map_components/GoogleMapComponent.jsx:922-1068`): the map
+ * owns the pane, the pin list rides beside it. The canvas keeps drawing under
+ * an auth failure notice rather than being swapped out, so a key rejection
+ * reads as a message, not a vanished tool.
+ */
+@Composable
+private fun ColumnScope.SplitBody(
+    state: MapUiState,
+    onEvent: (MapEvent) -> Unit,
+    canvas: @Composable () -> Unit,
+) {
+    Row(
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        Box(Modifier.weight(1f).fillMaxHeight()) {
+            // The canvas is a heavyweight browser surface, which paints above
+            // every Compose pixel in the window — the editor dialogs included.
+            // It steps aside while one is open (the engine keeps the browser
+            // alive off-screen, so it returns instantly) rather than burying
+            // the dialog it just asked for.
+            val editorOpen = state.pinEditor != null || state.cityEditor != null
+            if (!editorOpen) canvas()
+            state.canvasError?.let { message ->
+                ZillitNotice(
+                    text = message,
+                    tone = StatusTone.Rejected,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(ZillitTheme.spacing.md),
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.width(SIDE_PANE_WIDTH).fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            CityPicker(state = state, onEvent = onEvent)
+            TypeFilter(state = state, onEvent = onEvent)
+            ListContent(state = state, onEvent = onEvent)
+        }
+    }
+}
+
+@Composable
+private fun ListContent(state: MapUiState, onEvent: (MapEvent) -> Unit) {
+    when {
+        state.loading && state.pins.isEmpty() ->
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { ZillitSpinner() }
+        state.cities.isEmpty() -> ZillitText(
+            text = "No cities yet — add the first one to start pinning locations.",
+            style = ZillitTheme.typography.bodyMedium,
+            color = ZillitTheme.colors.textMuted,
+        )
+        else -> PinList(state = state, onEvent = onEvent)
+    }
+}
+
+@Composable
+private fun TypeFilter(state: MapUiState, onEvent: (MapEvent) -> Unit) {
+    if (state.types.isEmpty()) return
+    ZillitSelect(
+        value = state.typeFilter,
+        options = listOf<String?>(null) + state.types.map { it.name },
+        onSelect = { onEvent(MapEvent.FilterType(it)) },
+        label = { it ?: "All types" },
+        modifier = Modifier.width(SELECT_WIDTH),
+    )
 }
 
 @Composable
@@ -269,10 +353,30 @@ private fun PinEditorDialog(state: MapUiState, editor: PinEditor, onEvent: (MapE
                     helperText = "Presets: 30, 40, 50, 60",
                 )
             } else {
-                ZillitTextField(
-                    value = editor.address,
-                    onValueChange = { onEvent(MapEvent.PinChanged(address = it)) },
+                // The canvas's click-to-place already answers "where is this?"
+                // — but only for a host that has a canvas, and only by panning
+                // to a spot already on screen. Searching a place by name is
+                // the other half, and the web's pin form has both: an address
+                // autocomplete that fills address, lat and lng together
+                // (`map-module/hooks/useLocationForm.js:96-98`) beside the map.
+                // The pin wire carries all three (`location_address`,
+                // `location.lat`, `location.long` — MapRepositoryImpl.kt:210),
+                // so a pick persists. The pin's own name is left alone, as the
+                // web's autocomplete leaves it.
+                ZillitLocationField(
+                    text = editor.address,
+                    onTextChange = { onEvent(MapEvent.PinChanged(address = it)) },
+                    onPicked = {
+                        onEvent(
+                            MapEvent.PinChanged(
+                                address = it.address.ifBlank { it.name },
+                                latText = it.lat.toString(),
+                                lngText = it.lng.toString(),
+                            ),
+                        )
+                    },
                     label = "Address",
+                    initial = editor.pickedAt(),
                 )
                 if (state.types.isNotEmpty()) {
                     ZillitText(
@@ -357,4 +461,14 @@ private fun CityEditorDialog(editor: CityEditor, onEvent: (MapEvent) -> Unit) {
     }
 }
 
+/** Where the picker's map should open: where the pin already stands. */
+private fun PinEditor.pickedAt(): PickedLocation? {
+    val at = latText.trim().toDoubleOrNull() ?: return null
+    val to = lngText.trim().toDoubleOrNull() ?: return null
+    return PickedLocation(name = name, address = address, lat = at, lng = to)
+}
+
 private val SELECT_WIDTH = 240.dp
+
+/** The pin list beside the map — wide enough for a row's three buttons. */
+private val SIDE_PANE_WIDTH = 430.dp

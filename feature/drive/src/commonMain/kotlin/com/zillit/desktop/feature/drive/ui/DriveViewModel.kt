@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.drive.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -64,7 +65,28 @@ class DriveViewModel(
             launch { primeFavourites() }
             launch { primeTags() }
         }
+        listenOnce()
     }
+
+    /**
+     * Reloads the open destination when the socket announces a delete from
+     * another client — the web's refetch on the same events
+     * (`DriveManagement.jsx:1591-1596`, ZL-18490), targeted at whatever
+     * page is showing so a vanished row or a corrected trash count lands
+     * without a manual refresh. Guarded separately from [started]: a
+     * project switch resets [started] but must not stack a collector.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.collect {
+                if (started && !currentState.viewer.isBlocked) load(currentState.destination)
+            }
+        }
+    }
+
+    private var listening = false
 
     /**
      * The host could not open the document editor.
@@ -361,7 +383,7 @@ class DriveViewModel(
             when (val result = block()) {
                 is ZillitResult.Success -> setState { apply(result.data).copy(loading = false) }
                 is ZillitResult.Failure -> setState {
-                    copy(loading = false, error = result.error.userMessage)
+                    copy(loading = false, error = result.error.localised())
                 }
             }
         }
@@ -678,7 +700,7 @@ class DriveViewModel(
             )
             val settled = when (result) {
                 is ZillitResult.Success -> UploadState.Done(result.data.id)
-                is ZillitResult.Failure -> UploadState.Failed(result.error.userMessage)
+                is ZillitResult.Failure -> UploadState.Failed(result.error.localised())
             }
             setState {
                 copy(
@@ -717,7 +739,7 @@ class DriveViewModel(
     // -- shared ------------------------------------------------------------
 
     private fun report(error: ZillitError) {
-        sendEffect(DriveEffect.Failed(error.userMessage))
+        sendEffect(DriveEffect.Failed(error.localised()))
     }
 
     private companion object {

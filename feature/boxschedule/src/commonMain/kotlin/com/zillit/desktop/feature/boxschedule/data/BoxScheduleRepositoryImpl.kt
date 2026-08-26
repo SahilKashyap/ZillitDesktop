@@ -8,6 +8,7 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.boxschedule.domain.BlockDraft
 import com.zillit.desktop.feature.boxschedule.domain.BlockWrite
 import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleRepository
@@ -20,6 +21,10 @@ import com.zillit.desktop.feature.boxschedule.domain.NoteType
 import com.zillit.desktop.feature.boxschedule.domain.RecurrenceScope
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleBlock
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleType
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -50,9 +55,23 @@ import kotlinx.serialization.json.put
 class BoxScheduleRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** Null keeps the diary socket-less — tests, and hosts without a bus. */
+    private val bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : BoxScheduleRepository {
 
     private val base = "${config.apiV2(ZillitService.PreAndProduction).trimEnd('/')}/box-schedule"
+
+    /**
+     * See [BoxScheduleRepository.refreshes]. Another production's frame is
+     * dropped when both sides can name a project — the web's `sameProject`
+     * guard.
+     */
+    override val refreshes: Flow<Unit> =
+        bus?.onAny(BOX_SCHEDULE_SYNC_EVENTS)
+            ?.filter { message -> message.payload.matchesProject(currentProjectId()) }
+            ?.map { }
+            ?: emptyFlow()
 
     override suspend fun types(): ZillitResult<List<ScheduleType>> =
         get("$base/types").mapData { data ->
@@ -304,6 +323,8 @@ private fun parseEvent(obj: JsonObject?): DiaryEvent? {
         endDateTime = obj.long("endDateTime") ?: 0,
         fullDay = obj.bool("fullDay"),
         location = obj.text("location"),
+        locationLat = obj.double("locationLat"),
+        locationLng = obj.double("locationLng"),
         color = obj.text("color"),
         scheduleDayId = obj.text("scheduleDayId"),
         noteType = obj.text("noteType"),
@@ -343,6 +364,10 @@ internal fun eventWire(draft: DiaryDraft, create: Boolean): JsonObject = buildJs
         put("endDateTime", draft.endDateTime)
         put("fullDay", draft.fullDay)
         put("location", draft.location)
+        // Beside the text, as the web sends them (`CreateEventModal.jsx:540`):
+        // null when the place was typed rather than picked, never omitted.
+        put("locationLat", draft.locationLat)
+        put("locationLng", draft.locationLng)
         put("repeatStatus", draft.repeatStatus)
         put("repeatEndDate", draft.repeatEndDate)
         if (draft.timezone.isNotBlank()) put("timezone", draft.timezone)
@@ -367,6 +392,10 @@ private fun JsonObject.text(vararg names: String): String =
 
 private fun JsonObject.long(vararg names: String): Long? =
     firstOf(*names)?.epochMs()
+
+/** Coordinates arrive as numbers or numeric strings, like every other value here. */
+private fun JsonObject.double(vararg names: String): Double? =
+    (firstOf(*names) as? JsonPrimitive)?.content?.toDoubleOrNull()
 
 private fun JsonObject.bool(vararg names: String): Boolean =
     (firstOf(*names) as? JsonPrimitive)?.content.equals("true", ignoreCase = true)

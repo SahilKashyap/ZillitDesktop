@@ -501,6 +501,7 @@ private class StubChatRepository : ChatRepository {
         return ZillitResult.Success(emptyList())
     }
 
+    @Suppress("LongParameterList") // Mirrors ChatRepository.send exactly.
     override suspend fun send(
         receiverId: String,
         body: String,
@@ -508,6 +509,7 @@ private class StubChatRepository : ChatRepository {
         nowMillis: Long,
         isGroup: Boolean,
         attachment: ChatAttachment?,
+        location: com.zillit.desktop.feature.chat.domain.ChatLocation?,
     ): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
     override suspend fun rooms(): ZillitResult<List<GroupRoom>> {

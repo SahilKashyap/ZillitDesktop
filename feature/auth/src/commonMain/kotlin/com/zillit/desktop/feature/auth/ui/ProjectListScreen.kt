@@ -32,6 +32,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -90,8 +92,23 @@ internal fun ProjectListScreen(
     createViewModel: CreateProductionViewModel? = null,
     joinViewModel: JoinProductionViewModel? = null,
 ) {
+    // The picker often appears UNDER a mouse that just clicked — the
+    // production switcher sits where a habitual double-click's second
+    // release lands on whatever card composes beneath it, and that click
+    // opened a production nobody chose (seen live, 2026-08-24: two
+    // accidental hops in one session). Opens stay disarmed until the
+    // screen has been on show for a beat; every other control is safe to
+    // leave live, because only opening a production changes where you are.
+    var openArmed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(OPEN_ARM_DELAY_MS)
+        openArmed = true
+    }
+
     Box(modifier) {
-        ProjectListBody(state, onEvent, themeMode, onThemeModeChange)
+        ProjectListBody(state, { event ->
+            if (event !is AuthEvent.SelectProject || openArmed) onEvent(event)
+        }, themeMode, onThemeModeChange)
 
         // Always composed, visibility-driven: an `if` on the flag would
         // unmount the dialog on dismiss and skip its exit animation. Null
@@ -638,6 +655,9 @@ private val ICON_SIZE = 28.dp
 // fades out through animateItem, since a filtered-out card has no composable
 // left to animate itself.
 private val ENTRANCE_RISE = 16.dp
+/** How long a just-shown picker ignores opens — a double-click's echo dies here. */
+private const val OPEN_ARM_DELAY_MS = 350L
+
 private const val CARD_EXIT_MS = 140
 private const val CONTENT_SWAP_MS = 180
 private const val ENTRANCE_MS = 220

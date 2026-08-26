@@ -77,6 +77,31 @@ class ChatMediaRetryTest {
         offline = support,
     )
 
+    /**
+     * Building the view model while ALREADY online must not crash.
+     *
+     * `init` collects `support.online`, a StateFlow that replays its current
+     * value into a `Dispatchers.Main.immediate` collector — synchronously,
+     * inside the constructor. The retry it triggers reads `unsentMedia`, so
+     * that map has to be initialised before `init` runs. It was declared six
+     * hundred lines below, and the app died on the AWT thread before drawing
+     * a frame: `NullPointerException … "$this$filterValues$iv" is null`
+     * (seen live, 2026-08-25). Property initialisers run in source order —
+     * this test fails if the declaration ever moves back down.
+     */
+    @Test
+    fun `starting up already online does not crash the view model`() = runTest(dispatcher) {
+        val repository = FakeChatRepository()
+
+        // True from the first frame — the ordinary case for a desktop that
+        // opens with the network up.
+        val model = viewModel(repository, support(MutableStateFlow(true)))
+        runCurrent()
+
+        // It lives, and its state is the empty board rather than a corpse.
+        assertTrue(model.currentState.messages.isEmpty())
+    }
+
     /** Paperclip, then the preview's Send — with the pick settling between. */
     private fun TestScope.sendClip(model: ChatViewModel) {
         model.onEvent(ChatEvent.AttachFile)

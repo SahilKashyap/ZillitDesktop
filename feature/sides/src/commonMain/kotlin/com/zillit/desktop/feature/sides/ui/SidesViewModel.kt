@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.sides.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.sides.domain.GeneratePlan
@@ -18,9 +19,10 @@ import kotlinx.coroutines.delay
  *
  * Generation is the web's exact loop — start `publish:false`, poll every 2 s
  * for at most 90 ticks, `ready`/`error` both terminal, transient poll
- * failures swallowed — via [GeneratePoller]. While any list row is still
- * `generating`, the list re-fetches itself every 5 s, which stands in for
- * the web's `sides:generated` socket nudge.
+ * failures swallowed — via [GeneratePoller]. The `sides:generated` socket
+ * nudge refetches the list the moment a generation finishes; while any
+ * list row is still `generating`, the 5 s re-fetch stays as the fallback
+ * for a missed push, exactly as on the web.
  */
 class SidesViewModel(
     private val repository: SidesRepository,
@@ -33,7 +35,24 @@ class SidesViewModel(
     fun start() {
         setState { copy(viewer = resolveViewer()) }
         refresh()
+        listenOnce()
     }
+
+    /**
+     * Refetches the visible list when the backend announces a finished
+     * generation — the web's `sides:generated` handler
+     * (`SidesPage.jsx:92-109`). Guarded so a second Start (the window
+     * reopening) does not stack collectors.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.collect { refresh() }
+        }
+    }
+
+    private var listening = false
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
     override fun onEvent(event: SidesEvent) {
@@ -91,13 +110,13 @@ class SidesViewModel(
                         is ZillitResult.Success -> setState {
                             if (history) copy(historyList = list.data) else copy(sidesList = list.data)
                         }
-                        is ZillitResult.Failure -> setState { copy(error = list.error.userMessage) }
+                        is ZillitResult.Failure -> setState { copy(error = list.error.localised()) }
                     }
                     watchGenerating()
                 }
                 SidesDestination.Scripts -> when (val list = repository.scripts()) {
                     is ZillitResult.Success -> setState { copy(scripts = list.data) }
-                    is ZillitResult.Failure -> setState { copy(error = list.error.userMessage) }
+                    is ZillitResult.Failure -> setState { copy(error = list.error.localised()) }
                 }
             }
             setState { copy(loading = false) }
@@ -123,7 +142,7 @@ class SidesViewModel(
                     scripts.data.firstOrNull()?.let { pickScript(it.id) }
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, generate = null, error = scripts.error.userMessage)
+                    copy(busy = false, generate = null, error = scripts.error.localised())
                 }
             }
         }
@@ -145,7 +164,7 @@ class SidesViewModel(
                     updateGenerate { copy(versions = versions.data) }
                     versions.data.maxByOrNull { it.versionNumber }?.let { pickVersion(it.id) }
                 }
-                is ZillitResult.Failure -> setState { copy(error = versions.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(error = versions.error.localised()) }
             }
         }
     }
@@ -161,7 +180,7 @@ class SidesViewModel(
                 }
                 is ZillitResult.Failure -> {
                     updateGenerate { copy(scenesLoading = false) }
-                    setState { copy(error = scenes.error.userMessage) }
+                    setState { copy(error = scenes.error.localised()) }
                 }
             }
         }
@@ -197,7 +216,7 @@ class SidesViewModel(
                 }
                 is ZillitResult.Failure -> {
                     updateGenerate { copy(running = false) }
-                    setState { copy(error = outcome.error.userMessage) }
+                    setState { copy(error = outcome.error.localised()) }
                 }
             }
         }
@@ -215,7 +234,7 @@ class SidesViewModel(
                 }
                 is ZillitResult.Failure -> {
                     updateGenerate { copy(publishing = false) }
-                    setState { copy(error = published.error.userMessage) }
+                    setState { copy(error = published.error.localised()) }
                 }
             }
         }
@@ -227,14 +246,14 @@ class SidesViewModel(
             val url = when (val signed = repository.downloadUrl(id, countDownload = false)) {
                 is ZillitResult.Success -> signed.data
                 is ZillitResult.Failure -> {
-                    setState { copy(pdf = null, error = signed.error.userMessage) }
+                    setState { copy(pdf = null, error = signed.error.localised()) }
                     return@launch
                 }
             }
             val bytes = when (val fetched = transfer.fetch(url)) {
                 is ZillitResult.Success -> fetched.data
                 is ZillitResult.Failure -> {
-                    setState { copy(pdf = null, error = fetched.error.userMessage) }
+                    setState { copy(pdf = null, error = fetched.error.localised()) }
                     return@launch
                 }
             }
@@ -243,7 +262,7 @@ class SidesViewModel(
                     copy(pdf = pdf?.copy(loading = false, pages = pages.data))
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(pdf = null, error = pages.error.userMessage)
+                    copy(pdf = null, error = pages.error.localised())
                 }
             }
         }
@@ -257,7 +276,7 @@ class SidesViewModel(
         launch {
             when (val signed = repository.downloadUrl(id, countDownload = true)) {
                 is ZillitResult.Success -> sendEffect(SidesEffect.OpenUrl(signed.data))
-                is ZillitResult.Failure -> setState { copy(error = signed.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(error = signed.error.localised()) }
             }
         }
     }
@@ -272,7 +291,7 @@ class SidesViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = published.error.userMessage)
+                    copy(busy = false, error = published.error.localised())
                 }
             }
         }
@@ -287,7 +306,7 @@ class SidesViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = deleted.error.userMessage)
+                    copy(busy = false, error = deleted.error.localised())
                 }
             }
         }
@@ -299,7 +318,7 @@ class SidesViewModel(
             val attachment = when (val stored = transfer.upload(fileName, bytes)) {
                 is ZillitResult.Success -> stored.data
                 is ZillitResult.Failure -> {
-                    setState { copy(busy = false, error = stored.error.userMessage) }
+                    setState { copy(busy = false, error = stored.error.localised()) }
                     return@launch
                 }
             }
@@ -311,7 +330,7 @@ class SidesViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = created.error.userMessage)
+                    copy(busy = false, error = created.error.localised())
                 }
             }
         }
@@ -326,7 +345,7 @@ class SidesViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = deleted.error.userMessage)
+                    copy(busy = false, error = deleted.error.localised())
                 }
             }
         }

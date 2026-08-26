@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.documentdistribution.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * One page of the library listing.
@@ -107,6 +109,17 @@ internal fun String.looksLikeEmail(): Boolean {
 @Suppress("TooManyFunctions") // One suspend fun per server operation; see detekt.yml.
 interface DocDistRepository {
 
+    /**
+     * A pulse per realtime mutation another client announced, naming the
+     * destination whose listing went stale — the web's screens refresh
+     * independently (library via `useDocumentDistribution.js:132-138`,
+     * history via `HistoryDrawer.jsx:726-741`, presets and templates via
+     * their managers), so the kind travels with the pulse and the view
+     * model reloads only what is on screen. Defaulted empty for tests and
+     * hosts without a socket.
+     */
+    val refreshes: Flow<DocDistRefresh> get() = emptyFlow()
+
     // -- library -----------------------------------------------------------
 
     /**
@@ -203,3 +216,6 @@ interface DocDistRepository {
         replaceChatIds: List<String> = emptyList(),
     ): ZillitResult<Unit>
 }
+
+/** The stale listing a socket event names; see [DocDistRepository.refreshes]. */
+enum class DocDistRefresh { Library, History, Lists, Templates }

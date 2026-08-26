@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -127,7 +128,7 @@ private fun CardholderHeader(state: CardUiState, onEvent: (CardEvent) -> Unit) {
 private fun CardBody(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val error = state.error
     if (error != null) {
-        ZillitErrorState(message = error.userMessage, onRetry = { onEvent(CardEvent.Refresh) })
+        ZillitErrorState(message = error.localised(), onRetry = { onEvent(CardEvent.Refresh) })
         return
     }
 

@@ -2,7 +2,21 @@ package com.zillit.desktop.feature.costreport.domain
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.json.JsonObject
+
+/**
+ * What a socket announcement means to an open cost report.
+ *
+ * [Report] is the document itself changing — locked or posted elsewhere — and
+ * is worth a silent re-pull. [Source] is a feeder tool's approve/post landing
+ * (a PO, an invoice, a timecard…): the figures *may* be stale, but the web
+ * deliberately does not auto-refresh on it — recomputing the worksheet is
+ * heavy — and surfaces a manual Refresh pill instead
+ * (`CostReportWorksheetModule.jsx:5606-5615`). The same split here.
+ */
+enum class CostReportSync { Report, Source }
 
 /** The two faces of the crew-facing tool: the live worksheet and the posted timeline. */
 enum class CostReportTab(val id: String, val label: String) {
@@ -337,6 +351,12 @@ data class CostReportViewer(
 
 /** Every read the tool makes: seven GETs across three hosts. */
 interface CostReportRepository {
+    /**
+     * Socket announcements about the report — see [CostReportSync] for the
+     * two meanings. Defaulted empty for tests and hosts without a socket.
+     */
+    val syncs: Flow<CostReportSync> get() = emptyFlow()
+
     /** `account-hub/chart-of-accounts?active_only=false` — inactive rows keep their place. */
     suspend fun chartOfAccounts(): ZillitResult<List<CoaRow>>
 

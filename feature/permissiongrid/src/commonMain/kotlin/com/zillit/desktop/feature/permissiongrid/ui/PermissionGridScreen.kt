@@ -1,26 +1,36 @@
 package com.zillit.desktop.feature.permissiongrid.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
@@ -163,60 +173,156 @@ private fun Matrix(state: PermissionGridUiState, onEvent: (PermissionGridEvent) 
     val across = rememberScrollState()
     val down = rememberLazyListState()
 
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(ZillitTheme.colors.surfaceSunken)
-                .padding(horizontal = PAGE_PADDING),
-        ) {
-            Box(Modifier.width(SUBJECT_WIDTH).height(HEADER_HEIGHT), Alignment.CenterStart) {
-                ZillitText(
-                    text = state.axis.label,
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                )
-            }
-            Row(Modifier.horizontalScroll(across)) {
-                state.columns.forEach { unitName ->
-                    Box(Modifier.width(CELL_WIDTH).height(HEADER_HEIGHT), Alignment.Center) {
-                        ZillitText(
-                            text = unitName.localised(),
-                            style = ZillitTheme.typography.labelSmall,
-                            color = ZillitTheme.colors.textPrimary,
-                            textAlign = TextAlign.Center,
-                            maxLines = 2,
-                        )
-                    }
-                }
-            }
-        }
-
+    // The matrix wears a card, like every other surface in the app — the
+    // spreadsheet floats on the canvas instead of bleeding to the edges.
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(start = PAGE_PADDING, end = PAGE_PADDING, bottom = ZillitTheme.spacing.md)
+            .clip(ZillitTheme.shapes.medium)
+            .border(HAIRLINE, ZillitTheme.colors.border, ZillitTheme.shapes.medium)
+            .background(ZillitTheme.colors.surface),
+    ) {
+        MatrixHeader(state, across)
         ZillitLazyColumn(
             state = down,
             modifier = Modifier.fillMaxSize(),
         ) {
-            items(state.rows, key = { it.subject.id }) { row ->
-                SubjectRow(row, state, across, onEvent)
+            itemsIndexed(state.rows, key = { _, row -> row.subject.id }) { index, row ->
+                SubjectRow(row, index, state, across, onEvent)
             }
         }
     }
 }
 
+/** The card's top band: the axis on the frozen side, a title per tool after. */
+@Composable
+private fun MatrixHeader(state: PermissionGridUiState, across: androidx.compose.foundation.ScrollState) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ZillitTheme.colors.surfaceSunken)
+            .padding(horizontal = CARD_PADDING)
+            .height(IntrinsicSize.Min),
+    ) {
+        Box(Modifier.width(SUBJECT_WIDTH).height(HEADER_HEIGHT), Alignment.CenterStart) {
+            ZillitText(
+                text = state.axis.label.uppercase(),
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+        FreezeLine()
+        Row(Modifier.horizontalScroll(across)) {
+            state.columns.forEach { unitName ->
+                Box(Modifier.width(CELL_WIDTH).height(HEADER_HEIGHT), Alignment.Center) {
+                    ZillitText(
+                        text = unitName.localised(),
+                        style = ZillitTheme.typography.labelSmall,
+                        color = ZillitTheme.colors.textPrimary,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                    )
+                }
+                ColumnLine()
+            }
+        }
+    }
+    Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
+}
+
+/** The frozen column's edge — what says "this side stays put". */
+@Composable
+private fun FreezeLine() {
+    Box(
+        Modifier
+            .padding(end = ZillitTheme.spacing.sm)
+            .width(HAIRLINE)
+            .fillMaxHeight()
+            .background(ZillitTheme.colors.border),
+    )
+}
+
+/** The faint rule between tools, so forty columns read as a grid. */
+@Composable
+private fun ColumnLine() {
+    Box(
+        Modifier
+            .width(HAIRLINE)
+            .fillMaxHeight()
+            .padding(vertical = ZillitTheme.spacing.sm)
+            .background(ZillitTheme.colors.border.copy(alpha = COLUMN_LINE_ALPHA)),
+    )
+}
+
 @Composable
 private fun SubjectRow(
     row: GridRow,
+    index: Int,
     state: PermissionGridUiState,
     across: androidx.compose.foundation.ScrollState,
     onEvent: (PermissionGridEvent) -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = PAGE_PADDING),
+            .background(
+                when {
+                    // Lights under the cursor like every list in the app;
+                    // the zebra keeps a long row on its line without it.
+                    hovered -> ZillitTheme.colors.surfaceHover
+                    index % 2 == 1 -> ZillitTheme.colors.surfaceSunken.copy(alpha = ZEBRA_ALPHA)
+                    else -> ZillitTheme.colors.surface
+                },
+            )
+            .hoverable(interaction)
+            .padding(horizontal = CARD_PADDING)
+            .height(IntrinsicSize.Min),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.width(SUBJECT_WIDTH).padding(vertical = ZillitTheme.spacing.sm)) {
+        SubjectCell(row)
+        FreezeLine()
+        Row(Modifier.horizontalScroll(across)) {
+            state.columns.forEach { unitName ->
+                CellBoxes(
+                    cell = row.cells[unitName],
+                    enabled = state.canEdit,
+                    onToggle = { kind, enable ->
+                        onEvent(
+                            PermissionGridEvent.Toggle(
+                                subjectId = row.subject.id,
+                                unitName = unitName,
+                                kind = kind,
+                                enable = enable,
+                            ),
+                        )
+                    },
+                )
+                ColumnLine()
+            }
+        }
+    }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(HAIRLINE)
+            .background(ZillitTheme.colors.border.copy(alpha = COLUMN_LINE_ALPHA)),
+    )
+}
+
+/** The frozen half of a row: a face for the name, the name, its context. */
+@Composable
+private fun SubjectCell(row: GridRow) {
+    Row(
+        modifier = Modifier.width(SUBJECT_WIDTH).padding(vertical = ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitAvatar(name = row.subject.name, size = SUBJECT_AVATAR)
+        Column {
             ZillitText(
                 text = row.subject.name,
                 style = ZillitTheme.typography.bodyMedium,
@@ -236,31 +342,7 @@ private fun SubjectRow(
                     )
                 }
         }
-        Row(Modifier.horizontalScroll(across)) {
-            state.columns.forEach { unitName ->
-                CellBoxes(
-                    cell = row.cells[unitName],
-                    enabled = state.canEdit,
-                    onToggle = { kind, enable ->
-                        onEvent(
-                            PermissionGridEvent.Toggle(
-                                subjectId = row.subject.id,
-                                unitName = unitName,
-                                kind = kind,
-                                enable = enable,
-                            ),
-                        )
-                    },
-                )
-            }
-        }
     }
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(HAIRLINE)
-            .background(ZillitTheme.colors.border),
-    )
 }
 
 /**
@@ -348,7 +430,11 @@ private fun Centred(text: String) {
 }
 
 private val PAGE_PADDING = 24.dp
+private val CARD_PADDING = 16.dp
 private val SUBJECT_WIDTH = 220.dp
+private val SUBJECT_AVATAR = 32.dp
+private const val ZEBRA_ALPHA = 0.4f
+private const val COLUMN_LINE_ALPHA = 0.5f
 /** Wide enough for "View  Post  Download" on one line, boxes included. */
 private val CELL_WIDTH = 250.dp
 private val HEADER_HEIGHT = 56.dp

@@ -8,12 +8,17 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.location.domain.LocationDraft
 import com.zillit.desktop.feature.location.domain.LocationInfo
 import com.zillit.desktop.feature.location.domain.LocationMedia
 import com.zillit.desktop.feature.location.domain.LocationRepository
 import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.MediaAttachment
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -39,9 +44,22 @@ class LocationRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
     private val newUniqueId: () -> String,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    private val bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : LocationRepository {
 
     private val base = config.apiV2(ZillitService.Location).trimEnd('/') + "/location"
+
+    /**
+     * See [LocationRepository.refreshes]. Another production's frame is
+     * dropped when both sides can name a project, as every web handler does.
+     */
+    override val refreshes: Flow<Unit> =
+        bus?.onAny(LOCATION_SYNC_EVENTS)
+            ?.filter { message -> message.payload.matchesProject(currentProjectId()) }
+            ?.map { }
+            ?: emptyFlow()
 
     override suspend fun info(status: LocationStatus): ZillitResult<List<LocationInfo>> =
         get("$base/location-info", mapOf("status" to status.wire)).mapData { data ->

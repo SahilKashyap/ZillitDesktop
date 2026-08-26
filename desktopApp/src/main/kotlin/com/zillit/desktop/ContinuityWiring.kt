@@ -91,7 +91,12 @@ private fun ContinuityAttachment.toNotice() = NoticeAttachment(
 )
 
 internal fun AppGraph.Ready.buildContinuity(permissions: () -> ProjectPermissions) = ContinuityViewModel(
-    repository = ContinuityRepositoryImpl(apiClient, config, localise = { it.localised() }),
+    repository = ContinuityRepositoryImpl(
+        apiClient,
+        config,
+        localise = { it.localised() },
+        bus = socketEvents,
+    ),
     transfer = continuityTransfer(),
     resolveViewer = {
         val context = projectContext?.context?.value

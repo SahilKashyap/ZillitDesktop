@@ -2,9 +2,11 @@
 
 package com.zillit.desktop.feature.formsignature.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.formsignature.domain.DocumentSigner
+import com.zillit.desktop.feature.formsignature.domain.FormSignRefresh
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureRepository
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureViewer
 import com.zillit.desktop.feature.formsignature.domain.PdfWork
@@ -52,7 +54,32 @@ class FormSignatureViewModel(
         val viewer = resolveViewer()
         setState { copy(viewer = viewer, currentUserId = currentUserId()) }
         loadSignatures()
+        listenOnce()
     }
+
+    /**
+     * Refetches the list a socket `document:*` event names, when that list
+     * is on screen — the web pages' own refetch handlers, ported as a
+     * targeted reload (an area switch already calls [refresh], so an event
+     * missed while elsewhere is corrected on arrival). Guarded so a second
+     * Start (the window reopening) does not stack collectors.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.collect { kind ->
+                when (kind) {
+                    FormSignRefresh.Forms ->
+                        if (currentState.area == FormSignatureArea.StandardForms) loadStandardForms()
+                    FormSignRefresh.Documents ->
+                        if (currentState.area == FormSignatureArea.Documents) loadDocuments()
+                }
+            }
+        }
+    }
+
+    private var listening = false
 
     @Suppress("CyclomaticComplexMethod") // One branch per user act; the fan-out IS the function.
     override fun onEvent(event: FormSignatureEvent) {
@@ -134,7 +161,7 @@ class FormSignatureViewModel(
             onSuccess = { rows -> setState { copy(standard = standard.copy(rows = rows, loading = false)) } },
             onError = { error ->
                 setState { copy(standard = standard.copy(loading = false)) }
-                sendEffect(FormSignatureEffect.Failed(error.userMessage))
+                sendEffect(FormSignatureEffect.Failed(error.localised()))
             },
         )
     }
@@ -146,7 +173,7 @@ class FormSignatureViewModel(
             onSuccess = { rows -> setState { copy(documents = documents.copy(rows = rows, loading = false)) } },
             onError = { error ->
                 setState { copy(documents = documents.copy(loading = false)) }
-                sendEffect(FormSignatureEffect.Failed(error.userMessage))
+                sendEffect(FormSignatureEffect.Failed(error.localised()))
             },
         )
     }
@@ -228,7 +255,7 @@ class FormSignatureViewModel(
             when (val fetched = transfer.fetch(stored)) {
                 is ZillitResult.Failure -> {
                     setState { copy(detail = currentState.detail?.copy(loadingPages = false)) }
-                    sendEffect(FormSignatureEffect.Failed(fetched.error.userMessage))
+                    sendEffect(FormSignatureEffect.Failed(fetched.error.localised()))
                 }
                 is ZillitResult.Success -> {
                     detailPdf = fetched.data
@@ -275,7 +302,7 @@ class FormSignatureViewModel(
             when (outcome) {
                 is ZillitResult.Failure -> {
                     setState { copy(detail = currentState.detail?.copy(signing = false)) }
-                    sendEffect(FormSignatureEffect.Failed(outcome.error.userMessage))
+                    sendEffect(FormSignatureEffect.Failed(outcome.error.localised()))
                 }
                 is ZillitResult.Success -> {
                     detailPdf = null
@@ -383,7 +410,7 @@ class FormSignatureViewModel(
             when (stored) {
                 is ZillitResult.Failure -> {
                     setState { copy(uploadForm = currentState.uploadForm?.copy(uploading = false)) }
-                    sendEffect(FormSignatureEffect.Failed(stored.error.userMessage))
+                    sendEffect(FormSignatureEffect.Failed(stored.error.localised()))
                 }
                 is ZillitResult.Success -> {
                     val saved = repository.addStandardForm(
@@ -396,7 +423,7 @@ class FormSignatureViewModel(
                             setState {
                                 copy(uploadForm = currentState.uploadForm?.copy(uploading = false))
                             }
-                            sendEffect(FormSignatureEffect.Failed(saved.error.userMessage))
+                            sendEffect(FormSignatureEffect.Failed(saved.error.localised()))
                         }
                         is ZillitResult.Success -> {
                             setState { copy(uploadForm = null) }
@@ -495,7 +522,7 @@ class FormSignatureViewModel(
             when (stored) {
                 is ZillitResult.Failure -> {
                     setState { copy(send = currentState.send?.copy(sending = false)) }
-                    sendEffect(FormSignatureEffect.Failed(stored.error.userMessage))
+                    sendEffect(FormSignatureEffect.Failed(stored.error.localised()))
                 }
                 is ZillitResult.Success -> {
                     val signers = send.chosen.mapIndexed { index, userId ->
@@ -517,7 +544,7 @@ class FormSignatureViewModel(
                     when (sent) {
                         is ZillitResult.Failure -> {
                             setState { copy(send = currentState.send?.copy(sending = false)) }
-                            sendEffect(FormSignatureEffect.Failed(sent.error.userMessage))
+                            sendEffect(FormSignatureEffect.Failed(sent.error.localised()))
                         }
                         is ZillitResult.Success -> {
                             setState { copy(send = null) }
@@ -546,7 +573,7 @@ class FormSignatureViewModel(
             ) {
                 is ZillitResult.Failure -> {
                     setState { copy(draw = currentState.draw?.copy(saving = false)) }
-                    sendEffect(FormSignatureEffect.Failed(raster.error.userMessage))
+                    sendEffect(FormSignatureEffect.Failed(raster.error.localised()))
                     return@launch
                 }
                 is ZillitResult.Success -> raster.data
@@ -560,7 +587,7 @@ class FormSignatureViewModel(
             when (stored) {
                 is ZillitResult.Failure -> {
                     setState { copy(draw = currentState.draw?.copy(saving = false)) }
-                    sendEffect(FormSignatureEffect.Failed(stored.error.userMessage))
+                    sendEffect(FormSignatureEffect.Failed(stored.error.localised()))
                 }
                 is ZillitResult.Success -> {
                     val label = draw.name.ifBlank { if (draw.isSignature) "Signature" else "Initials" }
@@ -573,7 +600,7 @@ class FormSignatureViewModel(
                     when (saved) {
                         is ZillitResult.Failure -> {
                             setState { copy(draw = currentState.draw?.copy(saving = false)) }
-                            sendEffect(FormSignatureEffect.Failed(saved.error.userMessage))
+                            sendEffect(FormSignatureEffect.Failed(saved.error.localised()))
                         }
                         is ZillitResult.Success -> {
                             setState { copy(draw = null) }

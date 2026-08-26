@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.dealmemo.ui
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.dealmemo.domain.Agreement
 import com.zillit.desktop.feature.dealmemo.domain.BasicRateDetails
@@ -17,6 +18,7 @@ import com.zillit.desktop.feature.dealmemo.domain.DealViewer
 import com.zillit.desktop.feature.dealmemo.domain.NewDeal
 import com.zillit.desktop.feature.dealmemo.domain.Union
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 
 /** The pages the deal memo tool offers. */
 enum class DealDestination(val slug: String, val label: String) {
@@ -123,7 +125,10 @@ data class DealDraft(
     fun toRequest() = NewDeal(
         userId = userId.trim(),
         crewName = crewName.trim(),
-        departmentId = null,
+        // The rate-card department identifier — the wire's authoritative
+        // department column (`crew_details.department_identifier`,
+        // toDealMemoPayload.js:796-800).
+        departmentId = departmentIdentifier,
         designation = designation.takeIf { it.isNotBlank() },
         currency = currency,
         rates = DealRates(
@@ -204,8 +209,38 @@ class DealMemoViewModel(
         if (identity.canWriteDeals) {
             launch { repository.unions().getOrNull()?.let { list -> setState { copy(unions = list) } } }
         }
+        listenOnce()
         load(currentState.destination)
     }
+
+    /**
+     * Folds the socket's deal announcements into the screen: another client's
+     * create, decision or termination lands as a reload of whatever page is
+     * open — the web's `ah:deal_memo:*` refetch pattern. The rate card is left
+     * alone: no `deal:*` event changes the published scale, and reloading a
+     * 500-row catalogue over it would be pure noise. Guarded so a project
+     * switch restarting the tool does not stack collectors, and debounced
+     * because one action fans into several frames (the web coalesces at
+     * `accountHubListeners.js` `DEBOUNCE_MS = 500`).
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.collect {
+                syncJob?.cancel()
+                syncJob = launch {
+                    delay(SYNC_DEBOUNCE_MILLIS)
+                    if (currentState.destination != DealDestination.RateCard) {
+                        load(currentState.destination)
+                    }
+                }
+            }
+        }
+    }
+
+    private var listening = false
+    private var syncJob: Job? = null
 
     fun onProjectChanged() {
         started = false
@@ -411,9 +446,14 @@ class DealMemoViewModel(
 
             is ZillitResult.Failure -> {
                 setState { copy(busy = false) }
-                sendEffect(DealEffect.Failed(result.error.userMessage))
+                sendEffect(DealEffect.Failed(result.error.localised()))
             }
         }
+    }
+
+    companion object {
+        /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
+        const val SYNC_DEBOUNCE_MILLIS = 500L
     }
 }
 
@@ -422,7 +462,9 @@ internal fun Deal.toRequest() = NewDeal(
     userId = userId,
     crewName = crewName,
     departmentId = departmentId,
-    designation = designation,
+    // The raw stored identifier, never the display string — the wire keeps
+    // designation under `crew_details.designation_identifier`.
+    designation = designationIdentifier ?: designation,
     currency = currency,
     rates = rates,
     startDate = startDate,

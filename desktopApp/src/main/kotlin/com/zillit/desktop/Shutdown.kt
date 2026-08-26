@@ -42,6 +42,14 @@ internal object Shutdown {
     @Volatile
     private var engine: KcefCallEngine? = null
 
+    /** The map engine, whose parking window would keep the JVM alive the same way. */
+    @Volatile
+    private var mapEngine: KcefMapEngine? = null
+
+    /** The place picker's engine — a third parking window, for the same reason. */
+    @Volatile
+    private var locationPicker: KcefLocationPickerHost? = null
+
     /**
      * The last known window geometry.
      *
@@ -65,6 +73,16 @@ internal object Shutdown {
     /** The engine whose browser needs letting go of at the end. */
     fun engine(engine: KcefCallEngine) {
         this.engine = engine
+    }
+
+    /** The map canvas engine, for the same letting-go. */
+    fun mapEngine(engine: KcefMapEngine) {
+        this.mapEngine = engine
+    }
+
+    /** The location picker's engine, for the same letting-go. */
+    fun locationPicker(host: KcefLocationPickerHost) {
+        this.locationPicker = host
     }
 
     /** Records where the window is now, for whenever the process ends. */
@@ -118,6 +136,8 @@ internal object Shutdown {
         if (!done.compareAndSet(false, true)) return
         ZillitLog.i(TAG) { "shutting down" }
         engine?.releaseHolder()
+        mapEngine?.releaseHolder()
+        locationPicker?.releaseHolder()
         // Before CEF goes: an open editor frame is a displayable AWT window,
         // and one left behind keeps the JVM alive after the main window has
         // closed — an app that appears to ignore ⌘Q.

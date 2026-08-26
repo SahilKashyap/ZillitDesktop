@@ -38,7 +38,12 @@ enum class ApprovalScope(val wire: String, val label: String) {
  * A level can carry several — "any head of department" alongside two named
  * people — which is why a level is not simply a list of user ids.
  */
-data class ApprovalRule(val type: String = "", val userIds: List<String> = emptyList()) {
+data class ApprovalRule(
+    val type: String = "",
+    val userIds: List<String> = emptyList(),
+    /** Only an `amount` rule carries one — "approve when over this much". */
+    val amountThreshold: Double? = null,
+) {
     val isAssigned: Boolean get() = userIds.isNotEmpty()
 }
 

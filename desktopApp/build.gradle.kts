@@ -24,6 +24,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(project(":core:appupdate"))
     implementation(project(":core:common"))
     implementation(project(":core:designsystem"))
     implementation(project(":core:datastore"))
@@ -38,6 +39,7 @@ dependencies {
     implementation(project(":core:badges"))
     implementation(project(":core:notifications"))
     implementation(project(":core:media"))
+    implementation(project(":core:locationpicker"))
     implementation(project(":feature:notifications"))
     implementation(project(":feature:sos"))
     implementation(project(":core:units"))

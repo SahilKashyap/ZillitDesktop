@@ -87,12 +87,21 @@ object ConfigParser {
         return HeaderKeyMaterial(key, iv).takeIf { it.isCanonical }
     }
 
-    /** Both halves or neither: a project id without its key cannot call Firestore. */
+    /**
+     * Both halves or neither: a project id without its key cannot call Firestore.
+     *
+     * The app id is a third, *optional* value on top of that pair — only the
+     * Remote Config fetch needs it (see `AppUpdateChecker`), and requiring it
+     * would switch calling's Firestore mirror off on every install configured
+     * before it existed.
+     */
     private fun firebaseFrom(properties: Map<String, String>, prefix: String): FirebaseConfig? {
         val projectId = properties[prefix + FirebaseConfig.PROJECT_ID_SUFFIX]?.trim().orEmpty()
         val apiKey = properties[prefix + FirebaseConfig.API_KEY_SUFFIX]?.trim().orEmpty()
         if (projectId.isEmpty() || apiKey.isEmpty()) return null
-        return FirebaseConfig(projectId, apiKey)
+
+        val appId = properties[prefix + FirebaseConfig.APP_ID_SUFFIX]?.trim()?.takeIf { it.isNotEmpty() }
+        return FirebaseConfig(projectId, apiKey, appId)
     }
 
     /**

@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.formsignature.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * File transfer, injected from the host.
@@ -45,6 +47,16 @@ enum class UploadPurpose {
  *    web's add and update functions are byte-identical.
  */
 interface FormSignatureRepository {
+
+    /**
+     * Which list a socket `document:*` event says to refetch — the web's
+     * two pages refresh independently (`StandardFormsV2.jsx` the forms
+     * list, `DocumentsForSignature.jsx`/`FormPage.jsx` the for-signature
+     * list), so the kind travels with the pulse and the view model reloads
+     * only what is on screen. Defaulted empty for tests and hosts without
+     * a socket.
+     */
+    val refreshes: Flow<FormSignRefresh> get() = emptyFlow()
 
     suspend fun standardForms(selfAssigned: Boolean): ZillitResult<List<StandardForm>>
 
@@ -98,3 +110,6 @@ interface FormSignatureRepository {
     /** Everyone the tool offers as a signer, with their tool rights. */
     suspend fun signerOptions(): ZillitResult<List<SignerOption>>
 }
+
+/** The two lists a socket event can point at; see [FormSignatureRepository.refreshes]. */
+enum class FormSignRefresh { Forms, Documents }

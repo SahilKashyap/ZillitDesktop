@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -165,7 +166,7 @@ private fun CashBody(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     val error = state.error
     if (error != null) {
         ZillitErrorState(
-            message = error.userMessage,
+            message = error.localised(),
             onRetry = { onEvent(CashEvent.Refresh) },
         )
         return

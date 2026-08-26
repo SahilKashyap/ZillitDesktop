@@ -15,7 +15,10 @@ import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.DeliveryStatus
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistRefresh
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistRepository
+import kotlinx.coroutines.flow.Flow
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryPage
@@ -57,7 +60,12 @@ import kotlinx.serialization.json.jsonArray
 class DocDistRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    bus: SocketEventBus? = null,
 ) : DocDistRepository {
+
+    /** See [DocDistRepository.refreshes] and [docDistRefreshes]. */
+    override val refreshes: Flow<DocDistRefresh> = docDistRefreshes(bus)
 
     private val base = "${config.baseUrl(ZillitService.DocDistribution)}/api/v2/document-distribution"
 

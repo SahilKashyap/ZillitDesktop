@@ -18,7 +18,12 @@ import com.zillit.desktop.feature.home.domain.NoticeAttachment
 internal fun AppGraph.Ready.buildCrewList(
     permissions: () -> ProjectPermissions,
 ): CrewListViewModel = CrewListViewModel(
-    repository = CrewListRepositoryImpl(apiClient, config),
+    repository = CrewListRepositoryImpl(
+        apiClient,
+        config,
+        bus = socketEvents,
+        currentProjectId = { projectContext?.context?.value?.project?.projectId },
+    ),
     transfer = CrewListTransfer { pdf ->
         val stored = NoticeAttachment(
             media = pdf.media,

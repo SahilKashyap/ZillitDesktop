@@ -1,9 +1,20 @@
 package com.zillit.desktop.feature.location.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /** The location service (`locationapi`, `/api/v2/location`). */
 interface LocationRepository {
+
+    /**
+     * A pulse per socket frame saying another client created, edited, or
+     * deleted a record — the web's `location_created/updated/deleted`
+     * handlers (`LocationPage.jsx:1044,1108,1126`). The ViewModel answers
+     * by re-running its load. Empty by default: tests, and hosts without
+     * a socket.
+     */
+    val refreshes: Flow<Unit> get() = emptyFlow()
 
     /** The folder source for one shortlist — flat, grouped client-side. */
     suspend fun info(status: LocationStatus): ZillitResult<List<LocationInfo>>

@@ -102,6 +102,7 @@ internal fun AppGraph.Ready.buildDistribution(
         config = config,
         newUniqueId = { UUID.randomUUID().toString() },
         nowMillis = System::currentTimeMillis,
+        bus = socketEvents,
     ),
     transfer = distributionTransfer(),
     resolveViewer = {

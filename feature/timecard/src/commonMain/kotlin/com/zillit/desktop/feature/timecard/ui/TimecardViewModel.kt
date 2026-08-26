@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.timecard.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
@@ -12,6 +13,7 @@ import com.zillit.desktop.feature.timecard.data.QueuedTimecardSave
 import com.zillit.desktop.feature.timecard.data.QueuedTimecardSubmit
 import com.zillit.desktop.feature.timecard.data.TIMECARD_SAVE_KIND
 import com.zillit.desktop.feature.timecard.data.TIMECARD_SUBMIT_KIND
+import com.zillit.desktop.feature.timecard.data.payrollPeriodStart
 import com.zillit.desktop.feature.timecard.data.toLocalTimecard
 import com.zillit.desktop.feature.timecard.domain.Allowance
 import com.zillit.desktop.feature.timecard.domain.AllowanceType
@@ -111,12 +113,16 @@ sealed interface TimecardPrompt {
         val reason: String = "",
     ) : TimecardPrompt
 
-    /** Adding a deduction needs both a label and an amount. */
+    /**
+     * Adding a deduction needs a label and an amount; the nominal code is the
+     * web modal's third field (`AddDeductionModal.jsx:127-132`) — there is no
+     * reason on the deduction wire.
+     */
     data class Deduct(
         val targetId: String,
         val label: String = "",
         val amount: String = "",
-        val reason: String = "",
+        val nominalCode: String = "",
     ) : TimecardPrompt
 }
 
@@ -204,6 +210,7 @@ class TimecardViewModel(
         if (started) return
         started = true
         watchSync()
+        listenOnce()
         launch {
             val identity = viewer()
             val metadata = repository.metadata().rememberOrRecall(METADATA_CACHE, TimecardMetadata.serializer())
@@ -236,6 +243,31 @@ class TimecardViewModel(
         setState { copy(draft = null, localTimecards = emptyList(), staleSince = null) }
         start()
     }
+
+    /**
+     * Folds the socket's announcements into the screen: another client's
+     * submit, decision, lock or payment lands as a reload of whatever page is
+     * open — the web's `ah:timecard:*` refetch pattern. Guarded so a project
+     * switch restarting the tool does not stack collectors, and debounced
+     * because one action fans into several frames (the web coalesces at
+     * `accountHubListeners.js` `DEBOUNCE_MS = 500`).
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.collect {
+                syncJob?.cancel()
+                syncJob = launch {
+                    delay(SYNC_DEBOUNCE_MILLIS)
+                    load(currentState.destination)
+                }
+            }
+        }
+    }
+
+    private var listening = false
+    private var syncJob: Job? = null
 
     @Suppress("CyclomaticComplexMethod") // One branch per user action.
     override fun onEvent(event: TimecardEvent) {
@@ -312,8 +344,14 @@ class TimecardViewModel(
         loadJob = launch {
             val result = when (destination) {
                 TimecardDestination.ApprovalQueue -> repository.approvalQueue()
-                TimecardDestination.Processing ->
-                    repository.payrollProcessing(EpochDate.isoDate(currentWeekStarting()))
+                // The path takes epoch millis of the pay-period start's local
+                // midnight, never a date string — the web computes it with
+                // `startOfPeriodTz(now, browserTz(), payPeriodStartDay || 1)`
+                // (AccountantPayrollModule.jsx:949-969) and anything else is
+                // refused as `timecard_invalid_week_starting`.
+                TimecardDestination.Processing -> repository.payrollProcessing(
+                    payrollPeriodStart(nowMillis(), currentState.viewer.metadata.payPeriodStartDay),
+                )
 
                 TimecardDestination.Outstanding -> repository.outstanding()
                 else -> repository.myTimecards()
@@ -384,24 +422,42 @@ class TimecardViewModel(
      */
     private fun loadDraft(timecardId: String?) {
         val existing = currentState.timecards.firstOrNull { it.id == timecardId }
+        // The web stamps the creator's department on CREATE so the
+        // department-scoped approval tiers resolve (WeeklyTimecardModule.jsx:
+        // 4788-4791); null is its own missing-department case.
+        val department = currentState.viewer.departmentIdentifier
         val fromServer = if (existing != null) {
             TimecardDraft(
                 timecardId = existing.id,
                 weekStarting = existing.weekStarting,
                 days = existing.days.ifEmpty { blankWeek(existing.weekStarting) },
                 notes = existing.notes.orEmpty(),
+                departmentId = existing.departmentId ?: department,
             )
         } else {
             val monday = currentWeekStarting()
-            TimecardDraft(timecardId = null, weekStarting = monday, days = blankWeek(monday))
+            TimecardDraft(
+                timecardId = null,
+                weekStarting = monday,
+                days = blankWeek(monday),
+                departmentId = department,
+            )
         }
+        seededNotes = fromServer.notes.trim()
         setState { copy(draft = fromServer) }
         // Words typed into this week on this computer, if newer than what the
         // server has, come back over it. Never over something typed since.
         launch {
             val saved = restoreDraft(fromServer.weekStarting, newerThan = existing?.updatedAt) ?: return@launch
             if (currentState.draft == fromServer) {
-                setState { copy(draft = saved.copy(timecardId = fromServer.timecardId)) }
+                setState {
+                    copy(
+                        draft = saved.copy(
+                            timecardId = fromServer.timecardId,
+                            departmentId = fromServer.departmentId,
+                        ),
+                    )
+                }
             }
         }
     }
@@ -435,6 +491,7 @@ class TimecardViewModel(
             setState { copy(busy = true) }
             when (val result = repository.save(draft)) {
                 is ZillitResult.Success -> {
+                    sendNoteIfChanged(result.data, draft)
                     forgetDraft(draft.weekStarting)
                     setState { copy(busy = false, notice = "Timecard saved") }
                     load(currentState.destination)
@@ -448,11 +505,33 @@ class TimecardViewModel(
                         queueSave(support, draft)
                     } else {
                         setState { copy(busy = false) }
-                        sendEffect(TimecardEffect.Failed(result.error.userMessage))
+                        sendEffect(TimecardEffect.Failed(result.error.localised()))
                     }
                 }
             }
         }
+    }
+
+    /**
+     * What the notes field held when the editor opened this week — the yard
+     * stick for "did the user actually write something new". Compared against
+     * this rather than the list rows because `my-summary` is the slim
+     * projection and never carries notes, so a list comparison would re-post
+     * the same note on every save.
+     */
+    private var seededNotes: String = ""
+
+    /**
+     * Notes never ride the save body — the web appends them one at a time
+     * through `POST /weekly/:id/notes` (`timecards.js:114-126`, an append-only
+     * array). Sent only when the text actually changed, or every save would
+     * stack a duplicate note; best effort, because the week itself is already
+     * saved.
+     */
+    private suspend fun sendNoteIfChanged(savedId: String?, draft: TimecardDraft) {
+        val note = draft.notes.trim()
+        if (savedId == null || note.isEmpty() || note == seededNotes) return
+        if (repository.addNote(savedId, note) is ZillitResult.Success) seededNotes = note
     }
 
     // -- offline: the queue ----------------------------------------------------
@@ -637,7 +716,7 @@ class TimecardViewModel(
                         prompt.targetId,
                         prompt.label.trim(),
                         amount,
-                        prompt.reason.takeIf(String::isNotBlank),
+                        prompt.nominalCode.takeIf(String::isNotBlank),
                     )
                 }
             }
@@ -683,7 +762,7 @@ class TimecardViewModel(
 
             is ZillitResult.Failure -> {
                 setState { copy(busy = false) }
-                sendEffect(TimecardEffect.Failed(result.error.userMessage))
+                sendEffect(TimecardEffect.Failed(result.error.localised()))
             }
         }
     }
@@ -718,6 +797,9 @@ class TimecardViewModel(
         private const val DAYS_IN_WEEK = 7
         private const val DAY_MILLIS = 86_400_000L
         private const val DRAFT_SAVE_DEBOUNCE_MILLIS = 400L
+
+        /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
+        const val SYNC_DEBOUNCE_MILLIS = 500L
     }
 }
 

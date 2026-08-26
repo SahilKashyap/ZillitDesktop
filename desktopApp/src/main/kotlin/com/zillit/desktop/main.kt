@@ -74,6 +74,10 @@ import com.zillit.desktop.feature.auth.ui.AuthViewModel
 import com.zillit.desktop.feature.shell.AppShell
 import com.zillit.desktop.feature.shell.RailItem
 import com.zillit.desktop.feature.shell.DefaultRailItems
+import com.zillit.desktop.feature.home.data.boardRealtime
+import com.zillit.desktop.core.appupdate.UPDATE_CHECK_INTERVAL_MILLIS
+import com.zillit.desktop.core.appupdate.UpdateStatus
+import com.zillit.desktop.feature.shell.UpdateNotice
 import com.zillit.desktop.feature.shell.railItemsFor
 import com.zillit.desktop.feature.shell.AdminRailItem
 import com.zillit.desktop.feature.sos.data.SosRepositoryImpl
@@ -568,17 +572,22 @@ private fun ApplicationScope.ZillitWindows(
         LaunchedEffect(window) { onFrame(window) }
 
         ZillitTheme(darkTheme = isDark) {
-            ZillitContent(
-                graph = graph,
-                registry = registry,
-                viewModels = viewModels,
-                workspaceViewModel = viewModel,
-                authViewModel = authViewModel,
-                themeMode = themeMode,
-                onThemeModeChange = { mode ->
-                    scope.launch { preferences.set(ZillitPreferences.ThemeMode, mode.name) }
-                },
-            )
+            // Inside the theme: the picker styles its page from the app's own
+            // tokens. A no-op until the graph is Ready and until something
+            // actually asks to pick — Chromium starts on first use.
+            LocationPickerMount(graph) {
+                ZillitContent(
+                    graph = graph,
+                    registry = registry,
+                    viewModels = viewModels,
+                    workspaceViewModel = viewModel,
+                    authViewModel = authViewModel,
+                    themeMode = themeMode,
+                    onThemeModeChange = { mode ->
+                        scope.launch { preferences.set(ZillitPreferences.ThemeMode, mode.name) }
+                    },
+                )
+            }
         }
     }
 
@@ -589,6 +598,7 @@ private fun ApplicationScope.ZillitWindows(
         registry = registry,
         onEvent = viewModel::onEvent,
         darkTheme = isDark,
+        graph = graph,
     )
 
     // The popped-out video call: its own always-on-top OS window, for the
@@ -663,7 +673,11 @@ private fun RailItem.badgeKey(): String = when (id) {
     "cnc" -> "cnc_label"
     "email" -> "email_label"
     "home" -> "home_label"
-    "settings" -> "settings_label"
+    // The settings section's server rows are the admin approval queues and
+    // nothing else (web `getSettingsBadges`, `badgeUtils.js:413-437`). This
+    // rail counts those on its own Admin Settings entry, so counting the
+    // section here too showed the same event twice — once per entry.
+    "settings" -> ""
     // The SOS feed counts its own segment, as the web's side menu does
     // (`SideMenu.jsx`'s `sosBadges`). Help has nothing to count and must not
     // fall through to the tools total.
@@ -715,6 +729,30 @@ private fun HomeRealtime(ready: AppGraph.Ready, feed: HomeFeedViewModel?) {
         ready.homeRealtime.stream.collect { event ->
             feed.onEvent(HomeFeedEvent.Realtime(event))
         }
+    }
+}
+
+/**
+ * Feeds one reused board's socket events into its feed — the boards ride the
+ * Home engine but each has its own wire prefix (`info:message:added` and so
+ * on, `listenerSocket.js`). Subscribed once for the app, like Home's, and
+ * unconditional: an unknown board key is an empty flow, not an error.
+ */
+@Composable
+private fun BoardRealtime(ready: AppGraph.Ready, board: String, feed: HomeFeedViewModel?) {
+    if (feed == null) return
+
+    LaunchedEffect(ready, feed) {
+        boardRealtime(
+            events = ready.socketEvents,
+            board = board,
+            decryptBody = { hex ->
+                when (val result = ready.noticeDecryptor.decryptFromHex(hex)) {
+                    is ZillitResult.Success -> result.data
+                    is ZillitResult.Failure -> "[This message could not be decrypted]"
+                }
+            },
+        ).collect { event -> feed.onEvent(HomeFeedEvent.Realtime(event)) }
     }
 }
 
@@ -971,6 +1009,13 @@ private fun BackgroundWork(
     ToolReadOnFocus(ready, viewModels, workspace)
     HomeRealtime(ready, viewModels.homeFeed)
     EmailRealtime(ready, viewModels.email)
+    BoardRealtime(ready, "info", viewModels.info)
+    BoardRealtime(ready, "confidentialinfo", viewModels.confidentialInfo)
+    BoardRealtime(ready, "reports", viewModels.reports)
+    BoardRealtime(ready, "script-notes", viewModels.scriptNotes)
+    BoardRealtime(ready, "catering", viewModels.catering)
+    // The Accounts board's segment key is the singular "account".
+    BoardRealtime(ready, "account", viewModels.accounts)
 }
 
 /**
@@ -1103,6 +1148,17 @@ private fun SignedInShell(
     val syncStatus by (ready.syncEngine?.status ?: MutableStateFlow(SyncStatus())).collectAsState()
     var pendingChangesOpen by remember { mutableStateOf(false) }
 
+    // Once at sign-in, then every six hours. A desktop app stays open for
+    // days, so a launch-only check leaves someone on a stale build for a
+    // week; six hours is well inside Remote Config's own SDK default.
+    var updateStatus by remember { mutableStateOf<UpdateStatus>(UpdateStatus.Unknown) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            updateStatus = ready.appUpdateChecker.check()
+            delay(UPDATE_CHECK_INTERVAL_MILLIS)
+        }
+    }
+
     // Whether the rail offers Admin at all, and what is waiting behind it.
     // Read from the settings state rather than the project: it is the same
     // flag the admin page itself gates on, so the rail and the page cannot
@@ -1126,6 +1182,9 @@ private fun SignedInShell(
         projectName = authState.activeProject?.name,
         statusText = statusText(socketState, syncStatus),
         statusAction = syncStatusAction(syncStatus) { pendingChangesOpen = true },
+        updateNotice = updateStatus.toNotice(),
+        // The guarded launcher — https only, as the auth links use.
+        onDownloadUpdate = ::openInBrowser,
         railItems = railItemsWith(
             badges = badges,
             isAdmin = settingsState.account.isAdmin,
@@ -1587,6 +1646,9 @@ private fun chatProvider(
     loadThumbnail = { file -> fetchChatImage(ready, file, preview = true) },
     // The lightbox's fetch: the object itself, not its poster.
     loadFullImage = { file -> fetchChatImage(ready, file, preview = false) },
+    // "Open in Maps" on a shared location — the same guarded launcher the
+    // map, sides and distribution tools take (https only).
+    onOpenUrl = ::openInBrowser,
 )
 
 /**
@@ -1664,15 +1726,28 @@ private fun AppGraph.Ready.payrollViewer(): PayrollViewer {
     )
 }
 
-private fun AppGraph.Ready.dealViewer(): DealViewer {
+/** `Unknown` and `UpToDate` both mean "render nothing". */
+private fun UpdateStatus.toNotice(): UpdateNotice? = when (this) {
+    is UpdateStatus.Available -> UpdateNotice(latestVersion, mandatory = false, downloadUrl = downloadUrl)
+    is UpdateStatus.Required -> UpdateNotice(latestVersion, mandatory = true, downloadUrl = downloadUrl)
+    UpdateStatus.Unknown, UpdateStatus.UpToDate -> null
+}
+
+private fun AppGraph.Ready.dealViewer(permissions: ProjectPermissions): DealViewer {
     val context = projectContext?.context?.value
     val me = context?.user(context.profile?.userId)
     return DealViewer(
         userId = context?.profile?.userId.orEmpty(),
         departmentIdentifier = me?.department,
         designationIdentifier = me?.designation,
+        // The admin override rides along in `canPost` — "an administrator
+        // can reach everything", as the admin grid puts it.
+        hasPostingRights = permissions.canPost(DEAL_MEMO_TOOL_IDENTIFIER),
     )
 }
+
+/** The web's `TOOLS_NAME.deal_memo_tool` (`useDealMemoRights.js:36`). */
+private const val DEAL_MEMO_TOOL_IDENTIFIER = "deal_memo_tool"
 
 /**
  * Monday of the current week, in the machine's own zone.
@@ -1781,7 +1856,12 @@ private fun AppGraph.Ready.buildReport(
     permissions: () -> ProjectPermissions,
     today: () -> kotlinx.datetime.LocalDate,
 ): ReportViewModel = ReportViewModel(
-    repository = ReportRepositoryImpl(apiClient, config),
+    repository = ReportRepositoryImpl(
+        apiClient,
+        config,
+        bus = socketEvents,
+        currentProjectId = { projectContext?.context?.value?.project?.projectId },
+    ),
     kind = kind,
     delivery = productionReportDelivery(),
     callSheets = productionReportCallSheets(CallSheetRepositoryImpl(apiClient, config)),
@@ -2004,6 +2084,9 @@ private fun rememberAppViewModels(
                     uploadMedia = { name, type, bytes, onProgress ->
                         uploadChatMedia(it, name, type, bytes, onProgress)
                     },
+                    // The picture of a shared place — the same Static Maps
+                    // image the boards already post beside their locations.
+                    staticMap = { lat, lng -> fetchStaticMapBytes(it, lat, lng) },
                     voice = chatVoice(it),
                     loadFavourites = {
                         it.preferences.get(ZillitPreferences.ChatFavourites)
@@ -2110,7 +2193,7 @@ private fun rememberAppViewModels(
                 )
             },
             dealMemos = ready?.let { graph ->
-                DealMemoViewModel(graph.dealMemoRepository) { graph.dealViewer() }
+                DealMemoViewModel(graph.dealMemoRepository) { graph.dealViewer(permissions()) }
             },
             accountHub = ready?.let { graph ->
                 AccountHubViewModel(
@@ -2132,7 +2215,11 @@ private fun rememberAppViewModels(
             },
             formSignature = ready?.let { graph ->
                 FormSignatureViewModel(
-                    repository = FormSignatureRepositoryImpl(graph.apiClient, graph.config),
+                    repository = FormSignatureRepositoryImpl(
+                        graph.apiClient,
+                        graph.config,
+                        bus = graph.socketEvents,
+                    ),
                     transfer = graph.formSignatureTransfer(),
                     pdfWork = PdfBoxWork(),
                     resolveViewer = { FormSignatureViewer.from(permissions()) },
@@ -2148,6 +2235,7 @@ private fun rememberAppViewModels(
                         apiClient = graph.apiClient,
                         config = graph.config,
                         today = { esignToday() },
+                        bus = graph.socketEvents,
                     ),
                     transfer = graph.esignTransfer(),
                     pdf = esignPdf(),
@@ -2164,7 +2252,14 @@ private fun rememberAppViewModels(
             },
             callSheet = ready?.let { graph ->
                 CallSheetViewModel(
-                    repository = CallSheetRepositoryImpl(graph.apiClient, graph.config),
+                    repository = CallSheetRepositoryImpl(
+                        graph.apiClient,
+                        graph.config,
+                        bus = graph.socketEvents,
+                        currentProjectId = {
+                            graph.projectContext?.context?.value?.project?.projectId
+                        },
+                    ),
                     delivery = graph.callSheetDelivery(),
                     resolveViewer = { graph.callSheetViewer(permissions()) },
                     projectId = {
@@ -2197,6 +2292,7 @@ private fun rememberAppViewModels(
                         apiClient = graph.apiClient,
                         config = graph.config,
                         rawScenes = graph.sidesRawGet(),
+                        bus = graph.socketEvents,
                     ),
                     transfer = graph.sidesTransfer(),
                     resolveViewer = {
@@ -2219,6 +2315,10 @@ private fun rememberAppViewModels(
                         currentUserId = {
                             graph.projectContext?.context?.value?.profile?.userId
                         },
+                        bus = graph.socketEvents,
+                        currentProjectId = {
+                            graph.projectContext?.context?.value?.project?.projectId
+                        },
                     ),
                 )
             },
@@ -2238,7 +2338,14 @@ private fun rememberAppViewModels(
             accounts = ready?.accountsFeed(permissions),
             boxSchedule = ready?.let { graph ->
                 BoxScheduleViewModel(
-                    repository = BoxScheduleRepositoryImpl(graph.apiClient, graph.config),
+                    repository = BoxScheduleRepositoryImpl(
+                        graph.apiClient,
+                        graph.config,
+                        bus = graph.socketEvents,
+                        currentProjectId = {
+                            graph.projectContext?.context?.value?.project?.projectId
+                        },
+                    ),
                     calendar = graph.diaryCalendarLookup(),
                     resolveViewer = { graph.boxScheduleViewer(permissions()) },
                     nowMillis = System::currentTimeMillis,
@@ -2246,8 +2353,16 @@ private fun rememberAppViewModels(
             },
             maps = ready?.let { graph ->
                 MapViewModel(
-                    repository = MapRepositoryImpl(graph.apiClient, graph.config),
+                    repository = MapRepositoryImpl(
+                        graph.apiClient,
+                        graph.config,
+                        bus = graph.socketEvents,
+                        currentProjectId = {
+                            graph.projectContext?.context?.value?.project?.projectId
+                        },
+                    ),
                     resolveViewer = { graph.mapViewer(permissions()) },
+                    canvas = graph.mapCanvas,
                 )
             },
             recce = ready?.buildRecce(permissions),
@@ -2267,7 +2382,14 @@ private fun rememberAppViewModels(
             },
             transport = ready?.let { graph ->
                 TransportViewModel(
-                    repository = TransportRepositoryImpl(graph.apiClient, graph.config),
+                    repository = TransportRepositoryImpl(
+                        graph.apiClient,
+                        graph.config,
+                        bus = graph.socketEvents,
+                        currentProjectId = {
+                            graph.projectContext?.context?.value?.project?.projectId
+                        },
+                    ),
                     resolveViewer = {
                         TransportViewer.from(permissions(),
                             graph.projectContext?.context?.value?.profile?.userId.orEmpty())
@@ -2379,7 +2501,13 @@ private fun buildRegistry(
     // the legacy pre-production tile shares.
     val boxSchedule = viewModels.boxSchedule?.let { BoxScheduleToolProvider(it, BOX_SCHEDULE_PATH) }
     val preProduction = viewModels.boxSchedule?.let { BoxScheduleToolProvider(it, PRE_PRODUCTION_PATH) }
-    val maps = viewModels.maps?.let { MapToolProvider(it, onOpenUrl = ::openInBrowser) }
+    val maps = viewModels.maps?.let {
+        MapToolProvider(
+            it,
+            onOpenUrl = ::openInBrowser,
+            canvas = (graph as? AppGraph.Ready)?.let(::mapCanvasSurface),
+        )
+    }
     val recce = viewModels.recce?.let { RecceToolProvider(it, onOpenUrl = ::openInBrowser) }
     val externalUsers = viewModels.externalUsers?.let {
         com.zillit.desktop.feature.externalusers.ui.ExternalUsersToolProvider(it)

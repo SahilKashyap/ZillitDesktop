@@ -75,8 +75,9 @@ class TimecardSaveHandler(
         return when (val saved = repository.save(draft.copy(timecardId = target))) {
             is ZillitResult.Failure -> policy.outcomeFor(saved.error)
             is ZillitResult.Success -> SyncOutcome.Done(
-                // A PATCH already knows its id; a POST reads it back, best effort.
-                result = target ?: repository.myTimecards().getOrNull()
+                // The save names the id it landed on; a fake or older
+                // implementation that answers null gets the lookup, best effort.
+                result = saved.data ?: target ?: repository.myTimecards().getOrNull()
                     ?.firstOrNull { it.weekStarting == draft.weekStarting }?.id,
             )
         }

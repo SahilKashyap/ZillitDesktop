@@ -84,7 +84,13 @@ private fun MediaAttachment.toNotice() = NoticeAttachment(
 )
 
 internal fun AppGraph.Ready.buildLocation(permissions: () -> ProjectPermissions) = LocationViewModel(
-    repository = LocationRepositoryImpl(apiClient, config, newUniqueId = { UUID.randomUUID().toString() }),
+    repository = LocationRepositoryImpl(
+        apiClient,
+        config,
+        newUniqueId = { UUID.randomUUID().toString() },
+        bus = socketEvents,
+        currentProjectId = { projectContext?.context?.value?.project?.projectId },
+    ),
     transfer = locationTransfer(),
     resolveViewer = {
         val context = projectContext?.context?.value

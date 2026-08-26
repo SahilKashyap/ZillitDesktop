@@ -178,11 +178,27 @@ data class FeatureFlags(
 data class FirebaseConfig(
     val projectId: String,
     val apiKey: String,
+    /**
+     * Android's `mobilesdk_app_id` — `1:1234567890:android:abcdef`.
+     *
+     * Optional, and separate from the pair above, because it is needed by
+     * exactly one caller: Remote Config's client-fetch REST body requires an
+     * `appId` and rejects a request without one. The Firestore call-status
+     * mirror and the chat presence feed need only the project id and key, so
+     * requiring all three would have switched calling off on every install that
+     * already works.
+     *
+     * Absent, `core:appupdate` is simply off — no banner and no error. See
+     * `AppUpdateChecker`.
+     */
+    val appId: String? = null,
 ) {
-    override fun toString(): String = "FirebaseConfig(projectId=$projectId, apiKey=present)"
+    override fun toString(): String =
+        "FirebaseConfig(projectId=$projectId, apiKey=present, appId=${if (appId == null) "absent" else "present"})"
 
     companion object {
         const val PROJECT_ID_SUFFIX = "FIREBASE_PROJECT_ID"
         const val API_KEY_SUFFIX = "FIREBASE_API_KEY"
+        const val APP_ID_SUFFIX = "FIREBASE_APP_ID"
     }
 }

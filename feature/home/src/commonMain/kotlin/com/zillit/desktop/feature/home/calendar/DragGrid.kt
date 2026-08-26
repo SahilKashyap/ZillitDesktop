@@ -39,6 +39,12 @@ internal data class DragGrid(
 internal fun Modifier.draggableEvent(
     event: CalendarEvent,
     grid: () -> DragGrid,
+    /**
+     * Fires true at drag start and false at its end, so the containers can
+     * lift the dragged block's cell with `zIndex` — without it the block
+     * slides UNDER every later-composed sibling cell, half-hidden.
+     */
+    onDragging: (Boolean) -> Unit = {},
     onMove: (dayDelta: Int, minuteDelta: Int) -> Unit,
 ): Modifier {
     var offset by remember(event.id) { mutableStateOf(Offset.Zero) }
@@ -54,6 +60,7 @@ internal fun Modifier.draggableEvent(
         }
         .pointerInput(event.id) {
             detectDragGestures(
+                onDragStart = { onDragging(true) },
                 onDrag = { change, amount ->
                     change.consume()
                     offset += amount
@@ -62,9 +69,13 @@ internal fun Modifier.draggableEvent(
                     val geometry = grid()
                     val (days, minutes) = offset.toDeltas(geometry)
                     offset = Offset.Zero
+                    onDragging(false)
                     if (days != 0 || minutes != 0) onMove(days, minutes)
                 },
-                onDragCancel = { offset = Offset.Zero },
+                onDragCancel = {
+                    offset = Offset.Zero
+                    onDragging(false)
+                },
             )
         }
 }

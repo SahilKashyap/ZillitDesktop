@@ -17,6 +17,10 @@ kotlin {
             implementation(project(":core:media"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:localization"))
+            // "Share location" in the composer: the shared map picker the
+            // field module and the Maps tool already use, installed once at
+            // the app root as `LocalLocationPicker`.
+            implementation(project(":core:locationpicker"))
             implementation(project(":core:network"))
             implementation(project(":core:socket"))
             implementation(project(":core:sync"))

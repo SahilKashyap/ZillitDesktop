@@ -8,12 +8,17 @@ import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.maps.domain.LocationDraft
 import com.zillit.desktop.feature.maps.domain.LocationType
 import com.zillit.desktop.feature.maps.domain.MapCity
 import com.zillit.desktop.feature.maps.domain.MapLocation
 import com.zillit.desktop.feature.maps.domain.MapRepository
 import com.zillit.desktop.feature.maps.domain.ZoneDraft
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -45,9 +50,22 @@ import kotlinx.serialization.json.put
 class MapRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    private val bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : MapRepository {
 
     private val base = config.apiV2(ZillitService.Map).trimEnd('/')
+
+    /**
+     * See [MapRepository.refreshes]. Another production's frame is dropped
+     * when both sides can name a project, as every web handler does.
+     */
+    override val refreshes: Flow<Unit> =
+        bus?.onAny(MAP_SYNC_EVENTS)
+            ?.filter { message -> message.payload.matchesProject(currentProjectId()) }
+            ?.map { }
+            ?: emptyFlow()
 
     override suspend fun cities(): ZillitResult<List<MapCity>> =
         get("$base/city").mapData { data ->

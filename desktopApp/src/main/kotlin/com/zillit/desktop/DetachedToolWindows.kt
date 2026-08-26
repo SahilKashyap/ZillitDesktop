@@ -41,6 +41,12 @@ fun DetachedToolWindows(
     registry: ToolRegistry,
     onEvent: (WorkspaceEvent) -> Unit,
     darkTheme: Boolean,
+    /**
+     * For the location picker: a torn-off window is its own composition, so
+     * without its own mount every location field in it would degrade to
+     * plain text while the docked one offers a map.
+     */
+    graph: AppGraph,
 ) {
     val stateHolder = rememberSaveableStateHolder()
 
@@ -67,9 +73,11 @@ fun DetachedToolWindows(
                     title = "${window.title} — Zillit",
                 ) {
                     ZillitTheme(darkTheme = darkTheme) {
-                        Box(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
-                            stateHolder.SaveableStateProvider(window.id.value) {
-                                ToolWindowContent(window = window, registry = registry, onEvent = onEvent)
+                        LocationPickerMount(graph) {
+                            Box(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
+                                stateHolder.SaveableStateProvider(window.id.value) {
+                                    ToolWindowContent(window = window, registry = registry, onEvent = onEvent)
+                                }
                             }
                         }
                     }

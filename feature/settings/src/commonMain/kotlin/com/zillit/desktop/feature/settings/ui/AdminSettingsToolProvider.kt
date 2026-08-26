@@ -232,7 +232,7 @@ const val ADMIN_SETTINGS_PATH = "/settings/admin"
  * Shared with the rail, which cannot import this module — see `DefaultRailItems`
  * for why the rail is a fixed list rather than something derived.
  */
-const val ADMIN_SETTINGS_TITLE = "Admin settings"
+const val ADMIN_SETTINGS_TITLE = "Admin Settings"
 
 /**
  * Where each administration page lives.

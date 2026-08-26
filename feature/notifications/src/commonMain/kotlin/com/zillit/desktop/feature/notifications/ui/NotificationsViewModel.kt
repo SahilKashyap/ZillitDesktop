@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.notifications.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.notifications.data.NotificationsEndpoints
@@ -63,7 +64,7 @@ class NotificationsViewModel(
                 }
                 markRead()
             },
-            onError = { error -> setState { copy(loading = false, loaded = true, error = error.userMessage) } },
+            onError = { error -> setState { copy(loading = false, loaded = true, error = error.localised()) } },
         )
     }
 
@@ -89,7 +90,7 @@ class NotificationsViewModel(
                 }
                 markRead()
             },
-            onError = { error -> setState { copy(loadingMore = false, error = error.userMessage) } },
+            onError = { error -> setState { copy(loadingMore = false, error = error.localised()) } },
         )
     }
 
@@ -131,7 +132,7 @@ class NotificationsViewModel(
                     }
                     sendEffect(NotificationsEffect.Notice(notice))
                 }
-                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.localised()) }
             }
         }
     }

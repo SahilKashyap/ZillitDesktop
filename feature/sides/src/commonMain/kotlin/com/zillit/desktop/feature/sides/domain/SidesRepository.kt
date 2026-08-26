@@ -1,9 +1,19 @@
 package com.zillit.desktop.feature.sides.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /** The sides service (`sidesapi`), routes under `/api/v2`. */
 interface SidesRepository {
+
+    /**
+     * A pulse per `sides:generated` on the socket — the backend's nudge
+     * the moment a generation finishes, which the web answers with a list
+     * refetch (`SidesPage.jsx:92-109`). Defaulted empty for tests and
+     * hosts without a socket; the generating poll covers a missed push.
+     */
+    val refreshes: Flow<Unit> get() = emptyFlow()
 
     suspend fun scripts(limit: Int = SCRIPTS_LIMIT): ZillitResult<List<Script>>
 

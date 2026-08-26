@@ -92,7 +92,8 @@ internal fun JsonElement.unwrapData(): JsonObject? {
     }
 }
 
-private fun JsonObject.stringField(key: String): String? =
+/** Internal, not private: [BoardRealtimeEvents]' mapping reads the same keys. */
+internal fun JsonObject.stringField(key: String): String? =
     (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
 
 /**

@@ -15,6 +15,11 @@ import com.zillit.desktop.feature.sides.domain.SidesRecord
 import com.zillit.desktop.feature.sides.domain.SidesRepository
 import com.zillit.desktop.feature.sides.domain.SidesStatus
 import com.zillit.desktop.feature.sides.domain.StoredAttachment
+import com.zillit.desktop.core.socket.SocketEventBus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -46,7 +51,13 @@ class SidesRepositoryImpl(
     config: AppConfig,
     /** Raw authed GET returning the body text — for the envelope-less route. */
     private val rawScenes: suspend (url: String) -> ZillitResult<String>,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    bus: SocketEventBus? = null,
 ) : SidesRepository {
+
+    /** See [SidesRepository.refreshes]. */
+    override val refreshes: Flow<Unit> =
+        bus?.onAny(SIDES_SYNC_EVENTS)?.map { }?.conflate() ?: emptyFlow()
 
     private val base = config.apiV2(ZillitService.Sides).trimEnd('/')
 

@@ -14,6 +14,11 @@ import com.zillit.desktop.feature.continuity.domain.ContinuityScene
 import com.zillit.desktop.feature.continuity.domain.ContinuityTab
 import com.zillit.desktop.feature.continuity.domain.SceneDraft
 import com.zillit.desktop.feature.continuity.domain.TalentInfo
+import com.zillit.desktop.core.socket.SocketEventBus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -41,7 +46,16 @@ class ContinuityRepositoryImpl(
     config: AppConfig,
     /** Department names arrive as label keys (`camera_department_label`); the host translates. */
     private val localise: (String) -> String = { it },
+    /** Null keeps the board socket-less — tests, and hosts without a bus. */
+    bus: SocketEventBus? = null,
 ) : ContinuityRepository {
+
+    /**
+     * See [ContinuityRepository.refreshes]. Conflated: a multi-file upload
+     * lands as one `scenes:created` per file and one refetch answers all.
+     */
+    override val refreshes: Flow<Unit> =
+        bus?.onAny(CONTINUITY_SYNC_EVENTS)?.map { }?.conflate() ?: emptyFlow()
 
     private val base = config.apiV2(ZillitService.Continuity).trimEnd('/') + "/continuity"
 

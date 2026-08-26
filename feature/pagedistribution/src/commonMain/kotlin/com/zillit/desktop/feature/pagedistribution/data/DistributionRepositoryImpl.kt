@@ -20,6 +20,11 @@ import com.zillit.desktop.feature.pagedistribution.domain.ReadAction
 import com.zillit.desktop.feature.pagedistribution.domain.StoredPdf
 import com.zillit.desktop.feature.pagedistribution.domain.TabKind
 import com.zillit.desktop.feature.pagedistribution.domain.UploadDraft
+import com.zillit.desktop.core.socket.SocketEventBus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -51,7 +56,17 @@ class DistributionRepositoryImpl(
     private val config: AppConfig,
     private val newUniqueId: () -> String,
     private val nowMillis: () -> Long,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    private val bus: SocketEventBus? = null,
 ) : DistributionRepository {
+
+    /**
+     * See [DistributionRepository.refreshes]. Conflated: an upload emits a
+     * folder event and a page event back to back and one refetch answers
+     * both.
+     */
+    override fun refreshes(tool: DistributionTool): Flow<Unit> =
+        bus?.onAny(distributionSyncEvents(tool))?.map { }?.conflate() ?: emptyFlow()
 
     private fun base(tool: DistributionTool) = config.apiV2(tool.service).trimEnd('/') + "/" + tool.segment
 

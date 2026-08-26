@@ -41,6 +41,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.designsystem.icon.ZillitRailIcons
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 
@@ -74,11 +75,13 @@ data class RailItem(
 val DefaultRailItems: List<RailItem> = listOf(
     // Android's bottom bar order (BottomNavigationActivity.kt:555-563,
     // labels AppHelper.kt:134-172): Home, Email, Tools, C&C, Settings.
-    RailItem("home", "Home", ZillitIcons.Home, WorkspaceRoute.Home),
+    // The icons are the web side menu's own SVGs (`ZillitRailIcons`); Email
+    // keeps the app's envelope, as the web draws that one from Material too.
+    RailItem("home", "Home", ZillitRailIcons.Home, WorkspaceRoute.Home),
     RailItem("email", "Email", ZillitIcons.Mail, WorkspaceRoute.Tool("/email")),
-    RailItem("tools", "Film Tools", ZillitIcons.Tools, WorkspaceRoute.Tool("/home/tools")),
-    RailItem("cnc", "Chat & Calls", ZillitIcons.Chat, WorkspaceRoute.Tool("/cnc")),
-    RailItem("settings", "Settings", ZillitIcons.Settings, WorkspaceRoute.Tool("/settings")),
+    RailItem("tools", "Film Tools", ZillitRailIcons.Tools, WorkspaceRoute.Tool("/home/tools")),
+    RailItem("cnc", "Chat & Calls", ZillitRailIcons.Cnc, WorkspaceRoute.Tool("/cnc")),
+    RailItem("settings", "Settings", ZillitRailIcons.Settings, WorkspaceRoute.Tool("/settings")),
 )
 
 /**
@@ -90,7 +93,7 @@ val DefaultRailItems: List<RailItem> = listOf(
  * app is already installed, and the web's page only existed to install one.
  */
 val AppRailItems: List<RailItem> = listOf(
-    RailItem("sos", "SOS", ZillitIcons.Siren, WorkspaceRoute.Tool("/sos")),
+    RailItem("sos", "SOS", ZillitRailIcons.Sos, WorkspaceRoute.Tool("/sos")),
     RailItem("help", "Zillit Help", ZillitIcons.Help, WorkspaceRoute.Tool("/settings/help")),
 )
 
@@ -107,7 +110,7 @@ val AppRailItems: List<RailItem> = listOf(
  * windows it opens.
  */
 val AdminRailItem: RailItem =
-    RailItem("admin", "Admin", ZillitToolIcons.Production, WorkspaceRoute.Tool("/settings/admin"))
+    RailItem("admin", "Admin Settings", ZillitToolIcons.Production, WorkspaceRoute.Tool("/settings/admin"))
 
 /**
  * The rail for this reader.
@@ -272,8 +275,10 @@ private fun RailButton(
             .padding(horizontal = RAIL_GUTTER)
             .fillMaxWidth()
             .height(RAIL_BUTTON)
-            .clip(ZillitTheme.shapes.medium)
-            .background(background)
+            // A shaped background rather than `clip` + background: the clip
+            // also cut the badge, which rides just past the icon slot's
+            // corner when the rail is collapsed.
+            .background(background, ZillitTheme.shapes.medium)
             .hoverable(interaction)
             .clickable(
                 interactionSource = interaction,

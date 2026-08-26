@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.callsheet.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDelivery
@@ -16,6 +17,7 @@ import com.zillit.desktop.feature.callsheet.domain.firstUntitledSystemCell
 import com.zillit.desktop.feature.callsheet.domain.normalised
 import com.zillit.desktop.feature.callsheet.domain.withAddedLine
 import com.zillit.desktop.feature.callsheet.domain.withValue
+import kotlinx.coroutines.flow.conflate
 
 /**
  * Call sheet creation and review.
@@ -45,7 +47,27 @@ class CallSheetViewModel(
             )
         }
         refresh()
+        listenOnce()
     }
+
+    /**
+     * Reloads the open list when the socket says a sheet moved through the
+     * workflow on another client — the web's `handleSocketSheetUpdate`
+     * (`CallSheetApp.jsx:1631-1694`) reloads the lists the new status
+     * touches; this client's refresh already scopes to the open
+     * destination and bucket. Guarded so a second start (the window
+     * reopening) does not stack collectors; `conflate()` folds a burst
+     * into one reload.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.conflate().collect { refresh() }
+        }
+    }
+
+    private var listening = false
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
     override fun onEvent(event: CallSheetEvent) {
@@ -190,7 +212,7 @@ class CallSheetViewModel(
     private suspend fun <T> load(block: suspend () -> ZillitResult<T>) {
         when (val result = block()) {
             is ZillitResult.Success -> Unit
-            is ZillitResult.Failure -> setState { copy(error = result.error.userMessage) }
+            is ZillitResult.Failure -> setState { copy(error = result.error.localised()) }
         }
     }
 
@@ -261,7 +283,7 @@ class CallSheetViewModel(
                     }
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = result.error.userMessage)
+                    copy(busy = false, error = result.error.localised())
                 }
             }
         }
@@ -312,7 +334,7 @@ class CallSheetViewModel(
                 }
                 is ZillitResult.Failure -> {
                     updateEditor { copy(saving = false) }
-                    setState { copy(error = result.error.userMessage) }
+                    setState { copy(error = result.error.localised()) }
                 }
             }
         }
@@ -347,7 +369,7 @@ class CallSheetViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = result.error.userMessage)
+                    copy(busy = false, error = result.error.localised())
                 }
             }
         }
@@ -364,7 +386,7 @@ class CallSheetViewModel(
             val detail = when (val result = repository.sheet(sheetId)) {
                 is ZillitResult.Success -> result.data
                 is ZillitResult.Failure -> {
-                    setState { copy(busy = false, error = result.error.userMessage) }
+                    setState { copy(busy = false, error = result.error.localised()) }
                     return@launch
                 }
             }
@@ -393,7 +415,7 @@ class CallSheetViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = result.error.userMessage)
+                    copy(busy = false, error = result.error.localised())
                 }
             }
         }
@@ -419,7 +441,7 @@ class CallSheetViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = published.error.userMessage)
+                    copy(busy = false, error = published.error.localised())
                 }
             }
         }
@@ -453,12 +475,12 @@ class CallSheetViewModel(
                             copy(pdf = pdf?.copy(loading = false, pages = pages.data))
                         }
                         is ZillitResult.Failure -> setState {
-                            copy(pdf = null, error = pages.error.userMessage)
+                            copy(pdf = null, error = pages.error.localised())
                         }
                     }
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(pdf = null, error = bytes.error.userMessage)
+                    copy(pdf = null, error = bytes.error.localised())
                 }
             }
         }
@@ -474,7 +496,7 @@ class CallSheetViewModel(
                     refresh()
                 }
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = result.error.userMessage)
+                    copy(busy = false, error = result.error.localised())
                 }
             }
         }

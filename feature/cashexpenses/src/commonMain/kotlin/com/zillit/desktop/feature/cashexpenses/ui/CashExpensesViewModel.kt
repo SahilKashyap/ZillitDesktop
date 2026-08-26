@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.cashexpenses.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -502,7 +503,7 @@ class CashExpensesViewModel(
 
                 is ZillitResult.Failure -> {
                     setState { copy(busy = false) }
-                    sendEffect(CashEffect.Failed(saved.error.userMessage))
+                    sendEffect(CashEffect.Failed(saved.error.localised()))
                 }
             }
         }
@@ -646,7 +647,7 @@ class CashExpensesViewModel(
 
             is ZillitResult.Failure -> {
                 setState { copy(busy = false) }
-                sendEffect(CashEffect.Failed(result.error.userMessage))
+                sendEffect(CashEffect.Failed(result.error.localised()))
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.invoices.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.invoices.domain.ApprovalChain
 import com.zillit.desktop.feature.invoices.domain.ApprovalStatus
@@ -21,7 +22,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
         vm.run {
             when (val r = vm.repo.approve(invoice.id, next, total)) {
                 is ZillitResult.Failure -> vm.update {
-                    copy(busy = false, detail = detail?.copy(acting = false), error = r.error.userMessage)
+                    copy(busy = false, detail = detail?.copy(acting = false), error = r.error.localised())
                 }
                 is ZillitResult.Success -> {
                     vm.update { copy(busy = false, detail = detail?.copy(acting = false)) }
@@ -44,7 +45,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
         vm.run {
             when (val r = vm.repo.reject(d.invoice.id, reason)) {
                 is ZillitResult.Failure -> vm.update {
-                    copy(busy = false, detail = detail?.copy(acting = false), error = r.error.userMessage)
+                    copy(busy = false, detail = detail?.copy(acting = false), error = r.error.localised())
                 }
                 is ZillitResult.Success -> {
                     vm.update {
@@ -87,7 +88,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
     fun chase(invoice: Invoice) {
         vm.run {
             when (val r = vm.repo.chase(invoice.id)) {
-                is ZillitResult.Failure -> vm.update { copy(error = r.error.userMessage) }
+                is ZillitResult.Failure -> vm.update { copy(error = r.error.localised()) }
                 is ZillitResult.Success -> {
                     vm.update { copy(chased = chased + invoice.id) }
                     vm.notice("Reminder sent to the next approver")
@@ -114,7 +115,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
                 val tiers = vm.tiersFor(invoice)
                 val next = ApprovalChain.nextTier(tiers, invoice.approvals) ?: 1
                 when (val r = vm.repo.approve(invoice.id, next, tiers.size.coerceAtLeast(1))) {
-                    is ZillitResult.Failure -> failure = r.error.userMessage
+                    is ZillitResult.Failure -> failure = r.error.localised()
                     is ZillitResult.Success -> done++
                 }
             }
@@ -129,7 +130,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
         vm.update { copy(confirmDelete = null, busy = true) }
         vm.run {
             when (val r = vm.repo.delete(invoice.id)) {
-                is ZillitResult.Failure -> vm.update { copy(busy = false, error = r.error.userMessage) }
+                is ZillitResult.Failure -> vm.update { copy(busy = false, error = r.error.localised()) }
                 is ZillitResult.Success -> {
                     vm.update {
                         copy(
@@ -148,7 +149,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
     private fun finish(outcome: ZillitResult<*>, id: String, success: String) {
         when (outcome) {
             is ZillitResult.Failure -> vm.update {
-                copy(busy = false, detail = detail?.copy(acting = false), error = outcome.error.userMessage)
+                copy(busy = false, detail = detail?.copy(acting = false), error = outcome.error.localised())
             }
             is ZillitResult.Success -> {
                 vm.update { copy(busy = false, detail = detail?.copy(acting = false)) }

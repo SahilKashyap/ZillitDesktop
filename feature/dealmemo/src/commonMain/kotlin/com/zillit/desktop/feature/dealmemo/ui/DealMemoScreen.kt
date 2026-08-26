@@ -121,7 +121,7 @@ fun DealMemoScreen(
             val error = state.error
             when {
                 error != null -> ZillitErrorState(
-                    message = error.userMessage,
+                    message = error.localised(),
                     onRetry = { onEvent(DealEvent.Refresh) },
                 )
 
@@ -210,7 +210,11 @@ private fun MyDealPage(state: DealUiState, onEvent: (DealEvent) -> Unit) {
             }
         }
 
-        if (!deal.acknowledged) {
+        // The acknowledge endpoint answers a PENDING amendment only — with
+        // nothing pending it 422s `deal_no_pending_amendment`
+        // (`api/deal-memo/deal-memo.js:108-113`), so the button exists only
+        // while there is an amendment to confirm, as on the web.
+        if (deal.awaitingReacknowledgement) {
             ZillitButton(
                 text = "I agree to these terms",
                 onClick = {
@@ -228,9 +232,11 @@ private fun MyDealPage(state: DealUiState, onEvent: (DealEvent) -> Unit) {
                 leadingIcon = ZillitIcons.Check,
                 loading = state.busy,
             )
-        } else {
+        } else if (deal.acknowledged) {
             ZillitNotice(
-                text = "You agreed to these terms on ${EpochDate.date(deal.acknowledgedAt)}.",
+                text = deal.acknowledgedAt
+                    ?.let { "You agreed to these terms on ${EpochDate.date(it)}." }
+                    ?: "You confirmed the amended terms.",
                 tone = StatusTone.Done,
                 icon = ZillitIcons.Check,
             )
@@ -390,7 +396,13 @@ private fun DealDetail(state: DealUiState, deal: Deal, onEvent: (DealEvent) -> U
             }
         }
 
-        if (state.viewer.canWriteDeals && deal.status != DealStatus.Terminated) {
+        // The server rejects any write on a cancelled deal (the web gates its
+        // autosave on exactly this — `DMCreatePage.jsx` autosaveEnabled), and a
+        // deactivated one is terminal (`dealStatus.js:31-35`).
+        if (state.viewer.canWriteDeals &&
+            deal.status != DealStatus.Cancelled &&
+            deal.status != DealStatus.Deactivated
+        ) {
             ZillitDivider()
             ZillitButton(
                 text = "Send to crew member",
@@ -862,15 +874,16 @@ private fun DealPromptDialog(prompt: DealPrompt?, onEvent: (DealEvent) -> Unit) 
     }
 }
 
+/** The web's badge palette per status, mapped onto tones (`dealStatus.js:18-36`). */
 internal val DealStatus.tone: StatusTone
     get() = when (this) {
         DealStatus.Draft, DealStatus.Unknown -> StatusTone.Neutral
-        DealStatus.Sent -> StatusTone.InTransit
-        DealStatus.Acknowledged -> StatusTone.Ready
-        DealStatus.Amended -> StatusTone.Pending
+        DealStatus.Issued -> StatusTone.InTransit
+        DealStatus.AwaitingApproval -> StatusTone.Pending
+        DealStatus.Approved -> StatusTone.Ready
         DealStatus.Active -> StatusTone.Done
-        DealStatus.Expired -> StatusTone.Neutral
-        DealStatus.Terminated -> StatusTone.Rejected
+        DealStatus.Completed -> StatusTone.Progress
+        DealStatus.Rejected, DealStatus.Cancelled, DealStatus.Deactivated -> StatusTone.Rejected
     }
 
 @Suppress("MagicNumber") // Column proportions.

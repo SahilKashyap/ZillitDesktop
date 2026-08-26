@@ -1,9 +1,20 @@
 package com.zillit.desktop.feature.maps.domain
 
 import com.zillit.desktop.core.common.ZillitResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 /** The map service (`mapapi`), routes under `/api/v2`. */
 interface MapRepository {
+
+    /**
+     * A pulse per socket frame saying another client changed a location or
+     * zone — the web's `map_location_added/updated/deleted` handlers
+     * (`MapPage.jsx:73,100,126`). The ViewModel answers with a re-list.
+     * Empty by default: tests, and hosts without a socket.
+     */
+    val refreshes: Flow<Unit> get() = emptyFlow()
+
     suspend fun cities(): ZillitResult<List<MapCity>>
     suspend fun createCity(
         name: String,

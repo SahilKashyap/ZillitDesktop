@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
@@ -28,6 +29,7 @@ import com.zillit.desktop.feature.payroll.domain.PayrollWeek
 import com.zillit.desktop.feature.payroll.domain.Payslip
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 
 /** Everything the payroll tool is showing. */
 data class PayrollUiState(
@@ -181,9 +183,35 @@ class PayrollViewModel(
         if (started) return
         started = true
         setState { copy(viewer = viewer()) }
+        listenOnce()
         loadCurrentWeek()
         loadPermissions()
     }
+
+    /**
+     * Folds the socket's announcements into the grid: a final approval, lock,
+     * payment or post landing on another client reloads the week on screen —
+     * the web's `ah:payroll:list` refetch pattern. Guarded so a project
+     * switch restarting the tool does not stack collectors, and debounced
+     * because a batch action emits one frame per timecard (the web coalesces
+     * at `accountHubListeners.js` `DEBOUNCE_MS = 500`).
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.collect {
+                syncJob?.cancel()
+                syncJob = launch {
+                    delay(SYNC_DEBOUNCE_MILLIS)
+                    currentState.weekStarting?.let(::loadWeek) ?: loadCurrentWeek()
+                }
+            }
+        }
+    }
+
+    private var listening = false
+    private var syncJob: Job? = null
 
     fun onProjectChanged() {
         started = false
@@ -455,7 +483,7 @@ class PayrollViewModel(
 
                 is ZillitResult.Failure -> {
                     setState { copy(busy = false) }
-                    sendEffect(PayrollEffect.Failed(result.error.userMessage))
+                    sendEffect(PayrollEffect.Failed(result.error.localised()))
                 }
             }
         }
@@ -474,14 +502,17 @@ class PayrollViewModel(
 
             is ZillitResult.Failure -> {
                 setState { copy(busy = false) }
-                sendEffect(PayrollEffect.Failed(result.error.userMessage))
+                sendEffect(PayrollEffect.Failed(result.error.localised()))
             }
         }
     }
 
-    private companion object {
-        const val WEEKS_SHOWN = 9
-        const val WEEK_MILLIS = 7L * 24 * 60 * 60 * 1000
+    companion object {
+        private const val WEEKS_SHOWN = 9
+        private const val WEEK_MILLIS = 7L * 24 * 60 * 60 * 1000
+
+        /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
+        const val SYNC_DEBOUNCE_MILLIS = 500L
     }
 }
 

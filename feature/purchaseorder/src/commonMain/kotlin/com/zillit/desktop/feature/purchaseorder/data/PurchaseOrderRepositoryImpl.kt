@@ -11,14 +11,19 @@ import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PoApproval
 import com.zillit.desktop.feature.purchaseorder.domain.PoHistoryEntry
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
+import com.zillit.desktop.feature.purchaseorder.domain.PoRefresh
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrderRepository
 import com.zillit.desktop.feature.purchaseorder.domain.Vendor
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -43,10 +48,25 @@ import kotlinx.serialization.json.contentOrNull
 class PurchaseOrderRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** Null keeps the tool socket-less — tests, and hosts without a bus. */
+    bus: SocketEventBus? = null,
+    private val currentProjectId: () -> String? = { null },
 ) : PurchaseOrderRepository {
 
     private val base = "${config.baseUrl(ZillitService.PurchaseOrder)}/api/v2/purchase-orders"
     private val vendorsUrl = "${config.baseUrl(ZillitService.AccountHub)}/api/v2/vendors"
+
+    /**
+     * See [PurchaseOrderRepository.refreshes]. Another production's frame is
+     * dropped when both sides can name a project — the same cross-project
+     * gate the web's account-hub wrapper applies before any handler runs.
+     */
+    override val refreshes: Flow<PoRefresh> =
+        bus?.onAny(PO_SYNC_EVENTS, PoSyncEnvelope.serializer())
+            ?.mapNotNull { (event, envelope) ->
+                poRefreshFor(event).takeIf { envelope.inProject(currentProjectId()) }
+            }
+            ?: emptyFlow()
 
     override suspend fun orders(status: PoStatus?): ZillitResult<List<PurchaseOrder>> =
         list(base, status?.let { mapOf("status" to it.wire) }.orEmpty())

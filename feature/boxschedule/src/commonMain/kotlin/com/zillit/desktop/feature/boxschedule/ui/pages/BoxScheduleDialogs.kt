@@ -29,6 +29,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.core.locationpicker.oneLine
+import com.zillit.desktop.core.locationpicker.ZillitLocationField
 import com.zillit.desktop.feature.boxschedule.domain.DiaryClock
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
@@ -182,9 +185,24 @@ internal fun DiaryEditorDialog(
                         modifier = Modifier.weight(1f),
                     )
                 }
-                ZillitTextField(
-                    value = editor.location,
-                    onValueChange = { onEvent(BoxScheduleEvent.DiaryChanged(location = it)) },
+                // A map pick fills the line; only the line travels. The diary
+                // wire carries `location` as a string and nothing else —
+                // `eventWire` in BoxScheduleRepositoryImpl, pinned field for
+                // field by BoxScheduleSyncTest — so the coordinates behind the
+                // pick are deliberately dropped rather than invented into keys
+                // the server has never been asked for.
+                ZillitLocationField(
+                    text = editor.location,
+                    onTextChange = { onEvent(BoxScheduleEvent.DiaryChanged(location = it)) },
+                    onPicked = {
+                        onEvent(
+                            BoxScheduleEvent.DiaryChanged(
+                                location = it.oneLine(),
+                                locationLat = it.lat,
+                                locationLng = it.lng,
+                            ),
+                        )
+                    },
                     label = "Location",
                 )
                 ZillitText(
@@ -334,6 +352,8 @@ private fun ColorRow(current: String, options: List<String>, onPick: (String) ->
         }
     }
 }
+
+/** The one line a picked place reads as: its name, then its address. */
 
 /** `#rrggbb` to a Compose colour; null for anything else. */
 internal fun hexColor(hex: String): Color? {

@@ -21,6 +21,11 @@ class MapToolProvider(
     private val viewModel: MapViewModel,
     /** Opens a maps URL in the system browser (https only). */
     private val onOpenUrl: (String) -> Unit,
+    /**
+     * The host's map surface, composed as the main pane beside the pin
+     * list. Null keeps the list-only layout (no embedded browser).
+     */
+    private val canvas: (@Composable () -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = MAP_PATH
@@ -45,7 +50,7 @@ class MapToolProvider(
             }
         }
 
-        MapScreen(state = state, onEvent = viewModel::onEvent)
+        MapScreen(state = state, onEvent = viewModel::onEvent, canvas = canvas)
         ZillitErrorToast(message = notice, onDismiss = { notice = null })
     }
 }

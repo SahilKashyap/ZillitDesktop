@@ -1,17 +1,22 @@
 package com.zillit.desktop.feature.home
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.locationpicker.LocalLocationPicker
+import com.zillit.desktop.core.locationpicker.LocationPicker
+import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.feature.home.calendar.CalendarEvent2Event
 import com.zillit.desktop.feature.home.calendar.CallType
 import com.zillit.desktop.feature.home.calendar.EventAudience
@@ -210,6 +215,49 @@ class EventFormRenderTest {
         setContent { ZillitTheme { EventFormDialog(form(meeting), onEvent = {}) } }
 
         onNodeWithText("Location — required").assertExists()
+    }
+
+    /**
+     * A picked place fills the location line — and only the line.
+     *
+     * This client's body carries `location_description` and no coordinates
+     * (`eventBody`, EventGuests.kt:54), so the numbers behind the pick are
+     * dropped rather than sent under keys it has never sent. The web does send
+     * them (`AddCalendarEvent.jsx:433-438`); carrying them here is a wire
+     * change, not a form change.
+     */
+    @Test
+    fun `picking a place writes its line into the draft`() = runComposeUiTest {
+        val events = mutableListOf<CalendarEvent2Event>()
+        val picker = FakePicker(
+            PickedLocation(name = "Aria Hotel", address = "12 Marine Drive, Mumbai", lat = 18.94, lng = 72.82),
+        )
+        setContent {
+            ZillitTheme {
+                CompositionLocalProvider(LocalLocationPicker provides picker) {
+                    EventFormDialog(form(newEvent()), onEvent = events::add)
+                }
+            }
+        }
+
+        scrollFormToBottom()
+        onNodeWithText("Pick on map").performClick()
+        waitForIdle()
+
+        val changed = events.filterIsInstance<CalendarEvent2Event.FormChanged>().last()
+        assertEquals("Aria Hotel, 12 Marine Drive, Mumbai", changed.draft.location)
+    }
+
+    @Test
+    fun `with no picker wired the location is still a plain typed field`() = runComposeUiTest {
+        setContent { ZillitTheme { EventFormDialog(form(newEvent()), onEvent = {}) } }
+
+        onNodeWithText("Location").assertExists()
+        onAllNodesWithText("Pick on map").assertCountEquals(0)
+    }
+
+    private class FakePicker(private val place: PickedLocation?) : LocationPicker {
+        override suspend fun pick(initial: PickedLocation?, title: String): PickedLocation? = place
     }
 
     /**

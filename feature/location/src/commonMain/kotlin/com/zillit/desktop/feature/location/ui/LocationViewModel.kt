@@ -2,6 +2,7 @@
 
 package com.zillit.desktop.feature.location.ui
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -15,6 +16,7 @@ import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.LocationTransfer
 import com.zillit.desktop.feature.location.domain.LocationViewer
 import com.zillit.desktop.feature.location.domain.MediaAttachment
+import kotlinx.coroutines.flow.conflate
 
 /**
  * The location library: three shortlists of folders, a gallery per folder,
@@ -32,7 +34,25 @@ class LocationViewModel(
         // Television productions group by episode by default, as the web does.
         setState { copy(viewer = viewer, groupBy = if (viewer.isTelevision) GroupBy.EpisodeNo else groupBy) }
         refresh()
+        listenOnce()
     }
+
+    /**
+     * Reloads the open shortlist when the socket says another client
+     * created, edited, or deleted a record — the web's
+     * `location_created/updated/deleted` handlers re-run `getLocationList`.
+     * Guarded so a second start (the window reopening) does not stack
+     * collectors; `conflate()` folds a burst into one reload.
+     */
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
+        launch {
+            repository.refreshes.conflate().collect { refresh() }
+        }
+    }
+
+    private var listening = false
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
     override fun onEvent(event: LocationEvent) {
@@ -211,7 +231,7 @@ class LocationViewModel(
                 is ZillitResult.Success -> openAttachment(file.data, "location-${ids.size}.pdf")
             }
             when (outcome) {
-                is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
                     sendEffect(LocationEffect.Notice("PDF generated"))
@@ -232,7 +252,7 @@ class LocationViewModel(
         setState { copy(busy = true) }
         launch {
             when (val outcome = openAttachment(attachment, attachment.name.ifBlank { "location" })) {
-                is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = outcome.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false) }
                     sendEffect(LocationEffect.Notice("Saved to Downloads"))
@@ -274,7 +294,7 @@ class LocationViewModel(
                 if (id != null) repository.update(id, editor.toDraft(s.status)) else createNew(editor, s.status)
             when (outcome) {
                 is ZillitResult.Failure -> setState {
-                    copy(busy = false, editor = editor.copy(saving = false), error = outcome.error.userMessage)
+                    copy(busy = false, editor = editor.copy(saving = false), error = outcome.error.localised())
                 }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, editor = null) }
@@ -302,7 +322,7 @@ class LocationViewModel(
         setState { copy(busy = true) }
         launch {
             when (val result = block()) {
-                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.userMessage) }
+                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.localised()) }
                 is ZillitResult.Success -> {
                     setState { copy(busy = false, gallery = gallery?.copy(selected = emptySet(), selecting = false)) }
                     sendEffect(LocationEffect.Notice(notice))
@@ -322,7 +342,7 @@ class LocationViewModel(
     private fun <T> ZillitResult<T>.orError(): T? = when (this) {
         is ZillitResult.Success -> data
         is ZillitResult.Failure -> {
-            val message = this.error.userMessage
+            val message = this.error.localised()
             setState { copy(error = message) }
             null
         }

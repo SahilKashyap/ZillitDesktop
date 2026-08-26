@@ -8,8 +8,12 @@ plugins {
 kotlin {
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":core:socket"))
             implementation(project(":core:common"))
             implementation(project(":core:designsystem"))
+            // The pickup/drop-off fields are map pickers — the server refuses a
+            // ride whose ends have no coordinates.
+            implementation(project(":core:locationpicker"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:config"))
             implementation(project(":core:network"))
