@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
+import com.zillit.desktop.feature.location.domain.LocationMessage
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
@@ -47,6 +48,14 @@ class LocationRepositoryImpl(
     /** Null keeps the tool socket-less — tests, and hosts without a bus. */
     private val bus: SocketEventBus? = null,
     private val currentProjectId: () -> String? = { null },
+    /**
+     * The discussion's cipher — the same AES chat and the boards use. The
+     * seams default to identity so a host that has not wired them lists a
+     * thread with unreadable bodies rather than crashing.
+     */
+    private val encrypt: (String) -> String? = { it },
+    private val decrypt: (String) -> String? = { it },
+    private val myUserId: () -> String? = { null },
 ) : LocationRepository {
 
     private val base = config.apiV2(ZillitService.Location).trimEnd('/') + "/location"
@@ -137,6 +146,50 @@ class LocationRepositoryImpl(
         return ZillitResult.Success(Unit)
     }
 
+    /**
+     * `GET /v2/location/chat/{recordId}/{before}/previous?limit=50&page=`
+     * (called from `CastingChat.jsx:122-146`).
+     *
+     * The path parameter the web calls `unitId` is the *record's* own id, not
+     * a production unit's — a name that has cost more than one reader an
+     * afternoon.
+     */
+    override suspend fun messages(
+        recordId: String,
+        beforeMillis: Long,
+        page: Int,
+    ): ZillitResult<List<LocationMessage>> = get(
+        "$base/chat/$recordId/$beforeMillis/previous",
+        mapOf("limit" to MESSAGE_PAGE, "page" to page),
+    ).mapData { data ->
+        val me = myUserId()
+        ((data as? JsonArray) ?: emptyList()).mapNotNull { row ->
+            parseLocationMessage(row as? JsonObject, decrypt, me)
+        }
+    }
+
+    /**
+     * `POST /v2/location/chat` — the body encrypted, and the record's id
+     * under `unit_id`, which is what this service calls it
+     * (`utils/messageModal.js:99`).
+     */
+    override suspend fun sendMessage(recordId: String, body: String): ZillitResult<Unit> {
+        val cipher = encrypt(body)
+            ?: return ZillitResult.Failure(ZillitError.Storage("message encryption failed"))
+        return apiClient.envelope(
+            HttpVerb.Post,
+            "$base/chat",
+            RequestModule.ProjectUser,
+            buildJsonObject {
+                put("unit_id", recordId)
+                put("message", cipher)
+                put("message_translation", "")
+                put("message_type", "text")
+                put("unique_id", newUniqueId())
+            },
+        ).mapData { }
+    }
+
     override suspend fun pdf(ids: List<String>, includeDetails: Boolean): ZillitResult<MediaAttachment> =
         apiClient.envelope(
             HttpVerb.Post,
@@ -185,3 +238,6 @@ class LocationRepositoryImpl(
 }
 
 private fun JsonArray?.items(): List<JsonElement> = this?.toList() ?: emptyList()
+
+/** The page size the web asks for on this thread. */
+private const val MESSAGE_PAGE = 50

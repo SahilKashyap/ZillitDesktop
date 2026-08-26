@@ -11,6 +11,8 @@ import com.zillit.desktop.feature.accounthub.domain.CurrencySettings
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubItem
 import com.zillit.desktop.feature.accounthub.domain.NewVendor
+import com.zillit.desktop.feature.accounthub.domain.DealCondition
+import com.zillit.desktop.feature.accounthub.domain.PayrollBureau
 import com.zillit.desktop.feature.accounthub.domain.PayrollDefaults
 import com.zillit.desktop.feature.accounthub.domain.TaxType
 import com.zillit.desktop.feature.accounthub.domain.Vendor
@@ -59,6 +61,10 @@ sealed interface AccountHubEvent {
     data class EditSchedule(val schedule: ScheduleForm) : AccountHubEvent
 
     data class EditPayrollDefaults(val defaults: PayrollDefaults) : AccountHubEvent
+
+    data class EditDealConditions(val conditions: List<DealCondition>) : AccountHubEvent
+
+    data class EditPayrollBureaus(val bureaus: List<PayrollBureau>) : AccountHubEvent
 
     /** Commit one section. Sections save independently — see [SectionEdit]. */
     data class SaveSection(val section: SetupSection) : AccountHubEvent
@@ -168,6 +174,8 @@ enum class SetupSection(val label: String) {
     Budget("Project Budget"),
     Schedule("Production Schedule"),
     PayrollDefaults("Payroll Defaults"),
+    DealConditions("Standard Deal Conditions"),
+    PayrollBureaus("Payroll Bureau"),
 }
 
 /** One-shot things the console asks the host to do. */

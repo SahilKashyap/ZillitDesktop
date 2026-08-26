@@ -27,6 +27,8 @@ import com.zillit.desktop.feature.documentdistribution.domain.NewDistribution
 import com.zillit.desktop.feature.documentdistribution.domain.NewDistributionDefaults
 import com.zillit.desktop.feature.documentdistribution.domain.OpenState
 import com.zillit.desktop.feature.documentdistribution.domain.PublicationCategory
+import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
+import com.zillit.desktop.feature.documentdistribution.domain.PublishTarget
 import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
@@ -370,23 +372,8 @@ class DocDistRepositoryImpl(
             mapOf("category" to category),
         ).map { rows -> rows.mapNotNull { it.toDomain() } }
 
-    override suspend fun publish(
-        category: String,
-        documentIds: List<String>,
-        replaceChatIds: List<String>,
-    ): ZillitResult<Unit> = post(
-        "$base/publications",
-        buildJsonObject {
-            put("category", JsonPrimitive(category))
-            put("document_ids", documentIds.toJsonArray())
-            // `mode` is omitted on a first publish — there is nothing live to
-            // replace, and the server rejects `replace` with no target.
-            if (replaceChatIds.isNotEmpty()) {
-                put("mode", JsonPrimitive("replace"))
-                put("replace_chat_id", replaceChatIds.toJsonArray())
-            }
-        },
-    )
+    override suspend fun publish(category: String, draft: PublishDraft): ZillitResult<Unit> =
+        post("$base/publications", publicationWire(category, draft))
 
     // -- plumbing ----------------------------------------------------------
 

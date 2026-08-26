@@ -119,6 +119,35 @@ class ContinuityRepositoryImpl(
         },
     ).map { }
 
+    /** `PUT /v2/continuity/archive` with `{scene_ids}` (`ContinuityModal.jsx:384-388`). */
+    override suspend fun archive(sceneIds: List<String>): ZillitResult<Unit> = mutate(
+        HttpVerb.Put,
+        "$base/archive",
+        buildJsonObject {
+            put("scene_ids", buildJsonArray { sceneIds.forEach { add(JsonPrimitive(it)) } })
+        },
+    ).map { }
+
+    /**
+     * `POST /v2/continuity/distribute?…` — the filters ride the query string,
+     * and a blank one is omitted rather than sent empty
+     * (`DropDownForContunity.jsx:60-78`).
+     */
+    override suspend fun distribute(
+        visibility: String,
+        sceneNumber: String,
+        departmentId: String,
+    ): ZillitResult<Unit> = apiClient.envelope(
+        verb = HttpVerb.Post,
+        url = "$base/distribute",
+        module = RequestModule.ProjectUser,
+        queryParameters = buildMap {
+            visibility.takeIf { it.isNotBlank() }?.let { put("visibility", it) }
+            sceneNumber.takeIf { it.isNotBlank() }?.let { put("sceneNumber", it) }
+            departmentId.takeIf { it.isNotBlank() }?.let { put("departmentId", it) }
+        },
+    ).map { }
+
     override suspend fun delete(tab: ContinuityTab, id: String): ZillitResult<Unit> =
         mutate(HttpVerb.Delete, "$base/scene/${tab.wireLabel}/$id", null).map { }
 

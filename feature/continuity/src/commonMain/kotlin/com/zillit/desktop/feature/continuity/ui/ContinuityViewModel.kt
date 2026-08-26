@@ -101,6 +101,7 @@ class ContinuityViewModel(
                 setState { copy(confirmForward = true) }
             }
             ContinuityEvent.ConfirmForward -> forwardSelected()
+            ContinuityEvent.ArchiveSelected -> archiveSelected()
             ContinuityEvent.CancelForward -> setState { copy(confirmForward = false) }
             is ContinuityEvent.RequestDelete -> setState { copy(confirmDelete = event.scene) }
             ContinuityEvent.ConfirmDelete -> deleteConfirmed()
@@ -230,6 +231,32 @@ class ContinuityViewModel(
             rows.filter { it.departmentId.isBlank() || it.departmentId == viewer.departmentId }
         } else {
             rows
+        }
+    }
+
+    /**
+     * The file cabinet.
+     *
+     * Archiving takes scenes off the board without deleting the work — the
+     * web calls the same call "File Cabinet status updated". The selection
+     * clears either way, because after this the rows are gone from here.
+     */
+    private fun archiveSelected() {
+        val open = state.value.open ?: return
+        val ids = open.selected.toList()
+        if (ids.isEmpty()) return
+        setState { copy(busy = true) }
+        launch {
+            when (val result = repository.archive(ids)) {
+                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.localised()) }
+                is ZillitResult.Success -> {
+                    setState {
+                        copy(busy = false, open = this.open?.copy(selecting = false, selected = emptySet()))
+                    }
+                    sendEffect(ContinuityEffect.Notice("Moved to the file cabinet"))
+                    reloadOpen()
+                }
+            }
         }
     }
 

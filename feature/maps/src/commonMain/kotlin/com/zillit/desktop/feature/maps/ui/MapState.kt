@@ -59,6 +59,15 @@ data class MapUiState(
 sealed interface MapEvent {
     data object Refresh : MapEvent
     data class SelectCity(val cityId: String?) : MapEvent
+
+    /**
+     * Moves a city one place up or down the list.
+     *
+     * Up/down rather than drag: the list is a short sidebar, and a keyboard
+     * and mouse both reach a button. The service takes the whole arrangement
+     * either way.
+     */
+    data class MoveCity(val cityId: String, val up: Boolean) : MapEvent
     data class FilterType(val type: String?) : MapEvent
 
     data class NewPin(val isZone: Boolean) : MapEvent

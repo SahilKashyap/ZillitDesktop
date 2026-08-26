@@ -145,6 +145,7 @@ class MapViewModel(
             MapEvent.SaveCity -> saveCity()
             MapEvent.CloseCity -> setState { copy(cityEditor = null) }
             is MapEvent.DeleteCity -> run({ repository.deleteCity(event.id) }, "City removed")
+            is MapEvent.MoveCity -> moveCity(event.cityId, event.up)
             MapEvent.DismissError -> setState { copy(error = null) }
         }
     }
@@ -242,6 +243,24 @@ class MapViewModel(
             setState { copy(error = message) }
             null
         }
+    }
+
+    /**
+     * Moves one city and sends the whole arrangement.
+     *
+     * The new order shows immediately and is corrected by the reload the
+     * service's answer triggers: a list that lurches back on every click
+     * would be unusable for arranging anything.
+     */
+    private fun moveCity(cityId: String, up: Boolean) {
+        val current = currentState.cities
+        val index = current.indexOfFirst { it.id == cityId }
+        val target = if (up) index - 1 else index + 1
+        if (index < 0 || target !in current.indices) return
+
+        val reordered = current.toMutableList().apply { add(target, removeAt(index)) }
+        setState { copy(cities = reordered) }
+        run({ repository.reorderCities(reordered.map { it.id }) }, "Order saved")
     }
 
     private fun run(block: suspend () -> ZillitResult<Unit>, notice: String) {

@@ -181,6 +181,13 @@ object ZillitPreferences {
     /** Starred chat conversations, newline-joined ids, per production. */
     val ChatFavourites = PreferenceKey.StringKey("chat.favourites", "", PreferenceScope.Project)
 
+    /**
+     * The place the Weather tool last showed — name, latitude, longitude on
+     * three lines, per production. A unit shoots in the same few places for
+     * weeks, so re-picking on every open would be a chore.
+     */
+    val WeatherPlace = PreferenceKey.StringKey("weather.place", "", PreferenceScope.Project)
+
     /** Every declared key — used by tests to catch collisions. */
     val all: List<PreferenceKey<*>> = listOf(
         ThemeMode, UiScalePercent, Language,
@@ -189,6 +196,7 @@ object ZillitPreferences {
         AppLockEnabled, IdleLockMinutes,
         MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired, UpdateInstanceId,
         NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity,
+        WeatherPlace,
         CallMicrophoneId, CallSpeakerId,
         LastProjectId, LastUnitId,
         BoxScheduleView, BoxScheduleCalendarMode, BoxScheduleListMode,

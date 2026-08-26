@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.documentdistribution.ui.pages
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,6 +26,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitFileBadge
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -81,6 +83,10 @@ fun LibraryPage(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
 
         DocumentsCard(state, onEvent)
     }
+
+    MoveItemsDialog(state, onEvent)
+
+    PublishDialog(state, onEvent)
 
     NewFolderDialog(
         visible = newFolderOpen,
@@ -160,28 +166,7 @@ private fun LibraryToolbar(
 
         // A selection turns the toolbar into a bulk-action bar, in place. A
         // separate floating bar (the web's choice) covers the rows it acts on.
-        val selected = state.selectedDocumentIds.size
-        if (selected > 0) {
-            ZillitText(
-                text = "$selected selected",
-                style = ZillitTheme.typography.label,
-                color = ZillitTheme.colors.textSecondary,
-            )
-            ZillitButton(
-                text = "Clear",
-                onClick = { onEvent(DocDistEvent.ClearSelection) },
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-            )
-            if (state.viewer.canPost) {
-                ZillitButton(
-                    text = "Distribute",
-                    onClick = { onEvent(DocDistEvent.Compose) },
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Send,
-                )
-            }
-        }
+        SelectionActions(state, onEvent)
 
         Row(
             modifier = Modifier.weight(1f),
@@ -237,10 +222,66 @@ private fun documentsTitle(state: DocDistUiState): String {
     }
 }
 
+/** A selection turns the toolbar into a bulk-action bar, in place. */
+@Composable
+private fun SelectionActions(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
+    val selected = state.selectionCount
+    if (selected == 0) return
+
+    ZillitText(
+        text = "$selected selected",
+        style = ZillitTheme.typography.label,
+        color = ZillitTheme.colors.textSecondary,
+    )
+    ZillitButton(
+        text = "Clear",
+        onClick = { onEvent(DocDistEvent.ClearSelection) },
+        variant = ButtonVariant.Tertiary,
+        size = ButtonSize.Small,
+    )
+    if (!state.viewer.canPost) return
+    ZillitButton(
+        text = "Move",
+        onClick = { onEvent(DocDistEvent.OpenMove) },
+        variant = ButtonVariant.Secondary,
+        size = ButtonSize.Small,
+    )
+    // Only documents can be distributed or published; a folder in the
+    // selection is not a thing to send, so both buttons follow the documents.
+    if (state.selectedDocumentIds.isNotEmpty()) {
+        ZillitButton(
+            text = "Publish",
+            onClick = { onEvent(DocDistEvent.OpenPublish) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+        )
+        ZillitButton(
+            text = "Distribute",
+            onClick = { onEvent(DocDistEvent.Compose) },
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Send,
+        )
+    }
+}
+
 private fun folderColumns(
     state: DocDistUiState,
     onEvent: (DocDistEvent) -> Unit,
 ): List<TableColumn<LibraryFolder>> = buildList {
+    if (state.viewer.canPost) {
+        add(
+            TableColumn(
+                header = "",
+                width = ColumnWidth.Fixed(CHECK_COLUMN.dp),
+                cell = { folder ->
+                    ZillitCheckbox(
+                        checked = folder.id in state.selectedFolderIds,
+                        onCheckedChange = { onEvent(DocDistEvent.ToggleFolder(folder.id)) },
+                    )
+                },
+            ),
+        )
+    }
     add(
         TableColumn(
             header = "Name",
@@ -353,6 +394,92 @@ private fun documentColumns(
     )
 }
 
+/**
+ * "Move items": pick a destination folder for whatever is ticked.
+ *
+ * The destination list is indented to show the tree, and leaves out the
+ * folders being moved along with everything under them — dropping a folder
+ * into its own subtree detaches that branch from the root, and the documents
+ * inside it stop being reachable from anywhere.
+ */
+@Composable
+private fun MoveItemsDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
+    val move = state.moveTarget ?: return
+    val destinations = state.moveDestinations()
+    val folders = state.selectedFolderIds.size
+    val documents = state.selectedDocumentIds.size
+
+    ZillitDialogShell(
+        title = "Move items",
+        subtitle = listOfNotNull(
+            "$folders folder".plural(folders),
+            "$documents file".plural(documents),
+        ).joinToString(" · ").ifBlank { "Nothing selected" },
+        visible = true,
+        onDismiss = { onEvent(DocDistEvent.CloseMove) },
+        icon = ZillitIcons.Grid,
+    ) {
+        ZillitScrollColumn(
+            modifier = Modifier.fillMaxWidth().height(MOVE_LIST_HEIGHT.dp),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        ) {
+            DestinationRow(
+                label = "Library root",
+                indent = 0,
+                selected = move.destinationId == null,
+                onClick = { onEvent(DocDistEvent.ChooseMoveDestination(null)) },
+            )
+            destinations.forEach { destination ->
+                DestinationRow(
+                    label = destination.name,
+                    indent = destination.depth + 1,
+                    selected = move.destinationId == destination.id,
+                    onClick = { onEvent(DocDistEvent.ChooseMoveDestination(destination.id)) },
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
+        ) {
+            ZillitButton(
+                text = "Cancel",
+                onClick = { onEvent(DocDistEvent.CloseMove) },
+                variant = ButtonVariant.Tertiary,
+            )
+            ZillitButton(
+                text = "Move here",
+                onClick = { onEvent(DocDistEvent.ConfirmMove) },
+                loading = move.saving,
+                enabled = !move.saving && state.selectionCount > 0,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DestinationRow(
+    label: String,
+    indent: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    ZillitButton(
+        text = "${"    ".repeat(indent)}$label",
+        onClick = onClick,
+        variant = if (selected) ButtonVariant.Secondary else ButtonVariant.Tertiary,
+        size = ButtonSize.Small,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** "1 folder", "3 folders", and nothing at all for none. */
+private fun String.plural(count: Int): String? = when (count) {
+    0 -> null
+    1 -> this
+    else -> this + "s"
+}
+
 @Composable
 private fun NewFolderDialog(
     visible: Boolean,
@@ -431,3 +558,5 @@ private const val DATE_COLUMN = 130
 private const val SIZE_COLUMN = 100
 private const val ACTIONS_COLUMN = 96
 private const val CHECK_COLUMN = 44
+
+private const val MOVE_LIST_HEIGHT = 280

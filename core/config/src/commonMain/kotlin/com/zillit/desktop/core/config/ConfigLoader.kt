@@ -50,6 +50,7 @@ object ConfigParser {
         val headerKey = headerKeyFrom(properties, prefix)
         val firebase = firebaseFrom(properties, prefix)
         val agoraAppId = properties[prefix + AGORA_APP_ID_SUFFIX]?.trim()?.takeIf { it.isNotEmpty() }
+        val weatherApiKey = properties[prefix + WEATHER_API_KEY_SUFFIX]?.trim()?.takeIf { it.isNotEmpty() }
 
         if (!services.containsKey(ZillitService.Core)) {
             return ZillitResult.Failure(
@@ -68,6 +69,7 @@ object ConfigParser {
             headerKey = headerKey,
             firebase = firebase,
             agoraAppId = agoraAppId,
+            weatherApiKey = weatherApiKey,
         ).validate()
     }
 
@@ -128,6 +130,9 @@ object ConfigParser {
      * split leaves the backslash in the value where it fails the TLS check.
      */
     fun parseProperties(raw: String): Map<String, String> = PropertiesParser.parse(raw)
+
+    /** `<ENV>_WEATHER_API_KEY` — the Weather tool's OpenWeatherMap key. */
+    private const val WEATHER_API_KEY_SUFFIX = "WEATHER_API_KEY"
 
     private const val AGORA_APP_ID_SUFFIX = "AGORA_APP_ID"
 }

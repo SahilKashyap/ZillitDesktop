@@ -134,6 +134,13 @@ import com.zillit.desktop.feature.settings.ui.SettingsUiState
 import com.zillit.desktop.feature.settings.ui.UnitContext
 import com.zillit.desktop.feature.settings.ui.UnitSelection
 import com.zillit.desktop.feature.settings.ui.SettingsViewModel
+import com.zillit.desktop.feature.castboard.ui.CASTING_BACKGROUND_PATH
+import com.zillit.desktop.feature.castboard.ui.CASTING_MAIN_PATH
+import com.zillit.desktop.feature.castboard.ui.CASTING_PATH
+import com.zillit.desktop.feature.castboard.ui.CastingViewModel
+import com.zillit.desktop.feature.castboard.domain.BoardTool
+import com.zillit.desktop.feature.castboard.ui.WARDROBE_BACKGROUND_PATH
+import com.zillit.desktop.feature.castboard.ui.WARDROBE_MAIN_PATH
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.home.ui.decodeImageBitmap
@@ -177,6 +184,7 @@ import com.zillit.desktop.feature.home.ui.HomeBoardContext
 import com.zillit.desktop.feature.cardexpenses.domain.CardViewer
 import com.zillit.desktop.feature.cardexpenses.ui.CardExpensesToolProvider
 import com.zillit.desktop.feature.cardexpenses.ui.CardExpensesViewModel
+import com.zillit.desktop.feature.cashexpenses.domain.AssigneeOption
 import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.ui.CashExpensesToolProvider
 import com.zillit.desktop.feature.cashexpenses.ui.CashExpensesViewModel
@@ -190,6 +198,10 @@ import com.zillit.desktop.feature.documentdistribution.ui.DocDistToolProvider
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.ui.AccountHubToolProvider
 import com.zillit.desktop.feature.accounthub.ui.AccountHubViewModel
+import com.zillit.desktop.feature.budget.ui.BudgetViewModel
+import com.zillit.desktop.feature.weather.ui.WeatherViewModel
+import com.zillit.desktop.feature.budget.ui.DEPARTMENT_BUDGET_PATH
+import com.zillit.desktop.feature.budget.ui.MAIN_BUDGET_PATH
 import com.zillit.desktop.feature.budgetbuilder.domain.BudgetBuilderViewer
 import com.zillit.desktop.feature.budgetbuilder.ui.BudgetBuilderToolProvider
 import com.zillit.desktop.feature.budgetbuilder.ui.BudgetBuilderViewModel
@@ -239,6 +251,8 @@ import com.zillit.desktop.feature.permissiongrid.ui.PermissionGridViewModel
 import com.zillit.desktop.feature.sides.data.SidesRepositoryImpl
 import com.zillit.desktop.feature.sides.domain.SidesViewer
 import com.zillit.desktop.feature.sides.ui.SidesToolProvider
+import com.zillit.desktop.feature.addashboard.ui.AdViewModel
+import com.zillit.desktop.feature.saportal.ui.SaPortalViewModel
 import com.zillit.desktop.feature.sides.ui.SidesViewModel
 import com.zillit.desktop.feature.formsignature.data.FormSignatureRepositoryImpl
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
@@ -1329,20 +1343,35 @@ private fun buildMailbox(ready: AppGraph.Ready): EmailViewModel {
  */
 private suspend fun pickChatAttachment(
     ready: AppGraph.Ready,
-): com.zillit.desktop.feature.chat.domain.PendingChatUpload? {
-    val picked = com.zillit.desktop.feature.email.data.FilePicker().pick().firstOrNull()
-        ?: return null
+): com.zillit.desktop.feature.chat.domain.ChatPick {
+    // Chat's own ceiling, not mail's 25 MB: both other clients carry files up
+    // to 70 MB, and a desktop that stops at 25 refuses what a phone sends.
+    var refusal: String? = null
+    val picked = com.zillit.desktop.feature.email.data.FilePicker(
+        maxBytes = com.zillit.desktop.feature.chat.domain.ChatComposerRules.MAX_ATTACHMENT_BYTES,
+        onRefused = { _, _ ->
+            refusal = com.zillit.desktop.feature.chat.domain.ChatComposerRules.ATTACHMENT_TOO_LARGE
+        },
+    ).pick().firstOrNull()
+
+    val reason = refusal
+    if (picked == null) {
+        return reason?.let { com.zillit.desktop.feature.chat.domain.ChatPick.Refused(it) }
+            ?: com.zillit.desktop.feature.chat.domain.ChatPick.Cancelled
+    }
 
     // The bytes ride along so the thread's preview dialog can show (and for a
     // picture, edit) the file before anything uploads; the upload then takes
     // the possibly edited bytes back.
-    return com.zillit.desktop.feature.chat.domain.PendingChatUpload(
-        name = picked.name,
-        contentType = picked.contentType,
-        bytes = picked.bytes,
-    ) { bytes, onProgress ->
-        uploadChatMedia(ready, picked.name, picked.contentType, bytes, onProgress)
-    }
+    return com.zillit.desktop.feature.chat.domain.ChatPick.Ready(
+        com.zillit.desktop.feature.chat.domain.PendingChatUpload(
+            name = picked.name,
+            contentType = picked.contentType,
+            bytes = picked.bytes,
+        ) { bytes, onProgress ->
+            uploadChatMedia(ready, picked.name, picked.contentType, bytes, onProgress)
+        },
+    )
 }
 
 /**
@@ -1351,7 +1380,7 @@ private suspend fun pickChatAttachment(
  * same shape mail and notices use. Serves both the picker's files and the
  * composer's pasted images (ChatViewModel's `uploadMedia` seam).
  */
-private suspend fun uploadChatMedia(
+internal suspend fun uploadChatMedia(
     ready: AppGraph.Ready,
     name: String,
     contentType: String,
@@ -1385,7 +1414,7 @@ private suspend fun uploadChatMedia(
 }
 
 /** Fetches a message's file to Downloads and hands it to the OS. */
-private fun openChatAttachment(ready: AppGraph.Ready, file: ChatAttachment) {
+internal fun openChatAttachment(ready: AppGraph.Ready, file: ChatAttachment) {
     openNoticeAttachment(ready, appAttachmentScope)(
         com.zillit.desktop.feature.home.domain.NoticeAttachment(
             media = file.media,
@@ -1685,6 +1714,25 @@ private suspend fun fetchChatImage(
  * switch, and so the tools built at startup are not fixed to whoever was open
  * then — see the view models' `viewer` parameter.
  */
+/**
+ * Who a cash batch may be handed to: the whole crew.
+ *
+ * Not filtered by department or designation — the web's picker is the crew
+ * list, and a senior taking an unassigned batch themselves is the ordinary
+ * case, so the viewer is not removed either. The only exclusion is the
+ * batch's current owner, which [BatchAssignment.eligible] applies.
+ */
+private fun AppGraph.Ready.cashAssignees(): List<AssigneeOption> {
+    val context = projectContext?.context?.value
+    return context?.users.orEmpty().map { user ->
+        AssigneeOption(
+            userId = user.userId,
+            fullName = user.fullName,
+            designation = user.designation.orEmpty(),
+        )
+    }
+}
+
 private fun AppGraph.Ready.cashViewer(): CashViewer {
     val context = projectContext?.context?.value
     val me = context?.user(context.profile?.userId)
@@ -1786,6 +1834,9 @@ private fun AppGraph.Ready.docDistViewer(permissions: ProjectPermissions): DocDi
         // The reply-to on everything this person sends. Blank is fine — the
         // server falls back to the production's own address.
         userEmail = context?.profile?.email.orEmpty(),
+        // Television productions make the episode number mandatory on the
+        // schedule and script publish destinations.
+        isTelevision = context?.project?.subType?.contains("television", ignoreCase = true) == true,
     )
 }
 
@@ -2002,6 +2053,16 @@ internal class AppViewModels(
     val continuity: ContinuityViewModel?,
     /** Cost Report: the crew-facing live worksheet and posted snapshots. */
     val costReport: CostReportViewModel?,
+    val saPortal: SaPortalViewModel?,
+    val adDashboard: AdViewModel?,
+    /** One screen for both budget tiles — see BudgetToolProvider. */
+    val budget: BudgetViewModel?,
+    /** The forecast where the unit is. */
+    val weather: WeatherViewModel?,
+    /** Characters and who is up for them — one board, both casting lists. */
+    val casting: CastingViewModel?,
+    /** The same board, for costumes. */
+    val wardrobe: CastingViewModel?,
     /** Invoices: accounts payable — the department view, and the accountant pages. */
     val invoices: InvoicesViewModel?,
     /** The three PDF distribution tools — one engine, three [DistributionTool]s. */
@@ -2165,7 +2226,11 @@ private fun rememberAppViewModels(
                 )
             },
             cashExpenses = ready?.let { graph ->
-                CashExpensesViewModel(graph.cashRepository) { graph.cashViewer() }
+                CashExpensesViewModel(
+                    repository = graph.cashRepository,
+                    viewer = { graph.cashViewer() },
+                    assignees = { graph.cashAssignees() },
+                )
             },
             cardExpenses = ready?.let { graph ->
                 CardExpensesViewModel(graph.cardRepository) { graph.cardViewer() }
@@ -2373,6 +2438,12 @@ private fun rememberAppViewModels(
             location = ready?.buildLocation(permissions),
             continuity = ready?.buildContinuity(permissions),
             costReport = ready?.buildCostReport(permissions),
+            saPortal = ready?.buildSaPortal(permissions),
+            adDashboard = ready?.buildAdDashboard(permissions),
+            budget = ready?.buildBudget(permissions, scope),
+            weather = ready?.buildWeather(permissions),
+            casting = ready?.buildCastBoard(BoardTool.Casting, permissions),
+            wardrobe = ready?.buildCastBoard(BoardTool.Wardrobe, permissions),
             invoices = ready?.buildInvoices(permissions, scope),
             draft = ready?.let { graph ->
                 graph.buildDraft(
@@ -2528,6 +2599,32 @@ private fun buildRegistry(
         (graph as? AppGraph.Ready)?.continuityProvider(vm, scope)
     }
     val costReport = viewModels.costReport?.let { vm -> (graph as? AppGraph.Ready)?.costReportProvider(vm) }
+    val saPortal = viewModels.saPortal?.let { vm -> saPortalProviders(vm) }.orEmpty()
+    val adDashboard = viewModels.adDashboard?.let { vm -> adDashboardProvider(vm) }
+    val weather = viewModels.weather?.let { vm -> (graph as? AppGraph.Ready)?.weatherProvider(vm) }
+    // Three casting tiles, one board: whichever tile is clicked, the lists
+    // this viewer's rights allow are what open.
+    val castingTools = viewModels.casting?.let { vm ->
+        (graph as? AppGraph.Ready)?.let { readyGraph ->
+            listOf(CASTING_PATH, CASTING_MAIN_PATH, CASTING_BACKGROUND_PATH)
+                .map { path -> readyGraph.castBoardProvider(vm, path) }
+        }
+    }.orEmpty()
+    // The same board again, for costumes: two tiles, two lists, one engine.
+    val wardrobeTools = viewModels.wardrobe?.let { vm ->
+        (graph as? AppGraph.Ready)?.let { readyGraph ->
+            listOf(WARDROBE_MAIN_PATH, WARDROBE_BACKGROUND_PATH)
+                .map { path -> readyGraph.castBoardProvider(vm, path) }
+        }
+    }.orEmpty()
+    // Both budget tiles open the same screen; which halves it shows is a
+    // question of rights, as on the web.
+    val mainBudget = viewModels.budget?.let { vm ->
+        (graph as? AppGraph.Ready)?.budgetProvider(vm, MAIN_BUDGET_PATH, scope)
+    }
+    val departmentBudget = viewModels.budget?.let { vm ->
+        (graph as? AppGraph.Ready)?.budgetProvider(vm, DEPARTMENT_BUDGET_PATH, scope)
+    }
     val invoices = viewModels.invoices?.let { invoicesProvider(it) }
     // Schedule Full & One Line, Script & Pages, Schedule D.O.D — the same
     // PDF-distribution engine at the web's three paths.
@@ -2680,9 +2777,61 @@ private fun buildRegistry(
         )
     }
     val help = HelpToolProvider(onOpenExternal = ::openInBrowser, onContactSupport = ::contactSupport)
-    val cash = viewModels.cashExpenses?.let { CashExpensesToolProvider(it) }
-    val cards = viewModels.cardExpenses?.let { CardExpensesToolProvider(it) }
-    val orders = viewModels.purchaseOrders?.let { PurchaseOrderToolProvider(it) }
+    val cash = viewModels.cashExpenses?.let { vm ->
+        CashExpensesToolProvider(
+            viewModel = vm,
+            // A claim's receipt goes through the same routed store the boards
+            // read: fetched to Downloads, then handed to the OS. The key is
+            // stored bare on some productions, so the bucket and region are
+            // left to the store's own defaults.
+            onOpenAttachment = { key ->
+                (graph as? AppGraph.Ready)?.let { ready ->
+                    openNoticeAttachment(ready, scope)(
+                        com.zillit.desktop.feature.home.domain.NoticeAttachment(
+                            media = key,
+                            fileName = key.substringAfterLast('/'),
+                        ),
+                    )
+                }
+            },
+        )
+    }
+    val cards = viewModels.cardExpenses?.let { vm ->
+        CardExpensesToolProvider(
+            viewModel = vm,
+            // Same routed store as the boards and the cash receipts: fetched
+            // to Downloads, then handed to the OS.
+            onOpenAttachment = { key ->
+                (graph as? AppGraph.Ready)?.let { ready ->
+                    openNoticeAttachment(ready, scope)(
+                        com.zillit.desktop.feature.home.domain.NoticeAttachment(
+                            media = key,
+                            fileName = key.substringAfterLast('/'),
+                        ),
+                    )
+                }
+            },
+        )
+    }
+    val orders = viewModels.purchaseOrders?.let { vm ->
+        PurchaseOrderToolProvider(
+            viewModel = vm,
+            // An order's paperwork goes through the same routed store the
+            // boards read: fetched to Downloads, then handed to the OS.
+            onOpenAttachment = { file ->
+                (graph as? AppGraph.Ready)?.let { ready ->
+                    openNoticeAttachment(ready, scope)(
+                        com.zillit.desktop.feature.home.domain.NoticeAttachment(
+                            media = file.media,
+                            fileName = file.displayName,
+                            bucket = file.bucket,
+                            region = file.region,
+                        ),
+                    )
+                }
+            },
+        )
+    }
     val timecards = viewModels.timecards?.let { TimecardToolProvider(it) }
     val payroll = viewModels.payroll?.let { PayrollToolProvider(it) }
     val deals = viewModels.dealMemos?.let { DealMemoToolProvider(it) }
@@ -2749,8 +2898,9 @@ private fun buildRegistry(
         catering, accounts,
         boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList,
         assetRegister, transport, location, continuity, costReport, invoices, draft,
+        mainBudget, departmentBudget, weather, adDashboard,
         scheduleDistribution, scriptDistribution, scheduleDod,
-    )
+    ) + castingTools + wardrobeTools + saPortal
     val realPaths = real.map { it.path }.toSet()
     return ToolRegistry(real + placeholderTools().filterNot { it.path in realPaths })
 }
@@ -2960,6 +3110,8 @@ private const val PERSONAL_PRODUCTION = "personal"
 private fun buildJoin(ready: AppGraph.Ready) = JoinProductionViewModel(
     projectRepository = ready.projectRepository,
     unitRepository = ready.unitRepository,
+    photoStore = ready.joinPhotoStore(),
+    choosePhoto = ::chooseJoinPhoto,
 )
 
 /**

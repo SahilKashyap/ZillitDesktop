@@ -110,7 +110,17 @@ interface ProjectRepository {
 
     suspend fun listProjects(): ZillitResult<List<Project>>
 
-    suspend fun findByCode(code: String): ZillitResult<Project>
+    /**
+     * Resolves a production code.
+     *
+     * `PUT user/join-project-as-user`, not the older `GET project/{code}` —
+     * that route now answers 404 (`route_not_found`, seen live 2026-08-26
+     * against dev), which is why Android moved off it and left the old call
+     * commented out beside its replacement. The new one also does more: a code
+     * can be a production's shared code or one issued to a particular person,
+     * and only the server can tell which. See [CodeLookup].
+     */
+    suspend fun findByCode(code: String): ZillitResult<CodeLookup>
 
     /**
      * Asks to join [projectId], sending the details a production needs.

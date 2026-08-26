@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.purchaseorder.domain
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -252,6 +253,22 @@ enum class PoRefresh { Orders, Vendors }
 
 /** Everything the purchase order tool asks the server for. */
 @Suppress("TooManyFunctions") // One suspend fun per server operation; see detekt.yml.
+/**
+ * A file attached to a purchase order — a quote, a signed copy, a delivery
+ * note. The wire keeps the storage key under `media` and the display name
+ * under `name`, and the two are not the same string.
+ */
+data class PoAttachment(
+    val id: String = "",
+    val media: String,
+    val name: String = "",
+    val contentType: String = "",
+    val bucket: String = "",
+    val region: String = "",
+) {
+    val displayName: String get() = name.ifBlank { media.substringAfterLast('/') }
+}
+
 interface PurchaseOrderRepository {
 
     /**
@@ -275,6 +292,30 @@ interface PurchaseOrderRepository {
     suspend fun order(id: String): ZillitResult<PurchaseOrder>
 
     suspend fun history(id: String): ZillitResult<List<PoHistoryEntry>>
+
+    /**
+     * The files on an order (`GET /v2/list/attachments/{id}`).
+     *
+     * The order list has always carried an attachment *count*, so the app has
+     * been telling people "3 attachments" while offering no way to reach one.
+     */
+    suspend fun attachments(id: String): ZillitResult<List<PoAttachment>> =
+        ZillitResult.Success(emptyList())
+
+    /** Adds files to an order (`PUT /v2/add/attachments/{id}`). */
+    suspend fun addAttachments(id: String, files: List<PoAttachment>): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("purchase-order attachments are not wired"))
+
+    /** Removes one (`DELETE /v2/delete/{attachmentId}/{orderId}`). */
+    suspend fun deleteAttachment(attachmentId: String, orderId: String): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("purchase-order attachments are not wired"))
+
+    /**
+     * Emails the order to its supplier (`POST /v2/send/{id}`) — the step that
+     * turns an approved order into one the supplier has actually seen.
+     */
+    suspend fun emailToSupplier(id: String): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("sending to a supplier is not wired"))
 
     suspend fun create(order: NewPurchaseOrder): ZillitResult<Unit>
 

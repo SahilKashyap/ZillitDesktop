@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.location.domain
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -47,6 +48,24 @@ interface LocationRepository {
 
     /** Asks the server for a PDF of the records; answers a stored file. */
     suspend fun pdf(ids: List<String>, includeDetails: Boolean): ZillitResult<MediaAttachment>
+
+    /**
+     * A record's discussion, newest first
+     * (`GET /v2/location/chat/{recordId}/{before}/previous`).
+     *
+     * The path parameter the web calls `unitId` is the *record's* own id, not
+     * a production unit's (`CastingChat.jsx:122-127`) — a name that has cost
+     * more than one reader an afternoon.
+     */
+    suspend fun messages(
+        recordId: String,
+        beforeMillis: Long,
+        page: Int = 0,
+    ): ZillitResult<List<LocationMessage>> = ZillitResult.Success(emptyList())
+
+    /** Posts one line to a record's discussion (`POST /v2/location/chat`). */
+    suspend fun sendMessage(recordId: String, body: String): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("the location discussion is not wired"))
 }
 
 /** Host seams: storage up and down, and the OS hand-off. */

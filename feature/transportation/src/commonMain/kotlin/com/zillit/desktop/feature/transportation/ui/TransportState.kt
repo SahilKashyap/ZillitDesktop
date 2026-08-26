@@ -5,6 +5,7 @@ import com.zillit.desktop.feature.transportation.domain.PermanentDraft
 import com.zillit.desktop.feature.transportation.domain.PermanentPassenger
 import com.zillit.desktop.feature.transportation.domain.PermanentStatus
 import com.zillit.desktop.feature.transportation.domain.PermanentTrip
+import com.zillit.desktop.feature.transportation.domain.LicenceRequest
 import com.zillit.desktop.feature.transportation.domain.TransportUser
 import com.zillit.desktop.feature.transportation.domain.TransportViewer
 import com.zillit.desktop.feature.transportation.domain.TripAction
@@ -158,7 +159,17 @@ data class TransportUiState(
     val error: String? = null,
     val section: TransportSection = TransportSection.Requests,
     val crew: List<TransportUser> = emptyList(),
+    /** Licence changes waiting on a decision — the coordinator's queue. */
+    val licenceRequests: List<LicenceRequest> = emptyList(),
     val driverDesignations: List<String> = emptyList(),
+    /**
+     * The coordinators — everyone holding the tool's posting right.
+     *
+     * They are excluded from the temporary-driver picker: a coordinator
+     * assigns trips, and making one a driver puts them on both sides of their
+     * own allocations. The web applies the same exclusion.
+     */
+    val coordinatorIds: List<String> = emptyList(),
     val vehicles: List<Vehicle> = emptyList(),
     val vehicleTypes: List<String> = emptyList(),
     val tripStatus: TripStatus = TripStatus.Pending,
@@ -180,6 +191,21 @@ data class TransportUiState(
     /** Everyone a coordinator can assign: accepted drivers, not themselves. */
     val drivers: List<TransportUser>
         get() = crew.filter { it.isAccepted && it.isDriver(driverDesignations) && it.userId != viewer.userId }
+
+    /**
+     * Who may be made a temporary driver.
+     *
+     * Accepted crew who are not already drivers and are not the viewer — and
+     * not a coordinator: a coordinator allocates the trips, so driving them
+     * puts one person on both sides of their own allocation. The web applies
+     * the same exclusion (`AssignNewDriver.jsx`).
+     */
+    fun temporaryDriverCandidates(): List<TransportUser> = crew.filter { user ->
+        user.isAccepted &&
+            !user.isDriver(driverDesignations) &&
+            user.userId != viewer.userId &&
+            user.userId !in coordinatorIds
+    }
 
     /** Passengers and CC candidates: accepted crew, not themselves. */
     val passengerCandidates: List<TransportUser>
@@ -257,6 +283,9 @@ sealed interface TransportEvent {
     data class ToggleTempDriver(val userId: String, val on: Boolean) : TransportEvent
     data class SetAvailability(val userId: String, val available: Boolean) : TransportEvent
     data class DocumentReminder(val userId: String, val type: String) : TransportEvent
+
+    /** Approve or reject a driver's licence change. */
+    data class DecideLicence(val requestId: String, val approved: Boolean) : TransportEvent
 
     // My assignments
     data class SelectMyTab(val status: TripStatus) : TransportEvent

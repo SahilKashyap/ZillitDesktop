@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.cardexpenses
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -133,6 +135,15 @@ class CardScreenRenderTest {
         selectedReceiptId = "receipt-1",
         selectedCardId = "card-1",
     )
+
+    /** The receipt queue with one selected receipt, carrying (or lacking) a document. */
+    private fun receiptQueueState(attachment: String?) =
+        state(CardDestination.ReceiptInbox).let { base ->
+            base.copy(
+                receipts = listOf(receipt().copy(attachmentKey = attachment)),
+                selectedReceiptId = "receipt-1",
+            )
+        }
 
     @Test
     fun `every accountant destination composes`() {
@@ -321,6 +332,56 @@ class CardScreenRenderTest {
             }
             onNodeWithText("LEFT TO SPLIT").assertExists()
             onNodeWithText("Does not add up").assertExists()
+        }
+    }
+
+    /**
+     * The receipt is what the figures are checked against.
+     *
+     * The effect and the host's handler shipped with this module, but nothing
+     * ever raised it — so the document was unreachable from the screen whose
+     * whole job is comparing it with a statement line.
+     */
+    @Test
+    fun `a receipt with a document offers to open it`() {
+        val withDoc = receiptQueueState(attachment = "receipts/r1.jpg")
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    CardExpensesScreen(state = withDoc, onEvent = {})
+                }
+            }
+            onNodeWithText("View receipt").assertExists()
+        }
+    }
+
+    @Test
+    fun `a pdf receipt is named as one`() {
+        val withPdf = receiptQueueState(attachment = "receipts/r1.PDF")
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    CardExpensesScreen(state = withPdf, onEvent = {})
+                }
+            }
+            onNodeWithText("Open receipt (PDF)").assertExists()
+        }
+    }
+
+    @Test
+    fun `a receipt still waiting for its document offers nothing to open`() {
+        val none = receiptQueueState(attachment = null)
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    CardExpensesScreen(state = none, onEvent = {})
+                }
+            }
+            onAllNodesWithText("View receipt").assertCountEquals(0)
+            onAllNodesWithText("Open receipt (PDF)").assertCountEquals(0)
         }
     }
 

@@ -5,6 +5,7 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.drive.domain.DriveAction
+import com.zillit.desktop.feature.drive.domain.DriveFileRequest
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveItemKind
 import com.zillit.desktop.feature.drive.domain.DrivePage
@@ -54,6 +55,7 @@ class DriveViewModel(
 
     private var loadJob: Job? = null
     private var started = false
+    private val details = DriveDetails(this)
 
     fun start() {
         if (started) return
@@ -230,25 +232,60 @@ class DriveViewModel(
             is DriveEvent.Download -> download(event.item)
             DriveEvent.DownloadSelection -> downloadSelection()
             is DriveEvent.ShareLink -> shareLink(event.item)
+
+            // -- file requests ---------------------------------------------
+
+            is DriveEvent.OpenFileRequests -> openFileRequests(event.folder)
+            DriveEvent.CloseFileRequests -> setState { copy(fileRequests = FileRequestState()) }
+            is DriveEvent.FileRequestTitle -> setState {
+                copy(fileRequests = fileRequests.copy(title = event.text))
+            }
+            is DriveEvent.FileRequestDescription -> setState {
+                copy(fileRequests = fileRequests.copy(description = event.text))
+            }
+            is DriveEvent.FileRequestExpiry -> setState {
+                copy(fileRequests = fileRequests.copy(expiryDays = event.days))
+            }
+            is DriveEvent.FileRequestRequireName -> setState {
+                copy(fileRequests = fileRequests.copy(requireName = event.on))
+            }
+            is DriveEvent.FileRequestRequireEmail -> setState {
+                copy(fileRequests = fileRequests.copy(requireEmail = event.on))
+            }
+            DriveEvent.SubmitFileRequest -> submitFileRequest()
+            is DriveEvent.CopyFileRequest -> sendEffect(
+                DriveEffect.CopyToClipboard(event.request.link, "Request link copied"),
+            )
+            is DriveEvent.RevokeFileRequest -> revokeFileRequest(event.request)
             is DriveEvent.OpenInEditor -> openEditor(event.item, event.editable)
 
             // -- details ---------------------------------------------------
 
-            is DriveEvent.ShowDetails -> showDetails(event.item)
+            is DriveEvent.ShowDetails -> details.show(event.item)
             is DriveEvent.CommentDraft -> setState {
                 copy(details = details.copy(commentDraft = event.text))
             }
 
-            DriveEvent.PostComment -> postComment()
+            DriveEvent.PostComment -> details.postComment()
             is DriveEvent.DeleteComment -> mutate(
                 { repository.deleteComment(event.commentId) },
                 "Comment deleted",
-            ) { currentState.details.item?.let(::reloadDetails) }
+            ) { details.reloadOpen() }
+
+            is DriveEvent.TagDraft -> details.tagDraft(event.text)
+
+            is DriveEvent.AssignTag -> details.assignTag(event.tagId)
+
+            is DriveEvent.RemoveTag -> details.removeTag(event.tagId)
+
+            DriveEvent.CreateAndAssignTag -> details.createAndAssignTag()
+
+            is DriveEvent.DownloadVersion -> downloadVersion(event.item, event.versionId)
 
             is DriveEvent.RestoreVersion -> mutate(
                 { repository.restoreVersion(event.fileId, event.versionId) },
                 "Version restored",
-            ) { currentState.details.item?.let(::reloadDetails) }
+            ) { details.reloadOpen() }
 
             is DriveEvent.UpdateAccess -> mutate(
                 { repository.updateAccess(event.ref, event.entries, event.applyToChildren) },
@@ -556,6 +593,26 @@ class DriveViewModel(
         }
     }
 
+    /**
+     * Downloads one earlier version of a file.
+     *
+     * Gated on the same download right as the current version — the web's
+     * ZL-18294 fix, which existed because an old version was reachable by
+     * someone who could not download the live one.
+     */
+    private fun downloadVersion(item: DriveItem, versionId: String) {
+        if (!currentState.viewer.may(DriveAction.Download, item)) {
+            sendEffect(DriveEffect.Failed("You do not have download rights for that file."))
+            return
+        }
+        launch {
+            when (val url = repository.versionDownloadUrl(item.id, versionId)) {
+                is ZillitResult.Success -> sendEffect(DriveEffect.OpenUrl(url.data))
+                is ZillitResult.Failure -> report(url.error)
+            }
+        }
+    }
+
     private fun downloadSelection() {
         val state = currentState
         val files = state.viewer
@@ -576,6 +633,64 @@ class DriveViewModel(
         }
     }
 
+    /**
+     * Opens the panel and reads what is already open on the folder.
+     *
+     * Gated on posting access: a reader may see a folder without being able
+     * to invite the world to write into it (the web gates its own button the
+     * same way, ZL-18294). The transforms live in [FileRequests].
+     */
+    private fun openFileRequests(folder: DriveItem) {
+        if (!currentState.viewer.canPost) {
+            sendEffect(DriveEffect.Failed("You do not have posting rights on this drive."))
+            return
+        }
+        setState { copy(fileRequests = FileRequests.opening(folder)) }
+        launch {
+            val rows = repository.fileRequests(folder.id)
+            setState {
+                copy(
+                    fileRequests = FileRequests.loaded(
+                        fileRequests,
+                        (rows as? ZillitResult.Success)?.data.orEmpty(),
+                    ),
+                )
+            }
+        }
+    }
+
+    /** Makes the request, then keeps its link on screen to be copied. */
+    private fun submitFileRequest() {
+        if (!currentState.fileRequests.canSubmit) return
+        val draft = FileRequests.draft(currentState.fileRequests) ?: return
+        setState { copy(fileRequests = fileRequests.copy(submitting = true)) }
+        launch {
+            when (val made = repository.createFileRequest(draft)) {
+                is ZillitResult.Success -> {
+                    setState { copy(fileRequests = FileRequests.created(fileRequests, made.data)) }
+                    sendEffect(DriveEffect.CopyToClipboard(made.data.link, "Request link copied"))
+                }
+
+                is ZillitResult.Failure -> {
+                    setState { copy(fileRequests = fileRequests.copy(submitting = false)) }
+                    report(made.error)
+                }
+            }
+        }
+    }
+
+    /** Closes one for good; the row stays, marked, so the reader sees what happened. */
+    private fun revokeFileRequest(request: DriveFileRequest) {
+        launch {
+            when (val answer = repository.revokeFileRequest(request.id)) {
+                is ZillitResult.Success ->
+                    setState { copy(fileRequests = FileRequests.revoked(fileRequests, request.id)) }
+
+                is ZillitResult.Failure -> report(answer.error)
+            }
+        }
+    }
+
     private fun shareLink(item: DriveItem) {
         if (!currentState.viewer.may(DriveAction.Share, item)) {
             sendEffect(DriveEffect.Failed("Only an owner can share this file."))
@@ -590,59 +705,6 @@ class DriveViewModel(
                 )
 
                 is ZillitResult.Failure -> report(link.error)
-            }
-        }
-    }
-
-    // -- details panel -----------------------------------------------------
-
-    private fun showDetails(item: DriveItem?) {
-        if (item == null) {
-            setState { copy(details = DetailsState()) }
-            return
-        }
-        setState { copy(details = DetailsState(item = item, loading = true)) }
-        reloadDetails(item)
-    }
-
-    private fun reloadDetails(item: DriveItem) {
-        launch {
-            // Folders have neither comments nor versions; asking for them is
-            // two guaranteed 404s every time a folder is inspected.
-            val comments = if (item.isFolder) null else repository.comments(item.id)
-            val versions = if (item.isFolder) null else repository.versions(item.id)
-            val activity = repository.activity(item.id)
-            val access = repository.access(DriveRef(item.id, item.kind))
-            setState {
-                copy(
-                    details = details.copy(
-                        loading = false,
-                        comments = comments?.getOrNull().orEmpty(),
-                        versions = versions?.getOrNull().orEmpty(),
-                        activity = activity.getOrNull().orEmpty(),
-                        access = access.getOrNull().orEmpty(),
-                    ),
-                )
-            }
-        }
-    }
-
-    private fun postComment() {
-        val details = currentState.details
-        val item = details.item ?: return
-        val text = details.commentDraft.trim()
-        if (text.isEmpty()) return
-        setState { copy(details = this.details.copy(commentDraft = "")) }
-        launch {
-            when (val result = repository.addComment(item.id, text)) {
-                is ZillitResult.Success -> reloadDetails(item)
-                is ZillitResult.Failure -> {
-                    // The draft goes back in the box rather than being lost —
-                    // retyping a paragraph because the network blinked is the
-                    // worst thing a comment field can do.
-                    setState { copy(details = this.details.copy(commentDraft = text)) }
-                    report(result.error)
-                }
             }
         }
     }
@@ -741,6 +803,20 @@ class DriveViewModel(
     private fun report(error: ZillitError) {
         sendEffect(DriveEffect.Failed(error.localised()))
     }
+
+    // -- seams for DriveDetails ---------------------------------------------
+
+    internal val repo: DriveRepository get() = repository
+
+    internal fun update(reducer: DriveUiState.() -> DriveUiState) = setState(reducer)
+
+    internal fun run(block: suspend () -> Unit) = launch { block() }
+
+    internal fun reportError(error: ZillitError) = report(error)
+
+    internal fun reportFailure(reason: String) = sendEffect(DriveEffect.Failed(reason))
+
+    internal suspend fun reloadTags() = primeTags()
 
     private companion object {
         var uploadCounter = 0

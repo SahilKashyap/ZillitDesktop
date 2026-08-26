@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.toEpochMillisOrNull
 import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
 import com.zillit.desktop.feature.drive.domain.DriveActivity
 import com.zillit.desktop.feature.drive.domain.DriveComment
+import com.zillit.desktop.feature.drive.domain.DriveFileRequest
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveItemKind
 import com.zillit.desktop.feature.drive.domain.DrivePage
@@ -25,6 +26,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonTransformingSerializer
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.longOrNull
+import kotlinx.datetime.Instant
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -576,3 +580,61 @@ private fun JsonPrimitive?.epochMillis(): Long? = this?.content.toEpochMillisOrN
 
 /** Matches `HttpClientFactory.json` — lenient about keys this client does not read. */
 private val driveWireJson = Json { ignoreUnknownKeys = true }
+
+/**
+ * A file request as the service sends it.
+ *
+ * The public address comes back under more than one name depending on the
+ * route (`url` from the create, `link` from the list), so both are read —
+ * a request with no address is one nobody can use.
+ */
+@Serializable
+internal data class FileRequestDto(
+    @SerialName("_id") val id: String? = null,
+    @SerialName("id") val altId: String? = null,
+    @SerialName("title") val title: String? = null,
+    @SerialName("destination_folder_id") val folderId: String? = null,
+    @SerialName("url") val url: String? = null,
+    @SerialName("link") val link: String? = null,
+    @SerialName("public_url") val publicUrl: String? = null,
+    /**
+     * Both stamps arrive as an ISO string on this route, but the drive's
+     * other routes send epoch millis — read either rather than assume.
+     */
+    @SerialName("expires_at") val expiresAt: JsonPrimitive? = null,
+    @SerialName("created_at") val createdAt: JsonPrimitive? = null,
+    @SerialName("upload_count") val uploadCount: Int? = null,
+    @SerialName("revoked") val revoked: Boolean? = null,
+) {
+    fun toDomain(): DriveFileRequest? {
+        val identifier = id?.takeIf { it.isNotBlank() } ?: altId?.takeIf { it.isNotBlank() } ?: return null
+        return DriveFileRequest(
+            id = identifier,
+            title = title.orEmpty().ifBlank { "File request" },
+            destinationFolderId = folderId.orEmpty(),
+            link = listOfNotNull(url, link, publicUrl).firstOrNull { it.isNotBlank() }.orEmpty(),
+            expiresAtMillis = expiresAt.stamp(),
+            createdAtMillis = createdAt.stamp(),
+            uploadCount = uploadCount ?: 0,
+            revoked = revoked == true,
+        )
+    }
+}
+
+/**
+ * Epoch millis from a number, a numeric string, or an ISO instant.
+ *
+ * The web only ever *sends* `expires_in_ms` and never renders what comes
+ * back, so the response format is unattested — and the shared
+ * `toEpochMillisOrNull` reads numbers only, which would turn an ISO stamp
+ * into a silent zero. Both are accepted, as the invoices and cost-report
+ * wires do.
+ */
+private fun JsonPrimitive?.stamp(): Long {
+    val text = this?.contentOrNull?.trim().orEmpty()
+    if (text.isEmpty()) return 0
+    return this?.longOrNull
+        ?: text.toEpochMillisOrNull()
+        ?: runCatching { Instant.parse(text).toEpochMilliseconds() }.getOrNull()
+        ?: 0
+}

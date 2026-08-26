@@ -1,9 +1,11 @@
 package com.zillit.desktop.feature.drive.ui.pages
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,7 +13,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -33,6 +37,7 @@ import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
 import com.zillit.desktop.feature.drive.domain.DriveAction
 import com.zillit.desktop.feature.drive.domain.DriveComment
 import com.zillit.desktop.feature.drive.domain.DriveItem
+import com.zillit.desktop.feature.drive.domain.DriveTag
 import com.zillit.desktop.feature.drive.domain.DriveVersion
 import com.zillit.desktop.feature.drive.domain.DriveViewer
 import com.zillit.desktop.feature.drive.domain.formatBytes
@@ -71,6 +76,8 @@ fun DetailsPanel(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
         ZillitDivider()
 
         DetailsAccess(state.details.access)
+
+        DetailsTags(state.details, state.tags, state.viewer, onEvent)
 
         DetailsVersions(item, state.details.versions, state.viewer, onEvent)
         DetailsComments(item, state.details, onEvent)
@@ -123,6 +130,17 @@ private fun DetailsActions(
                 onClick = { onEvent(DriveEvent.ShareLink(item)) },
                 variant = ButtonVariant.Tertiary,
                 size = ButtonSize.Small,
+            )
+        }
+        // A folder is the only thing files can be sent *into*, so this is the
+        // one place the ask makes sense.
+        if (item.isFolder && viewer.canPost) {
+            ZillitButton(
+                text = "Request files",
+                onClick = { onEvent(DriveEvent.OpenFileRequests(item)) },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Upload,
             )
         }
         if (item.isEditableDocument) {
@@ -185,6 +203,128 @@ private fun ColumnScope.DetailsAccess(access: List<DriveAccessEntry>) {
     }
 }
 
+/**
+ * The item's tags, and the two ways to add one.
+ *
+ * The browse list already filters by tag; without this section those filters
+ * only ever matched tags applied on another client, which is a filter that
+ * quietly does nothing on a production that lives on desktop.
+ *
+ * Read-only viewers see the tags but no controls — tagging is a posting
+ * action on the drive tool, the same gate the web applies.
+ */
+@Composable
+private fun ColumnScope.DetailsTags(
+    details: DetailsState,
+    all: List<DriveTag>,
+    viewer: DriveViewer,
+    onEvent: (DriveEvent) -> Unit,
+) {
+    ZillitDivider()
+    ZillitSectionLabel("Tags")
+
+    val mayTag = viewer.canCreate
+    if (details.tags.isEmpty()) {
+        ZillitText(
+            text = if (mayTag) "No tags yet." else "No tags.",
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textSecondary,
+        )
+    } else {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        ) {
+            details.tags.forEach { tag ->
+                AppliedTagChip(
+                    tag = tag,
+                    onRemove = { onEvent(DriveEvent.RemoveTag(tag.id)) }.takeIf {
+                        mayTag && !details.tagsBusy
+                    },
+                )
+            }
+        }
+    }
+
+    if (!mayTag) return
+    TagControls(details, details.unapplied(all), onEvent)
+}
+
+/** The two ways to add a tag: pick one the production already has, or coin one. */
+@Composable
+private fun ColumnScope.TagControls(
+    details: DetailsState,
+    available: List<DriveTag>,
+    onEvent: (DriveEvent) -> Unit,
+) {
+    if (available.isNotEmpty()) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        ) {
+            available.forEach { tag ->
+                ZillitButton(
+                    text = "+ ${tag.name}",
+                    onClick = { onEvent(DriveEvent.AssignTag(tag.id)) },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                    enabled = !details.tagsBusy,
+                )
+            }
+        }
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitTextField(
+            value = details.tagDraft,
+            onValueChange = { onEvent(DriveEvent.TagDraft(it)) },
+            placeholder = "New tag",
+            onImeAction = { onEvent(DriveEvent.CreateAndAssignTag) },
+            imeAction = ImeAction.Done,
+            modifier = Modifier.weight(1f),
+        )
+        ZillitButton(
+            text = "Add",
+            onClick = { onEvent(DriveEvent.CreateAndAssignTag) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            enabled = details.tagDraft.isNotBlank() && !details.tagsBusy,
+        )
+    }
+}
+
+/** One applied tag. The remove control is absent, not disabled, for a reader. */
+@Composable
+private fun AppliedTagChip(tag: DriveTag, onRemove: (() -> Unit)?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        modifier = Modifier
+            .clip(ZillitTheme.shapes.pill)
+            .background(ZillitTheme.colors.surfaceRaised)
+            .padding(
+                start = ZillitTheme.spacing.xs,
+                end = if (onRemove == null) ZillitTheme.spacing.xs else ZillitTheme.spacing.xxs,
+                top = ZillitTheme.spacing.xxs,
+                bottom = ZillitTheme.spacing.xxs,
+            ),
+    ) {
+        ZillitText(text = "#${tag.name}", style = ZillitTheme.typography.bodySmall)
+        if (onRemove != null) {
+            ZillitIconButton(
+                icon = ZillitIcons.Close,
+                contentDescription = "Remove tag ${tag.name}",
+                onClick = onRemove,
+                size = TAG_REMOVE,
+            )
+        }
+    }
+}
+
 @Composable
 private fun ColumnScope.DetailsVersions(
     item: DriveItem,
@@ -209,6 +349,14 @@ private fun ColumnScope.DetailsVersions(
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                     maxLines = 1,
+                )
+            }
+            if (viewer.may(DriveAction.Download, item)) {
+                ZillitButton(
+                    text = "Download",
+                    onClick = { onEvent(DriveEvent.DownloadVersion(item, version.id)) },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
                 )
             }
             if (viewer.may(DriveAction.Edit, item)) {
@@ -308,3 +456,5 @@ private fun DetailRow(label: String, value: String) {
 }
 
 private const val ACTIVITY_PREVIEW = 8
+
+private val TAG_REMOVE = 18.dp

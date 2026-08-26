@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.purchaseorder.ui
 
+import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -19,6 +20,11 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 /** Purchase Orders as a workspace window. */
 class PurchaseOrderToolProvider(
     private val viewModel: PurchaseOrderViewModel,
+    /**
+     * Fetches one of an order's files from storage and hands it to the OS.
+     * Defaulted to nothing so a host without a downloader still composes.
+     */
+    private val onOpenAttachment: (PoAttachment) -> Unit = {},
 ) : ToolProvider {
 
     override val path: String = PURCHASE_ORDER_PATH
@@ -38,6 +44,10 @@ class PurchaseOrderToolProvider(
             viewModel.effects.collect { effect ->
                 when (effect) {
                     is PoEffect.Failed -> failure = effect.message
+                    // The file lives in the production's storage; fetching and
+                    // handing it to the OS is the host's business, not this
+                    // module's.
+                    is PoEffect.OpenAttachment -> onOpenAttachment(effect.attachment)
                 }
             }
         }

@@ -47,7 +47,14 @@ val PO_ORDER_SYNC_EVENTS: List<SocketEventName> = listOf(
     SocketEventName("purchase-order:reinit"),
     SocketEventName("purchase-order:user:approval:added"),
     SocketEventName("purchase-order:user:approval:removed"),
+    // Both spellings are bridged on the web (`listenerSocket.js:1379/1383`)
+    // and both aliases are consumed by two components each — the backend's
+    // choice is not settled, so subscribe to the pair.
     SocketEventName("purchase-order:approval-level:delete"),
+    SocketEventName("purchase-order:approval-level:removed"),
+    // Named for the supplier but it is the *order* that changed: sending one
+    // moves it out of the draft list (`listofAccountandemail.jsx:60`).
+    SocketEventName("purchase-order:supplier:sent"),
     // The company/PO-settings edit (`purchaseorder_companyedit` on the web,
     // CompanyIndex.jsx:91) — order headers carry company details, so the list
     // is refetched rather than left showing the old letterhead.

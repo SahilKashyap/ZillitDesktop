@@ -4,6 +4,8 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.feature.cashexpenses.domain.AssigneeOption
+import com.zillit.desktop.feature.cashexpenses.domain.BatchAssignment
 import com.zillit.desktop.feature.cashexpenses.domain.CashQueue
 import com.zillit.desktop.feature.cashexpenses.domain.CashRepository
 import com.zillit.desktop.feature.cashexpenses.domain.CashSettings
@@ -51,6 +53,14 @@ class CashExpensesViewModel(
      * "not an accountant" for the life of the process.
      */
     private val viewer: () -> CashViewer,
+    /**
+     * Who a batch may be handed to.
+     *
+     * A host seam rather than a repository call: the crew list belongs to the
+     * open production, not to this service, and every other module that picks
+     * a person reads it the same way.
+     */
+    private val assignees: () -> List<AssigneeOption> = { emptyList() },
 ) : ZillitViewModel<CashUiState, CashEvent, CashEffect>(
     CashUiState(
         viewer = viewer(),
@@ -91,6 +101,9 @@ class CashExpensesViewModel(
                     copy(viewer = identity, destination = CashDestination.landing(identity, pipeline))
                 }
             }
+            // Read here rather than at construction: the crew belongs to the
+            // open production, which does not exist when this is built.
+            setState { copy(assignees = assignees()) }
             load(currentState.destination)
         }
     }
@@ -105,6 +118,21 @@ class CashExpensesViewModel(
     override fun onEvent(event: CashEvent) {
         when (event) {
             CashEvent.Refresh -> load(currentState.destination)
+
+            // The effect and the host's handler have been wired since this
+            // module shipped; nothing ever raised it, so a reviewer could
+            // read a claim's figures but never look at what they came from.
+            is CashEvent.ViewReceipt -> sendEffect(CashEffect.OpenAttachment(event.receiptUrl))
+
+            is CashEvent.AssignPickUser -> setState {
+                val open = prompt as? CashPrompt.Assign ?: return@setState this
+                copy(prompt = open.copy(selectedUserId = event.userId))
+            }
+
+            is CashEvent.AssignReason -> setState {
+                val open = prompt as? CashPrompt.Assign ?: return@setState this
+                copy(prompt = open.copy(reason = event.text))
+            }
 
             is CashEvent.Open -> {
                 setState {
@@ -518,6 +546,8 @@ class CashExpensesViewModel(
         when (prompt) {
             is CashPrompt.Confirm -> resolveConfirm(prompt)
 
+            is CashPrompt.Assign -> resolveAssign(prompt)
+
             is CashPrompt.WithReason -> {
                 val reason = prompt.reason.trim()
                 if (reason.isEmpty()) {
@@ -563,6 +593,40 @@ class CashExpensesViewModel(
                         repository.createReconciliation(amount, prompt.note.takeIf(String::isNotBlank))
                             .toUnit()
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * The batch stays where it is afterwards — only its owner moved — so the
+     * row is patched in place rather than the queue being reloaded out from
+     * under whoever is reading it.
+     */
+    private fun resolveAssign(prompt: CashPrompt.Assign) {
+        val batch = currentState.queueBatches.firstOrNull { it.id == prompt.batchId }
+        if (!BatchAssignment.canSubmit(batch, prompt.selectedUserId, prompt.reason)) {
+            sendEffect(CashEffect.Failed("Choose someone, and say why on a reassignment."))
+            setState { copy(prompt = prompt) }
+            return
+        }
+        val reason = BatchAssignment.reasonFor(batch, prompt.reason)
+        launch {
+            when (val result = repository.assignBatch(prompt.batchId, prompt.selectedUserId, reason)) {
+                is ZillitResult.Success -> setState {
+                    copy(
+                        queueBatches = BatchAssignment.applied(
+                            queueBatches,
+                            prompt.batchId,
+                            prompt.selectedUserId,
+                        ),
+                        notice = "${prompt.label}ed",
+                    )
+                }
+
+                is ZillitResult.Failure -> {
+                    sendEffect(CashEffect.Failed(result.error.localised()))
+                    setState { copy(prompt = prompt) }
                 }
             }
         }

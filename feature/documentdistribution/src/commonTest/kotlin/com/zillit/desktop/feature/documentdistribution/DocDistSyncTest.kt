@@ -17,6 +17,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.LibraryPage
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryQuery
 import com.zillit.desktop.feature.documentdistribution.domain.NewDistribution
 import com.zillit.desktop.feature.documentdistribution.domain.PublicationCategory
+import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
 import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistDestination
@@ -121,7 +122,7 @@ class DocDistSyncTest {
             ZillitResult.Success(emptyList<PublicationCategory>())
         override suspend fun publishedFiles(category: String) =
             ZillitResult.Success(emptyList<PublishedFile>())
-        override suspend fun publish(category: String, documentIds: List<String>, replaceChatIds: List<String>) =
+        override suspend fun publish(category: String, draft: PublishDraft) =
             ZillitResult.Success(Unit)
     }
 

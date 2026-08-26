@@ -25,6 +25,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.formsignature.ui.pages.DetailPage
 import com.zillit.desktop.feature.formsignature.ui.pages.DocumentsPage
 import com.zillit.desktop.feature.formsignature.ui.pages.HistoryDialog
+import com.zillit.desktop.feature.formsignature.ui.pages.SignerEditorDialog
 import com.zillit.desktop.feature.formsignature.ui.pages.SendDialog
 import com.zillit.desktop.feature.formsignature.ui.pages.SignaturesPage
 import com.zillit.desktop.feature.formsignature.ui.pages.StandardFormsPage
@@ -67,6 +68,7 @@ fun FormSignatureScreen(state: FormSignatureUiState, onEvent: (FormSignatureEven
     SendDialog(state, onEvent)
     UploadFormDialog(state, onEvent)
     HistoryDialog(state, onEvent)
+    SignerEditorDialog(state, onEvent)
 }
 
 @Composable

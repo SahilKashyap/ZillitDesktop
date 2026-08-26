@@ -30,6 +30,8 @@ import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.ChatVoice
 import com.zillit.desktop.feature.chat.domain.GroupRoom
+import com.zillit.desktop.feature.chat.domain.ChatComposerRules
+import com.zillit.desktop.feature.chat.domain.ChatPick
 import com.zillit.desktop.feature.chat.domain.PendingChatUpload
 import com.zillit.desktop.feature.chat.domain.liveChatUnread
 import com.zillit.desktop.feature.chat.domain.sortedRecents
@@ -200,7 +202,7 @@ class ChatViewModel(
     private val nowMillis: () -> Long,
     private val newUniqueId: () -> String,
     /** Opens the OS picker; the upload itself runs after the preview's Send. */
-    private val pickAttachment: suspend () -> PendingChatUpload? = { null },
+    private val pickAttachment: suspend () -> ChatPick = { ChatPick.Cancelled },
     /**
      * The host's routed uploader for bytes that never saw the picker — a
      * pasted image. The picker's own files carry their uploader inside
@@ -685,6 +687,12 @@ class ChatViewModel(
         val typed = currentState.draft.trim()
         val body = bodyOverride
             ?: typed.ifEmpty { if (attachment == null) return else "" }
+        // Every send funnels through here — typed line, file caption, shared
+        // place — so the web's 2000-character ceiling is stated once.
+        if (ChatComposerRules.bodyTooLong(body)) {
+            setState { copy(error = ChatComposerRules.BODY_TOO_LONG) }
+            return
+        }
         val reply = currentState.replyTo?.asReplyRef()
         val optimistic = appendOptimistic(peer, body, attachment, reply, location)
         setState { copy(draft = "", replyTo = null) }
@@ -697,25 +705,24 @@ class ChatViewModel(
         val support = offline
         if (support != null && support.isOffline && attachment == null) {
             launch { queue(support, peer.userId, body, optimistic, isGroup, location) }
-            return
+        } else {
+            launchResult(
+                block = {
+                    sendOnWire(peer.userId, body, optimistic, isGroup, attachment, reply, location)
+                },
+                onSuccess = { setSendState(optimistic.uniqueId, ChatSendState.Sent) },
+                onError = { error ->
+                    // The message never left this machine (socket down, no
+                    // network): keep it and send it later rather than fail it.
+                    if (support != null && attachment == null && error is ZillitError.NoConnection) {
+                        launch { queue(support, peer.userId, body, optimistic, isGroup, location) }
+                    } else {
+                        setSendState(optimistic.uniqueId, ChatSendState.Failed)
+                        setState { copy(error = error.localised()) }
+                    }
+                },
+            )
         }
-
-        launchResult(
-            block = {
-                sendOnWire(peer.userId, body, optimistic, isGroup, attachment, reply, location)
-            },
-            onSuccess = { setSendState(optimistic.uniqueId, ChatSendState.Sent) },
-            onError = { error ->
-                // The message never left this machine (socket down, no
-                // network): keep it and send it later rather than fail it.
-                if (support != null && attachment == null && error is ZillitError.NoConnection) {
-                    launch { queue(support, peer.userId, body, optimistic, isGroup, location) }
-                } else {
-                    setSendState(optimistic.uniqueId, ChatSendState.Failed)
-                    setState { copy(error = error.localised()) }
-                }
-            },
-        )
     }
 
     /**
@@ -895,7 +902,24 @@ class ChatViewModel(
     /** The paperclip: the pick goes to the preview, not straight to the wire. */
     private suspend fun pickForPreview() {
         if (currentState.peer == null) return
-        val pending = pickAttachment() ?: return
+        val pending = when (val pick = pickAttachment()) {
+            is ChatPick.Cancelled -> return
+            // The picker weighed the file without reading it, as the web
+            // weighs a File before uploading; its reason is the user's.
+            is ChatPick.Refused -> {
+                setState { copy(error = pick.reason) }
+                return
+            }
+
+            is ChatPick.Ready -> pick.upload
+        }
+        // What the picker's own scales could not judge: an executable is
+        // refused by name, whatever its size (`ChatFooterCnc.jsx:604-609`).
+        val refusal = ChatComposerRules.refuse(pending.name, pending.bytes.size.toLong())
+        if (refusal != null) {
+            setState { copy(error = refusal) }
+            return
+        }
         ZillitLog.d(TAG) { "picked ${pending.name} for preview" }
         setState { copy(pendingPreview = pending) }
     }
@@ -903,6 +927,12 @@ class ChatViewModel(
     /** A pasted picture takes the picker's road, with the host uploader behind it. */
     private fun imagePasted(event: ChatEvent.ImagePasted) {
         if (currentState.peer == null) return
+        // The clipboard can hold a bigger picture than any picker would pass.
+        val refusal = ChatComposerRules.refuse(event.name, event.bytes.size.toLong())
+        if (refusal != null) {
+            setState { copy(error = refusal) }
+            return
+        }
         val pending = PendingChatUpload(event.name, event.contentType, event.bytes) { bytes, onProgress ->
             uploadMedia(event.name, event.contentType, bytes, onProgress)
         }
@@ -918,6 +948,12 @@ class ChatViewModel(
     private fun sendMedia(result: PreviewResult, caption: String) {
         val peer = currentState.peer ?: return
         val pending = currentState.pendingPreview ?: return
+        // A caption is a body like any other; refuse it before the optimistic
+        // bubble appears, since this path never reaches the guard in send().
+        if (ChatComposerRules.bodyTooLong(caption.trim())) {
+            setState { copy(error = ChatComposerRules.BODY_TOO_LONG) }
+            return
+        }
         setState { copy(pendingPreview = null) }
         val placeholder = ChatAttachment(media = "", name = result.name, contentType = result.contentType)
         val optimistic = appendOptimistic(peer, body = caption.trim(), attachment = placeholder)
@@ -1270,6 +1306,25 @@ class ChatViewModel(
      * "synced" means to someone looking at the list rather than a thread.
      * Only the open thread also appends the bubble.
      */
+    /**
+     * The second tick, for a message that arrived with no thread on screen.
+     *
+     * Nobody has read it, but it did reach this computer, and the sender is
+     * owed that. Only for a message still on rung 1: the web gates the same
+     * emit on `status === 1` to stop a flood of acks for messages already
+     * delivered or read (`CNC_CHATLIST_SORT_BACKEND_REVIEW.md` §6.2).
+     *
+     * An open thread is deliberately excluded by the caller — the read emit
+     * there is the stronger claim, and racing a 2 behind a 3 would walk the
+     * sender's ticks backwards.
+     */
+    private fun ackDelivered(message: ChatMessage) {
+        if (message.isMine || message.sendState != ChatSendState.Sent) return
+        val conversation = if (message.isGroup) message.receiverId else message.senderId
+        if (conversation.isBlank()) return
+        launch { repository.markDelivered(conversation, message.id, message.isGroup) }
+    }
+
     private fun arrived(message: ChatMessage) {
         // The server's echo of our own media send is the ack the store waits
         // for — the retry loop must not send a file the thread already shows.
@@ -1293,6 +1348,8 @@ class ChatViewModel(
                 applySplit(sectionBadges())
             }
         }
+
+        if (!isOpen) ackDelivered(message)
 
         // The arrival itself is the newest word on its thread — learned here
         // rather than trusted to the cache, so a row lifts on the message

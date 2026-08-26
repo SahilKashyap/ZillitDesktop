@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.drive
 
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.feature.drive.data.DRIVE_SYNC_EVENTS
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
 import com.zillit.desktop.feature.drive.domain.DriveActivity
@@ -33,6 +34,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * A drive delete pulse refetches the open destination once — the web's
@@ -95,6 +97,7 @@ class DriveSyncTest {
         override suspend fun tags() = ZillitResult.Success(emptyList<DriveTag>())
         override suspend fun createTag(name: String, color: String) = ok()
         override suspend fun deleteTag(tagId: String) = ok()
+        override suspend fun itemTags(ref: DriveRef) = ZillitResult.Success(emptyList<DriveTag>())
         override suspend fun assignTag(tagId: String, ref: DriveRef) = ok()
         override suspend fun removeTag(tagId: String, ref: DriveRef) = ok()
         override suspend fun versions(fileId: String) = ZillitResult.Success(emptyList<DriveVersion>())
@@ -103,6 +106,50 @@ class DriveSyncTest {
 
         private fun ok() = ZillitResult.Success(Unit)
         private fun <T> unused(): ZillitResult<T> = ZillitResult.Failure(ZillitError.Unknown("unused"))
+    }
+
+    // -- which wire events are subscribed ----------------------------------
+
+    /**
+     * The list the browse view reloads on.
+     *
+     * The names are the wire's, not the underscore aliases the web's
+     * components listen to — those are re-emits and exist only inside
+     * `listenerSocket.js`. Getting one wrong is silent: the subscription
+     * simply never fires and the list quietly goes stale.
+     */
+    @Test
+    fun `the browse list reloads on every change another client can announce`() {
+        val names = DRIVE_SYNC_EVENTS.map { it.value }
+
+        assertTrue("drive:file:added" in names, "a colleague's upload must appear")
+        assertTrue("drive:folder:created" in names)
+        assertTrue("drive:file:updated" in names && "drive:folder:updated" in names)
+        assertTrue("drive:folder:moved" in names)
+        assertTrue("drive:file:deleted" in names && "drive:folder:deleted" in names)
+        assertTrue("drive:bulk:deleted" in names)
+    }
+
+    /**
+     * Sharing updates a badge on the web rather than reloading, and comments
+     * belong to the open details panel — reloading the whole list for either
+     * would throw a reader back to the top of the folder.
+     */
+    @Test
+    fun `sharing and comments do not reload the list`() {
+        val names = DRIVE_SYNC_EVENTS.map { it.value }
+
+        assertTrue(names.none { it.endsWith(":shared") })
+        assertTrue(names.none { it.startsWith("drive:comment") })
+    }
+
+    @Test
+    fun `every subscribed name is a drive event, spelt in wire form`() {
+        val names = DRIVE_SYNC_EVENTS.map { it.value }
+
+        assertEquals(names.size, names.toSet().size, "no duplicate subscriptions")
+        assertTrue(names.all { it.startsWith("drive:") }, "no underscore aliases")
+        assertTrue(names.none { it.contains('_') })
     }
 
     @Test

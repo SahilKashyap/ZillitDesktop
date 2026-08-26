@@ -46,6 +46,17 @@ data class AppConfig(
      * channel token is the credential), but kept out of logs like every key.
      */
     val agoraAppId: String? = null,
+    /**
+     * The OpenWeatherMap key behind the Weather tool.
+     *
+     * A real credential on someone's billable account, so it lives in the
+     * config file like every other secret here rather than in source — the
+     * Android client ships it hard-coded in `WeatherVM.kt:33`, which puts it
+     * in every extractable APK; this app does not copy that.
+     *
+     * Null simply switches the tool's forecast off, with the screen saying so.
+     */
+    val weatherApiKey: String? = null,
 ) {
 
     /**
@@ -59,6 +70,7 @@ data class AppConfig(
             "realtime=${realtime.size}, featureFlags=$featureFlags, " +
             "headerKey=${if (headerKey == null) "absent" else "present"}, " +
             "firebase=${if (firebase == null) "absent" else "present"}, " +
+            "weatherApiKey=${if (weatherApiKey == null) "absent" else "present"}, " +
             "agora=${if (agoraAppId == null) "absent" else "present"})"
 
     /**

@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.auth
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.auth.domain.CodeLookup
 import com.zillit.desktop.feature.auth.domain.AuthRepository
 import com.zillit.desktop.feature.auth.domain.AuthSession
 import com.zillit.desktop.feature.auth.domain.Department
@@ -72,7 +73,7 @@ class SessionResumeTest {
     private class FakeProjects : ProjectRepository {
         private val only = Project("p1", "Only", "P1", null, null)
         override suspend fun listProjects() = ZillitResult.Success(listOf(only, only.copy(id = "p2")))
-        override suspend fun findByCode(code: String) = ZillitResult.Success(only)
+        override suspend fun findByCode(code: String) = ZillitResult.Success(CodeLookup.NeedsDetails(only))
         override suspend fun create(
             draft: NewProductionDraft,
             selectedType: ProductionType?,

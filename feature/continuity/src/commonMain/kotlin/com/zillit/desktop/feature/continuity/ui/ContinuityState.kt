@@ -96,6 +96,9 @@ sealed interface ContinuityEvent {
     data class ToggleSelect(val id: String) : ContinuityEvent
     data object ForwardSelected : ContinuityEvent
     data object ConfirmForward : ContinuityEvent
+
+    /** Moves the selected scenes into the file cabinet. */
+    data object ArchiveSelected : ContinuityEvent
     data object CancelForward : ContinuityEvent
 
     data class RequestDelete(val scene: ContinuityScene) : ContinuityEvent

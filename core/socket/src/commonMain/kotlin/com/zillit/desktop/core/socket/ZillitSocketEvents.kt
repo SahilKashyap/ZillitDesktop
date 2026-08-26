@@ -83,9 +83,24 @@ object ZillitSocketEvents {
         val UnitUpdated = SocketEventName("home:unit:update")
         val UnitDeleted = SocketEventName("home:unit:delete")
 
+        /**
+         * A comment on a notice.
+         *
+         * The payload carries the comment, not the notice it hangs off, so
+         * these reload the board rather than patching a post in place — the
+         * same coarse handling every other board applies to them
+         * (`BoardRealtimeEvents.chatBoard`). Home was the one board without
+         * them, so a comment appeared live on an Info notice and silently on
+         * a Home one.
+         */
+        val CommentAdded = SocketEventName("home:message:comment:added")
+        val CommentEdited = SocketEventName("home:message:comment:edited")
+        val CommentDeleted = SocketEventName("home:message:comment:deleted")
+
         val Messages = listOf(MessageAdded, MessageEdited, MessageDeleted, MessagesDeleted)
+        val Comments = listOf(CommentAdded, CommentEdited, CommentDeleted)
         val Units = listOf(UnitCreated, UnitUpdated, UnitDeleted)
-        val All = Messages + Units
+        val All = Messages + Comments + Units
     }
 
     object Session {

@@ -203,6 +203,9 @@ sealed interface CardEvent {
     data class UpdateBsCode(val cardId: String, val code: String) : CardEvent
     data class ImportStatement(val attachmentKey: String) : CardEvent
 
+    /** Opens a receipt's stored image or PDF through the host's file layer. */
+    data class ViewReceipt(val attachmentKey: String) : CardEvent
+
     data class EditSettings(val settings: CardSettings) : CardEvent
     data object SaveSettings : CardEvent
 
@@ -361,6 +364,11 @@ class CardExpensesViewModel(
             is CardEvent.UpdateBsCode -> act("Control code updated") {
                 repository.updateBsControlCode(event.cardId, event.code)
             }
+
+            // The effect and the host's handler shipped with this module;
+            // nothing raised it, so an accountant could read a receipt's
+            // figures but never look at the receipt.
+            is CardEvent.ViewReceipt -> sendEffect(CardEffect.OpenAttachment(event.attachmentKey))
 
             is CardEvent.ImportStatement -> act("Statement imported") {
                 repository.importStatement(event.attachmentKey)

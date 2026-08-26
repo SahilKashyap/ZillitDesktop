@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.drive.ui
 
 import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
 import com.zillit.desktop.feature.drive.domain.DriveGrouping
+import com.zillit.desktop.feature.drive.domain.DriveFileRequest
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveQuickFilter
 import com.zillit.desktop.feature.drive.domain.DriveRef
@@ -47,6 +48,20 @@ sealed interface DriveEvent {
     data class Download(val item: DriveItem) : DriveEvent
     data object DownloadSelection : DriveEvent
     data class ShareLink(val item: DriveItem) : DriveEvent
+
+    // -- file requests ---------------------------------------------------
+
+    /** Opens the panel for a folder — the folder is where the files will land. */
+    data class OpenFileRequests(val folder: DriveItem) : DriveEvent
+    data object CloseFileRequests : DriveEvent
+    data class FileRequestTitle(val text: String) : DriveEvent
+    data class FileRequestDescription(val text: String) : DriveEvent
+    data class FileRequestExpiry(val days: Int) : DriveEvent
+    data class FileRequestRequireName(val on: Boolean) : DriveEvent
+    data class FileRequestRequireEmail(val on: Boolean) : DriveEvent
+    data object SubmitFileRequest : DriveEvent
+    data class CopyFileRequest(val request: DriveFileRequest) : DriveEvent
+    data class RevokeFileRequest(val request: DriveFileRequest) : DriveEvent
     data class OpenInEditor(val item: DriveItem, val editable: Boolean) : DriveEvent
 
     // -- details panel ----------------------------------------------------
@@ -56,6 +71,11 @@ sealed interface DriveEvent {
     data object PostComment : DriveEvent
     data class DeleteComment(val commentId: String) : DriveEvent
     data class RestoreVersion(val fileId: String, val versionId: String) : DriveEvent
+    data class DownloadVersion(val item: DriveItem, val versionId: String) : DriveEvent
+    data class TagDraft(val text: String) : DriveEvent
+    data class AssignTag(val tagId: String) : DriveEvent
+    data class RemoveTag(val tagId: String) : DriveEvent
+    data object CreateAndAssignTag : DriveEvent
     data class UpdateAccess(
         val ref: DriveRef,
         val entries: List<DriveAccessEntry>,

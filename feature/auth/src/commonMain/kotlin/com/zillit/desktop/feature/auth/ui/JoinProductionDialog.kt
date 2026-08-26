@@ -159,6 +159,8 @@ private fun DetailsStep(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
         }
     }
 
+    PhotoRow(state, onEvent)
+
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         ZillitTextField(
             value = draft.firstName,
@@ -195,6 +197,72 @@ private fun DetailsStep(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
         onConfirm = { onEvent(JoinEvent.Submit) },
         onDismiss = { onEvent(JoinEvent.Dismiss) },
     )
+}
+
+/**
+ * The joiner's own picture.
+ *
+ * The phones take a selfie here — Android opens its camera activity, iOS asks
+ * for a photo — and a workstation has no camera worth assuming, so the picture
+ * is chosen from disk. It is stored the moment it is picked, which is why this
+ * has a busy state of its own: the upload belongs to the form, not to the
+ * button that submits it.
+ *
+ * Optional throughout. A production would rather have a crew member with no
+ * photograph than not have them.
+ */
+@Composable
+private fun PhotoRow(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
+    if (!state.canChoosePhoto) return
+    val stored = state.photo
+
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitAvatar(name = state.draft.firstName.ifBlank { "?" })
+
+            Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+                ZillitText(
+                    text = when {
+                        state.isStoringPhoto -> "Saving your photo…"
+                        stored != null -> "Photo added"
+                        else -> "Add a photo — optional"
+                    },
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textSecondary,
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+                    ZillitButton(
+                        text = if (stored != null) "Change" else "Choose photo",
+                        variant = ButtonVariant.Tertiary,
+                        enabled = !state.isStoringPhoto && !state.isBusy,
+                        onClick = { onEvent(JoinEvent.ChoosePhoto) },
+                    )
+                    if (stored != null) {
+                        ZillitButton(
+                            text = "Remove",
+                            variant = ButtonVariant.Tertiary,
+                            enabled = !state.isStoringPhoto,
+                            onClick = { onEvent(JoinEvent.RemovePhoto) },
+                        )
+                    }
+                }
+            }
+        }
+
+        // A photo that would not save must not read as a form error: the
+        // request goes without it.
+        state.photoError?.let { problem ->
+            ZillitText(
+                text = problem,
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.danger,
+            )
+        }
+    }
 }
 
 @Composable

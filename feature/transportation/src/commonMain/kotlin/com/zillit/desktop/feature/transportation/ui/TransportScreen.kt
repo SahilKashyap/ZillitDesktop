@@ -32,6 +32,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
+import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTab
@@ -393,6 +394,51 @@ private fun PermanentRow(state: TransportUiState, trip: PermanentTrip, onEvent: 
 
 // Drivers --------------------------------------------------------------------
 
+/**
+ * Drivers waiting for a licence change to be approved.
+ *
+ * The desktop listened for the socket event and reloaded the crew, but had no
+ * way to answer: the decision could only be made from the web. It sits above
+ * the driver list because it is the one thing here that is blocking someone.
+ */
+@Composable
+private fun LicenceRequests(state: TransportUiState, onEvent: (TransportEvent) -> Unit) {
+    ZillitSectionCard(
+        modifier = Modifier.fillMaxWidth(),
+        title = "Licence changes waiting",
+        meta = "${state.licenceRequests.size} to answer",
+    ) {
+        state.licenceRequests.forEach { request ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ZillitText(
+                    text = state.userName(request.userId),
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = ZillitTheme.colors.textPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                ZillitButton(
+                    text = "Approve",
+                    onClick = { onEvent(TransportEvent.DecideLicence(request.id, approved = true)) },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    enabled = !state.busy,
+                )
+                ZillitButton(
+                    text = "Reject",
+                    onClick = { onEvent(TransportEvent.DecideLicence(request.id, approved = false)) },
+                    variant = ButtonVariant.Danger,
+                    size = ButtonSize.Small,
+                    enabled = !state.busy,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun DriversSection(state: TransportUiState, onEvent: (TransportEvent) -> Unit) {
     val colors = ZillitTheme.colors
@@ -405,9 +451,11 @@ private fun DriversSection(state: TransportUiState, onEvent: (TransportEvent) ->
         },
     )
     val drivers = state.drivers
-    val others = state.crew.filter { it.isAccepted && !it.isDriver(state.driverDesignations) && it.userId != state
-        .viewer.userId }
+    val others = state.temporaryDriverCandidates()
     LazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        if (state.licenceRequests.isNotEmpty()) {
+            item { LicenceRequests(state, onEvent) }
+        }
         item {
             ZillitText(text = "DRIVERS (${drivers.size})", style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted)

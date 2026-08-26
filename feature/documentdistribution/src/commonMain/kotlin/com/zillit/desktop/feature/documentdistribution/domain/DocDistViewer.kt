@@ -29,7 +29,19 @@ data class DocDistViewer(
     val canDownload: Boolean = true,
     /** False until the tools call has answered. See the class doc. */
     val ready: Boolean = false,
+    /** Television productions make the episode number mandatory on the tool destinations. */
+    val isTelevision: Boolean = false,
+    /**
+     * The publish destinations this person may actually send to.
+     *
+     * Each one is gated by its *receiving* tool's posting right, not by this
+     * tool's — publishing a call sheet writes into the Call Sheet tool, so
+     * that tool decides. Offering a destination the person cannot post to
+     * produces a server refusal at the last step of a filled-in form.
+     */
+    val publishable: Set<String> = emptySet(),
 ) {
+    fun targets(): List<PublishTarget> = PublishTarget.all.filter { it.category in publishable }
 
     /**
      * Whether the tool should refuse to render.
@@ -56,10 +68,16 @@ data class DocDistViewer(
             permissions: ProjectPermissions,
             userId: String,
             userEmail: String,
+            isTelevision: Boolean = false,
         ): DocDistViewer {
             val access = permissions.access(TOOL_IDENTIFIER)
             if (!access.enabled && permissions.visibleTools.isEmpty()) {
-                return DocDistViewer(userId = userId, userEmail = userEmail, ready = false)
+                return DocDistViewer(
+                    userId = userId,
+                    userEmail = userEmail,
+                    ready = false,
+                    isTelevision = isTelevision,
+                )
             }
             return DocDistViewer(
                 userId = userId,
@@ -68,7 +86,21 @@ data class DocDistViewer(
                 canPost = permissions.canPost(TOOL_IDENTIFIER),
                 canDownload = permissions.canDownload(TOOL_IDENTIFIER),
                 ready = true,
+                isTelevision = isTelevision,
+                publishable = publishableTargets(permissions),
             )
         }
+
+        /**
+         * A destination with no [PublishTarget.toolIdentifier] — the Call
+         * Sheet unit — is gated by the home unit list rather than the tool
+         * grid, which this module does not hold. It is offered, and the
+         * server refuses it if the unit is not this person's to post to.
+         */
+        private fun publishableTargets(permissions: ProjectPermissions): Set<String> =
+            PublishTarget.all
+                .filter { it.toolIdentifier == null || permissions.canPost(it.toolIdentifier) }
+                .map { it.category }
+                .toSet()
     }
 }

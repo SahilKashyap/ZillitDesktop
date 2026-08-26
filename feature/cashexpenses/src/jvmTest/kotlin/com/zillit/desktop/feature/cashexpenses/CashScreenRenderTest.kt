@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.cashexpenses
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -11,6 +12,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashMetadata
 import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
+import com.zillit.desktop.feature.cashexpenses.domain.Claim
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 import com.zillit.desktop.feature.cashexpenses.domain.FloatStatus
@@ -212,6 +214,93 @@ class CashScreenRenderTest {
      * renders but reports the wrong page is worse than one that does not
      * render at all, because it looks like it works.
      */
+    private fun claim(receipt: String?) = Claim(
+        id = "claim-1",
+        batchId = "batch-1",
+        description = "Gaffer tape",
+        supplier = null,
+        category = null,
+        costCode = "5010",
+        codedDescription = null,
+        episode = null,
+        receiptDate = null,
+        grossAmount = 24.0,
+        netAmount = 20.0,
+        vatAmount = 4.0,
+        taxRate = 20.0,
+        taxType = null,
+        settlementType = null,
+        status = BatchStatus.AwaitingApproval,
+        receiptUrl = receipt,
+    )
+
+    private fun withClaim(receipt: String?) = state(CashDestination.ApprovalQueue).let { base ->
+        base.copy(
+            queueBatches = listOf(sampleBatch().copy(claims = listOf(claim(receipt)))),
+            selectedBatchId = "batch-1",
+        )
+    }
+
+    /**
+     * The receipt is the thing being checked.
+     *
+     * The effect and the host's handler were wired when this module shipped,
+     * but nothing raised it — so a reviewer could read a claim's figures and
+     * never look at what they came from.
+     */
+    @Test
+    fun `a claim with a receipt offers to open it`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    CashExpensesScreen(state = withClaim("receipts/r1.jpg"), onEvent = {})
+                }
+            }
+            onNodeWithText("View receipt").assertExists()
+        }
+    }
+
+    /** A PDF says so, because it opens in another application rather than inline. */
+    @Test
+    fun `a pdf receipt is named as one`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    CashExpensesScreen(state = withClaim("receipts/r1.pdf"), onEvent = {})
+                }
+            }
+            onNodeWithText("Open receipt (PDF)").assertExists()
+        }
+    }
+
+    @Test
+    fun `a claim with no receipt offers nothing to open`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    CashExpensesScreen(state = withClaim(null), onEvent = {})
+                }
+            }
+            onAllNodesWithText("View receipt").assertCountEquals(0)
+            onAllNodesWithText("Open receipt (PDF)").assertCountEquals(0)
+        }
+    }
+
+    @Test
+    fun `the assign action is offered on the sign-off queue`() {
+        val signOff = state(CashDestination.PettyCashSignOff)
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    CashExpensesScreen(state = signOff, onEvent = {})
+                }
+            }
+            // Unassigned, so it reads "Assign" rather than "Reassign".
+            onNodeWithText("Assign").assertExists()
+        }
+    }
+
     @Test
     fun `clicking a shared tab asks to open that destination`() {
         var opened: CashDestination? = null

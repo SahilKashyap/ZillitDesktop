@@ -110,6 +110,14 @@ interface ChatRepository {
     suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean = false)
 
     /**
+     * Tells the sender their message reached this computer — the ladder's
+     * rung 2, which every other client sends on arrival and this one never
+     * did. Silent by default so a repository that has not adopted it (a fake
+     * in a test) is not forced to.
+     */
+    suspend fun markDelivered(peerId: String, messageId: String, isGroup: Boolean = false) = Unit
+
+    /**
      * Conversations this user read on ANOTHER device — peer id for DMs, room
      * id for groups. The listing clears its row and the badge refetches;
      * without this, a thread read on the phone stays badged here until
@@ -212,7 +220,29 @@ class ChatRepositoryImpl(
     private val decrypt: (String) -> String?,
     /** The at-rest copy; null in tests. Bodies stay cipher-hex inside it. */
     private val disk: ChatCache? = null,
+    /**
+     * Which surface this repository speaks for. The default is C&C, so every
+     * existing caller behaves exactly as before; the budget tools pass their
+     * own tool and department.
+     */
+    private val scope: com.zillit.desktop.feature.chat.domain.ChatScope =
+        com.zillit.desktop.feature.chat.domain.ChatScope(),
 ) : ChatRepository, ReplyAwareChatRepository {
+
+    // Every event this repository speaks, under its own surface's names.
+    private val privateChat = scoped(PRIVATE_CHAT)
+    private val groupChat = scoped(GROUP_CHAT)
+    private val readUntill = scoped(READ_UNTILL)
+    private val groupReadUntill = scoped(GROUP_READ_UNTILL)
+    private val updateReaction = scoped(UPDATE_REACTION)
+    private val typingEvent = scoped(TYPING)
+    private val privateEdit = scoped(PRIVATE_CHAT_EDIT)
+    private val groupEdit = scoped(GROUP_CHAT_EDIT)
+    private val privateDelete = scoped(PRIVATE_CHAT_DELETE)
+    private val groupDelete = scoped(GROUP_CHAT_DELETE)
+
+    private fun scoped(event: com.zillit.desktop.core.socket.SocketEventName) =
+        com.zillit.desktop.core.socket.SocketEventName(scope.event(event.value))
 
     private val threads = mutableMapOf<String, List<ChatMessage>>()
 
@@ -239,15 +269,15 @@ class ChatRepositoryImpl(
     override val incoming: Flow<ChatMessage> =
         kotlinx.coroutines.flow.merge(
             acked,
-            bus.on(PRIVATE_CHAT).mapNotNull { message ->
+            bus.on(privateChat).mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt) }
             },
-            bus.on(GROUP_CHAT).mapNotNull { message ->
+            bus.on(groupChat).mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt, isGroup = true) }
             },
             // A reaction event IS the updated message; riding the same flow
             // means the thread upserts it with no second merge path to drift.
-            bus.on(UPDATE_REACTION).mapNotNull { message ->
+            bus.on(updateReaction).mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt) }
             },
         ).mapNotNull { message ->
@@ -259,17 +289,17 @@ class ChatRepositoryImpl(
         }
 
     override val typing: Flow<Pair<String, Boolean>> =
-        bus.on(TYPING).mapNotNull { it.payload?.let(::typingFrom) }
+        bus.on(typingEvent).mapNotNull { it.payload?.let(::typingFrom) }
 
     override val receipts: Flow<ReadReceipt> =
-        bus.on(READ_UNTILL).mapNotNull { message ->
+        bus.on(readUntill).mapNotNull { message ->
             message.payload?.let { readReceiptFrom(it, myUserId()) }
         }
 
     override val deletions: Flow<List<String>> =
         kotlinx.coroutines.flow.merge(
-            bus.on(PRIVATE_CHAT_DELETE),
-            bus.on(GROUP_CHAT_DELETE),
+            bus.on(privateDelete),
+            bus.on(groupDelete),
         ).mapNotNull { message ->
             message.payload?.let(::deletedIdsFrom)
                 ?.takeIf { it.isNotEmpty() }
@@ -280,17 +310,17 @@ class ChatRepositoryImpl(
         }
 
     override val selfReads: Flow<String> =
-        kotlinx.coroutines.flow.merge(bus.on(READ_UNTILL), bus.on(GROUP_READ_UNTILL))
+        kotlinx.coroutines.flow.merge(bus.on(readUntill), bus.on(groupReadUntill))
             .mapNotNull { message ->
                 message.payload?.let { selfReadFrom(it, myUserId()) }
             }
 
     override val edits: Flow<ChatMessage> =
         kotlinx.coroutines.flow.merge(
-            bus.on(PRIVATE_CHAT_EDIT).mapNotNull { message ->
+            bus.on(privateEdit).mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt) }
             },
-            bus.on(GROUP_CHAT_EDIT).mapNotNull { message ->
+            bus.on(groupEdit).mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt, isGroup = true) }
             },
         )
@@ -306,23 +336,34 @@ class ChatRepositoryImpl(
     override fun lastMessageOf(otherUserId: String): ChatMessage? =
         cached(otherUserId)?.maxByOrNull(ChatMessage::timestampMillis)
 
-    override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean) {
+    override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean) =
+        emitWatermark(peerId, messageId, isGroup, READ_UNTILL_READ)
+
+    override suspend fun markDelivered(peerId: String, messageId: String, isGroup: Boolean) =
+        emitWatermark(peerId, messageId, isGroup, DELIVERED_STATUS)
+
+    /** One emit for both rungs — the envelope differs only in its `status`. */
+    private suspend fun emitWatermark(peerId: String, messageId: String, isGroup: Boolean, status: Int) {
         val project = projectId() ?: return
         if (isGroup) {
             val me = myUserId() ?: return
             bus.emit(
-                GROUP_READ_UNTILL,
-                groupReadUntillEnvelope(peerId, me, messageId, project),
+                groupReadUntill,
+                groupReadUntillEnvelope(peerId, me, messageId, project, status, scope.messageTool),
                 JsonElement.serializer(),
             )
         } else {
-            bus.emit(READ_UNTILL, readUntillEnvelope(peerId, messageId, project), JsonElement.serializer())
+            bus.emit(
+                readUntill,
+                readUntillEnvelope(peerId, messageId, project, status, scope.messageTool),
+                JsonElement.serializer(),
+            )
         }
     }
 
     override suspend fun sendTyping(receiverId: String, started: Boolean) {
         val me = myUserId() ?: return
-        bus.emit(TYPING, typingEnvelope(me, receiverId, started), JsonElement.serializer())
+        bus.emit(typingEvent, typingEnvelope(me, receiverId, started, scope.messageTool), JsonElement.serializer())
     }
 
     /** The session cache, emptied whenever the open production changes. */
@@ -356,7 +397,7 @@ class ChatRepositoryImpl(
             com.zillit.desktop.core.common.ZillitError.Unauthorized("no open project"),
         )
         return bus.emitForAck(
-            if (isGroup) GROUP_CHAT_DELETE else PRIVATE_CHAT_DELETE,
+            if (isGroup) groupDelete else privateDelete,
             deleteEnvelope(messageIds, project),
             JsonElement.serializer(),
         ).flatMap { ack ->
@@ -492,6 +533,13 @@ class ChatRepositoryImpl(
             url = "${config.apiV2(ZillitService.Chat)}chat-room",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
+            // C&C sends `cnc_section` with an empty department; the budget
+            // tools name their tool, department and document. The web's
+            // `getChatList` omits the document (`budgetApi/api.js:82-88`) —
+            // and this server answers that 400, as it answers a create
+            // without one "Cnc Budget Document Id Required" (live,
+            // 2026-08-26). Sent for C&C too, where it is empty and omitted.
+            queryParameters = scope.messageParameters(),
         ).map(::roomsFrom)
 
     /**
@@ -520,7 +568,7 @@ class ChatRepositoryImpl(
             verb = HttpVerb.Post,
             url = "${config.apiV2(ZillitService.Chat)}chat-room",
             module = RequestModule.ProjectUser,
-            body = createRoomBody(name, me, memberIds),
+            body = createRoomBody(name, me, memberIds, scope),
         ).refuseStatusZero().flatMap { envelope ->
             createdRoomFrom(envelope.data)
                 ?.let { ZillitResult.Success(it) }
@@ -554,13 +602,14 @@ class ChatRepositoryImpl(
             module = RequestModule.ProjectUser,
             // Android sends both, the department empty for CNC; a missing
             // parameter is not the same as an empty one to this server.
-            queryParameters = mapOf("tool" to "cnc_section", "department_id" to ""),
+            queryParameters = scope.messageParameters(),
             // Always the newest window, from "now": one name per thread so
             // the read cache answers it offline (the disk cache does too;
             // this keeps the fetch itself from failing).
             options = CallOptions(
                 cacheAs = "${config.apiV2(ZillitService.Chat)}" +
-                    (if (isGroup) "group-chat" else "private-chat") + "/messages/$otherUserId/newest",
+                    (if (isGroup) "group-chat" else "private-chat") +
+                    "/messages/$otherUserId/newest/${scope.cacheKey()}",
             ),
         ).map { body ->
             chatRows(body)
@@ -625,6 +674,36 @@ class ChatRepositoryImpl(
     ): ZillitResult<Unit> =
         sendInternal(receiverId, body, uniqueId, nowMillis, isGroup, attachment, replyToId = null, location = location)
 
+    /** One message on the wire, wearing this repository's scope. */
+    @Suppress("LongParameterList")
+    private fun outgoing(
+        project: String,
+        uniqueId: String,
+        me: String,
+        receiverId: String,
+        cipher: String,
+        nowMillis: Long,
+        isGroup: Boolean,
+        attachment: com.zillit.desktop.feature.chat.domain.ChatAttachment?,
+        replyToId: String?,
+        location: com.zillit.desktop.feature.chat.domain.ChatLocation?,
+    ) = sendEnvelope(
+        projectId = project,
+        uniqueId = uniqueId,
+        senderId = me,
+        receiverId = receiverId,
+        cipherBody = cipher,
+        nowMillis = nowMillis,
+        isGroup = isGroup,
+        attachment = attachment,
+        replyToId = replyToId,
+        location = location,
+        // A message names the message tool, never the room tool.
+        tool = scope.messageTool,
+        departmentId = scope.departmentId,
+        budgetDocumentId = scope.budgetDocumentId,
+    )
+
     @Suppress("LongParameterList") // One optional reply id and one place beyond send()'s own list.
     private suspend fun sendInternal(
         receiverId: String,
@@ -650,20 +729,12 @@ class ChatRepositoryImpl(
         // a rejection with `{success:false, message:…}` on the callback, so an
         // emit alone cannot tell a delivered message from a discarded one —
         // which is exactly how a "sent" attachment went missing.
+        val envelope = outgoing(
+            project, uniqueId, me, receiverId, cipher, nowMillis, isGroup, attachment, replyToId, location,
+        )
         return bus.emitForAck(
-            if (isGroup) GROUP_CHAT else PRIVATE_CHAT,
-            sendEnvelope(
-                projectId = project,
-                uniqueId = uniqueId,
-                senderId = me,
-                receiverId = receiverId,
-                cipherBody = cipher,
-                nowMillis = nowMillis,
-                isGroup = isGroup,
-                attachment = attachment,
-                replyToId = replyToId,
-                location = location,
-            ),
+            if (isGroup) groupChat else privateChat,
+            envelope,
             JsonElement.serializer(),
         ).flatMap { ack ->
             val complaint = ackComplaint(ack)
@@ -779,3 +850,6 @@ private const val SNIPPET_MARGIN = 24
 
 /** Enough rows to find the line; a chat-wide grep is not the surface. */
 private const val MAX_MESSAGE_HITS = 50
+
+/** The read rung, named here because the envelopes now take one explicitly. */
+private const val READ_UNTILL_READ = 3

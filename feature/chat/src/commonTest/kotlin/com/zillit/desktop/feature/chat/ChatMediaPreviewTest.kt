@@ -63,7 +63,12 @@ class ChatMediaPreviewTest {
         repository = repository,
         nowMillis = { NOW },
         newUniqueId = { "unique-${repository.sent.size}" },
-        pickAttachment = { pending },
+        // A null pick is the dialog dismissed, as it was before the seam
+        // learned to say why nothing came back.
+        pickAttachment = {
+            pending?.let { com.zillit.desktop.feature.chat.domain.ChatPick.Ready(it) }
+                ?: com.zillit.desktop.feature.chat.domain.ChatPick.Cancelled
+        },
     )
 
     @Test

@@ -4,10 +4,13 @@ import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
 import com.zillit.desktop.feature.documentdistribution.domain.LibrarySort
+import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 
 /** Everything the user can do in this tool. */
+
+
 sealed interface DocDistEvent {
 
     data object Refresh : DocDistEvent
@@ -36,6 +39,17 @@ sealed interface DocDistEvent {
     data class SelectAll(val selected: Boolean) : DocDistEvent
 
     data class DeleteDocument(val documentId: String) : DocDistEvent
+    data class ToggleFolder(val folderId: String) : DocDistEvent
+    data object OpenPublish : DocDistEvent
+    data object ClosePublish : DocDistEvent
+    data class ChoosePublishTarget(val category: String) : DocDistEvent
+    data class EditPublishDraft(val draft: PublishDraft) : DocDistEvent
+    data class ToggleReplaceTarget(val chatId: String) : DocDistEvent
+    data object ConfirmPublish : DocDistEvent
+    data object OpenMove : DocDistEvent
+    data object CloseMove : DocDistEvent
+    data class ChooseMoveDestination(val folderId: String?) : DocDistEvent
+    data object ConfirmMove : DocDistEvent
     data class MoveSelection(val folderId: String?) : DocDistEvent
     data class OpenDocument(val documentId: String) : DocDistEvent
     data class DownloadDocument(val documentId: String) : DocDistEvent

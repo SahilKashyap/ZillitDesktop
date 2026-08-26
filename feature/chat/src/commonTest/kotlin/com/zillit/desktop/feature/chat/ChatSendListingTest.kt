@@ -207,7 +207,17 @@ internal class FakeChatRepository(
 
     override fun cached(otherUserId: String): List<ChatMessage>? = null
     override fun lastMessageOf(otherUserId: String): ChatMessage? = lastByPeer[otherUserId]
-    override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean) = Unit
+    /** Both watermark rungs, recorded so a test can tell which one went. */
+    val reads = mutableListOf<Pair<String, String>>()
+    val delivered2 = mutableListOf<Pair<String, String>>()
+
+    override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean) {
+        reads += peerId to messageId
+    }
+
+    override suspend fun markDelivered(peerId: String, messageId: String, isGroup: Boolean) {
+        delivered2 += peerId to messageId
+    }
     override fun markThreadRead(peerId: String, uptoMillis: Long) = Unit
     override fun unreadCounts(): Map<String, Int> = emptyMap()
     override fun newestActivity(): Map<String, Long> = activityByPeer.toMap()

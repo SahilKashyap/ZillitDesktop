@@ -14,6 +14,8 @@ import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
 import com.zillit.desktop.feature.drive.domain.DriveActivity
 import com.zillit.desktop.feature.drive.domain.DriveComment
 import com.zillit.desktop.feature.drive.domain.DriveCrumb
+import com.zillit.desktop.feature.drive.domain.DriveFileRequest
+import com.zillit.desktop.feature.drive.domain.DriveFileRequestDraft
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveItemKind
 import com.zillit.desktop.feature.drive.domain.DrivePage
@@ -246,6 +248,66 @@ class DriveRepositoryImpl(
         // client's intent explicit and survives a future default change.
         body = buildJsonObject { put("expiry", JsonPrimitive(SHARE_EXPIRY)) },
     ).flatMap { it.required("share link") }
+
+    /** `GET /v2/drive/folders/{id}/file-requests` — what is open on a folder. */
+    override suspend fun fileRequests(folderId: String): ZillitResult<List<DriveFileRequest>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "$base/folders/$folderId/file-requests",
+            serializer = ListSerializer(FileRequestDto.serializer()),
+            module = RequestModule.ProjectUser,
+            options = callOptions(),
+        ).map { rows -> rows.mapNotNull { it.toDomain() } }
+
+    /**
+     * `POST /v2/drive/file-requests` (`RequestFilesDrawer.jsx:179-193`).
+     *
+     * Optional fields are omitted rather than sent empty: the web sends
+     * `undefined` for a blank description, and this service treats an empty
+     * string as a value rather than as absence.
+     */
+    override suspend fun createFileRequest(
+        draft: DriveFileRequestDraft,
+    ): ZillitResult<DriveFileRequest> = apiClient.request(
+        verb = HttpVerb.Post,
+        url = "$base/file-requests",
+        serializer = FileRequestDto.serializer(),
+        module = RequestModule.ProjectUser,
+        options = callOptions(),
+        body = buildJsonObject {
+            put("destination_folder_id", JsonPrimitive(draft.destinationFolderId))
+            put("title", JsonPrimitive(draft.title.trim()))
+            draft.description.trim().takeIf { it.isNotBlank() }
+                ?.let { put("description", JsonPrimitive(it)) }
+            draft.thankYouMessage.trim().takeIf { it.isNotBlank() }
+                ?.let { put("thank_you_message", JsonPrimitive(it)) }
+            if (draft.expiresInMillis > 0) put("expires_in_ms", JsonPrimitive(draft.expiresInMillis))
+            if (draft.maxFilesPerSession > 0) {
+                put("max_files_per_session", JsonPrimitive(draft.maxFilesPerSession))
+            }
+            if (draft.maxTotalSizeBytes > 0) {
+                put("max_total_size_bytes", JsonPrimitive(draft.maxTotalSizeBytes))
+            }
+            put("allowed_mime_patterns", draft.allowedMimePatterns.toJsonArray())
+            put("require_uploader_email", JsonPrimitive(draft.requireUploaderEmail))
+            put("require_uploader_name", JsonPrimitive(draft.requireUploaderName))
+            put("recipients", draft.recipients.toJsonArray())
+        },
+    ).flatMap { dto ->
+        dto.toDomain()
+            ?.let { ZillitResult.Success(it) }
+            ?: ZillitResult.Failure(
+                ZillitError.Http(status = 200, serverMessage = "the request was made but came back empty"),
+            )
+    }
+
+    /** `POST /v2/drive/file-requests/{id}/revoke` — closed for good. */
+    override suspend fun revokeFileRequest(requestId: String): ZillitResult<Unit> = apiClient.envelope(
+        verb = HttpVerb.Post,
+        url = "$base/file-requests/$requestId/revoke",
+        module = RequestModule.ProjectUser,
+        options = callOptions(),
+    ).map { }
 
     /**
      * The address to load, assembled from the pieces the config returns.
@@ -513,6 +575,13 @@ class DriveRepositoryImpl(
 
     override suspend fun deleteTag(tagId: String): ZillitResult<Unit> =
         mutate(HttpVerb.Delete, "$base/tags/$tagId", null)
+
+    override suspend fun itemTags(ref: DriveRef): ZillitResult<List<DriveTag>> =
+        get(
+            "$base/tags/item-tags",
+            ListSerializer(TagDto.serializer()),
+            mapOf("item_id" to ref.id, "item_type" to ref.kind.wire),
+        ).map { rows -> rows.mapNotNull { it.toDomain() } }
 
     override suspend fun assignTag(tagId: String, ref: DriveRef): ZillitResult<Unit> =
         mutate(HttpVerb.Post, "$base/tags/assign", tagBody(tagId, ref))

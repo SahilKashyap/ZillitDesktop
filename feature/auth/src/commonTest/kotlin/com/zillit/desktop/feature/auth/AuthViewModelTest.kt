@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.auth
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.auth.domain.CodeLookup
 import com.zillit.desktop.feature.auth.domain.AuthRepository
 import com.zillit.desktop.feature.auth.domain.AuthSession
 import com.zillit.desktop.feature.auth.domain.Department
@@ -309,7 +310,7 @@ private class FakeProjectRepository(private val projects: List<Project>) : Proje
 
     override suspend fun findByCode(code: String) =
         projects.firstOrNull { it.code == code }
-            ?.let { ZillitResult.Success(it) }
+            ?.let { ZillitResult.Success(CodeLookup.NeedsDetails(it)) }
             ?: ZillitResult.Failure(ZillitError.Validation("not found"))
 
     override suspend fun requestJoin(projectId: String, draft: JoinDraft) = ZillitResult.Success(JoinStatus.Pending)

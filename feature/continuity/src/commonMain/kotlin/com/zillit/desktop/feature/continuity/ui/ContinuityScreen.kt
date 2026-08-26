@@ -250,6 +250,11 @@ private fun CardsDialog(
                     ZillitButton(text = "Forward to All (${open.selected.size})",
                         onClick = { onEvent(ContinuityEvent.ForwardSelected) }, variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small, enabled = open.selected.isNotEmpty(), loading = state.busy)
+                    // Off the board, not deleted — the work stays in the file
+                    // cabinet, which is where a wrapped scene belongs.
+                    ZillitButton(text = "File cabinet (${open.selected.size})",
+                        onClick = { onEvent(ContinuityEvent.ArchiveSelected) }, variant = ButtonVariant.Tertiary,
+                        size = ButtonSize.Small, enabled = open.selected.isNotEmpty(), loading = state.busy)
                 }
                 ZillitButton(text = if (open.selecting) "Done" else "Select",
                     onClick = { onEvent(ContinuityEvent.ToggleSelecting) }, variant = ButtonVariant.Tertiary,

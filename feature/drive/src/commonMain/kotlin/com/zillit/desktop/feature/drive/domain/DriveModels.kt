@@ -273,3 +273,38 @@ data class DriveAccessEntry(
     val role: DriveRole = DriveRole.Viewer,
     val permissions: DrivePermissions = DrivePermissions.ViewOnly,
 )
+
+/**
+ * An open invitation to put files into one folder.
+ *
+ * A production asks a supplier, a location owner or a crew member who has no
+ * Zillit account to send files: the request is a public link scoped to a
+ * folder, with an expiry and limits, and whatever arrives lands in the Drive.
+ * The web calls this "Request files" (`components/drive/RequestFilesDrawer.jsx`).
+ */
+data class DriveFileRequest(
+    val id: String,
+    val title: String,
+    val destinationFolderId: String,
+    /** The public address to send out; empty once revoked. */
+    val link: String = "",
+    val expiresAtMillis: Long = 0,
+    val createdAtMillis: Long = 0,
+    val uploadCount: Int = 0,
+    val revoked: Boolean = false,
+)
+
+/** What a new request asks for. Everything but the folder and title is optional. */
+data class DriveFileRequestDraft(
+    val destinationFolderId: String,
+    val title: String,
+    val description: String = "",
+    val thankYouMessage: String = "",
+    val expiresInMillis: Long = 0,
+    val maxFilesPerSession: Int = 0,
+    val maxTotalSizeBytes: Long = 0,
+    val allowedMimePatterns: List<String> = emptyList(),
+    val requireUploaderName: Boolean = false,
+    val requireUploaderEmail: Boolean = false,
+    val recipients: List<String> = emptyList(),
+)

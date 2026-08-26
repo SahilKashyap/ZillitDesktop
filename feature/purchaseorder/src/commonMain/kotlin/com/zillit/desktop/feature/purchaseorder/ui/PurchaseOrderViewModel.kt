@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.purchaseorder.data.PO_CREATE_KIND
 import com.zillit.desktop.feature.purchaseorder.data.QueuedPurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.data.toLocalOrder
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
+import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
 import com.zillit.desktop.feature.purchaseorder.domain.PoHistoryEntry
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PoRefresh
@@ -64,6 +65,8 @@ data class PoUiState(
     val localOrders: List<PurchaseOrder> = emptyList(),
     val vendors: List<Vendor> = emptyList(),
     val history: List<PoHistoryEntry> = emptyList(),
+    /** The selected order's files. The list has always shown their count. */
+    val attachments: List<PoAttachment> = emptyList(),
     val search: String = "",
     val statusFilter: PoStatus? = null,
     val selectedId: String? = null,
@@ -161,6 +164,15 @@ sealed interface PoEvent {
     data object ClearSelection : PoEvent
     data object ClearNotice : PoEvent
 
+    /** Opens one of the selected order's files. */
+    data class OpenAttachment(val attachment: PoAttachment) : PoEvent
+
+    /** Removes one from the selected order. */
+    data class DeleteAttachment(val attachment: PoAttachment) : PoEvent
+
+    /** Emails the selected order to its supplier. */
+    data class EmailSupplier(val id: String) : PoEvent
+
     data class Ask(val prompt: PoPrompt) : PoEvent
     data class UpdatePrompt(val prompt: PoPrompt) : PoEvent
     data object DismissPrompt : PoEvent
@@ -174,6 +186,9 @@ sealed interface PoEvent {
 
 sealed interface PoEffect {
     data class Failed(val message: String) : PoEffect
+
+    /** The host fetches the file from storage and hands it to the OS. */
+    data class OpenAttachment(val attachment: PoAttachment) : PoEffect
 }
 
 /**
@@ -291,6 +306,9 @@ class PurchaseOrderViewModel(
 
             PoEvent.ClearSelection -> setState { copy(selection = emptySet()) }
             PoEvent.ClearNotice -> setState { copy(notice = null) }
+            is PoEvent.OpenAttachment -> sendEffect(PoEffect.OpenAttachment(event.attachment))
+            is PoEvent.DeleteAttachment -> removeAttachment(event.attachment)
+            is PoEvent.EmailSupplier -> emailSupplier(event.id)
 
             is PoEvent.Ask -> setState { copy(prompt = event.prompt) }
             is PoEvent.UpdatePrompt -> setState { copy(prompt = event.prompt) }
@@ -381,14 +399,56 @@ class PurchaseOrderViewModel(
         }
     }
 
-    /** Selecting an order also fetches its audit trail for the detail pane. */
+    /** Selecting an order also fetches its audit trail and its files. */
     private fun selectOrder(id: String?) {
-        setState { copy(selectedId = id, history = emptyList()) }
-        // A row that exists only here has no history to fetch.
+        setState { copy(selectedId = id, history = emptyList(), attachments = emptyList()) }
+        // A row that exists only here has neither to fetch.
         if (id == null || id.startsWith(LOCAL_ID_PREFIX)) return
         launch {
             repository.history(id).getOrNull()?.let { entries ->
                 if (currentState.selectedId == id) setState { copy(history = entries) }
+            }
+        }
+        launch {
+            // The count on the row has always come from the order itself; the
+            // files behind it were never fetched until now.
+            repository.attachments(id).getOrNull()?.let { files ->
+                if (currentState.selectedId == id) setState { copy(attachments = files) }
+            }
+        }
+    }
+
+    /** Removes a file, then re-reads so the count and the list agree. */
+    private fun removeAttachment(attachment: PoAttachment) {
+        val orderId = currentState.selectedId ?: return
+        setState { copy(busy = true) }
+        launch {
+            when (val answer = repository.deleteAttachment(attachment.id, orderId)) {
+                is ZillitResult.Success -> {
+                    setState {
+                        copy(
+                            busy = false,
+                            notice = "Attachment removed",
+                            attachments = attachments.filterNot { it.id == attachment.id },
+                        )
+                    }
+                    load(currentState.destination)
+                }
+
+                is ZillitResult.Failure -> setState { copy(busy = false, error = answer.error) }
+            }
+        }
+    }
+
+    /** Sends the order to its supplier — what makes an approved order real to them. */
+    private fun emailSupplier(id: String) {
+        setState { copy(busy = true) }
+        launch {
+            when (val answer = repository.emailToSupplier(id)) {
+                is ZillitResult.Success ->
+                    setState { copy(busy = false, notice = "Sent to the supplier") }
+
+                is ZillitResult.Failure -> setState { copy(busy = false, error = answer.error) }
             }
         }
     }

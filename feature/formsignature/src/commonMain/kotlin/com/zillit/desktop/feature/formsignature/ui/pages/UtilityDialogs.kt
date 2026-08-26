@@ -1,5 +1,10 @@
 package com.zillit.desktop.feature.formsignature.ui.pages
 
+import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
+import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
+import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -109,6 +114,67 @@ internal fun HistoryDialog(
                             color = ZillitTheme.colors.textSecondary,
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Change who must sign a document that has already gone out.
+ *
+ * The service takes the whole signer list rather than a delta, so this shows
+ * everyone and saves everyone — unticking a name is what removes them. People
+ * who have already signed are shown but fixed: taking them off would discard
+ * ink that exists.
+ */
+@Composable
+internal fun SignerEditorDialog(state: FormSignatureUiState, onEvent: (FormSignatureEvent) -> Unit) {
+    val editor = state.signerEditor ?: return
+
+    ZillitDialogShell(
+        title = "Who must sign",
+        subtitle = editor.title.takeIf { it.isNotBlank() },
+        icon = ZillitIcons.UserPlus,
+        visible = true,
+        onDismiss = { onEvent(FormSignatureEvent.CloseSignerEditor) },
+        actions = {
+            ZillitButton(
+                text = "Cancel",
+                onClick = { onEvent(FormSignatureEvent.CloseSignerEditor) },
+                variant = ButtonVariant.Tertiary,
+            )
+            ZillitButton(
+                text = "Save",
+                onClick = { onEvent(FormSignatureEvent.SaveSigners) },
+                enabled = editor.canSave,
+                loading = editor.saving,
+            )
+        },
+    ) {
+        if (editor.loading) {
+            ZillitText(
+                text = "Loading…",
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textSecondary,
+            )
+            return@ZillitDialogShell
+        }
+        editor.options.forEach { option ->
+            val signed = option.userId in editor.alreadySigned
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                ZillitCheckbox(
+                    checked = option.userId in editor.chosen,
+                    onCheckedChange = { onEvent(FormSignatureEvent.ToggleSigner(option.userId)) },
+                    label = option.fullName.ifBlank { option.email.ifBlank { option.userId } },
+                    enabled = !signed,
+                )
+                if (signed) {
+                    ZillitStatusPill(label = "Signed", tone = StatusTone.Done)
                 }
             }
         }

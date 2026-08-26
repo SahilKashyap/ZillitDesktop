@@ -49,6 +49,8 @@ dependencies {
     implementation(project(":core:session"))
     implementation(project(":core:socket"))
     implementation(project(":feature:accounthub"))
+    implementation(project(":feature:budget"))
+    implementation(project(":feature:castboard"))
     implementation(project(":feature:budgetbuilder"))
     implementation(project(":feature:esignature"))
     implementation(project(":feature:formsignature"))
@@ -80,8 +82,11 @@ dependencies {
     implementation(project(":feature:draft"))
     implementation(project(":feature:continuity"))
     implementation(project(":feature:costreport"))
+    implementation(project(":feature:addashboard"))
+    implementation(project(":feature:saportal"))
     implementation(project(":feature:invoices"))
     implementation(project(":feature:transportation"))
+    implementation(project(":feature:weather"))
 
     // The app module had no tests until the single-instance guard, which is
     // logic rather than wiring and worth pinning — particularly its behaviour

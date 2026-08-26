@@ -15,6 +15,7 @@ import com.zillit.desktop.feature.home.data.JvmAudioRecorder
 import com.zillit.desktop.feature.home.data.identifierToWireTool
 import com.zillit.desktop.feature.home.data.pdfThumbnailJpeg
 import com.zillit.desktop.feature.home.data.videoThumbnailJpeg
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.feature.home.domain.GeoPoint
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.home.domain.PickedMedia
@@ -97,15 +98,25 @@ internal suspend fun fetchStaticMap(ready: AppGraph.Ready, point: GeoPoint): Pic
 internal suspend fun fetchStaticMapBytes(ready: AppGraph.Ready, lat: Double, lng: Double): ByteArray? {
     val key = ready.remoteConfigRepository.credentials.value?.googleMapsKey
         ?.takeIf { it.isNotBlank() }
-        ?: return null
+        ?: run {
+            ZillitLog.w("StaticMap") { "no maps key in remote config; no picture" }
+            return null
+        }
 
     return runCatching {
         val url = "https://maps.googleapis.com/maps/api/staticmap" +
             "?center=$lat,$lng&zoom=15&size=600x400" +
             "&markers=color:red%7C$lat,$lng&key=$key"
         val response = ready.httpClient.get(url)
-        if (response.status.isSuccess()) response.readRawBytes() else null
-    }.getOrNull()
+        if (response.status.isSuccess()) {
+            response.readRawBytes()
+        } else {
+            // Google answers a refused key with 200 and an error PNG, so a
+            // non-2xx here is worth saying out loud rather than swallowing.
+            ZillitLog.w("StaticMap") { "map refused: ${response.status}" }
+            null
+        }
+    }.onFailure { ZillitLog.w("StaticMap") { "map fetch failed: $it" } }.getOrNull()
 }
 
 private const val STATIC_MAP_NAME = "location-map.png"

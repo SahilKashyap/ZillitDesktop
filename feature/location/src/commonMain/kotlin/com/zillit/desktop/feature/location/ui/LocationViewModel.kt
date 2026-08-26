@@ -92,8 +92,15 @@ class LocationViewModel(
             LocationEvent.ConfirmDelete -> deleteSelected()
             LocationEvent.CancelDelete -> setState { copy(confirmDelete = null) }
             LocationEvent.PdfSelected -> pdfSelected()
-            is LocationEvent.View -> setState { copy(viewing = event.record) }
-            LocationEvent.CloseView -> setState { copy(viewing = null) }
+            is LocationEvent.View -> {
+                setState { copy(viewing = event.record, discussion = emptyList(), discussionDraft = "") }
+                loadDiscussion(event.record.id)
+            }
+            LocationEvent.CloseView -> setState {
+                copy(viewing = null, discussion = emptyList(), discussionDraft = "")
+            }
+            is LocationEvent.DiscussionDraftChanged -> setState { copy(discussionDraft = event.text) }
+            LocationEvent.SendDiscussion -> sendDiscussion()
             is LocationEvent.Download -> download(event.record)
             LocationEvent.PickFile -> guardPost { sendEffect(LocationEffect.PickFile) }
             is LocationEvent.FilePicked -> {
@@ -172,6 +179,45 @@ class LocationViewModel(
                         gallery?.copy(records = fetched, exhausted = fetched.size < PAGE)
                     },
                 )
+            }
+        }
+    }
+
+    /**
+     * The open record's thread.
+     *
+     * Newest-first on the wire, oldest-first on screen: a discussion reads
+     * downwards. A failure costs the thread, not the record — the picture and
+     * its details are what the reader opened.
+     */
+    private fun loadDiscussion(recordId: String) {
+        setState { copy(discussionLoading = true) }
+        launch {
+            val rows = repository.messages(recordId, nowMillis())
+            setState {
+                copy(
+                    discussionLoading = false,
+                    discussion = (rows as? ZillitResult.Success)?.data?.reversed().orEmpty(),
+                )
+            }
+        }
+    }
+
+    /** Posts the draft, then re-reads the thread so the line appears as saved. */
+    private fun sendDiscussion() {
+        val record = currentState.viewing ?: return
+        val body = currentState.discussionDraft.trim()
+        if (body.isEmpty() || currentState.discussionSending) return
+        setState { copy(discussionSending = true) }
+        launch {
+            when (val answer = repository.sendMessage(record.id, body)) {
+                is ZillitResult.Success -> {
+                    setState { copy(discussionSending = false, discussionDraft = "") }
+                    loadDiscussion(record.id)
+                }
+
+                is ZillitResult.Failure ->
+                    setState { copy(discussionSending = false, error = answer.error.localised()) }
             }
         }
     }

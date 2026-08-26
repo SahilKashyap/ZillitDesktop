@@ -94,6 +94,15 @@ class MapRepositoryImpl(
     override suspend fun deleteCity(id: String): ZillitResult<Unit> =
         write(HttpVerb.Delete, "$base/city/$id", null)
 
+    /** `PUT /v2/city/reorder-cities` — the whole arrangement, not a move. */
+    override suspend fun reorderCities(cityIds: List<String>): ZillitResult<Unit> = write(
+        HttpVerb.Put,
+        "$base/city/reorder-cities",
+        buildJsonObject {
+            put("newOrder", buildJsonArray { cityIds.forEach { add(JsonPrimitive(it)) } })
+        },
+    )
+
     override suspend fun types(): ZillitResult<List<LocationType>> =
         get("$base/location-type").mapData { data ->
             (data as? JsonArray).items().mapNotNull { parseType(it as? JsonObject) }

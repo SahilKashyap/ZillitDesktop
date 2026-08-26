@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.continuity.domain
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import kotlinx.coroutines.flow.Flow
@@ -173,6 +174,26 @@ interface ContinuityRepository {
 
     /** Forward to All Departments. */
     suspend fun share(ids: List<String>, sceneFolder: String): ZillitResult<Unit>
+
+    /**
+     * Moves scenes into the file cabinet (`PUT /v2/continuity/archive`).
+     *
+     * The web calls this "File Cabinet status updated" — an archive that
+     * takes a board's scenes off it without deleting the work.
+     */
+    suspend fun archive(sceneIds: List<String>): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("archiving is not wired"))
+
+    /**
+     * Distributes the board (`POST /v2/continuity/distribute`), narrowed by
+     * whichever of visibility, scene number and department are given — the
+     * web omits a blank rather than sending it empty.
+     */
+    suspend fun distribute(
+        visibility: String,
+        sceneNumber: String,
+        departmentId: String,
+    ): ZillitResult<Unit> = ZillitResult.Failure(ZillitError.Unknown("distribution is not wired"))
 
     /** Removes from the [tab] board only (soft, per visibility). */
     suspend fun delete(tab: ContinuityTab, id: String): ZillitResult<Unit>

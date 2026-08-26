@@ -5,6 +5,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashSettings
 import com.zillit.desktop.feature.cashexpenses.domain.CashTopUp
 import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
+import com.zillit.desktop.feature.cashexpenses.domain.AssigneeOption
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.DepartmentOverview
 import com.zillit.desktop.feature.cashexpenses.domain.DraftReceipt
@@ -51,6 +52,8 @@ data class CashUiState(
     val topUps: List<CashTopUp> = emptyList(),
     val floatTopUps: List<CashTopUp> = emptyList(),
     val queueBatches: List<ClaimBatch> = emptyList(),
+    /** Who a batch may be handed to, resolved by the host from the crew. */
+    val assignees: List<AssigneeOption> = emptyList(),
     val myBatches: List<ClaimBatch> = emptyList(),
     val reconciliations: List<Reconciliation> = emptyList(),
     val bookBalance: Double? = null,
@@ -176,6 +179,21 @@ sealed interface CashPrompt {
         val label: String,
         val amount: String = "",
         val note: String = "",
+    ) : CashPrompt
+
+    /**
+     * Hands a batch to someone.
+     *
+     * Its own shape rather than a [WithReason]: the reason is required only
+     * on a reassignment, and the person is the field that must be chosen —
+     * see [BatchAssignment].
+     */
+    data class Assign(
+        val batchId: String,
+        val title: String,
+        val label: String,
+        val selectedUserId: String = "",
+        val reason: String = "",
     ) : CashPrompt
 
     /** Yes or no. */

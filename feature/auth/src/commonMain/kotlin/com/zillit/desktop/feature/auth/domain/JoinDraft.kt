@@ -36,10 +36,20 @@ data class JoinDraft(
      * them yet — an unannounced cast member on a call sheet is a leak.
      */
     val keepNamePrivate: Boolean = false,
+    /**
+     * The profile picture, once it has been stored.
+     *
+     * Holds the *uploaded* keys rather than the file: the picture is sent to
+     * storage as soon as it is chosen, so the wait happens while the user is
+     * still filling the form instead of being added to the submit. Null means
+     * no picture, and the request then omits the field entirely — see
+     * `toRequestDto`.
+     */
+    val photo: JoinPhoto? = null,
 ) {
     /** Never prints the name: join requests are logged on failure. */
     override fun toString(): String =
-        "JoinDraft(hasName=${firstName.isNotBlank()}, dept=$departmentId, unit=$unitId)"
+        "JoinDraft(hasName=${firstName.isNotBlank()}, dept=$departmentId, unit=$unitId, photo=${photo != null})"
 }
 
 /** Why a join request was refused before it was sent. */

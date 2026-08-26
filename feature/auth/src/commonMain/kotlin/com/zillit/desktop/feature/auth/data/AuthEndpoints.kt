@@ -53,8 +53,15 @@ internal class AuthEndpoints(private val config: AppConfig) {
     /** `GET ?lang=` — languages a production can be created in. */
     val languages get() = "${core}preset/languages"
 
-    /** `GET` — look a project up by its share code. */
-    fun projectByCode(code: String) = "${core}project/$code"
+    /**
+     * `PUT` — resolve a production code.
+     *
+     * Android's `PATH_JOIN_USER_BOTH_CODE`: "both" because it answers for a
+     * production's shared code *and* for one issued to a single person. It
+     * replaced `GET project/{code}`, which now answers 404 — that call is
+     * still in the Android source, commented out directly above this one.
+     */
+    val joinProjectAsUser get() = "${core}user/join-project-as-user"
 
     /** `POST` request · `GET` pending list. */
     val joinProject get() = "${core}user/join-project"

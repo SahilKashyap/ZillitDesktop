@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.chat.data
 
 import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.feature.chat.domain.ChatMessage
+import com.zillit.desktop.feature.chat.domain.ChatScope
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -36,14 +37,27 @@ val GROUP_CHAT_EDIT = SocketEventName("group-chat:edit")
 val PRIVATE_CHAT_DELETE = SocketEventName("private-chat:delete-messages")
 val GROUP_CHAT_DELETE = SocketEventName("group-chat:delete-messages")
 
-/** Marks everything from [peerId] up to [messageId] read — Android's status 3. */
-fun readUntillEnvelope(peerId: String, messageId: String, projectId: String): JsonObject =
+/**
+ * Marks everything from [peerId] up to [messageId] read — Android's status 3.
+ *
+ * [status] is the ladder's rung: 3 when the thread is open on screen, 2 when
+ * the message merely reached this computer. Every other client sends the 2 —
+ * the web on each arrival (`CncObserevers.jsx`), Android likewise — and a
+ * client that never does leaves its senders on one tick forever.
+ */
+fun readUntillEnvelope(
+    peerId: String,
+    messageId: String,
+    projectId: String,
+    status: Int = READ_STATUS,
+    tool: String = ChatScope.CNC,
+): JsonObject =
     buildJsonObject {
         put("user_id", peerId)
         put("_id", messageId)
-        put("status", READ_STATUS)
+        put("status", status)
         put("project_id", projectId)
-        put("chat_tool", "cnc_section")
+        put("chat_tool", tool)
     }
 
 /**
@@ -57,14 +71,16 @@ fun groupReadUntillEnvelope(
     myUserId: String,
     messageId: String,
     projectId: String,
+    status: Int = READ_STATUS,
+    tool: String = ChatScope.CNC,
 ): JsonObject =
     buildJsonObject {
         put("room_id", roomId)
         put("user_id", myUserId)
         put("_id", messageId)
-        put("status", READ_STATUS)
+        put("status", status)
         put("project_id", projectId)
-        put("chat_tool", "cnc_section")
+        put("chat_tool", tool)
     }
 
 /**
@@ -90,12 +106,17 @@ fun selfReadFrom(payload: JsonElement, myUserId: String?): String? {
     }
 }
 
-fun typingEnvelope(senderId: String, receiverId: String, started: Boolean): JsonObject =
+fun typingEnvelope(
+    senderId: String,
+    receiverId: String,
+    started: Boolean,
+    tool: String = ChatScope.CNC,
+): JsonObject =
     buildJsonObject {
         put("sender", senderId)
         put("receiver", receiverId)
         put("status", if (started) "start" else "end")
-        put("chat_tool", "cnc_section")
+        put("chat_tool", tool)
     }
 
 /**
@@ -161,6 +182,9 @@ fun roomsFrom(body: JsonElement): List<com.zillit.desktop.feature.chat.domain.Gr
 }
 
 private const val READ_STATUS = 3
+
+/** "On this computer" — the rung below read, which nothing here used to send. */
+const val DELIVERED_STATUS = 2
 
 /**
  * The `user:list` ack — `{detail:{usersList:[userId…]}}` — read tolerantly:
@@ -352,6 +376,18 @@ fun sendEnvelope(
      * `utils/Constants.kt:713`). See [LOCATION_KIND].
      */
     location: com.zillit.desktop.feature.chat.domain.ChatLocation? = null,
+    /** Which surface this message belongs to — C&C unless a tool says otherwise. */
+    tool: String = ChatScope.CNC,
+    /** The budget tools scope their rooms by department; C&C sends nothing. */
+    departmentId: String = "",
+    /**
+     * Which budget document is being discussed. The web's budget payload
+     * always carries the key, empty when there is none
+     * (`cnc/cncUtil.js:172`), and this server refuses a budget message
+     * without it — the complaint is `cnc_invalid_chat_tool`, which names the
+     * wrong field entirely (live, 2026-08-26).
+     */
+    budgetDocumentId: String = "",
 ): JsonObject = buildJsonObject {
     put("project_id", projectId)
     put("unique_id", uniqueId)
@@ -359,7 +395,11 @@ fun sendEnvelope(
     put("deleted", 0)
     put("messageUniqueId", receiverId)
     put("message_type", if (location != null) LOCATION_KIND else attachment?.kind ?: "text")
-    put("chat_tool", "cnc_section")
+    put("chat_tool", tool)
+    if (departmentId.isNotBlank()) {
+        put("department_id", departmentId)
+        put("budget_document_id", budgetDocumentId)
+    }
     put("sender", senderId)
     put("receiver", receiverId)
     put("message", cipherBody)

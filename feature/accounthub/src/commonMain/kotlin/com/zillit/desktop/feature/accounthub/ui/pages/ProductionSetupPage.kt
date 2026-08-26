@@ -143,6 +143,9 @@ private fun ColumnScope.DealMemoSections(
     onEvent: (AccountHubEvent) -> Unit,
 ) {
     ScheduleSection(state, onEvent)
+    // The web's order: the pay/clause cluster sits under the schedule.
+    DealConditionsSection(state, onEvent)
+    PayrollBureausSection(state, onEvent)
     PayrollDefaultsSection(state, onEvent)
 }
 
@@ -731,7 +734,7 @@ private fun PayrollDefaultsSection(state: AccountHubUiState, onEvent: (AccountHu
 }
 
 @Composable
-private fun EmptyLine(text: String) {
+internal fun EmptyLine(text: String) {
     ZillitText(
         text = text,
         style = ZillitTheme.typography.bodySmall,
