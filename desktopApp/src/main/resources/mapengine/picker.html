@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<!--
+  The map-based location picker for Zillit Desktop.
+
+  Loaded into embedded Chromium (KCEF) from a local file, mirroring the web's
+  two pickers — boxScheduleV2/components/PlacePicker.jsx (Places autocomplete +
+  draggable pin) and transportationHub/common/LocationPicker.jsx (address input
+  + inline pin, reverse-geocoding every pin move). Kotlin drives it through
+  `window.zillitPicker.*` and hears back over the CEF message router as
+  one-line JSON — the contract lives in LocationPickerWire.kt; change either
+  side only with the other.
+
+  ## Why the search box is HTML and not Compose
+
+  The CEF surface is a heavyweight AWT component: it paints above every Compose
+  pixel in the window, whatever the z-order says. A Compose suggestion dropdown
+  opened over the map would be drawn *behind* it and simply not exist as far as
+  the user is concerned. So the input, and Google's own `.pac-container`
+  dropdown, live inside the page — where they are on the same layer as the map
+  — and are styled from the Zillit tokens Kotlin passes on boot so they still
+  look like the app in both themes.
+
+  The Google Maps key is NOT in this file. The page loads without it, announces
+  `{"type":"ready"}`, and Kotlin answers with `zillitPicker.boot(key, theme)` —
+  the key exists only in the page runtime, never in the extracted file.
+-->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Zillit Location Picker</title>
+    <style>
+        :root {
+            --zp-background: #e5e3df; /* Google's own map-loading grey */
+            --zp-surface: #ffffff;
+            --zp-text: #101828;
+            --zp-accent: #f97316;
+            --zp-border: #d0d5dd;
+            --zp-muted: rgba(16, 24, 40, 0.6);
+            --zp-hover: rgba(16, 24, 40, 0.06);
+        }
+
+        html, body, #map {
+            margin: 0;
+            height: 100%;
+            width: 100%;
+            background: var(--zp-background);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        /* Floats over the map, on the map's own layer — see the note above. */
+        #searchbar {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            right: 12px;
+            max-width: 460px;
+            z-index: 5;
+        }
+
+        #search {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px 12px;
+            font-size: 14px;
+            font-weight: 500;
+            line-height: 20px;
+            color: var(--zp-text);
+            background: var(--zp-surface);
+            border: 1px solid var(--zp-border);
+            border-radius: 8px;
+            outline: none;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+        }
+
+        #search::placeholder {
+            color: var(--zp-muted);
+        }
+
+        #search:focus {
+            border-color: var(--zp-accent);
+            /* The literal first: `color-mix` is Chromium 111+, and which CEF
+               this JBR carries is not ours to choose. An older engine keeps
+               the brand orange, a newer one takes the themed accent. */
+            box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.28);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--zp-accent) 28%, transparent);
+        }
+
+        /* Google appends its suggestion list to <body>; these are the only
+           hooks it gives for restyling it. */
+        .pac-container {
+            background: var(--zp-surface);
+            border: 1px solid var(--zp-border);
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+            font-family: inherit;
+            margin-top: 2px;
+        }
+
+        /* Google's "powered by Google" strip is `.pac-container:after` and is
+           deliberately left alone — it is attribution, not decoration. */
+
+        .pac-item {
+            padding: 8px 12px;
+            font-size: 13px;
+            color: var(--zp-muted);
+            border-top: 1px solid var(--zp-border);
+            cursor: pointer;
+        }
+
+        .pac-item:first-child {
+            border-top: none;
+        }
+
+        .pac-item:hover,
+        .pac-item-selected {
+            background: var(--zp-hover);
+        }
+
+        .pac-item-query,
+        .pac-matched {
+            color: var(--zp-text);
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .pac-icon {
+            /* The default sprite is a dark glyph that vanishes in dark mode. */
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+<div id="searchbar">
+    <input id="search" type="text" autocomplete="off" spellcheck="false"
+           placeholder="Search for a place or address…">
+</div>
+<script>
+    'use strict';
+
+    /* JS → Kotlin: one-line JSON over the CEF message router. */
+    function send(payload) {
+        if (window.cefQuery) {
+            window.cefQuery({ request: JSON.stringify(payload) });
+        }
+    }
+
+    var map = null;
+    var marker = null;
+    var geocoder = null;
+    var booted = false;
+    var pendingCenter = null;
+    var pendingPin = null;
+
+    /* The web's fallback centre when neither a value nor a user location
+       exists (boxScheduleV2/components/PlacePicker.jsx:34), and its two zoom
+       levels — 15 with a place, 11 without (:322). */
+    var FALLBACK = { lat: 28.6139, lng: 77.2090 };
+    var ZOOM_PLACE = 15;
+    var ZOOM_WIDE = 11;
+
+    /* Google's global hook for a refused key — a bad key, or a
+       referrer-restricted key rejecting this file:// origin. Without it the
+       picker is a silent grey slab. */
+    window.gm_authFailure = function () {
+        send({ type: 'auth-failed' });
+    };
+
+    function applyTheme(theme) {
+        if (!theme) { return; }
+        var root = document.documentElement.style;
+        root.setProperty('--zp-background', theme.background);
+        root.setProperty('--zp-surface', theme.surface);
+        root.setProperty('--zp-text', theme.text);
+        root.setProperty('--zp-accent', theme.accent);
+        root.setProperty('--zp-border', theme.border);
+        /* Derived from the text colour rather than passed, so a caller cannot
+           get the two out of step: muted text on a dark surface must be light. */
+        root.setProperty('--zp-muted', theme.dark ? 'rgba(255,255,255,0.62)' : 'rgba(16,24,40,0.6)');
+        root.setProperty('--zp-hover', theme.dark ? 'rgba(255,255,255,0.10)' : 'rgba(16,24,40,0.06)');
+        document.body.style.colorScheme = theme.dark ? 'dark' : 'light';
+    }
+
+    /* Every change goes up: the pin moved, or a suggestion was chosen. Kotlin
+       always holds what "Use this location" would return. */
+    function emit(name, address, lat, lng) {
+        send({
+            type: 'picked',
+            name: name || address || '',
+            address: address || '',
+            lat: lat,
+            lng: lng
+        });
+    }
+
+    function placePin(lat, lng, zoom) {
+        if (!map) { pendingPin = { lat: lat, lng: lng }; return; }
+        var position = { lat: lat, lng: lng };
+        if (!marker) {
+            marker = new google.maps.Marker({ map: map, position: position, draggable: true });
+            marker.addListener('dragend', function (e) {
+                if (!e.latLng) { return; }
+                var p = e.latLng.toJSON();
+                reverseGeocode(p.lat, p.lng);
+            });
+        } else {
+            marker.setPosition(position);
+            marker.setMap(map);
+        }
+        map.panTo(position);
+        if (zoom) { map.setZoom(zoom); }
+    }
+
+    /* Fills address and name from the coordinates, the web's behaviour on every
+       pin move (transportationHub/common/LocationPicker.jsx:120-136,
+       boxScheduleV2/components/PlacePicker.jsx:117-137). A geocode that fails
+       still yields the coordinates — with them written out as the address — so
+       a pick is never lost to a network hiccup. */
+    function reverseGeocode(lat, lng) {
+        placePin(lat, lng);
+        var coordText = lat.toFixed(6) + ', ' + lng.toFixed(6);
+        if (!geocoder) {
+            emit('', coordText, lat, lng);
+            return;
+        }
+        geocoder.geocode({ location: { lat: lat, lng: lng } }, function (results, status) {
+            var top = (status === 'OK' && results && results[0]) ? results[0] : null;
+            var address = (top && top.formatted_address) || coordText;
+            document.getElementById('search').value = address;
+            emit('', address, lat, lng);
+        });
+    }
+
+    function wireAutocomplete() {
+        var input = document.getElementById('search');
+        var auto = new google.maps.places.Autocomplete(input, {
+            fields: ['formatted_address', 'geometry', 'name']
+        });
+        auto.bindTo('bounds', map);
+        auto.addListener('place_changed', function () {
+            var place = auto.getPlace();
+            if (!place) { return; }
+            var address = place.formatted_address || place.name || input.value;
+            input.value = address;
+            var loc = place.geometry && place.geometry.location;
+            if (!loc) { return; }
+            var lat = loc.lat();
+            var lng = loc.lng();
+            placePin(lat, lng, ZOOM_PLACE);
+            /* The name is the one thing reverse-geocoding cannot recover, so a
+               chosen suggestion reports it directly. */
+            emit(place.name, address, lat, lng);
+        });
+        /* Enter in the box would otherwise submit nothing and blur the field
+           before Google has resolved the highlighted suggestion. */
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); }
+        });
+    }
+
+    /* Called by Google's script once it has loaded. */
+    window.__zpInit = function () {
+        map = new google.maps.Map(document.getElementById('map'), {
+            center: FALLBACK,
+            zoom: ZOOM_WIDE,
+            streetViewControl: false,
+            fullscreenControl: false,
+            mapTypeControl: false,
+            clickableIcons: false
+        });
+        geocoder = new google.maps.Geocoder();
+        map.addListener('click', function (e) {
+            if (!e.latLng) { return; }
+            var p = e.latLng.toJSON();
+            reverseGeocode(p.lat, p.lng);
+        });
+        wireAutocomplete();
+        send({ type: 'map-ready' });
+        if (pendingPin !== null) {
+            var pin = pendingPin;
+            pendingPin = null;
+            placePin(pin.lat, pin.lng, ZOOM_PLACE);
+        }
+        if (pendingCenter !== null) {
+            var c = pendingCenter;
+            pendingCenter = null;
+            window.zillitPicker.center(c.lat, c.lng, c.zoom);
+        }
+    };
+
+    window.zillitPicker = {
+        /* Kotlin hands the decrypted key and the app's colours down; the page
+           injects Google's script itself. Idempotent — a second boot is a
+           no-op, which matters because the host replays boot on every reopen. */
+        boot: function (key, themeText) {
+            try {
+                applyTheme(JSON.parse(themeText));
+            } catch (ignored) {
+                /* A theme that will not parse is not worth failing the map for. */
+            }
+            if (booted) { return; }
+            booted = true;
+            var tag = document.createElement('script');
+            tag.src = 'https://maps.googleapis.com/maps/api/js?key='
+                + encodeURIComponent(key) + '&libraries=places&v=weekly&callback=__zpInit';
+            tag.onerror = function () {
+                send({ type: 'error', message: 'The Google Maps script could not load.' });
+            };
+            document.head.appendChild(tag);
+        },
+
+        center: function (lat, lng, zoom) {
+            if (!map) { pendingCenter = { lat: lat, lng: lng, zoom: zoom }; return; }
+            map.setZoom(zoom);
+            map.panTo({ lat: lat, lng: lng });
+        },
+
+        /* Seeds the pin from a place already saved, without geocoding it: the
+           address is the one the record holds, not one Google might reword. */
+        setPin: function (lat, lng) {
+            placePin(lat, lng, ZOOM_PLACE);
+        },
+
+        /* Lets the host put the saved address back in the box on reopen. */
+        setSearchText: function (text) {
+            document.getElementById('search').value = text;
+        },
+
+        /* Cleared between openings so the next place does not start inside the
+           last one's search text or pin. */
+        reset: function () {
+            document.getElementById('search').value = '';
+            if (marker) { marker.setMap(null); }
+        }
+    };
+
+    /* The shell is up and waiting for its key. */
+    send({ type: 'ready' });
+</script>
+</body>
+</html>
