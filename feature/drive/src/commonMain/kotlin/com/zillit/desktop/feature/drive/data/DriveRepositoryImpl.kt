@@ -576,12 +576,38 @@ class DriveRepositoryImpl(
     override suspend fun deleteTag(tagId: String): ZillitResult<Unit> =
         mutate(HttpVerb.Delete, "$base/tags/$tagId", null)
 
+    /**
+     * The rows here are joins, not tags — see [ItemTagDto]. A row whose
+     * `tag_id` arrived bare has no name, so the project list fills it in;
+     * that list is already loaded and costs nothing to consult.
+     */
     override suspend fun itemTags(ref: DriveRef): ZillitResult<List<DriveTag>> =
         get(
             "$base/tags/item-tags",
-            ListSerializer(TagDto.serializer()),
+            ListSerializer(ItemTagDto.serializer()),
             mapOf("item_id" to ref.id, "item_type" to ref.kind.wire),
-        ).map { rows -> rows.mapNotNull { it.toDomain() } }
+        ).flatMap { rows ->
+            val applied = rows.mapNotNull { it.toDomain() }
+            if (applied.none { it.name.isBlank() }) {
+                ZillitResult.Success(applied)
+            } else {
+                named(applied)
+            }
+        }
+
+    /** Fills blank names from the production's tag list, leaving the ids alone. */
+    private suspend fun named(applied: List<DriveTag>): ZillitResult<List<DriveTag>> =
+        when (val all = tags()) {
+            is ZillitResult.Failure -> ZillitResult.Success(applied)
+            is ZillitResult.Success -> {
+                val byId = all.data.associateBy { it.id }
+                ZillitResult.Success(
+                    applied.map { tag ->
+                        if (tag.name.isNotBlank()) tag else byId[tag.id] ?: tag
+                    },
+                )
+            }
+        }
 
     override suspend fun assignTag(tagId: String, ref: DriveRef): ZillitResult<Unit> =
         mutate(HttpVerb.Post, "$base/tags/assign", tagBody(tagId, ref))
@@ -667,6 +693,13 @@ class DriveRepositoryImpl(
      * a parse failure waiting to be reported as a failed delete that in fact
      * succeeded.
      */
+    private inline fun <T, R> ZillitResult<T>.flatMap(
+        transform: (T) -> ZillitResult<R>,
+    ): ZillitResult<R> = when (this) {
+        is ZillitResult.Success -> transform(data)
+        is ZillitResult.Failure -> ZillitResult.Failure(error)
+    }
+
     private suspend fun mutate(
         verb: HttpVerb,
         path: String,

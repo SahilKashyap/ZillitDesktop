@@ -20,6 +20,7 @@ import com.zillit.desktop.feature.drive.domain.UploadSession
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -283,6 +284,40 @@ internal data class TagDto(
 ) {
     fun toDomain(): DriveTag? = id?.takeIf { it.isNotBlank() }?.let {
         DriveTag(id = it, name = name.orEmpty().ifBlank { "Tag" }, color = color.orEmpty())
+    }
+}
+
+/**
+ * One row of `/tags/item-tags` — a **join**, not a tag.
+ *
+ * `_id` is the join row's own id and must never be read as the tag's: a
+ * remove call carrying it finds nothing. The tag hangs off [tagId], which the
+ * server sends either populated (the whole tag object) or bare (its id),
+ * depending on the route — the web branches on exactly that
+ * (`FileDetailsPanel.jsx:732`).
+ *
+ * A bare id yields a tag with no name, which the caller fills in from the
+ * project's tag list.
+ */
+@Serializable
+internal data class ItemTagDto(
+    @SerialName("tag_id") val tagId: JsonElement? = null,
+) {
+    fun toDomain(): DriveTag? = when (val value = tagId) {
+        is JsonObject -> TagDto(
+            id = value["_id"]?.jsonPrimitive?.contentOrNull,
+            name = value["name"]?.jsonPrimitive?.contentOrNull,
+            color = value["color"]?.jsonPrimitive?.contentOrNull,
+        ).toDomain()
+
+        is JsonPrimitive -> value.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+            // No name on the wire; the caller resolves it. Blank rather than
+            // TagDto's "Tag" placeholder, so an unresolved one is visibly
+            // unresolved instead of quietly mislabelled.
+            ?.let { DriveTag(id = it, name = "", color = "") }
+
+        else -> null
     }
 }
 

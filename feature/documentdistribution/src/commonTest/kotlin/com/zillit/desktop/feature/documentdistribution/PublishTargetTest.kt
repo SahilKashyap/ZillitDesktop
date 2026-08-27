@@ -207,4 +207,23 @@ class PublishTargetTest {
         assertFalse(viewer.ready)
         assertTrue(viewer.publishable.isEmpty(), "nothing is offered until rights are known")
     }
+    /**
+     * The call sheet is gated by the home unit list, not the tool grid, so it
+     * is offered to someone holding Document Distribution and nothing else.
+     * Verified live 2026-08-27 on a production with 42 tools switched on,
+     * where the dialog said "no posting rights on any tool" instead.
+     */
+    @Test
+    fun `call sheet is offered to someone holding no destination tool`() {
+        val viewer = DocDistViewer.from(
+            permissions = ProjectPermissions(listOf(granted(DocDistViewer.TOOL_IDENTIFIER))),
+            userId = "u1",
+            userEmail = "u@x.com",
+            isTelevision = false,
+        )
+
+        assertTrue(viewer.targets().isNotEmpty(), "no destination offered at all")
+        assertEquals(listOf(PublishTarget.CallSheet), viewer.targets())
+    }
+
 }
