@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.sos
 
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.feature.sos.domain.SosCrewMember
 import com.zillit.desktop.feature.sos.domain.SosFix
 import com.zillit.desktop.feature.sos.domain.SosViewer
 import com.zillit.desktop.feature.sos.ui.SosConfirm
@@ -39,11 +40,12 @@ class SosFeedTest {
     private fun viewModel(
         repository: FakeSosRepository,
         fix: SosFix? = SosFix(lat = 51.5, long = -0.1),
+        crew: List<SosCrewMember> = emptyList(),
     ) = SosViewModel(
         repository = repository,
         nowMillis = { now },
         viewer = { SosViewer(userId = "u-me", isAdmin = false, phone = "7700900000") },
-        crew = { emptyList() },
+        crew = { crew },
         locationFix = { fix },
         pageLimit = repository.pageSize,
     )
@@ -203,6 +205,7 @@ class SosFeedTest {
         val collector = launch {
             viewModel.effects.collect { effect ->
                 when (effect) {
+                    is SosEffect.PlaceCall -> Unit
                     is SosEffect.OpenLink -> links += effect.url
                     is SosEffect.Notice -> notices += effect.message
                 }
@@ -218,5 +221,84 @@ class SosFeedTest {
         assertEquals(listOf("https://maps.google.com/?q=1,2"), links)
         assertEquals(listOf("This alert carries no location."), notices)
         collector.cancel()
+    }
+
+    private fun theirAlert() = FakeSosRepository().apply { alerts += alert("a1", 200, sender = "u-them") }
+
+    @Test
+    fun `calling an alert's sender rings the device the crew list knows`() = runTest(dispatcher) {
+        val model = viewModel(
+            theirAlert(),
+            crew = listOf(SosCrewMember("u-them", "Asha", "Gaffer", deviceId = "their-device")),
+        )
+        val effects = mutableListOf<SosEffect>()
+        val collector = launch { model.effects.collect { effects += it } }
+        model.start()
+        advanceUntilIdle()
+
+        model.onEvent(SosEvent.CallSender("a1", video = false))
+        advanceUntilIdle()
+
+        collector.cancel()
+
+        val call = effects.filterIsInstance<SosEffect.PlaceCall>().single()
+        assertEquals("u-them", call.userId)
+        assertEquals("their-device", call.deviceId)
+        assertEquals("Asha", call.displayName)
+    }
+
+    @Test
+    fun `somebody off the production cannot be called`() = runTest(dispatcher) {
+        // Their row survives on the crew list so old alerts can still name
+        // them — and it keeps its device id, so only the status catches this.
+        val model = viewModel(
+            theirAlert(),
+            crew = listOf(SosCrewMember("u-them", "Asha", "Gaffer", deviceId = "their-device", hasLeft = true)),
+        )
+        val effects = mutableListOf<SosEffect>()
+        val collector = launch { model.effects.collect { effects += it } }
+        model.start()
+        advanceUntilIdle()
+
+        model.onEvent(SosEvent.CallSender("a1", video = false))
+        advanceUntilIdle()
+
+        collector.cancel()
+
+        assertTrue(effects.filterIsInstance<SosEffect.PlaceCall>().isEmpty())
+        assertTrue(effects.filterIsInstance<SosEffect.Notice>().isNotEmpty(), "silence is the wrong answer here")
+    }
+
+    @Test
+    fun `a sender with no device is refused rather than dialled`() = runTest(dispatcher) {
+        val model = viewModel(theirAlert(), crew = listOf(SosCrewMember("u-them", "Asha", "Gaffer")))
+        val effects = mutableListOf<SosEffect>()
+        val collector = launch { model.effects.collect { effects += it } }
+        model.start()
+        advanceUntilIdle()
+
+        model.onEvent(SosEvent.CallSender("a1", video = false))
+        advanceUntilIdle()
+
+        collector.cancel()
+
+        assertTrue(effects.filterIsInstance<SosEffect.PlaceCall>().isEmpty())
+    }
+
+    @Test
+    fun `your own alert has nobody to ring`() = runTest(dispatcher) {
+        val repository = FakeSosRepository().apply { alerts += alert("mine", 200, sender = "u-me") }
+        val model = viewModel(repository, crew = listOf(SosCrewMember("u-me", "Me", "", deviceId = "d")))
+        val effects = mutableListOf<SosEffect>()
+        val collector = launch { model.effects.collect { effects += it } }
+        model.start()
+        advanceUntilIdle()
+
+        model.onEvent(SosEvent.CallSender("mine", video = false))
+        advanceUntilIdle()
+
+        collector.cancel()
+
+        assertTrue(effects.filterIsInstance<SosEffect.PlaceCall>().isEmpty())
     }
 }

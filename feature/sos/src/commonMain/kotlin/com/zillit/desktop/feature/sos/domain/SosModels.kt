@@ -128,6 +128,20 @@ data class SosCrewMember(
     val fullName: String,
     /** A label key, or a plain name — shown through the dictionary either way. */
     val designation: String,
+    /**
+     * The device to ring them on. Blank when the crew list has none, which is
+     * the one state a call button must refuse: a call that fails on press is
+     * worse than a call button that is not there.
+     */
+    val deviceId: String = "",
+    /**
+     * They are off the production.
+     *
+     * Kept on the list rather than filtered out, because the alert picker
+     * still has to name them on old alerts — but they cannot be called, and
+     * a blank device id would not catch it: this roster keeps their device.
+     */
+    val hasLeft: Boolean = false,
 )
 
 /** Who is looking, and what the page shows because of it. */

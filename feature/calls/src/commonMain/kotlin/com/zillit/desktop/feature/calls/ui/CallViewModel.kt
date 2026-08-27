@@ -248,6 +248,10 @@ sealed interface CallEvent {
         val provider: CallProvider = CallProvider.Agora,
         /** Line 1 rings a person; Line 2 rings one of their devices. */
         val receiverUserId: String = "",
+        /** A room from a calendar or box-schedule event. See placeCall. */
+        val isCalendarCall: Boolean = false,
+        /** A call to the 24x7 support team. See placeCall. */
+        val is247Call: Boolean = false,
     ) : CallEvent
 
     data object Accept : CallEvent
@@ -644,6 +648,8 @@ class CallViewModel(
         displayName = event.displayName,
         provider = event.provider,
         receiverUserId = event.receiverUserId,
+        isCalendarCall = event.isCalendarCall,
+        is247Call = event.is247Call,
     )
 
     /** Everything a call leaves behind, cleared in one place. */

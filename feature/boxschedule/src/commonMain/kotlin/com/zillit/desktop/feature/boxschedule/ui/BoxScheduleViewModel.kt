@@ -64,6 +64,7 @@ class BoxScheduleViewModel(
     override fun onEvent(event: BoxScheduleEvent) {
         when (event) {
             BoxScheduleEvent.Refresh -> refresh()
+            is BoxScheduleEvent.JoinCall -> joinCall(event.listKey)
             BoxScheduleEvent.NewBlock -> setState {
                 copy(blockEditor = BlockEditor(typeId = types.firstOrNull()?.id.orEmpty()))
             }
@@ -321,6 +322,7 @@ class BoxScheduleViewModel(
                     scheduleDayId = event.scheduleDayId,
                     noteType = event.noteType.ifBlank { "general" },
                     repeatStatus = event.repeatStatus.ifBlank { "none" },
+                    callType = event.callType,
                     occurrenceDate = event.occurrenceDate.takeIf { event.isRecurring },
                     isRecurring = event.isRecurring,
                 ),
@@ -431,6 +433,29 @@ class BoxScheduleViewModel(
             noteType = noteType,
             repeatStatus = repeatStatus,
             repeatEndDate = 0,
+            callType = callType,
+        )
+    }
+
+    /**
+     * Joins the call on one event.
+     *
+     * The guards are re-checked here rather than trusted from the button: the
+     * list can move under a click, and dialling a blank room places a call
+     * into nothing.
+     */
+    private fun joinCall(listKey: String) {
+        val event = currentState.events.firstOrNull { it.listKey == listKey } ?: return
+        if (!event.isCallJoinable || !event.hasCallRoom) {
+            sendEffect(BoxScheduleEffect.Notice("This event has no call to join."))
+            return
+        }
+        sendEffect(
+            BoxScheduleEffect.JoinCall(
+                roomId = event.cncCallGroupId,
+                title = event.title,
+                video = event.prefersVideoCall,
+            ),
         )
     }
 

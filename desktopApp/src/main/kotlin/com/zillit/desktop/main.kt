@@ -94,6 +94,7 @@ import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.ui.HomeFeedEvent
 import com.zillit.desktop.feature.home.ui.HomeFeedViewModel
 import com.zillit.desktop.feature.home.calendar.CalendarEvent2Event
+import com.zillit.desktop.feature.home.calendar.CalendarEvent
 import com.zillit.desktop.feature.home.calendar.CalendarViewModel
 import com.zillit.desktop.feature.home.calendar.EventInvitee
 import kotlinx.datetime.TimeZone
@@ -2596,6 +2597,11 @@ private fun buildRegistry(
                 // The grid's customise button opens the same switches Admin
                 // Settings holds — one page, two doors, as the phones do it.
                 customiseToolsRoute = AdminDestination.ToolAvailability.path,
+                // A calendar call is a room, not a ring: everyone invited
+                // dials the event's own group and walks in.
+                onJoinEventCall = viewModels.calls?.let { vm ->
+                    { event -> vm.onEvent(joinEventCall(event)) }
+                },
             )
         }
     }
@@ -2612,8 +2618,28 @@ private fun buildRegistry(
     }
     // The diary answers at both paths: the tile's own, and the web mount that
     // the legacy pre-production tile shares.
-    val boxSchedule = viewModels.boxSchedule?.let { BoxScheduleToolProvider(it, BOX_SCHEDULE_PATH) }
-    val preProduction = viewModels.boxSchedule?.let { BoxScheduleToolProvider(it, PRE_PRODUCTION_PATH) }
+    // The same room a calendar Join opens — the two surfaces show the same
+    // events, so the lambda is the same one in both places.
+    val joinDiaryCall: ((String, String, Boolean) -> Unit)? = viewModels.calls?.let { vm ->
+        { roomId, title, video ->
+            vm.onEvent(
+                CallEvent.Place(
+                    chatRoomId = roomId,
+                    receiverDeviceId = "",
+                    mode = CallMode.Group,
+                    type = if (video) CallType.Video else CallType.Audio,
+                    displayName = title,
+                    isCalendarCall = true,
+                ),
+            )
+        }
+    }
+    val boxSchedule = viewModels.boxSchedule?.let {
+        BoxScheduleToolProvider(it, BOX_SCHEDULE_PATH, onJoinCall = joinDiaryCall)
+    }
+    val preProduction = viewModels.boxSchedule?.let {
+        BoxScheduleToolProvider(it, PRE_PRODUCTION_PATH, onJoinCall = joinDiaryCall)
+    }
     val maps = viewModels.maps?.let {
         MapToolProvider(
             it,
@@ -2803,6 +2829,22 @@ private fun buildRegistry(
                 crew = { ready.projectContext?.context?.value.sosCrew() },
             ),
             onOpenLink = ::openInBrowser,
+            // An ordinary private call. Nothing about the wire is special —
+            // only the screen it was started from.
+            onCall = viewModels.calls?.let { vm ->
+                { userId, deviceId, name, video ->
+                    vm.onEvent(
+                        CallEvent.Place(
+                            chatRoomId = "",
+                            receiverDeviceId = deviceId,
+                            mode = CallMode.Private,
+                            type = if (video) CallType.Video else CallType.Audio,
+                            displayName = name,
+                            receiverUserId = userId,
+                        ),
+                    )
+                }
+            },
         )
     }
     // The rail's foot: the web side menu's Pin to Start and Zillit Help.
@@ -2818,7 +2860,15 @@ private fun buildRegistry(
             ),
         )
     }
-    val help = HelpToolProvider(onOpenExternal = ::openInBrowser, onContactSupport = ::contactSupport)
+    val help = HelpToolProvider(
+        onOpenExternal = ::openInBrowser,
+        onContactSupport = ::contactSupport,
+        // A support call is a self-dial: it goes to this account's PRIMARY
+        // device and the backend routes it to whichever agent is free.
+        // Deliberately NOT this machine's device id — on a QR-linked desktop
+        // that is a child row, and dialling it would ring this very computer.
+        onCallSupport = callSupport(graph as? AppGraph.Ready, viewModels.calls),
+    )
     val cash = viewModels.cashExpenses?.let { vm ->
         CashExpensesToolProvider(
             viewModel = vm,
@@ -2874,7 +2924,8 @@ private fun buildRegistry(
             },
         )
     }
-    val timecards = viewModels.timecards?.let { TimecardToolProvider(it) }
+     val timecards = viewModels.timecards?.let { TimecardToolProvider(it) }
+
     val payroll = viewModels.payroll?.let { PayrollToolProvider(it) }
     val deals = viewModels.dealMemos?.let { DealMemoToolProvider(it) }
     val distribution = viewModels.docDist?.let {
@@ -2969,12 +3020,96 @@ private fun ProjectContext?.sosViewer(): SosViewer = SosViewer(
 )
 
 /** The production's crew, for the "add a receiver" picker. */
+/**
+ * Rings the 24x7 support team, or null when there is nothing to ring with.
+ *
+ * Null rather than a no-op button: no calling, or no open production, and the
+ * control simply is not drawn — pressing something that answers with an
+ * apology is worse on a support screen than anywhere else.
+ *
+ * The dial target is the account's own primary device. Nothing on the wire
+ * says "support"; the backend recognises the self-dial and routes it. The
+ * `is247Call` flag is local, and is what keeps Record and Add-people off the
+ * call once it connects.
+ */
+/**
+ * The Place event for a calendar or box-schedule room.
+ *
+ * One helper because three surfaces raise it — the calendar popover, the box
+ * schedule and pre-production — and three copies of the same six arguments is
+ * how they drift apart. The room id IS the call: nobody is rung, and the
+ * `isCalendarCall` flag is what keeps hanging up from closing the room on
+ * everyone still in it.
+ */
+private fun joinEventCall(event: CalendarEvent): CallEvent.Place = CallEvent.Place(
+    chatRoomId = event.cncGroupId,
+    receiverDeviceId = "",
+    mode = CallMode.Group,
+    type = if (event.callType?.prefersVideo == true) CallType.Video else CallType.Audio,
+    displayName = event.title,
+    isCalendarCall = true,
+)
+
+private fun callSupport(
+    ready: AppGraph.Ready?,
+    calls: CallViewModel?,
+): (suspend () -> String?)? {
+    if (ready == null || calls == null) return null
+    return {
+        // Both of these are read WHEN THE BUTTON IS PRESSED, not when it is
+        // built. The registry is assembled once, early, and the profile often
+        // is not loaded by then — reading it there returned null, which took
+        // the whole button away and made the failure look like a missing
+        // feature rather than a not-yet.
+        val userId = ready.projectContext?.context?.value?.profile?.userId.orEmpty()
+        val primary = ready.accountRepository.linkedDevices()
+            .getOrNull()
+            ?.firstOrNull { it.isPrimary }
+            ?.id
+            .orEmpty()
+        when {
+            userId.isBlank() -> "Open a production first, then call support."
+            // A blank receiver is dropped from the request body, so this would
+            // place a call nobody was ever invited to.
+            primary.isBlank() -> {
+                ZillitLog.w("Support") { "no primary device on this account; support call not placed" }
+                "Could not find your primary device. Try again in a moment."
+            }
+            else -> {
+                ZillitLog.i("Support") { "placing a support call to the primary device" }
+                calls.onEvent(
+                    CallEvent.Place(
+                        chatRoomId = "",
+                        receiverDeviceId = primary,
+                        mode = CallMode.Private,
+                        type = CallType.Audio,
+                        displayName = "Zillit support",
+                        receiverUserId = userId,
+                        is247Call = true,
+                    ),
+                )
+                null
+            }
+        }
+    }
+}
+
 private fun ProjectContext?.sosCrew(): List<SosCrewMember> =
     this?.users.orEmpty().mapNotNull { user ->
         val id = user.userId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
         // Translated words, not the wire's label key — the same rule the
         // Contacts tab applies (designationText drops the placeholder too).
-        SosCrewMember(userId = id, fullName = user.fullName, designation = user.designationText().orEmpty())
+        SosCrewMember(
+            userId = id,
+            fullName = user.fullName,
+            designation = user.designationText().orEmpty(),
+            // Carried so an alert can be answered with a call. The list keeps
+            // people who have left — the picker still has to name them on old
+            // alerts — so their status rides along and the call refuses them,
+            // which a blank device id would not: this roster keeps that too.
+            deviceId = user.deviceId.orEmpty(),
+            hasLeft = user.status == "left" || user.status == "removed",
+        )
     }
 
 private fun ProjectContext.crewContacts(): List<EmailContact> =
@@ -3195,14 +3330,43 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
  * with subject "Zillit Issue"); the in-app compose is the richer route but
  * needs a mailbox on this production, which the frame cannot assume.
  */
-private fun contactSupport() {
-    runCatching {
-        val desktop = java.awt.Desktop.getDesktop().takeIf { java.awt.Desktop.isDesktopSupported() }
-        if (desktop?.isSupported(java.awt.Desktop.Action.MAIL) == true) {
-            desktop.mail(java.net.URI("mailto:support@zillit.com?subject=Zillit%20Issue"))
-        }
+private fun contactSupport(): String? {
+    val mailto = java.net.URI("mailto:$SUPPORT_ADDRESS?subject=Zillit%20Issue")
+    val desktop = runCatching {
+        java.awt.Desktop.getDesktop().takeIf { java.awt.Desktop.isDesktopSupported() }
+    }.getOrNull() ?: return noMailClient()
+
+    // The mail action first, then the plain URL handler. They are not the same
+    // thing: a Mac with no default mail client still reports MAIL as supported
+    // and then does nothing with the request, which is exactly the silence
+    // this used to produce — the whole function was one runCatching that
+    // swallowed every outcome, success and failure alike.
+    if (desktop.isSupported(java.awt.Desktop.Action.MAIL)) {
+        val sent = runCatching { desktop.mail(mailto) }
+            .onFailure { ZillitLog.w("Support") { "mail client refused: ${it.message}" } }
+        if (sent.isSuccess) return null
     }
+    if (desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
+        val opened = runCatching { desktop.browse(mailto) }
+            .onFailure { ZillitLog.w("Support") { "no handler for mailto: ${it.message}" } }
+        if (opened.isSuccess) return null
+    }
+    return noMailClient()
 }
+
+/**
+ * What to say when nothing on this machine will open a mail.
+ *
+ * The address, not an apology: somebody who cannot be handed a compose window
+ * can still be handed something to copy, and that is the whole point of the
+ * row they pressed.
+ */
+private fun noMailClient(): String {
+    ZillitLog.w("Support") { "no mail client on this machine" }
+    return "No mail app is set up on this Mac. Write to $SUPPORT_ADDRESS."
+}
+
+private const val SUPPORT_ADDRESS = "support@zillit.com"
 
 /** The segment the phones count the bell against (`GLOBAL_LABEL` on Android). */
 private const val GLOBAL_BADGE_SEGMENT = "global_label"

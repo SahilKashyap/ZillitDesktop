@@ -201,7 +201,7 @@ private fun productionGroup(): SettingsGroup =
             SettingsEntry(
                 destination = SettingsDestination.Help,
                 title = "Zillit help",
-                detail = "Guides for every tool, opened in your browser.",
+                detail = "FAQs, privacy, terms — and a way to reach support.",
                 icon = ZillitIcons.Info,
             ),
             SettingsEntry(
@@ -458,9 +458,6 @@ private fun List<SettingsGroup>.availableOn(production: ProductionFacts): List<S
             .takeIf { it.isNotEmpty() }
             ?.let { group.copy(entries = it) }
     }
-
-/** Zillit's documentation site — the same pages the phone clients open. */
-const val ZILLIT_HELP_URL = "https://documentation.zillit.com/"
 
 /** The admin walkthrough iOS links from its own "project setup notes" row. */
 const val SETUP_NOTES_URL = "https://documentation.zillit.com/#project-setup-notes"

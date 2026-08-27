@@ -51,6 +51,7 @@ internal fun EventDetailPopover(
     detail: EventDetailState,
     onEvent: (CalendarEvent2Event) -> Unit,
     modifier: Modifier = Modifier,
+    onJoinCall: ((CalendarEvent) -> Unit)? = null,
 ) {
     val colors = ZillitTheme.colors
 
@@ -85,7 +86,11 @@ internal fun EventDetailPopover(
                 contentPadding = PaddingValues(horizontal = ZillitTheme.spacing.lg),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
-                DetailRows(detail)
+                DetailRows(
+                    detail,
+                    joinable = onJoinCall != null && detail.canJoinCall,
+                    onJoin = onJoinCall,
+                )
             }
 
             DetailActions(detail, onEvent)
@@ -149,7 +154,11 @@ private fun DetailHeader(detail: EventDetailState, onEvent: (CalendarEvent2Event
 
 /** Everything the grid block could not fit. */
 @Composable
-private fun DetailRows(detail: EventDetailState) {
+private fun DetailRows(
+    detail: EventDetailState,
+    joinable: Boolean,
+    onJoin: ((CalendarEvent) -> Unit)?,
+) {
     val event = detail.event
 
     InfoRow(
@@ -167,7 +176,20 @@ private fun DetailRows(detail: EventDetailState) {
     }
 
     if (event.hasCall) {
-        InfoRow(icon = ZillitIcons.Monitor, primary = "Video call", secondary = "Joining is on the call sheet")
+        val label = event.callType?.label ?: "Call"
+        if (joinable) {
+            // The room is the event's own; everyone invited walks into the
+            // same one rather than ringing each other.
+            ZillitButton(
+                text = "Join call",
+                onClick = { onJoin?.invoke(event) },
+                variant = ButtonVariant.Primary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Phone,
+            )
+        } else {
+            InfoRow(icon = ZillitIcons.Monitor, primary = label, secondary = "No call to join")
+        }
     }
 
     if (event.reminderMinutes > 0) {

@@ -13,7 +13,6 @@ import com.zillit.desktop.feature.settings.ui.SettingsEffect
 import com.zillit.desktop.feature.settings.ui.SettingsEvent
 import com.zillit.desktop.feature.settings.ui.SettingsUiState
 import com.zillit.desktop.feature.settings.ui.SettingsViewModel
-import com.zillit.desktop.feature.settings.ui.ZILLIT_HELP_URL
 import com.zillit.desktop.feature.settings.ui.adminSettingsEntries
 import com.zillit.desktop.feature.settings.ui.entryCount
 import com.zillit.desktop.feature.settings.ui.matching
@@ -152,8 +151,16 @@ class SettingsListingTest {
         job.cancel()
     }
 
+    /**
+     * Help stopped going to the browser.
+     *
+     * It used to open documentation.zillit.com in a tab, which meant the app's
+     * own guide page — the phones' four links, plus the support call and the
+     * mail to support — was reachable only from the rail. Setup notes are
+     * still a web page and still open in a browser.
+     */
     @Test
-    fun `help and setup notes go to the browser`() = runTest {
+    fun `help opens the app's own guide, and setup notes still go to the browser`() = runTest {
         val settings = viewModel()
         val effects = mutableListOf<SettingsEffect>()
         val job = CoroutineScope(dispatcher).launch { settings.effects.collect(effects::add) }
@@ -164,7 +171,7 @@ class SettingsListingTest {
 
         assertEquals(
             listOf<SettingsEffect>(
-                SettingsEffect.OpenExternal(ZILLIT_HELP_URL),
+                SettingsEffect.OpenHelp,
                 SettingsEffect.OpenExternal(SETUP_NOTES_URL),
             ),
             effects.toList(),

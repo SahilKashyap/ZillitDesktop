@@ -189,6 +189,15 @@ sealed interface SettingsEffect {
     data object AskLeaveProduction : SettingsEffect
 
     /**
+     * Opens Zillit Help — the app's own guide page, in this same window.
+     *
+     * Named rather than routed, like [OpenAccountPage]: the route belongs to
+     * the provider, and this module's view model has no reason to know the
+     * string the workspace navigates by.
+     */
+    data object OpenHelp : SettingsEffect
+
+    /**
      * Hands a documentation link to the browser.
      *
      * Carried as an effect rather than opened here: this module is common code

@@ -123,7 +123,11 @@ private fun HandAndShare(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     )
     // One recording per call is the rule every platform enforces, so while
     // somebody else holds it the button steps aside and the banner explains.
-    if (state.recordedBy.isBlank() || state.recording) {
+    //
+    // Never on a support call: recording the 24x7 team is not something the
+    // product offers, and the phones hide it for the same reason.
+    val mayRecord = state.session?.is247Call != true
+    if (mayRecord && (state.recordedBy.isBlank() || state.recording)) {
         RoundAction(
             icon = ZillitIcons.Record,
             label = if (state.recording) "Stop recording" else "Record call",

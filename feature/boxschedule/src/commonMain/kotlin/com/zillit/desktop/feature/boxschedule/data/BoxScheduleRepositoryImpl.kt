@@ -333,6 +333,8 @@ private fun parseEvent(obj: JsonObject?): DiaryEvent? {
         masterEventId = obj.text("masterEventId"),
         isRecurringInstance = obj.bool("isRecurringInstance"),
         calendarEventId = obj.text("calendarEventId"),
+        callType = obj.text("callType"),
+        cncCallGroupId = obj.text("cncCallGroupId"),
     )
 }
 
@@ -372,7 +374,9 @@ internal fun eventWire(draft: DiaryDraft, create: Boolean): JsonObject = buildJs
         put("repeatEndDate", draft.repeatEndDate)
         if (draft.timezone.isNotBlank()) put("timezone", draft.timezone)
         put("reminder", "none")
-        put("callType", "")
+        // What the event already had, not a blank: the write sends the whole
+        // event, so hardcoding "" here erased a call set on another client.
+        put("callType", draft.callType)
         if (create) put("createEventInCalendar", draft.createInCalendar)
     }
     // Distribution is deliberately unset: the desktop offers no audience picker

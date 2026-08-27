@@ -49,6 +49,13 @@ data class CalendarEvent(
     val audience: EventAudience = EventAudience.Members,
     /** How the people on it are meeting; null on a personal event. */
     val callType: CallType? = null,
+    /**
+     * The chat room the event's call is held in — the server's `cnc_group_id`.
+     *
+     * It IS the call: everyone invited dials this same room rather than
+     * ringing each other, so without it there is nothing to join.
+     */
+    val cncGroupId: String = "",
     /** Crew on the event, so reopening it does not uninvite them. */
     val inviteeIds: Set<String> = emptySet(),
     /** Guests invited by address rather than by crew record. */

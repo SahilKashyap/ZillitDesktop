@@ -79,6 +79,11 @@ class SettingsToolProvider(
                 when (effect) {
                     is SettingsEffect.OpenExternal -> onOpenExternal(effect.url)
 
+                    // Zillit Help is a page of this app's own, so it opens the
+                    // way the account pages do rather than in a browser.
+                    SettingsEffect.OpenHelp ->
+                        navigator.navigate(WorkspaceRoute.Tool(HELP_PATH))
+
                     // A row on the listing, opened in this same window — these
                     // are the reader's own pages, not somewhere else's.
                     is SettingsEffect.OpenAccountPage ->

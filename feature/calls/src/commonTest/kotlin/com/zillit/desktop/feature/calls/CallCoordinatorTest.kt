@@ -21,6 +21,8 @@ import com.zillit.desktop.feature.calls.domain.CallEngineEvent
 import com.zillit.desktop.feature.calls.domain.EngineConnection
 import com.zillit.desktop.feature.calls.domain.CallParticipant
 import com.zillit.desktop.feature.calls.domain.CallStatus
+import com.zillit.desktop.feature.calls.domain.CallMode
+import com.zillit.desktop.feature.calls.domain.CallType
 import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.calls.domain.CallTimeouts
 import com.zillit.desktop.feature.calls.domain.NoopCallEngine
@@ -1032,6 +1034,95 @@ class CallCoordinatorTest {
         // Nothing used to notice this: the desktop sat in an empty room with
         // the timer running and the microphone live until the user looked.
         assertEquals(CallPhase.Idle, coordinator.phase.value)
+    }
+
+    @Test
+    fun `the kind of call the caller asked for survives the request`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val coordinator = coordinator(socket)
+            coordinator.placeCall(
+                chatRoomId = "group-9",
+                receiverDeviceId = "",
+                mode = CallMode.Group,
+                type = CallType.Audio,
+                isCalendarCall = true,
+            )
+            runCurrent()
+
+            // Stamped on the provisional session, before the server answers:
+            // the controls have to be right while it is still connecting, and
+            // the create-call response does not carry this back.
+            assertTrue(coordinator.session.value?.isCalendarCall == true)
+        }
+
+    @Test
+    fun `a support call is marked as one from the moment it is placed`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val coordinator = coordinator(socket)
+            coordinator.placeCall(
+                chatRoomId = "",
+                receiverDeviceId = "my-primary-device",
+                mode = CallMode.Private,
+                type = CallType.Audio,
+                is247Call = true,
+            )
+            runCurrent()
+
+            // Nothing on the wire says "support" — the backend decides that by
+            // routing — so this flag is the only thing that hides Record and
+            // Add people, and it has to be true while the call is ringing.
+            assertTrue(coordinator.session.value?.is247Call == true)
+        }
+
+    @Test
+    fun `an ordinary call is neither`() = runTest(StandardTestDispatcher()) {
+        val socket = FakeSocket()
+        val coordinator = coordinator(socket)
+        coordinator.placeCall(
+            chatRoomId = "",
+            receiverDeviceId = "their-device",
+            mode = CallMode.Private,
+            type = CallType.Audio,
+        )
+        runCurrent()
+
+        val session = coordinator.session.value
+        assertFalse(session?.isCalendarCall == true)
+        assertFalse(session?.is247Call == true)
+    }
+
+    @Test
+    fun `being alone in a calendar room is not an ending`() = runTest(StandardTestDispatcher()) {
+        val socket = FakeSocket()
+        val engine = ScriptableEngine()
+        val coordinator = coordinator(socket, engine = engine)
+        socket.deliver(
+            ZillitSocketEvents.Calls.Incoming,
+            ring.replace(""""call_mode":"private"""", """"call_mode":"group","is_calendar_call":true"""),
+        )
+        runCurrent()
+        coordinator.accept()
+        runCurrent()
+
+        // The other side leaves; on an ordinary call this ends it.
+        socket.deliver(
+            ZillitSocketEvents.Calls.Update,
+            """{"roomId":"r1","userId":"caller","status":"incall"}""",
+        )
+        runCurrent()
+        socket.deliver(
+            ZillitSocketEvents.Calls.Update,
+            """{"roomId":"r1","userId":"caller","status":"leave"}""",
+        )
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+
+        // Someone who opens the room early, or outstays the others, is still
+        // in a room the event owns — hanging up on them would close it.
+        assertEquals(CallPhase.InCall, coordinator.phase.value)
     }
 }
 

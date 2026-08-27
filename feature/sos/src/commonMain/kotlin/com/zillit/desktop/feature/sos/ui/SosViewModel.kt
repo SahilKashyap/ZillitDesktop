@@ -69,6 +69,7 @@ class SosViewModel(
             SosEvent.ConfirmAction -> confirmAction()
             SosEvent.CancelConfirm -> setState { copy(confirm = null) }
             is SosEvent.OpenMap -> openMap(event.alertId)
+            is SosEvent.CallSender -> callSender(event.alertId, event.video)
             SosEvent.DismissError -> setState { copy(error = null) }
             // Everything the receiver card raises, handled next door so neither
             // half of this screen's event set outgrows one readable `when`.
@@ -177,6 +178,37 @@ class SosViewModel(
             sendEffect(SosEffect.Notice("This alert carries no location."))
         } else {
             sendEffect(SosEffect.OpenLink(url))
+        }
+    }
+
+    /**
+     * Rings whoever raised an alert.
+     *
+     * Three refusals, each with its own message, because "nothing happened"
+     * is the worst possible answer to pressing a call button on an emergency:
+     * your own alert has nobody to ring, someone off the production cannot be
+     * reached, and a crew row with no device id has no phone to ring at all.
+     */
+    private fun callSender(alertId: String, video: Boolean) {
+        val alert = currentState.alerts.firstOrNull { it.id == alertId } ?: return
+        if (alert.senderId.isBlank() || alert.senderId == currentState.viewer.userId) {
+            sendEffect(SosEffect.Notice("This is your own alert."))
+            return
+        }
+        val sender = crew().firstOrNull { it.userId == alert.senderId }
+        when {
+            sender == null || sender.hasLeft ->
+                sendEffect(SosEffect.Notice("They are no longer on this production."))
+            sender.deviceId.isBlank() ->
+                sendEffect(SosEffect.Notice("They have no device to call."))
+            else -> sendEffect(
+                SosEffect.PlaceCall(
+                    userId = sender.userId,
+                    deviceId = sender.deviceId,
+                    displayName = sender.fullName.ifBlank { alert.senderNameHint },
+                    video = video,
+                ),
+            )
         }
     }
 
