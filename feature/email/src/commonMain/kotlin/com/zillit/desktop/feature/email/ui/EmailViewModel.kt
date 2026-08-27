@@ -138,8 +138,19 @@ sealed interface EmailEvent {
     /** Narrows the search: fields, folders, read state, attachments. */
     data class SearchFiltersChanged(val query: EmailQuery) : EmailEvent
 
-    /** Opens the composer. [replyTo] is null for a new message. */
-    data class Compose(val mode: ComposeMode, val replyTo: EmailMessage? = null) : Message
+    /**
+     * Opens the composer. [replyTo] is null for a new message.
+     *
+     * [addressedTo] and [about] prefill a message the app itself offered to
+     * start — writing to support is the one today — and are ignored for a
+     * reply, which brings its own recipient.
+     */
+    data class Compose(
+        val mode: ComposeMode,
+        val replyTo: EmailMessage? = null,
+        val addressedTo: String = "",
+        val about: String = "",
+    ) : Message
 
     /** Something changed on the server. */
     data class Realtime(val event: EmailRealtimeEvent) : EmailEvent
@@ -192,7 +203,13 @@ sealed interface EmailEvent {
 
 sealed interface EmailEffect {
     /** Hand off to the composer, which is its own ViewModel and its own window. */
-    data class OpenComposer(val mode: ComposeMode, val replyTo: EmailMessage?) : EmailEffect
+    data class OpenComposer(
+        val mode: ComposeMode,
+        val replyTo: EmailMessage?,
+        /** Prefilled when the app offered to start this message. */
+        val addressedTo: String = "",
+        val about: String = "",
+    ) : EmailEffect
 
     /** Reopen a saved draft in a composer window. */
     data class OpenDraft(val draftId: String) : EmailEffect
@@ -456,7 +473,10 @@ class EmailViewModel(
         when (event) {
             is EmailEvent.SelectMessage -> openMessage(event.messageId)
             is EmailEvent.EditDraft -> sendEffect(EmailEffect.OpenDraft(event.draftId))
-            is EmailEvent.Compose -> sendEffect(EmailEffect.OpenComposer(event.mode, event.replyTo))
+            is EmailEvent.Compose ->
+                sendEffect(
+                    EmailEffect.OpenComposer(event.mode, event.replyTo, event.addressedTo, event.about),
+                )
             EmailEvent.CloseMessage -> setState {
                 copy(selectedMessageId = null, thread = emptyList())
             }

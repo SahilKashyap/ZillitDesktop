@@ -1513,6 +1513,8 @@ private fun mailProvider(
             ?.let(::decodeBase64Default)
             ?.let(::decodeImageBitmap)
     },
+    // A message another screen queued — "write to us" on the help page.
+    claimPendingCompose = ::claimPendingSupportCompose,
 )
 
 /** Chat & Calls: the crew directory, from the users the project already syncs. */
@@ -2862,7 +2864,10 @@ private fun buildRegistry(
     }
     val help = HelpToolProvider(
         onOpenExternal = ::openInBrowser,
-        onContactSupport = ::contactSupport,
+        onContactSupport = ::queueSupportMessage,
+        // Where it lands once queued: Zillit's own mailbox, not the OS's idea
+        // of a mail client.
+        supportComposeRoute = "/email",
         // A support call is a self-dial: it goes to this account's PRIMARY
         // device and the backend routes it to whichever agent is free.
         // Deliberately NOT this machine's device id — on a QR-linked desktop
@@ -3332,57 +3337,43 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
  * needs a mailbox on this production, which the frame cannot assume.
  */
 /**
- * Opens a mail to support, and answers honestly when it cannot.
+ * Queues a message to support in Zillit's own mail.
  *
- * Uses `/usr/bin/open` rather than `Desktop.mail`, because the AWT call
- * returns quietly whether or not anything handled the request — which is how
- * this button came to look broken while reporting success. `open` exits
- * non-zero when no application will take the URL, which is the one signal
- * available that the user's mail actually opened.
+ * Not `mailto:`. A `mailto:` is only as good as whatever the OS registered for
+ * it, and here that is a *browser*, which accepts the URL, reports success and
+ * then does nothing unless it has separately been told which webmail to hand
+ * it to. Every layer reported success and no compose window ever appeared —
+ * `open` exits 0, `Desktop.mail` returns normally, and nothing anywhere
+ * signals that the message was dropped.
+ *
+ * The app has a mailbox of its own, which is what the web client uses for this
+ * row too. Left here for the mail window to claim when it opens, because the
+ * composer is raised by an effect and an effect emitted before that window
+ * exists has nobody collecting it.
  */
-private suspend fun contactSupport(): String? = withContext(Dispatchers.IO) {
+private fun queueSupportMessage(): String? {
     ZillitLog.i(SUPPORT_TAG) { "write to us pressed" }
-    val mailto = "mailto:$SUPPORT_ADDRESS?subject=Zillit%20Issue"
-
-    val opened = runCatching {
-        ProcessBuilder("/usr/bin/open", mailto)
-            .redirectErrorStream(true)
-            .start()
-            .waitFor(MAIL_OPEN_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
-            .let { finished -> finished }
-    }.getOrElse { thrown ->
-        ZillitLog.w(SUPPORT_TAG) { "could not run the URL opener: ${thrown.message}" }
-        false
-    }
-
-    if (opened) {
-        ZillitLog.i(SUPPORT_TAG) { "handed the mail to the system" }
-        return@withContext null
-    }
-
-    // Last resort: AWT, on the chance this is not a Mac or `open` is missing.
-    val viaAwt = runCatching {
-        val desktop = java.awt.Desktop.getDesktop().takeIf { java.awt.Desktop.isDesktopSupported() }
-        if (desktop?.isSupported(java.awt.Desktop.Action.MAIL) == true) {
-            desktop.mail(java.net.URI(mailto))
-            true
-        } else {
-            false
-        }
-    }.getOrElse { false }
-
-    if (viaAwt) {
-        null
-    } else {
-        // The address, not an apology: somebody who cannot be handed a compose
-        // window can still be handed something to copy.
-        ZillitLog.w(SUPPORT_TAG) { "nothing on this machine opened the mail" }
-        "No mail app is set up on this Mac. Write to $SUPPORT_ADDRESS."
-    }
+    pendingSupportCompose = SUPPORT_ADDRESS to SUPPORT_SUBJECT
+    return null
 }
 
-/** `open` answers in well under a second; this is only so a wedged one cannot hang the press. */
-private const val MAIL_OPEN_TIMEOUT_SECONDS = 10L
+/**
+ * The message waiting for the mail window, if any.
+ *
+ * Read once and cleared, so re-opening mail later does not raise a composer
+ * the user never asked for a second time.
+ */
+@Volatile
+private var pendingSupportCompose: Pair<String, String>? = null
+
+private fun claimPendingSupportCompose(): Pair<String, String>? {
+    val pending = pendingSupportCompose
+    pendingSupportCompose = null
+    if (pending != null) ZillitLog.i(SUPPORT_TAG) { "mail opened; starting the message to support" }
+    return pending
+}
+
+private const val SUPPORT_SUBJECT = "Zillit Issue"
 
 private const val SUPPORT_TAG = "Support"
 

@@ -58,11 +58,41 @@ class EmailToolProvider(
     private val loadThumbnail:
     suspend (EmailAttachment, String) -> androidx.compose.ui.graphics.ImageBitmap? =
         { _, _ -> null },
+    /**
+     * A message another screen asked us to start, taken once when the mailbox
+     * opens.
+     *
+     * Claimed rather than pushed: the composer is raised by an effect, and an
+     * effect emitted before this window exists has nobody collecting it and is
+     * simply lost. Leaving it here for the mailbox to pick up when it opens
+     * removes the race entirely.
+     */
+    private val claimPendingCompose: () -> Pair<String, String>? = { null },
 ) : ToolProvider {
 
     override val path: String = "/email"
     override val title: String = "Email"
     override val icon = ZillitIcons.Mail
+
+    /**
+     * Loads the mailbox, then starts anything another screen queued for it —
+     * "write to us" on the help page is the one today.
+     *
+     * Claimed here rather than pushed as an effect: the composer is raised by
+     * an effect, and one emitted before this window exists has nobody
+     * collecting it and is simply lost.
+     */
+    private suspend fun openMailbox() {
+        viewModel.onEvent(EmailEvent.Load)
+        claimPendingCompose()?.let { (address, subject) ->
+            viewModel.composers.open(
+                ComposeMode.New,
+                replyToId = null,
+                addressedTo = address,
+                about = subject,
+            )
+        }
+    }
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
@@ -70,7 +100,7 @@ class EmailToolProvider(
 
         // Loaded when the window opens, not at startup: the mailbox calls carry
         // project and user in their headers.
-        LaunchedEffect(viewModel) { viewModel.onEvent(EmailEvent.Load) }
+        LaunchedEffect(viewModel) { openMailbox() }
 
         // Composers stand on the bottom edge of the mailbox rather than opening
         // windows: minimising one keeps a half-written reply to hand while the
@@ -79,7 +109,12 @@ class EmailToolProvider(
             viewModel.effects.collect { effect ->
                 when (effect) {
                     is EmailEffect.OpenComposer ->
-                        viewModel.composers.open(effect.mode, effect.replyTo?.id)
+                        viewModel.composers.open(
+                            effect.mode,
+                            effect.replyTo?.id,
+                            effect.addressedTo,
+                            effect.about,
+                        )
                     is EmailEffect.OpenDraft -> viewModel.composers.openDraft(effect.draftId)
                 }
             }

@@ -229,8 +229,16 @@ class ComposeViewModel(
     replyTo: EmailMessage? = null,
     /** Set when reopening a saved draft, so editing updates it rather than forking. */
     editing: EmailDraft? = null,
+    /**
+     * A recipient and subject the composer opens already carrying.
+     *
+     * For a message the app itself offers to start — writing to support is the
+     * one today. Ignored for a reply or a reopened draft, which bring their own.
+     */
+    addressedTo: String = "",
+    about: String = "",
 ) : ZillitViewModel<ComposeUiState, ComposeEvent, ComposeEffect>(
-    initial(mode, replyTo, deps.selfAddress(), editing),
+    initial(mode, replyTo, deps.selfAddress(), editing, addressedTo, about),
 ) {
 
     /** Null until the first autosave, then the draft this composer owns. */
@@ -501,15 +509,23 @@ class ComposeViewModel(
         const val TAG = "Email"
         const val AUTOSAVE_DELAY_MILLIS = 1_000L
 
+        @Suppress("LongParameterList") // Every source a composer can open from.
         fun initial(
             mode: ComposeMode,
             replyTo: EmailMessage?,
             selfAddress: String,
             editing: EmailDraft?,
+            addressedTo: String = "",
+            about: String = "",
         ): ComposeUiState {
             val draft = editing?.toOutgoing()
                 ?: replyTo?.replyDraft(mode, selfAddress)
-                ?: OutgoingEmail()
+                // Last, so a reply or a reopened draft keeps its own recipient:
+                // this only fills a composer that would otherwise open empty.
+                ?: OutgoingEmail(
+                    to = listOfNotNull(addressedTo.takeIf(String::isNotBlank)),
+                    subject = about,
+                )
 
             return ComposeUiState(
                 draft = draft,

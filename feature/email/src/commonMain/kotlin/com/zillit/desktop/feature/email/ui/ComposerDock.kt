@@ -88,6 +88,8 @@ fun BoxScope.ComposerDock(
                 mode = composer.mode,
                 replyTo = composer.replyToId?.let(messageById),
                 editing = composer.draftId?.let(draftById),
+                addressedTo = composer.addressedTo,
+                about = composer.about,
             )
         }
 
