@@ -182,7 +182,10 @@ class SettingsViewModel(
      */
     private fun open(destination: SettingsDestination) {
         when (destination) {
-            SettingsDestination.Help -> sendEffect(SettingsEffect.OpenExternal(ZILLIT_HELP_URL))
+            // The app's own guide, not a web page: it carries the same four
+            // links the phones' Zillit Guide does, plus the support call and
+            // the mail to support, which a browser tab cannot offer.
+            SettingsDestination.Help -> sendEffect(SettingsEffect.OpenHelp)
             SettingsDestination.SetupNotes -> sendEffect(SettingsEffect.OpenExternal(SETUP_NOTES_URL))
 
             SettingsDestination.ApproveNewCrew ->

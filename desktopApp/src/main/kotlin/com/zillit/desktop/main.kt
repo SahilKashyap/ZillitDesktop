@@ -2770,7 +2770,7 @@ private fun buildRegistry(
         // device and the backend routes it to whichever agent is free.
         // Deliberately NOT this machine's device id — on a QR-linked desktop
         // that is a child row, and dialling it would ring this very computer.
-        onCallSupport = callSupport(graph as? AppGraph.Ready, viewModels.calls, scope),
+        onCallSupport = callSupport(graph as? AppGraph.Ready, viewModels.calls),
     )
     val cash = viewModels.cashExpenses?.let { CashExpensesToolProvider(it) }
     val cards = viewModels.cardExpenses?.let { CardExpensesToolProvider(it) }
@@ -2902,24 +2902,30 @@ private fun joinEventCall(event: CalendarEvent): CallEvent.Place = CallEvent.Pla
 private fun callSupport(
     ready: AppGraph.Ready?,
     calls: CallViewModel?,
-    scope: kotlinx.coroutines.CoroutineScope,
-): (() -> Unit)? {
+): (suspend () -> String?)? {
     if (ready == null || calls == null) return null
-    val userId = ready.projectContext?.context?.value?.profile?.userId
-        ?.takeIf(String::isNotBlank)
-        ?: return null
     return {
-        scope.launch {
-            val primary = ready.accountRepository.linkedDevices()
-                .getOrNull()
-                ?.firstOrNull { it.isPrimary }
-                ?.id
-                .orEmpty()
-            if (primary.isBlank()) {
-                // A blank receiver is dropped from the request body, which
-                // would place a call nobody was invited to.
-                ZillitLog.w("Calls") { "no primary device for this account; support call not placed" }
-            } else {
+        // Both of these are read WHEN THE BUTTON IS PRESSED, not when it is
+        // built. The registry is assembled once, early, and the profile often
+        // is not loaded by then — reading it there returned null, which took
+        // the whole button away and made the failure look like a missing
+        // feature rather than a not-yet.
+        val userId = ready.projectContext?.context?.value?.profile?.userId.orEmpty()
+        val primary = ready.accountRepository.linkedDevices()
+            .getOrNull()
+            ?.firstOrNull { it.isPrimary }
+            ?.id
+            .orEmpty()
+        when {
+            userId.isBlank() -> "Open a production first, then call support."
+            // A blank receiver is dropped from the request body, so this would
+            // place a call nobody was ever invited to.
+            primary.isBlank() -> {
+                ZillitLog.w("Support") { "no primary device on this account; support call not placed" }
+                "Could not find your primary device. Try again in a moment."
+            }
+            else -> {
+                ZillitLog.i("Support") { "placing a support call to the primary device" }
                 calls.onEvent(
                     CallEvent.Place(
                         chatRoomId = "",
@@ -2931,9 +2937,9 @@ private fun callSupport(
                         is247Call = true,
                     ),
                 )
+                null
             }
         }
-        Unit
     }
 }
 
@@ -3171,14 +3177,43 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
  * with subject "Zillit Issue"); the in-app compose is the richer route but
  * needs a mailbox on this production, which the frame cannot assume.
  */
-private fun contactSupport() {
-    runCatching {
-        val desktop = java.awt.Desktop.getDesktop().takeIf { java.awt.Desktop.isDesktopSupported() }
-        if (desktop?.isSupported(java.awt.Desktop.Action.MAIL) == true) {
-            desktop.mail(java.net.URI("mailto:support@zillit.com?subject=Zillit%20Issue"))
-        }
+private fun contactSupport(): String? {
+    val mailto = java.net.URI("mailto:$SUPPORT_ADDRESS?subject=Zillit%20Issue")
+    val desktop = runCatching {
+        java.awt.Desktop.getDesktop().takeIf { java.awt.Desktop.isDesktopSupported() }
+    }.getOrNull() ?: return noMailClient()
+
+    // The mail action first, then the plain URL handler. They are not the same
+    // thing: a Mac with no default mail client still reports MAIL as supported
+    // and then does nothing with the request, which is exactly the silence
+    // this used to produce — the whole function was one runCatching that
+    // swallowed every outcome, success and failure alike.
+    if (desktop.isSupported(java.awt.Desktop.Action.MAIL)) {
+        val sent = runCatching { desktop.mail(mailto) }
+            .onFailure { ZillitLog.w("Support") { "mail client refused: ${it.message}" } }
+        if (sent.isSuccess) return null
     }
+    if (desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
+        val opened = runCatching { desktop.browse(mailto) }
+            .onFailure { ZillitLog.w("Support") { "no handler for mailto: ${it.message}" } }
+        if (opened.isSuccess) return null
+    }
+    return noMailClient()
 }
+
+/**
+ * What to say when nothing on this machine will open a mail.
+ *
+ * The address, not an apology: somebody who cannot be handed a compose window
+ * can still be handed something to copy, and that is the whole point of the
+ * row they pressed.
+ */
+private fun noMailClient(): String {
+    ZillitLog.w("Support") { "no mail client on this machine" }
+    return "No mail app is set up on this Mac. Write to $SUPPORT_ADDRESS."
+}
+
+private const val SUPPORT_ADDRESS = "support@zillit.com"
 
 /** The segment the phones count the bell against (`GLOBAL_LABEL` on Android). */
 private const val GLOBAL_BADGE_SEGMENT = "global_label"

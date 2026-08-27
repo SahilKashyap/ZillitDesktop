@@ -109,6 +109,7 @@ class AdminSettingsToolProvider(
                     // view model is shared and its effects are a broadcast, so
                     // they arrive here too — and are not ours to act on.
                     is SettingsEffect.OpenExternal,
+                    SettingsEffect.OpenHelp,
                     is SettingsEffect.OpenAccountPage,
                     SettingsEffect.AskLeaveProduction,
                     SettingsEffect.SignedOut,

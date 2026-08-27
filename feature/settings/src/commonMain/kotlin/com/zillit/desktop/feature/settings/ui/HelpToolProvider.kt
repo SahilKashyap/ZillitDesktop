@@ -6,6 +6,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
+import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -23,10 +30,19 @@ import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 
 /**
- * "Zillit Help": the web's help desk (`pages/helpDesk/Help.jsx`) — Terms of
- * Use, Privacy Policy, FAQ, Contact Us, Reviews — as cards that open the
- * browser, and Contact Us that opens a mail to support (the web opens its
- * compose window when the person has a mailbox; here the frame decides).
+ * "Zillit Help": the phones' Zillit Guide — FAQs, Privacy Policy, Terms of Use
+ * and Contact Us — as cards that open the browser, plus a Contact Us that both
+ * rings the 24x7 support team and opens a mail to support.
+ *
+ * The list and its order are iOS's (`ZillitGuideViewController.swift:12-22`),
+ * and so are the link targets, which differ from the web client's shorter
+ * slugs this screen used to carry.
+ *
+ * Two of the phones' rows are deliberately absent. *Reviews* is commented out
+ * in iOS's own list. *Tutorial for Admin* and *Tutorial for User* are not
+ * links at all — they dismiss to the dashboard and start a coach-mark tour of
+ * the iOS tab bar, which has no desktop equivalent; a browser row in their
+ * place would invent a destination neither client has.
  *
  * It lives under Settings' path so the rail — which cannot import this
  * module — can name it as a fixed route. *Pin to Start* used to live beside
@@ -35,12 +51,24 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
  */
 class HelpToolProvider(
     private val onOpenExternal: (String) -> Unit,
-    private val onContactSupport: () -> Unit,
     /**
-     * Rings the 24x7 support team. Null where calling is unavailable or no
-     * production is open, and the button is then simply not drawn.
+     * Opens a mail to support. Returns why it could not, or null when it did.
+     *
+     * A return value rather than a bare callback because there is no other
+     * way for this screen to know: a machine with no mail client set up takes
+     * the request and does nothing with it, and a button that silently does
+     * nothing is indistinguishable from a broken one.
      */
-    private val onCallSupport: (() -> Unit)? = null,
+    private val onContactSupport: () -> String?,
+    /**
+     * Rings the 24x7 support team, answering why it could not.
+     *
+     * Suspending because it has to find this account's primary device first —
+     * that is a request, and doing it when the button is built rather than
+     * when it is pressed would hide the button from anyone whose profile had
+     * not loaded yet. Null only where calling is unavailable at all.
+     */
+    private val onCallSupport: (suspend () -> String?)? = null,
 ) : ToolProvider {
 
     override val path: String = HELP_PATH
@@ -50,7 +78,17 @@ class HelpToolProvider(
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
-        HelpScreen(onOpenExternal, onContactSupport, onCallSupport)
+        var notice by remember { mutableStateOf<String?>(null) }
+        val scope = rememberCoroutineScope()
+
+        HelpScreen(
+            onOpenExternal = onOpenExternal,
+            onContactSupport = { notice = onContactSupport() },
+            onCallSupport = onCallSupport?.let { call ->
+                { scope.launch { notice = call() }.let { } }
+            },
+        )
+        ZillitErrorToast(message = notice, onDismiss = { notice = null })
     }
 }
 
@@ -63,22 +101,29 @@ internal data class HelpEntry(
     val callable: Boolean = false,
 )
 
-/** The web's five cards and links (`Help.jsx:220-274`), in its order. */
+/** The phones' four cards and links, in their order. See the class comment. */
 internal val HELP_ENTRIES: List<HelpEntry> = listOf(
+    HelpEntry(
+        "FAQs",
+        "Answers to the questions people ask most.",
+        "https://corporate.zillit.com/frequently-asked-questions-for-zillit-application-and-web-platform",
+    ),
+    HelpEntry(
+        "Privacy Policy",
+        "What Zillit stores, and why.",
+        "https://corporate.zillit.com/privacy-policy-for-zillit-application-and-web-platform",
+    ),
     HelpEntry(
         "Terms of Use",
         "The terms you agreed to when you joined Zillit.",
-        "https://corporate.zillit.com/terms-of-use",
+        "https://corporate.zillit.com/terms-conditions-for-zillit-application-and-web-platform",
     ),
-    HelpEntry("Privacy Policy", "What Zillit stores, and why.", "https://corporate.zillit.com/privacy-policy"),
-    HelpEntry("FAQ", "Answers to the questions people ask most.", "https://zillit.com/frequently-asked-questions"),
     HelpEntry(
         "Contact Us",
         "Call our 24x7 support team, or write to support@zillit.com — we read everything.",
         null,
         callable = true,
     ),
-    HelpEntry("Reviews", "Tell us how Zillit is working for your production.", "https://corporate.zillit.com/d"),
 )
 
 @Composable
