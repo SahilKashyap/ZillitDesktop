@@ -2905,6 +2905,7 @@ private fun callSupport(
 ): (suspend () -> String?)? {
     if (ready == null || calls == null) return null
     return {
+        ZillitLog.i(SUPPORT_TAG) { "call us pressed" }
         // Both of these are read WHEN THE BUTTON IS PRESSED, not when it is
         // built. The registry is assembled once, early, and the profile often
         // is not loaded by then — reading it there returned null, which took
@@ -2921,11 +2922,11 @@ private fun callSupport(
             // A blank receiver is dropped from the request body, so this would
             // place a call nobody was ever invited to.
             primary.isBlank() -> {
-                ZillitLog.w("Support") { "no primary device on this account; support call not placed" }
+                ZillitLog.w(SUPPORT_TAG) { "no primary device on this account; support call not placed" }
                 "Could not find your primary device. Try again in a moment."
             }
             else -> {
-                ZillitLog.i("Support") { "placing a support call to the primary device" }
+                ZillitLog.i(SUPPORT_TAG) { "placing a support call to the primary device" }
                 calls.onEvent(
                     CallEvent.Place(
                         chatRoomId = "",
@@ -3177,41 +3178,60 @@ private fun buildCalendar(ready: AppGraph.Ready) = CalendarViewModel(
  * with subject "Zillit Issue"); the in-app compose is the richer route but
  * needs a mailbox on this production, which the frame cannot assume.
  */
-private fun contactSupport(): String? {
-    val mailto = java.net.URI("mailto:$SUPPORT_ADDRESS?subject=Zillit%20Issue")
-    val desktop = runCatching {
-        java.awt.Desktop.getDesktop().takeIf { java.awt.Desktop.isDesktopSupported() }
-    }.getOrNull() ?: return noMailClient()
-
-    // The mail action first, then the plain URL handler. They are not the same
-    // thing: a Mac with no default mail client still reports MAIL as supported
-    // and then does nothing with the request, which is exactly the silence
-    // this used to produce — the whole function was one runCatching that
-    // swallowed every outcome, success and failure alike.
-    if (desktop.isSupported(java.awt.Desktop.Action.MAIL)) {
-        val sent = runCatching { desktop.mail(mailto) }
-            .onFailure { ZillitLog.w("Support") { "mail client refused: ${it.message}" } }
-        if (sent.isSuccess) return null
-    }
-    if (desktop.isSupported(java.awt.Desktop.Action.BROWSE)) {
-        val opened = runCatching { desktop.browse(mailto) }
-            .onFailure { ZillitLog.w("Support") { "no handler for mailto: ${it.message}" } }
-        if (opened.isSuccess) return null
-    }
-    return noMailClient()
-}
-
 /**
- * What to say when nothing on this machine will open a mail.
+ * Opens a mail to support, and answers honestly when it cannot.
  *
- * The address, not an apology: somebody who cannot be handed a compose window
- * can still be handed something to copy, and that is the whole point of the
- * row they pressed.
+ * Uses `/usr/bin/open` rather than `Desktop.mail`, because the AWT call
+ * returns quietly whether or not anything handled the request — which is how
+ * this button came to look broken while reporting success. `open` exits
+ * non-zero when no application will take the URL, which is the one signal
+ * available that the user's mail actually opened.
  */
-private fun noMailClient(): String {
-    ZillitLog.w("Support") { "no mail client on this machine" }
-    return "No mail app is set up on this Mac. Write to $SUPPORT_ADDRESS."
+private suspend fun contactSupport(): String? = withContext(Dispatchers.IO) {
+    ZillitLog.i(SUPPORT_TAG) { "write to us pressed" }
+    val mailto = "mailto:$SUPPORT_ADDRESS?subject=Zillit%20Issue"
+
+    val opened = runCatching {
+        ProcessBuilder("/usr/bin/open", mailto)
+            .redirectErrorStream(true)
+            .start()
+            .waitFor(MAIL_OPEN_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+            .let { finished -> finished }
+    }.getOrElse { thrown ->
+        ZillitLog.w(SUPPORT_TAG) { "could not run the URL opener: ${thrown.message}" }
+        false
+    }
+
+    if (opened) {
+        ZillitLog.i(SUPPORT_TAG) { "handed the mail to the system" }
+        return@withContext null
+    }
+
+    // Last resort: AWT, on the chance this is not a Mac or `open` is missing.
+    val viaAwt = runCatching {
+        val desktop = java.awt.Desktop.getDesktop().takeIf { java.awt.Desktop.isDesktopSupported() }
+        if (desktop?.isSupported(java.awt.Desktop.Action.MAIL) == true) {
+            desktop.mail(java.net.URI(mailto))
+            true
+        } else {
+            false
+        }
+    }.getOrElse { false }
+
+    if (viaAwt) {
+        null
+    } else {
+        // The address, not an apology: somebody who cannot be handed a compose
+        // window can still be handed something to copy.
+        ZillitLog.w(SUPPORT_TAG) { "nothing on this machine opened the mail" }
+        "No mail app is set up on this Mac. Write to $SUPPORT_ADDRESS."
+    }
 }
+
+/** `open` answers in well under a second; this is only so a wedged one cannot hang the press. */
+private const val MAIL_OPEN_TIMEOUT_SECONDS = 10L
+
+private const val SUPPORT_TAG = "Support"
 
 private const val SUPPORT_ADDRESS = "support@zillit.com"
 

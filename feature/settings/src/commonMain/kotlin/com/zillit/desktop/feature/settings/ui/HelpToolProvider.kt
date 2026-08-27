@@ -59,7 +59,7 @@ class HelpToolProvider(
      * the request and does nothing with it, and a button that silently does
      * nothing is indistinguishable from a broken one.
      */
-    private val onContactSupport: () -> String?,
+    private val onContactSupport: suspend () -> String?,
     /**
      * Rings the 24x7 support team, answering why it could not.
      *
@@ -83,7 +83,10 @@ class HelpToolProvider(
 
         HelpScreen(
             onOpenExternal = onOpenExternal,
-            onContactSupport = { notice = onContactSupport() },
+            // Both run off the click: asking the OS to open a mail means
+            // waiting on a process, and blocking the frame to do it would
+            // freeze the window for as long as the mail app takes to wake up.
+            onContactSupport = { scope.launch { notice = onContactSupport() }.let { } },
             onCallSupport = onCallSupport?.let { call ->
                 { scope.launch { notice = call() }.let { } }
             },
