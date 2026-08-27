@@ -63,6 +63,11 @@ internal fun CalendarScreen(
     onEvent: (CalendarEvent2Event) -> Unit,
     modifier: Modifier = Modifier,
     loadAvatar: suspend (String) -> ByteArray? = { null },
+    /**
+     * Joins the event's call. Null on a host with no calling, and the button
+     * is then not drawn at all.
+     */
+    onJoinCall: ((CalendarEvent) -> Unit)? = null,
 ) {
     Box(modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
@@ -104,7 +109,7 @@ internal fun CalendarScreen(
 
         EventFormDialog(state.form, onEvent, loadAvatar = loadAvatar)
 
-        state.detail?.let { detail -> EventDetailPopover(detail, onEvent) }
+        state.detail?.let { detail -> EventDetailPopover(detail, onEvent, onJoinCall = onJoinCall) }
 
         // Always composed so its exit can play; the flag drives visibility.
         DeleteEventDialog(state.detail, onEvent)

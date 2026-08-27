@@ -139,6 +139,9 @@ sealed interface SosEvent {
 
     data class OpenMap(val alertId: String) : SosEvent
 
+    /** Rings whoever raised this alert. */
+    data class CallSender(val alertId: String, val video: Boolean) : SosEvent
+
     data class SelectContactTab(val tab: SosContactTab) : SosEvent
     data class CrewSearchChanged(val text: String) : SosEvent
     data class CodeSearchChanged(val text: String) : SosEvent
@@ -160,4 +163,18 @@ sealed interface SosEffect {
 
     /** The alert's map link, for the host to open in the system browser. */
     data class OpenLink(val url: String) : SosEffect
+
+    /**
+     * Ring one person, for the host to hand to the calling stack.
+     *
+     * An ordinary private call: an SOS carries no special line, room or flag,
+     * and the only thing that makes it an SOS is which screen it was started
+     * from. The module stays free of a dependency on calling this way.
+     */
+    data class PlaceCall(
+        val userId: String,
+        val deviceId: String,
+        val displayName: String,
+        val video: Boolean,
+    ) : SosEffect
 }

@@ -47,6 +47,10 @@ internal fun AppGraph.Ready.diaryCalendarLookup(): MainCalendarLookup = MainCale
                     isRecurringInstance = false,
                     calendarEventId = event.id,
                     calendarSourced = true,
+                    // Carried through so a calendar event mirrored into the
+                    // diary keeps its Join button here too.
+                    callType = event.callType?.wireValue.orEmpty(),
+                    cncCallGroupId = event.cncGroupId,
                 )
             }
     }

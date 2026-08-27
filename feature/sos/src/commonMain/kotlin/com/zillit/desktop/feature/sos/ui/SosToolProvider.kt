@@ -32,6 +32,12 @@ class SosToolProvider(
      * this module never builds one.
      */
     private val onOpenLink: (String) -> Unit,
+    /**
+     * Rings whoever raised an alert. Null on a host with no calling, where
+     * the buttons are simply not drawn — a call control that does nothing is
+     * worse than none, on this screen most of all.
+     */
+    private val onCall: ((userId: String, deviceId: String, name: String, video: Boolean) -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = SOS_PATH
@@ -51,11 +57,13 @@ class SosToolProvider(
                 when (effect) {
                     is SosEffect.Notice -> notice = effect.message
                     is SosEffect.OpenLink -> onOpenLink(effect.url)
+                    is SosEffect.PlaceCall ->
+                        onCall?.invoke(effect.userId, effect.deviceId, effect.displayName, effect.video)
                 }
             }
         }
 
-        SosScreen(state = state, onEvent = viewModel::onEvent)
+        SosScreen(state = state, onEvent = viewModel::onEvent, mayCall = onCall != null)
         ZillitToast(message = notice, onDismiss = { notice = null }, tone = ZillitToastTone.Success)
     }
 }

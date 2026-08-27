@@ -272,6 +272,24 @@ class CallCoordinator(
          */
         provider: CallProvider = CallProvider.Agora,
         receiverUserId: String = "",
+        /**
+         * A room struck from a calendar or box-schedule event.
+         *
+         * Nothing on the wire says so — the server is told the same thing as
+         * for any group call, and the specialness is all local: nobody is
+         * being rung, so there is no ring to time out, and the room outlives
+         * whoever is currently in it, so leaving must not end it.
+         */
+        isCalendarCall: Boolean = false,
+        /**
+         * A call to the 24x7 support team.
+         *
+         * Also invisible on the wire: it is placed as an ordinary private
+         * call and the backend routes it to whichever agent is free. What it
+         * changes here is that nobody may be added and nothing may be
+         * recorded.
+         */
+        is247Call: Boolean = false,
     ) {
         if (_phase.value != CallPhase.Idle) return
         _phase.value = CallPhase.Outgoing
@@ -280,24 +298,9 @@ class CallCoordinator(
         // non-null session and hangUp() returns without one, so a stalled POST
         // otherwise means up to a minute of no card, no cancel, and every
         // further call-button press silently refused by the phase check above.
-        _session.value = CallSession(
-            // Blank until the server names it. Every id-scoped write already
-            // guards on blank — the doc's "must have a valid ObjectId" rule —
-            // so a provisional session cannot post a status for no call.
-            callUuid = "",
-            direction = CallDirection.Outgoing,
-            // Named now so the outgoing card can say which line it is on
-            // before the server answers.
-            provider = provider,
-            mode = mode,
-            type = type,
-            hasVideo = type == CallType.Video,
-            selfUserId = selfUserId().orEmpty(),
-            selfDeviceId = selfDeviceId().orEmpty(),
-            receiverDeviceId = receiverDeviceId,
-            receiverUserId = receiverUserId,
-            chatRoomId = chatRoomId,
-            title = displayName,
+        _session.value = provisionalSession(
+            chatRoomId, receiverDeviceId, receiverUserId,
+            mode, type, displayName, provider, isCalendarCall, is247Call,
         )
         _cameraOn.value = type == CallType.Video
         scope.launch {
@@ -333,9 +336,16 @@ class CallCoordinator(
                         title = displayName.ifBlank { session.title },
                         receiverDeviceId = receiverDeviceId,
                         receiverUserId = receiverUserId,
+                        // Re-stamped because the create-call response does not
+                        // carry them: adopting it wholesale would drop what
+                        // the caller just said about what kind of call this is.
+                        isCalendarCall = isCalendarCall,
+                        is247Call = is247Call,
                     )
                     _cameraOn.value = session.hasVideo
-                    startRingTimeout(CallTimeouts.OUTGOING_MS) { outgoingRangOut() }
+                    // A calendar room rings nobody — the caller walks into it —
+                    // so there is no unanswered call to give up on.
+                    if (!isCalendarCall) startRingTimeout(CallTimeouts.OUTGOING_MS) { outgoingRangOut() }
                     // Claim our own row before watching: the caller is a participant
                     // like any other, and iOS/web read the roster to know who is on
                     // the call. Without this the desktop was missing from the call
@@ -575,6 +585,51 @@ class CallCoordinator(
         if (_media.value.selfSharing) scope.launch { engine.stopScreenShare() }
     }
 
+    /**
+     * The session that stands in while the server is still being asked.
+     *
+     * Built before the round trip so the outgoing card and its Cancel exist
+     * for the whole of it: every overlay branch is gated on a non-null
+     * session, so a stalled POST would otherwise mean up to a minute with no
+     * card, no way to cancel, and every further press of the call button
+     * silently refused.
+     */
+    @Suppress("LongParameterList") // Everything the provisional card needs to draw.
+    private fun provisionalSession(
+        chatRoomId: String,
+        receiverDeviceId: String,
+        receiverUserId: String,
+        mode: CallMode,
+        type: CallType,
+        displayName: String,
+        provider: CallProvider,
+        isCalendarCall: Boolean,
+        is247Call: Boolean,
+    ) = CallSession(
+        // Blank until the server names it. Every id-scoped write already
+        // guards on blank — the doc's "must have a valid ObjectId" rule — so
+        // a provisional session cannot post a status for no call.
+        callUuid = "",
+        direction = CallDirection.Outgoing,
+        // Named now so the outgoing card can say which line it is on before
+        // the server answers.
+        provider = provider,
+        mode = mode,
+        type = type,
+        hasVideo = type == CallType.Video,
+        selfUserId = selfUserId().orEmpty(),
+        selfDeviceId = selfDeviceId().orEmpty(),
+        receiverDeviceId = receiverDeviceId,
+        receiverUserId = receiverUserId,
+        chatRoomId = chatRoomId,
+        title = displayName,
+        // Set before the server answers so the controls are already right
+        // while it rings — a support call must not offer Record even for the
+        // second the request is in flight.
+        isCalendarCall = isCalendarCall,
+        is247Call = is247Call,
+    )
+
     /** Starts or stops recording the call's audio on this machine. */
     fun toggleRecording() {
         if (_phase.value != CallPhase.InCall) return
@@ -619,7 +674,11 @@ class CallCoordinator(
         }
         // A call the server has not named yet cannot be ended by uuid; the
         // create-call response handles the cancel when it lands.
+        // A calendar room outlives whoever is in it: the event owns it, and
+        // the next person to join expects to find it there. Leaving is the
+        // only thing this button may do on one.
         val endsForEveryone = current.callUuid.isNotBlank() && !othersActive &&
+            !current.isCalendarCall &&
             (current.direction == CallDirection.Outgoing || wasInCall)
         // The mirror off the critical path: a Firestore write that black-holes
         // must not hold the hang-up the room is waiting on behind a 60 s
@@ -733,10 +792,15 @@ class CallCoordinator(
      * having walked out and is not it.
      */
     private fun roomLooksEmpty(): Boolean {
-        if (_phase.value != CallPhase.InCall) return false
-        if (reconnect.isArmed) return false
         val current = _session.value ?: return false
-        return allOthersGone(current.participants, everConnected, _media.value.peers.size)
+        // Being first into a calendar room is normal rather than an ending:
+        // someone who opens it five minutes early would otherwise be hung up
+        // on two seconds later, and the room is the event's, not theirs.
+        val couldEnd = _phase.value == CallPhase.InCall &&
+            !reconnect.isArmed &&
+            !current.isCalendarCall
+        return couldEnd &&
+            allOthersGone(current.participants, everConnected, _media.value.peers.size)
     }
 
     private fun onSomeoneAnswered() {
@@ -995,7 +1059,11 @@ class CallCoordinator(
         // A join that lands while we are already leaving is not an arrival.
         if (_phase.value == CallPhase.Ending) return
         recordMediaUid(current, uid)
-        if (_phase.value == CallPhase.Incoming) {
+        // A calendar room has nobody to answer it: walking in IS the
+        // connection, and with no ring timeout armed nothing else would ever
+        // move the call out of Outgoing.
+        val walkedIn = _phase.value == CallPhase.Outgoing && current.isCalendarCall
+        if (_phase.value == CallPhase.Incoming || walkedIn) {
             cancelRingTimeout()
             _phase.value = CallPhase.InCall
         }

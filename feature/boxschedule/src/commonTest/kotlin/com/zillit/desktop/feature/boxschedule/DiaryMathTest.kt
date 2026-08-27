@@ -153,4 +153,34 @@ class DiaryMathTest {
         noteType = "", repeatStatus = "", occurrenceId = occurrenceId, masterEventId = masterEventId,
         isRecurringInstance = isInstance, calendarEventId = calendarEventId, calendarSourced = calendarSourced,
     )
+
+    @Test
+    fun `editing an event does not erase the call somebody attached elsewhere`() {
+        // The write sends the whole event, and this key used to be hardcoded
+        // blank — so opening an event on the desktop and saving it stripped
+        // the call type off, leaving a room id nobody could join.
+        val body = eventWire(
+            DiaryDraft(
+                kind = DiaryKind.Event, title = "Standup", body = "d", date = 10, startDateTime = 11,
+                endDateTime = 12, fullDay = false, callType = "video",
+            ),
+            create = false,
+        )
+
+        assertEquals("video", (body["callType"] as JsonPrimitive).content)
+    }
+
+    @Test
+    fun `an event created here has no call, and says so`() {
+        val body = eventWire(
+            DiaryDraft(
+                kind = DiaryKind.Event, title = "Standup", body = "d", date = 10, startDateTime = 11,
+                endDateTime = 12, fullDay = false,
+            ),
+            create = true,
+        )
+
+        // The desktop offers no way to attach one; blank is the honest value.
+        assertEquals("", (body["callType"] as JsonPrimitive).content)
+    }
 }

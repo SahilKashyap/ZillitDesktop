@@ -340,6 +340,7 @@ internal fun readEvent(row: JsonElement): CalendarEvent? {
         invitedCount = (row["invited_users"] as? JsonArray)?.size ?: 0,
         audience = row.readAudience(),
         callType = CallType.of(row.str("call_type")),
+        cncGroupId = row.str("cnc_group_id").orEmpty(),
         inviteeIds = row.inviteeIds(),
         externalEmails = row.externalEmails(),
     )

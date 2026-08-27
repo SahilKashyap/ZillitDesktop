@@ -27,6 +27,11 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 class BoxScheduleToolProvider(
     private val viewModel: BoxScheduleViewModel,
     override val path: String = BOX_SCHEDULE_PATH,
+    /**
+     * Joins an event's call. Null on a host with no calling, where the Join
+     * button is not drawn.
+     */
+    private val onJoinCall: ((roomId: String, title: String, video: Boolean) -> Unit)? = null,
 ) : ToolProvider {
 
     override val title: String = "Box Schedule"
@@ -45,11 +50,13 @@ class BoxScheduleToolProvider(
             viewModel.effects.collect { effect ->
                 when (effect) {
                     is BoxScheduleEffect.Notice -> notice = effect.message
+                    is BoxScheduleEffect.JoinCall ->
+                        onJoinCall?.invoke(effect.roomId, effect.title, effect.video)
                 }
             }
         }
 
-        BoxScheduleScreen(state = state, onEvent = viewModel::onEvent)
+        BoxScheduleScreen(state = state, onEvent = viewModel::onEvent, mayCall = onJoinCall != null)
         ZillitErrorToast(message = notice, onDismiss = { notice = null })
     }
 }

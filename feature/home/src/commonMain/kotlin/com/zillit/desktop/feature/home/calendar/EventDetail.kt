@@ -97,6 +97,23 @@ data class EventPermissions(
     val canRespond: Boolean = false,
 )
 
+/**
+ * Whether this event's call can be joined right now.
+ *
+ * Not gated on having accepted the invitation: somebody who declined and then
+ * changed their mind is exactly who needs the button, and the phones say so
+ * outright. An event with no room id has nothing to dial — the server mints
+ * one only for events created with a call.
+ *
+ * A missing end time counts as NOT past, which is why this does not reuse
+ * [hasFinished]: that falls back to the start, so an event with no end would
+ * become unjoinable the moment it began.
+ */
+fun CalendarEvent.canJoinCall(nowMillis: Long): Boolean {
+    val isPast = endMillis > 0 && endMillis < nowMillis
+    return callType?.isJoinable == true && !isCancelled && !isPast && cncGroupId.isNotBlank()
+}
+
 fun permissionsFor(
     event: CalendarEvent,
     isCreator: Boolean,

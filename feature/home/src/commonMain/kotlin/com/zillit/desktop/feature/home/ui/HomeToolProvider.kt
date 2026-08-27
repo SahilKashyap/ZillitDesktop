@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.LaunchedEffect
 import com.zillit.desktop.feature.home.calendar.CalendarScreen
+import com.zillit.desktop.feature.home.calendar.CalendarEvent
 import com.zillit.desktop.feature.home.calendar.CalendarViewModel
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -63,6 +64,11 @@ class HomeToolProvider(
      * grid's customise button opens. Null hides the button entirely.
      */
     private val customiseToolsRoute: String? = null,
+    /**
+     * Joins a calendar event's call. Null on a host with no calling, where
+     * the Join button is not drawn.
+     */
+    private val onJoinEventCall: ((CalendarEvent) -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = "/home"
@@ -111,6 +117,7 @@ class HomeToolProvider(
                         state = calendarState,
                         onEvent = vm::onEvent,
                         loadAvatar = board.loadAvatar,
+                        onJoinCall = onJoinEventCall,
                     )
                 }
             },

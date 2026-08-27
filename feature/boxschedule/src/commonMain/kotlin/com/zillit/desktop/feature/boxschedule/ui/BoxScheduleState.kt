@@ -40,6 +40,8 @@ data class DiaryEditor(
     val noteType: String = "general",
     val repeatStatus: String = "none",
     val saving: Boolean = false,
+    /** Carried through an edit untouched — the desktop cannot set it. */
+    val callType: String = "",
     /** For a recurring occurrence's edit/delete: which instant it is. */
     val occurrenceDate: Long? = null,
     val isRecurring: Boolean = false,
@@ -83,6 +85,9 @@ data class BoxScheduleUiState(
 
 sealed interface BoxScheduleEvent {
     data object Refresh : BoxScheduleEvent
+
+    /** Joins the call on one event, addressed by its list key. */
+    data class JoinCall(val listKey: String) : BoxScheduleEvent
 
     // Blocks
     data object NewBlock : BoxScheduleEvent
@@ -135,4 +140,12 @@ sealed interface BoxScheduleEvent {
 
 sealed interface BoxScheduleEffect {
     data class Notice(val message: String) : BoxScheduleEffect
+
+    /**
+     * Joins an event's call, for the host to hand to the calling stack.
+     *
+     * The same room a calendar event's Join opens — this module keeps no
+     * dependency on calling, only on the id.
+     */
+    data class JoinCall(val roomId: String, val title: String, val video: Boolean) : BoxScheduleEffect
 }

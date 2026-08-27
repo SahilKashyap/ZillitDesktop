@@ -83,6 +83,8 @@ data class EventDetailState(
     val event: CalendarEvent,
     val permissions: EventPermissions,
     val hasFinished: Boolean,
+    /** The event's call can be joined right now. See [canJoinCall]. */
+    val canJoinCall: Boolean = false,
     val dateLabel: String,
     val timeLabel: String,
     val isBusy: Boolean = false,
@@ -483,6 +485,7 @@ class CalendarViewModel(
                     event = event,
                     permissions = permissionsFor(event, isCreator(event), now),
                     hasFinished = event.hasFinished(now),
+                    canJoinCall = event.canJoinCall(now),
                     dateLabel = event.dateLabel(state.zone),
                     timeLabel = event.timeLabel(state.zone),
                 ),

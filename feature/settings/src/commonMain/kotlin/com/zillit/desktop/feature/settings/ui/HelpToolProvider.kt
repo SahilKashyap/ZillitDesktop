@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Row
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpSize
@@ -35,6 +36,11 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 class HelpToolProvider(
     private val onOpenExternal: (String) -> Unit,
     private val onContactSupport: () -> Unit,
+    /**
+     * Rings the 24x7 support team. Null where calling is unavailable or no
+     * production is open, and the button is then simply not drawn.
+     */
+    private val onCallSupport: (() -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = HELP_PATH
@@ -44,12 +50,18 @@ class HelpToolProvider(
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
-        HelpScreen(onOpenExternal, onContactSupport)
+        HelpScreen(onOpenExternal, onContactSupport, onCallSupport)
     }
 }
 
 /** One card of the help desk. */
-internal data class HelpEntry(val title: String, val blurb: String, val url: String?)
+internal data class HelpEntry(
+    val title: String,
+    val blurb: String,
+    val url: String?,
+    /** This row can also ring the support team, not only write to them. */
+    val callable: Boolean = false,
+)
 
 /** The web's five cards and links (`Help.jsx:220-274`), in its order. */
 internal val HELP_ENTRIES: List<HelpEntry> = listOf(
@@ -60,12 +72,21 @@ internal val HELP_ENTRIES: List<HelpEntry> = listOf(
     ),
     HelpEntry("Privacy Policy", "What Zillit stores, and why.", "https://corporate.zillit.com/privacy-policy"),
     HelpEntry("FAQ", "Answers to the questions people ask most.", "https://zillit.com/frequently-asked-questions"),
-    HelpEntry("Contact Us", "Write to support@zillit.com — we read everything.", null),
+    HelpEntry(
+        "Contact Us",
+        "Call our 24x7 support team, or write to support@zillit.com — we read everything.",
+        null,
+        callable = true,
+    ),
     HelpEntry("Reviews", "Tell us how Zillit is working for your production.", "https://corporate.zillit.com/d"),
 )
 
 @Composable
-internal fun HelpScreen(onOpenExternal: (String) -> Unit, onContactSupport: () -> Unit) {
+internal fun HelpScreen(
+    onOpenExternal: (String) -> Unit,
+    onContactSupport: () -> Unit,
+    onCallSupport: (() -> Unit)? = null,
+) {
     ZillitScrollColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -83,12 +104,22 @@ internal fun HelpScreen(onOpenExternal: (String) -> Unit, onContactSupport: () -
                 title = entry.title,
                 icon = ZillitIcons.Help,
                 action = {
-                    ZillitButton(
-                        text = if (entry.url == null) "Write to us" else "Open",
-                        variant = ButtonVariant.Secondary,
-                        size = ButtonSize.Small,
-                        onClick = { entry.url?.let(onOpenExternal) ?: onContactSupport() },
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+                        if (entry.callable && onCallSupport != null) {
+                            ZillitButton(
+                                text = "Call us",
+                                variant = ButtonVariant.Primary,
+                                size = ButtonSize.Small,
+                                onClick = onCallSupport,
+                            )
+                        }
+                        ZillitButton(
+                            text = if (entry.url == null) "Write to us" else "Open",
+                            variant = ButtonVariant.Secondary,
+                            size = ButtonSize.Small,
+                            onClick = { entry.url?.let(onOpenExternal) ?: onContactSupport() },
+                        )
+                    }
                 },
             ) {
                 ZillitText(

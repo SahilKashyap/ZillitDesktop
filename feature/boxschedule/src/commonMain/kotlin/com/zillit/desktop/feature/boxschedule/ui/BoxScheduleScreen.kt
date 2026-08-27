@@ -42,7 +42,11 @@ import com.zillit.desktop.feature.boxschedule.ui.pages.hexColor
  * running number, and the events and notes on that day.
  */
 @Composable
-fun BoxScheduleScreen(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> Unit) {
+fun BoxScheduleScreen(
+    state: BoxScheduleUiState,
+    onEvent: (BoxScheduleEvent) -> Unit,
+    mayCall: Boolean = false,
+) {
     Box(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -59,7 +63,7 @@ fun BoxScheduleScreen(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> 
                     style = ZillitTheme.typography.bodyMedium,
                     color = ZillitTheme.colors.textMuted,
                 )
-                else -> DiaryList(state = state, onEvent = onEvent)
+                else -> DiaryList(state = state, onEvent = onEvent, mayCall = mayCall)
             }
         }
         state.blockEditor?.let { BlockEditorDialog(state = state, editor = it, onEvent = onEvent) }
@@ -118,10 +122,14 @@ private fun Chrome(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> Uni
 }
 
 @Composable
-private fun DiaryList(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> Unit) {
+private fun DiaryList(
+    state: BoxScheduleUiState,
+    onEvent: (BoxScheduleEvent) -> Unit,
+    mayCall: Boolean,
+) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         items(state.rows, key = { "${it.block.id}:${it.date}" }) { row ->
-            DayRow(state = state, row = row, onEvent = onEvent)
+            DayRow(state = state, row = row, onEvent = onEvent, mayCall = mayCall)
         }
         val orphans = state.orphanEvents
         if (orphans.isNotEmpty()) {
@@ -135,7 +143,13 @@ private fun DiaryList(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> 
             }
             items(orphans, key = { "orphan:${it.listKey}" }) { event ->
                 ZillitSectionCard {
-                    EventLine(state = state, event = event, onEvent = onEvent, showDate = true)
+                    EventLine(
+                        state = state,
+                        event = event,
+                        onEvent = onEvent,
+                        showDate = true,
+                        mayCall = mayCall,
+                    )
                 }
             }
         }
@@ -144,7 +158,12 @@ private fun DiaryList(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> 
 
 @Composable
 @Suppress("LongMethod") // One row: date column, events column, action strip.
-private fun DayRow(state: BoxScheduleUiState, row: ScheduleDayRow, onEvent: (BoxScheduleEvent) -> Unit) {
+private fun DayRow(
+    state: BoxScheduleUiState,
+    row: ScheduleDayRow,
+    onEvent: (BoxScheduleEvent) -> Unit,
+    mayCall: Boolean,
+) {
     val colors = ZillitTheme.colors
     ZillitSectionCard {
         Row(
@@ -188,7 +207,13 @@ private fun DayRow(state: BoxScheduleUiState, row: ScheduleDayRow, onEvent: (Box
                     )
                 }
                 onDay.forEach { event ->
-                    EventLine(state = state, event = event, onEvent = onEvent, showDate = false)
+                    EventLine(
+                        state = state,
+                        event = event,
+                        onEvent = onEvent,
+                        showDate = false,
+                        mayCall = mayCall,
+                    )
                 }
             }
             if (state.viewer.mayEdit) {
@@ -223,6 +248,7 @@ private fun EventLine(
     event: DiaryEvent,
     onEvent: (BoxScheduleEvent) -> Unit,
     showDate: Boolean,
+    mayCall: Boolean,
 ) {
     val colors = ZillitTheme.colors
     Row(
@@ -260,20 +286,44 @@ private fun EventLine(
                 color = colors.textMuted,
             )
         }
-        if (state.viewer.mayEdit && !event.calendarSourced) {
-            ZillitButton(
-                text = "Edit",
-                onClick = { onEvent(BoxScheduleEvent.EditDiary(event.listKey)) },
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-            )
-            ZillitButton(
-                text = "Delete",
-                onClick = { onEvent(BoxScheduleEvent.DeleteDiary(event.listKey)) },
-                variant = ButtonVariant.Danger,
-                size = ButtonSize.Small,
-            )
-        }
+        EventActions(state, event, mayCall, onEvent)
+    }
+}
+
+/**
+ * The buttons on one event row.
+ *
+ * Join sits OUTSIDE the edit gate deliberately: read-only crew reach this
+ * screen, and joining a call is not editing the schedule.
+ */
+@Composable
+private fun EventActions(
+    state: BoxScheduleUiState,
+    event: DiaryEvent,
+    mayCall: Boolean,
+    onEvent: (BoxScheduleEvent) -> Unit,
+) {
+    if (mayCall && event.isCallJoinable && event.hasCallRoom) {
+        ZillitButton(
+            text = "Join call",
+            onClick = { onEvent(BoxScheduleEvent.JoinCall(event.listKey)) },
+            variant = ButtonVariant.Primary,
+            size = ButtonSize.Small,
+        )
+    }
+    if (state.viewer.mayEdit && !event.calendarSourced) {
+        ZillitButton(
+            text = "Edit",
+            onClick = { onEvent(BoxScheduleEvent.EditDiary(event.listKey)) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+        )
+        ZillitButton(
+            text = "Delete",
+            onClick = { onEvent(BoxScheduleEvent.DeleteDiary(event.listKey)) },
+            variant = ButtonVariant.Danger,
+            size = ButtonSize.Small,
+        )
     }
 }
 

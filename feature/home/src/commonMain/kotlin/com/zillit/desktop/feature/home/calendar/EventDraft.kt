@@ -43,6 +43,17 @@ enum class CallType(val wireValue: String, val label: String) {
     /** Somewhere to actually turn up to. */
     val needsLocation: Boolean get() = this == InPersonAndCall
 
+    /**
+     * There is a call to join.
+     *
+     * A plain in-person meeting is not one — it is a place to be, not a room
+     * to dial. "Meet in person & call" is both, and does have a room.
+     */
+    val isJoinable: Boolean get() = this != InPerson
+
+    /** Video where the event asked for it; audio for everything else. */
+    val prefersVideo: Boolean get() = this == Video
+
     companion object {
         /** Null for an unset or unrecognised value — including the web's "none". */
         fun of(wireValue: String?): CallType? =

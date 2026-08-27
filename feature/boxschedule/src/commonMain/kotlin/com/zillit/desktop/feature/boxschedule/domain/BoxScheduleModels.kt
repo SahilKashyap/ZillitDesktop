@@ -88,7 +88,24 @@ data class DiaryEvent(
     val calendarEventId: String,
     /** True for read-only rows merged in from the Main Calendar. */
     val calendarSourced: Boolean = false,
+    /** `audio`, `video`, `meet_in_person`, `meet_in_person_call`, or blank. */
+    val callType: String = "",
+    /**
+     * The chat room the event's call is held in, inherited from the calendar
+     * event it was created with. It IS the call: everyone dials this same room.
+     */
+    val cncCallGroupId: String = "",
 ) {
+    /** There is a call to join — a plain in-person meeting is not one. */
+    val isCallJoinable: Boolean
+        get() = callType.lowercase() in setOf("audio", "video", "meet_in_person_call")
+
+    /** And a room to join it in. The server mints one only for events with a call. */
+    val hasCallRoom: Boolean get() = cncCallGroupId.isNotBlank()
+
+    /** Video where the event asked for it; audio otherwise. */
+    val prefersVideoCall: Boolean get() = callType.equals("video", ignoreCase = true)
+
     /** List key: never `id` alone, or a whole recurring series collapses. */
     val listKey: String get() = occurrenceId.ifBlank { id }
 
@@ -157,6 +174,16 @@ data class DiaryDraft(
     val timezone: String = "",
     /** Only on create: mirror into the Home calendar. */
     val createInCalendar: Boolean = false,
+    /**
+     * The event's call type, carried through an edit unchanged.
+     *
+     * The desktop offers no way to attach a call, so this is only ever what
+     * the event already had. It has to ride along regardless: the write sends
+     * the whole event, and a blank here erases a call somebody set on another
+     * client — the event keeps its room id and loses the type that makes it
+     * joinable.
+     */
+    val callType: String = "",
 ) {
     companion object {
         const val DEFAULT_EVENT_COLOR = "#3498DB"

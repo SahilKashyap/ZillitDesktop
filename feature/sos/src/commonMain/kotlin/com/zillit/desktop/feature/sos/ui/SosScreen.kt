@@ -52,7 +52,7 @@ import com.zillit.desktop.feature.sos.domain.SosCrewMember
  * Every colour comes from [ZillitTheme], so light and dark are the same code.
  */
 @Composable
-fun SosScreen(state: SosUiState, onEvent: (SosEvent) -> Unit) {
+fun SosScreen(state: SosUiState, onEvent: (SosEvent) -> Unit, mayCall: Boolean = false) {
     Box(Modifier.fillMaxSize()) {
         ZillitScrollColumn(
             modifier = Modifier.fillMaxSize(),
@@ -62,7 +62,7 @@ fun SosScreen(state: SosUiState, onEvent: (SosEvent) -> Unit) {
             SosHeader(state, onEvent)
             SendNotice()
             state.error?.let { message -> ErrorNotice(message, onEvent) }
-            AlertsCard(state, onEvent)
+            AlertsCard(state, mayCall, onEvent)
             ContactsCard(state, onEvent)
         }
         state.confirm?.let { ConfirmDialog(it, onEvent) }
@@ -130,7 +130,7 @@ private fun ErrorNotice(message: String, onEvent: (SosEvent) -> Unit) {
 // Alerts -------------------------------------------------------------------
 
 @Composable
-private fun AlertsCard(state: SosUiState, onEvent: (SosEvent) -> Unit) {
+private fun AlertsCard(state: SosUiState, mayCall: Boolean, onEvent: (SosEvent) -> Unit) {
     ZillitSectionCard(
         title = "SOS alerts received",
         icon = ZillitIcons.Bell,
@@ -148,7 +148,13 @@ private fun AlertsCard(state: SosUiState, onEvent: (SosEvent) -> Unit) {
 
             else -> Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 state.alerts.forEach { alert ->
-                    AlertRow(alert = alert, viewerId = state.viewer.userId, busy = state.busy, onEvent = onEvent)
+                    AlertRow(
+                        alert = alert,
+                        viewerId = state.viewer.userId,
+                        busy = state.busy,
+                        mayCall = mayCall,
+                        onEvent = onEvent,
+                    )
                 }
                 MoreRow(state, onEvent)
             }
@@ -178,7 +184,13 @@ private fun MoreRow(state: SosUiState, onEvent: (SosEvent) -> Unit) {
  * done with it — open the map link and delete the row.
  */
 @Composable
-private fun AlertRow(alert: SosAlert, viewerId: String, busy: Boolean, onEvent: (SosEvent) -> Unit) {
+private fun AlertRow(
+    alert: SosAlert,
+    viewerId: String,
+    busy: Boolean,
+    mayCall: Boolean,
+    onEvent: (SosEvent) -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -187,7 +199,7 @@ private fun AlertRow(alert: SosAlert, viewerId: String, busy: Boolean, onEvent: 
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        AlertRowHead(alert, viewerId, busy, onEvent)
+        AlertRowHead(alert, viewerId, busy, mayCall, onEvent)
         ZillitText(text = alert.text, style = ZillitTheme.typography.bodyMedium)
         if (alert.contactInfo.isNotBlank()) {
             ZillitText(
@@ -207,7 +219,13 @@ private fun AlertRow(alert: SosAlert, viewerId: String, busy: Boolean, onEvent: 
 }
 
 @Composable
-private fun AlertRowHead(alert: SosAlert, viewerId: String, busy: Boolean, onEvent: (SosEvent) -> Unit) {
+private fun AlertRowHead(
+    alert: SosAlert,
+    viewerId: String,
+    busy: Boolean,
+    mayCall: Boolean,
+    onEvent: (SosEvent) -> Unit,
+) {
     val sent = alert.senderId.isNotBlank() && alert.senderId == viewerId
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -235,6 +253,22 @@ private fun AlertRowHead(alert: SosAlert, viewerId: String, busy: Boolean, onEve
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
                 maxLines = 1,
+            )
+        }
+        // Only on somebody else's alert: your own has nobody to ring, and a
+        // button that always answers "this is your own alert" is furniture.
+        if (mayCall && !sent && alert.senderId.isNotBlank()) {
+            ZillitIconButton(
+                icon = ZillitIcons.Phone,
+                contentDescription = "Call them",
+                onClick = { onEvent(SosEvent.CallSender(alert.id, video = false)) },
+                enabled = !busy,
+            )
+            ZillitIconButton(
+                icon = ZillitIcons.Camera,
+                contentDescription = "Video call them",
+                onClick = { onEvent(SosEvent.CallSender(alert.id, video = true)) },
+                enabled = !busy,
             )
         }
         ZillitIconButton(
