@@ -63,6 +63,14 @@ PROD_CHAT_BASE_URL=
 PROD_CONTINUITY_BASE_URL=
 PROD_AD_DASHBOARD_BASE_URL=
 PROD_COST_REPORT_BASE_URL=
+
+# -- Consolidated services. Thirteen per-module backends were merged into four
+# -- hosts; the per-module keys above are kept so a rollback is a config edit.
+# -- Set <ENV>_USE_NEW_URL=false to go back to the old hosts.
+PROD_CSE_BASE_URL=
+PROD_MRMI_BASE_URL=
+PROD_LCW_BASE_URL=
+PROD_SCRIPTOPS_BASE_URL=
 PROD_DEAL_MEMO_BASE_URL=
 PROD_DOC_DISTRIBUTION_BASE_URL=
 PROD_DRIVE_BASE_URL=

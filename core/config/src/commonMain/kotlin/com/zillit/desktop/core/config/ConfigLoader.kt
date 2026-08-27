@@ -30,12 +30,31 @@ object ConfigParser {
     ): ZillitResult<AppConfig> {
         val prefix = "${environment.propertyPrefix}_"
 
-        val services = ZillitService.entries.mapNotNull { service ->
+        val declared = ZillitService.entries.mapNotNull { service ->
             properties[prefix + service.configKey]
                 ?.trim()
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { service to it }
         }.toMap()
+
+        // Thirteen modules moved to four consolidated hosts; see
+        // [ConsolidatedHosts]. Android decides this per call from a Firebase
+        // flag because its BuildConfig hosts are compile-time constants. Here
+        // every host resolves through one map, so the swap happens once.
+        //
+        // The default is ON, which is where this deliberately parts company
+        // with Android's fail-closed default: theirs protects a fresh install
+        // whose old hosts still answer, while ours are decommissioned — twelve
+        // of the thirteen returned 502 on 2026-08-27. Failing closed here
+        // would mean shipping an app that reaches nothing. Set the key to
+        // false to roll back without a release.
+        val useConsolidated = properties[prefix + USE_NEW_URL_SUFFIX]
+            ?.trim()
+            ?.lowercase()
+            ?.let { it != "false" && it != "0" && it != "no" }
+            ?: true
+
+        val services = if (useConsolidated) ConsolidatedHosts.applied(declared) else declared
 
         val realtime = ZillitRealtimeEndpoint.entries.mapNotNull { endpoint ->
             properties[prefix + endpoint.configKey]
@@ -135,4 +154,12 @@ object ConfigParser {
     private const val WEATHER_API_KEY_SUFFIX = "WEATHER_API_KEY"
 
     private const val AGORA_APP_ID_SUFFIX = "AGORA_APP_ID"
+
+    /**
+     * `<ENV>_USE_NEW_URL` — the consolidated-host switch, Android's
+     * `use_new_url` Remote Config flag by another route. Absent means on;
+     * see the note at the call site for why the default differs from
+     * Android's.
+     */
+    private const val USE_NEW_URL_SUFFIX = "USE_NEW_URL"
 }

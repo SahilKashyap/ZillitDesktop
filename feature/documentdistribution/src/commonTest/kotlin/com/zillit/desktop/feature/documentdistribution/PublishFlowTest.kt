@@ -374,4 +374,33 @@ class PublishFlowTest {
         assertFalse("production_report" in offered, "no posting right on that tool")
         assertFalse("confidential_info" in offered)
     }
+    /**
+     * The production opens before its tool grid arrives, so the viewer built
+     * at that moment answers "rights not yet known" and offers no publish
+     * destination. Nothing used to replace it — seen live 2026-08-27, a
+     * permanently empty Publish dialog on a production with 42 tools on.
+     */
+    @Test
+    fun `rights arriving after the production opens reach the publish dialog`() = runTest {
+        var rights = ProjectPermissions.Empty
+        val vm = DocDistViewModel(
+            repository = PublishRepo(MutableSharedFlow()),
+            viewer = { DocDistViewer.from(rights, "u1", "u@x") },
+            today = { LocalDate(2026, 8, 24) },
+        ).also { it.start() }
+        runCurrent()
+
+        assertTrue(vm.state.value.viewer.targets().isEmpty(), "resolved too early to know")
+
+        // The tools call answers.
+        rights = ProjectPermissions(tools = listOf(granted(DocDistViewer.TOOL_IDENTIFIER)))
+        vm.onRightsChanged()
+        runCurrent()
+
+        assertTrue(
+            vm.state.value.viewer.targets().isNotEmpty(),
+            "publish dialog still offers nothing after rights arrived",
+        )
+    }
+
 }

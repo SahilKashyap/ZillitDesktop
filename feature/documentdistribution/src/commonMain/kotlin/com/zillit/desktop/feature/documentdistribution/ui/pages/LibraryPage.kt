@@ -12,6 +12,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -71,10 +73,16 @@ fun LibraryPage(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
                     rows = state.subfolders,
                     key = { it.id },
                     onRowClick = { onEvent(DocDistEvent.OpenFolder(it.id)) },
-                    // Inside a card in a fixed page there is a bounded height,
-                    // but the folder list is short by nature and virtualising a
-                    // dozen rows costs more than it saves.
-                    virtualised = false,
+                    // The folder list is NOT short by nature — verified live
+                    // 2026-08-27 on a production with twelve, of which a fixed
+                    // page showed six and clipped the rest with no way to
+                    // reach them. Given a bounded height the table scrolls
+                    // itself; the height follows the row count so a short list
+                    // still sits snug rather than reserving empty space.
+                    modifier = Modifier
+                        .height(folderListHeight(state.subfolders.size))
+                        .testTag(FOLDER_TABLE_TAG),
+                    virtualised = true,
                     columns = folderColumns(state, onEvent),
                     emptyTitle = "No folders",
                 )
@@ -557,6 +565,21 @@ private const val SORT_WIDTH = 180
 private const val DATE_COLUMN = 130
 private const val SIZE_COLUMN = 100
 private const val ACTIONS_COLUMN = 96
+/**
+ * How tall the folders list should be.
+ *
+ * Capped so the documents underneath stay visible: a production with sixty
+ * folders must not push its files off the page.
+ */
+private fun folderListHeight(rows: Int): Dp =
+    (TABLE_HEADER + FOLDER_ROW * rows.coerceAtMost(FOLDER_ROWS_SHOWN)).dp
+
+/** Names the folders list so a test can scroll it without guessing. */
+const val FOLDER_TABLE_TAG = "docdist-folders"
+
 private const val CHECK_COLUMN = 44
+private const val TABLE_HEADER = 44
+private const val FOLDER_ROW = 42
+private const val FOLDER_ROWS_SHOWN = 6
 
 private const val MOVE_LIST_HEIGHT = 280

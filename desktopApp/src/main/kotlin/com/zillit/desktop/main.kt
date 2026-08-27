@@ -1028,6 +1028,34 @@ private fun ProjectScopedLoads(
         // The outside-contact directory is the previous production's until it reloads.
         viewModels.externalUsers?.onProjectChanged()
     }
+
+    // The calls above run while the tool grid is still out — `projectId` flips
+    // when the production is chosen, but rights arrive with the Home load this
+    // very effect kicks off. Every viewer resolved up there is therefore the
+    // "rights not yet known" one, and nothing replaced it: Document
+    // Distribution offered no publish destination at all on a production with
+    // 42 tools switched on (seen live 2026-08-27). Keyed on the arrival, so it
+    // fires once per production and swaps in the real rights without
+    // re-fetching a thing.
+    val rights = viewModels.home?.state?.collectAsState()?.value?.permissions
+    LaunchedEffect(projectId, rights) {
+        if (projectId == null || rights == null || rights === ProjectPermissions.Empty) {
+            return@LaunchedEffect
+        }
+        viewModels.cashExpenses?.onRightsChanged()
+        viewModels.cardExpenses?.onRightsChanged()
+        viewModels.dealMemos?.onRightsChanged()
+        viewModels.payroll?.onRightsChanged()
+        viewModels.accountHub?.onRightsChanged()
+        viewModels.docDist?.onRightsChanged()
+        viewModels.drive?.onRightsChanged()
+        viewModels.adDashboard?.onRightsChanged()
+        viewModels.saPortal?.onRightsChanged()
+        viewModels.purchaseOrders?.onRightsChanged()
+        viewModels.timecards?.onRightsChanged()
+        viewModels.permissionGrid?.onRightsChanged(PermissionGridViewer.from(rights))
+        viewModels.externalUsers?.onRightsChanged()
+    }
 }
 
 /**
@@ -2924,7 +2952,7 @@ private fun buildRegistry(
             },
         )
     }
-     val timecards = viewModels.timecards?.let { TimecardToolProvider(it) }
+            val timecards = viewModels.timecards?.let { TimecardToolProvider(it) }
 
     val payroll = viewModels.payroll?.let { PayrollToolProvider(it) }
     val deals = viewModels.dealMemos?.let { DealMemoToolProvider(it) }

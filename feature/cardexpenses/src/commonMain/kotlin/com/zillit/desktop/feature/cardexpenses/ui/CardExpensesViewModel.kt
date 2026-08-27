@@ -268,6 +268,23 @@ class CardExpensesViewModel(
         start()
     }
 
+    /**
+     * Swaps in the real rights once the tool grid has answered.
+     *
+     * `projectId` flips the moment a production is chosen, but the rights that
+     * gate this screen arrive with the Home load a beat later — so the viewer
+     * resolved at open is the "not yet known" one, and nothing used to replace
+     * it. Seen live 2026-08-27: Document Distribution offered no publish
+     * destination at all on a production with 42 tools switched on. Only the
+     * viewer changes here; the open page and its data are already right.
+     */
+    fun onRightsChanged() {
+        // Read outside the state lambda: inside it, `viewer` is the
+        // state's own viewer property rather than the supplier.
+        val resolved = viewer()
+        setState { copy(viewer = resolved) }
+    }
+
     private fun startInternal() = launch {
         val identity = viewer()
         // Metadata and settings are settled independently: a failing /settings

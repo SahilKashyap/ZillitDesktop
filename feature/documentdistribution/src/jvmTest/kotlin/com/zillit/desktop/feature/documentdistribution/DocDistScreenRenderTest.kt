@@ -2,7 +2,13 @@ package com.zillit.desktop.feature.documentdistribution
 
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.test.ExperimentalTestApi
+import com.zillit.desktop.feature.documentdistribution.ui.pages.FOLDER_TABLE_TAG
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runSkikoComposeUiTest
@@ -322,4 +328,30 @@ class DocDistScreenRenderTest {
             onNodeWithText("Add at least one recipient.").assertIsDisplayed()
         }
     }
+
+    /**
+     * A production accumulates folders, and a fixed page clips whatever does
+     * not fit. Verified live 2026-08-27: twelve folders, six reachable, no
+     * way to scroll to the rest.
+     */
+    @Test
+    fun `a long folder list still reaches its last folder`() {
+        val many = (1..20).map { LibraryFolder(id = "f$it", name = "Folder $it") }
+        val crowded = state(DocDistDestination.Library).let { base ->
+            base.copy(folders = many, currentFolderId = null)
+        }
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) { DocDistScreen(state = crowded, onEvent = {}) }
+            }
+            // Reachable, not merely present: a bounded list composes only
+            // what is on screen, so the twentieth folder proves itself by
+            // being scrolled to.
+            onNode(hasScrollAction() and hasAnyAncestor(hasTestTag(FOLDER_TABLE_TAG)))
+                .performScrollToNode(hasText("Folder 20"))
+            onNodeWithText("Folder 20").assertIsDisplayed()
+        }
+    }
+
 }

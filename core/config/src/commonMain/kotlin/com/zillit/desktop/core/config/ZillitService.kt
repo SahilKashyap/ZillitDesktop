@@ -43,6 +43,24 @@ enum class ZillitService(val configKey: String) {
     Continuity("CONTINUITY_BASE_URL"),
 
     /**
+     * `cseapi` — continuity, sides and e-signature, merged.
+     *
+     * One of four consolidated services that replaced thirteen per-module
+     * backends. See [ConsolidatedHosts]; the old per-module entries are kept
+     * so a rollback is a config change rather than a release.
+     */
+    Cse("CSE_BASE_URL"),
+
+    /** `mrmiapi` — map, recce, media and integrations, merged. */
+    Mrmi("MRMI_BASE_URL"),
+
+    /** `lcwapi` — location, casting and wardrobe, merged. */
+    Lcw("LCW_BASE_URL"),
+
+    /** `scriptopsapi` — script notes, script distribution and schedule distribution, merged. */
+    ScriptOps("SCRIPTOPS_BASE_URL"),
+
+    /**
      * The AD dashboard service: the production side of supporting artistes —
      * the register, shoot days, attendance, rate config and AD reports.
      *
