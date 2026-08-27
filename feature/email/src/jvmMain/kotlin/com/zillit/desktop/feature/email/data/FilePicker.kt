@@ -17,7 +17,18 @@ import kotlinx.coroutines.withContext
  * machine and understands the sidebar, recents and tags the user already has.
  * `JFileChooser` draws its own, and on macOS it looks a decade out of date.
  */
-class FilePicker(private val maxBytes: Long = MAX_ATTACHMENT_BYTES) {
+class FilePicker(
+    private val maxBytes: Long = MAX_ATTACHMENT_BYTES,
+    /**
+     * Told the name and size of a file turned away for being too big.
+     *
+     * Silence is the wrong answer to "why did nothing happen?": the dialog
+     * closes, no attachment appears, and the sender is left guessing. Mail
+     * and the boards keep the old quiet behaviour by default; chat says it
+     * out loud, as both other clients do.
+     */
+    private val onRefused: (name: String, sizeBytes: Long) -> Unit = { _, _ -> },
+) {
 
     /** Null when the user cancelled, or the file could not be read. */
     suspend fun pick(): List<PickedFile> = withContext(Dispatchers.IO) {
@@ -36,6 +47,7 @@ class FilePicker(private val maxBytes: Long = MAX_ATTACHMENT_BYTES) {
             // memory to then reject it would hang the app first.
             file.length() > maxBytes -> {
                 ZillitLog.w(TAG) { "attachment refused: ${file.length()} bytes" }
+                onRefused(file.name, file.length())
                 null
             }
 

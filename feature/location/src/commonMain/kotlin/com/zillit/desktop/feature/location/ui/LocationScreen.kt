@@ -35,6 +35,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
+import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
@@ -135,7 +137,7 @@ fun LocationScreen(
             state.browsing != null -> PicksDialog(state.browsing, onEvent)
         }
         state.editor?.let { EditorDialog(state, onEvent) }
-        state.viewing?.let { ViewDialog(it, onEvent, loadImage, resolveUser) }
+        state.viewing?.let { ViewDialog(state, it, onEvent, loadImage, resolveUser) }
         state.confirmDelete?.let { ids ->
             ZillitDialogShell(
                 title = "Delete records",
@@ -426,6 +428,7 @@ private fun Thumbnail(
 
 @Composable
 private fun ViewDialog(
+    state: LocationUiState,
     record: LocationMedia,
     onEvent: (LocationEvent) -> Unit,
     loadImage: suspend (MediaAttachment, Boolean) -> ImageBitmap?,
@@ -473,7 +476,75 @@ private fun ViewDialog(
                     ZillitText(text = value, style = ZillitTheme.typography.bodySmall, color = colors.textPrimary)
                 }
             }
+            ZillitDivider()
+            Discussion(state, onEvent, resolveUser)
         }
+    }
+}
+
+/**
+ * The record's discussion.
+ *
+ * The phones and the web have carried this thread for years — it is where a
+ * location manager answers "can we park a truck there?" against the picture
+ * itself. This client had no thread at all, so the conversation happened
+ * somewhere the record could not see.
+ */
+@Composable
+private fun Discussion(
+    state: LocationUiState,
+    onEvent: (LocationEvent) -> Unit,
+    resolveUser: (String) -> String?,
+) {
+    val colors = ZillitTheme.colors
+    ZillitSectionLabel(text = "Discussion", modifier = Modifier.fillMaxWidth())
+    when {
+        state.discussionLoading && state.discussion.isEmpty() -> ZillitText(
+            text = "Loading…",
+            style = ZillitTheme.typography.bodySmall,
+            color = colors.textSecondary,
+        )
+
+        state.discussion.isEmpty() -> ZillitText(
+            text = "Nothing said about this one yet.",
+            style = ZillitTheme.typography.bodySmall,
+            color = colors.textMuted,
+        )
+
+        else -> state.discussion.forEach { message ->
+            Column(modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs)) {
+                ZillitText(
+                    text = if (message.isMine) "You" else resolveUser(message.senderId) ?: "Someone",
+                    style = ZillitTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                )
+                ZillitText(
+                    // A line whose body would not decrypt keeps its place;
+                    // saying so is better than an empty bubble.
+                    text = message.body.ifBlank { "(could not be read)" },
+                    style = ZillitTheme.typography.bodySmall,
+                    color = if (message.body.isBlank()) colors.textMuted else colors.textPrimary,
+                )
+            }
+        }
+    }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        ZillitTextField(
+            value = state.discussionDraft,
+            onValueChange = { onEvent(LocationEvent.DiscussionDraftChanged(it)) },
+            placeholder = "Say something about this location…",
+            modifier = Modifier.weight(1f),
+        )
+        ZillitButton(
+            text = "Send",
+            onClick = { onEvent(LocationEvent.SendDiscussion) },
+            enabled = state.discussionDraft.isNotBlank() && !state.discussionSending,
+            loading = state.discussionSending,
+        )
     }
 }
 

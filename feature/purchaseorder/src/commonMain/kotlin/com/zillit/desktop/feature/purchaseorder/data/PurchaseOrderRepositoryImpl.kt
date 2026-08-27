@@ -8,6 +8,7 @@ import com.zillit.desktop.core.common.toAmountOrNull
 import com.zillit.desktop.core.common.toEpochMillisOrNull
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
+import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
@@ -45,6 +46,7 @@ import kotlinx.serialization.json.contentOrNull
  * vendor list backs invoices and cash — so the two hosts are held separately.
  * Asking the purchase-order host for them answers `route_not_found`.
  */
+@Suppress("TooManyFunctions") // One method per server operation; see detekt.yml.
 class PurchaseOrderRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
@@ -54,6 +56,12 @@ class PurchaseOrderRepositoryImpl(
 ) : PurchaseOrderRepository {
 
     private val base = "${config.baseUrl(ZillitService.PurchaseOrder)}/api/v2/purchase-orders"
+
+    /**
+     * The service root without the `/purchase-orders` tail: the attachment
+     * and send routes hang off `/api/v2` directly.
+     */
+    private val serviceRoot = "${config.baseUrl(ZillitService.PurchaseOrder)}/api/v2"
     private val vendorsUrl = "${config.baseUrl(ZillitService.AccountHub)}/api/v2/vendors"
 
     /**
@@ -93,6 +101,64 @@ class PurchaseOrderRepositoryImpl(
             serializer = ListSerializer(PoHistoryDto.serializer()),
             module = RequestModule.ProjectUser,
         ).map { rows -> rows.map { it.toDomain() } }
+
+    /**
+     * `GET /v2/list/attachments/{id}` (`purchaseOrder/api.js`).
+     *
+     * Note the shape of these three routes: they hang off the service root,
+     * not off `/purchase-orders/{id}` like everything else on this tool. The
+     * order id is a path segment in a differently-shaped path each time.
+     */
+    override suspend fun attachments(id: String): ZillitResult<List<PoAttachment>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "$serviceRoot/list/attachments/$id",
+            serializer = ListSerializer(PoAttachmentDto.serializer()),
+            module = RequestModule.ProjectUser,
+        ).map { rows -> rows.mapNotNull { it.toDomain() } }
+
+    /** `PUT /v2/add/attachments/{id}` with the files under `attachment`. */
+    override suspend fun addAttachments(id: String, files: List<PoAttachment>): ZillitResult<Unit> =
+        apiClient.envelope(
+            verb = HttpVerb.Put,
+            url = "$serviceRoot/add/attachments/$id",
+            module = RequestModule.ProjectUser,
+            body = buildJsonObject {
+                put(
+                    "attachment",
+                    buildJsonArray {
+                        files.forEach { file ->
+                            add(
+                                buildJsonObject {
+                                    put("media", JsonPrimitive(file.media))
+                                    put("name", JsonPrimitive(file.displayName))
+                                    put("content_type", JsonPrimitive(file.contentType))
+                                    put("bucket", JsonPrimitive(file.bucket))
+                                    put("region", JsonPrimitive(file.region))
+                                    put("thumbnail", JsonPrimitive(""))
+                                },
+                            )
+                        }
+                    },
+                )
+            },
+        ).map { }
+
+    /** `DELETE /v2/delete/{attachmentId}/{orderId}` — the ids in that order. */
+    override suspend fun deleteAttachment(attachmentId: String, orderId: String): ZillitResult<Unit> =
+        apiClient.envelope(
+            verb = HttpVerb.Delete,
+            url = "$serviceRoot/delete/$attachmentId/$orderId",
+            module = RequestModule.ProjectUser,
+        ).map { }
+
+    /** `POST /v2/send/{id}` — the order, to the supplier's inbox. */
+    override suspend fun emailToSupplier(id: String): ZillitResult<Unit> =
+        apiClient.envelope(
+            verb = HttpVerb.Post,
+            url = "$serviceRoot/send/$id",
+            module = RequestModule.ProjectUser,
+        ).map { }
 
     override suspend fun create(order: NewPurchaseOrder): ZillitResult<Unit> =
         post(base, order.body())
@@ -403,4 +469,26 @@ internal data class VendorDto(
 internal fun JsonObjectBuilder.putIfPresent(key: String, value: String?) {
     val trimmed = value?.trim()
     if (!trimmed.isNullOrEmpty()) put(key, JsonPrimitive(trimmed))
+}
+
+/** A file on an order, as the service lists it. */
+@Serializable
+internal data class PoAttachmentDto(
+    @SerialName("_id") val id: String? = null,
+    @SerialName("media") val media: String? = null,
+    @SerialName("name") val name: String? = null,
+    @SerialName("content_type") val contentType: String? = null,
+    @SerialName("bucket") val bucket: String? = null,
+    @SerialName("region") val region: String? = null,
+) {
+    fun toDomain(): PoAttachment? = media?.takeIf { it.isNotBlank() }?.let { key ->
+        PoAttachment(
+            id = id.orEmpty(),
+            media = key,
+            name = name.orEmpty(),
+            contentType = contentType.orEmpty(),
+            bucket = bucket.orEmpty(),
+            region = region.orEmpty(),
+        )
+    }
 }

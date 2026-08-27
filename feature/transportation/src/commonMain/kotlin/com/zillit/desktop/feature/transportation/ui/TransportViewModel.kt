@@ -150,6 +150,11 @@ class TransportViewModel(
             is TransportEvent.DocumentReminder -> run("Reminder sent") {
                 repository.pendingDocumentReminder(event.userId, event.type, null)
             }
+            is TransportEvent.DecideLicence -> run(
+                if (event.approved) "Licence approved" else "Licence rejected",
+            ) {
+                repository.decideLicenceRequest(event.requestId, event.approved)
+            }
             is TransportEvent.SelectMyTab -> {
                 setState { copy(myTab = event.status) }
                 loadMine()
@@ -167,15 +172,20 @@ class TransportViewModel(
                 val designations = async { repository.driverDesignations() }
                 val vehicles = async { repository.vehicles() }
                 val types = async { repository.vehicleTypes() }
+                val coordinators = async { repository.postingRightUsers() }
                 val crewList = crew.await().orError()
                 val designationList = designations.await().orError()
                 val vehicleList = vehicles.await().orError()
                 val typeList = types.await().orError()
+                // Failing soft: an unreadable coordinator list must not empty
+                // the picker, so the last known set stands.
+                val coordinatorList = coordinators.await().orError()
                 setState {
                     copy(
                         loading = false,
                         crew = crewList ?: this.crew,
                         driverDesignations = designationList ?: driverDesignations,
+                        coordinatorIds = coordinatorList ?: coordinatorIds,
                         vehicles = vehicleList ?: this.vehicles,
                         vehicleTypes = typeList ?: vehicleTypes,
                     )
@@ -199,6 +209,23 @@ class TransportViewModel(
             val crewList = repository.crew().orError()
             val vehicleList = repository.vehicles().orError()
             setState { copy(crew = crewList ?: crew, vehicles = vehicleList ?: vehicles) }
+        }
+        loadLicenceRequests()
+    }
+
+    /**
+     * The licence-change queue.
+     *
+     * Only a coordinator can answer one, so only a coordinator is asked for
+     * the list. A failure costs the queue, never the screen — the same
+     * bargain the crew and vehicle reloads make.
+     */
+    private fun loadLicenceRequests() {
+        if (!currentState.viewer.isCoordinator) return
+        launch {
+            repository.licenceRequests().orError()?.let { rows ->
+                setState { copy(licenceRequests = rows.filter { it.verified == null }) }
+            }
         }
     }
 

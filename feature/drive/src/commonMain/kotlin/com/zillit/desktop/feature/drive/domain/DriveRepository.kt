@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.drive.domain
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -102,6 +103,21 @@ interface DriveRepository {
 
     /** A public link. The server fixes the expiry at 24 hours. */
     suspend fun shareLink(fileId: String): ZillitResult<String>
+
+    /**
+     * The open file requests on one folder
+     * (`GET /v2/drive/folders/{id}/file-requests`).
+     */
+    suspend fun fileRequests(folderId: String): ZillitResult<List<DriveFileRequest>> =
+        ZillitResult.Success(emptyList())
+
+    /** Opens a new one (`POST /v2/drive/file-requests`), answering its link. */
+    suspend fun createFileRequest(draft: DriveFileRequestDraft): ZillitResult<DriveFileRequest> =
+        ZillitResult.Failure(ZillitError.Unknown("file requests are not wired"))
+
+    /** Closes one for good (`POST /v2/drive/file-requests/{id}/revoke`). */
+    suspend fun revokeFileRequest(requestId: String): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("file requests are not wired"))
 
     /**
      * The document editor's configuration for [fileId].
@@ -207,6 +223,9 @@ interface DriveRepository {
     suspend fun createTag(name: String, color: String): ZillitResult<Unit>
 
     suspend fun deleteTag(tagId: String): ZillitResult<Unit>
+
+    /** The tags already on one item — the project list says nothing about which are applied. */
+    suspend fun itemTags(ref: DriveRef): ZillitResult<List<DriveTag>>
 
     suspend fun assignTag(tagId: String, ref: DriveRef): ZillitResult<Unit>
 

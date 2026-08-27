@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.auth
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.auth.domain.CodeLookup
 import com.zillit.desktop.feature.auth.domain.AuthRepository
 import com.zillit.desktop.feature.auth.domain.AuthSession
 import com.zillit.desktop.feature.auth.domain.Department
@@ -323,7 +324,7 @@ class SessionExpiryTest {
             ZillitResult.Success(Unit)
 
         override suspend fun listProjects() = ZillitResult.Success(listOf(ONLY))
-        override suspend fun findByCode(code: String) = ZillitResult.Success(ONLY)
+        override suspend fun findByCode(code: String) = ZillitResult.Success(CodeLookup.NeedsDetails(ONLY))
         override suspend fun requestJoin(projectId: String, draft: JoinDraft) =
             ZillitResult.Success(JoinStatus.Pending)
 

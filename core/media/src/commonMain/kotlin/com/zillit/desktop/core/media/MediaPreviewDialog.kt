@@ -17,6 +17,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalFontFamilyResolver
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Density
@@ -83,6 +89,21 @@ fun MediaPreviewDialog(
     val scope = rememberCoroutineScope()
     val editing = session.tool != null
 
+    // One send, shared by the button and the caption field's Enter — the
+    // phones and the web both send on Enter from the preview's caption
+    // (web `CNC_FIXES_CHANGELOG.md` Fix 7 added it there), and a dialog
+    // where Enter does nothing reads as a dialog that ignored you.
+    val send: () -> Unit = {
+        sending = true
+        scope.launch {
+            // Compositing and encoding a full photo is real work;
+            // off the UI thread so the dialog does not freeze.
+            val results = withContext(Dispatchers.Default) { session.results(rasterMeasurer) }
+            sending = false
+            if (results != null) onSend(results, session.caption.trim()) else sendError = ENCODE_FAILED
+        }
+    }
+
     ZillitDialogShell(
         title = if (editing) "Edit picture" else "Send media",
         subtitle = if (editing) "Draw, crop, or add text — then Done." else "Check what you picked and add a caption.",
@@ -107,27 +128,28 @@ fun MediaPreviewDialog(
                     captionLimit = captionLimit,
                     error = sendError,
                     onCancel = onCancel,
-                    onSend = {
-                        sending = true
-                        scope.launch {
-                            // Compositing and encoding a full photo is real work;
-                            // off the UI thread so the dialog does not freeze.
-                            val results = withContext(Dispatchers.Default) { session.results(rasterMeasurer) }
-                            sending = false
-                            if (results != null) onSend(results, session.caption.trim()) else sendError = ENCODE_FAILED
-                        }
-                    },
+                    onSend = send,
                 )
             }
         },
     ) {
-        if (editing) EditBody(session, measurer) else PreviewBody(session, measurer, captionLimit)
+        if (editing) {
+            EditBody(session, measurer)
+        } else {
+            PreviewBody(session, measurer, captionLimit, sending, send)
+        }
     }
 }
 
 /** Preview mode: the item large, its toolbar, the filmstrip, the caption. */
 @Composable
-private fun ColumnScope.PreviewBody(session: MediaPreviewSession, measurer: TextMeasurer, captionLimit: Int) {
+private fun ColumnScope.PreviewBody(
+    session: MediaPreviewSession,
+    measurer: TextMeasurer,
+    captionLimit: Int,
+    sending: Boolean,
+    onSend: () -> Unit,
+) {
     val item = session.current ?: return
     PreviewToolbar(session, measurer)
     ItemPreview(session, item, Modifier.weight(1f))
@@ -138,7 +160,17 @@ private fun ColumnScope.PreviewBody(session: MediaPreviewSession, measurer: Text
         placeholder = "Add a caption…",
         singleLine = false,
         maxLength = captionLimit,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
+            // Enter sends, Shift+Enter starts a line — the composer's own
+            // bargain (`ThreadPane.kt:546`), so the two fields behave alike.
+            // A send already in flight swallows the key rather than firing
+            // twice.
+            val enter = event.type == KeyEventType.KeyDown &&
+                event.key == Key.Enter &&
+                !event.isShiftPressed
+            if (enter && !sending) onSend()
+            enter
+        },
     )
 }
 

@@ -31,6 +31,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.Claim
+import com.zillit.desktop.feature.cashexpenses.domain.BatchAssignment
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseCategory
 import com.zillit.desktop.feature.cashexpenses.domain.Settlement
@@ -232,6 +233,7 @@ private fun BatchDetail(state: CashUiState, batch: ClaimBatch, onEvent: (CashEve
             ZillitText(text = "Receipts", style = ZillitTheme.typography.titleSmall)
             batch.claims.forEach { claim ->
                 ClaimRow(
+                    onEvent = onEvent,
                     claim = claim,
                     currency = batch.currency,
                     // Coding is offered where coding happens: a coordinator in
@@ -290,7 +292,12 @@ private fun CashUiState.canCode(): Boolean = when (destination) {
 
 @Suppress("LongMethod") // One receipt line, with its flags and its coding affordance.
 @Composable
-private fun ClaimRow(claim: Claim, currency: String?, onCode: (() -> Unit)?) {
+private fun ClaimRow(
+    claim: Claim,
+    currency: String?,
+    onCode: (() -> Unit)?,
+    onEvent: (CashEvent) -> Unit,
+) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xs),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
@@ -348,14 +355,27 @@ private fun ClaimRow(claim: Claim, currency: String?, onCode: (() -> Unit)?) {
             )
         }
 
-        onCode?.let { code ->
-            ZillitButton(
-                text = if (claim.lineItems.isEmpty()) "Code this receipt" else "Edit coding",
-                onClick = code,
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.Edit,
-            )
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            claim.receiptUrl?.takeIf { it.isNotBlank() }?.let { receipt ->
+                ZillitButton(
+                    // Named for what opens: on most productions this is a
+                    // photograph, and "view receipt" is what the person
+                    // checking the figures is actually after.
+                    text = if (claim.receiptIsPdf) "Open receipt (PDF)" else "View receipt",
+                    onClick = { onEvent(CashEvent.ViewReceipt(receipt)) },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                )
+            }
+            onCode?.let { code ->
+                ZillitButton(
+                    text = if (claim.lineItems.isEmpty()) "Code this receipt" else "Edit coding",
+                    onClick = code,
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Edit,
+                )
+            }
         }
     }
 }
@@ -393,6 +413,18 @@ private fun actionsFor(state: CashUiState, batch: ClaimBatch): List<BatchAction>
             targetId = it.id,
             title = "Reject this batch",
             label = "Why it is being rejected",
+        )
+    }
+
+    // Handing a batch on is a Post & Ledger action: it is the queue where a
+    // senior decides who takes each one, and the batch stays put afterwards —
+    // only its owner moves. The word follows the batch, so an unassigned one
+    // reads "Assign" and one already owned reads "Reassign".
+    val assign = BatchAction(BatchAssignment.actionLabel(batch), ButtonVariant.Secondary) {
+        CashPrompt.Assign(
+            batchId = it.id,
+            title = "${BatchAssignment.actionLabel(it)} batch ${it.reference}".trim(),
+            label = BatchAssignment.actionLabel(it),
         )
     }
 
@@ -463,6 +495,7 @@ private fun actionsFor(state: CashUiState, batch: ClaimBatch): List<BatchAction>
 
         CashDestination.PettyCashSignOff, CashDestination.OutOfPocketSignOff -> if (viewer.canSeeSignOff) {
             listOf(
+                assign,
                 BatchAction("Sign off & post", ButtonVariant.Primary) {
                     CashPrompt.Confirm(
                         ConfirmAction.PostBatch,

@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.accounthub.ui.pages
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,6 +28,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
+import com.zillit.desktop.core.designsystem.component.ZillitSpinner
+import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -39,6 +42,9 @@ import com.zillit.desktop.feature.accounthub.domain.CoaLineType
 import com.zillit.desktop.feature.accounthub.domain.CoaNode
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
+import com.zillit.desktop.feature.accounthub.domain.TrackingSet
+import com.zillit.desktop.feature.accounthub.ui.ChartState
+import com.zillit.desktop.feature.accounthub.ui.TrackingRow
 import com.zillit.desktop.feature.accounthub.ui.ChartView
 import com.zillit.desktop.feature.accounthub.ui.HubPage
 
@@ -128,7 +134,7 @@ fun ChartOfAccountsPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> 
         }
 
         if (chart.view == ChartView.Layers) {
-            LayersNotice()
+            LayersView(chart)
             return@HubPage
         }
 
@@ -293,15 +299,78 @@ private fun chartColumns(
 )
 
 @Composable
-private fun LayersNotice() {
+private fun ColumnScope.LayersView(chart: ChartState) {
     ZillitNotice(
         text = "Layers are the analytical dimensions that sit beside the nominal chart — " +
-            "locations, episodes, units. Reading them is wired; editing them is not in " +
-            "this build.",
+            "locations, episodes, units. They are shown here as the accounts service " +
+            "holds them; editing them is not in this build.",
         tone = StatusTone.Neutral,
         icon = ZillitIcons.Info,
     )
+    if (chart.loading && chart.trackingSets.isEmpty()) {
+        ZillitSpinner()
+        return
+    }
+    if (chart.trackingSets.isEmpty()) {
+        ZillitEmptyState(
+            title = "No layers",
+            // Named for where they come from: a production with none has not
+            // set any up, which is not the same as this screen failing.
+            message = "This production has no tracking dimensions configured.",
+        )
+        return
+    }
+    chart.trackingSets.forEach { set -> LayerSet(set, chart) }
 }
+
+@Composable
+private fun ColumnScope.LayerSet(set: TrackingSet, chart: ChartState) {
+    val rows = chart.rows(set)
+    ZillitSectionCard(
+        title = listOf(set.code, set.name).filter { it.isNotBlank() }.joinToString(" · "),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            if (!set.isActive) {
+                ZillitStatusPill(label = "Inactive", tone = StatusTone.Neutral)
+            }
+            if (rows.isEmpty()) {
+                ZillitText(
+                    text = "No codes in this layer.",
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textMuted,
+                )
+                return@Column
+            }
+            rows.forEach { row -> LayerRow(row) }
+        }
+    }
+}
+
+@Composable
+private fun LayerRow(row: TrackingRow) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitText(
+            text = "${"    ".repeat(row.depth)}${row.node.code}",
+            style = ZillitTheme.typography.numeric,
+            color = ZillitTheme.colors.textSecondary,
+            modifier = Modifier.width(LAYER_CODE_WIDTH.dp),
+        )
+        ZillitText(text = row.node.name, maxLines = 1, modifier = Modifier.weight(1f))
+        if (row.orphaned) {
+            // Its parent is inactive or gone. The code is still postable, so
+            // hiding it would understate what this production can be coded to.
+            ZillitStatusPill(label = "No parent", tone = StatusTone.Pending)
+        }
+        if (!row.node.isActive) ZillitStatusPill(label = "Inactive", tone = StatusTone.Neutral)
+    }
+}
+
+private const val LAYER_CODE_WIDTH = 140
 
 /**
  * The add / edit form.

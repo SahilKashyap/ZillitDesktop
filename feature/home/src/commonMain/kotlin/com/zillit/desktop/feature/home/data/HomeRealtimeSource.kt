@@ -33,6 +33,11 @@ class HomeRealtimeSource(
     private fun toEvent(message: SocketMessage): HomeRealtimeEvent? = when {
         message.event in ZillitSocketEvents.Home.Units -> HomeRealtimeEvent.UnitsChanged
 
+        // A comment's payload is the comment, not the notice it belongs to,
+        // so there is nothing to patch in place — the board is re-read, which
+        // is what every other board does with the same events.
+        message.event in ZillitSocketEvents.Home.Comments -> HomeRealtimeEvent.UnitsChanged
+
         // An admin moved MY rights: the tab strip and the composer's gate are
         // both stale, so the unit list is read afresh — Android's own
         // fallback branch, minus its in-place patching (QA #18: rights taken

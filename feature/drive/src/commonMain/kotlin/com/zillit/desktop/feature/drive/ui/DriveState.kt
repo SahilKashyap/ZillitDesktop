@@ -7,6 +7,7 @@ import com.zillit.desktop.feature.drive.domain.DriveComment
 import com.zillit.desktop.feature.drive.domain.DriveCrumb
 import com.zillit.desktop.feature.drive.domain.DriveGroup
 import com.zillit.desktop.feature.drive.domain.DriveGrouping
+import com.zillit.desktop.feature.drive.domain.DriveFileRequest
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveQuickFilter
 import com.zillit.desktop.feature.drive.domain.DriveRef
@@ -26,11 +27,51 @@ data class DetailsState(
     val activity: List<DriveActivity> = emptyList(),
     val versions: List<DriveVersion> = emptyList(),
     val access: List<DriveAccessEntry> = emptyList(),
+    /** The tags on this item, as distinct from the project's whole tag list. */
+    val tags: List<DriveTag> = emptyList(),
     val commentDraft: String = "",
+    val tagDraft: String = "",
     val loading: Boolean = false,
+    val tagsBusy: Boolean = false,
 ) {
     val open: Boolean get() = item != null
+
+    /** The project tags not yet on this item — what the "add" menu offers. */
+    fun unapplied(all: List<DriveTag>): List<DriveTag> {
+        val on = tags.map { it.id }.toSet()
+        return all.filterNot { it.id in on }
+    }
 }
+
+/**
+ * The "Request files" panel on a folder.
+ *
+ * A production asks someone with no Zillit account — a supplier, a location
+ * owner — to send files straight into a folder. [created] holds the link the
+ * service just made, which is the whole point of the exchange and must not be
+ * lost when the list reloads behind it.
+ */
+data class FileRequestState(
+    val folderId: String? = null,
+    val folderName: String = "",
+    val requests: List<DriveFileRequest> = emptyList(),
+    val loading: Boolean = false,
+    val submitting: Boolean = false,
+    val title: String = "",
+    val description: String = "",
+    val expiryDays: Int = DEFAULT_EXPIRY_DAYS,
+    val requireName: Boolean = true,
+    val requireEmail: Boolean = false,
+    val created: DriveFileRequest? = null,
+) {
+    val open: Boolean get() = folderId != null
+
+    /** A request needs somewhere to land and something to call itself. */
+    val canSubmit: Boolean get() = folderId != null && title.isNotBlank() && !submitting
+}
+
+/** A fortnight: long enough for a supplier to get round to it, short enough to expire. */
+const val DEFAULT_EXPIRY_DAYS = 14
 
 /** A confirmation the user has to answer before something irreversible happens. */
 data class DrivePrompt(
@@ -87,6 +128,7 @@ data class DriveUiState(
 
     val uploads: List<QueuedUpload> = emptyList(),
     val details: DetailsState = DetailsState(),
+    val fileRequests: FileRequestState = FileRequestState(),
     val prompt: DrivePrompt? = null,
 ) {
 

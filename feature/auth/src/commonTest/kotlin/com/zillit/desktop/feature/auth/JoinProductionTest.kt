@@ -6,8 +6,11 @@ import com.zillit.desktop.core.units.ProductionUnit
 import com.zillit.desktop.core.units.UnitRepository
 import com.zillit.desktop.feature.auth.domain.Department
 import com.zillit.desktop.feature.auth.domain.Designation
+import com.zillit.desktop.feature.auth.domain.ChosenPhoto
+import com.zillit.desktop.feature.auth.domain.CodeLookup
 import com.zillit.desktop.feature.auth.domain.JoinDraft
 import com.zillit.desktop.feature.auth.domain.JoinFieldError
+import com.zillit.desktop.feature.auth.domain.JoinPhoto
 import com.zillit.desktop.feature.auth.domain.JoinStatus
 import com.zillit.desktop.feature.auth.domain.NewProductionDraft
 import com.zillit.desktop.feature.auth.domain.ProductionType
@@ -66,6 +69,38 @@ class JoinProductionTest {
     private fun viewModel(projects: FakeProjects = FakeProjects()) =
         JoinProductionViewModel(projects, FakeUnits())
 
+    /** A stored photo, and a picker that always finds one. */
+    private val storedPhoto = JoinPhoto(
+        media = "profile-picture/abc/selfie.jpg",
+        thumbnail = "profile-picture/abc/selfie.jpg",
+        bucket = "zillit-dev-uploads",
+        region = "ap-south-1",
+    )
+
+    private fun withPhoto(
+        projects: FakeProjects = FakeProjects(),
+        chosen: ChosenPhoto? = ChosenPhoto("selfie.jpg", "image/jpeg", ByteArray(8)),
+        stores: Boolean = true,
+    ) = JoinProductionViewModel(
+        projects,
+        FakeUnits(),
+        photoStore = {
+            if (stores) {
+                ZillitResult.Success(storedPhoto)
+            } else {
+                ZillitResult.Failure(ZillitError.Storage(technical = "no bucket", userMessage = "No storage."))
+            }
+        },
+        choosePhoto = { chosen },
+    )
+
+    /** Drives [model] to the details step. */
+    private fun JoinProductionViewModel.findProduction() {
+        onEvent(JoinEvent.CodeChanged("ABC123"))
+        onEvent(JoinEvent.FindProject)
+        dispatcher.scheduler.advanceUntilIdle()
+    }
+
     /** Drives the flow to the details step, as finding a code does. */
     private fun atDetails(projects: FakeProjects = FakeProjects()): JoinProductionViewModel {
         val model = viewModel(projects)
@@ -73,6 +108,95 @@ class JoinProductionTest {
         model.onEvent(JoinEvent.FindProject)
         dispatcher.scheduler.advanceUntilIdle()
         return model
+    }
+
+    // -- the profile picture -----------------------------------------------
+
+    @Test
+    fun `choosing a photo stores it and puts the keys on the draft`() = runTest(dispatcher) {
+        val model = withPhoto()
+        model.findProduction()
+
+        model.onEvent(JoinEvent.ChoosePhoto)
+        advanceUntilIdle()
+
+        assertEquals(storedPhoto, model.state.value.photo)
+        assertEquals(false, model.state.value.isStoringPhoto)
+        assertNull(model.state.value.photoError)
+    }
+
+    @Test
+    fun `the stored keys reach the request`() = runTest(dispatcher) {
+        val repo = FakeProjects()
+        val model = withPhoto(repo)
+        model.findProduction()
+        model.onEvent(JoinEvent.ChoosePhoto)
+        advanceUntilIdle()
+
+        model.onEvent(JoinEvent.DraftChanged(complete()))
+        model.onEvent(JoinEvent.Submit)
+        advanceUntilIdle()
+
+        assertEquals(storedPhoto, repo.joined.single().second.photo)
+    }
+
+    @Test
+    fun `a join without a photo carries none`() = runTest(dispatcher) {
+        val repo = FakeProjects()
+        val model = viewModel(repo)
+        model.findProduction()
+
+        model.onEvent(JoinEvent.DraftChanged(complete()))
+        model.onEvent(JoinEvent.Submit)
+        advanceUntilIdle()
+
+        assertNull(repo.joined.single().second.photo)
+    }
+
+    @Test
+    fun `a picture that will not store never blocks the join`() = runTest(dispatcher) {
+        // A production would rather have the crew member than the photograph.
+        val model = withPhoto(stores = false)
+        model.findProduction()
+
+        model.onEvent(JoinEvent.ChoosePhoto)
+        advanceUntilIdle()
+
+        assertNull(model.state.value.photo)
+        assertNotNull(model.state.value.photoError)
+        assertEquals(false, model.state.value.isStoringPhoto)
+    }
+
+    @Test
+    fun `cancelling the picker changes nothing`() = runTest(dispatcher) {
+        val model = withPhoto(chosen = null)
+        model.findProduction()
+
+        model.onEvent(JoinEvent.ChoosePhoto)
+        advanceUntilIdle()
+
+        assertNull(model.state.value.photo)
+        assertNull(model.state.value.photoError)
+        assertEquals(false, model.state.value.isStoringPhoto)
+    }
+
+    @Test
+    fun `a photo can be taken off again`() = runTest(dispatcher) {
+        val model = withPhoto()
+        model.findProduction()
+        model.onEvent(JoinEvent.ChoosePhoto)
+        advanceUntilIdle()
+
+        model.onEvent(JoinEvent.RemovePhoto)
+
+        assertNull(model.state.value.photo)
+    }
+
+    @Test
+    fun `a host with no storage does not offer a photo at all`() = runTest(dispatcher) {
+        // Better than offering a control that silently cannot save.
+        assertEquals(false, viewModel().state.value.canChoosePhoto)
+        assertTrue(withPhoto().state.value.canChoosePhoto)
     }
 
     // -- finding the production --------------------------------------------
@@ -93,6 +217,22 @@ class JoinProductionTest {
 
         assertEquals(listOf(camera, costume), model.state.value.departments)
         assertEquals(listOf(mainUnit), model.state.value.units)
+    }
+
+    @Test
+    fun `a code issued to one person skips the form entirely`() = runTest(dispatcher) {
+        // They were pre-approved: the server has already put them on the
+        // production, and asking for a department would open a second request
+        // against their own membership.
+        val model = viewModel(FakeProjects(preApproved = true))
+        model.onEvent(JoinEvent.CodeChanged("PRE-APPROVED"))
+        model.onEvent(JoinEvent.FindProject)
+        advanceUntilIdle()
+
+        assertEquals(JoinStep.Submitted, model.state.value.step)
+        assertEquals(JoinStatus.Approved, model.state.value.outcome)
+        assertNull(model.state.value.project, "there is no form to name a production on")
+        assertEquals(false, model.state.value.isBusy)
     }
 
     @Test
@@ -232,17 +372,26 @@ class JoinProductionTest {
 
     // -- fakes -------------------------------------------------------------
 
-    private inner class FakeProjects(private val findFails: Boolean = false) : ProjectRepository {
+    private inner class FakeProjects(
+        private val findFails: Boolean = false,
+        /** Answers as a code issued to one person, who is already on the production. */
+        private val preApproved: Boolean = false,
+    ) : ProjectRepository {
         val joined = mutableListOf<Pair<String, JoinDraft>>()
 
-        override suspend fun findByCode(code: String): ZillitResult<Project> =
-            if (findFails) {
+        override suspend fun findByCode(code: String): ZillitResult<CodeLookup> = when {
+            findFails ->
                 ZillitResult.Failure(ZillitError.Validation("No production found for that code."))
-            } else {
-                ZillitResult.Success(
+
+            preApproved ->
+                ZillitResult.Success(CodeLookup.AlreadyOn(projectId = "p1", userId = "u1"))
+
+            else -> ZillitResult.Success(
+                CodeLookup.NeedsDetails(
                     Project(id = "p1", name = "Feature Film", code = code, type = null, region = null),
-                )
-            }
+                ),
+            )
+        }
 
         override suspend fun departments(projectId: String) =
             ZillitResult.Success(listOf(camera, costume))

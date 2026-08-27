@@ -5,6 +5,7 @@ import com.zillit.desktop.feature.auth.domain.Department
 import com.zillit.desktop.feature.auth.domain.Designation
 import com.zillit.desktop.feature.auth.domain.JoinDraft
 import com.zillit.desktop.feature.auth.domain.JoinFieldError
+import com.zillit.desktop.feature.auth.domain.JoinPhoto
 import com.zillit.desktop.feature.auth.domain.JoinStatus
 import com.zillit.desktop.feature.auth.domain.Project
 
@@ -25,6 +26,21 @@ data class JoinFlowState(
     val errors: Set<JoinFieldError> = emptySet(),
     val isBusy: Boolean = false,
     val error: String? = null,
+    /**
+     * The stored picture.
+     *
+     * Held here rather than on [draft] because the draft is replaced wholesale
+     * every time a field changes — a picture living on it would be wiped by
+     * the next keystroke that rebuilt it. It is merged into the draft once, at
+     * submit, where the request is actually assembled.
+     */
+    val photo: JoinPhoto? = null,
+    /** The picture is on its way to storage. */
+    val isStoringPhoto: Boolean = false,
+    /** Why the picture did not save. Never blocks the request. */
+    val photoError: String? = null,
+    /** False when the host configured no storage; the control is then absent. */
+    val canChoosePhoto: Boolean = false,
     /** Set once the request is in; the dialog becomes a confirmation. */
     val outcome: JoinStatus? = null,
 ) {

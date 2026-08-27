@@ -106,6 +106,7 @@ class FormSignatureViewModel(
             is FormSignatureEvent.SelfAssign -> selfAssign(event.formId)
             is FormSignatureEvent.DeleteStandardForm -> deleteStandardForm(event.formId)
             is FormSignatureEvent.DeleteDocument -> deleteDocument(event.documentId)
+            is SignerEditorEvent -> onSignerEditorEvent(event)
             is FormSignatureEvent.ShowHistory -> showHistory(event.documentId)
             FormSignatureEvent.CloseHistory -> setState { copy(history = null) }
             FormSignatureEvent.StartUploadForm -> {
@@ -380,6 +381,82 @@ class FormSignatureViewModel(
             onSuccess = { loadStandardForms() },
             onError = { sendEffect(FormSignatureEffect.Failed(it.userMessage)) },
         )
+    }
+
+    /** The signer editor's four events, kept off the main list. */
+    private fun onSignerEditorEvent(event: SignerEditorEvent) = when (event) {
+        is FormSignatureEvent.EditSigners -> openSignerEditor(event.document)
+        is FormSignatureEvent.ToggleSigner -> toggleSigner(event.userId)
+        FormSignatureEvent.SaveSigners -> saveSigners()
+        FormSignatureEvent.CloseSignerEditor -> setState { copy(signerEditor = null) }
+    }
+
+    /** Ticks or unticks one name in the signer editor. */
+    private fun toggleSigner(userId: String) = setState {
+        copy(
+            signerEditor = signerEditor?.let { editor ->
+                editor.copy(
+                    chosen = if (userId in editor.chosen) editor.chosen - userId else editor.chosen + userId,
+                )
+            },
+        )
+    }
+
+    /**
+     * Opens the editor on a sent document, with everyone already on it ticked.
+     *
+     * Someone who has already signed is shown but cannot be unticked: taking
+     * them off would discard ink that exists.
+     */
+    private fun openSignerEditor(document: SignDocument) {
+        setState {
+            copy(
+                signerEditor = SignerEditorState(
+                    documentId = document.id,
+                    title = document.document?.name.orEmpty(),
+                    chosen = document.signers.map { it.userId }.toSet(),
+                    alreadySigned = document.signers.filter { it.signed }.map { it.userId }.toSet(),
+                ),
+            )
+        }
+        launch {
+            val options = repository.signerOptions()
+            setState {
+                copy(
+                    signerEditor = signerEditor?.copy(
+                        loading = false,
+                        options = (options as? ZillitResult.Success)?.data.orEmpty(),
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Saves the whole list.
+     *
+     * The service replaces rather than merges, so what is posted is every
+     * signer the document should have — the ones already on it included.
+     */
+    private fun saveSigners() {
+        val editor = currentState.signerEditor ?: return
+        if (!editor.canSave) return
+        setState { copy(signerEditor = editor.copy(saving = true)) }
+        launch {
+            val signers = (editor.chosen + editor.alreadySigned).toList()
+            when (val answer = repository.updateSigners(editor.documentId, signers)) {
+                is ZillitResult.Success -> {
+                    setState { copy(signerEditor = null) }
+                    sendEffect(FormSignatureEffect.Notice("Signers updated"))
+                    loadDocuments()
+                }
+
+                is ZillitResult.Failure -> {
+                    setState { copy(signerEditor = editor.copy(saving = false)) }
+                    sendEffect(FormSignatureEffect.Failed(answer.error.localised()))
+                }
+            }
+        }
     }
 
     private fun deleteDocument(documentId: String) {

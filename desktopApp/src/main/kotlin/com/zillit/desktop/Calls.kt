@@ -1,6 +1,7 @@
 package com.zillit.desktop
 
 import androidx.compose.foundation.layout.fillMaxSize
+import com.zillit.desktop.feature.calls.ui.CallLogEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -238,6 +239,13 @@ internal fun CallLogTab(ready: AppGraph.Ready, calls: CallViewModel) {
             },
         )
     }
+    // A call that just ended belongs in Recents now, not after the user
+    // thinks to switch tabs. The web had the same hole and closed it by
+    // listening for the call-ended event (`CNC_FIXES_CHANGELOG.md` Fix 6);
+    // this listens to the coordinator both tabs already share.
+    LaunchedEffect(logs) {
+        ready.callCoordinator.ended.collect { logs.onEvent(CallLogEvent.Refresh) }
+    }
     val state by logs.state.collectAsState()
     CallLogPane(
         state = state,
@@ -250,7 +258,7 @@ internal fun CallLogTab(ready: AppGraph.Ready, calls: CallViewModel) {
 }
 
 /** A crew member's name, honouring the keep-private flag the lists apply. */
-private fun crewNameOf(ready: AppGraph.Ready, userId: String): String? =
+internal fun crewNameOf(ready: AppGraph.Ready, userId: String): String? =
     ready.projectContext?.context?.value?.user(userId)
         ?.takeUnless { it.keepNamePrivate }
         ?.fullName

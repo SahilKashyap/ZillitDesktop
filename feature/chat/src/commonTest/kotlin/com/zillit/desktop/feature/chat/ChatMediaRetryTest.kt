@@ -73,7 +73,7 @@ class ChatMediaRetryTest {
         repository = repository,
         nowMillis = { now },
         newUniqueId = { "unique-${now++}" },
-        pickAttachment = { pending() },
+        pickAttachment = { com.zillit.desktop.feature.chat.domain.ChatPick.Ready(pending()) },
         offline = support,
     )
 

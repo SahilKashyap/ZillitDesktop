@@ -8,6 +8,9 @@ import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
+import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
+import com.zillit.desktop.feature.documentdistribution.domain.PublishTarget
+import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.LibrarySort
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
@@ -85,6 +88,11 @@ data class DocDistUiState(
     val dateFilter: String? = null,
     val sort: LibrarySort = LibrarySort.NameAsc,
     val selectedDocumentIds: Set<String> = emptySet(),
+    val selectedFolderIds: Set<String> = emptySet(),
+    /** Non-null while the "Move items" dialog is open. */
+    val moveTarget: MoveTargetState? = null,
+    /** Non-null while the Publish dialog is open. */
+    val publish: PublishState? = null,
 
     // -- other pages ------------------------------------------------------
     val history: List<Distribution> = emptyList(),
@@ -131,6 +139,40 @@ data class DocDistUiState(
     val selectedDocuments: List<LibraryDocument>
         get() = documents.filter { it.id in selectedDocumentIds }
 
+    val selectionCount: Int get() = selectedDocumentIds.size + selectedFolderIds.size
+
+    /**
+     * The folders a move may land in, deepest-first paths flattened for a list.
+     *
+     * A folder being moved is excluded along with everything beneath it: the
+     * service will happily reparent a folder into its own subtree, which
+     * detaches that whole branch from the root and leaves its documents
+     * reachable by nothing. The web offers every folder and lets it happen.
+     */
+    fun moveDestinations(): List<MoveDestination> {
+        val byParent = folders.groupBy { it.parentId }
+        val barred = mutableSetOf<String>()
+        fun bar(id: String) {
+            if (!barred.add(id)) return
+            byParent[id].orEmpty().forEach { bar(it.id) }
+        }
+        selectedFolderIds.forEach(::bar)
+
+        val out = mutableListOf<MoveDestination>()
+        fun walk(parentId: String?, depth: Int) {
+            if (depth > MAX_DEPTH) return
+            byParent[parentId].orEmpty()
+                .sortedBy { it.name.lowercase() }
+                .forEach { folder ->
+                    if (folder.id in barred) return@forEach
+                    out += MoveDestination(folder.id, folder.name, depth)
+                    walk(folder.id, depth + 1)
+                }
+        }
+        walk(null, 0)
+        return out
+    }
+
     val hasMore: Boolean get() = documents.size < totalDocuments
 
     /** Whether the "view only" banner belongs on screen. */
@@ -139,5 +181,34 @@ data class DocDistUiState(
     private companion object {
         /** Deeper than any real library, shallow enough to stop a cycle dead. */
         const val MAX_DEPTH = 64
+    }
+}
+
+/** The open "Move items" dialog: what is being moved, and where to. */
+data class MoveTargetState(val destinationId: String? = null, val saving: Boolean = false)
+
+/** One row in the destination picker. [depth] is its indent under the root. */
+data class MoveDestination(val id: String, val name: String, val depth: Int)
+
+/**
+ * The Publish dialog: which destination, and the fields that destination
+ * demands. [alreadyPublished] is loaded per category and is what turns the
+ * add/replace choice on — a first publish has nothing to replace.
+ */
+data class PublishState(
+    val target: PublishTarget? = null,
+    val draft: PublishDraft = PublishDraft(),
+    val alreadyPublished: List<PublishedFile> = emptyList(),
+    val loadingPublished: Boolean = false,
+    val saving: Boolean = false,
+) {
+    /** Add / replace is offered only where the destination republishes *and* something is there. */
+    val offersMode: Boolean
+        get() = target?.republishable == true && !loadingPublished && alreadyPublished.isNotEmpty()
+
+    fun problem(isTelevision: Boolean): String? {
+        val chosen = target ?: return "Choose a destination"
+        val effective = if (offersMode) draft else draft.copy(replaceChatIds = emptyList())
+        return chosen.problem(effective, isTelevision)
     }
 }

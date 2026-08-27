@@ -18,12 +18,16 @@ import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubSection
 import com.zillit.desktop.feature.accounthub.domain.NewAccount
 import com.zillit.desktop.feature.accounthub.domain.NewVendor
+import com.zillit.desktop.feature.accounthub.domain.DealCondition
+import com.zillit.desktop.feature.accounthub.domain.PayrollBureau
 import com.zillit.desktop.feature.accounthub.domain.PayrollDefaults
 import com.zillit.desktop.feature.accounthub.domain.ProductionSchedule
 import com.zillit.desktop.feature.accounthub.domain.ProjectBudget
 import com.zillit.desktop.feature.accounthub.domain.ProjectCurrency
 import com.zillit.desktop.feature.accounthub.domain.SchedulePhase
 import com.zillit.desktop.feature.accounthub.domain.TaxType
+import com.zillit.desktop.feature.accounthub.domain.TrackingSet
+import com.zillit.desktop.feature.accounthub.domain.TrackingNode
 import com.zillit.desktop.feature.accounthub.domain.Vendor
 import com.zillit.desktop.feature.accounthub.domain.VendorChange
 
@@ -164,6 +168,8 @@ data class SetupState(
     val budget: SectionEdit<BudgetForm> = SectionEdit(BudgetForm()),
     val schedule: SectionEdit<ScheduleForm> = SectionEdit(ScheduleForm()),
     val payrollDefaults: SectionEdit<PayrollDefaults> = SectionEdit(PayrollDefaults()),
+    val dealConditions: SectionEdit<List<DealCondition>> = SectionEdit(emptyList()),
+    val payrollBureaus: SectionEdit<List<PayrollBureau>> = SectionEdit(emptyList()),
     /**
      * Banks are not a [SectionEdit].
      *
@@ -192,6 +198,11 @@ data class SetupState(
 }
 
 /** Which classes the chart is filtered to. */
+/** One tracking code, with the depth it reads at. */
+data class TrackingRow(val node: TrackingNode, val depth: Int, val orphaned: Boolean = false)
+
+private const val MAX_TRACKING_DEPTH = 32
+
 enum class ChartView(val slug: String, val label: String) {
     /** The cost side — what a production spends against. */
     Expense("accounts", "Cost Accounts"),
@@ -213,7 +224,40 @@ data class ChartState(
     val showInactive: Boolean = false,
     val expanded: Set<String> = emptySet(),
     val form: AccountForm? = null,
+    /** The analytical dimensions behind the Layers tab. Read-only in this build. */
+    val trackingSets: List<TrackingSet> = emptyList(),
 ) {
+    /**
+     * One set's codes as a flat, indented reading order.
+     *
+     * Tracking codes nest by [TrackingNode.parentId] — unlike the nominal
+     * chart, which nests by code prefix — so the depth has to be walked
+     * rather than counted out of the code itself.
+     */
+    fun rows(set: TrackingSet): List<TrackingRow> {
+        val byParent = set.nodes.groupBy { it.parentId }
+        val out = mutableListOf<TrackingRow>()
+        fun walk(parentId: String?, depth: Int) {
+            if (depth > MAX_TRACKING_DEPTH) return
+            byParent[parentId].orEmpty()
+                .filter { showInactive || it.isActive }
+                .sortedBy { it.code }
+                .forEach { node ->
+                    out += TrackingRow(node, depth)
+                    walk(node.id, depth + 1)
+                }
+        }
+        walk(null, 0)
+        // A code whose parent is inactive (or missing) would otherwise vanish
+        // from a screen meant to show every dimension — the same orphan rule
+        // the nominal chart applies.
+        val shown = out.map { it.node.id }.toSet()
+        val orphans = set.nodes
+            .filter { it.id !in shown && (showInactive || it.isActive) }
+            .sortedBy { it.code }
+            .map { TrackingRow(it, depth = 0, orphaned = true) }
+        return out + orphans
+    }
     /** The rows this view shows, before the tree is built. */
     val visibleAccounts: List<CoaAccount>
         get() = accounts

@@ -27,6 +27,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -203,6 +204,28 @@ class FormSignatureRepositoryImpl(
             )
             put("only_signature_required", onlySignatureRequired)
             put("user_signature_required", userSignatureRequired)
+        },
+    ).map { }
+
+    /**
+     * `POST /v2/sign-document/send-document` with the *whole* signer list.
+     *
+     * The route's name says "send", but on an existing document it is how the
+     * signer list is edited — adding one means posting everyone.
+     */
+    override suspend fun updateSigners(
+        documentId: String,
+        signerIds: List<String>,
+    ): ZillitResult<Unit> = apiClient.envelope(
+        verb = HttpVerb.Post,
+        url = "$base/sign-document/send-document",
+        module = RequestModule.ProjectUser,
+        body = buildJsonObject {
+            put("document_id", JsonPrimitive(documentId))
+            put(
+                "signers",
+                buildJsonArray { signerIds.distinct().forEach { add(JsonPrimitive(it)) } },
+            )
         },
     ).map { }
 

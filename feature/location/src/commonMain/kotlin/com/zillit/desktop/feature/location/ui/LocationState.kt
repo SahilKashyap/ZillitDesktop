@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.location.domain.LocationDraft
 import com.zillit.desktop.feature.location.domain.LocationFolder
 import com.zillit.desktop.feature.location.domain.LocationInfo
 import com.zillit.desktop.feature.location.domain.LocationMedia
+import com.zillit.desktop.feature.location.domain.LocationMessage
 import com.zillit.desktop.feature.location.domain.LocationPick
 import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.LocationViewer
@@ -101,12 +102,21 @@ data class LocationUiState(
     /** The record opened full-size. */
     val viewing: LocationMedia? = null,
     val confirmDelete: List<String>? = null,
+    /** The open record's discussion, oldest first. */
+    val discussion: List<LocationMessage> = emptyList(),
+    val discussionLoading: Boolean = false,
+    val discussionDraft: String = "",
+    val discussionSending: Boolean = false,
 ) {
     val folders: List<LocationFolder> get() = Folders.search(Folders.group(info, groupBy), query)
 }
 
 sealed interface LocationEvent {
     data class SelectStatus(val status: LocationStatus) : LocationEvent
+
+    /** The open record's discussion — the thread the phones and web have. */
+    data class DiscussionDraftChanged(val text: String) : LocationEvent
+    data object SendDiscussion : LocationEvent
     data class SelectGroupBy(val by: GroupBy) : LocationEvent
     data class Search(val query: String) : LocationEvent
     data object Refresh : LocationEvent

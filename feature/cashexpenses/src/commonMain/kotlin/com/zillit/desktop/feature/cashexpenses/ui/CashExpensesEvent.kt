@@ -9,6 +9,13 @@ sealed interface CashEvent {
 
     data object Refresh : CashEvent
 
+    /** Opens a claim's stored receipt through the host's file layer. */
+    data class ViewReceipt(val receiptUrl: String) : CashEvent
+
+    data class AssignPickUser(val userId: String) : CashEvent
+
+    data class AssignReason(val text: String) : CashEvent
+
     data class Open(val destination: CashDestination) : CashEvent
 
     data class SwitchPipeline(val pipeline: ExpenseType) : CashEvent

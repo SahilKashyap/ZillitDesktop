@@ -36,6 +36,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.drive.ui.pages.ActivityPage
 import com.zillit.desktop.feature.drive.ui.pages.BrowsePage
 import com.zillit.desktop.feature.drive.ui.pages.DetailsPanel
+import com.zillit.desktop.feature.drive.ui.pages.FileRequestDialog
 import com.zillit.desktop.feature.drive.ui.pages.DrivePromptDialog
 import com.zillit.desktop.feature.drive.ui.pages.FavouritesPage
 import com.zillit.desktop.feature.drive.ui.pages.StoragePage
@@ -131,6 +132,7 @@ private fun DriveScreenBody(
         }
 
         DrivePromptDialog(state.prompt, onEvent)
+        FileRequestDialog(state, onEvent)
 
         ZillitToast(
             message = state.notice,

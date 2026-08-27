@@ -376,6 +376,21 @@ private fun ReceiptDetail(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
             WorkflowStatusPill(receipt.status)
         }
 
+        receipt.attachmentKey?.takeIf { it.isNotBlank() }?.let { key ->
+            ZillitButton(
+                // The document is what the figures are being checked against,
+                // so it sits with them rather than among the decide actions.
+                text = if (key.endsWith(".pdf", ignoreCase = true)) {
+                    "Open receipt (PDF)"
+                } else {
+                    "View receipt"
+                },
+                onClick = { onEvent(CardEvent.ViewReceipt(key)) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
+        }
+
         ZillitText(
             text = money(receipt.amount, receipt.currency),
             style = ZillitTheme.typography.displayLarge,

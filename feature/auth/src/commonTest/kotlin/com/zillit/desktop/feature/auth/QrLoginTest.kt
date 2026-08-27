@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.auth
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.auth.domain.CodeLookup
 import com.zillit.desktop.feature.auth.domain.JoinDraft
 import com.zillit.desktop.feature.auth.domain.Department
 import com.zillit.desktop.feature.auth.domain.DeviceIdentity
@@ -314,7 +315,7 @@ private class FakeProjectRepositoryForQr : com.zillit.desktop.feature.auth.domai
         ZillitResult.Success(kotlin.Unit)
 
     override suspend fun listProjects() = ZillitResult.Success(listOf(only))
-    override suspend fun findByCode(code: String) = ZillitResult.Success(only)
+    override suspend fun findByCode(code: String) = ZillitResult.Success(CodeLookup.NeedsDetails(only))
     override suspend fun requestJoin(projectId: String, draft: JoinDraft) =
         ZillitResult.Success(com.zillit.desktop.feature.auth.domain.JoinStatus.Pending)
 

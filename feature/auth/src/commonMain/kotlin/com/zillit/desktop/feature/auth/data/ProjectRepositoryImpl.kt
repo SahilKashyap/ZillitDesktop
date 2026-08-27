@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonElement
 import com.zillit.desktop.core.network.jsonBody
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.feature.auth.domain.AuthSession
+import com.zillit.desktop.feature.auth.domain.CodeLookup
 import com.zillit.desktop.feature.auth.domain.Department
 import com.zillit.desktop.feature.auth.domain.JoinDraft
 import com.zillit.desktop.feature.auth.domain.JoinStatus
@@ -21,6 +22,8 @@ import com.zillit.desktop.feature.auth.domain.Project
 import com.zillit.desktop.feature.auth.domain.ProjectRepository
 import com.zillit.desktop.feature.auth.domain.Unit as DomainUnit
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Projects and units.
@@ -52,19 +55,31 @@ class ProjectRepositoryImpl(
             dtos.filter { it.isSelectable }.mapNotNull { it.toDomain() }
         }
 
-    override suspend fun findByCode(code: String): ZillitResult<Project> {
+    /**
+     * Resolves a production code.
+     *
+     * A `PUT` with the code in the body, which reads oddly for a lookup and is
+     * what the server wants — Android's `joinProjectPreApprovedApi` sends
+     * exactly this, under `WITH_PROJECT_ID` headers ([RequestModule.Project]).
+     *
+     * The answer is read leniently rather than through a typed DTO: it carries
+     * a whole user record in one branch and a whole project in the other, and
+     * this endpoint only has to yield an id or two from either.
+     */
+    override suspend fun findByCode(code: String): ZillitResult<CodeLookup> {
         val trimmed = code.trim()
         if (trimmed.isBlank()) {
             return ZillitResult.Failure(ZillitError.Validation("Enter a project code."))
         }
 
         return apiClient.request(
-            verb = HttpVerb.Get,
-            url = endpoints.projectByCode(trimmed),
-            serializer = ProjectDto.serializer(),
+            verb = HttpVerb.Put,
+            url = endpoints.joinProjectAsUser,
+            serializer = JsonElement.serializer(),
             module = RequestModule.Project,
-        ).flatMapNotNull { dto ->
-            dto.toDomain()
+            body = jsonBody(buildJsonObject { put("code", trimmed) }),
+        ).flatMapNotNull { body ->
+            body.toCodeLookup()
                 ?.let { ZillitResult.Success(it) }
                 ?: ZillitResult.Failure(ZillitError.Validation("No production found for that code."))
         }

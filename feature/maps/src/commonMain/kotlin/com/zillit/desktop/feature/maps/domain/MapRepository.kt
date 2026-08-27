@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.maps.domain
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -24,6 +25,16 @@ interface MapRepository {
         radiusMiles: Double,
     ): ZillitResult<Unit>
     suspend fun deleteCity(id: String): ZillitResult<Unit>
+
+    /**
+     * Sets the order cities are listed in
+     * (`PUT /v2/city/reorder-cities` with `{newOrder}`).
+     *
+     * The whole list is sent, in the order it should read — the service takes
+     * an arrangement, not a move.
+     */
+    suspend fun reorderCities(cityIds: List<String>): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("reordering cities is not wired"))
 
     suspend fun types(): ZillitResult<List<LocationType>>
     suspend fun createType(name: String, icon: String, subTypes: List<String>): ZillitResult<Unit>

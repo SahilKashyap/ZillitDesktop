@@ -7,6 +7,7 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.feature.transportation.domain.LicenceRequest
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
@@ -139,6 +140,32 @@ class TransportRepositoryImpl(
                 put("user_id", userId)
                 put("trip_reminder_type", type)
                 message?.takeIf { it.isNotBlank() && type == "document" }?.let { put("trip_reminder_message", it) }
+            },
+        )
+
+    /**
+     * `GET /v2/transportation/driver/change-requests` — the requests waiting
+     * on a manager (`transportationApi.js:61-68`).
+     */
+    override suspend fun licenceRequests(): ZillitResult<List<LicenceRequest>> =
+        get("$base/driver/change-requests").mapData { data ->
+            (data as? JsonArray).items().mapNotNull { parseLicenceRequest(it as? JsonObject) }
+        }
+
+    /**
+     * `PUT` the same route (`transportationApi.js:98-106`).
+     *
+     * `is_licence_verified` is spelled the British way while the path is
+     * spelled the American way; both spellings appear in this service and
+     * they are not interchangeable.
+     */
+    override suspend fun decideLicenceRequest(requestId: String, approved: Boolean): ZillitResult<Unit> =
+        write(
+            HttpVerb.Put,
+            "$base/driver/change-requests",
+            buildJsonObject {
+                put("request_id", requestId)
+                put("is_licence_verified", approved)
             },
         )
 

@@ -72,7 +72,14 @@ fun CashExpensesScreen(
             }
         }
 
-        CashPromptDialog(state.prompt, onEvent)
+        CashPromptDialog(
+            prompt = state.prompt,
+            assignees = state.assignees,
+            batch = (state.prompt as? CashPrompt.Assign)?.let { open ->
+                state.queueBatches.firstOrNull { it.id == open.batchId }
+            },
+            onEvent = onEvent,
+        )
 
         // Over the page rather than inside it: coding is a focused task, and
         // the queue behind stays where it was so the next row is one click away.

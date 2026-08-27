@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.chat.data
 
+import com.zillit.desktop.feature.chat.domain.ChatScope
 import com.zillit.desktop.feature.chat.domain.GroupRoom
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -24,11 +25,22 @@ import kotlinx.serialization.json.put
  * `budget_document_id`, `is_random_call_group`) are omitted, as Android's
  * default `Json` omits defaults.
  */
-fun createRoomBody(name: String, ownerId: String, memberIds: List<String>): JsonObject =
+fun createRoomBody(
+    name: String,
+    ownerId: String,
+    memberIds: List<String>,
+    /** The surface the room belongs to — C&C unless a tool says otherwise. */
+    scope: ChatScope = ChatScope(),
+): JsonObject =
     buildJsonObject {
         put("room_name", name)
-        put("room_tool", "cnc_section")
+        put("room_tool", scope.tool)
         put("owned_by", ownerId)
+        // Both are declared on `ReqGroupModel` and both are omitted when
+        // empty, as Android's default `Json` omits its defaults — a budget
+        // room names its department, a C&C room has none to name.
+        if (scope.departmentId.isNotBlank()) put("department_id", scope.departmentId)
+        if (scope.budgetDocumentId.isNotBlank()) put("budget_document_id", scope.budgetDocumentId)
         put("members", buildJsonArray { memberIds.forEach { add(JsonPrimitive(it)) } })
     }
 

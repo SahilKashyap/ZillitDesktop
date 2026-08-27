@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.location.data
 
+import kotlinx.serialization.json.contentOrNull
+import com.zillit.desktop.feature.location.domain.LocationMessage
 import com.zillit.desktop.feature.location.domain.Folders
 import com.zillit.desktop.feature.location.domain.LocationDraft
 import com.zillit.desktop.feature.location.domain.LocationInfo
@@ -184,3 +186,36 @@ private fun JsonObject.long(vararg names: String): Long? =
 private fun JsonObject.flag(name: String): Boolean =
     (firstOf(name) as? JsonPrimitive)?.let { p -> p.content.equals("true",
         true) || (p.longOrNull ?: 0L) != 0L } ?: false
+
+/**
+ * One discussion line.
+ *
+ * A body that will not decrypt is kept as an empty line rather than dropped:
+ * the thread's shape — who spoke, and when — is still true, and dropping the
+ * row would silently renumber a conversation people refer to by position.
+ */
+internal fun parseLocationMessage(
+    obj: JsonObject?,
+    decrypt: (String) -> String?,
+    myUserId: String?,
+): LocationMessage? {
+    if (obj == null) return null
+    val id = obj.messageText("_id", "id").takeIf { it.isNotBlank() } ?: return null
+    val sender = obj.messageText("sender", "user_id", "created_by")
+    val cipher = obj.messageText("message")
+    return LocationMessage(
+        id = id,
+        senderId = sender,
+        body = cipher.takeIf { it.isNotBlank() }?.let { decrypt(it) }.orEmpty(),
+        sentAtMillis = obj.messageLong("created", "created_at") ?: 0,
+        isMine = myUserId != null && sender.isNotBlank() && sender == myUserId,
+    )
+}
+
+private fun JsonObject.messageText(vararg names: String): String =
+    names.firstNotNullOfOrNull { name ->
+        (this[name] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+    }.orEmpty()
+
+private fun JsonObject.messageLong(vararg names: String): Long? =
+    names.firstNotNullOfOrNull { name -> (this[name] as? JsonPrimitive)?.longOrNull }

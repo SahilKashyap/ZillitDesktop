@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.auth
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.auth.domain.CodeLookup
 import com.zillit.desktop.feature.auth.domain.AuthRepository
 import com.zillit.desktop.feature.auth.domain.AuthSession
 import com.zillit.desktop.feature.auth.domain.Department
@@ -65,7 +66,7 @@ class OfflineProjectListTest {
     private class Projects(private val answer: () -> ZillitResult<List<Project>>) : ProjectRepository {
         private val one = Project("p1", "One", "P1", null, null)
         override suspend fun listProjects() = answer()
-        override suspend fun findByCode(code: String) = ZillitResult.Success(one)
+        override suspend fun findByCode(code: String) = ZillitResult.Success(CodeLookup.NeedsDetails(one))
         override suspend fun create(
             draft: NewProductionDraft,
             selectedType: ProductionType?,

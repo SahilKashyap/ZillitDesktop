@@ -44,6 +44,7 @@ class ContinuityViewModelTest {
         val cards = mutableListOf<ContinuityScene>()
         val created = mutableListOf<Pair<SceneDraft, ContinuityAttachment>>()
         val shared = mutableListOf<List<String>>()
+        val archived = mutableListOf<List<String>>()
         var pages = 0
         override suspend fun folders(tab: ContinuityTab) = ZillitResult.Success(
             cards.filter { it.shownOn(tab) }.map { it.sceneNumber }.distinct(),
@@ -66,6 +67,11 @@ class ContinuityViewModelTest {
             return ZillitResult.Success(Unit)
         }
         override suspend fun update(id: String, draft: SceneDraft) = ZillitResult.Success(null)
+        override suspend fun archive(sceneIds: List<String>): ZillitResult<Unit> {
+            archived += sceneIds
+            return ZillitResult.Success(Unit)
+        }
+
         override suspend fun share(ids: List<String>, sceneFolder: String): ZillitResult<Unit> {
             shared += ids
             return ZillitResult.Success(Unit)
@@ -221,6 +227,45 @@ class ContinuityViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf(listOf("a")), repo.shared)
         assertEquals(false, assertNotNull(vm.state.value.open).selecting)
+    }
+
+    /**
+     * The file cabinet: off the board, not deleted.
+     *
+     * Unlike forwarding there is no confirmation — nothing is destroyed and
+     * the scenes can be read back from the cabinet.
+     */
+    @Test
+    fun `archiving files the selection away and leaves selection mode`() = runTest(dispatcher) {
+        val repo = FakeRepo().apply { cards += scene("a", "12"); cards += scene("b", "12") }
+        val vm = viewModel(repo)
+        vm.start()
+        advanceUntilIdle()
+        vm.onEvent(ContinuityEvent.OpenFolder("12"))
+        advanceUntilIdle()
+        vm.onEvent(ContinuityEvent.ToggleSelecting)
+        vm.onEvent(ContinuityEvent.ToggleSelect("a"))
+        vm.onEvent(ContinuityEvent.ArchiveSelected)
+        advanceUntilIdle()
+
+        assertEquals(listOf(listOf("a")), repo.archived)
+        assertEquals(false, assertNotNull(vm.state.value.open).selecting)
+    }
+
+    /** An empty selection asks the service for nothing. */
+    @Test
+    fun `archiving nothing calls nothing`() = runTest(dispatcher) {
+        val repo = FakeRepo().apply { cards += scene("a", "12") }
+        val vm = viewModel(repo)
+        vm.start()
+        advanceUntilIdle()
+        vm.onEvent(ContinuityEvent.OpenFolder("12"))
+        advanceUntilIdle()
+        vm.onEvent(ContinuityEvent.ToggleSelecting)
+        vm.onEvent(ContinuityEvent.ArchiveSelected)
+        advanceUntilIdle()
+
+        assertTrue(repo.archived.isEmpty())
     }
 }
 

@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.documentdistribution.ui
 
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
+import com.zillit.desktop.feature.documentdistribution.domain.PublishTarget
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
@@ -204,13 +206,41 @@ class DocDistViewModel(
                 "Document deleted",
             )
 
-            is DocDistEvent.MoveSelection -> {
-                val ids = currentState.selectedDocumentIds.toList()
-                if (ids.isEmpty()) return
-                mutate({ repository.moveDocuments(ids, event.folderId) }, "Moved ${ids.size}") {
-                    setState { copy(selectedDocumentIds = emptySet()) }
-                }
+            is DocDistEvent.ToggleFolder -> setState {
+                copy(selectedFolderIds = selectedFolderIds.toggled(event.folderId))
             }
+
+            DocDistEvent.OpenPublish -> openPublish()
+
+            DocDistEvent.ClosePublish -> setState { copy(publish = null) }
+
+            is DocDistEvent.ChoosePublishTarget -> choosePublishTarget(event.category)
+
+            is DocDistEvent.EditPublishDraft -> setState {
+                copy(publish = publish?.copy(draft = event.draft))
+            }
+
+            is DocDistEvent.ToggleReplaceTarget -> setState {
+                val open = publish ?: return@setState this
+                val chosen = open.draft.replaceChatIds.toSet().toggled(event.chatId)
+                copy(publish = open.copy(draft = open.draft.copy(replaceChatIds = chosen.toList())))
+            }
+
+            DocDistEvent.ConfirmPublish -> confirmPublish()
+
+            DocDistEvent.OpenMove ->
+                setState { copy(moveTarget = MoveTargetState(destinationId = currentFolderId)) }
+
+            DocDistEvent.CloseMove -> setState { copy(moveTarget = null) }
+
+            is DocDistEvent.ChooseMoveDestination -> setState {
+                copy(moveTarget = moveTarget?.copy(destinationId = event.folderId))
+            }
+
+            DocDistEvent.ConfirmMove ->
+                moveSelection(currentState.moveTarget?.destinationId, closesDialog = true)
+
+            is DocDistEvent.MoveSelection -> moveSelection(event.folderId, closesDialog = false)
 
             is DocDistEvent.OpenDocument -> openUrl(event.documentId)
             is DocDistEvent.DownloadDocument -> openUrl(event.documentId)
@@ -449,6 +479,139 @@ class DocDistViewModel(
      * ordering, date buckets and per-day counts, and a locally-patched row is
      * one that disagrees with all three until the next refresh.
      */
+    /**
+     * Moves the ticked folders and documents into one destination.
+     *
+     * Folders go first: reparenting a folder rewrites the tree the documents
+     * are being placed into, and doing it the other way round can land a
+     * document in a folder that is about to move out from under it.
+     *
+     * A folder cannot be dropped into itself or its own subtree — see
+     * [DocDistUiState.moveDestinations], which never offers those.
+     */
+    // -- publishing --------------------------------------------------------
+
+    private fun openPublish() {
+        val documents = currentState.selectedDocumentIds.toList()
+        if (documents.isEmpty()) {
+            report(ZillitError.Unknown("Choose at least one document to publish."))
+            return
+        }
+        setState { copy(publish = PublishState(draft = PublishDraft(documentIds = documents))) }
+    }
+
+    /**
+     * Switching destination clears the fields the previous one collected.
+     *
+     * They are not interchangeable — a scene number typed for Pages is not a
+     * D.O.D name — and carrying them across is how a stale value gets sent
+     * to an endpoint that reads a different key.
+     */
+    private fun choosePublishTarget(category: String) {
+        val target = PublishTarget.of(category) ?: return
+        val open = currentState.publish ?: return
+        setState {
+            copy(
+                publish = open.copy(
+                    target = target,
+                    draft = PublishDraft(documentIds = open.draft.documentIds),
+                    alreadyPublished = emptyList(),
+                    loadingPublished = target.republishable,
+                ),
+            )
+        }
+        if (!target.republishable) return
+        launch {
+            val published = repository.publishedFiles(category)
+            setState {
+                copy(
+                    publish = publish?.copy(
+                        loadingPublished = false,
+                        alreadyPublished = published.getOrNull().orEmpty(),
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun confirmPublish() {
+        val open = currentState.publish ?: return
+        val target = open.target ?: return
+        val problem = open.problem(currentState.viewer.isTelevision)
+        if (problem != null) {
+            report(ZillitError.Unknown(problem))
+            return
+        }
+        val draft = if (open.offersMode) open.draft else open.draft.copy(replaceChatIds = emptyList())
+        setState { copy(publish = publish?.copy(saving = true)) }
+        launch {
+            when (val result = repository.publish(target.category, draft)) {
+                is ZillitResult.Success -> {
+                    val count = draft.documentIds.size
+                    setState {
+                        copy(
+                            publish = null,
+                            selectedDocumentIds = emptySet(),
+                            notice = "Published $count file" +
+                                (if (count == 1) "" else "s") + " to ${target.label}",
+                        )
+                    }
+                    load(currentState.destination)
+                }
+
+                is ZillitResult.Failure -> {
+                    setState { copy(publish = publish?.copy(saving = false)) }
+                    report(result.error)
+                }
+            }
+        }
+    }
+
+    private fun moveSelection(folderId: String?, closesDialog: Boolean) {
+        val folders = currentState.selectedFolderIds.toList()
+        val documents = currentState.selectedDocumentIds.toList()
+        val moved = folders.size + documents.size
+        if (moved == 0) return
+        if (folders.any { it == folderId }) {
+            report(ZillitError.Unknown("A folder cannot be moved into itself."))
+            return
+        }
+        if (closesDialog) setState { copy(moveTarget = moveTarget?.copy(saving = true)) }
+        launch {
+            val failure = moveParts(folders, documents, folderId)
+            if (failure != null) {
+                setState { copy(moveTarget = moveTarget?.copy(saving = false)) }
+                report(failure)
+                return@launch
+            }
+            setState {
+                copy(
+                    selectedFolderIds = emptySet(),
+                    selectedDocumentIds = emptySet(),
+                    moveTarget = null,
+                    notice = "Moved $moved item" + if (moved == 1) "" else "s",
+                )
+            }
+            load(currentState.destination)
+        }
+    }
+
+    private suspend fun moveParts(
+        folders: List<String>,
+        documents: List<String>,
+        folderId: String?,
+    ): ZillitError? {
+        if (folders.isNotEmpty()) {
+            val result = repository.moveFolders(folders, folderId)
+            if (result is ZillitResult.Failure) return result.error
+        }
+        if (documents.isNotEmpty()) {
+            val result = repository.moveDocuments(documents, folderId)
+            if (result is ZillitResult.Failure) return result.error
+        }
+        return null
+    }
+
     private fun mutate(
         block: suspend () -> ZillitResult<Unit>,
         success: String,

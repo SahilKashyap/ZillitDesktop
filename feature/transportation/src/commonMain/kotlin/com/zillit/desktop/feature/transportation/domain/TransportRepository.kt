@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.transportation.domain
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -49,6 +50,22 @@ interface TransportRepository {
     ): ZillitResult<Unit>
 
     suspend fun pendingDocumentReminder(userId: String, type: String, message: String?): ZillitResult<Unit>
+
+    /**
+     * Licence-change requests waiting on a decision
+     * (`GET /v2/transportation/driver/change-requests`).
+     */
+    suspend fun licenceRequests(): ZillitResult<List<LicenceRequest>> = ZillitResult.Success(emptyList())
+
+    /**
+     * Answers one (`PUT` the same route).
+     *
+     * The body spells the field `is_licence_verified` while the route spells
+     * its own path `license` — the two spellings are not interchangeable, and
+     * the wrong one is accepted with nothing changed.
+     */
+    suspend fun decideLicenceRequest(requestId: String, approved: Boolean): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("licence decisions are not wired"))
 
     // Trip requests ----------------------------------------------------------
     suspend fun trips(status: TripStatus, asDriver: Boolean, userId: String,

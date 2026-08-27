@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.formsignature.domain
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -83,6 +84,18 @@ interface FormSignatureRepository {
         onlySignatureRequired: Boolean,
         userSignatureRequired: Boolean,
     ): ZillitResult<Unit>
+
+    /**
+     * Changes who must sign a document that has already gone out
+     * (`POST /v2/sign-document/send-document`).
+     *
+     * **[signerIds] replaces the list, it does not add to it.** The web sends
+     * the existing signers *and* the new ones together
+     * (`AddSignerDrawer.jsx:103-111`); sending only the additions would quietly
+     * drop everyone already waiting to sign.
+     */
+    suspend fun updateSigners(documentId: String, signerIds: List<String>): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("changing signers is not wired"))
 
     suspend fun deleteDocument(documentId: String): ZillitResult<Unit>
 

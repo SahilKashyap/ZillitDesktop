@@ -29,6 +29,12 @@ import com.zillit.desktop.feature.accounthub.ui.AccountHubScreen
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.ApprovalsState
 import com.zillit.desktop.feature.accounthub.ui.ChartState
+import com.zillit.desktop.feature.accounthub.domain.DealCondition
+import com.zillit.desktop.feature.accounthub.domain.PayrollBureau
+import com.zillit.desktop.feature.accounthub.ui.SetupTab
+import com.zillit.desktop.feature.accounthub.domain.TrackingNode
+import com.zillit.desktop.feature.accounthub.domain.TrackingSet
+import com.zillit.desktop.feature.accounthub.ui.ChartView
 import com.zillit.desktop.feature.accounthub.ui.SectionEdit
 import com.zillit.desktop.feature.accounthub.ui.SetupState
 import com.zillit.desktop.feature.accounthub.ui.VendorForm
@@ -224,6 +230,113 @@ class AccountHubScreenRenderTest {
             // so its absence does not read as a missing control.
             onNodeWithText("Each account saves on its own — there is no section-level save here.")
                 .assertIsDisplayed()
+        }
+    }
+
+    /**
+     * The Layers tab shows what the accounts service holds.
+     *
+     * It drew a notice and nothing else before — the notice claimed reading
+     * was wired while nothing ever called for the data.
+     */
+    @Test
+    fun `the layers tab lists the production's tracking dimensions`() {
+        val layered = state(HubArea.ChartOfAccounts).let { base ->
+            base.copy(
+                chart = base.chart.copy(
+                    view = ChartView.Layers,
+                    trackingSets = listOf(
+                        TrackingSet(
+                            id = "s1",
+                            name = "Locations",
+                            code = "LOC",
+                            nodes = listOf(
+                                TrackingNode(id = "a", setId = "s1", code = "LON", name = "London"),
+                                TrackingNode(
+                                    id = "b",
+                                    setId = "s1",
+                                    code = "LON-01",
+                                    name = "Soho",
+                                    parentId = "a",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) { AccountHubScreen(state = layered, onEvent = {}) }
+            }
+            onNodeWithText("LOC · Locations").assertExists()
+            onNodeWithText("London").assertExists()
+            onNodeWithText("Soho").assertExists()
+        }
+    }
+
+    @Test
+    fun `a production with no layers is told so rather than shown a bare notice`() {
+        val none = state(HubArea.ChartOfAccounts).let { base ->
+            base.copy(chart = base.chart.copy(view = ChartView.Layers))
+        }
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) { AccountHubScreen(state = none, onEvent = {}) }
+            }
+            onNodeWithText("This production has no tracking dimensions configured.").assertExists()
+        }
+    }
+
+    /**
+     * The Deal Memo tab's two newest sections.
+     *
+     * Both shipped with a complete data layer and no screen, so the rows are
+     * asserted rather than only the headings — a section card that draws its
+     * title and none of its content would pass a heading-only check.
+     */
+    @Test
+    fun `the deal memo tab renders its conditions and bureaux`() {
+        val dealTab = state(HubArea.ProductionSetup).let { base ->
+            base.copy(
+                setup = base.setup.copy(
+                    tab = SetupTab.DealMemo,
+                    dealConditions = SectionEdit(
+                        listOf(DealCondition("c1", 1, "Overtime is paid after ten hours.")),
+                    ),
+                    payrollBureaus = SectionEdit(listOf(PayrollBureau("b1", "Sargent-Disc"))),
+                ),
+            )
+        }
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) { AccountHubScreen(state = dealTab, onEvent = {}) }
+            }
+            // Composed rather than displayed: both sections sit below the
+            // fold of the test window, and what is being proved here is that
+            // they are built at all — they were absent entirely until now.
+            onNodeWithText("Standard Deal Conditions").assertExists()
+            onNodeWithText("Overtime is paid after ten hours.").assertExists()
+            onNodeWithText("Payroll Bureau").assertExists()
+            onNodeWithText("Sargent-Disc").assertExists()
+        }
+    }
+
+    @Test
+    fun `an empty deal memo tab says so rather than drawing bare cards`() {
+        val empty = state(HubArea.ProductionSetup).let { base ->
+            base.copy(setup = base.setup.copy(tab = SetupTab.DealMemo))
+        }
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) { AccountHubScreen(state = empty, onEvent = {}) }
+            }
+            onNodeWithText("No standard conditions yet.").assertExists()
+            onNodeWithText("No payroll bureaux yet.").assertExists()
         }
     }
 

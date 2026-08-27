@@ -271,3 +271,21 @@ data class TransportViewer(
         }
     }
 }
+
+/**
+ * A driver asking for their licence details to be changed.
+ *
+ * The transport manager approves or rejects it, which is what puts the new
+ * licence on the crew row. This client listened for the socket events and
+ * reloaded the crew, but had no way to answer a request — the decision could
+ * only be made from the web (`DocumentRequests.jsx`, `DocumentDetailsModal.jsx`).
+ */
+data class LicenceRequest(
+    val id: String,
+    val userId: String,
+    /** The picture the driver submitted, as a storage key. */
+    val licencePicture: String = "",
+    val createdAtMs: Long = 0,
+    /** Null while nobody has answered it. */
+    val verified: Boolean? = null,
+)

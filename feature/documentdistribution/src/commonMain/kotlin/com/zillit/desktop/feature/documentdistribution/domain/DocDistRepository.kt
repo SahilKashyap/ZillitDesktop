@@ -210,11 +210,11 @@ interface DocDistRepository {
     /** What is currently published under [category]; empty means a first publish. */
     suspend fun publishedFiles(category: String): ZillitResult<List<PublishedFile>>
 
-    suspend fun publish(
-        category: String,
-        documentIds: List<String>,
-        replaceChatIds: List<String> = emptyList(),
-    ): ZillitResult<Unit>
+    /**
+     * Publishes into [category]. What [draft] must carry differs by
+     * destination — see [PublishTarget], which also validates it.
+     */
+    suspend fun publish(category: String, draft: PublishDraft): ZillitResult<Unit>
 }
 
 /** The stale listing a socket event names; see [DocDistRepository.refreshes]. */

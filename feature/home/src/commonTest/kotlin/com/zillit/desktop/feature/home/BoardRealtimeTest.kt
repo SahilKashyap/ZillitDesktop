@@ -8,6 +8,7 @@ import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.core.socket.SocketMessage
 import com.zillit.desktop.feature.home.data.BOARD_REALTIME_EVENTS
+import com.zillit.desktop.feature.home.data.HomeRealtimeSource
 import com.zillit.desktop.feature.home.data.boardRealtime
 import com.zillit.desktop.feature.home.data.toRealtimeEvent
 import com.zillit.desktop.feature.home.domain.HomeRealtimeEvent
@@ -220,6 +221,49 @@ class BoardRealtimeTest {
         assertEquals(2, seen.size)
         assertEquals("n1", (seen[0] as HomeRealtimeEvent.NoticeAdded).notice.id)
         assertEquals(HomeRealtimeEvent.UnitsChanged, seen[1])
+    }
+
+    /**
+     * Home was the one board that ignored comments.
+     *
+     * Every sibling reloads on `<prefix>:message:comment:*` through
+     * `chatBoard`, but Home has its own event list and had none — so the same
+     * action appeared live on an Info notice and silently on a Home one.
+     */
+    @Test
+    fun `a comment on a home notice reloads the board`() = runTest {
+        val client = ScriptedSocketClient()
+        val seen = mutableListOf<HomeRealtimeEvent>()
+        backgroundScope.launch {
+            HomeRealtimeSource(SocketEventBus(client), decryptBody = { it }).stream
+                .collect { seen += it }
+        }
+        runCurrent()
+
+        client.deliver("home:message:comment:added", """{"_id":"c1","unit_id":"u1"}""")
+        client.deliver("home:message:comment:edited", """{"_id":"c1","unit_id":"u1"}""")
+        client.deliver("home:message:comment:deleted", """{"_id":"c1","unit_id":"u1"}""")
+        runCurrent()
+
+        assertEquals(3, seen.size, "each comment event reloads once")
+        seen.forEach { assertEquals(HomeRealtimeEvent.UnitsChanged, it) }
+    }
+
+    /** A post still patches in place — coarsening everything would be a regression. */
+    @Test
+    fun `a home post is still delivered as a post`() = runTest {
+        val client = ScriptedSocketClient()
+        val seen = mutableListOf<HomeRealtimeEvent>()
+        backgroundScope.launch {
+            HomeRealtimeSource(SocketEventBus(client), decryptBody = { it }).stream
+                .collect { seen += it }
+        }
+        runCurrent()
+
+        client.deliver("home:message:added", post)
+        runCurrent()
+
+        assertEquals("n1", (seen.single() as HomeRealtimeEvent.NoticeAdded).notice.id)
     }
 
     @Test

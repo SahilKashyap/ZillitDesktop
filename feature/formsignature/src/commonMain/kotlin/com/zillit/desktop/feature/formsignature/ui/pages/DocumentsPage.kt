@@ -144,6 +144,15 @@ private fun RowActions(
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         if (state.documents.tab == SignDocumentTab.Uploaded && state.viewer.canPost) {
+            // Adding a name to a document already out for signature — the one
+            // thing a sender routinely needs and had to leave the app for.
+            if (!document.finalized) {
+                ZillitIconButton(
+                    icon = ZillitIcons.UserPlus,
+                    contentDescription = "Change signers",
+                    onClick = { onEvent(FormSignatureEvent.EditSigners(document)) },
+                )
+            }
             ZillitIconButton(
                 icon = ZillitIcons.Trash,
                 contentDescription = "Delete",

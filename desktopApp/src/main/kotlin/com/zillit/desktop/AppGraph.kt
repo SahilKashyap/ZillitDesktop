@@ -449,6 +449,15 @@ sealed interface AppGraph {
          */
         val noticeDecryptor: NoticeDecryptor,
         val chatRepository: ChatRepository,
+        /**
+         * The same chat, on another surface.
+         *
+         * C&C is one conversation space among several — the budget tools hang
+         * their discussions off the same socket and endpoints under their own
+         * tool name. This builds a repository for any of them, sharing the
+         * socket, the cipher and the disk cache with C&C.
+         */
+        val chatRepositoryFor: (com.zillit.desktop.feature.chat.domain.ChatScope) -> ChatRepository,
         /** The chat header's green-dot feed; null without Firebase configuration. */
         val chatPresence: com.zillit.desktop.feature.chat.data.DevicePresenceSource?,
         /** Whether a newer desktop build exists. Never throws; never nags on doubt. */
@@ -954,6 +963,27 @@ sealed interface AppGraph {
             // Messages written offline leave through the same send as live ones.
             syncHandlers.register(ChatSendHandler(chatRepository))
 
+            // Another tool's conversations, on the same wire. Built on demand
+            // and remembered per scope so a tool reopened twice keeps one
+            // repository (and so one thread cache) rather than growing a new
+            // one each time it is composed.
+            val scopedChats = mutableMapOf<com.zillit.desktop.feature.chat.domain.ChatScope, ChatRepository>()
+            val chatRepositoryFor: (com.zillit.desktop.feature.chat.domain.ChatScope) -> ChatRepository = { scope ->
+                scopedChats.getOrPut(scope) {
+                    ChatRepositoryImpl(
+                        apiClient = apiClient,
+                        config = config,
+                        bus = socketEvents,
+                        myUserId = { projectContext?.context?.value?.profile?.userId },
+                        projectId = { activeProject.value?.id },
+                        encrypt = { plain -> (cryptoEngine.encryptToHex(plain) as? ZillitResult.Success)?.data },
+                        decrypt = { cipher -> (cryptoEngine.decryptFromHex(cipher) as? ZillitResult.Success)?.data },
+                        disk = chatCache,
+                        scope = scope,
+                    )
+                }
+            }
+
             // The notification list — the phones' bell page. Same cipher as
             // the boards: a row's body arrives encrypted like a notice's.
             val notificationsRepository = NotificationsRepositoryImpl(
@@ -1090,6 +1120,7 @@ sealed interface AppGraph {
                 notificationsRepository = notificationsRepository,
                 noticeDecryptor = noticeDecryptor,
                 chatRepository = chatRepository,
+                chatRepositoryFor = chatRepositoryFor,
                 chatPresence = chatPresence,
                 appUpdateChecker = appUpdateChecker,
                 homeRealtime = homeRealtime,

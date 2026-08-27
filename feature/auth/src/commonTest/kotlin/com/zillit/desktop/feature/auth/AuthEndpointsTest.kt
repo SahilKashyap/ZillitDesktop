@@ -47,7 +47,7 @@ class AuthEndpointsTest {
         "favouriteProject" to endpoints.favouriteProject,
         "projectTypes" to endpoints.projectTypes,
         "languages" to endpoints.languages,
-        "projectByCode" to endpoints.projectByCode("ABC123"),
+        "joinProjectAsUser" to endpoints.joinProjectAsUser,
         "joinProject" to endpoints.joinProject,
         "departments" to endpoints.departments,
         "joinStatus" to endpoints.joinStatus,

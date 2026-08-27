@@ -4,6 +4,9 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.feature.purchaseorder.data.PoSyncEnvelope
+import com.zillit.desktop.feature.purchaseorder.data.PO_ORDER_SYNC_EVENTS
+import com.zillit.desktop.feature.purchaseorder.data.PO_SYNC_EVENTS
+import com.zillit.desktop.feature.purchaseorder.data.PO_VENDOR_SYNC_EVENTS
 import com.zillit.desktop.feature.purchaseorder.data.poRefreshFor
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PoHistoryEntry
@@ -55,6 +58,44 @@ class PurchaseOrderSyncTest {
         assertEquals(PoRefresh.Orders, poRefreshFor(SocketEventName("purchase-order:approval-level:delete")))
         assertEquals(PoRefresh.Vendors, poRefreshFor(SocketEventName("vendor:updated")))
         assertEquals(PoRefresh.Vendors, poRefreshFor(SocketEventName("purchase-order:supplier:update")))
+    }
+
+    /**
+     * The backend has not settled on one spelling for a removed approval
+     * level, so both are subscribed — the web bridges each and two of its
+     * components consume each alias. An event that never fires costs
+     * nothing; a missed one leaves a stale approval chain on screen.
+     */
+    @Test
+    fun `both spellings of a removed approval level are subscribed`() {
+        val names = PO_ORDER_SYNC_EVENTS.map { it.value }
+
+        assertTrue("purchase-order:approval-level:delete" in names)
+        assertTrue("purchase-order:approval-level:removed" in names)
+    }
+
+    /**
+     * `supplier:sent` is named for the supplier but reports that the *order*
+     * was sent — it moves one out of the draft list — so it reloads the
+     * orders, not the vendor picker.
+     */
+    @Test
+    fun `sending an order to its supplier reloads the orders`() {
+        assertEquals(
+            PoRefresh.Orders,
+            poRefreshFor(SocketEventName("purchase-order:supplier:sent")),
+        )
+    }
+
+    @Test
+    fun `no event is subscribed twice or routed to both refreshes`() {
+        val names = PO_SYNC_EVENTS.map { it.value }
+
+        assertEquals(names.size, names.toSet().size, "duplicate subscription")
+        assertTrue(
+            PO_ORDER_SYNC_EVENTS.none { it in PO_VENDOR_SYNC_EVENTS },
+            "an event routed to both would refetch twice",
+        )
     }
 
     @Test

@@ -172,11 +172,41 @@ data class FormSignatureUiState(
     val documents: DocumentsState = DocumentsState(),
     val signatures: SignaturesState = SignaturesState(),
     val detail: DetailState? = null,
+    /** Editing who must sign a document that has already gone out. */
+    val signerEditor: SignerEditorState? = null,
     val send: SendState? = null,
     val uploadForm: UploadFormState? = null,
     val draw: DrawState? = null,
     val history: HistoryState? = null,
 )
+
+/**
+ * Changing the signers on a sent document.
+ *
+ * [chosen] starts as everyone already on the document, because the service
+ * takes the whole list rather than a delta — dropping someone here is what
+ * removes them.
+ */
+data class SignerEditorState(
+    val documentId: String,
+    val title: String,
+    val options: List<SignerOption> = emptyList(),
+    val chosen: Set<String> = emptySet(),
+    val alreadySigned: Set<String> = emptySet(),
+    val loading: Boolean = true,
+    val saving: Boolean = false,
+) {
+    /** Nobody to sign is not a document anyone is waiting on. */
+    val canSave: Boolean get() = chosen.isNotEmpty() && !saving && !loading
+}
+
+/**
+ * The signer editor's own events.
+ *
+ * A marker over the four of them, so the view model's event list stays one
+ * line per feature rather than one per button.
+ */
+sealed interface SignerEditorEvent
 
 sealed interface FormSignatureEvent {
     data class SwitchArea(val area: FormSignatureArea) : FormSignatureEvent
@@ -194,6 +224,12 @@ sealed interface FormSignatureEvent {
     data class SelfAssign(val formId: String) : FormSignatureEvent
     data class DeleteStandardForm(val formId: String) : FormSignatureEvent
     data class DeleteDocument(val documentId: String) : FormSignatureEvent
+
+    /** Opens the signer editor on a sent document. */
+    data class EditSigners(val document: SignDocument) : FormSignatureEvent, SignerEditorEvent
+    data class ToggleSigner(val userId: String) : FormSignatureEvent, SignerEditorEvent
+    data object SaveSigners : FormSignatureEvent, SignerEditorEvent
+    data object CloseSignerEditor : FormSignatureEvent, SignerEditorEvent
     data class ShowHistory(val documentId: String) : FormSignatureEvent
     data object CloseHistory : FormSignatureEvent
 

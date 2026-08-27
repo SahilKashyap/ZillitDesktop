@@ -90,6 +90,11 @@ internal fun AppGraph.Ready.buildLocation(permissions: () -> ProjectPermissions)
         newUniqueId = { UUID.randomUUID().toString() },
         bus = socketEvents,
         currentProjectId = { projectContext?.context?.value?.project?.projectId },
+        // A record's discussion is encrypted like every other body in this
+        // app — the same AES the notice boards and chat use.
+        encrypt = { plain -> (noticeDecryptor.encryptToHex(plain) as? ZillitResult.Success)?.data },
+        decrypt = { cipher -> (noticeDecryptor.decryptFromHex(cipher) as? ZillitResult.Success)?.data },
+        myUserId = { projectContext?.context?.value?.profile?.userId },
     ),
     transfer = locationTransfer(),
     resolveViewer = {

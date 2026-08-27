@@ -3,7 +3,12 @@ package com.zillit.desktop.feature.auth.ui
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.units.UnitRepository
+import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.auth.domain.ChosenPhoto
+import com.zillit.desktop.feature.auth.domain.CodeLookup
 import com.zillit.desktop.feature.auth.domain.JoinDraft
+import com.zillit.desktop.feature.auth.domain.JoinPhotoStore
+import com.zillit.desktop.feature.auth.domain.JoinStatus
 import com.zillit.desktop.feature.auth.domain.Project
 import com.zillit.desktop.feature.auth.domain.ProjectRepository
 import com.zillit.desktop.feature.auth.domain.validate
@@ -14,6 +19,10 @@ sealed interface JoinEvent {
     data class DraftChanged(val draft: JoinDraft) : JoinEvent
     data object Submit : JoinEvent
     data object Dismiss : JoinEvent
+
+    /** Opens the picker, then stores whatever comes back. */
+    data object ChoosePhoto : JoinEvent
+    data object RemovePhoto : JoinEvent
 }
 
 sealed interface JoinEffect {
@@ -33,7 +42,22 @@ class JoinProductionViewModel(
     private val projectRepository: ProjectRepository,
     /** Null when units cannot be listed; the form then cannot be completed. */
     private val unitRepository: UnitRepository? = null,
+    /**
+     * Where a chosen picture goes. Null on a build with no storage configured,
+     * and the form then does not offer a picture at all — better than offering
+     * one that silently cannot be saved.
+     */
+    private val photoStore: JoinPhotoStore? = null,
+    /** Opens the host's file picker. Null when the user cancels. */
+    private val choosePhoto: suspend () -> ChosenPhoto? = { null },
 ) : ZillitViewModel<JoinFlowState, JoinEvent, JoinEffect>(JoinFlowState()) {
+
+    init {
+        // Said once, from what the host supplied: a form that offers a picture
+        // it cannot store is worse than one that never offered.
+        if (photoStore != null) setState { copy(canChoosePhoto = true) }
+    }
+
 
     override fun onEvent(event: JoinEvent) {
         when (event) {
@@ -41,8 +65,11 @@ class JoinProductionViewModel(
             JoinEvent.FindProject -> findProject()
             is JoinEvent.DraftChanged -> onDraftChanged(event.draft)
             JoinEvent.Submit -> submit()
+            JoinEvent.ChoosePhoto -> pickPhoto()
+            JoinEvent.RemovePhoto -> setState { copy(photo = null, photoError = null) }
             JoinEvent.Dismiss -> {
-                setState { JoinFlowState() }
+                // Everything typed goes, but not what the host can do.
+                setState { JoinFlowState(canChoosePhoto = canChoosePhoto) }
                 sendEffect(JoinEffect.Dismissed)
             }
         }
@@ -62,12 +89,32 @@ class JoinProductionViewModel(
 
         launchResult(
             block = { projectRepository.findByCode(code) },
-            onSuccess = { project ->
-                setState { copy(project = project) }
-                loadOptions(project)
-            },
+            onSuccess = ::onCodeResolved,
             onError = { error -> setState { copy(isBusy = false, error = error.localised()) } },
         )
+    }
+
+    /**
+     * Branches on what the code turned out to be.
+     *
+     * A code issued to one person has already put them on the production, so
+     * there is nothing to ask: the flow skips straight to the confirmation and
+     * the list reloads to show the production they can now open. Asking such a
+     * user for a department they have already been given would create a second
+     * pending request against their own membership.
+     */
+    private fun onCodeResolved(lookup: CodeLookup) {
+        when (lookup) {
+            is CodeLookup.NeedsDetails -> {
+                setState { copy(project = lookup.project) }
+                loadOptions(lookup.project)
+            }
+
+            is CodeLookup.AlreadyOn -> {
+                setState { copy(isBusy = false, outcome = JoinStatus.Approved) }
+                sendEffect(JoinEffect.Requested)
+            }
+        }
     }
 
     /**
@@ -115,6 +162,33 @@ class JoinProductionViewModel(
         }
     }
 
+    /**
+     * Chooses a picture and stores it there and then.
+     *
+     * Uploaded on choosing rather than on submit, as both phones do: the wait
+     * belongs while the user is still filling the form in, not bolted onto the
+     * button that sends it. A failure leaves the form usable and the picture
+     * unset — a photo is not worth blocking a join over.
+     */
+    private fun pickPhoto() {
+        val store = photoStore ?: return
+
+        launch {
+            val chosen = choosePhoto() ?: return@launch
+            setState { copy(isStoringPhoto = true, photoError = null) }
+
+            when (val stored = store.store(chosen)) {
+                is ZillitResult.Success -> setState {
+                    copy(photo = stored.data, isStoringPhoto = false)
+                }
+
+                is ZillitResult.Failure -> setState {
+                    copy(isStoringPhoto = false, photoError = stored.error.localised())
+                }
+            }
+        }
+    }
+
     private fun submit() {
         val project = currentState.project ?: return
 
@@ -127,7 +201,15 @@ class JoinProductionViewModel(
         setState { copy(isBusy = true, error = null) }
 
         launchResult(
-            block = { projectRepository.requestJoin(project.id, currentState.draft) },
+            // The picture is merged in here, the one place the request is
+            // assembled — it is not something the user typed, and keeping it
+            // off the draft is what stops a keystroke erasing it.
+            block = {
+                projectRepository.requestJoin(
+                    project.id,
+                    currentState.draft.copy(photo = currentState.photo),
+                )
+            },
             onSuccess = { status ->
                 setState { copy(isBusy = false, outcome = status) }
                 sendEffect(JoinEffect.Requested)

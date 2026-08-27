@@ -178,3 +178,19 @@ data class LocationViewer(
         }
     }
 }
+
+/**
+ * One line in a location record's discussion.
+ *
+ * The web runs this thread through a component shared with casting and
+ * wardrobe (`pages/FilmTools/casting/CastingChat.jsx`), which dispatches by
+ * route to each tool's own service. Bodies travel AES-encrypted exactly as
+ * chat and the notice boards do.
+ */
+data class LocationMessage(
+    val id: String,
+    val senderId: String,
+    val body: String,
+    val sentAtMillis: Long,
+    val isMine: Boolean,
+)

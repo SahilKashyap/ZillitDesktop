@@ -15,6 +15,8 @@ import com.zillit.desktop.feature.transportation.domain.TripStatus
 import com.zillit.desktop.feature.transportation.domain.TripUpdate
 import com.zillit.desktop.feature.transportation.domain.Vehicle
 import com.zillit.desktop.feature.transportation.domain.VehicleDraft
+import com.zillit.desktop.feature.transportation.domain.LicenceRequest
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull

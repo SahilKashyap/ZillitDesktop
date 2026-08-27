@@ -42,6 +42,17 @@ enum class ZillitService(val configKey: String) {
     Chat("CHAT_BASE_URL"),
     Continuity("CONTINUITY_BASE_URL"),
 
+    /**
+     * The AD dashboard service: the production side of supporting artistes —
+     * the register, shoot days, attendance, rate config and AD reports.
+     *
+     * Serves `/api/v2/{artistes,artiste-queries,supporting-artist-days,
+     * ad-shoot-days,ad-rate-config,ad-report,ad-agencies}` (the web's
+     * `SERVICE_DEFS` `ad-dashboard` prefix). A different service from
+     * [SupportingArtists], which is the artiste's own side.
+     */
+    AdDashboard("AD_DASHBOARD_BASE_URL"),
+
     /** The cost-report service (`cost-report-server`): live cost report, posted snapshots, ledger drill-down. */
     CostReport("COST_REPORT_BASE_URL"),
     DealMemo("DEAL_MEMO_BASE_URL"),
@@ -69,6 +80,18 @@ enum class ZillitService(val configKey: String) {
     ScriptDistribution("SCRIPT_DIST_BASE_URL"),
     ScriptNotes("SCRIPT_NOTES_BASE_URL"),
     Sides("SIDES_BASE_URL"),
+
+    /**
+     * The supporting-artiste self-service portal (`sae-server`), serving
+     * every route under `/api/v2/sa-portal` — the artiste's own vouchers,
+     * pay and queries.
+     *
+     * Its envelope differs from the rest of the estate: **success carries no
+     * `status` field**, only `{message, data}`; failure is the usual
+     * `{status: 0, message, data}`. Reading success as `status == 1` here
+     * would refuse every good answer.
+     */
+    SupportingArtists("SUPPORTING_ARTISTS_BASE_URL"),
     Transportation("TRANSPORTATION_BASE_URL"),
     Units("UNITS_BASE_URL"),
     Wardrobe("WARDROBE_BASE_URL"),

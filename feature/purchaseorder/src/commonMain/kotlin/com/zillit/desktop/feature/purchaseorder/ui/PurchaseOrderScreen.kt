@@ -416,7 +416,67 @@ private fun OrderDetail(state: PoUiState, order: PurchaseOrder, onEvent: (PoEven
         }
 
         ZillitDivider()
+        Attachments(state, order, onEvent)
+        ZillitDivider()
         OrderActions(state, order, onEvent)
+    }
+}
+
+/**
+ * The order's files.
+ *
+ * The row has always shown a count; until now there was no way to reach what
+ * it was counting. A quote, a signed copy, a delivery note — the paperwork
+ * that makes an order arguable.
+ */
+@Composable
+private fun Attachments(state: PoUiState, order: PurchaseOrder, onEvent: (PoEvent) -> Unit) {
+    ZillitText(text = "Attachments", style = ZillitTheme.typography.titleSmall)
+    when {
+        state.attachments.isEmpty() && order.attachmentCount > 0 -> ZillitText(
+            // The count came with the order; the files are a second call.
+            text = "Loading…",
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textSecondary,
+        )
+
+        state.attachments.isEmpty() -> ZillitText(
+            text = "Nothing attached to this order.",
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textMuted,
+        )
+
+        else -> state.attachments.forEach { file ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                ZillitText(
+                    text = file.displayName,
+                    style = ZillitTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                )
+                ZillitButton(
+                    text = "Open",
+                    onClick = { onEvent(PoEvent.OpenAttachment(file)) },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                )
+                // Removing paperwork from an order is the raiser's or an
+                // accountant's business, as raising it is.
+                if (state.viewer.owns(order) || state.viewer.hasFullAccess) {
+                    ZillitButton(
+                        text = "Remove",
+                        onClick = { onEvent(PoEvent.DeleteAttachment(file)) },
+                        variant = ButtonVariant.Danger,
+                        size = ButtonSize.Small,
+                        enabled = !state.busy,
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -2,6 +2,8 @@
 
 package com.zillit.desktop.feature.maps.ui
 
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -202,13 +204,36 @@ private fun TypeFilter(state: MapUiState, onEvent: (MapEvent) -> Unit) {
 @Composable
 private fun CityPicker(state: MapUiState, onEvent: (MapEvent) -> Unit) {
     if (state.cities.isEmpty()) return
-    ZillitSelect(
-        value = state.selectedCity,
-        options = state.cities,
-        onSelect = { it?.let { city -> onEvent(MapEvent.SelectCity(city.id)) } },
-        label = { city: MapCity? -> city?.let { "${it.name} (${it.locationCount})" } ?: "Pick a city" },
-        modifier = Modifier.width(SELECT_WIDTH),
-    )
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitSelect(
+            value = state.selectedCity,
+            options = state.cities,
+            onSelect = { it?.let { city -> onEvent(MapEvent.SelectCity(city.id)) } },
+            label = { city: MapCity? -> city?.let { "${it.name} (${it.locationCount})" } ?: "Pick a city" },
+            modifier = Modifier.width(SELECT_WIDTH),
+        )
+        // The order of this list is the production's own — the city it works
+        // in most belongs at the top. Arranged here rather than by dragging
+        // a dropdown open, which no pointer enjoys.
+        val index = state.cities.indexOfFirst { it.id == state.selectedCityId }
+        if (index >= 0 && state.cities.size > 1) {
+            ZillitIconButton(
+                icon = ZillitIcons.ChevronUp,
+                contentDescription = "Move city up",
+                onClick = { onEvent(MapEvent.MoveCity(state.cities[index].id, up = true)) },
+                enabled = index > 0,
+            )
+            ZillitIconButton(
+                icon = ZillitIcons.ChevronDown,
+                contentDescription = "Move city down",
+                onClick = { onEvent(MapEvent.MoveCity(state.cities[index].id, up = false)) },
+                enabled = index < state.cities.lastIndex,
+            )
+        }
+    }
 }
 
 @Composable

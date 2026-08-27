@@ -7,6 +7,7 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.accounthub.domain.AccountHubRepository
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
+import com.zillit.desktop.feature.accounthub.domain.DealCondition
 import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
 import com.zillit.desktop.feature.accounthub.domain.ApprovalSequence
 import com.zillit.desktop.feature.accounthub.domain.ApprovalTier
@@ -58,6 +59,7 @@ class AccountHubViewModel(
 
     private var started = false
     private var searchJob: Job? = null
+    private val setupSections = SetupSections(this)
 
     /**
      * Resolves who this is, then opens their landing screen.
@@ -173,6 +175,12 @@ class AccountHubViewModel(
                 copy(setup = setup.copy(payrollDefaults = setup.payrollDefaults.loaded(defaults)))
             }
         }, ::report)
+        launchResult(repository::dealConditions, { rows ->
+            setState { copy(setup = setup.copy(dealConditions = setup.dealConditions.loaded(rows))) }
+        }, ::report)
+        launchResult(repository::payrollBureaus, { rows ->
+            setState { copy(setup = setup.copy(payrollBureaus = setup.payrollBureaus.loaded(rows))) }
+        }, ::report)
         loadBanks()
         loadCatalogues()
         launch {
@@ -231,91 +239,18 @@ class AccountHubViewModel(
             is AccountHubEvent.EditPayrollDefaults -> setState {
                 copy(setup = setup.copy(payrollDefaults = setup.payrollDefaults.edit(event.defaults)))
             }
-            is AccountHubEvent.SaveSection -> saveSection(event.section)
-            is AccountHubEvent.RevertSection -> revertSection(event.section)
+            is AccountHubEvent.EditDealConditions -> setState {
+                copy(setup = setup.copy(dealConditions = setup.dealConditions.edit(event.conditions)))
+            }
+            is AccountHubEvent.EditPayrollBureaus -> setState {
+                copy(setup = setup.copy(payrollBureaus = setup.payrollBureaus.edit(event.bureaus)))
+            }
+            is AccountHubEvent.SaveSection -> setupSections.save(event.section)
+            is AccountHubEvent.RevertSection -> setupSections.revert(event.section)
             else -> onCompanyEvent(event)
         }
     }
 
-    @Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per action.
-    private fun saveSection(section: SetupSection) {
-        if (!requireEdit()) return
-        val setup = currentState.setup
-        when (section) {
-            SetupSection.Companies -> commit(
-                marking = { copy(setup = this.setup.copy(companies = this.setup.companies.copy(saving = true))) },
-                call = { repository.saveCompanies(setup.companies.edited) },
-                done = { rows -> copy(setup = this.setup.copy(companies = this.setup.companies.committed(rows))) },
-                failed = { copy(setup = this.setup.copy(companies = this.setup.companies.copy(saving = false))) },
-                notice = "Companies saved.",
-            )
-            SetupSection.Currencies -> commit(
-                marking = { copy(setup = this.setup.copy(currencies = this.setup.currencies.copy(saving = true))) },
-                call = { repository.saveCurrencies(setup.currencies.edited) },
-                done = { value -> copy(setup = this.setup.copy(currencies = this.setup.currencies.committed(value))) },
-                failed = { copy(setup = this.setup.copy(currencies = this.setup.currencies.copy(saving = false))) },
-                notice = "Currencies saved.",
-            )
-            SetupSection.TaxTypes -> commit(
-                marking = { copy(setup = this.setup.copy(taxTypes = this.setup.taxTypes.copy(saving = true))) },
-                call = { repository.saveTaxTypes(setup.taxTypes.edited) },
-                done = { rows -> copy(setup = this.setup.copy(taxTypes = this.setup.taxTypes.committed(rows))) },
-                failed = { copy(setup = this.setup.copy(taxTypes = this.setup.taxTypes.copy(saving = false))) },
-                notice = "Tax types saved.",
-            )
-            SetupSection.AssetTags -> commit(
-                marking = { copy(setup = this.setup.copy(assetTags = this.setup.assetTags.copy(saving = true))) },
-                call = { repository.saveAssetTags(setup.assetTags.edited) },
-                done = { tags -> copy(setup = this.setup.copy(assetTags = this.setup.assetTags.committed(tags))) },
-                failed = { copy(setup = this.setup.copy(assetTags = this.setup.assetTags.copy(saving = false))) },
-                notice = "Asset tags saved.",
-            )
-            SetupSection.Budget -> commit(
-                marking = { copy(setup = this.setup.copy(budget = this.setup.budget.copy(saving = true))) },
-                call = { repository.saveProjectBudget(setup.budget.edited.toDomain()) },
-                done = { value ->
-                    copy(setup = this.setup.copy(budget = this.setup.budget.committed(BudgetForm.from(value))))
-                },
-                failed = { copy(setup = this.setup.copy(budget = this.setup.budget.copy(saving = false))) },
-                notice = "Budget saved.",
-            )
-            SetupSection.Schedule -> commit(
-                marking = { copy(setup = this.setup.copy(schedule = this.setup.schedule.copy(saving = true))) },
-                call = { repository.saveProductionSchedule(setup.schedule.edited.toDomain()) },
-                done = { value ->
-                    copy(setup = this.setup.copy(schedule = this.setup.schedule.committed(ScheduleForm.from(value))))
-                },
-                failed = { copy(setup = this.setup.copy(schedule = this.setup.schedule.copy(saving = false))) },
-                notice = "Schedule saved.",
-            )
-            SetupSection.PayrollDefaults -> commit(
-                marking = {
-                    copy(setup = this.setup.copy(payrollDefaults = this.setup.payrollDefaults.copy(saving = true)))
-                },
-                call = { repository.savePayrollDefaults(setup.payrollDefaults.edited) },
-                done = { value ->
-                    copy(setup = this.setup.copy(payrollDefaults = this.setup.payrollDefaults.committed(value)))
-                },
-                failed = {
-                    copy(setup = this.setup.copy(payrollDefaults = this.setup.payrollDefaults.copy(saving = false)))
-                },
-                notice = "Payroll defaults saved.",
-            )
-        }
-    }
-
-    private fun revertSection(section: SetupSection) = setState {
-        val next = when (section) {
-            SetupSection.Companies -> setup.copy(companies = setup.companies.reverted())
-            SetupSection.Currencies -> setup.copy(currencies = setup.currencies.reverted())
-            SetupSection.TaxTypes -> setup.copy(taxTypes = setup.taxTypes.reverted())
-            SetupSection.AssetTags -> setup.copy(assetTags = setup.assetTags.reverted())
-            SetupSection.Budget -> setup.copy(budget = setup.budget.reverted())
-            SetupSection.Schedule -> setup.copy(schedule = setup.schedule.reverted())
-            SetupSection.PayrollDefaults -> setup.copy(payrollDefaults = setup.payrollDefaults.reverted())
-        }
-        copy(setup = next)
-    }
 
     private fun onCompanyEvent(event: AccountHubEvent) {
         when (event) {
@@ -412,6 +347,11 @@ class AccountHubViewModel(
                 report(error)
             },
         )
+        // The Layers tab's own source. Loaded beside the chart rather than on
+        // the tab opening, so switching tabs does not stall on a request.
+        launchResult(repository::trackingSets, { sets ->
+            setState { copy(chart = chart.copy(trackingSets = sets)) }
+        }, ::report)
     }
 
     @Suppress("CyclomaticComplexMethod") // One branch per action.
@@ -770,6 +710,24 @@ class AccountHubViewModel(
     private fun report(error: ZillitError) {
         sendEffect(AccountHubEffect.Failed(error.localised()))
     }
+
+    // -- seams for SetupSections -------------------------------------------
+
+    internal val repo: AccountHubRepository get() = repository
+
+    internal val setupState: AccountHubUiState get() = currentState
+
+    internal fun update(reducer: AccountHubUiState.() -> AccountHubUiState) = setState(reducer)
+
+    internal fun mayEdit(): Boolean = requireEdit()
+
+    internal fun <T> commitSection(
+        marking: AccountHubUiState.() -> AccountHubUiState,
+        call: suspend () -> ZillitResult<T>,
+        done: AccountHubUiState.(T) -> AccountHubUiState,
+        failed: AccountHubUiState.() -> AccountHubUiState,
+        notice: String,
+    ) = commit(marking, call, done, failed, notice)
 
     private fun newLocalId(prefix: String): String = "$prefix-${localIdCounter++}"
 
