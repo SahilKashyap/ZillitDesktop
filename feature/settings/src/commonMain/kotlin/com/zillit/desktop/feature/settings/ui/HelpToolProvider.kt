@@ -69,6 +69,13 @@ class HelpToolProvider(
      * not loaded yet. Null only where calling is unavailable at all.
      */
     private val onCallSupport: (suspend () -> String?)? = null,
+    /**
+     * Where writing to support goes, once [onContactSupport] has queued it.
+     *
+     * A route rather than a call into mail: this module knows nothing about
+     * the mailbox, and the frame owns which window that is.
+     */
+    private val supportComposeRoute: String? = null,
 ) : ToolProvider {
 
     override val path: String = HELP_PATH
@@ -86,7 +93,16 @@ class HelpToolProvider(
             // Both run off the click: asking the OS to open a mail means
             // waiting on a process, and blocking the frame to do it would
             // freeze the window for as long as the mail app takes to wake up.
-            onContactSupport = { scope.launch { notice = onContactSupport() }.let { } },
+            onContactSupport = {
+                scope.launch {
+                    notice = onContactSupport()
+                    // Only on success: a failure has a message to read, and
+                    // moving the window out from under it would hide it.
+                    if (notice == null) {
+                        supportComposeRoute?.let { navigator.navigate(WorkspaceRoute.Tool(it)) }
+                    }
+                }.let { }
+            },
             onCallSupport = onCallSupport?.let { call ->
                 { scope.launch { notice = call() }.let { } }
             },

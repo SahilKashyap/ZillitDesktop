@@ -31,6 +31,9 @@ data class OpenComposer(
     val replyToId: String? = null,
     val draftId: String? = null,
     val window: ComposerWindow = ComposerWindow.Docked,
+    /** Prefilled for a message the app offered to start. See [ComposeViewModel]. */
+    val addressedTo: String = "",
+    val about: String = "",
 )
 
 /**
@@ -61,11 +64,13 @@ class ComposerDeck(private val newId: () -> String = countingIds()) {
      * replies to one mail is a thing people genuinely do, and silently focusing
      * the first would look like the second click did nothing.
      */
-    fun open(mode: ComposeMode, replyToId: String?) {
+    fun open(mode: ComposeMode, replyToId: String?, addressedTo: String = "", about: String = "") {
         _state.value = _state.value.restored() + OpenComposer(
             id = newId(),
             mode = mode,
             replyToId = replyToId,
+            addressedTo = addressedTo,
+            about = about,
         )
     }
 
