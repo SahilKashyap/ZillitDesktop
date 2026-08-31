@@ -116,6 +116,15 @@ data class EnvelopeField(
     val recipientId: String = "",
     val label: String = "",
     val defaultValue: String = "",
+    /**
+     * Whether the signer must fill this before the envelope can be completed.
+     *
+     * **Defaults to true, as the wire does** — every tab the backend ships
+     * carries `required` and Android declares it `= true` (`DocuSignDtos`).
+     * A field is mandatory unless it says otherwise, so a value this port
+     * failed to read must not read as optional.
+     */
+    val required: Boolean = true,
     val documentIndex: Int = 0,
     /** Filled value after signing, when the server echoes one. */
     val value: String = "",

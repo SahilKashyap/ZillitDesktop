@@ -145,7 +145,8 @@ class BudgetScreenRenderTest {
         canPostMain = true,
         canViewDepartment = true,
         canPostDepartment = true,
-        canDownload = true,
+        canDownloadMain = true,
+        canDownloadDepartment = true,
         resolved = true,
     )
 

@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.DeliveryStatus
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
+import com.zillit.desktop.feature.documentdistribution.domain.DocumentStorage
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryPage
@@ -84,6 +85,13 @@ internal data class DocumentDto(
     @SerialName("document_date") val documentDate: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("media") val media: String? = null,
+    /**
+     * The S3 object, when there is one.
+     *
+     * Nested — `media` at the top level is not where the listing puts it, and
+     * reading only that left every document with no storage at all.
+     */
+    @SerialName("attachment") val attachment: AttachmentStorageDto? = null,
 ) {
     fun toDomain(): LibraryDocument? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -101,8 +109,21 @@ internal data class DocumentDto(
             // bucket beside `2026-08-11` splits one day into two headings.
             documentDate = documentDate.orEmpty().take(ISO_DATE_LENGTH),
             createdAt = createdAt.toEpochMillisOrNull(),
-            storageKey = media?.takeIf { it.isNotBlank() },
+            storage = attachment?.toDomain() ?: media?.takeIf { it.isNotBlank() }
+                ?.let { DocumentStorage(key = it, bucket = "", region = "") },
         )
+    }
+}
+
+/** The S3 triplet a presigned GET needs. */
+@Serializable
+internal data class AttachmentStorageDto(
+    @SerialName("media") val media: String? = null,
+    @SerialName("bucket") val bucket: String? = null,
+    @SerialName("region") val region: String? = null,
+) {
+    fun toDomain(): DocumentStorage? = media?.takeIf { it.isNotBlank() }?.let { key ->
+        DocumentStorage(key = key, bucket = bucket.orEmpty(), region = region.orEmpty())
     }
 }
 

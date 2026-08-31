@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.DocDistRefresh
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistRepository
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
+import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryPage
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryQuery
@@ -21,7 +22,14 @@ import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
 import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistDestination
+import com.zillit.desktop.feature.documentdistribution.ui.DocDistEvent
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistViewModel
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -32,14 +40,6 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.LocalDate
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-
-import com.zillit.desktop.feature.documentdistribution.ui.DocDistEvent
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * Moving items in the library.
@@ -92,7 +92,7 @@ class MoveItemsTest {
             calls += "docs:${documentIds.joinToString(",")}->${folderId ?: "root"}"
             return ZillitResult.Success(Unit)
         }
-        override suspend fun downloadUrl(documentId: String) = ZillitResult.Success("url")
+        override suspend fun documentUrl(document: LibraryDocument) = ZillitResult.Success("url")
         override suspend fun lists() = ZillitResult.Success(emptyList<DistributionList>())
         override suspend fun createList(name: String, recipients: List<Recipient>) =
             ZillitResult.Success(Unit)
@@ -164,18 +164,18 @@ class MoveItemsTest {
     }
 
     @Test
-    fun `the library root is a destination in its own right`() = runTest(dispatcher) {
+    fun `the library root is a destination for folders`() = runTest(dispatcher) {
         val repo = MoveRepo(MutableSharedFlow())
         val vm = started(repo)
         runCurrent()
 
-        vm.onEvent(DocDistEvent.ToggleDocument("d1"))
+        vm.onEvent(DocDistEvent.ToggleFolder("w1"))
         vm.onEvent(DocDistEvent.OpenMove)
         vm.onEvent(DocDistEvent.ChooseMoveDestination(null))
         vm.onEvent(DocDistEvent.ConfirmMove)
         runCurrent()
 
-        assertEquals(listOf("docs:d1->root"), repo.calls)
+        assertEquals(listOf("folders:w1->root"), repo.calls)
     }
 
     @Test
@@ -187,6 +187,7 @@ class MoveItemsTest {
         vm.onEvent(DocDistEvent.ToggleFolder("calls"))
         vm.onEvent(DocDistEvent.ToggleDocument("d1"))
         vm.onEvent(DocDistEvent.OpenMove)
+        vm.onEvent(DocDistEvent.ChooseMoveDestination("scripts"))
         vm.onEvent(DocDistEvent.ConfirmMove)
         runCurrent()
 
@@ -204,6 +205,8 @@ class MoveItemsTest {
 
         vm.onEvent(DocDistEvent.ToggleDocument("d1"))
         vm.onEvent(DocDistEvent.OpenMove)
+        // A folder, because a file may not be filed at the root.
+        vm.onEvent(DocDistEvent.ChooseMoveDestination("scripts"))
         vm.onEvent(DocDistEvent.ConfirmMove)
         runCurrent()
 
@@ -298,5 +301,46 @@ class MoveItemsTest {
         vm.onEvent(DocDistEvent.ToggleFolder("calls"))
 
         assertTrue(vm.state.value.selectedFolderIds.isEmpty())
+    }
+    /**
+     * A file must live inside a folder.
+     *
+     * Both phones enforce it — web refuses with "Files must be moved into a
+     * folder, not the root", Android dims the Root row (`rootForbidden`) and
+     * explains why up front. The desktop offered Library root as a destination
+     * *and preselected it*, so confirming a file move with nothing picked
+     * filed the files at the root in two clicks.
+     */
+    @Test
+    fun `files may not be moved to the library root`() = runTest(dispatcher) {
+        val repo = MoveRepo(MutableSharedFlow())
+        val vm = started(repo)
+        runCurrent()
+
+        vm.onEvent(DocDistEvent.ToggleDocument("d1"))
+        vm.onEvent(DocDistEvent.OpenMove)
+        vm.onEvent(DocDistEvent.ChooseMoveDestination(null))
+        vm.onEvent(DocDistEvent.ConfirmMove)
+        runCurrent()
+
+        assertTrue(vm.state.value.rootForbidden, "a file selection bars the root")
+        assertEquals(emptyList(), repo.calls, "the files were filed at the root anyway")
+    }
+
+    /** A mixed selection is barred too — the files in it still need a folder. */
+    @Test
+    fun `a folder and a file together may not go to the root`() = runTest(dispatcher) {
+        val repo = MoveRepo(MutableSharedFlow())
+        val vm = started(repo)
+        runCurrent()
+
+        vm.onEvent(DocDistEvent.ToggleFolder("calls"))
+        vm.onEvent(DocDistEvent.ToggleDocument("d1"))
+        vm.onEvent(DocDistEvent.OpenMove)
+        vm.onEvent(DocDistEvent.ChooseMoveDestination(null))
+        vm.onEvent(DocDistEvent.ConfirmMove)
+        runCurrent()
+
+        assertEquals(emptyList(), repo.calls)
     }
 }

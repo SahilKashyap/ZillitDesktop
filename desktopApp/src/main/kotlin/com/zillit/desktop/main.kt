@@ -2276,6 +2276,7 @@ private fun rememberAppViewModels(
             admin = ready?.let { graph ->
                 AdminViewModel(
                     repository = graph.adminRepository,
+                    isAdmin = { graph.projectContext?.context?.value?.isAdmin == true },
                     // Named on the deletion confirmation, and read at call time
                     // rather than captured: a dialog naming the wrong
                     // production is the worst place for a stale value.

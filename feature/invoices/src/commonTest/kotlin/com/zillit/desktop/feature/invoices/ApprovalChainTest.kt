@@ -5,6 +5,7 @@ import com.zillit.desktop.feature.invoices.domain.ApprovalChain
 import com.zillit.desktop.feature.invoices.domain.ApprovalTierConfig
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
+import com.zillit.desktop.feature.invoices.domain.InvoiceViewer
 import com.zillit.desktop.feature.invoices.domain.TierLevel
 import com.zillit.desktop.feature.invoices.domain.TierRule
 import com.zillit.desktop.feature.invoices.domain.TierScope
@@ -111,4 +112,42 @@ class ApprovalChainTest {
         assertTrue(ApprovalChain.isApprover(tiers, "pm"))
         assertFalse(ApprovalChain.isApprover(tiers, "nobody"))
     }
+    /**
+     * Owning the production is not the same as running its ledger.
+     *
+     * The web's invoice entry page grants posting on `ADMIN_DESIGNATIONS` —
+     * Production Accountant and Financial Controller — not on the
+     * project-owner flag. This port read `permissions.isAdmin`, so a project
+     * admin with no invoice rights could both open the tool and post to it.
+     */
+    @Test
+    fun `a project admin does not inherit invoice rights`() {
+        val admin = InvoiceViewer(
+            userId = "u1",
+            departmentIdentifier = "department_art",
+            designationIdentifier = "designation_art_director_art",
+            canView = false,
+            canPost = false,
+            isAdmin = true,
+            ready = true,
+        )
+
+        assertTrue(admin.isBlocked, "an admin without view rights still opened the tool")
+        assertFalse(admin.mayPost, "an admin without posting rights could still post")
+    }
+
+    /** The senior designations keep it, which is what the web actually checks. */
+    @Test
+    fun `a production accountant may post without an explicit right`() {
+        val senior = InvoiceViewer(
+            userId = "u1",
+            departmentIdentifier = "department_accounts",
+            designationIdentifier = "designation_production_accountant_accounts",
+            canPost = false,
+            ready = true,
+        )
+
+        assertTrue(senior.mayPost)
+    }
+
 }

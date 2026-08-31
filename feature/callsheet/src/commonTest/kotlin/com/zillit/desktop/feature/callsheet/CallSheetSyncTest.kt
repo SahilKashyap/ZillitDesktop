@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.callsheet
 
+import com.zillit.desktop.feature.callsheet.ui.CallSheetEvent
+import com.zillit.desktop.feature.callsheet.ui.ApprovalBucket
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.callsheet.data.matchesProject
@@ -48,6 +50,7 @@ class CallSheetSyncTest {
 
     private class FakeRepository(override val refreshes: Flow<Unit>) : CallSheetRepository {
         var listCalls = 0
+        val queries = mutableListOf<Pair<String?, String?>>()
 
         override suspend fun metadata(projectId: String) = ZillitResult.Success(SheetMetadata())
         override suspend fun saveMetadata(
@@ -61,7 +64,14 @@ class CallSheetSyncTest {
             createdById: String?, approverId: String?,
         ): ZillitResult<List<CallSheetSummary>> {
             listCalls++
-            return ZillitResult.Success(emptyList())
+            queries += createdById to approverId
+            val row = CallSheetSummary(
+                id = if (createdById != null) "mine" else "toApprove",
+                serialNo = "1", name = "Day 1", status = CallSheetStatus.ApprovedForPublish,
+                createdBy = "", createdById = createdById.orEmpty(),
+                createdAt = "", updatedAt = "", publishedAt = "",
+            )
+            return ZillitResult.Success(listOf(row))
         }
         override suspend fun sheet(id: String): ZillitResult<CallSheetDetail> =
             ZillitResult.Failure(ZillitError.Validation("unused"))
@@ -133,4 +143,38 @@ class CallSheetSyncTest {
             "a frame naming no project must pass — the web handler never filters",
         )
     }
+    /**
+     * Finalized is the publishing bucket, and it is scoped to its owners.
+     *
+     * The web only offers Publish when `createdById === currentUserId`, and
+     * Android's Finalized tab keeps the approved sheets relevant to the user.
+     * This port fetched every approved sheet on the production, so anyone with
+     * authoring rights could publish someone else's call sheet to the crew.
+     */
+    @Test
+    fun `the finalized bucket asks only for this person's sheets`() = runTest(dispatcher) {
+        val repo = FakeRepository(MutableSharedFlow())
+        val vm = CallSheetViewModel(
+            repository = repo,
+            delivery = NoDelivery,
+            resolveViewer = { CallSheetViewer(userId = "u1", canPost = true, ready = true) },
+            projectId = { "p1" },
+            membersProvider = { emptyList() },
+            companySeed = { CompanySeed() },
+            todayMs = { 0L },
+        )
+        vm.start()
+        runCurrent()
+        repo.queries.clear()
+
+        vm.onEvent(CallSheetEvent.OpenBucket(ApprovalBucket.Finalized))
+        runCurrent()
+
+        assertTrue(repo.queries.isNotEmpty(), "the bucket made no query")
+        assertTrue(
+            repo.queries.all { (createdBy, approver) -> createdBy != null || approver != null },
+            "an unscoped query would list the whole production: ${repo.queries}",
+        )
+    }
+
 }

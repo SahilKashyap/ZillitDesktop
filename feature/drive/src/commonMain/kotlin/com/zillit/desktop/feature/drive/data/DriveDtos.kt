@@ -202,13 +202,6 @@ internal data class DrivePageDto(
 }
 
 @Serializable
-internal data class CrumbDto(
-    @SerialName("_id") val id: String? = null,
-    @SerialName("name") val name: String? = null,
-    @SerialName("folder_name") val folderName: String? = null,
-)
-
-@Serializable
 internal data class UploadPartDto(
     @SerialName("part_number") val partNumber: Int? = null,
     @SerialName("url") val url: String? = null,

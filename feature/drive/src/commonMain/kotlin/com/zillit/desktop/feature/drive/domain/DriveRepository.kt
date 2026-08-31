@@ -56,14 +56,6 @@ interface DriveRepository {
 
     suspend fun item(id: String, kind: DriveItemKind): ZillitResult<DriveItem>
 
-    /**
-     * The chain from the root down to [folderId].
-     *
-     * Asked of the server rather than walked client-side: unlike Document
-     * Distribution, the drive's folder list is paged, so the ancestors of a
-     * deep folder are frequently not in memory.
-     */
-    suspend fun breadcrumb(folderId: String): ZillitResult<List<DriveCrumb>>
 
     // -- mutations ---------------------------------------------------------
 

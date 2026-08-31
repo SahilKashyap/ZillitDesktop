@@ -52,6 +52,17 @@ class AdminViewModel(
      * device that flipped the switch should not wait for its own echo.
      */
     private val onToolsChanged: () -> Unit = {},
+    /**
+     * Whether the person at the keyboard administers this production.
+     *
+     * The screen already refuses everyone else — it renders `NotAnAdmin()`
+     * and returns before drawing a single control. This is the second layer,
+     * and it is the one that matters here: every write on this surface
+     * rewrites the production's own rights, up to granting somebody else
+     * administrator. A default of true keeps the tests' construction honest;
+     * the app passes the real thing.
+     */
+    private val isAdmin: () -> Boolean = { true },
 ) : ZillitViewModel<AdminUiState, AdminEvent, AdminEffect>(AdminUiState()) {
 
     /** Destinations already read, so returning to one is not a refetch. */
@@ -642,6 +653,10 @@ class AdminViewModel(
      * corrected rather than retyped.
      */
     private fun mutate(success: String, block: suspend () -> ZillitResult<Unit>) {
+        if (!isAdmin()) {
+            setState { copy(error = "Only an administrator can change this production's settings.") }
+            return
+        }
         if (currentState.isSaving) return
         setState { copy(isSaving = true, error = null) }
 

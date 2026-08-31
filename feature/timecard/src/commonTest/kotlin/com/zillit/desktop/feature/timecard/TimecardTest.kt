@@ -16,13 +16,18 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-private fun day(type: DayType = DayType.Worked, hours: Double = 10.0) = TimecardDay(
+private fun day(
+    type: DayType = DayType.Worked,
+    hours: Double = 10.0,
+    allowances: List<Allowance> = emptyList(),
+) = TimecardDay(
     date = 1_754_000_000_000,
     dayType = type,
     callTime = "07:00",
     wrapTime = "19:00",
     workedHours = hours,
     note = null,
+    allowances = allowances,
 )
 
 @Suppress("LongParameterList") // A test builder: one default per field the tests vary.
@@ -180,4 +185,39 @@ class TimecardTest {
         assertEquals(DayType.Unknown, DayType.from("Prep"), "web-only vocabulary degrades, never mislabels")
         assertEquals(TimecardStatus.FinalApproved, TimecardStatus.from("FINAL_APPROVED"))
     }
+    /**
+     * A day type this port does not model is not a day nobody worked.
+     *
+     * The web's `NON_PAID_DAY_TYPES` names exactly four — REST, Holiday, Sick,
+     * Sick (Unpaid) — while `Prep`, `Wrap`, `Post` and `Turnaround` all pay a
+     * flat rate. This port files those under [DayType.Unknown], whose
+     * `isPaidWork` is false, so a prep-day allowance refused the whole week:
+     * the crew member could not file at all.
+     */
+    @Test
+    fun `an allowance on an unmodelled paid day does not block the week`() {
+        val meal = Allowance("meal", "Meal", 25.0)
+        val prepDay = TimecardDraft(
+            null, 1_754_000_000_000,
+            listOf(day(DayType.Unknown, hours = 0.0, allowances = listOf(meal))),
+        )
+
+        assertNull(prepDay.validationError(), "an unmodelled flat-pay day blocked filing")
+    }
+
+    /** The rule still holds for the days the web does call unpaid. */
+    @Test
+    fun `an allowance on a rest day is still refused`() {
+        val meal = Allowance("meal", "Meal", 25.0)
+        val restDay = TimecardDraft(
+            null, 1_754_000_000_000,
+            listOf(day(DayType.Rest, hours = 0.0, allowances = listOf(meal))),
+        )
+
+        assertEquals(
+            "Allowances can only be claimed on a day that was worked.",
+            restDay.validationError(),
+        )
+    }
+
 }

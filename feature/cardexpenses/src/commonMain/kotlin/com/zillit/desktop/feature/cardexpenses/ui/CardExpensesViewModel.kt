@@ -819,6 +819,29 @@ class CardExpensesViewModel(
     @Suppress("CyclomaticComplexMethod") // One branch per confirmable action.
     private fun resolveConfirm(prompt: CardPrompt.Confirm) {
         val id = prompt.targetId
+        // Each action carries the right its own screen asks for. This
+        // dispatch went straight to the repository, so a prompt arriving
+        // here approved or posted money with no check of its own — the
+        // screens gated it and the handler trusted them.
+        //
+        // The card lifecycle and posting are an accountant's (`CardPages`);
+        // approving a receipt is an approver's (`ReceiptPages`); approving a
+        // card is either. The claimant's own steps — submit, match, flag,
+        // dismiss, top-up — are left alone: a person acting on their own
+        // receipt is not something any screen refuses.
+        val allowed = when (prompt.action) {
+            CardConfirmAction.ApproveCard ->
+                currentState.viewer.isApprover || currentState.viewer.isAccountant
+            CardConfirmAction.ApproveReceipt -> currentState.viewer.isApprover
+            CardConfirmAction.ActivateCard, CardConfirmAction.SuspendCard,
+            CardConfirmAction.ReactivateCard, CardConfirmAction.PostReceipt,
+            -> currentState.viewer.isAccountant
+            else -> true
+        }
+        if (!allowed) {
+            sendEffect(CardEffect.Failed("You do not have the rights to do that on this production."))
+            return
+        }
         when (prompt.action) {
             CardConfirmAction.ApproveCard -> act("Card approved") { repository.approveCard(id, null) }
             CardConfirmAction.OverrideCard -> act("Card overridden") { repository.overrideCard(id) }

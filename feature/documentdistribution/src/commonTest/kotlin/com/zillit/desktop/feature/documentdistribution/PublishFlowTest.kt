@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.documentdistribution
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.permissions.ToolAccess
 import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.feature.documentdistribution.data.DOC_DIST_REFRESH_BY_EVENT
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
@@ -12,16 +14,27 @@ import com.zillit.desktop.feature.documentdistribution.domain.DocDistRefresh
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistRepository
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
+import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryPage
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryQuery
 import com.zillit.desktop.feature.documentdistribution.domain.NewDistribution
 import com.zillit.desktop.feature.documentdistribution.domain.PublicationCategory
+import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
+import com.zillit.desktop.feature.documentdistribution.domain.PublishMode
 import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistDestination
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistEvent
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistViewModel
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -32,19 +45,6 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.LocalDate
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-
-import com.zillit.desktop.core.permissions.ProjectPermissions
-import com.zillit.desktop.core.permissions.ToolAccess
-import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
-import com.zillit.desktop.feature.documentdistribution.domain.PublishMode
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /**
  * The publish flow: choosing a destination, filling what it asks for, sending.
@@ -83,7 +83,7 @@ class PublishFlowTest {
         override suspend fun deleteDocument(documentId: String) = ZillitResult.Success(Unit)
         override suspend fun moveDocuments(documentIds: List<String>, folderId: String?) =
             ZillitResult.Success(Unit)
-        override suspend fun downloadUrl(documentId: String) = ZillitResult.Success("url")
+        override suspend fun documentUrl(document: LibraryDocument) = ZillitResult.Success("url")
         override suspend fun lists() = ZillitResult.Success(emptyList<DistributionList>())
         override suspend fun createList(name: String, recipients: List<Recipient>) =
             ZillitResult.Success(Unit)

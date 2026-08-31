@@ -24,6 +24,9 @@ kotlin {
         }
         jvmTest.dependencies {
             implementation(compose.desktop.currentOs)
+            // Resolving a document's URL must not touch the network; the mock
+            // engine is what proves it by refusing every request.
+            implementation(libs.ktor.client.mock)
             @OptIn(ExperimentalComposeLibrary::class)
             implementation(compose.uiTest)
         }

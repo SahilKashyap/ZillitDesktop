@@ -330,8 +330,22 @@ class EsignViewModel(
                     FieldAnswer.Mark(mark)
                 }
                 field.type == FieldType.FullName -> FieldAnswer.Typed(currentUserName())
-                field.type == FieldType.Text || field.type == FieldType.Email ->
+                field.type == FieldType.Text || field.type == FieldType.Email -> {
+                    // A required field the signer never filled is not an empty
+                    // answer to send — Android refuses the whole submit with
+                    // "Please complete every required field." and the wire
+                    // marks a tab required unless it says otherwise. This port
+                    // sent the default (usually blank) and completed the
+                    // envelope regardless.
+                    if (field.required && field.defaultValue.isBlank()) {
+                        return ZillitResult.Failure(
+                            ZillitError.Validation(
+                                "Fill in ${field.label.ifBlank { "every required field" }} before signing.",
+                            ),
+                        )
+                    }
                     FieldAnswer.Typed(field.defaultValue)
+                }
                 else -> null
             }
             answers += SignedField(

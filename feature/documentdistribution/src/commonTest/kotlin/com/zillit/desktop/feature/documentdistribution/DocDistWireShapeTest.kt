@@ -4,6 +4,8 @@ import com.zillit.desktop.feature.documentdistribution.data.decodeDistributions
 import com.zillit.desktop.feature.documentdistribution.data.decodeFolders
 import com.zillit.desktop.feature.documentdistribution.data.decodeLibraryPage
 import kotlin.test.Test
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -110,4 +112,45 @@ class DocDistWireShapeTest {
         )
         assertTrue(rows.single().openSummary.startsWith("0 of 1"))
     }
+    /**
+     * The S3 object is nested under `attachment`, which is where both phones
+     * read it (`Document.attachment`, `isS3 = attachment != null`).
+     *
+     * This port read a top-level `media` instead and so found storage on no
+     * document at all — invisible, because the only thing that used it was a
+     * call to an endpoint that did not exist either.
+     */
+    @Test
+    fun `a document's storage is read from the nested attachment`() {
+        val page = decodeLibraryPage(
+            """
+            {"documents":[{
+              "_id": "d1",
+              "original_name": "Day 11.pdf",
+              "attachment": {
+                "media": "documents/day 11.pdf",
+                "bucket": "zillit-prod",
+                "region": "eu-west-2"
+              }
+            }]}
+            """.trimIndent(),
+        )
+
+        val storage = page.documents.single().storage
+        assertNotNull(storage)
+        assertEquals("documents/day 11.pdf", storage.key)
+        assertEquals("zillit-prod", storage.bucket)
+        assertEquals("eu-west-2", storage.region)
+    }
+
+    /** A LOCAL production sends no attachment, and that is not a parse failure. */
+    @Test
+    fun `a document with no attachment simply has no storage`() {
+        val page = decodeLibraryPage(
+            """{"documents":[{"_id": "d1", "original_name": "Day 11.pdf"}]}""",
+        )
+
+        assertNull(page.documents.single().storage)
+    }
+
 }

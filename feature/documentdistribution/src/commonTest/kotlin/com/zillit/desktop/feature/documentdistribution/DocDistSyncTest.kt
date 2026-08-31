@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.DocDistRefresh
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistRepository
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
+import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryPage
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryQuery
@@ -23,6 +24,10 @@ import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistDestination
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistEvent
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistViewModel
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -33,10 +38,6 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.LocalDate
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
 
 /**
  * A `document_distribution:*` pulse reloads the destination it names, only
@@ -96,7 +97,7 @@ class DocDistSyncTest {
         override suspend fun deleteDocument(documentId: String) = ZillitResult.Success(Unit)
         override suspend fun moveDocuments(documentIds: List<String>, folderId: String?) =
             ZillitResult.Success(Unit)
-        override suspend fun downloadUrl(documentId: String) = ZillitResult.Success("url")
+        override suspend fun documentUrl(document: LibraryDocument) = ZillitResult.Success("url")
         override suspend fun lists() = ZillitResult.Success(emptyList<DistributionList>())
         override suspend fun createList(name: String, recipients: List<Recipient>) =
             ZillitResult.Success(Unit)

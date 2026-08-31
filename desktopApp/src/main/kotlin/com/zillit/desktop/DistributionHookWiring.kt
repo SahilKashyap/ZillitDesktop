@@ -23,7 +23,11 @@ internal fun distributionHook(
         if (file == null) {
             ZillitResult.Failure(ZillitError.Storage("publish asked for a post with no file"))
         } else {
-            FromToolPublisher(ready.apiClient, ready.config).publish(
+            FromToolPublisher(
+                ready.apiClient,
+                ready.config,
+                canPost = { permissions().canPost(DOC_DISTRIBUTION_TOOL) },
+            ).publish(
                 FromToolFile(
                     folderPath = folderPath,
                     name = file.fileName,

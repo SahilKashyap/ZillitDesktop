@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.budget
 
+import com.zillit.desktop.feature.budget.domain.BudgetType
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.permissions.ToolAccess
 import com.zillit.desktop.feature.budget.domain.BudgetViewer
@@ -63,12 +64,27 @@ class BudgetViewerTest {
 
     /** Download is a right of its own, and either budget granting it is enough. */
     @Test
-    fun `download comes from either budget`() {
+    fun `a department download right does not open the main budget`() {
+        // iOS reads the right off the matching tool — `MAIN_BUDGET_TOOL` for
+        // the production's budget, `DEPARTMENT_BUDGET_TOOL` for a
+        // department's (`BudgetDetailVC`). This port OR-ed the two into one
+        // flag, so a department's download right also handed out the
+        // production's whole budget.
         val viewer = BudgetViewer.from(
             permissions(mainView = true, departmentView = false, departmentDownload = true),
         )
 
-        assertTrue(viewer.canDownload)
+        assertTrue(viewer.canDownload(BudgetType.Department))
+        assertFalse(viewer.canDownload(BudgetType.Main), "the main budget was handed out")
+    }
+
+    /** iOS excepts admins on this tool: `guard (hasAdminAccess || hasDownloadAccess)`. */
+    @Test
+    fun `a project admin may download either budget`() {
+        val viewer = BudgetViewer.from(permissions(mainView = true, isAdmin = true))
+
+        assertTrue(viewer.canDownload(BudgetType.Main))
+        assertTrue(viewer.canDownload(BudgetType.Department))
     }
 
     private fun permissions(
@@ -76,8 +92,10 @@ class BudgetViewerTest {
         mainPost: Boolean = false,
         departmentView: Boolean = false,
         departmentDownload: Boolean = false,
+        isAdmin: Boolean = false,
     ) = ProjectPermissions(
-        listOf(
+        isAdmin = isAdmin,
+        tools = listOf(
             ToolAccess(
                 identifier = BudgetViewer.MAIN_TOOL,
                 canView = mainView,

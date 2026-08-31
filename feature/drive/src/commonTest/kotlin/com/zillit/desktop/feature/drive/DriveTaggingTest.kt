@@ -78,9 +78,11 @@ class DriveTaggingTest {
         var assignFails = false
         val versionUrlsAsked = mutableListOf<Pair<String, String>>()
 
+        var rows = emptyList<DriveItem>()
+
         override suspend fun contents(query: DriveQuery): ZillitResult<DrivePage> {
             browseLoads++
-            return ZillitResult.Success(DrivePage(emptyList(), total = 0))
+            return ZillitResult.Success(DrivePage(rows, total = rows.size))
         }
 
         override suspend fun tags() = ZillitResult.Success(projectTags.toList())
@@ -110,10 +112,14 @@ class DriveTaggingTest {
         }
 
         override suspend fun item(id: String, kind: DriveItemKind): ZillitResult<DriveItem> = unused()
-        override suspend fun breadcrumb(folderId: String) = ZillitResult.Success(emptyList<DriveCrumb>())
         override suspend fun createFolder(name: String, parentId: String?, description: String):
             ZillitResult<DriveItem> = unused()
-        override suspend fun rename(ref: DriveRef, name: String, description: String?) = ok()
+        var renames = 0
+
+        override suspend fun rename(ref: DriveRef, name: String, description: String?): ZillitResult<Unit> {
+            renames++
+            return ok()
+        }
         override suspend fun move(ref: DriveRef, targetFolderId: String?) = ok()
         override suspend fun delete(ref: DriveRef) = ok()
         override suspend fun bulkDelete(refs: List<DriveRef>) = ok()
@@ -385,4 +391,63 @@ class DriveTaggingTest {
 
         assertEquals(all, DetailsState(item = file).unapplied(all))
     }
+    /**
+     * The folder trail.
+     *
+     * Built as the user walks it. There was a `GET /drive/folders/:id/breadcrumb`
+     * call here until 2026-08-27 — a route the service does not have, on any
+     * verb, and neither reference client asks for one. Its failure was
+     * swallowed into an empty list, so every folder in the Drive showed no
+     * trail and nothing said why.
+     */
+    @Test
+    fun `the trail grows as folders are opened and truncates on the way back`() = runTest(dispatcher) {
+        val repo = FakeRepo()
+        // Both folders in every listing: the name of the folder being opened
+        // is read off the page it was clicked on.
+        repo.rows = listOf(folder("f1", "Scripts"), folder("f2", "Drafts"))
+        val vm = model(repo)
+        vm.start()
+        runCurrent()
+
+        vm.onEvent(DriveEvent.OpenFolder("f1"))
+        runCurrent()
+        assertEquals(listOf("Scripts"), vm.state.value.breadcrumb.map { it.name })
+
+        vm.onEvent(DriveEvent.OpenFolder("f2"))
+        runCurrent()
+        assertEquals(listOf("Scripts", "Drafts"), vm.state.value.breadcrumb.map { it.name })
+
+        // Clicking a crumb already on the trail walks back to it.
+        vm.onEvent(DriveEvent.OpenFolder("f1"))
+        runCurrent()
+        assertEquals(listOf("Scripts"), vm.state.value.breadcrumb.map { it.name })
+
+        // And the root clears it.
+        vm.onEvent(DriveEvent.OpenFolder(null))
+        runCurrent()
+        assertEquals(emptyList(), vm.state.value.breadcrumb)
+    }
+
+    private fun folder(id: String, name: String) =
+        DriveItem(id = id, name = name, kind = DriveItemKind.Folder)
+
+    /**
+     * Creating, renaming and moving ran through `mutate`, which asks nothing —
+     * while delete, download, share and view are each checked in their own
+     * handler. `DriveScreen` offers New folder only on `canCreate`.
+     */
+    @Test
+    fun `someone who may not edit cannot rename`() = runTest(dispatcher) {
+        val repo = FakeRepo()
+        val vm = model(repo, canPost = false)
+        vm.start()
+        runCurrent()
+
+        vm.onEvent(DriveEvent.Rename(DriveRef("f1", DriveItemKind.Folder), "Scripts", null))
+        runCurrent()
+
+        assertEquals(0, repo.renames, "a rename went through without the right")
+    }
+
 }

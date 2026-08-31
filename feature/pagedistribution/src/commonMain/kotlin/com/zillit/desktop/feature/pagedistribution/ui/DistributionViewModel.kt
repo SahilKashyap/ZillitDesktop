@@ -308,6 +308,11 @@ class DistributionViewModel(
     }
 
     private fun submitUpload() {
+        // Guarded here as well as on the dialog that opens it: [guardPost]
+        // sits on picking a file and on opening the move editor, which is a
+        // step too early — the commit is what writes, and it is reachable
+        // whenever the dialog state exists.
+        if (!state.value.viewer.mayPost) return guardPost {}
         val current = state.value
         val editor = current.upload ?: return
         val tab = current.activeTab
@@ -413,6 +418,11 @@ class DistributionViewModel(
     }
 
     private fun delete() {
+        // Guarded here as well as on the dialog that opens it: [guardPost]
+        // sits on picking a file and on opening the move editor, which is a
+        // step too early — the commit is what writes, and it is reachable
+        // whenever the dialog state exists.
+        if (!state.value.viewer.mayPost) return guardPost {}
         val document = state.value.confirmDelete ?: return
         if (!state.value.viewer.mayDelete(document.createdBy)) {
             setState { copy(confirmDelete = null, error = "Only an admin or the uploader can delete this") }
@@ -453,6 +463,11 @@ class DistributionViewModel(
     }
 
     private fun move() {
+        // Guarded here as well as on the dialog that opens it: [guardPost]
+        // sits on picking a file and on opening the move editor, which is a
+        // step too early — the commit is what writes, and it is reachable
+        // whenever the dialog state exists.
+        if (!state.value.viewer.mayPost) return guardPost {}
         val editor = state.value.move ?: return
         val target = editor.target ?: return
         val tab = state.value.activeTab

@@ -13,7 +13,6 @@ import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
 import com.zillit.desktop.feature.drive.domain.DriveActivity
 import com.zillit.desktop.feature.drive.domain.DriveComment
-import com.zillit.desktop.feature.drive.domain.DriveCrumb
 import com.zillit.desktop.feature.drive.domain.DriveFileRequest
 import com.zillit.desktop.feature.drive.domain.DriveFileRequestDraft
 import com.zillit.desktop.feature.drive.domain.DriveItem
@@ -118,16 +117,6 @@ class DriveRepositoryImpl(
                 ?: ZillitResult.Failure(ZillitError.Serialization("drive item had no id"))
         }
     }
-
-    override suspend fun breadcrumb(folderId: String): ZillitResult<List<DriveCrumb>> =
-        get("$base/folders/$folderId/breadcrumb", ListSerializer(CrumbDto.serializer()))
-            .map { rows ->
-                rows.mapNotNull { crumb ->
-                    crumb.id?.takeIf { it.isNotBlank() }?.let {
-                        DriveCrumb(id = it, name = (crumb.name ?: crumb.folderName).orEmpty())
-                    }
-                }
-            }
 
     // -- mutations ---------------------------------------------------------
 

@@ -150,8 +150,26 @@ data class LocationViewer(
     val isTelevision: Boolean = false,
     val ready: Boolean = false,
 ) {
-    val isBlocked: Boolean get() = ready && !canView && !isAdmin
-    val mayPost: Boolean get() = isAdmin || canPost
+    /**
+     * Rights as issued, with no project-admin bypass.
+     *
+     * Android's location pages read `postingAccess` / `viewAccess` off the
+     * tool's row directly and never consult `isAdmin` for either. It *is*
+     * consulted for somebody else's upload — see [mayDelete] — which is a
+     * different rule and stays.
+     */
+    val isBlocked: Boolean get() = ready && !canView
+    val mayPost: Boolean get() = canPost
+
+    /**
+     * Download is the one right an admin *does* inherit.
+     *
+     * iOS gates every download in this tool on
+     * `getLoginUserAdminAccess() || getProjectDownloadRight(LOCATION_TOOL)`
+     * (`FolderDetailVC+Collection`, `LocationChatVC+Ext`) and offers to ask an
+     * admin for the right otherwise. Posting is not the same question — no
+     * client grants that to an admin here.
+     */
     val mayDownload: Boolean get() = isAdmin || canDownload
 
     /** The web's gallery-delete rule: admins, or every selected item is yours. */

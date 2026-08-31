@@ -58,7 +58,6 @@ class DriveSyncTest {
             return ZillitResult.Success(DrivePage(emptyList(), total = 0))
         }
         override suspend fun item(id: String, kind: DriveItemKind): ZillitResult<DriveItem> = unused()
-        override suspend fun breadcrumb(folderId: String) = ZillitResult.Success(emptyList<DriveCrumb>())
         override suspend fun createFolder(name: String, parentId: String?, description: String):
             ZillitResult<DriveItem> = unused()
         override suspend fun rename(ref: DriveRef, name: String, description: String?) = ok()

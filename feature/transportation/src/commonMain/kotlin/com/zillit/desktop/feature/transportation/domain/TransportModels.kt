@@ -248,10 +248,19 @@ data class TransportViewer(
     val isAdmin: Boolean = false,
     val ready: Boolean = false,
 ) {
-    val isBlocked: Boolean get() = ready && !canView && !isAdmin
+    val isBlocked: Boolean get() = ready && !canView
 
-    /** The web's coordinator: `posting_access` on the tool. */
-    val isCoordinator: Boolean get() = canPost || isAdmin
+    /**
+     * The coordinator: `posting_access` on the tool, as this comment always
+     * said — the `|| isAdmin` beneath it did not match.
+     *
+     * Android resolves the role in a documented priority chain that never
+     * looks at `isAdmin` (`TransportationActivity.resolveTransportRole`):
+     * posting access wins over driver designation, then driver, then view
+     * access as passenger, then out. An admin without posting rights is a
+     * passenger there, and was a coordinator here.
+     */
+    val isCoordinator: Boolean get() = canPost
 
     companion object {
         const val TOOL_IDENTIFIER = "transportation_tool"

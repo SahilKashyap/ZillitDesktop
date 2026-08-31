@@ -432,6 +432,15 @@ class DealMemoViewModel(
                     act("Terms acknowledged") { repository.acknowledge(prompt.targetId) }
 
                 DealConfirmAction.SendToCrew -> {
+                    // Issuing terms to a crew member is the production's act,
+                    // not the crew member's. The screen offers it only where
+                    // `canWriteDeals` holds (`DealMemoScreen`), and the whole
+                    // All Deals destination is gated on the same — but this
+                    // handler took any prompt that reached it.
+                    if (!currentState.viewer.canWriteDeals) {
+                        sendEffect(DealEffect.Failed("You do not have rights to issue deals."))
+                        return
+                    }
                     val deal = currentState.deals.firstOrNull { it.id == prompt.targetId }
                     if (deal == null) {
                         sendEffect(DealEffect.Failed("That deal is no longer on screen."))

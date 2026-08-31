@@ -118,8 +118,17 @@ data class MapViewer(
     val isAdmin: Boolean = false,
     val ready: Boolean = false,
 ) {
-    val isBlocked: Boolean get() = ready && !canView && !isAdmin
-    val mayEdit: Boolean get() = isAdmin || canPost
+    /**
+     * Rights as issued, with no project-admin bypass.
+     *
+     * Android's map screen reads the tool's row and nothing else —
+     * `if (viewAccess == false) finish() else hasPermission = postingAccess`
+     * (`ViewPinnedLocationActivity.checkPostingRights`). The web's map module
+     * never mentions `is_admin` either. Owning the production does not put
+     * pins on its map.
+     */
+    val isBlocked: Boolean get() = ready && !canView
+    val mayEdit: Boolean get() = canPost
 
     companion object {
         const val TOOL_IDENTIFIER = "map_tool"

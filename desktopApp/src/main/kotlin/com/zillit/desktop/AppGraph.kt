@@ -19,6 +19,7 @@ import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.OkHttpEngineProvider
 import com.zillit.desktop.core.network.HeaderContext
 import com.zillit.desktop.core.network.ReadScope
+import com.zillit.desktop.core.network.S3Presigner
 import com.zillit.desktop.core.network.HeaderCrypto
 import com.zillit.desktop.core.badges.BadgeStore
 import com.zillit.desktop.core.database.LabelCache
@@ -707,6 +708,13 @@ sealed interface AppGraph {
 
             val socketEvents = SocketEventBus(socketClient)
 
+            // Document Distribution reaches its files by presigned URL: its
+            // own byte proxy answers only to the app's encrypted headers, and
+            // the browser that opens the document sends none of them.
+            val docDistPresigner = S3Presigner(
+                credentials = { awsKeyPair(remoteConfigRepository) },
+            )
+
             appScope.reportSocketRejections(socketClient, sessionExpired)
 
             val unitRepository = UnitRepositoryImpl(apiClient, config)
@@ -1180,7 +1188,22 @@ sealed interface AppGraph {
                 // `/vendors` (which is also the hub, despite the path), and the
                 // core service for the shared currency and tax catalogues.
                 accountHubRepository = AccountHubRepositoryImpl(apiClient, config),
-                docDistRepository = DocDistRepositoryImpl(apiClient, config, bus = socketEvents),
+                docDistRepository = DocDistRepositoryImpl(
+                    apiClient = apiClient,
+                    config = config,
+                    bus = socketEvents,
+                    // The tool's own `/raw` proxy answers only to the app's
+                    // encrypted headers, so a browser cannot open it. An S3
+                    // document is reached by a presigned URL instead — which
+                    // is what both phones do.
+                    presign = { storage ->
+                        docDistPresigner.presignedGet(
+                            bucket = storage.bucket,
+                            region = storage.region,
+                            key = storage.key,
+                        )
+                    },
+                ),
                 driveRepository = DriveRepositoryImpl(
                     apiClient = apiClient,
                     config = config,

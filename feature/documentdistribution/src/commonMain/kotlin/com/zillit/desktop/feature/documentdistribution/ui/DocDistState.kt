@@ -173,6 +173,17 @@ data class DocDistUiState(
         return out
     }
 
+    /**
+     * Whether the Library root is off-limits as a move destination.
+     *
+     * A file must live inside a folder — both phones enforce it and say so
+     * (web: "Files must be moved into a folder, not the root"; Android dims
+     * the Root row and explains it up front so nobody thinks they have found
+     * a bug). Folders alone may go to the root, which is how a top-level
+     * folder is made.
+     */
+    val rootForbidden: Boolean get() = selectedDocumentIds.isNotEmpty()
+
     val hasMore: Boolean get() = documents.size < totalDocuments
 
     /** Whether the "view only" banner belongs on screen. */

@@ -334,4 +334,20 @@ class TransportValidationTest {
         assertFalse(user(status = "left").isAccepted)
         assertFalse(user(status = "removed").isAccepted)
     }
+    /**
+     * The coordinator is posting access, and only that.
+     *
+     * Android resolves the role in a documented chain that never consults
+     * `isAdmin`: posting access wins over driver designation, then driver,
+     * then view access as passenger, then out
+     * (`TransportationActivity.resolveTransportRole`). An admin without
+     * posting rights is a passenger there; this port made them a coordinator.
+     */
+    @Test
+    fun `a project admin is not a transport coordinator`() {
+        val admin = TransportViewer(canView = true, canPost = false, isAdmin = true, ready = true)
+
+        assertFalse(admin.isCoordinator)
+    }
+
 }

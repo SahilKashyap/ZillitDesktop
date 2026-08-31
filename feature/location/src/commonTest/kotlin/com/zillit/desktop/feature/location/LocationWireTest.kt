@@ -2,6 +2,8 @@
 
 package com.zillit.desktop.feature.location
 
+import kotlin.test.assertFalse
+import com.zillit.desktop.feature.location.domain.LocationViewer
 import com.zillit.desktop.feature.location.data.createWire
 import com.zillit.desktop.feature.location.data.editWire
 import com.zillit.desktop.feature.location.data.moveWire
@@ -124,4 +126,22 @@ class LocationWireTest {
         val hall = Folders.group(rows, GroupBy.LocationName).first { it.key == "Hall" }
         assertEquals(listOf(LocationPick("Hall", "12")), Folders.picks(hall, GroupBy.LocationName, rows))
     }
+    /**
+     * Posting and downloading are different questions for an admin.
+     *
+     * Android's location pages gate posting on `postingAccess` alone, while
+     * iOS gates every *download* on `getLoginUserAdminAccess() ||
+     * getProjectDownloadRight(LOCATION_TOOL)` and offers to ask an admin for
+     * the right otherwise. This port granted both.
+     */
+    @Test
+    fun `an admin inherits location downloads but not posting`() {
+        val admin = LocationViewer(
+            canView = true, canPost = false, canDownload = false, isAdmin = true, ready = true,
+        )
+
+        assertFalse(admin.mayPost, "an admin without posting rights could post")
+        assertTrue(admin.mayDownload, "iOS grants an admin the download")
+    }
+
 }

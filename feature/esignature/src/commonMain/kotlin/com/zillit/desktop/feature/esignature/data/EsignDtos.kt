@@ -101,6 +101,8 @@ internal data class FieldDto(
     @SerialName("recipient_id") val recipientId: String? = null,
     val label: String? = null,
     @SerialName("default_value") val defaultValue: String? = null,
+    /** Absent means required — the backend ships it on every tab. */
+    val required: Boolean? = null,
     @SerialName("document_index") val documentIndex: JsonPrimitive? = null,
     val value: String? = null,
 ) {
@@ -117,6 +119,7 @@ internal data class FieldDto(
             recipientId = recipientId.orEmpty(),
             label = label.orEmpty(),
             defaultValue = defaultValue.orEmpty(),
+            required = required ?: true,
             documentIndex = documentIndex?.intOrNull ?: 0,
             value = value.orEmpty(),
         )

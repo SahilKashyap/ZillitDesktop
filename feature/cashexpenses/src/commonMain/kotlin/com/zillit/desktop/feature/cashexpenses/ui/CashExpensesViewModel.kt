@@ -649,9 +649,46 @@ class CashExpensesViewModel(
         }
     }
 
+    /**
+     * Why this person may not do [action], or null if they may.
+     *
+     * Mirrors the screens exactly: `QueuePage` offers Approve to an approver,
+     * `FloatPages` offers the whole float lifecycle to an accountant, the
+     * override actions read their own predicate, and reconciliation sign-off
+     * is a senior's.
+     */
+    private fun refusalFor(action: ConfirmAction): String? {
+        val viewer = currentState.viewer
+        val allowed = when (action) {
+            ConfirmAction.ApproveFloat, ConfirmAction.ApproveBatch -> viewer.isApprover
+            ConfirmAction.OverrideFloat -> viewer.canOverrideFloat()
+            ConfirmAction.OverrideBatch -> viewer.canOverrideBatch()
+            ConfirmAction.ReadyToCollect, ConfirmAction.CollectFloat,
+            ConfirmAction.CloseFloat, ConfirmAction.IssueFloat,
+            ConfirmAction.PostBatch,
+            -> viewer.isAccountant
+            ConfirmAction.SignOffReconciliation -> viewer.isSenior
+            else -> true
+        }
+        return if (allowed) null else "You do not have the rights to do that on this production."
+    }
+
     @Suppress("CyclomaticComplexMethod") // One branch per confirmable action.
     private fun resolveConfirm(prompt: CashPrompt.Confirm) {
         val id = prompt.targetId
+        // Each action carries the right its own screen asks for. The
+        // dispatch below went straight to the repository, so a prompt
+        // arriving here approved, posted or closed money with no check of
+        // its own — the screens gated it and the handler trusted them.
+        //
+        // Only the actions whose screen gate was read are listed. The
+        // claimant's own steps (submit, verify, code, top-up) are not here:
+        // they are a person acting on their own claim, and inventing a rule
+        // for them would refuse work nobody refuses today.
+        refusalFor(prompt.action)?.let { reason ->
+            sendEffect(CashEffect.Failed(reason))
+            return
+        }
         when (prompt.action) {
             ConfirmAction.ApproveFloat -> act("Float approved") { repository.approveFloat(id, null) }
             ConfirmAction.OverrideFloat -> act("Float overridden") { repository.overrideFloat(id) }

@@ -8,6 +8,7 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDelivery
 import com.zillit.desktop.feature.callsheet.domain.CallSheetRepository
 import com.zillit.desktop.feature.callsheet.domain.CallSheetStatus
+import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
 import com.zillit.desktop.feature.callsheet.domain.CompanySeed
 import com.zillit.desktop.feature.callsheet.domain.ComposeSheet
 import com.zillit.desktop.feature.callsheet.domain.InternalApprover
@@ -202,11 +203,41 @@ class CallSheetViewModel(
                         }
                     }
             }
+            // Finalized is the publishing bucket, and it belongs to the people
+            // the sheet belongs to. Both phones scope it: the web only offers
+            // Publish when `createdById === currentUserId`, and Android's
+            // Finalized tab keeps the approved sheets "relevant to the user",
+            // filtered by their own approval requests. Unscoped, every author
+            // on the production could publish anyone's approved call sheet out
+            // to the whole crew.
             ApprovalBucket.Finalized -> load {
-                repository.sheets(project, listOf(CallSheetStatus.ApprovedForPublish))
-                    .also { result -> ifOk(result) { setState { copy(finalized = it) } } }
+                val approved = listOf(CallSheetStatus.ApprovedForPublish)
+                val mine = repository.sheets(project, approved, createdById = me)
+                val toApprove = repository.sheets(project, approved, approverId = me)
+                combined(mine, toApprove).also { result ->
+                    ifOk(result) { setState { copy(finalized = it) } }
+                }
             }
         }
+    }
+
+    /**
+     * Both scoped queries as one list, de-duplicated by sheet id.
+     *
+     * A sheet this person raised *and* approved comes back from both, and a
+     * failure on either side is the whole bucket's failure — a half-loaded
+     * publishing list is worse than an error.
+     */
+    private fun combined(
+        first: ZillitResult<List<CallSheetSummary>>,
+        second: ZillitResult<List<CallSheetSummary>>,
+    ): ZillitResult<List<CallSheetSummary>> = when {
+        first is ZillitResult.Failure -> first
+        second is ZillitResult.Failure -> second
+        else -> ZillitResult.Success(
+            ((first as ZillitResult.Success).data + (second as ZillitResult.Success).data)
+                .distinctBy { it.id },
+        )
     }
 
     private suspend fun <T> load(block: suspend () -> ZillitResult<T>) {

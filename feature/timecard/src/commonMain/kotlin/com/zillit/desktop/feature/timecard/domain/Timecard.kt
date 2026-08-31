@@ -132,6 +132,21 @@ enum class DayType(val wire: String?, val label: String) {
     /** Whether hours entered on this day count towards pay. */
     val isPaidWork: Boolean get() = this == Worked || this == Travel
 
+    /**
+     * Whether this day is *known* to pay nothing.
+     *
+     * The web's `NON_PAID_DAY_TYPES` names four and no more — `REST`,
+     * `Holiday`, `Sick`, `Sick (Unpaid)`. Everything else it knows about
+     * pays, including the flat-pay `Prep`/`Wrap`/`Post`/`Turnaround` family
+     * this port has no bucket for and files under [Unknown].
+     *
+     * Deliberately not `!isPaidWork`: a day whose type this port does not
+     * model is not a day nobody worked, and refusing what it does not
+     * understand blocked a whole week from being filed over a prep-day
+     * allowance.
+     */
+    val isKnownUnpaid: Boolean get() = this == Rest || this == Holiday || this == Sick
+
     companion object {
         /**
          * Reads codes and legacy labels alike: the wire carries codes for the
@@ -397,8 +412,12 @@ data class TimecardDraft(
             "Every allowance needs an amount."
 
         // An allowance on a day nobody worked is almost always a mis-click on
-        // the row above, and it is paid before anyone notices.
-        days.any { day -> !day.dayType.isPaidWork && day.allowances.isNotEmpty() } ->
+        // the row above, and it is paid before anyone notices. Only days this
+        // port *knows* pay nothing count — see [DayType.isKnownUnpaid]; an
+        // unmodelled flat-pay type must not block the week.
+        days.any { day ->
+            (day.dayType.isKnownUnpaid || day.dayType == DayType.NotWorked) && day.allowances.isNotEmpty()
+        } ->
             "Allowances can only be claimed on a day that was worked."
 
         else -> null

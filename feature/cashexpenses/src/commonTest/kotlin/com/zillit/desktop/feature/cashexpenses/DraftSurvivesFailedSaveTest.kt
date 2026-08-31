@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.cashexpenses
 
+import com.zillit.desktop.feature.cashexpenses.ui.ConfirmAction
+import com.zillit.desktop.feature.cashexpenses.ui.CashPrompt
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
@@ -120,6 +122,8 @@ class DraftSurvivesFailedSaveTest {
     private class FakeCash(var writesSucceed: Boolean) : CashRepository {
         var floatRequests = 0
         var codingSaves = 0
+        var floatApprovals = 0
+        var floatCloses = 0
 
         private fun <T> fail(): ZillitResult<T> =
             ZillitResult.Failure(ZillitError.NoConnection(technical = "test: offline"))
@@ -149,13 +153,19 @@ class DraftSurvivesFailedSaveTest {
         override suspend fun activeFloats(): ZillitResult<List<CashFloat>> = fail()
         override suspend fun floatApprovalQueue(): ZillitResult<List<CashFloat>> = fail()
         override suspend fun floatHistory(floatId: String): ZillitResult<List<CashHistoryEntry>> = fail()
-        override suspend fun approveFloat(floatId: String, note: String?): ZillitResult<Unit> = fail()
+        override suspend fun approveFloat(floatId: String, note: String?): ZillitResult<Unit> {
+            floatApprovals++
+            return if (writesSucceed) ZillitResult.Success(Unit) else fail()
+        }
         override suspend fun rejectFloat(floatId: String, reason: String): ZillitResult<Unit> = fail()
         override suspend fun overrideFloat(floatId: String): ZillitResult<Unit> = fail()
         override suspend fun markFloatReadyToCollect(floatId: String, companyId: String?): ZillitResult<Unit> = fail()
         override suspend fun issueFloat(floatId: String): ZillitResult<Unit> = fail()
         override suspend fun collectFloat(floatId: String): ZillitResult<Unit> = fail()
-        override suspend fun closeFloat(floatId: String): ZillitResult<Unit> = fail()
+        override suspend fun closeFloat(floatId: String): ZillitResult<Unit> {
+            floatCloses++
+            return if (writesSucceed) ZillitResult.Success(Unit) else fail()
+        }
         override suspend fun recordCashReturn(floatId: String, amount: Double, note: String?): ZillitResult<Unit> =
             fail()
 
@@ -247,4 +257,48 @@ class DraftSurvivesFailedSaveTest {
             ),
         )
     }
+    /**
+     * The queue only offers Approve to an approver, and this is the money.
+     *
+     * `resolveConfirm` dispatched every confirmable action straight to the
+     * repository with no rights check of its own, so a prompt reaching it
+     * approved a float or a batch outright. The screens gate it
+     * (`QueuePage` on `viewer.isApprover`); the handler did not.
+     */
+    @Test
+    fun `a non-approver cannot approve a float`() = runTest(dispatcher) {
+        val repository = FakeCash(writesSucceed = true)
+        val vm = viewModel(repository)
+
+        vm.onEvent(
+            CashEvent.Ask(
+                CashPrompt.Confirm(ConfirmAction.ApproveFloat, "f1", "Approve this float", ""),
+            ),
+        )
+        vm.onEvent(CashEvent.ConfirmPrompt)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(0, repository.floatApprovals, "a non-approver approved a float")
+    }
+
+    /**
+     * The float lifecycle is an accountant's, per `FloatPages` — the whole
+     * action column renders "—" for anyone else. Closing a float is final.
+     */
+    @Test
+    fun `a non-accountant cannot close a float`() = runTest(dispatcher) {
+        val repository = FakeCash(writesSucceed = true)
+        val vm = viewModel(repository)
+
+        vm.onEvent(
+            CashEvent.Ask(
+                CashPrompt.Confirm(ConfirmAction.CloseFloat, "f1", "Close this float", ""),
+            ),
+        )
+        vm.onEvent(CashEvent.ConfirmPrompt)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(0, repository.floatCloses, "a non-accountant closed a float")
+    }
+
 }

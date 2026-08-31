@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.maps
 
+import com.zillit.desktop.feature.maps.domain.MapViewer
 import com.zillit.desktop.feature.maps.data.locationWire
 import com.zillit.desktop.feature.maps.data.zoneWire
 import com.zillit.desktop.feature.maps.domain.Geo
@@ -63,4 +64,20 @@ class MapWireTest {
         assertFalse(Geo.within(18.5286, 73.8743, 18.9398, 72.8355, 30.0))
         assertEquals(0.0, Geo.distanceMeters(1.0, 1.0, 1.0, 1.0))
     }
+    /**
+     * Rights as issued: owning the production does not put pins on its map.
+     *
+     * Android reads the tool's row and nothing else — `if (viewAccess ==
+     * false) finish() else hasPermission = postingAccess` — the web's map
+     * module never mentions `is_admin`, and `MAP_TOOL` is not among the tools
+     * iOS admin-excepts for download. This port had `isAdmin || canPost`.
+     */
+    @Test
+    fun `a project admin does not inherit map editing`() {
+        val admin = MapViewer(canView = false, canPost = false, isAdmin = true, ready = true)
+
+        assertFalse(admin.mayEdit, "an admin without posting rights could edit the map")
+        assertTrue(admin.isBlocked, "an admin without view rights still opened the map")
+    }
+
 }

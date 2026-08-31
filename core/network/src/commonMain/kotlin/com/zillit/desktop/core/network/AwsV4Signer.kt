@@ -54,6 +54,12 @@ object AwsV4Signer {
 
     private const val ALGORITHM = "AWS4-HMAC-SHA256"
 
+    /** The only header a browser or bare client is sure to send. */
+    private const val SIGNED_HEADER = "host"
+
+    /** What a body-less GET signs as. */
+    private const val UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD"
+
     /**
      * The `Authorization` header value.
      *
@@ -94,6 +100,65 @@ object AwsV4Signer {
 
         return "$ALGORITHM Credential=$accessKey/$scope, " +
             "SignedHeaders=$signedHeaders, Signature=$signature"
+    }
+
+    /**
+     * A presigned GET URL — signature in the query string rather than a header.
+     *
+     * Needed wherever the fetcher cannot carry an `Authorization` header: the
+     * OS browser opening a document, or a bare HTTP client fetching bytes for
+     * a production whose files live in S3. Both phones do the same thing
+     * through the AWS SDK's `generatePresignedUrl`.
+     *
+     * Only `host` is signed, because it is the only header the eventual
+     * fetcher is guaranteed to send. The payload is `UNSIGNED-PAYLOAD`, which
+     * is what a GET with no body signs as.
+     *
+     * [ttlSeconds] is how long the URL stays good; AWS refuses more than seven
+     * days.
+     */
+    fun presignedUrl(
+        request: AwsRequest,
+        accessKey: String,
+        secretKey: String,
+        ttlSeconds: Int,
+        hmacSha256: (key: ByteArray, data: String) -> ByteArray,
+        sha256Hex: (String) -> String,
+    ): String {
+        val date = request.timestamp.substringBefore('T')
+        val scope = "$date/${request.region}/${request.service}/aws4_request"
+
+        // Sorted by name, and each part encoded the way the signature reads it
+        // — the credential's slashes become %2F or the signatures disagree.
+        val query = listOf(
+            "X-Amz-Algorithm" to ALGORITHM,
+            "X-Amz-Credential" to "$accessKey/$scope",
+            "X-Amz-Date" to request.timestamp,
+            "X-Amz-Expires" to ttlSeconds.toString(),
+            "X-Amz-SignedHeaders" to SIGNED_HEADER,
+        ).sortedBy { it.first }
+            .joinToString("&") { (name, value) -> "${uriEncode(name)}=${uriEncode(value)}" }
+
+        val canonicalRequest = listOf(
+            request.method,
+            request.path,
+            query,
+            "$SIGNED_HEADER:${request.host}\n",
+            SIGNED_HEADER,
+            UNSIGNED_PAYLOAD,
+        ).joinToString("\n")
+
+        val stringToSign = listOf(
+            ALGORITHM,
+            request.timestamp,
+            scope,
+            sha256Hex(canonicalRequest),
+        ).joinToString("\n")
+
+        val signingKey = signingKey(secretKey, date, request.region, request.service, hmacSha256)
+        val signature = hmacSha256(signingKey, stringToSign).toHex()
+
+        return "https://${request.host}${request.path}?$query&X-Amz-Signature=$signature"
     }
 
     /** Every header that gets signed, lowercased and sorted as the spec requires. */
@@ -138,6 +203,15 @@ object AwsV4Signer {
  */
 fun s3KeyPath(key: String): String =
     "/" + key.split('/').joinToString("/") { segment -> uriEncodeSegment(segment) }
+
+/**
+ * One RFC 3986 encoding, used for both a path segment and a query part.
+ *
+ * `/` is *not* unreserved, so it encodes — which is what a query value needs
+ * (the credential's scope is full of slashes) and what [s3KeyPath] relies on
+ * by splitting the key first and joining the results back with a literal `/`.
+ */
+internal fun uriEncode(value: String): String = uriEncodeSegment(value)
 
 private fun uriEncodeSegment(segment: String): String = buildString {
     for (byte in segment.encodeToByteArray()) {

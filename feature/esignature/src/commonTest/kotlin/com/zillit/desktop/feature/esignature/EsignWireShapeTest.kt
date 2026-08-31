@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.esignature
 
+import kotlin.test.assertFalse
+import com.zillit.desktop.feature.esignature.data.FieldDto
 import com.zillit.desktop.feature.esignature.data.EnvelopeDto
 import com.zillit.desktop.feature.esignature.data.signedFieldWire
 import com.zillit.desktop.feature.esignature.domain.EnvelopeStatus
@@ -130,4 +132,35 @@ class EsignWireShapeTest {
             json.decodeFromString(EnvelopeDto.serializer(), """{"title":"x"}""").toDomain(),
         )
     }
+    /**
+     * A tab is required unless the wire says otherwise.
+     *
+     * Android declares `required: Boolean = true` on every tab
+     * (`DocuSignDtos`) and refuses the whole submit with "Please complete
+     * every required field." This port read no such flag and sent a blank
+     * Text field's default value instead, completing a legally binding
+     * envelope with mandatory fields empty.
+     */
+    @Test
+    fun `a tab with no required flag is required`() {
+        val field = json.decodeFromString(
+            FieldDto.serializer(),
+            """{"_id":"t1","type":"text","page":1,"x":10,"y":10}""",
+        ).toDomain()
+
+        assertNotNull(field)
+        assertTrue(field.required, "an unflagged tab must not read as optional")
+    }
+
+    @Test
+    fun `an explicitly optional tab is optional`() {
+        val field = json.decodeFromString(
+            FieldDto.serializer(),
+            """{"_id":"t1","type":"text","page":1,"x":10,"y":10,"required":false}""",
+        ).toDomain()
+
+        assertNotNull(field)
+        assertFalse(field.required)
+    }
+
 }

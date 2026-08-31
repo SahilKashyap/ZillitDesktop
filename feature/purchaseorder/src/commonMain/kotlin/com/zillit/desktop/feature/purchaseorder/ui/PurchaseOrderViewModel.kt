@@ -619,9 +619,34 @@ class PurchaseOrderViewModel(
 
     // -- actions on existing orders --------------------------------------------
 
+    /**
+     * Whether this person may not carry out [prompt].
+     *
+     * Posting and closing are an accountant's (`PurchaseOrderScreen`), and
+     * deleting is the raiser's own order. Approve and reject are absent on
+     * purpose: the approval queue only ever holds what was routed to this
+     * person, so it is scoped by data rather than by a right.
+     */
+    private fun refusesPrompt(prompt: PoPrompt): Boolean {
+        val confirm = prompt as? PoPrompt.Confirm ?: return false
+        val order = currentState.orders.firstOrNull { it.id == confirm.targetId }
+        val allowed = when (confirm.action) {
+            PoConfirmAction.Post, PoConfirmAction.Close,
+            PoConfirmAction.CloseSelected,
+            -> currentState.viewer.isAccountant
+            PoConfirmAction.Delete -> order == null || currentState.viewer.owns(order)
+            else -> true
+        }
+        return !allowed
+    }
+
     private fun resolvePrompt() {
         val prompt = currentState.prompt ?: return
         setState { copy(prompt = null) }
+        if (refusesPrompt(prompt)) {
+            sendEffect(PoEffect.Failed("You do not have the rights to do that on this production."))
+            return
+        }
         when (prompt) {
             is PoPrompt.Confirm -> when (prompt.action) {
                 PoConfirmAction.Approve -> act("Order approved") { repository.approve(prompt.targetId, null) }

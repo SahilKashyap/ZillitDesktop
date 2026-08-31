@@ -74,13 +74,32 @@ data class LibraryDocument(
     /** `YYYY-MM-DD`, or blank when the server filed it undated. */
     val documentDate: String = "",
     val createdAt: Long? = null,
-    /** Object key, when the production stores in S3. Absent on LOCAL projects. */
-    val storageKey: String? = null,
+    /**
+     * Where the bytes live, when the production stores in S3.
+     *
+     * Null on a LOCAL production, whose bytes are proxied by the server
+     * instead. Both phones decide the same way — storage is a property of the
+     * *document*, not the project: `attachment != null` means S3.
+     */
+    val storage: DocumentStorage? = null,
 ) {
     /** Whether the watermark pipeline can stamp this — PDFs and raster images. */
     val isWatermarkable: Boolean
         get() = mediaKind == MediaKind.Pdf || mediaKind == MediaKind.Image
 }
+
+/**
+ * An S3 object, as the listing names it.
+ *
+ * Enough to presign a GET and no more: the desktop cannot open the server's
+ * `/raw` proxy (that route needs the app's encrypted headers, which a browser
+ * does not send), so an S3 document is reached by a presigned URL instead.
+ */
+data class DocumentStorage(
+    val key: String,
+    val bucket: String,
+    val region: String,
+)
 
 /** Someone a distribution can go to. */
 data class Recipient(

@@ -245,7 +245,7 @@ private fun FileRow(state: BudgetUiState, document: BudgetDocument, onEvent: (Bu
             variant = ButtonVariant.Secondary,
             leadingIcon = ZillitIcons.Eye,
         )
-        if (state.viewer.canDownload) {
+        if (state.viewer.canDownload(document.type)) {
             ZillitButton(
                 text = "Download",
                 onClick = { onEvent(BudgetEvent.DownloadFile) },

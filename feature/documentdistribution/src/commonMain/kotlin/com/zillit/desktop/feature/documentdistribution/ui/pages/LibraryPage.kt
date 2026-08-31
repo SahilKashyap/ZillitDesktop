@@ -431,10 +431,14 @@ private fun MoveItemsDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> Un
             modifier = Modifier.fillMaxWidth().height(MOVE_LIST_HEIGHT.dp),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
         ) {
+            // Shown even when it cannot be chosen, as Android does: a root
+            // that vanishes reads as a missing destination, where a dimmed one
+            // with a reason reads as a rule.
             DestinationRow(
-                label = "Library root",
+                label = if (state.rootForbidden) "Library root · files must be in a folder" else "Library root",
                 indent = 0,
-                selected = move.destinationId == null,
+                selected = move.destinationId == null && !state.rootForbidden,
+                enabled = !state.rootForbidden,
                 onClick = { onEvent(DocDistEvent.ChooseMoveDestination(null)) },
             )
             destinations.forEach { destination ->
@@ -459,7 +463,11 @@ private fun MoveItemsDialog(state: DocDistUiState, onEvent: (DocDistEvent) -> Un
                 text = "Move here",
                 onClick = { onEvent(DocDistEvent.ConfirmMove) },
                 loading = move.saving,
-                enabled = !move.saving && state.selectionCount > 0,
+                // A destination must be picked when the root is barred:
+                // "Move here" with nothing chosen would otherwise mean the
+                // root, which is the one place these files may not go.
+                enabled = !move.saving && state.selectionCount > 0 &&
+                    (move.destinationId != null || !state.rootForbidden),
             )
         }
     }
@@ -471,12 +479,14 @@ private fun DestinationRow(
     indent: Int,
     selected: Boolean,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     ZillitButton(
         text = "${"    ".repeat(indent)}$label",
         onClick = onClick,
         variant = if (selected) ButtonVariant.Secondary else ButtonVariant.Tertiary,
         size = ButtonSize.Small,
+        enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
     )
 }

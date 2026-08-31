@@ -62,11 +62,26 @@ data class FromToolFile(
 class FromToolPublisher(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /**
+     * Posting rights on Document Distribution, read at publish time.
+     *
+     * The board that calls this checks them too. Both layers is what the web
+     * does deliberately (`publishFromTool` refuses without `canPost` even
+     * though its caller has already asked) — this class is reachable from any
+     * tool's board, and a caller that forgets is a silent write into a library
+     * the person may only read.
+     */
+    private val canPost: () -> Boolean = { true },
 ) {
     private val base = "${config.baseUrl(ZillitService.DocDistribution)}/api/v2/document-distribution"
 
     /** Returns the server's document id. */
     suspend fun publish(file: FromToolFile): ZillitResult<String> {
+        if (!canPost()) {
+            return ZillitResult.Failure(
+                ZillitError.Validation("You do not have permission to distribute to Document Distribution."),
+            )
+        }
         // The two things the server hard-fails on, said before the round trip.
         if (file.name.isBlank() || !file.name.contains('.')) {
             return ZillitResult.Failure(

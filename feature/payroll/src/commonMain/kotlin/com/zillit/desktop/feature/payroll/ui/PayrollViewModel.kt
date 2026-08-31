@@ -444,6 +444,14 @@ class PayrollViewModel(
         val prompt = currentState.prompt ?: return
         setState { copy(prompt = null) }
 
+        // Marking a week paid, unpaid or posting it to the ledger is a
+        // payroll operator's act — the screen offers each only where
+        // `canOperate` holds (`PayrollScreen`), and this handler took
+        // whatever prompt reached it.
+        if (!currentState.viewer.canOperate) {
+            sendEffect(PayrollEffect.Failed("You do not have rights to operate payroll."))
+            return
+        }
         when (prompt) {
             is PayrollPrompt.Confirm -> when (prompt.action) {
                 PayrollConfirmAction.MarkPaid ->

@@ -6,6 +6,7 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.drive.domain.DriveAction
 import com.zillit.desktop.feature.drive.domain.DriveFileRequest
+import com.zillit.desktop.feature.drive.domain.DriveCrumb
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveItemKind
 import com.zillit.desktop.feature.drive.domain.DrivePage
@@ -147,9 +148,20 @@ class DriveViewModel(
             // -- browsing --------------------------------------------------
 
             is DriveEvent.OpenFolder -> {
+                // Read before the state changes: the folder being opened is a
+                // row of the folder being left.
+                val name = currentState.items.firstOrNull { it.id == event.folderId }?.name
                 setState {
                     copy(
                         folderId = event.folderId,
+                        // Kept as the user walks it. The service has no route
+                        // that returns a folder's ancestors — the one this
+                        // asked until 2026-08-27 answered 404 to every verb,
+                        // and the failure was swallowed, so every folder in
+                        // the Drive showed no trail at all. A page of children
+                        // never contains its own parents, so there is nothing
+                        // to reconstruct it from after the fact.
+                        breadcrumb = breadcrumb.walkedTo(event.folderId, name),
                         // Selection is per folder: carrying it across a
                         // navigation means a bulk delete hits rows the user can
                         // no longer see.
@@ -204,18 +216,18 @@ class DriveViewModel(
 
             // -- acting on items -------------------------------------------
 
-            is DriveEvent.CreateFolder -> mutate(
+            is DriveEvent.CreateFolder -> if (refuse(currentState.refusalToCreate())) Unit else mutate(
                 { repository.createFolder(event.name, currentState.folderId).asUnit() },
                 "Folder created",
             )
 
-            is DriveEvent.Rename -> mutate(
+            is DriveEvent.Rename -> if (refuse(currentState.refusalToEdit(listOf(event.ref)))) Unit else mutate(
                 { repository.rename(event.ref, event.name, event.description) },
                 "Renamed",
             )
 
             is DriveEvent.MoveTo -> {
-                if (event.refs.isEmpty()) return
+                if (event.refs.isEmpty() || refuse(currentState.refusalToEdit(event.refs))) return
                 mutate(
                     {
                         if (event.refs.size == 1) {
@@ -377,18 +389,29 @@ class DriveViewModel(
         setState { copy(loading = true, error = null) }
         loadJob = launch {
             val page = repository.contents(query(offset = 0))
-            // Only when inside a folder — the root has no chain to fetch, and
-            // asking for one is a 404 on every drive open.
-            val crumbs = currentState.folderId?.let { repository.breadcrumb(it) }
             setState {
                 copy(
                     loading = false,
-                    breadcrumb = crumbs?.getOrNull().orEmpty(),
                     error = (page as? ZillitResult.Failure)?.error?.userMessage,
                 )
             }
             (page as? ZillitResult.Success)?.let { applyPage(it.data, append = false) }
         }
+    }
+
+    /**
+     * The trail after opening [folderId].
+     *
+     * Clicking a crumb already on the trail walks back to it; anything else is
+     * a step deeper. Opening the root clears it. A folder reached without a
+     * name — from a move, or a window restored straight into it — appends
+     * nothing rather than a blank crumb.
+     */
+    private fun List<DriveCrumb>.walkedTo(folderId: String?, name: String?): List<DriveCrumb> {
+        if (folderId == null) return emptyList()
+        val already = indexOfFirst { it.id == folderId }
+        if (already >= 0) return take(already + 1)
+        return name?.let { this + DriveCrumb(id = folderId, name = it) } ?: this
     }
 
     private fun loadMore() {
@@ -489,6 +512,12 @@ class DriveViewModel(
      * the server checks each item, so a mixed selection partially succeeds, and
      * a dialog that promises twenty and removes seventeen is a dialog that lied.
      */
+    /** Reports [reason] if there is one, and says whether the write stops. */
+    private fun refuse(reason: String?): Boolean {
+        reason?.let { sendEffect(DriveEffect.Failed(it)) }
+        return reason != null
+    }
+
     private fun requestDelete(refs: List<DriveRef>) {
         val state = currentState
         val items = state.items.filter { item -> refs.any { it.id == item.id } }

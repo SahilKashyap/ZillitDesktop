@@ -14,7 +14,8 @@ data class BudgetViewer(
     val canPostMain: Boolean = false,
     val canViewDepartment: Boolean = false,
     val canPostDepartment: Boolean = false,
-    val canDownload: Boolean = false,
+    val canDownloadMain: Boolean = false,
+    val canDownloadDepartment: Boolean = false,
     /** False until `project/tools` has answered — not a denial. See [from]. */
     val resolved: Boolean = false,
 ) {
@@ -34,6 +35,25 @@ data class BudgetViewer(
      */
     val departmentOnly: Boolean get() = !canViewMain && !canPostMain
 
+    /**
+     * Whether this person may take a copy of [type]'s file.
+     *
+     * Per budget, not per screen. iOS picks the right off the matching tool —
+     * `MAIN_BUDGET_TOOL` for the production's budget, `DEPARTMENT_BUDGET_TOOL`
+     * for a department's (`BudgetDetailVC`) — where this port OR-ed the two
+     * into one flag, so download rights on a department budget also opened the
+     * production's, which is the more sensitive of the two.
+     */
+    fun canDownload(type: BudgetType): Boolean = when (type) {
+        BudgetType.Main -> canDownloadMain
+        BudgetType.Department -> canDownloadDepartment
+        // A budget whose type this port does not recognise is not one to hand
+        // out. The opposite default to a *validation* — refusing to understand
+        // a day type blocks a person's own timecard, where refusing to
+        // understand a budget only withholds a file they can still ask for.
+        BudgetType.Unknown -> false
+    }
+
     companion object {
         const val MAIN_TOOL = "main_budget_tool"
         const val DEPARTMENT_TOOL = "department_budget_tool"
@@ -52,7 +72,11 @@ data class BudgetViewer(
                 canPostMain = main?.canPost == true,
                 canViewDepartment = department?.canView == true,
                 canPostDepartment = department?.canPost == true,
-                canDownload = main?.canDownload == true || department?.canDownload == true,
+                // The admin exception is iOS's, on this tool specifically:
+                // `guard (hasAdminAccess || hasDownloadAccess)`, with an offer
+                // to ask an admin for the right otherwise.
+                canDownloadMain = main?.canDownload == true || permissions.isAdmin,
+                canDownloadDepartment = department?.canDownload == true || permissions.isAdmin,
                 resolved = true,
             )
         }

@@ -18,6 +18,8 @@ import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistRefresh
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistRepository
+import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
+import com.zillit.desktop.feature.documentdistribution.domain.DocumentStorage
 import kotlinx.coroutines.flow.Flow
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
@@ -64,6 +66,14 @@ class DocDistRepositoryImpl(
     config: AppConfig,
     /** Null keeps the tool socket-less — tests, and hosts without a bus. */
     bus: SocketEventBus? = null,
+    /**
+     * Turns an S3 object into a presigned GET URL.
+     *
+     * Injected because the signing primitives are the platform's. Null — or a
+     * null answer — means this host cannot presign, and the document simply
+     * cannot be opened, which is reported rather than guessed at.
+     */
+    private val presign: suspend (DocumentStorage) -> String? = { null },
 ) : DocDistRepository {
 
     /** See [DocDistRepository.refreshes] and [docDistRefreshes]. */
@@ -161,13 +171,36 @@ class DocDistRepositoryImpl(
      * what keeps preview, download and watermark from each carrying their own
      * copy of the branch — the web has three.
      */
-    override suspend fun downloadUrl(documentId: String): ZillitResult<String> =
-        apiClient.requestOrNull(
-            verb = HttpVerb.Get,
-            url = "$base/documents/$documentId/download-url",
-            serializer = UrlDto.serializer(),
-            module = RequestModule.ProjectUser,
-        ).map { it?.value ?: "$base/documents/$documentId/raw" }
+    /**
+     * Where to fetch a document's bytes from.
+     *
+     * S3 documents get a presigned URL, which is the only form the OS browser
+     * can open: the server's `/documents/:id/raw` proxy answers only to the
+     * app's encrypted headers, and a browser sends none of them. Both phones
+     * split the same way — `attachment != null` is S3, everything else is the
+     * proxy.
+     *
+     * There was a `/documents/:id/download-url` endpoint here until
+     * 2026-08-27. It does not exist: every open and every download in this
+     * tool came back 404, and the `/raw` fallback beneath it was unreachable
+     * because a 404 is a failure, not a null body.
+     */
+    override suspend fun documentUrl(document: LibraryDocument): ZillitResult<String> {
+        val storage = document.storage
+            ?: return ZillitResult.Failure(
+                ZillitError.Storage(
+                    technical = "document ${document.id} has no S3 attachment",
+                    userMessage = "This file is stored on the server and cannot be opened from the desktop yet.",
+                ),
+            )
+        return presign(storage)?.let { ZillitResult.Success(it) }
+            ?: ZillitResult.Failure(
+                ZillitError.Storage(
+                    technical = "no AWS credentials, or an incomplete attachment",
+                    userMessage = "This file cannot be opened — the workspace has no file storage configured.",
+                ),
+            )
+    }
 
     // -- distribution lists ------------------------------------------------
 

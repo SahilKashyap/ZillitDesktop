@@ -476,6 +476,15 @@ class ComposeViewModel(
             setState { copy(error = "Add at least one valid recipient.") }
             return
         }
+        // The button is already disabled while a file is in flight, but this is
+        // the send itself: [areSettled] is the reason, and a message that goes
+        // now names objects that do not exist yet. The web says the same
+        // ("Please wait while files are uploading") rather than sending a mail
+        // whose attachment never appears.
+        if (!currentState.attachments.areSettled) {
+            setState { copy(error = "Please wait while files finish uploading.") }
+            return
+        }
 
         // No *new* autosave may land after this: the send carries the draft id
         // so the server deletes it, and a save arriving afterwards would

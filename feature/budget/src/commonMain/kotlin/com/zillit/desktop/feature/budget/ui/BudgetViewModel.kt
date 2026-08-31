@@ -160,7 +160,7 @@ class BudgetViewModel(
             setState { copy(error = "There is no file on this budget yet.") }
             return
         }
-        if (save && !currentState.viewer.canDownload) {
+        if (save && !currentState.viewer.canDownload(document.type)) {
             setState { copy(error = "You do not have download rights for this budget.") }
             return
         }

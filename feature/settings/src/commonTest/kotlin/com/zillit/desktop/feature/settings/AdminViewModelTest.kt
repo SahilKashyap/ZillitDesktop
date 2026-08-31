@@ -691,4 +691,28 @@ class AdminViewModelTest {
 
         assertTrue(repository.calls.contains("cancelDeletion"))
     }
+    /**
+     * Every write on this surface rewrites the production's own rights —
+     * granting administrator among them. The screen refuses a non-admin
+     * before drawing a control (`AdminSettingsScreen` renders `NotAnAdmin()`
+     * and returns), but the view model took whatever event reached it.
+     */
+    @Test
+    fun `a non-admin cannot change the production`() = runTest {
+        val repository = Recorder()
+        val model = AdminViewModel(
+            repository,
+            productionName = { "Feature One" },
+            isAdmin = { false },
+        )
+
+        model.onEvent(AdminEvent.CancelDeletion)
+
+        assertTrue(
+            repository.calls.isEmpty(),
+            "a non-admin changed the production: ${repository.calls}",
+        )
+        assertNotNull(model.state.value.error)
+    }
+
 }

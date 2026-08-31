@@ -170,4 +170,58 @@ class PurchaseOrderTest {
         assertEquals(2_750.0, order.total)
         assertNotNull(order.nominalCode)
     }
+    /**
+     * Full access is two rules, not one.
+     *
+     * The web gates the accountant console on the senior designation and says
+     * twice that `is_admin` must not bypass it ("Admin alone must NOT bypass
+     * the assignment-based row gate"), while the department queue is gated on
+     * `is_admin` alone. This port ORed them together, so any admin in the
+     * accounts department saw every order on the production.
+     */
+    @Test
+    fun `an accounts admin who is not senior does not see every order`() {
+        val adminInAccounts = PoViewer(
+            userId = "u1",
+            departmentIdentifier = "designation_1st_assistant_accountant_accounts",
+            designationIdentifier = "designation_1st_assistant_accountant_accounts",
+            isProjectAdmin = true,
+        )
+
+        assertTrue(adminInAccounts.isAccountant, "accounts department puts them in the console view")
+        assertFalse(adminInAccounts.hasFullAccess, "admin bypassed the accountant gate")
+    }
+
+    @Test
+    fun `a production accountant sees every order`() {
+        val senior = PoViewer(
+            userId = "u1",
+            departmentIdentifier = "department_accounts",
+            designationIdentifier = "designation_production_accountant_accounts",
+        )
+
+        assertTrue(senior.hasFullAccess)
+    }
+
+    /** The department queue keeps its own rule: the project-owner flag. */
+    @Test
+    fun `outside accounts the project admin still sees every order`() {
+        val admin = PoViewer(
+            userId = "u1",
+            departmentIdentifier = "department_art",
+            designationIdentifier = "designation_art_director_art",
+            isProjectAdmin = true,
+        )
+
+        assertFalse(admin.isAccountant)
+        assertTrue(admin.hasFullAccess, "the department queue is gated on is_admin")
+    }
+
+    @Test
+    fun `outside accounts a non-admin sees only their own`() {
+        val crew = PoViewer("u1", "department_art", "designation_art_director_art")
+
+        assertFalse(crew.hasFullAccess)
+    }
+
 }

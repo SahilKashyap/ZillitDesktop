@@ -161,13 +161,31 @@ data class PoViewer(
         get() = !enteredAsTool && departmentIdentifier?.contains(ACCOUNTS, ignoreCase = true) == true
 
     /**
-     * Production Accountant and Financial Controller see every order on the
-     * production; everyone else sees their own and whatever is routed to them.
+     * Production Accountant or Financial Controller — senior by role.
+     *
+     * The same two designations the web treats as senior everywhere
+     * (`isSeniorAccountant` in `accountHub/utils/po-permissions.js`): they are
+     * final approver and payroll accountant across PO, invoices, card and cash
+     * as well as here.
      */
-    val hasFullAccess: Boolean
-        get() = isProjectAdmin || designationIdentifier.normalisedRole().let { value ->
+    val isSeniorAccountant: Boolean
+        get() = designationIdentifier.normalisedRole().let { value ->
             value.isNotEmpty() && SENIOR_DESIGNATIONS.any { value.contains(it) }
         }
+
+    /**
+     * Who sees every order on the production — and it is not one rule.
+     *
+     * The web gates the two views differently and says so twice:
+     * `canAccessAnyPO_accountant` is the senior designation **and explicitly
+     * not `is_admin`** ("Admin alone must NOT bypass the assignment-based row
+     * gate"), while `canAccessAnyPO_department` is `is_admin` alone. Folding
+     * them into one `isProjectAdmin || senior` handed the accountant console
+     * to any admin in the accounts department, which is the half the web
+     * refuses.
+     */
+    val hasFullAccess: Boolean
+        get() = if (isAccountant) isSeniorAccountant else isProjectAdmin
 
     /**
      * Whether [order] is this person's to act on.

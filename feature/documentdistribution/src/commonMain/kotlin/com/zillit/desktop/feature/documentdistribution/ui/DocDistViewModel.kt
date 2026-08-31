@@ -509,6 +509,7 @@ class DocDistViewModel(
     // -- publishing --------------------------------------------------------
 
     private fun openPublish() {
+        if (refusesWrite()) return
         val documents = currentState.selectedDocumentIds.toList()
         if (documents.isEmpty()) {
             report(ZillitError.Unknown("Choose at least one document to publish."))
@@ -589,8 +590,16 @@ class DocDistViewModel(
         val documents = currentState.selectedDocumentIds.toList()
         val moved = folders.size + documents.size
         if (moved == 0) return
+        if (refusesWrite()) return
         if (folders.any { it == folderId }) {
             report(ZillitError.Unknown("A folder cannot be moved into itself."))
+            return
+        }
+        // The dialog bars the root row when files are selected; this is the
+        // backstop behind it, because the destination also arrives from paths
+        // the dialog does not own.
+        if (documents.isNotEmpty() && folderId == null) {
+            report(ZillitError.Unknown("Files must be moved into a folder, not the root."))
             return
         }
         if (closesDialog) setState { copy(moveTarget = moveTarget?.copy(saving = true)) }
@@ -629,11 +638,26 @@ class DocDistViewModel(
         return null
     }
 
+    /**
+     * Refuses a write this person has no posting rights for.
+     *
+     * The buttons are already hidden without them, but the web keeps the same
+     * two layers deliberately (`requirePost()` in every handler) — a stale
+     * window, a socket-driven reload or a repeated action can reach a handler
+     * whose button is long gone.
+     */
+    private fun refusesWrite(): Boolean {
+        if (currentState.viewer.canPost) return false
+        sendEffect(DocDistEffect.Failed("You do not have posting rights for Document Distribution."))
+        return true
+    }
+
     private fun mutate(
         block: suspend () -> ZillitResult<Unit>,
         success: String,
         onDone: () -> Unit = {},
     ) {
+        if (refusesWrite()) return
         launch {
             when (val result = block()) {
                 is ZillitResult.Success -> {
@@ -826,8 +850,14 @@ class DocDistViewModel(
             sendEffect(DocDistEffect.Failed("You do not have download rights for this tool."))
             return
         }
+        // Found on the rows in hand: where a document's bytes live comes back
+        // with the listing, and the server has no route that will tell us
+        // again.
+        val document = currentState.documents.firstOrNull { it.id == documentId }
+            ?: return report(ZillitError.Unknown("That file is no longer in this folder."))
+
         launch {
-            when (val url = repository.downloadUrl(documentId)) {
+            when (val url = repository.documentUrl(document)) {
                 is ZillitResult.Success -> sendEffect(DocDistEffect.OpenUrl(url.data))
                 is ZillitResult.Failure -> report(url.error)
             }

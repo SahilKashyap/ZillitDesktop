@@ -37,9 +37,19 @@ data class InvoiceViewer(
 
     val canOverride: Boolean get() = overrideFlag == true || isSenior
 
-    val isBlocked: Boolean get() = ready && !canView && !isAdmin
+    /**
+     * Rights as issued, with no project-admin bypass.
+     *
+     * The web's invoice entry page reads `ADMIN_DESIGNATIONS` — which is the
+     * same two senior designations, Production Accountant and Financial
+     * Controller — not the project-owner flag. Owning the production is not
+     * the same as running its ledger, and the phones list every tool from the
+     * user's own `view_access` without consulting `isAdmin` either.
+     */
+    val isBlocked: Boolean get() = ready && !canView
 
-    val mayPost: Boolean get() = canPost || isAdmin
+    /** `if (isAdmin) setCanPost(true)` on the web, where that admin is PA/FC. */
+    val mayPost: Boolean get() = canPost || hasSeniorDesignation
 
     fun withSettings(settings: InvoiceSettings): InvoiceViewer = copy(
         seniorFlag = settings.seniorFor(userId),

@@ -153,7 +153,14 @@ interface DocDistRepository {
      * want the file, and pulling megabytes through the API client to hand them
      * straight back out again would double the transfer for no benefit.
      */
-    suspend fun downloadUrl(documentId: String): ZillitResult<String>
+    /**
+     * A URL the OS browser can open for this document.
+     *
+     * Takes the document rather than its id: where the bytes live is on the
+     * row the listing already returned, and a second round trip to ask the
+     * server would hit a route that does not exist.
+     */
+    suspend fun documentUrl(document: LibraryDocument): ZillitResult<String>
 
     // -- distribution lists ------------------------------------------------
 

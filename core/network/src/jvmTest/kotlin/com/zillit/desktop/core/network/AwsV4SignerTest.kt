@@ -147,4 +147,64 @@ class AwsV4SignerTest {
         assertEquals("/p/caf%C3%A9%20%26%20co%2Bx.pdf", s3KeyPath("p/café & co+x.pdf"))
         assertEquals("/~tilde/", s3KeyPath("~tilde/"))
     }
+    /**
+     * AWS's own worked example for a presigned GET
+     * ("Example: Signature Calculation for Presigned URL", S3 developer guide).
+     *
+     * The whole reason this signer is hand-written rather than the SDK is that
+     * a mistake here is silent — a presigned URL that is wrong comes back 403
+     * with nothing to say which of the six steps drifted. So it is checked
+     * against the published signature, digit for digit.
+     */
+    @Test
+    fun `the published presigned-url example signs as AWS says it should`() {
+        val url = AwsV4Signer.presignedUrl(
+            request = AwsRequest(
+                method = "GET",
+                path = "/test.txt",
+                host = "examplebucket.s3.amazonaws.com",
+                payloadSha256 = "",
+                timestamp = "20130524T000000Z",
+                region = "us-east-1",
+            ),
+            accessKey = "AKIAIOSFODNN7EXAMPLE",
+            secretKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            ttlSeconds = 86_400,
+            hmacSha256 = ::hmac,
+            sha256Hex = ::sha256Hex,
+        )
+
+        assertTrue(
+            url.endsWith(
+                "&X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404",
+            ),
+            "signature disagrees with AWS's worked example: $url",
+        )
+        // The credential's slashes must travel encoded, or the signature the
+        // server recomputes reads a different string than the one signed.
+        assertTrue(
+            url.contains("X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request"),
+            "credential is not encoded as the signature reads it: $url",
+        )
+    }
+
+    /** A URL that has expired by the time it is opened is worse than none. */
+    @Test
+    fun `the expiry travels in the query, and changes the signature`() {
+        val request = AwsRequest(
+            method = "GET",
+            path = "/test.txt",
+            host = "examplebucket.s3.amazonaws.com",
+            payloadSha256 = "",
+            timestamp = "20130524T000000Z",
+            region = "us-east-1",
+        )
+        fun signed(ttl: Int) = AwsV4Signer.presignedUrl(
+            request, "AKIAIOSFODNN7EXAMPLE", "secret", ttl, ::hmac, ::sha256Hex,
+        )
+
+        assertTrue(signed(900).contains("X-Amz-Expires=900"))
+        assertTrue(signed(900) != signed(901), "expiry is not part of the signature")
+    }
+
 }

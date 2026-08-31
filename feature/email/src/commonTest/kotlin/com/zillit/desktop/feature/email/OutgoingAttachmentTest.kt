@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.email
 
+import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.email.domain.AttachmentUploader
@@ -139,6 +141,36 @@ class OutgoingAttachmentTest {
         advanceUntilIdle()
 
         assertTrue(composer.state.value.canSend)
+    }
+
+    /**
+     * The disabled button is not the guard — the send is.
+     *
+     * `canSend` already went false mid-upload, but the send handler itself
+     * only checked recipients, so anything reaching it another way posted a
+     * message naming an object still on its way up. The web refuses with
+     * "Please wait while files are uploading" rather than sending a mail whose
+     * attachment never appears.
+     */
+    @Test
+    fun `a send raised mid-upload is refused, not sent`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val uploader = FakeUploader().apply { this.gate = gate }
+        val server = FakeMailServer()
+        val composer = composer(server, uploader)
+
+        composer.addressAndWrite()
+        composer.onEvent(ComposeEvent.AttachFile(file()))
+        advanceUntilIdle()
+
+        composer.onEvent(ComposeEvent.Send)
+        advanceUntilIdle()
+
+        assertNull(server.sent, "a mail went out naming an unfinished upload")
+        assertNotNull(composer.state.value.error)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
     }
 
     @Test
