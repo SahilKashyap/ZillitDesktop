@@ -190,6 +190,9 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
                     onEvent(AccountHubEvent.UpdateBankDraft(draft.copy(accountNumber = it)))
                 },
                 label = "Account number",
+                // The server's validator caps it here. Not a UK 8-digit rule:
+                // truncating to 8 was tried and reverted (ZL-20361).
+                maxLength = ACCOUNT_NUMBER_MAX,
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
@@ -248,5 +251,6 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
 }
 
 private const val WEIGHT_WIDE = 2f
+private const val ACCOUNT_NUMBER_MAX = 50
 private const val COUNTRY_CODE_LENGTH = 2
 private const val SORT_CODE_DIGITS = 6

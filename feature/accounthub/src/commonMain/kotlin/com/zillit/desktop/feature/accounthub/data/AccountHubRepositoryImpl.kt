@@ -429,11 +429,23 @@ class AccountHubRepositoryImpl(
         module = RequestModule.ProjectUser,
     ).map { it.toDomain() ?: Vendor(id = id, verified = true) }
 
+    /**
+     * A refusal here arrives as a 200. The server answers `{status: 0, message:
+     * "vendor_in_use_by_purchase_orders"}` for a vendor a purchase order still
+     * names, and reporting that as a deletion leaves the row on screen with a
+     * success notice against it (ZL-21088; Android `VendorRepository.kt:273`).
+     */
     override suspend fun deleteVendor(id: String): ZillitResult<Unit> = apiClient.envelope(
         verb = HttpVerb.Delete,
         url = "$vendorsBase/$id",
         module = RequestModule.ProjectUser,
-    ).map { }
+    ).flatMap { envelope ->
+        if (envelope.status == 0) {
+            ZillitResult.Failure(ZillitError.Http(status = HTTP_OK, serverMessage = envelope.message))
+        } else {
+            ZillitResult.Success(Unit)
+        }
+    }
 
     override suspend fun vendorHistory(id: String): ZillitResult<List<VendorChange>> =
         apiClient.request(
@@ -640,6 +652,7 @@ private fun VendorAddress.toJson(): JsonElement = buildJsonObject {
 private fun VendorPhone.toJson(): JsonElement = buildJsonObject {
     put("country_code", JsonPrimitive(countryCode.trim()))
     put("number", JsonPrimitive(number.trim()))
+
 }
 
 /** Blank optional text goes as null: this validator types its fields. */
@@ -690,3 +703,6 @@ private fun List<com.zillit.desktop.feature.accounthub.domain.ApprovalTier>.toJs
             )
         }
     }
+
+/** A refusal that still answers 200 — the envelope, not the transport, says no. */
+private const val HTTP_OK = 200
