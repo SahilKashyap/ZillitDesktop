@@ -38,6 +38,8 @@ interface HomeFeedRepository {
         attachment: UploadedNoticeMedia?,
         location: GeoPoint?,
         replacePrevious: Boolean?,
+        /** The one live document to retire, or null. */
+        replaceChatId: String? = null,
     ): ZillitResult<Notice> = postNotice(unitId, text, localId, attachment, location)
 
     /**

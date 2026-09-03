@@ -82,6 +82,7 @@ class HomeBoardRulesTest {
             attachment: UploadedNoticeMedia?,
             location: GeoPoint?,
             replacePrevious: Boolean?,
+            replaceChatId: String?,
         ): ZillitResult<Notice> {
             posted += Triple(text, attachment, replacePrevious)
             return ZillitResult.Success(

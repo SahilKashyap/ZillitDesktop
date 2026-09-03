@@ -38,6 +38,8 @@ data class Notice(
     val sendState: NoticeSendState = NoticeSendState.Sent,
     /** Client-generated; how an optimistic post is matched to the server's copy. */
     val localId: String? = null,
+    /** Set only on the row the server answers a replace post with: the message it retired (`replaced_chat_id`). */
+    val replacedNoticeId: String? = null,
 ) {
     val commentCount: Int get() = comments.size
 
@@ -341,3 +343,15 @@ fun Notice.displayTimestamp(history: Boolean): Long =
 /** `updated` when the server sent one, else `created` — never 0, which would sort to the top. */
 private val Notice.orderingTimestamp: Long
     get() = if (updatedAtMillis > 0) updatedAtMillis else createdAtMillis
+
+/**
+ * What a "Replace one document" upload may swap out: LIVE document messages
+ * the server has acknowledged — never an image or text (the server acts on
+ * nothing else), never a pending post (the server matches on `_id`). Newest
+ * first. The web's `replaceableMessages` and Android's
+ * `ReplaceableMessages.eligible`, on this board's rows.
+ */
+fun replaceTargets(notices: List<Notice>): List<Notice> = notices
+    .filter { it.kind == NoticeKind.Document && !it.attachment?.media.isNullOrBlank() }
+    .filter { it.localId == null && it.id.isNotBlank() }
+    .sortedByDescending { maxOf(it.updatedAtMillis, it.createdAtMillis) }
