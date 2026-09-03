@@ -443,35 +443,32 @@ private fun CallLineButton(
                 RoundedCornerShape(LINE_MENU_RADIUS),
             ),
         ) {
-            CallLineRow("Line 2", "Agora") { open = false; onPick(false) }
-            CallLineRow("Line 1", "Mediasoup") { open = false; onPick(true) }
+            CallLineRow("Line 2") { open = false; onPick(false) }
+            CallLineRow("Line 1") { open = false; onPick(true) }
         }
     }
 }
 
+/**
+ * One line to place the call on.
+ *
+ * The line's number and nothing else. It used to carry the media stack's name
+ * beside it — "Agora", "Mediasoup" — on the theory that "Line 1" alone means
+ * nothing; but those are our vendors, not the user's vocabulary, and naming
+ * them here puts an implementation detail in front of somebody choosing how to
+ * ring a colleague. The phones offer the same choice by number alone.
+ */
 @Composable
-private fun CallLineRow(title: String, detail: String, onClick: () -> Unit) {
+private fun CallLineRow(title: String, onClick: () -> Unit) {
     DropdownMenuItem(
         onClick = onClick,
         modifier = Modifier.background(ZillitTheme.colors.surfaceRaised),
         text = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                ZillitText(
-                    text = title,
-                    style = ZillitTheme.typography.bodyMedium,
-                    color = ZillitTheme.colors.textPrimary,
-                )
-                // The stack's name, because "Line 1" alone means nothing to
-                // anyone who has not read the calling code.
-                ZillitText(
-                    text = detail,
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                )
-            }
+            ZillitText(
+                text = title,
+                style = ZillitTheme.typography.bodyMedium,
+                color = ZillitTheme.colors.textPrimary,
+            )
         },
     )
 }

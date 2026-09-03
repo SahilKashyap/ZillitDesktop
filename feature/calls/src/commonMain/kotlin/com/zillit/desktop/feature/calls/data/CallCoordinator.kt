@@ -730,6 +730,29 @@ class CallCoordinator(
             return
         }
 
+        // The SFU marks every joiner `in_call` — the caller's own join
+        // included — and the server broadcasts that straight back while the
+        // callee is still ringing. Read as an answer it starts the duration,
+        // stops the ringback and cancels the no-answer timeout with nobody on
+        // the other end: the call sits on a running timer forever, and neither
+        // a later decline nor the 60 s timeout can end it, because both are
+        // gated on the phase this just moved. Ignore it — do NOT finish():
+        // PickedElsewhere is right only for an incoming ring.
+        //
+        // A support call is the one case where our own id genuinely IS the far
+        // end (`callSupport` rings our own primary device), so it keeps the old
+        // behaviour. `receiverUserId` covers the same case when the 24x7 flag
+        // was not carried — a redial rebuilds the request without it.
+        val weAreAlsoTheCallee = current.is247Call ||
+            (current.receiverUserId.isNotBlank() && current.receiverUserId == current.selfUserId)
+        if (change.userId == current.selfUserId && current.selfUserId.isNotBlank() &&
+            change.status == CallStatus.InCall &&
+            _phase.value == CallPhase.Outgoing && !weAreAlsoTheCallee
+        ) {
+            ZillitLog.i(TAG) { "ignoring our own in_call while ${current.callUuid} is still ringing" }
+            return
+        }
+
         _session.value = current.copy(
             participants = current.participants.withStatus(change.userId, change.status),
         )

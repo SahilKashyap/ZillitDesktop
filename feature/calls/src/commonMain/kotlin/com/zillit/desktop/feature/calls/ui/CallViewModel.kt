@@ -325,6 +325,18 @@ class CallViewModel(
      * app did before it had a picker.
      */
     private val screenSources: com.zillit.desktop.feature.calls.domain.ScreenSources? = null,
+    /**
+     * User id → the name we may show, for roster rows the server left
+     * nameless. Host-supplied and already keep-name-private filtered; see
+     * `callNameDirectory` in the desktop app.
+     *
+     * A flow rather than a lambda: the crew arrives in stages — cache first,
+     * then a network refresh — and the tiles are rebuilt only when one of the
+     * combined flows emits. A pull-lambda would leave a stage full of "Guest"
+     * until something unrelated happened to re-emit.
+     */
+    private val nameDirectory: kotlinx.coroutines.flow.Flow<Map<String, String>> =
+        kotlinx.coroutines.flow.flowOf(emptyMap()),
 ) : ZillitViewModel<CallUiState, CallEvent, Nothing>(CallUiState()) {
 
     init {
@@ -374,7 +386,10 @@ class CallViewModel(
                 coordinator.media,
                 coordinator.micMuted,
                 coordinator.cameraOn,
-            ) { session, media, muted, camera -> Inputs(session, media, muted, camera) }
+                nameDirectory,
+            ) { session, media, muted, camera, directory ->
+                Inputs(session, media, muted, camera, directory)
+            }
                 .collect { inputs ->
                     setState {
                         projectCallUi(
@@ -384,6 +399,7 @@ class CallViewModel(
                             micMuted = inputs.micMuted,
                             cameraOn = inputs.cameraOn,
                             selfName = coordinator.selfDisplayName,
+                            nameFor = { inputs.directory[it] },
                         )
                     }
                 }
@@ -575,6 +591,7 @@ class CallViewModel(
         val media: CallMedia,
         val micMuted: Boolean,
         val cameraOn: Boolean,
+        val directory: Map<String, String> = emptyMap(),
     )
 
     // Exhaustive dispatch over the sealed event set — the branch count is the

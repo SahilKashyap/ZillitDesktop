@@ -54,6 +54,16 @@ fun buildTiles(
     micMuted: Boolean,
     cameraOn: Boolean,
     selfHand: Boolean = false,
+    /**
+     * User id → the name we are allowed to show, from the open production's
+     * crew. Keep-name-private members are absent from the map rather than
+     * mapped to a blank, so a lookup can never reveal one.
+     *
+     * Line 1 group rows arrive with no name at all, and the 1:1 mitigation
+     * below cannot help them — there is no single "other person" to borrow
+     * from. Without this every face on a group stage read "Guest".
+     */
+    nameFor: (String) -> String? = { null },
 ): List<CallTile> {
     session ?: return emptyList()
     val selfUid = media.selfUid.takeIf { it != 0 } ?: session.localUid
@@ -71,7 +81,9 @@ fun buildTiles(
         .orEmpty()
     return buildList {
         add(selfTile(session, media, selfName, micMuted, cameraOn, selfUid, selfHand))
-        roster.forEach { add(rosterTile(it, media, bound[it.userId] ?: 0, theOtherPerson)) }
+        roster.forEach {
+            add(rosterTile(it, media, bound[it.userId] ?: 0, theOtherPerson, nameFor))
+        }
         media.peers.keys.filter { it != 0 && it !in claimed }.sorted()
             .forEach { add(guestTile(it, media)) }
     }
@@ -122,12 +134,20 @@ private fun rosterTile(
     media: CallMedia,
     uid: Int,
     fallbackName: String = "",
+    nameFor: (String) -> String? = { null },
 ): CallTile =
     CallTile(
         // Keyed by user id, so a late `agora_uid` from the call-dump merge is
         // ADOPTED by the existing tile instead of appearing as a new arrival.
         key = person.userId.ifBlank { "uid:$uid" },
-        name = person.name.ifBlank { fallbackName }.ifBlank { UNNAMED },
+        // The server's own name wins, so a call that shows names today is
+        // unchanged. `ifBlank` all the way down rather than `?:`: a directory
+        // that declines to name somebody must fall through to Guest, never
+        // render an empty caption.
+        name = person.name
+            .ifBlank { nameFor(person.userId).orEmpty() }
+            .ifBlank { fallbackName }
+            .ifBlank { UNNAMED },
         userId = person.userId,
         uid = uid,
         presence = person.status,

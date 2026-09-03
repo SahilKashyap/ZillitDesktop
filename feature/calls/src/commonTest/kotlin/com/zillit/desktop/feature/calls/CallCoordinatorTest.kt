@@ -26,6 +26,11 @@ import com.zillit.desktop.feature.calls.domain.CallType
 import com.zillit.desktop.feature.calls.domain.CallPhase
 import com.zillit.desktop.feature.calls.domain.CallTimeouts
 import com.zillit.desktop.feature.calls.domain.NoopCallEngine
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -36,6 +41,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -218,6 +224,7 @@ class CallCoordinatorTest {
         engine: CallEngine = NoopCallEngine(),
         now: () -> Long = { 1_000L },
         share: com.zillit.desktop.feature.calls.domain.CallRecordingShare? = null,
+        callApi: CallApi? = null,
     ): CallCoordinator {
         val bus = SocketEventBus(socket)
         // ApiClient with an unroutable base: every REST call fails as a
@@ -238,7 +245,7 @@ class CallCoordinatorTest {
             ),
         )
         val coordinator = CallCoordinator(
-            api = api,
+            api = callApi ?: api,
             bus = bus,
             engine = engine,
             scope = backgroundScope,
@@ -252,6 +259,184 @@ class CallCoordinatorTest {
         runCurrent()
         return coordinator
     }
+
+    /**
+     * A create-call response for Line 1 with no `mediasoup_server_url`, so the
+     * session is adopted but [CallSession.isJoinable] is false and `joinMedia`
+     * returns before touching an engine: the socket is then the only thing that
+     * can move the phase, which is exactly what these tests are about.
+     */
+    private val created = """
+        {"status":1,"data":{
+          "call_uuid":"u1","room_id":"r1","project_id":"p1","line":"mediasoup",
+          "call_mode":"private","call_type":"audio",
+          "call_users":[
+            {"user_id":"me","device_id":"my-device","status":"caller"},
+            {"user_id":"them","device_id":"their-device","status":"ringing"}
+          ]}}
+    """.trimIndent()
+
+    /** A [CallApi] that answers the create-call POST with [created]. */
+    private fun placingApi(): CallApi {
+        val engine = MockEngine {
+            respond(created, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        return CallApi(
+            apiClient = com.zillit.desktop.core.network.ApiClient(
+                httpClient = com.zillit.desktop.core.network.HttpClientFactory.create({ CoordinatorMockEngineFactory(engine) }),
+                headerProvider = { _, _, _, _ -> emptyMap() },
+            ),
+            config = com.zillit.desktop.core.config.AppConfig(
+                environment = com.zillit.desktop.core.config.Environment.Develop,
+                services = mapOf(
+                    com.zillit.desktop.core.config.ZillitService.Calling to "https://calls.test",
+                ),
+                realtime = emptyMap(),
+            ),
+        )
+    }
+
+    /**
+     * Waits for the mock engine, which answers on Ktor's own IO dispatcher,
+     * without letting the virtual clock move.
+     *
+     * `yield` rather than a real `delay`: suspending the test body on a real
+     * dispatcher lets `runTest` run the virtual clock forward while it waits,
+     * which fires the 60 s ring timeout the instant the session is adopted and
+     * ends the call before the test has begun. Yielding keeps a runnable task
+     * on the test scheduler at all times, so the clock stays where it is and
+     * only the real thread makes progress.
+     */
+    private suspend fun TestScope.settle(condition: () -> Boolean) {
+        repeat(SETTLE_SPINS) {
+            runCurrent()
+            if (condition()) return
+            yield()
+        }
+        runCurrent()
+    }
+
+    /** Places a 1:1 Line 1 call and waits for the server session to be adopted. */
+    private suspend fun TestScope.ringing(
+        socket: FakeSocket,
+        receiverUserId: String = "them",
+        is247Call: Boolean = false,
+    ): CallCoordinator {
+        val coordinator = coordinator(socket, callApi = placingApi())
+        coordinator.placeCall(
+            chatRoomId = "",
+            receiverDeviceId = "their-device",
+            mode = CallMode.Private,
+            type = CallType.Audio,
+            provider = com.zillit.desktop.feature.calls.domain.CallProvider.Mediasoup,
+            receiverUserId = receiverUserId,
+            is247Call = is247Call,
+        )
+        settle { coordinator.session.value?.roomId == "r1" }
+        assertEquals(CallPhase.Outgoing, coordinator.phase.value, "the call must still be ringing")
+        return coordinator
+    }
+
+    /**
+     * The user's report: an outgoing call sat on a running 00:39 timer reading
+     * "1 in call" while the callee's tile still said "Ringing…". The SFU marks
+     * every joiner `in_call` — the caller's own join included — and the server
+     * broadcast that back, which this read as an answer.
+     */
+    @Test
+    fun `our own in_call while the call is still ringing is not an answer`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val coordinator = ringing(socket)
+
+            socket.deliver(
+                ZillitSocketEvents.Calls.Update,
+                """{"roomId":"r1","userId":"me","status":"incall"}""",
+            )
+            runCurrent()
+            advanceTimeBy(39_000)
+            runCurrent()
+
+            assertEquals(CallPhase.Outgoing, coordinator.phase.value)
+            val roster = coordinator.session.value?.participants.orEmpty()
+            assertEquals(
+                CallStatus.Ringing,
+                roster.first { it.userId == "them" }.status,
+                "the callee never answered",
+            )
+            assertEquals(
+                CallStatus.Caller,
+                roster.first { it.userId == "me" }.status,
+                "our own row must not have been marked connected either",
+            )
+        }
+
+    /** The control: a real remote answer must still connect the call. */
+    @Test
+    fun `a real remote in_call still answers an outgoing call`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val coordinator = ringing(socket)
+
+            socket.deliver(
+                ZillitSocketEvents.Calls.Update,
+                """{"roomId":"r1","userId":"them","status":"incall"}""",
+            )
+            runCurrent()
+            assertEquals(CallPhase.InCall, coordinator.phase.value)
+
+            // And the ring timeout was cancelled by the answer, not left armed.
+            advanceTimeBy(CallTimeouts.OUTGOING_MS + 1_000)
+            runCurrent()
+            assertEquals(CallPhase.InCall, coordinator.phase.value)
+        }
+
+    /**
+     * The worse half of the same bug: the false answer also cancelled the
+     * no-answer timeout, so a call nobody picked up never ended at all.
+     */
+    @Test
+    fun `an outgoing call nobody answers still rings out`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val coordinator = ringing(socket)
+            val endings = mutableListOf<CallEndReason>()
+            val watch = launch { coordinator.ended.collect { endings += it.reason } }
+
+            socket.deliver(
+                ZillitSocketEvents.Calls.Update,
+                """{"roomId":"r1","userId":"me","status":"incall"}""",
+            )
+            runCurrent()
+            advanceTimeBy(CallTimeouts.OUTGOING_MS + 1_000)
+            runCurrent()
+            // The teardown reports the missed call before it finishes, and
+            // those round trips land on the mock engine's own thread.
+            settle { coordinator.phase.value == CallPhase.Idle }
+
+            assertEquals(CallPhase.Idle, coordinator.phase.value)
+            assertEquals(listOf(CallEndReason.Timeout), endings)
+            watch.cancel()
+        }
+
+    /**
+     * A support call rings the user's OWN primary device, so there our own id
+     * genuinely is the far end. The guard above must not swallow that answer.
+     */
+    @Test
+    fun `a support call answered on our own device still connects`() =
+        runTest(StandardTestDispatcher()) {
+            val socket = FakeSocket()
+            val coordinator = ringing(socket, receiverUserId = "me", is247Call = true)
+
+            socket.deliver(
+                ZillitSocketEvents.Calls.Update,
+                """{"roomId":"r1","userId":"me","status":"incall"}""",
+            )
+            runCurrent()
+
+            assertEquals(CallPhase.InCall, coordinator.phase.value)
+        }
 
     private val ring = """
         {"call_uuid":"u1","room_id":"r1","project_id":"p1","call_mode":"private",
@@ -1128,3 +1313,12 @@ class CallCoordinatorTest {
 
 /** The tail of the canned ring, spliced on when a test needs a roster. */
 private const val RECEIVER_FIELD = """"receiver_user_id":"me""""
+
+/** Hands the same mock engine back to the app's client factory. */
+private class CoordinatorMockEngineFactory(private val engine: MockEngine) :
+    io.ktor.client.engine.HttpClientEngineFactory<io.ktor.client.engine.mock.MockEngineConfig> {
+    override fun create(block: io.ktor.client.engine.mock.MockEngineConfig.() -> Unit) = engine
+}
+
+/** Spins on the test scheduler while the mock engine answers on a real thread. */
+private const val SETTLE_SPINS = 200_000

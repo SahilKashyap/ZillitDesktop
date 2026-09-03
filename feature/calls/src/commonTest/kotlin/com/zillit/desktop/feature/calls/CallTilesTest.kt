@@ -232,4 +232,80 @@ class CallTilesTest {
 
         assertTrue(tiles.drop(1).all { it.name == "Guest" }, tiles.map { it.name }.toString())
     }
+
+    /** A Line 1 group roster: real user ids, no names on any row. */
+    private fun namelessGroup() = CallSession(
+        callUuid = "u1",
+        selfUserId = "me",
+        mode = CallMode.Group,
+        title = "Team Leads",
+        participants = listOf(
+            CallParticipant(userId = "a", name = "", status = CallStatus.InCall),
+            CallParticipant(userId = "b", name = "", status = CallStatus.InCall),
+            CallParticipant(userId = "c", name = "", status = CallStatus.InCall),
+        ),
+    )
+
+    /**
+     * The reported bug: every face on a Line 1 group stage read "Guest",
+     * because nothing on that line writes a name onto the roster row and the
+     * 1:1 mitigation has no single other person to borrow from.
+     */
+    @Test
+    fun `a nameless group roster row is named from the local directory`() {
+        val directory = mapOf("a" to "Priya", "b" to "Rahul", "c" to "Dev")
+
+        val tiles = buildTiles(
+            namelessGroup(), CallMedia(), "Vivek",
+            micMuted = false, cameraOn = false, selfHand = false,
+            nameFor = directory::get,
+        )
+
+        assertEquals(listOf("Priya", "Rahul", "Dev"), tiles.drop(1).map { it.name })
+    }
+
+    /**
+     * Somebody the directory declines to name — a keep-name-private member is
+     * absent from the map — must stay "Guest". The filtering happens where the
+     * map is built; the contract here is that a miss never invents a name.
+     */
+    @Test
+    fun `a crew member the directory declines to name is still not named`() {
+        val tiles = buildTiles(
+            namelessGroup(), CallMedia(), "Vivek",
+            micMuted = false, cameraOn = false, selfHand = false,
+            nameFor = mapOf("a" to "Priya")::get,
+        )
+
+        assertEquals("Guest", tiles.single { it.userId == "b" }.name)
+        assertEquals("Guest", tiles.single { it.userId == "c" }.name)
+    }
+
+    @Test
+    fun `the directory never overrides a name the server sent`() {
+        val tiles = buildTiles(
+            session(person("vivek", name = "Asha")), CallMedia(), "Me",
+            micMuted = false, cameraOn = false, selfHand = false,
+            nameFor = { "Someone Else" },
+        )
+
+        assertEquals("Asha", tiles.last().name)
+    }
+
+    /**
+     * An unclaimed stream has no user id at all, so there is nobody to look
+     * up. A wrong name on a face is worse than the bug this fixes.
+     */
+    @Test
+    fun `an unclaimed stream is still a Guest even with a full directory`() {
+        val media = CallMedia(peers = mapOf(77 to MediaPeer(77)))
+
+        val tiles = buildTiles(
+            session(), media, "Me",
+            micMuted = false, cameraOn = false, selfHand = false,
+            nameFor = { "Priya" },
+        )
+
+        assertEquals("Guest", tiles.single { it.uid == 77 }.name)
+    }
 }

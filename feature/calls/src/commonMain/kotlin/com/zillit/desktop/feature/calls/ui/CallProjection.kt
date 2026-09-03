@@ -19,8 +19,11 @@ fun projectCallUi(
     micMuted: Boolean,
     cameraOn: Boolean,
     selfName: String,
+    /** See [buildTiles]. Keep-name-private members are already filtered out. */
+    nameFor: (String) -> String? = { null },
 ): CallUiState {
-    val tiles = buildTiles(session, media, selfName, micMuted, cameraOn, previous.handRaised)
+    val tiles =
+        buildTiles(session, media, selfName, micMuted, cameraOn, previous.handRaised, nameFor)
     // Latched, never unlatched mid-call: the stage swapping between a Compose
     // grid and a browser surface every time somebody toggled a camera would
     // move a native window between parents on each toggle.
