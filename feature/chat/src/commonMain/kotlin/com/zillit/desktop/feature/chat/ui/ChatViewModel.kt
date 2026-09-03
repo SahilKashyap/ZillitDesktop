@@ -10,6 +10,7 @@ import com.zillit.desktop.core.sync.OfflineSupport
 import com.zillit.desktop.core.sync.SyncState
 import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.locationpicker.oneLine
+import com.zillit.desktop.feature.chat.data.ChatSilence
 import com.zillit.desktop.feature.chat.data.CHAT_SEND_KIND
 import com.zillit.desktop.feature.chat.data.LOCATION_KIND
 import com.zillit.desktop.feature.chat.data.PresenceSource
@@ -316,6 +317,18 @@ class ChatViewModel(
                 refreshSectionBadges()
             }
         }
+        // `notification:silent`'s chat half — a room lost, messages deleted —
+        // applied here as the phones apply it to their ledgers, then the seed
+        // re-read so the server's copy of those rows cannot put them back.
+        launch {
+            repository.silenced.collect { silence ->
+                repository.silence(silence)
+                silence.rooms.forEach(serverUnread::remove)
+                setState { copy(unread = unread - silence.rooms) }
+                reloadBacklog()
+                refreshSectionBadges()
+            }
+        }
         launch {
             repository.typing.collect { (peer, started) ->
                 onEvent(ChatEvent.PeerTyping(peer, started))
@@ -396,25 +409,7 @@ class ChatViewModel(
                 // The per-conversation counts and stamps, from the server's
                 // backlog. A failed fetch keeps whatever the cache can say —
                 // no toast.
-                launchResult(
-                    block = { repository.conversationBacklog() },
-                    onSuccess = { backlog ->
-                        serverUnread.clear()
-                        // A thread open right now was just read; its rows in
-                        // the backlog predate that.
-                        val counts = backlog.unread
-                        serverUnread.putAll(currentState.peer?.userId?.let { counts - it } ?: counts)
-                        setState { copy(ledgerRooms = backlog.rooms) }
-                        learnActivity(backlog.activity)
-                        // The order follows the stamps as much as the counts:
-                        // a row that just grew a badge from this answer moves
-                        // to where its message puts it, not where the cache
-                        // last saw it.
-                        showRecents(currentState.recents)
-                        launch { rememberRecents() }
-                    },
-                    onError = { },
-                )
+                reloadBacklog()
                 launchResult(
                     block = { repository.recentPeers() },
                     onSuccess = { ids ->
@@ -1105,6 +1100,40 @@ class ChatViewModel(
      * arrivals as they land. See [knownActivity].
      */
     private val serverActivity = mutableMapOf<String, Long>()
+
+    /**
+     * Seeds the server's word on unread per conversation, and the listing's
+     * order, from the notification backlog. Runs on every listing refresh and
+     * after a silence, whose prunes the repository applies to the seed.
+     */
+    private fun reloadBacklog() {
+        launchResult(
+            block = { repository.conversationBacklog() },
+            onSuccess = { backlog ->
+                serverUnread.clear()
+                // A thread open right now was just read; its rows in
+                // the backlog predate that.
+                val counts = backlog.unread
+                serverUnread.putAll(currentState.peer?.userId?.let { counts - it } ?: counts)
+                setState { copy(ledgerRooms = backlog.rooms) }
+                // The one line that says where a badge came from: read it before
+                // believing a count. Ids, not names, on purpose.
+                ZillitLog.d(TAG) {
+                    "backlog unread=${counts.entries.joinToString { "${it.key}:${it.value}" }} " +
+                        "rooms=${backlog.rooms.size} " +
+                        "local=${repository.unreadCounts().entries.joinToString { "${it.key}:${it.value}" }}"
+                }
+                learnActivity(backlog.activity)
+                // The order follows the stamps as much as the counts:
+                // a row that just grew a badge from this answer moves
+                // to where its message puts it, not where the cache
+                // last saw it.
+                showRecents(currentState.recents)
+                launch { rememberRecents() }
+            },
+            onError = { },
+        )
+    }
 
     /** What the rows show: the larger of the server's word and the cache's. */
     private fun combinedUnread(local: Map<String, Int>): Map<String, Int> =

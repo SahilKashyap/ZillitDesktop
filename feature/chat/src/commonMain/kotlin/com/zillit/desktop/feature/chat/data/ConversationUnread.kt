@@ -28,23 +28,65 @@ fun conversationUnreadFrom(payload: JsonElement): Map<String, Int> =
  * own echoes included, since a thread we read on the phone or wrote into from
  * it still moved.
  */
-fun conversationBacklogFrom(payload: JsonElement): ConversationBacklog {
+/**
+ * @param readMarks what this device knows to be read per conversation — its own
+ *   reads, reads relayed from the phones (`selfReads`) and `notification:silent`
+ *   prunes. A row no newer than the mark does not count: the server keeps rows
+ *   the phones have long marked read, and they would otherwise sit in the badge
+ *   for good (seen live 2026-09-03: a C&C badge of 8 over two silent threads).
+ * @param silencedIds message ids a `notification:silent` told every device to
+ *   drop (`deleted_chat_ids`); the server relays that instruction but never
+ *   applies it to its own rows.
+ */
+fun conversationBacklogFrom(
+    payload: JsonElement,
+    readMarks: Map<String, Long> = emptyMap(),
+    silencedIds: Set<String> = emptySet(),
+): ConversationBacklog {
     val rows = when (payload) {
         is JsonArray -> payload
         is JsonObject -> payload["data"] as? JsonArray
         else -> null
     } ?: return ConversationBacklog()
-    val counts = mutableMapOf<String, Int>()
-    val newest = mutableMapOf<String, Long>()
-    val rooms = mutableSetOf<String>()
-    rows.forEach { element ->
-        val row = element as? JsonObject ?: return@forEach
-        val key = row.conversationKey() ?: return@forEach
+    val tally = BacklogTally(readMarks, silencedIds)
+    rows.forEach { element -> (element as? JsonObject)?.let(tally::add) }
+    return tally.backlog()
+}
+
+/** The four maps a backlog folds into, filled one row at a time. */
+private class BacklogTally(private val readMarks: Map<String, Long>, private val silencedIds: Set<String>) {
+    private val counts = mutableMapOf<String, Int>()
+    private val newest = mutableMapOf<String, Long>()
+    private val rooms = mutableSetOf<String>()
+    private val messageKeys = mutableMapOf<String, String>()
+
+    fun add(row: JsonObject) {
+        val key = row.conversationKey() ?: return
         if (row.text("unit") == GROUP_UNIT) rooms += key
-        row.createdMillis()?.let { at -> newest[key] = maxOf(newest[key] ?: 0L, at) }
-        if (row.isUnread() && !row.isSelfEcho()) counts[key] = (counts[key] ?: 0) + 1
+        val created = row.createdMillis()
+        created?.let { at -> newest[key] = maxOf(newest[key] ?: 0L, at) }
+        val messageId = row.messageId()
+        if (messageId != null && messageId in silencedIds) return
+        if (row.countsAsUnread(created, readMarks[key])) {
+            counts[key] = (counts[key] ?: 0) + 1
+            messageId?.let { messageKeys[it] = key }
+        }
     }
-    return ConversationBacklog(unread = counts, activity = newest, rooms = rooms)
+
+    fun backlog() = ConversationBacklog(unread = counts, activity = newest, rooms = rooms, messageKeys = messageKeys)
+}
+
+/** Unread on the server, not our echo, and newer than what this device knows to be read. */
+private fun JsonObject.countsAsUnread(created: Long?, readMark: Long?): Boolean {
+    val readHere = created != null && created <= (readMark ?: 0L)
+    return isUnread() && !isSelfEcho() && !readHere
+}
+
+/** The chat message a notification row is about, under whichever key this server version used. */
+private fun JsonObject.messageId(): String? {
+    val reference = this["reference_data"] as? JsonObject
+    return listOfNotNull(reference?.text("chat_id"), reference?.text("message_id"), text("reference_id"))
+        .firstOrNull { it.isNotBlank() }
 }
 
 /** The conversation this row belongs to, or null when it is not a chat row. */

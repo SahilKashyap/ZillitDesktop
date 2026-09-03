@@ -125,6 +125,20 @@ interface ChatRepository {
      */
     val selfReads: Flow<String>
 
+    /**
+     * `notification:silent`'s chat instruction — rooms lost and messages
+     * deleted — as the phones and the web receive it. Feed it to [silence];
+     * the repository does not act on the flow by itself.
+     */
+    val silenced: Flow<ChatSilence> get() = kotlinx.coroutines.flow.emptyFlow()
+
+    /**
+     * Applies a silence the way the phones' local ledgers do: a lost room is
+     * marked read to now, and a deleted message is forgotten and kept out of
+     * every later backlog seed, so the count cannot come back from the server.
+     */
+    fun silence(silence: ChatSilence) = Unit
+
     /** Remembers locally how far a thread has been read, for the badges. */
     fun markThreadRead(peerId: String, uptoMillis: Long)
 
@@ -234,6 +248,8 @@ class ChatRepositoryImpl(
     private val groupChat = scoped(GROUP_CHAT)
     private val readUntill = scoped(READ_UNTILL)
     private val groupReadUntill = scoped(GROUP_READ_UNTILL)
+    private val silentEvent = com.zillit.desktop.core.socket.ZillitSocketEvents.Badges.Silent
+    private val silencedIds = mutableSetOf<String>()
     private val updateReaction = scoped(UPDATE_REACTION)
     private val typingEvent = scoped(TYPING)
     private val privateEdit = scoped(PRIVATE_CHAT_EDIT)
@@ -314,6 +330,19 @@ class ChatRepositoryImpl(
             .mapNotNull { message ->
                 message.payload?.let { selfReadFrom(it, myUserId()) }
             }
+
+    override val silenced: Flow<ChatSilence> =
+        bus.on(silentEvent).mapNotNull { message -> chatSilenceFrom(message.payload) }
+
+    override fun silence(silence: ChatSilence) {
+        val project = projectId() ?: return
+        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        silence.rooms.forEach { room -> disk?.markReadUntil(project, room, now) }
+        if (silence.deletedMessageIds.isNotEmpty()) {
+            silencedIds += silence.deletedMessageIds
+            forget(silence.deletedMessageIds.toList())
+        }
+    }
 
     override val edits: Flow<ChatMessage> =
         kotlinx.coroutines.flow.merge(
@@ -508,7 +537,10 @@ class ChatRepositoryImpl(
             options = CallOptions(
                 cacheAs = "${config.apiV2(ZillitService.Notification)}project/all/notifications/newest",
             ),
-        ).map(::conversationBacklogFrom)
+        ).map { payload ->
+            val marks = projectId()?.let { disk?.readMarks(it) }.orEmpty()
+            conversationBacklogFrom(payload, readMarks = marks, silencedIds = silencedIds)
+        }
 
     override suspend fun recentPeers(): ZillitResult<List<String>> {
         val me = myUserId() ?: return ZillitResult.Success(emptyList())
