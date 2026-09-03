@@ -42,7 +42,7 @@ import kotlinx.datetime.LocalDate
  * [start], never a constructor snapshot. Capturing it at construction fixes
  * every user as "rights unknown" for the life of the process.
  */
-@Suppress("TooManyFunctions") // One handler per user action; see detekt.yml.
+@Suppress("TooManyFunctions", "LargeClass") // One handler per user action; see detekt.yml.
 class DocDistViewModel(
     private val repository: DocDistRepository,
     /** Who is looking, read at start rather than at construction. See the class doc. */
@@ -296,14 +296,8 @@ class DocDistViewModel(
 
             // -- history ---------------------------------------------------
 
-            is DocDistEvent.ToggleHistorySender -> {
-                setState { togglingSender(event.senderId) }
-                loadHistory()
-            }
-            DocDistEvent.ClearHistorySenders -> {
-                setState { copy(historySenderIds = emptySet(), historySenderQuery = "") }
-                loadHistory()
-            }
+            is DocDistEvent.ToggleHistorySender -> reloadHistory { togglingSender(event.senderId) }
+            DocDistEvent.ClearHistorySenders -> reloadHistory { clearingSenders() }
             is DocDistEvent.SearchHistorySenders -> setState { copy(historySenderQuery = event.text) }
             is DocDistEvent.HistorySenderMenu -> setState { copy(historySenderMenuOpen = event.open) }
             is DocDistEvent.SearchHistory -> {
@@ -461,17 +455,15 @@ class DocDistViewModel(
         fetch({ repository.history(page = 0, search = currentState.historySearch, senderIds = ids) }) { rows ->
             historyLoaded(rows, ids)
         }
-        if (!sendersAsked) {
-            sendersAsked = true
-            launch {
-                // Not shipped everywhere: a failure means "use what the rows say".
-                val fetched = (repository.senders() as? ZillitResult.Success)?.data.orEmpty()
-                if (fetched.isNotEmpty()) setState { copy(historySenders = mergedSenders(fetched, history)) }
-            }
-        }
+        senders.askOnce { fetched -> setState { copy(historySenders = mergedSenders(fetched, history)) } }
     }
 
-    private var sendersAsked = false
+    private fun reloadHistory(change: DocDistUiState.() -> DocDistUiState) {
+        setState(change)
+        loadHistory()
+    }
+
+    private val senders = HistorySenderSource(repository, ::launch)
 
     /**
      * Runs [block] once the user stops typing.
@@ -929,6 +921,9 @@ internal fun mergedSenders(known: List<DistributionSender>, rows: List<Distribut
 
 private fun DocDistUiState.togglingSender(id: String): DocDistUiState =
     copy(historySenderIds = if (id in historySenderIds) historySenderIds - id else historySenderIds + id)
+
+private fun DocDistUiState.clearingSenders(): DocDistUiState =
+    copy(historySenderIds = emptySet(), historySenderQuery = "")
 
 /**
  * The filter is applied here as well as pushed as `sent_by`: a backend that
