@@ -146,7 +146,12 @@ private fun NewDeal.crewDetails(): JsonObject = buildJsonObject {
     put("full_legal_name", JsonNull)
     put("preferred_name", JsonNull)
     put("screen_credit_designation", JsonNull)
-    put("passport_attachment", JsonNull)
+    // A LIST now, not the single object it once was (ZL-20959, both phones,
+    // BE 2026-08-26). The web sends the same empty array on a new deal
+    // (`toDealMemoPayload.js:794`) — but `[]` CLEARS what the crew member has
+    // uploaded, so an update built from a [Deal] projection would wipe them.
+    // Re-notifying therefore goes through `chase`, never through an update.
+    put("passport_attachment", EMPTY_ROWS)
     // The Zillit-master _ids resolve through the departments master the web
     // loads (`toDealMemoPayload.js:43-55`); the identifier columns are the
     // authoritative ones and round-trip on their own (js:796-800).
@@ -402,11 +407,18 @@ private val KEEP_AS_IS = setOf("1st", "2nd", "3rd")
  * when a row carries only the rate-card identifier and no master to resolve
  * it against — which is the desktop's standing situation.
  */
-internal fun humanisedIdentifier(raw: String?, prefix: String): String? {
+internal fun humanisedIdentifier(raw: String?, prefix: String, within: String? = null): String? {
     val trimmed = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    // A designation identifier repeats its own department at the end
+    // (`designation_action_prop_buyer_art_department` inside
+    // `department_art_department`). The web strips that tail against the
+    // project's departments (`data/utils.js:117-133`); the row names its own,
+    // which is the same answer without a master to load.
+    val department = within?.trim()?.removePrefix("department_")?.takeIf { it.isNotEmpty() }
     return trimmed
         .removePrefix(prefix)
         .removeSuffix("_label")
+        .let { bare -> department?.let { bare.removeSuffix("_$it") } ?: bare }
         .split('_')
         .filter { it.isNotEmpty() }
         .joinToString(" ") { word ->

@@ -157,7 +157,7 @@ sealed interface DealPrompt {
     ) : DealPrompt
 }
 
-enum class DealConfirmAction { Acknowledge, SendToCrew }
+enum class DealConfirmAction { Acknowledge, Chase }
 
 sealed interface DealEvent {
     data object Refresh : DealEvent
@@ -431,9 +431,9 @@ class DealMemoViewModel(
                 DealConfirmAction.Acknowledge ->
                     act("Terms acknowledged") { repository.acknowledge(prompt.targetId) }
 
-                DealConfirmAction.SendToCrew -> {
-                    // Issuing terms to a crew member is the production's act,
-                    // not the crew member's. The screen offers it only where
+                DealConfirmAction.Chase -> {
+                    // Nudging a crew member is the production's act, not the
+                    // crew member's. The screen offers it only where
                     // `canWriteDeals` holds (`DealMemoScreen`), and the whole
                     // All Deals destination is gated on the same — but this
                     // handler took any prompt that reached it.
@@ -446,11 +446,11 @@ class DealMemoViewModel(
                         sendEffect(DealEffect.Failed("That deal is no longer on screen."))
                         return
                     }
-                    // Re-sending is an update with notify on: it does not change
-                    // the terms, it re-issues them to the crew member.
-                    act("Deal sent to crew") {
-                        repository.update(deal.id, deal.toRequest(), notify = true)
-                    }
+                    // A bodyless nudge, exactly as both phones send it. This was
+                    // an `update` with the deal projected back into a request —
+                    // which re-sent every crew-detail key as blank and wiped the
+                    // crew member's own entries. See `Deal.toRequest`.
+                    act("Crew member reminded") { repository.chase(deal.id) }
                 }
             }
         }
@@ -484,6 +484,14 @@ class DealMemoViewModel(
 }
 
 /** The deal's own terms, as an update request — for a re-send. */
+/**
+ * A deal projected back into a create request.
+ *
+ * **Lossy.** [Deal] carries the terms this client reads, not the crew member's
+ * own entries — legal name, bank, emergency contacts, passport uploads. Sending
+ * this as an update blanks all of them, which is why re-notifying goes through
+ * [DealMemoRepository.chase] and never through an update.
+ */
 internal fun Deal.toRequest() = NewDeal(
     userId = userId,
     crewName = crewName,

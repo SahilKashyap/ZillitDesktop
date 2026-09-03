@@ -396,25 +396,26 @@ private fun DealDetail(state: DealUiState, deal: Deal, onEvent: (DealEvent) -> U
             }
         }
 
-        // The server rejects any write on a cancelled deal (the web gates its
-        // autosave on exactly this — `DMCreatePage.jsx` autosaveEnabled), and a
-        // deactivated one is terminal (`dealStatus.js:31-35`).
+        // Chase is for a deal that is out and unanswered: the server refuses it
+        // on any other status (`deal_chase_invalid_status`), and both phones
+        // show it on exactly this row — issued, posting rights, not your own
+        // deal (`DealMemoListAdapter.kt:161-178`).
         if (state.viewer.canWriteDeals &&
-            deal.status != DealStatus.Cancelled &&
-            deal.status != DealStatus.Deactivated
+            deal.status == DealStatus.Issued &&
+            deal.userId != state.viewer.userId
         ) {
             ZillitDivider()
             ZillitButton(
-                text = "Send to crew member",
+                text = "Remind crew member",
                 onClick = {
                     onEvent(
                         DealEvent.Ask(
                             DealPrompt.Confirm(
-                                DealConfirmAction.SendToCrew,
+                                DealConfirmAction.Chase,
                                 deal.id,
-                                "Send these terms",
-                                "${deal.crewName.ifBlank { "The crew member" }} is notified and asked " +
-                                    "to confirm them.",
+                                "Remind them to confirm",
+                                "${deal.crewName.ifBlank { "The crew member" }} is notified again and " +
+                                    "asked to confirm these terms.",
                             ),
                         ),
                     )
