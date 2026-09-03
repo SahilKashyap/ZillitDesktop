@@ -55,6 +55,38 @@ class BadgeStore(private val source: BadgeSource) {
     val counts: StateFlow<BadgeCounts> = state.asStateFlow()
 
     /**
+     * Tools and units this person has lost sight of, per `notification:silent`.
+     *
+     * Remembered, not just applied once: the server never removes those rows
+     * from its ledger, so every later [refresh] would put them back. iOS keeps
+     * the same memory in its local notification database.
+     */
+    private var lostTools: Set<String> = emptySet()
+    private var lostUnits: Set<String> = emptySet()
+
+    /** Applies the silent instruction now and to every refresh after it. */
+    fun suppress(tools: Set<String> = emptySet(), units: Set<String> = emptySet()) {
+        if (tools.isEmpty() && units.isEmpty()) return
+        lostTools = lostTools + tools
+        lostUnits = lostUnits + units
+        state.value = state.value.without(tools, units)
+    }
+
+    /** The badge goes out the moment the read is sent; the refresh confirms. */
+    fun clearTool(identifier: String) {
+        state.value = state.value.clearingTool(identifier)
+    }
+
+    fun clearSection(key: String) {
+        state.value = state.value.clearingSection(key)
+    }
+
+    /** One more unread, as a `notification:save` frame arrives; the refresh confirms. */
+    fun bump(section: String?, tool: String?, unit: String?) {
+        state.value = state.value.bumping(section, tool, unit).without(lostTools, lostUnits)
+    }
+
+    /**
      * Replaces the counts from the server.
      *
      * On failure the previous counts stand rather than being cleared: a dropped
@@ -63,11 +95,13 @@ class BadgeStore(private val source: BadgeSource) {
      */
     suspend fun refresh(): ZillitResult<BadgeCounts> =
         source.fetch().also { result ->
-            if (result is ZillitResult.Success) state.value = result.data
+            if (result is ZillitResult.Success) state.value = result.data.without(lostTools, lostUnits)
         }
 
-    /** Sign-out and production switch — the counts belong to a production. */
+    /** Sign-out and production switch — the counts, and what was lost, belong to a production. */
     fun clear() {
+        lostTools = emptySet()
+        lostUnits = emptySet()
         state.value = BadgeCounts.Empty
     }
 }

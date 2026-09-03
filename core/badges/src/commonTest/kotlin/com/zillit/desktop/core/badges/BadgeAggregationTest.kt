@@ -60,4 +60,17 @@ class BadgeAggregationTest {
 
         assertTrue(!counts.toString().contains("confidential_info_tool"))
     }
+
+    /** The store is a StateFlow; only value equality lets it skip a no-op emission. */
+    @Test
+    fun `counts are equal by value`() {
+        val a = BadgeCounts(bySection = mapOf("cnc_label" to 1), byTool = mapOf("email_tool" to 1))
+        val b = BadgeCounts(bySection = mapOf("cnc_label" to 1), byTool = mapOf("email_tool" to 1))
+        val c = BadgeCounts(bySection = mapOf("cnc_label" to 2), byTool = mapOf("email_tool" to 1))
+
+        assertEquals(a, b)
+        assertEquals(a.hashCode(), b.hashCode())
+        assertTrue(a != c)
+    }
+
 }

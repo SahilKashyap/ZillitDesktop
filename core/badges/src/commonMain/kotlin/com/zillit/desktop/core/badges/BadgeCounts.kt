@@ -44,10 +44,93 @@ class BadgeCounts(
     fun toolMap(): Map<String, Int> = byTool
     fun unitMap(): Map<String, Int> = byUnit
 
+    /**
+     * Drops what this person can no longer see.
+     *
+     * The server's ledger keeps rows for tools and units whose view access
+     * was taken away; the phones apply the `notification:silent`
+     * instruction to their own copy and never show them. Each dropped key's
+     * own count comes off its section total too, so the rail agrees with
+     * the tiles.
+     */
+    fun without(tools: Set<String>, units: Set<String>): BadgeCounts {
+        if (tools.isEmpty() && units.isEmpty()) return this
+        val droppedTools = tools.sumOf { byTool[it] ?: 0 }
+        val droppedUnits = units.sumOf { byUnit[it] ?: 0 }
+        return BadgeCounts(
+            bySection = bySection
+                .lessening(BadgeSections.TOOLS, droppedTools)
+                .lessening(BadgeSections.HOME, droppedUnits),
+            byTool = byTool - tools,
+            byUnit = byUnit - units,
+        )
+    }
+
+    /** The tool read locally, before the server confirms — and its share of the section. */
+    fun clearingTool(identifier: String): BadgeCounts {
+        val had = byTool[identifier] ?: return this
+        return BadgeCounts(
+            bySection = bySection.lessening(BadgeSections.TOOLS, had),
+            byTool = byTool - identifier,
+            byUnit = byUnit,
+        )
+    }
+
+    /** A whole section read locally, before the server confirms. */
+    fun clearingSection(key: String): BadgeCounts {
+        if ((bySection[key] ?: 0) == 0) return this
+        val tools = if (key == BadgeSections.TOOLS) emptyMap() else byTool
+        val units = if (key == BadgeSections.HOME) emptyMap() else byUnit
+        return BadgeCounts(bySection = bySection - key, byTool = tools, byUnit = units)
+    }
+
+    /** One more unread, as a `notification:save` frame says — the refresh will confirm. */
+    fun bumping(section: String?, tool: String?, unit: String?): BadgeCounts {
+        if (section == null && tool == null && unit == null) return this
+        return BadgeCounts(
+            bySection = section?.let { bySection.adding(it) } ?: bySection,
+            byTool = tool?.let { byTool.adding(it) } ?: byTool,
+            byUnit = unit?.let { byUnit.adding(it) } ?: byUnit,
+        )
+    }
+
+    /**
+     * Value equality over the three maps.
+     *
+     * The store is a `StateFlow`, which skips an emission whose value equals
+     * the last — with identity equality every refresh that changed nothing
+     * still redrew the rail, the tabs and every tile.
+     */
+    override fun equals(other: Any?): Boolean =
+        other is BadgeCounts && bySection == other.bySection && byTool == other.byTool && byUnit == other.byUnit
+
+    override fun hashCode(): Int = (bySection.hashCode() * HASH_MIX + byTool.hashCode()) * HASH_MIX + byUnit.hashCode()
+
     override fun toString(): String =
         "BadgeCounts(sections=${bySection.size}, tools=${byTool.size}, total=$total)"
 
     companion object {
         val Empty = BadgeCounts()
+        private const val HASH_MIX = 31
+
+        private fun Map<String, Int>.lessening(key: String, by: Int): Map<String, Int> {
+            if (by <= 0) return this
+            val left = (this[key] ?: 0) - by
+            return if (left > 0) this + (key to left) else this - key
+        }
+
+        private fun Map<String, Int>.adding(key: String): Map<String, Int> = this + (key to (this[key] ?: 0) + 1)
     }
+}
+
+/**
+ * The section keys the ledger groups by. Named once so the store, the tally
+ * and the wiring do not each spell them.
+ */
+object BadgeSections {
+    const val CNC = "cnc_label"
+    const val TOOLS = "tools_label"
+    const val HOME = "home_label"
+    const val SETTINGS = "settings_label"
+    val all: Set<String> = setOf(CNC, TOOLS, HOME, SETTINGS)
 }

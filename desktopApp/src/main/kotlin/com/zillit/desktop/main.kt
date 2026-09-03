@@ -918,6 +918,8 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
     LaunchedEffect(socketState.isConnected) {
         if (socketState.isConnected) ready.badgeStore.refresh()
     }
+    // The two frames that move a badge without a refresh — see HomeWiring.
+    LaunchedEffect(ready) { badgeSocketEffects(ready) }
     LaunchedEffect(ready) {
         // A burst of `notification:save` (one per record) must cost one
         // refetch, not one each — but a *sustained* stream must not starve

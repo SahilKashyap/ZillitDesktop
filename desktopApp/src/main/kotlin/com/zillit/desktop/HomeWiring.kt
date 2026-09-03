@@ -13,6 +13,9 @@ import com.zillit.desktop.feature.email.domain.storageKindOf
 import com.zillit.desktop.feature.home.data.ClipAudioPlayer
 import com.zillit.desktop.feature.home.data.JvmAudioRecorder
 import com.zillit.desktop.feature.home.data.identifierToWireTool
+import com.zillit.desktop.feature.home.data.badgeSuppressionFrom
+import com.zillit.desktop.feature.home.data.badgeArrivalFrom
+import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.feature.home.data.pdfThumbnailJpeg
 import com.zillit.desktop.feature.home.data.videoThumbnailJpeg
 import com.zillit.desktop.core.common.ZillitLog
@@ -315,6 +318,11 @@ internal suspend fun emitSegmentRead(
     referenceId: String? = null,
 ) {
     val projectId = ready.projectContext?.context?.value?.project?.projectId ?: return
+    // Out of the rail the moment the read is sent, not READ_SETTLE_MILLIS later
+    // — that wait is for the server's ledger, and the badge should not sit lit
+    // while it catches up. Only a whole section is cleared here: a finer
+    // segment would over-clear until the refresh put the rest back.
+    if (segment in BadgeSections.all) ready.badgeStore.clearSection(segment)
     ready.socketEvents.emit(
         ZillitSocketEvents.Badges.NotificationRead,
         NotificationReadDto(
@@ -583,4 +591,35 @@ private fun AppGraph.Ready.boardFeed(
             preferences.set(ZillitPreferences.RecentMentions, names.joinToString("\n"))
         },
     )
+}
+
+/**
+ * The two socket frames that change a badge without a refresh.
+ *
+ * `notification:save` lifts the count at once — the conflated refresh confirms
+ * it 600ms later, so a wrong guess is short-lived. `notification:silent`
+ * forgets tools and units this person lost sight of, and re-sends each tool as
+ * a read the way iOS's `emitForBadgeDelete` does, so the server's ledger
+ * forgets too rather than handing the rows back on the next refresh.
+ */
+internal suspend fun badgeSocketEffects(ready: AppGraph.Ready) = kotlinx.coroutines.coroutineScope {
+    launch {
+        ready.socketEvents.on(ZillitSocketEvents.Badges.Save).collect { message ->
+            badgeArrivalFrom(message.payload)?.let { ready.badgeStore.bump(it.section, it.toolIdentifier, it.unit) }
+        }
+    }
+    launch {
+        ready.socketEvents.on(ZillitSocketEvents.Badges.Silent).collect { message ->
+            val lost = badgeSuppressionFrom(message.payload) ?: return@collect
+            ready.badgeStore.suppress(lost.toolIdentifiers, lost.units)
+            val projectId = ready.projectContext?.context?.value?.project?.projectId ?: return@collect
+            lost.toolWireLabels.forEach { label ->
+                ready.socketEvents.emit(
+                    ZillitSocketEvents.Badges.NotificationRead,
+                    NotificationReadDto(projectId = projectId, segment = label, timestamp = System.currentTimeMillis()),
+                    NotificationReadDto.serializer(),
+                )
+            }
+        }
+    }
 }
