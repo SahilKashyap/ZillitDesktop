@@ -186,6 +186,7 @@ private fun PlacementCard(
 
         if (form.offersPrivateName(seed.designationName)) {
             PrivateNameRow(form, onEvent)
+            if (form.mailboxAddress != null && !form.isPersonal) MailboxConsentRow(form, onEvent)
         }
     }
 }
@@ -253,3 +254,25 @@ private fun rolePlaceholder(form: ProfileFormState): String = when {
 }
 
 private val AVATAR = 44.dp
+
+/**
+ * ZL-21078: whether the crew list shows this user's Zillit mailbox address.
+ * Offered only to someone who has a mailbox, and never on a personal
+ * production (no crew list there). The server's default is ON.
+ */
+@Composable
+private fun MailboxConsentRow(form: ProfileFormState, onEvent: (AccountEvent) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        ZillitCheckbox(
+            checked = form.showMailboxInCrewList,
+            onCheckedChange = { onEvent(AccountEvent.MailboxConsentChanged(it)) },
+            label = "Show my Zillit mailbox address in the crew list",
+            enabled = !form.isSaving,
+        )
+        ZillitText(
+            text = "${form.mailboxAddress.orEmpty()} appears next to your name so the crew can write to it.",
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textMuted,
+        )
+    }
+}

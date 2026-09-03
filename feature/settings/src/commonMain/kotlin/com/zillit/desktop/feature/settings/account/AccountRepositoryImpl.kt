@@ -65,6 +65,7 @@ class AccountRepositoryImpl(
             edit.departmentId?.takeIf { it.isNotBlank() }?.let { put("department_id", it) }
             edit.designationId?.takeIf { it.isNotBlank() }?.let { put("designation_id", it) }
             put("keep_name_private", edit.keepNamePrivate)
+            edit.showMailboxInCrewList?.let { put("zillit_email_enable", it) }
         }
 
         return apiClient.envelope(

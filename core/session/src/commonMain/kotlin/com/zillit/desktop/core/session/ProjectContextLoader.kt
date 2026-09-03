@@ -218,6 +218,9 @@ internal data class ProfileDto(
     @SerialName("designation_id") val designationId: String? = null,
     @SerialName("designation_name") val designationName: String? = null,
     @SerialName("keep_name_private") val keepNamePrivate: Boolean? = null,
+    /** ZL-21078: show the Zillit mailbox address on the crew list. Absent means the server default, ON. */
+    @SerialName("zillit_email_enable") val zillitEmailEnable: Boolean? = null,
+    @SerialName("mail_box_detail") val mailBoxDetail: MailBoxDetailDto? = null,
     // Which production unit this user is on. Set from the unit picker in
     // settings; the web reads the same two fields back to seed it.
     @SerialName("join_unit_id") val joinUnitId: String? = null,
@@ -236,6 +239,8 @@ internal data class ProfileDto(
             designationId = designationId?.takeIf { it.isNotBlank() },
             designationName = designationName?.takeIf { it.isNotBlank() },
             keepNamePrivate = keepNamePrivate == true,
+            showMailboxInCrewList = zillitEmailEnable,
+            mailboxAddress = mailBoxDetail?.emailAddress?.takeIf { it.isNotBlank() },
             fullName = listOfNotNull(firstName, lastName)
                 .filter { it.isNotBlank() }
                 .joinToString(" ")
@@ -379,3 +384,9 @@ private fun JsonElement?.toImageUrl(): String? = when (this) {
 
 /** In preference order — a thumbnail is the right size for an avatar. */
 private val IMAGE_KEYS = listOf("thumbnail", "media", "url", "path", "file_name")
+
+/** The profile's mailbox block — only the address is read here; credentials live in the email module. */
+@Serializable
+internal data class MailBoxDetailDto(
+    @SerialName("email_address") val emailAddress: String? = null,
+)
