@@ -16,7 +16,12 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import com.zillit.desktop.core.session.ProjectContext
 import com.zillit.desktop.feature.calls.domain.CallMode
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import com.zillit.desktop.feature.calls.ui.CallEvent
 import com.zillit.desktop.feature.calls.ui.CallLogPane
 import com.zillit.desktop.feature.calls.ui.CallLogViewModel
@@ -262,6 +267,38 @@ internal fun crewNameOf(ready: AppGraph.Ready, userId: String): String? =
     ready.projectContext?.context?.value?.user(userId)
         ?.takeUnless { it.keepNamePrivate }
         ?.fullName
+
+
+/**
+ * The in-call name book: user id → the name we are allowed to show.
+ *
+ * Line 1 group rosters arrive with no names on them at all, so every face on
+ * the stage read "Guest". This is what the tiles fall back to.
+ *
+ * Keep-name-private members are left OUT of the map rather than mapped to a
+ * blank: a lookup then cannot reveal one, and no future refactor of the
+ * caption ladder can turn their absence into an empty caption. Placeholder
+ * names go too — `fullName` degrades to the email address and then to
+ * "Unknown" (ProjectContextLoader), and a call stage is screen-shared and
+ * recorded, which is the wrong place to paint somebody's email address.
+ * Ourselves as well: the self tile is built separately and says "You".
+ */
+internal fun ProjectContext.callNameDirectory(): Map<String, String> {
+    val self = profile?.userId
+    return users.asSequence()
+        .filter { !it.keepNamePrivate && it.userId != self }
+        .mapNotNull { user ->
+            user.fullName
+                .takeIf { it.isNotBlank() && it != user.email && it != "Unknown" }
+                ?.let { user.userId to it }
+        }
+        .toMap()
+}
+
+/** [callNameDirectory] as the calls view model wants it — see its `nameDirectory`. */
+internal fun AppGraph.Ready.callNameDirectory(): Flow<Map<String, String>> =
+    projectContext?.context?.map { it.callNameDirectory() }?.distinctUntilChanged()
+        ?: flowOf(emptyMap())
 
 
 /**

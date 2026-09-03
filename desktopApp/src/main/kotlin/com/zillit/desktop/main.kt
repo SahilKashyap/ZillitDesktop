@@ -2294,6 +2294,7 @@ private fun rememberAppViewModels(
                 CallViewModel(
                     coordinator = graph.callCoordinator,
                     crew = { graph.callableCrew() },
+                    nameDirectory = graph.callNameDirectory(),
                     // Null in a dev run: the helper only exists in a packaged
                     // bundle, and without it Share sends the whole screen.
                     screenSources = macCaptureHelper()?.let(::MacScreenSources),

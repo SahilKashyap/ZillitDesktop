@@ -20,6 +20,7 @@ import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.domain.CallStatus
 import com.zillit.desktop.feature.calls.domain.CallType
+import com.zillit.desktop.core.common.ZillitLog
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -199,6 +200,14 @@ class CallApi(
             val data = envelope.data as? JsonObject
             val users = data?.get("call_users")
                 ?: (data?.get("call") as? JsonObject)?.get("call_users")
+            // Key names only, never values: this says whether the server ever
+            // sends a name for a Line 1 group row, which is the difference
+            // between a wire bug and the display fallback the tiles now use.
+            // The values are people's names and must not reach a log file.
+            ZillitLog.d(CALL_API_TAG) {
+                val rows = users as? JsonArray
+                "call-dump rows=${rows?.size} keys=${(rows?.firstOrNull() as? JsonObject)?.keys}"
+            }
             readParticipants(users)
         }
 
@@ -520,3 +529,6 @@ internal suspend fun CallApi.invite(
         )
     }
 }
+
+/** Log tag for the calling REST surface. */
+private const val CALL_API_TAG = "CallApi"
