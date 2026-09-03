@@ -75,6 +75,10 @@ sealed interface DocDistEvent {
     // -- history ----------------------------------------------------------
 
     data class SearchHistory(val text: String) : DocDistEvent
+    data class ToggleHistorySender(val senderId: String) : DocDistEvent
+    data object ClearHistorySenders : DocDistEvent
+    data class SearchHistorySenders(val text: String) : DocDistEvent
+    data class HistorySenderMenu(val open: Boolean) : DocDistEvent
     /** Expands one row and refreshes its per-recipient open status. */
     data class ExpandDistribution(val distributionId: String?) : DocDistEvent
     /** Re-opens the composer with a past send's recipients and subject. */

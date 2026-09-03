@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.documentdistribution.ui
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.DateGroup
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
+import com.zillit.desktop.feature.documentdistribution.domain.DistributionSender
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
@@ -97,6 +98,11 @@ data class DocDistUiState(
     // -- other pages ------------------------------------------------------
     val history: List<Distribution> = emptyList(),
     val historySearch: String = "",
+    /** The "Sent by" menu: everyone the history could have been sent by, the ids ticked, and the menu's own search. */
+    val historySenders: List<DistributionSender> = emptyList(),
+    val historySenderIds: Set<String> = emptySet(),
+    val historySenderQuery: String = "",
+    val historySenderMenuOpen: Boolean = false,
     val expandedDistributionId: String? = null,
     val lists: List<DistributionList> = emptyList(),
     val contacts: List<Contact> = emptyList(),

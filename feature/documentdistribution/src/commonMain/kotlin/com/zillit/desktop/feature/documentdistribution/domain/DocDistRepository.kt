@@ -196,7 +196,22 @@ interface DocDistRepository {
 
     suspend fun send(distribution: NewDistribution): ZillitResult<Unit>
 
-    suspend fun history(page: Int, search: String): ZillitResult<List<Distribution>>
+    /**
+     * @param senderIds the "Sent by" filter — ZL-21138: sent as `sent_by=id1,id2`,
+     *   which the backend treats as OR; empty omits the param (absence is "All").
+     */
+    suspend fun history(
+        page: Int,
+        search: String,
+        senderIds: Set<String> = emptySet(),
+    ): ZillitResult<List<Distribution>>
+
+    /**
+     * Every distinct sender across the project's history, for the "Sent by"
+     * menu. The endpoint is not shipped everywhere; a failure is an empty
+     * list and the caller falls back to the senders it can read off the rows.
+     */
+    suspend fun senders(): ZillitResult<List<DistributionSender>>
 
     suspend fun distribution(id: String): ZillitResult<Distribution>
 

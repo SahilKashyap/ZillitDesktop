@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.documentdistribution.ui
 
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.feature.documentdistribution.domain.Distribution
+import com.zillit.desktop.feature.documentdistribution.domain.DistributionSender
 import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
 import com.zillit.desktop.feature.documentdistribution.domain.PublishTarget
 import com.zillit.desktop.core.common.ZillitResult
@@ -294,6 +296,16 @@ class DocDistViewModel(
 
             // -- history ---------------------------------------------------
 
+            is DocDistEvent.ToggleHistorySender -> {
+                setState { togglingSender(event.senderId) }
+                loadHistory()
+            }
+            DocDistEvent.ClearHistorySenders -> {
+                setState { copy(historySenderIds = emptySet(), historySenderQuery = "") }
+                loadHistory()
+            }
+            is DocDistEvent.SearchHistorySenders -> setState { copy(historySenderQuery = event.text) }
+            is DocDistEvent.HistorySenderMenu -> setState { copy(historySenderMenuOpen = event.open) }
             is DocDistEvent.SearchHistory -> {
                 setState { copy(historySearch = event.text) }
                 debounced(::loadHistory)
@@ -444,9 +456,22 @@ class DocDistViewModel(
      * unknown, and floating it to the top puts the least informative row where
      * the most recent one belongs.
      */
-    private fun loadHistory() = fetch(
-        { repository.history(page = 0, search = currentState.historySearch) },
-    ) { rows -> copy(history = rows.sortedByDescending { it.sentAt ?: Long.MIN_VALUE }) }
+    private fun loadHistory() {
+        val ids = currentState.historySenderIds
+        fetch({ repository.history(page = 0, search = currentState.historySearch, senderIds = ids) }) { rows ->
+            historyLoaded(rows, ids)
+        }
+        if (!sendersAsked) {
+            sendersAsked = true
+            launch {
+                // Not shipped everywhere: a failure means "use what the rows say".
+                val fetched = (repository.senders() as? ZillitResult.Success)?.data.orEmpty()
+                if (fetched.isNotEmpty()) setState { copy(historySenders = mergedSenders(fetched, history)) }
+            }
+        }
+    }
+
+    private var sendersAsked = false
 
     /**
      * Runs [block] once the user stops typing.
@@ -889,3 +914,31 @@ internal fun Recipient.sameAs(other: Contact): Boolean =
 
 /** Templates carry no id until saved; blank means "new". */
 internal val EmailTemplate.isNew: Boolean get() = id.isBlank()
+
+/** The menu's senders: the endpoint's list, plus anyone a loaded row names that it did not, by id. */
+internal fun mergedSenders(known: List<DistributionSender>, rows: List<Distribution>): List<DistributionSender> {
+    val byId = linkedMapOf<String, DistributionSender>()
+    known.forEach { if (it.id.isNotBlank()) byId[it.id] = it }
+    rows.forEach { row ->
+        if (row.senderId.isNotBlank() && row.senderId !in byId) {
+            byId[row.senderId] = DistributionSender(row.senderId, row.sentByName)
+        }
+    }
+    return byId.values.sortedBy { it.name.lowercase() }
+}
+
+private fun DocDistUiState.togglingSender(id: String): DocDistUiState =
+    copy(historySenderIds = if (id in historySenderIds) historySenderIds - id else historySenderIds + id)
+
+/**
+ * The filter is applied here as well as pushed as `sent_by`: a backend that
+ * ignores the param still answers, and the rows must not show senders the
+ * menu says are off.
+ */
+private fun DocDistUiState.historyLoaded(rows: List<Distribution>, ids: Set<String>): DocDistUiState {
+    val kept = if (ids.isEmpty()) rows else rows.filter { it.senderId in ids }
+    return copy(
+        history = kept.sortedByDescending { it.sentAt ?: Long.MIN_VALUE },
+        historySenders = mergedSenders(historySenders, rows),
+    )
+}

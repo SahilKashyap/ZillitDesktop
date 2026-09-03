@@ -20,7 +20,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import com.zillit.desktop.feature.documentdistribution.domain.DistributionSender
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -260,6 +264,14 @@ internal data class DistributionDto(
      */
     @SerialName("created") val created: JsonPrimitive? = null,
     @SerialName("sent_by_name") val sentByName: String? = null,
+    // The sender as the backend has spelled it over time (ZL-21138): a nested
+    // `created_by` object, a bare id with the name on a sibling key, or the
+    // older `sent_by` / `sender` keys. `created_by`, when present, is trusted
+    // exclusively — even when null — exactly as the web reads it.
+    @SerialName("created_by") val createdBy: JsonElement? = null,
+    @SerialName("created_by_name") val createdByName: String? = null,
+    @SerialName("sent_by") val sentBy: JsonElement? = null,
+    @SerialName("sender") val sender: JsonElement? = null,
     @SerialName("recipients") val recipients: List<RecipientDto> = emptyList(),
     @SerialName("attachments") val attachments: List<AttachmentSummaryDto> = emptyList(),
     @SerialName("presets_used") val presetsUsed: List<PresetUsedDto> = emptyList(),
@@ -270,7 +282,8 @@ internal data class DistributionDto(
             id = identifier,
             subject = subject.orEmpty().ifBlank { "(no subject)" },
             sentAt = created?.content.toEpochMillisOrNull(),
-            sentByName = sentByName.orEmpty(),
+            sentByName = sentByName.orEmpty().ifBlank { readSender()?.name.orEmpty() },
+            senderId = readSender()?.id.orEmpty(),
             recipients = recipients.mapNotNull { it.toDelivery() },
             attachmentNames = attachments.mapNotNull { it.name?.takeIf(String::isNotBlank) },
             listsUsed = presetsUsed.mapNotNull { it.name?.takeIf(String::isNotBlank) },
@@ -386,3 +399,69 @@ internal fun decodeDistributions(json: String): List<Distribution> =
 
 /** Matches `HttpClientFactory.json` — lenient about keys this client does not read. */
 private val docDistWireJson = Json { ignoreUnknownKeys = true }
+
+/**
+ * The web's `historySenders.readSender`, key for key: `created_by` wins
+ * when it carries a sender; otherwise `sent_by`, then `sender`. (The web
+ * also treats an explicit null `created_by` as final; a nullable JSON field
+ * cannot tell null from absent here, so that null falls through instead —
+ * a sender shown where the web shows none, never the reverse.) An object yields its id and
+ * a name (email as the last resort); a bare id yields the id with the name
+ * from the sibling `*_name` keys. An id-only sender is kept — the id is what
+ * filters — and a row with no sender at all yields null.
+ */
+internal fun DistributionDto.readSender(): DistributionSender? {
+    val candidates: List<Pair<JsonElement?, String?>> =
+        if (createdBy != null) listOf(createdBy to createdByName)
+        else listOf(sentBy to sentByName, sender to sentByName)
+    for ((raw, siblingName) in candidates) {
+        val found = senderFrom(raw, siblingName) ?: continue
+        return found
+    }
+    return null
+}
+
+private fun senderFrom(raw: JsonElement?, siblingName: String?): DistributionSender? = when (raw) {
+    null, is JsonNull -> null
+    is JsonObject -> {
+        val id = raw.firstText("user_id", "_id", "id")
+        if (id.isNullOrBlank()) null
+        else DistributionSender(
+            id = id,
+            name = raw.firstText("full_name", "name", "display_name") ?: raw.firstText("email").orEmpty(),
+            designation = raw.firstText("designation", "job_title", "job", "role", "department").orEmpty(),
+        )
+    }
+    is JsonPrimitive ->
+        raw.contentOrNull?.takeIf { it.isNotBlank() }?.let { DistributionSender(it, siblingName.orEmpty()) }
+    else -> null
+}
+
+private fun JsonObject.firstText(vararg keys: String): String? =
+    keys.firstNotNullOfOrNull { key ->
+        (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+    }
+
+/**
+ * `GET distributions/senders` — `{ senders: [{ user_id, full_name }] }`. Read
+ * loosely: the endpoint is not shipped everywhere.
+ */
+@Serializable
+internal data class DistributionSendersDto(
+    @SerialName("senders") val senders: List<DistributionSenderDto> = emptyList(),
+)
+
+@Serializable
+internal data class DistributionSenderDto(
+    @SerialName("user_id") val userId: String? = null,
+    @SerialName("_id") val id: String? = null,
+    @SerialName("full_name") val fullName: String? = null,
+    @SerialName("name") val name: String? = null,
+    @SerialName("designation") val designation: String? = null,
+) {
+    fun toDomain(): DistributionSender? {
+        val key = (userId ?: id)?.takeIf { it.isNotBlank() } ?: return null
+        val label = (fullName ?: name).orEmpty()
+        return DistributionSender(key, label, designation.orEmpty())
+    }
+}
