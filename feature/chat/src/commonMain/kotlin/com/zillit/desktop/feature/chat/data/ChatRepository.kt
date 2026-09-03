@@ -143,7 +143,13 @@ interface ChatRepository {
     fun markThreadRead(peerId: String, uptoMillis: Long)
 
     /** Cached non-mine messages newer than each thread's read mark. */
-    fun unreadCounts(): Map<String, Int>
+    /**
+     * @param floor per conversation, the newest message the server's backlog
+     *   already knows about. The cache only adds what arrived after that —
+     *   its whole purpose — so a thread read on the phone long ago, whose
+     *   read mark here never moved, cannot outvote the server's zero.
+     */
+    fun unreadCounts(floor: Map<String, Long> = emptyMap()): Map<String, Int>
 
     /** Each cached thread's newest activity, for recency ordering. */
     fun newestActivity(): Map<String, Long>
@@ -461,14 +467,14 @@ class ChatRepositoryImpl(
         projectId()?.let { disk?.markReadUntil(it, peerId, uptoMillis) }
     }
 
-    override fun unreadCounts(): Map<String, Int> {
+    override fun unreadCounts(floor: Map<String, Long>): Map<String, Int> {
         val project = projectId() ?: return emptyMap()
         val store = disk ?: return emptyMap()
         val marks = store.readMarks(project)
         return store.lastPerPeer(project).associate { newest ->
-            val readUntil = marks[newest.peerId] ?: 0L
+            val since = maxOf(marks[newest.peerId] ?: 0L, floor[newest.peerId] ?: 0L)
             newest.peerId to store.thread(project, newest.peerId)
-                .count { !it.isMine && it.createdAt > readUntil }
+                .count { !it.isMine && it.createdAt > since }
         }.filterValues { it > 0 }
     }
 

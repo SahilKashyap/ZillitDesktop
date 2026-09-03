@@ -437,7 +437,7 @@ class ChatViewModel(
             copy(
                 recents = ordered,
                 previews = previewsFor(ordered),
-                unread = combinedUnread(repository.unreadCounts()),
+                unread = combinedUnread(repository.unreadCounts(serverActivity)),
                 activity = activity,
             )
         }
@@ -1121,7 +1121,7 @@ class ChatViewModel(
                 ZillitLog.d(TAG) {
                     "backlog unread=${counts.entries.joinToString { "${it.key}:${it.value}" }} " +
                         "rooms=${backlog.rooms.size} " +
-                        "local=${repository.unreadCounts().entries.joinToString { "${it.key}:${it.value}" }}"
+                        "local=${localSummary()}"
                 }
                 learnActivity(backlog.activity)
                 // The order follows the stamps as much as the counts:
@@ -1134,6 +1134,10 @@ class ChatViewModel(
             onError = { },
         )
     }
+
+    /** The cache's unread per conversation, as the seed line prints it. */
+    private fun localSummary(): String =
+        repository.unreadCounts(serverActivity).entries.joinToString { "${it.key}:${it.value}" }
 
     /** What the rows show: the larger of the server's word and the cache's. */
     private fun combinedUnread(local: Map<String, Int>): Map<String, Int> =
@@ -1391,7 +1395,7 @@ class ChatViewModel(
         if (!isOpen && !message.isMine && other.isNotBlank()) {
             serverUnread[other] = (serverUnread[other] ?: 0) + 1
         }
-        val unread = combinedUnread(repository.unreadCounts())
+        val unread = combinedUnread(repository.unreadCounts(serverActivity))
         setState {
             copy(
                 recents = sortedRecents(withPeer(recents, other), activity),
