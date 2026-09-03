@@ -35,6 +35,7 @@ import com.zillit.desktop.feature.home.domain.ReadBy
 import com.zillit.desktop.feature.home.domain.UploadedNoticeMedia
 import com.zillit.desktop.feature.home.domain.NoticeSendState
 import com.zillit.desktop.feature.home.domain.Notice
+import com.zillit.desktop.feature.home.domain.replaceTargets
 import com.zillit.desktop.feature.home.domain.visibleTabs
 
 data class HomeFeedUiState(
@@ -312,6 +313,8 @@ data class PendingPreview(
     /** Everything picked or dropped — the wire takes one per post, so N files become N posts. */
     val files: List<PickedMedia>,
     val replace: Boolean? = null,
+    /** "Replace one document": the live message the upload retires. */
+    val replaceChatId: String? = null,
 )
 
 data class PendingOpen(val attachment: NoticeAttachment, val nonce: Long)
@@ -422,6 +425,9 @@ sealed interface HomeFeedEvent {
      * the second question; Dismiss drops the whole thing.
      */
     data object CallSheetContinuation : HomeFeedEvent
+    /** "Replace one document": show the live documents to pick from. */
+    data object CallSheetPickReplacement : HomeFeedEvent
+    data class CallSheetReplaceOne(val noticeId: String) : HomeFeedEvent
     data object CallSheetNew : HomeFeedEvent
     data object CallSheetReplaceConfirmed : HomeFeedEvent
     data object CallSheetDismiss : HomeFeedEvent
@@ -530,6 +536,7 @@ class HomeFeedViewModel(
      * would land as a "Continuation" on the second try.
      */
     private val replaceByLocalId = mutableMapOf<String, Boolean>()
+    private val replaceTargetByLocalId = mutableMapOf<String, String>()
 
     /** Test seam: the pre-fix state where a failed upload's file is gone. */
     internal fun forgetPickedFor(localId: String) {
@@ -630,6 +637,10 @@ class HomeFeedViewModel(
             HomeFeedEvent.OpenHandled -> setState { copy(pendingOpen = null) }
             is HomeFeedEvent.JumpToPost -> setState { copy(jumpTo = JumpTarget(event.noticeId, ++openCounter)) }
             HomeFeedEvent.CallSheetContinuation -> answerCallSheet(replace = false)
+            HomeFeedEvent.CallSheetPickReplacement -> setState {
+                copy(callSheetPrompt = callSheetPrompt?.copy(picking = true))
+            }
+            is HomeFeedEvent.CallSheetReplaceOne -> answerCallSheet(replace = false, replaceChatId = event.noticeId)
             HomeFeedEvent.CallSheetNew -> setState {
                 copy(callSheetPrompt = callSheetPrompt?.copy(confirmingReplace = true))
             }
@@ -801,7 +812,10 @@ class HomeFeedViewModel(
         // put the question before the picker opens; dropped files wait in
         // the prompt so the answer can attach them.
         if (replace == null && callSheetAsksFirst(unit)) {
-            setState { copy(callSheetPrompt = CallSheetPrompt(dropped = dropped, kind = kind)) }
+            setState {
+                val prompt = CallSheetPrompt(dropped = dropped, kind = kind, targets = replaceTargets(notices))
+                copy(callSheetPrompt = prompt)
+            }
             return
         }
 
@@ -815,7 +829,12 @@ class HomeFeedViewModel(
             // picture only reaches the board once it has been looked at (and
             // possibly drawn on). The replace answer rides with it — the
             // posts are built when Send is pressed, one per file.
-            setState { copy(pendingPreview = PendingPreview(files, replace), error = null) }
+            setState {
+                copy(
+                    pendingPreview = PendingPreview(files, replace, replaceChatId),
+                    error = null,
+                )
+            }
         }
     }
 
@@ -982,7 +1001,7 @@ class HomeFeedViewModel(
             )
         }
 
-        deliver(unit.id, optimistic, draft.media, draft.location, draft.replacePrevious)
+        deliver(unit.id, optimistic, draft.media, draft.location, draft.replacePrevious, draft.replaceChatId)
     }
 
     /**
@@ -1002,10 +1021,10 @@ class HomeFeedViewModel(
      * ahead with the flag — from the picker, or with the file that was
      * dropped and has been waiting in the prompt.
      */
-    private fun answerCallSheet(replace: Boolean) {
+    private fun answerCallSheet(replace: Boolean, replaceChatId: String? = null) {
         val prompt = currentState.callSheetPrompt ?: return
         setState { copy(callSheetPrompt = null) }
-        attach(dropped = prompt.dropped, replace = replace, kind = prompt.kind)
+        attach(dropped = prompt.dropped, replace = replace, kind = prompt.kind, replaceChatId = replaceChatId)
     }
 
     /**
@@ -1413,6 +1432,7 @@ class HomeFeedViewModel(
             picked = pickedByLocalId[localId],
             location = failed.location,
             replacePrevious = replaceByLocalId[localId],
+            replaceChatId = replaceTargetByLocalId[localId],
         )
     }
 
@@ -1450,10 +1470,12 @@ class HomeFeedViewModel(
         picked: PickedMedia?,
         location: GeoPoint? = null,
         replacePrevious: Boolean? = null,
+        replaceChatId: String? = null,
     ) {
         val localId = optimistic.localId ?: return
         picked?.let { pickedByLocalId[localId] = it }
         replacePrevious?.let { replaceByLocalId[localId] = it }
+        replaceChatId?.let { replaceTargetByLocalId[localId] = it }
 
         launchResult(
             block = {
@@ -1487,7 +1509,9 @@ class HomeFeedViewModel(
                         copy(uploadProgress = uploadProgress + (localId to UPLOAD_DONE))
                     }
                 }
-                repository.postNotice(unitId, optimistic.body, localId, uploaded, location, replacePrevious)
+                repository.postNotice(
+                    unitId, optimistic.body, localId, uploaded, location, replacePrevious, replaceChatId,
+                )
             },
             onSuccess = { saved ->
                 // Replace rather than append: the optimistic card and the
@@ -1496,6 +1520,11 @@ class HomeFeedViewModel(
                 uploadedByLocalId.remove(localId)
                 pickedByLocalId.remove(localId)
                 replaceByLocalId.remove(localId)
+                replaceTargetByLocalId.remove(localId)
+                // "Replace one document": the retired message leaves the board
+                // the moment the server names it, as the web's
+                // `removeMessagesFromList` on `replaced_chat_id`.
+                saved.replacedNoticeId?.let { gone -> setState { copy(notices = notices.filterNot { it.id == gone }) } }
                 setState {
                     copy(
                         notices = notices.replacing(localId, saved),

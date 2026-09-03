@@ -3441,6 +3441,9 @@ private fun buildAccount(ready: AppGraph.Ready): AccountViewModel =
                 // The untranslated key, which is what the privacy toggle gates on.
                 designationName = profile?.designationName,
                 keepNamePrivate = profile?.keepNamePrivate == true,
+                showMailboxInCrewList = profile?.showMailboxInCrewList ?: true,
+                mailboxAddress = profile?.mailboxAddress,
+                isPersonal = context.project?.type.equals(PERSONAL_PRODUCTION, ignoreCase = true),
                 // A personal production has one member, who runs it — the web
                 // makes the same substitution rather than reading the flag.
                 isAdmin = context.isAdmin ||

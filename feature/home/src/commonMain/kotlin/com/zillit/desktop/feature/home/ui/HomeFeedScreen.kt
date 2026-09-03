@@ -40,6 +40,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
@@ -531,17 +533,53 @@ private fun CallSheetPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEven
     val unitLabel = state.selectedUnit?.label ?: "Call Sheet"
     // Remembered across the exit so the fading card keeps its last words.
     var confirming by remember { mutableStateOf(false) }
-    if (prompt != null) confirming = prompt.confirmingReplace
-
+    var picking by remember { mutableStateOf(false) }
+    if (prompt != null) {
+        confirming = prompt.confirmingReplace
+        picking = prompt.picking
+    }
     ZillitDialogShell(
-        title = "Alert",
+        title = if (picking) "Replace which document?" else "Alert",
         icon = ZillitIcons.Warning,
         visible = prompt != null,
         onDismiss = { onEvent(HomeFeedEvent.CallSheetDismiss) },
         width = CALL_SHEET_PROMPT_WIDTH,
-        actions = {
-            Spacer(Modifier.weight(1f))
-            if (!confirming) {
+        actions = { PromptActions(prompt, confirming, picking, onEvent) },
+    ) {
+        when {
+            picking -> ReplaceTargetList(prompt?.targets.orEmpty(), onEvent)
+            else -> ZillitText(
+                text = if (!confirming) {
+                    "Are you uploading a document in continuation of the existing $unitLabel, " +
+                        "or uploading a new $unitLabel? Please choose below."
+                } else {
+                    "Doing this will send all current data posted here to History. " +
+                        "It will be replaced with the new upload. Do you still want to proceed?"
+                },
+                style = ZillitTheme.typography.bodyMedium,
+                color = ZillitTheme.colors.textPrimary,
+            )
+        }
+    }
+}
+
+
+/** The prompt's buttons per mode: the three answers, the "New" confirmation, or the picker's Cancel. */
+@Composable
+private fun RowScope.PromptActions(
+    prompt: CallSheetPrompt?,
+    confirming: Boolean,
+    picking: Boolean,
+    onEvent: (HomeFeedEvent) -> Unit,
+) {
+        Spacer(Modifier.weight(1f))
+        when {
+            picking -> ZillitButton(
+                text = "Cancel",
+                variant = ButtonVariant.Tertiary,
+                onClick = { onEvent(HomeFeedEvent.CallSheetDismiss) },
+            )
+            !confirming -> {
                 ZillitButton(
                     text = "Cancel",
                     variant = ButtonVariant.Tertiary,
@@ -552,8 +590,18 @@ private fun CallSheetPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEven
                     variant = ButtonVariant.Secondary,
                     onClick = { onEvent(HomeFeedEvent.CallSheetContinuation) },
                 )
+                // "Replace one document" — the phones' third answer: swap a
+                // single live document rather than send the whole unit to
+                // History. Only offered when there is something to swap.
+                ZillitButton(
+                    text = "Replace one…",
+                    variant = ButtonVariant.Secondary,
+                    enabled = prompt?.targets?.isNotEmpty() == true,
+                    onClick = { onEvent(HomeFeedEvent.CallSheetPickReplacement) },
+                )
                 ZillitButton(text = "New", onClick = { onEvent(HomeFeedEvent.CallSheetNew) })
-            } else {
+            }
+            else -> {
                 ZillitButton(
                     text = "No",
                     variant = ButtonVariant.Secondary,
@@ -565,21 +613,33 @@ private fun CallSheetPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEven
                     onClick = { onEvent(HomeFeedEvent.CallSheetReplaceConfirmed) },
                 )
             }
-        },
+        }
+}
+
+/** The live documents a "Replace one" upload may retire — a click is the answer. */
+@Composable
+private fun ReplaceTargetList(targets: List<Notice>, onEvent: (HomeFeedEvent) -> Unit) {
+    Column(
+        Modifier.heightIn(max = REPLACE_LIST_HEIGHT).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = if (!confirming) {
-                "Are you uploading a document in continuation of the existing $unitLabel, " +
-                    "or uploading a new $unitLabel? Please choose below."
-            } else {
-                "Doing this will send all current data posted here to History. " +
-                    "It will be replaced with the new upload. Do you still want to proceed?"
-            },
-            style = ZillitTheme.typography.bodyMedium,
-            color = ZillitTheme.colors.textPrimary,
+            text = "The chosen document goes to History; your upload takes its place.",
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textMuted,
         )
+        targets.forEach { target ->
+            ZillitButton(
+                text = target.attachment?.fileName?.ifBlank { null } ?: target.body.ifBlank { "Document" },
+                variant = ButtonVariant.Secondary,
+                onClick = { onEvent(HomeFeedEvent.CallSheetReplaceOne(target.id)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
+
+private val REPLACE_LIST_HEIGHT = 320.dp
 
 /**
  * Who has and hasn't read a post — the web's `ReadByUsersModal`, as a card
