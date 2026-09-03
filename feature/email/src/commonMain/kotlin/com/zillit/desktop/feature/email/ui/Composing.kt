@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.email.ui
 
+import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.feature.email.domain.AttachmentUploader
 import com.zillit.desktop.feature.email.domain.ContactRepository
 import com.zillit.desktop.feature.email.domain.DraftRepository
@@ -28,6 +29,11 @@ data class Composing(
     val uploader: AttachmentUploader? = null,
     /** Opens the system file chooser. Suspends while it is up. */
     val chooseFiles: suspend () -> List<PickedFile> = { emptyList() },
+    /**
+     * The same chooser, filtered to one kind from the attach sheet. Defaults
+     * to the untyped one so a host (or test) wiring only that still works.
+     */
+    val chooseFilesOf: suspend (PreviewKind) -> List<PickedFile> = { chooseFiles() },
     val newAttachmentId: () -> String = { "attachment" },
     /** Reply-all drops this address, so a reply never goes to its sender. */
     val selfAddress: () -> String = { "" },

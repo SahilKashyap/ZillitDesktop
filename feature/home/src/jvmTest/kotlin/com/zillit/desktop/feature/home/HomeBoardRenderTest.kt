@@ -23,6 +23,7 @@ import com.zillit.desktop.feature.home.ui.HomeFeedEvent
 import com.zillit.desktop.feature.home.ui.HomeFeedScreen
 import com.zillit.desktop.feature.home.ui.HomeFeedUiState
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 /**
  * Composes the real board — the card menu on a long-press, the call sheet's
@@ -70,6 +71,45 @@ class HomeBoardRenderTest {
         currentUserId = "me",
         nowMillis = now,
     )
+
+    @Test
+    fun `a notice board's paperclip opens the phones' attach sheet`() = runComposeUiTest {
+        var fired: HomeFeedEvent? = null
+        setContent {
+            ZillitTheme { HomeFeedScreen(state = board(notices), onEvent = { fired = it }) }
+        }
+
+        onNodeWithContentDescription("Attach a file").performClick()
+        waitForIdle()
+        listOf("Photo", "Video", "Document", "Audio").forEach { onNodeWithText(it).assertExists() }
+
+        onNodeWithText("Photo").performClick()
+        waitForIdle()
+        assertEquals(
+            HomeFeedEvent.AttachKind(com.zillit.desktop.core.media.PreviewKind.Image),
+            fired,
+        )
+    }
+
+    @Test
+    fun `the call sheet takes documents only, with no sheet to open`() = runComposeUiTest {
+        // Both phones hide everything but the document picker there
+        // (Android Home.kt:908-911, iOS ProductionVC.swift:1149); a sheet of
+        // one collapses to a plain button.
+        var fired: HomeFeedEvent? = null
+        setContent {
+            ZillitTheme { HomeFeedScreen(state = board(callSheet), onEvent = { fired = it }) }
+        }
+
+        onNodeWithContentDescription("Attach a document").performClick()
+        waitForIdle()
+
+        assertEquals(
+            HomeFeedEvent.AttachKind(com.zillit.desktop.core.media.PreviewKind.Document),
+            fired,
+        )
+        onNodeWithText("Photo").assertDoesNotExist()
+    }
 
     @Test
     fun `a long-press opens the phones' menu, Edit and Delete stay past the window`() = runComposeUiTest {

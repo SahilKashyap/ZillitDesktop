@@ -230,10 +230,13 @@ private fun CompactHeader(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
             )
         }
         if (state.viewer.canCreate) {
-            ZillitIconButton(
+            // The phones' upload sheet: Photo, Video, Document — Android's
+            // `ZillitDriveActivity` offers camera, gallery, video and document.
+            com.zillit.desktop.core.media.AttachMenu(
+                kinds = DRIVE_UPLOAD_KINDS,
                 icon = ZillitIcons.Upload,
                 contentDescription = "Upload",
-                onClick = { onEvent(DriveEvent.PickFiles) },
+                onPick = { kind -> onEvent(DriveEvent.PickFilesOf(kind)) },
             )
         }
         ZillitIconButton(
@@ -264,3 +267,10 @@ private fun DriveBody(state: DriveUiState, onEvent: (DriveEvent) -> Unit) {
 }
 
 private const val DETAILS_WIDTH = 360
+
+/** What Drive's upload sheet offers — the phones' set, minus the camera. */
+private val DRIVE_UPLOAD_KINDS = listOf(
+    com.zillit.desktop.core.media.PreviewKind.Image,
+    com.zillit.desktop.core.media.PreviewKind.Video,
+    com.zillit.desktop.core.media.PreviewKind.Document,
+)

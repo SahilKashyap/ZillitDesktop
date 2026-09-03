@@ -13,6 +13,7 @@ kotlin {
             implementation(project(":core:localization"))
             implementation(project(":core:network"))
             implementation(project(":core:designsystem"))
+            implementation(project(":core:media"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:database"))
             implementation(project(":core:socket"))

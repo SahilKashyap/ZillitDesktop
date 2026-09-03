@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.email.ui
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.ContactRepository
@@ -161,6 +162,9 @@ sealed interface ComposeEvent {
     /** Opens the system file chooser. */
     data object PickFiles : Field
 
+    /** The attach sheet's answer — the chooser filtered to one kind. */
+    data class PickFilesOf(val kind: PreviewKind) : Field
+
     /** Switches the sign-off. Null sends none. */
     data class SignatureChosen(val signature: EmailSignature?) : Field
 
@@ -210,6 +214,9 @@ sealed interface ComposeEffect {
      * the ViewModel stays free of both.
      */
     data object ChooseFiles : ComposeEffect
+
+    /** As [ChooseFiles], filtered to one kind from the attach sheet. */
+    data class ChooseFilesOf(val kind: PreviewKind) : ComposeEffect
 
     /** Open the signature manager in its own window. */
     data object OpenSignatures : ComposeEffect
@@ -347,6 +354,7 @@ class ComposeViewModel(
             is ComposeEvent.ContactPicked -> pick(event.contact)
             is ComposeEvent.AttachFile -> attach(event.file)
             ComposeEvent.PickFiles -> sendEffect(ComposeEffect.ChooseFiles)
+            is ComposeEvent.PickFilesOf -> sendEffect(ComposeEffect.ChooseFilesOf(event.kind))
             is ComposeEvent.SignatureChosen -> setState { copy(signature = event.signature) }
             ComposeEvent.ManageSignatures -> sendEffect(ComposeEffect.OpenSignatures)
             is ComposeEvent.RemoveAttachment -> setState {

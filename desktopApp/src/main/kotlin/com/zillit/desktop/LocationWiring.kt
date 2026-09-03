@@ -113,7 +113,9 @@ internal fun AppGraph.Ready.locationProvider(viewModel: LocationViewModel,
     viewModel = viewModel,
     onPickFile = { onPicked ->
         scope.launch {
-            val picked = FilePicker().pick().firstOrNull()
+            val picked = attachmentPicker
+                .pick(com.zillit.desktop.core.media.PreviewKind.Document, multiple = false)
+                .firstOrNull()
             onPicked(picked?.let { PickedLocationFile(it.name, it.contentType, it.bytes) })
         }
     },

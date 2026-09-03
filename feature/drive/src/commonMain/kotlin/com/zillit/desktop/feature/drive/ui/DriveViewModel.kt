@@ -328,6 +328,7 @@ class DriveViewModel(
             // -- uploads ---------------------------------------------------
 
             DriveEvent.PickFiles -> sendEffect(DriveEffect.PickFiles)
+            is DriveEvent.PickFilesOf -> sendEffect(DriveEffect.PickFilesOf(event.kind))
             is DriveEvent.Upload -> enqueue(event.files)
             is DriveEvent.CancelUpload -> cancelUpload(event.uploadId)
             DriveEvent.ClearFinishedUploads -> setState {

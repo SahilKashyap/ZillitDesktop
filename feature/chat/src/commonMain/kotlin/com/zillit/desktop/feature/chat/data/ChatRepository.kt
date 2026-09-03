@@ -14,6 +14,7 @@ import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.database.ChatCache
 import com.zillit.desktop.core.database.ChatMessageRow
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.socket.SocketMessage
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import kotlinx.coroutines.flow.Flow
@@ -294,15 +295,15 @@ class ChatRepositoryImpl(
     override val incoming: Flow<ChatMessage> =
         kotlinx.coroutines.flow.merge(
             acked,
-            bus.on(privateChat).mapNotNull { message ->
+            bus.on(privateChat).hereOnly().mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt) }
             },
-            bus.on(groupChat).mapNotNull { message ->
+            bus.on(groupChat).hereOnly().mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt, isGroup = true) }
             },
             // A reaction event IS the updated message; riding the same flow
             // means the thread upserts it with no second merge path to drift.
-            bus.on(updateReaction).mapNotNull { message ->
+            bus.on(updateReaction).hereOnly().mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt) }
             },
         ).mapNotNull { message ->
@@ -314,17 +315,17 @@ class ChatRepositoryImpl(
         }
 
     override val typing: Flow<Pair<String, Boolean>> =
-        bus.on(typingEvent).mapNotNull { it.payload?.let(::typingFrom) }
+        bus.on(typingEvent).hereOnly().mapNotNull { it.payload?.let(::typingFrom) }
 
     override val receipts: Flow<ReadReceipt> =
-        bus.on(readUntill).mapNotNull { message ->
+        bus.on(readUntill).hereOnly().mapNotNull { message ->
             message.payload?.let { readReceiptFrom(it, myUserId()) }
         }
 
     override val deletions: Flow<List<String>> =
         kotlinx.coroutines.flow.merge(
-            bus.on(privateDelete),
-            bus.on(groupDelete),
+            bus.on(privateDelete).hereOnly(),
+            bus.on(groupDelete).hereOnly(),
         ).mapNotNull { message ->
             message.payload?.let(::deletedIdsFrom)
                 ?.takeIf { it.isNotEmpty() }
@@ -335,13 +336,13 @@ class ChatRepositoryImpl(
         }
 
     override val selfReads: Flow<String> =
-        kotlinx.coroutines.flow.merge(bus.on(readUntill), bus.on(groupReadUntill))
+        kotlinx.coroutines.flow.merge(bus.on(readUntill).hereOnly(), bus.on(groupReadUntill).hereOnly())
             .mapNotNull { message ->
                 message.payload?.let { selfReadFrom(it, myUserId()) }
             }
 
     override val silenced: Flow<ChatSilence> =
-        bus.on(silentEvent).mapNotNull { message -> chatSilenceFrom(message.payload) }
+        bus.on(silentEvent).hereOnly().mapNotNull { message -> chatSilenceFrom(message.payload) }
 
     override fun silence(silence: ChatSilence) {
         val project = projectId() ?: return
@@ -355,10 +356,10 @@ class ChatRepositoryImpl(
 
     override val edits: Flow<ChatMessage> =
         kotlinx.coroutines.flow.merge(
-            bus.on(privateEdit).mapNotNull { message ->
+            bus.on(privateEdit).hereOnly().mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt) }
             },
-            bus.on(groupEdit).mapNotNull { message ->
+            bus.on(groupEdit).hereOnly().mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt, isGroup = true) }
             },
         )
@@ -454,6 +455,21 @@ class ChatRepositoryImpl(
             }
         }
     }
+
+    /**
+     * Only frames for the open production — or frames that name none.
+     *
+     * Applied before any reader, because `remember` and `forget` key their
+     * caches on the *open* project: a message for production A arriving while
+     * B is open was written into B's thread and counted as B's unread, which
+     * is the "another project's badge went up on this one" report. Android
+     * gates the same way on `detail.project_id`.
+     */
+    private fun Flow<SocketMessage>.hereOnly(): Flow<SocketMessage> =
+        filter { message ->
+            val named = message.payload?.let(::frameProjectId)
+            named == null || named == projectId()
+        }
 
     /** Drops [messageIds] from the session map and the at-rest cache. */
     private fun forget(messageIds: List<String>) {

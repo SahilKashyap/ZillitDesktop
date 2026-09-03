@@ -47,21 +47,30 @@ fun badgeSuppressionFrom(payload: JsonElement?): BadgeSuppression? {
  * out 600ms later. A frame with none of them is not an unread — a silent
  * clear or a calendar edit rides the same event.
  */
-data class BadgeArrival(val section: String?, val toolIdentifier: String?, val unit: String?)
+data class BadgeArrival(
+    val section: String?,
+    val toolIdentifier: String?,
+    val unit: String?,
+    /** Which production the unread belongs to; null on frames that do not say. */
+    val projectId: String? = null,
+)
 
-fun badgeArrivalFrom(payload: JsonElement?): BadgeArrival? {
+fun badgeArrivalFrom(payload: JsonElement?, activeProjectId: String? = null): BadgeArrival? {
     val record = payload.record() ?: return null
+    // Beside `section` in the record on the wire; the outer level is read too
+    // for a frame that wraps the record in `data` and names the project outside.
+    val project = record.text("project_id") ?: (payload as? JsonObject)?.text("project_id")
+    if (record.isQuiet() || project.isElsewhere(activeProjectId)) return null
     // The phones do not count these, and neither does the banner pipeline
     // (`quietReason` in feature:notifications, from ProjectObserver.swift):
     // a silent push, a frame flagged `ignore`, or this person's own action.
     // Lifting the badge for one would show a count the refresh then takes
     // away 600ms later — a flicker for nothing.
-    if (record.isQuiet()) return null
     val section = record.text("section")
     val tool = record.text("tool")?.let(::wireToolToIdentifier)
     val unit = record.text("unit")
     if (section == null && tool == null && unit == null) return null
-    return BadgeArrival(section, tool, unit)
+    return BadgeArrival(section, tool, unit, project)
 }
 
 /**
@@ -88,6 +97,18 @@ private fun JsonElement?.record(): JsonObject? = when (this) {
         else runCatching { Json.parseToJsonElement(content) }.getOrNull()?.record()
     else -> null
 }
+
+/**
+ * One socket serves every production this device is on, so a frame can belong
+ * to a production that is not open. The web refreshes its visible badges only
+ * when `project_id` is the current project's; lifting the count here for
+ * another production's unread put that production's badge on the open one,
+ * where nothing could ever clear it. A frame that names no project keeps the
+ * old behaviour — the refresh 600ms later is scoped by the request header and
+ * sorts it out.
+ */
+private fun String?.isElsewhere(activeProjectId: String?): Boolean =
+    this != null && activeProjectId != null && this != activeProjectId
 
 private fun JsonObject.isQuiet(): Boolean {
     val reference = this["reference_data"] as? JsonObject

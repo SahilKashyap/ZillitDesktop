@@ -286,10 +286,13 @@ private fun ActionBar(state: ComposeUiState, onEvent: (ComposeEvent) -> Unit) {
             loading = state.isSending,
         )
 
-        ZillitIconButton(
+        // The phones' attach sheet behind the paperclip: Photo, Video,
+        // Document, Audio — Android's `ComposeActivity` offers the same four.
+        com.zillit.desktop.core.media.AttachMenu(
+            kinds = com.zillit.desktop.core.media.ALL_ATTACHMENT_KINDS,
             icon = ZillitIcons.Paperclip,
             contentDescription = "Attach a file",
-            onClick = { onEvent(ComposeEvent.PickFiles) },
+            onPick = { kind -> onEvent(ComposeEvent.PickFilesOf(kind)) },
         )
 
         SignatureMenu(state, onEvent)

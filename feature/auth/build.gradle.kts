@@ -10,6 +10,7 @@ kotlin {
             implementation(project(":core:common"))
             implementation(project(":core:config"))
             implementation(project(":core:designsystem"))
+            implementation(project(":core:media"))
             implementation(project(":core:localization"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:network"))

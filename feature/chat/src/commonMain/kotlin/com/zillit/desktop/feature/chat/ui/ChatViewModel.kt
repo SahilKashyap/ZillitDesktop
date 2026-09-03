@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.sync.NewOperation
 import com.zillit.desktop.core.sync.OfflineSupport
@@ -138,6 +139,13 @@ sealed interface ChatEvent {
     data object AttachFile : ChatEvent
 
     /**
+     * The attach sheet's answer — Photo, Video, Document or Audio — as the
+     * phones' `PickerDialog` items and iOS's action sheet offer them. The
+     * kind filters the OS dialog and is checked again after the choice.
+     */
+    data class AttachKind(val kind: PreviewKind) : ChatEvent
+
+    /**
      * The composer's pin, after the shared map picker answered: send this
      * place as a `message_type: "location"` message.
      *
@@ -204,6 +212,11 @@ class ChatViewModel(
     private val newUniqueId: () -> String,
     /** Opens the OS picker; the upload itself runs after the preview's Send. */
     private val pickAttachment: suspend () -> ChatPick = { ChatPick.Cancelled },
+    /**
+     * The same, filtered to one kind from the attach sheet. Defaults to the
+     * untyped picker so a host (or test) that wires only that one still works.
+     */
+    private val pickAttachmentOf: suspend (PreviewKind) -> ChatPick = { pickAttachment() },
     /**
      * The host's routed uploader for bytes that never saw the picker — a
      * pasted image. The picker's own files carry their uploader inside
@@ -376,6 +389,7 @@ class ChatViewModel(
                 }
             }
             ChatEvent.AttachFile -> launch { pickForPreview() }
+            is ChatEvent.AttachKind -> launch { pickForPreview(event.kind) }
             is ChatEvent.ShareLocation -> shareLocation(event.place)
             is ChatEvent.ImagePasted -> imagePasted(event)
             is ChatEvent.PreviewSend -> sendMedia(event.result, event.caption)
@@ -586,12 +600,19 @@ class ChatViewModel(
                             local.isMine && local.sendState != ChatSendState.Sent &&
                                 rows.none { it.uniqueId == local.uniqueId }
                         }
-                        // A full window means the server likely holds more
-                        // before it — the "Show older" pager's cue (QA #7/#8).
+                        // The "Show older" pager's cue (QA #7/#8). This used
+                        // to be "a full page of 50", which is an assumption
+                        // about the server's window size that nothing on the
+                        // wire confirms — and when the window is smaller, the
+                        // pager never appears and everything older than the
+                        // first page is unreachable. The web assumes nothing:
+                        // it offers older until a page comes back empty. Same
+                        // here — anything past a lone row may have history,
+                        // and the older-page fetch retires the button itself.
                         copy(
                             isLoading = false,
                             messages = rows + inFlight,
-                            hasOlder = rows.size >= CHAT_PAGE,
+                            hasOlder = rows.size > 1,
                         )
                     } else {
                         this
@@ -895,9 +916,9 @@ class ChatViewModel(
     )
 
     /** The paperclip: the pick goes to the preview, not straight to the wire. */
-    private suspend fun pickForPreview() {
+    private suspend fun pickForPreview(kind: PreviewKind? = null) {
         if (currentState.peer == null) return
-        val pending = when (val pick = pickAttachment()) {
+        val pending = when (val pick = if (kind == null) pickAttachment() else pickAttachmentOf(kind)) {
             is ChatPick.Cancelled -> return
             // The picker weighed the file without reading it, as the web
             // weighs a File before uploading; its reason is the user's.
@@ -1066,12 +1087,19 @@ class ChatViewModel(
                     if (this.peer?.userId != peer.userId) {
                         copy(loadingOlder = false)
                     } else {
+                        val merged = (page + messages)
+                            .distinctBy { it.uniqueId }
+                            .sortedBy { it.timestampMillis }
                         copy(
-                            messages = (page + messages)
-                                .distinctBy { it.uniqueId }
-                                .sortedBy { it.timestampMillis },
+                            messages = merged,
                             loadingOlder = false,
-                            hasOlder = page.size >= CHAT_PAGE,
+                            // More behind it while a page still brings rows
+                            // this thread had not seen. The server's window
+                            // includes the boundary row, so the last page
+                            // comes back holding only what was already here
+                            // — that is the stop, not a page shorter than
+                            // some assumed size. See the first-page note.
+                            hasOlder = merged.size > messages.size,
                         )
                     }
                 }
@@ -1479,12 +1507,6 @@ private const val SECTION_BADGE_SETTLE_MILLIS = 1_800L
 
 /** The file is being prepared (posters, PDF pages) — no bytes moving yet. */
 private const val PREPARING = -1
-
-/**
- * The history window's size — `/messages/{peer}/{ts}/previous` answers ~50
- * rows per page, so a full page means the server likely holds older ones.
- */
-private const val CHAT_PAGE = 50
 
 /** The states this device assigns itself; the server's own words never yield to the outbox. */
 private fun ChatSendState.isOurs(): Boolean =

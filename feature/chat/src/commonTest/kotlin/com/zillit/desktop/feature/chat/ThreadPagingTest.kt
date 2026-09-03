@@ -21,10 +21,20 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * QA #7/#8: "Show older" pages the thread backwards. A full first window
- * offers the button, the fetch asks `history` from the oldest loaded stamp
- * (`/messages/{peer}/{ts}/previous`), pages MERGE rather than replace, and a
- * short page retires the button.
+ * QA #7/#8: "Show older" pages the thread backwards. The fetch asks `history`
+ * from the oldest loaded stamp (`/messages/{peer}/{ts}/previous`) and pages
+ * MERGE rather than replace.
+ *
+ * ## When the button shows
+ *
+ * Whenever there may be more — which is any first window past a lone row, and
+ * any older page that still brought rows the thread had not seen. It used to
+ * be "a full page of 50", an assumption about the server's window size that
+ * nothing on the wire confirms: with a smaller window the button never
+ * appeared, and everything older than the first page was unreachable. That
+ * is the "old chat of a few users is not loading" report — the few being the
+ * ones with more than a window's worth. The web assumes no size either; it
+ * offers older until a page comes back with nothing new.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ThreadPagingTest {
@@ -72,38 +82,73 @@ class ThreadPagingTest {
     )
 
     @Test
-    fun `a full window offers Show older and the next page merges in`() = runTest(dispatcher) {
-        val repository = PagingRepository()
-        // Newest window: 50 rows ending NOW; the page before: 10 older rows,
-        // one of them overlapping the newest window by unique id.
-        val newest = (0 until 50).map { message(100 + it, 10_000L + it) }
-        val older = (0 until 10).map { message(if (it == 0) 100 else it, 9_000L + it) }
-        repository.answer = { before -> if (before == NOW_MS) newest else older }
+    fun `older pages merge in, and the button retires only when a page adds nothing`() =
+        runTest(dispatcher) {
+            val repository = PagingRepository()
+            // Newest window: 50 rows ending NOW. The page before: 10 older
+            // rows, one of them the boundary row the newest window already
+            // holds. The page before THAT: only the boundary row — the
+            // server's window includes it, so a page of nothing new is what
+            // the start of the thread looks like.
+            val newest = (0 until 50).map { message(100 + it, 10_000L + it) }
+            val older = (0 until 10).map { message(if (it == 0) 100 else it, 9_000L + it) }
+            val boundaryOnly = listOf(older.last())
+            repository.answer = { before ->
+                when (before) {
+                    NOW_MS -> newest
+                    10_000L -> older
+                    else -> boundaryOnly
+                }
+            }
 
-        val model = viewModel(repository)
-        model.onEvent(ChatEvent.OpenThread(aisha))
-        advanceUntilIdle()
+            val model = viewModel(repository)
+            model.onEvent(ChatEvent.OpenThread(aisha))
+            advanceUntilIdle()
 
-        assertTrue(model.currentState.hasOlder, "a full page means more behind it")
-        assertEquals(50, model.currentState.messages.size)
+            assertTrue(model.currentState.hasOlder, "a first window past one row may have more")
+            assertEquals(50, model.currentState.messages.size)
 
-        model.onEvent(ChatEvent.ShowOlder)
-        advanceUntilIdle()
+            model.onEvent(ChatEvent.ShowOlder)
+            advanceUntilIdle()
 
-        assertEquals(10_000L, repository.asked.last(), "asked from the oldest loaded stamp")
-        // 50 + 10 - 1 duplicate: merged by unique id, not replaced.
-        assertEquals(59, model.currentState.messages.size)
-        assertEquals(
-            model.currentState.messages.sortedBy { it.timestampMillis },
-            model.currentState.messages,
-            "the merge keeps time order",
-        )
-        assertFalse(model.currentState.hasOlder, "a short page retires the button")
-        assertFalse(model.currentState.loadingOlder)
-    }
+            assertEquals(10_000L, repository.asked.last(), "asked from the oldest loaded stamp")
+            // 50 + 10 - 1 duplicate: merged by unique id, not replaced.
+            assertEquals(59, model.currentState.messages.size)
+            assertEquals(
+                model.currentState.messages.sortedBy { it.timestampMillis },
+                model.currentState.messages,
+                "the merge keeps time order",
+            )
+            assertTrue(model.currentState.hasOlder, "a page that brought new rows may have more")
+            assertFalse(model.currentState.loadingOlder)
+
+            model.onEvent(ChatEvent.ShowOlder)
+            advanceUntilIdle()
+
+            assertEquals(9_000L, repository.asked.last(), "asked from the new oldest stamp")
+            assertEquals(59, model.currentState.messages.size, "nothing new to merge")
+            assertFalse(model.currentState.hasOlder, "a page that adds nothing retires the button")
+        }
+
+    /**
+     * The regression this rule exists for: a window smaller than the old
+     * assumed 50 still has history behind it, and must still offer it.
+     */
+    @Test
+    fun `a first window smaller than the old page size still offers Show older`() =
+        runTest(dispatcher) {
+            val repository = PagingRepository()
+            repository.answer = { (0 until 20).map { message(it, 10_000L + it) } }
+
+            val model = viewModel(repository)
+            model.onEvent(ChatEvent.OpenThread(aisha))
+            advanceUntilIdle()
+
+            assertTrue(model.currentState.hasOlder, "20 rows is not proof the thread starts here")
+        }
 
     @Test
-    fun `a short first window never offers the button`() = runTest(dispatcher) {
+    fun `a lone first row never offers the button`() = runTest(dispatcher) {
         val repository = PagingRepository()
         repository.answer = { listOf(message(1, 10_000L)) }
 

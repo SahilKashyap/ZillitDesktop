@@ -292,6 +292,10 @@ private fun WidgetDrive(viewModel: DriveViewModel) {
                     val picked = DriveFilePicker().pick()
                     if (picked.isNotEmpty()) viewModel.onEvent(DriveEvent.Upload(picked))
                 }
+                is DriveEffect.PickFilesOf -> scope.launch {
+                    val picked = attachmentPicker.pickPaths(effect.kind).map { it.toDrivePick() }
+                    if (picked.isNotEmpty()) viewModel.onEvent(DriveEvent.Upload(picked))
+                }
             }
         }
     }

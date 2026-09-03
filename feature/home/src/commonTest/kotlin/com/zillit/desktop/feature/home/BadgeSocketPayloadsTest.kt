@@ -86,4 +86,25 @@ class BadgeSocketPayloadsTest {
         assertEquals(setOf("sides_tool"), asArray?.toolIdentifiers, "an array frame was not opened")
     }
 
+    /**
+     * One socket, every production: a frame for a production that is not
+     * open must not lift the open one's badge. The web refreshes only when
+     * `project_id` is the current project's; a frame that names no project
+     * keeps behaving as before.
+     */
+    @Test
+    fun `another production's unread does not lift this production's badge`() {
+        // As the wire spells it: the project beside the grouping keys.
+        val frame = """{"data":{"project_id":"p2","section":"cnc_label","tool":"sides_label"}}"""
+        assertNull(badgeArrivalFrom(json(frame), activeProjectId = "p1"))
+        assertEquals("p2", badgeArrivalFrom(json(frame), activeProjectId = "p2")?.projectId)
+        // And a frame that names it outside the `data` wrapper.
+        val outer = """{"project_id":"p2","data":{"section":"cnc_label"}}"""
+        assertNull(badgeArrivalFrom(json(outer), activeProjectId = "p1"))
+        // Nothing open yet, or a frame with no project: the old behaviour.
+        assertNotNull(badgeArrivalFrom(json(frame)))
+        assertNotNull(
+            badgeArrivalFrom(json("""{"data":{"section":"cnc_label"}}"""), activeProjectId = "p1"),
+        )
+    }
 }

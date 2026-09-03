@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.home.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -221,6 +222,11 @@ class MediaCapture(
     /** The OS file dialog; an empty result means the user cancelled. */
     val pick: suspend () -> List<PickedMedia> = { emptyList() },
     /**
+     * The same dialog, filtered to one kind from the attach sheet. Defaults
+     * to the untyped picker so a host (or test) wiring only that still works.
+     */
+    val pickOf: suspend (PreviewKind) -> List<PickedMedia> = { pick() },
+    /**
      * Puts a picked file into the production's storage (S3 or Box — the app
      * module routes, as mail attachments do). Null disables attaching. The
      * callback reports 0..100 as bytes move, from the uploading coroutine.
@@ -285,6 +291,8 @@ data class ReadByView(val noticeId: String, val lists: ReadBy? = null, val comme
 data class CallSheetPrompt(
     val confirmingReplace: Boolean = false,
     val dropped: List<PickedMedia> = emptyList(),
+    /** Which kind was chosen on the sheet, so the answer opens the right dialog. */
+    val kind: PreviewKind? = null,
 )
 
 /**
@@ -327,6 +335,13 @@ sealed interface HomeFeedEvent {
 
     /** The paperclip: open the OS picker and attach what comes back. */
     data object Attach : HomeFeedEvent
+
+    /**
+     * The attach sheet's answer — Photo, Video, Document or Audio — as both
+     * phones offer them before the OS dialog opens. The kind filters that
+     * dialog and is checked again after the choice.
+     */
+    data class AttachKind(val kind: PreviewKind) : HomeFeedEvent
 
     /** A file dragged in from the OS; [extra] counts the ones beyond the first. */
     data class AttachDropped(val files: List<PickedMedia>) : HomeFeedEvent
@@ -601,6 +616,7 @@ class HomeFeedViewModel(
     private fun onFileEvent(event: HomeFeedEvent) {
         when (event) {
             HomeFeedEvent.Attach -> attach()
+            is HomeFeedEvent.AttachKind -> attach(kind = event.kind)
             is HomeFeedEvent.AttachDropped -> attach(dropped = event.files)
             HomeFeedEvent.StartRecording -> record()
             HomeFeedEvent.StopRecording -> record(discard = false)
@@ -773,6 +789,8 @@ class HomeFeedViewModel(
         dropped: List<PickedMedia> = emptyList(),
         /** The call sheet's answer; null when the question has not been put. */
         replace: Boolean? = null,
+        /** The attach sheet's kind; null opens the untyped dialog. */
+        kind: PreviewKind? = null,
     ) {
         if (!requirePostingRights()) return
         if (media.upload == null || currentState.replyTo != null) return
@@ -783,12 +801,12 @@ class HomeFeedViewModel(
         // put the question before the picker opens; dropped files wait in
         // the prompt so the answer can attach them.
         if (replace == null && callSheetAsksFirst(unit)) {
-            setState { copy(callSheetPrompt = CallSheetPrompt(dropped = dropped)) }
+            setState { copy(callSheetPrompt = CallSheetPrompt(dropped = dropped, kind = kind)) }
             return
         }
 
         launch {
-            val files = dropped.ifEmpty { media.pick() }
+            val files = dropped.ifEmpty { if (kind == null) media.pick() else media.pickOf(kind) }
                 .filterNot { refusedByCallSheet(unit, it) }
             if (files.isEmpty()) return@launch
 
@@ -987,7 +1005,7 @@ class HomeFeedViewModel(
     private fun answerCallSheet(replace: Boolean) {
         val prompt = currentState.callSheetPrompt ?: return
         setState { copy(callSheetPrompt = null) }
-        attach(dropped = prompt.dropped, replace = replace)
+        attach(dropped = prompt.dropped, replace = replace, kind = prompt.kind)
     }
 
     /**

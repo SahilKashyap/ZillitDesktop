@@ -130,6 +130,9 @@ internal fun homeMediaCapture(ready: AppGraph.Ready) = MediaCapture(
     // The same OS dialog mail attachments use. Several files become several
     // posts — the wire takes one attachment per message, as the phones send.
     pick = { FilePicker().pick().map { it.toNoticeMedia() } },
+    // The attach sheet's kind filters the same dialog — Photo, Video,
+    // Document, Audio — and is checked again after the choice.
+    pickOf = { kind -> attachmentPicker.pick(kind).map { it.toNoticeMedia() } },
     // The same routed uploader (S3 or Box by production) mail uses. A video's
     // poster frame travels first as its own object; a poster that fails to
     // upload costs the poster, never the video.
@@ -196,6 +199,13 @@ internal fun homeMediaCapture(ready: AppGraph.Ready) = MediaCapture(
 /** Email's picker type and home's, bridged where both are in scope. */
 internal fun com.zillit.desktop.feature.email.domain.PickedFile.toNoticeMedia() =
     PickedMedia(name = name, contentType = contentType, bytes = bytes)
+
+internal fun com.zillit.desktop.core.media.PickedFile.toNoticeMedia() =
+    PickedMedia(name = name, contentType = contentType, bytes = bytes)
+
+/** One picker for every attach sheet in the app; the kind is the only thing that varies. */
+internal val attachmentPicker: com.zillit.desktop.core.media.AttachmentPicker =
+    com.zillit.desktop.core.media.AwtAttachmentPicker()
 
 /**
  * Fetches an attachment, saves it to Downloads, and hands it to the OS.
@@ -605,7 +615,12 @@ private fun AppGraph.Ready.boardFeed(
 internal suspend fun badgeSocketEffects(ready: AppGraph.Ready) = kotlinx.coroutines.coroutineScope {
     launch {
         ready.socketEvents.on(ZillitSocketEvents.Badges.Save).collect { message ->
-            badgeArrivalFrom(message.payload)?.let { ready.badgeStore.bump(it.section, it.toolIdentifier, it.unit) }
+            // Only this production's unread lifts this production's badge —
+            // the socket is one per device, not one per production.
+            val open = ready.projectContext?.context?.value?.project?.projectId
+            badgeArrivalFrom(message.payload, open)?.let {
+                ready.badgeStore.bump(it.section, it.toolIdentifier, it.unit)
+            }
         }
     }
     launch {

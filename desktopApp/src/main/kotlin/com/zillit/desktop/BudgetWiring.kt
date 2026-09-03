@@ -94,7 +94,7 @@ internal fun AppGraph.Ready.budgetProvider(
  */
 private suspend fun pickBudgetFile(ready: AppGraph.Ready): BudgetFile? {
     val media = homeMediaCapture(ready)
-    val picked = media.pick().firstOrNull() ?: return null
+    val picked = media.pickOf(com.zillit.desktop.core.media.PreviewKind.Document).firstOrNull() ?: return null
     val stored = (media.upload?.invoke(picked) { } as? ZillitResult.Success)?.data ?: return null
     return BudgetFile(
         media = stored.media,

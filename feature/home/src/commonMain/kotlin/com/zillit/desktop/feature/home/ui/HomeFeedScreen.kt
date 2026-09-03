@@ -1015,11 +1015,17 @@ private fun ReplyBar(parent: Notice, authorLabel: String?, onCancel: () -> Unit)
  */
 @Composable
 private fun MediaButtons(enabled: Boolean, documentsOnly: Boolean, onEvent: (HomeFeedEvent) -> Unit) {
-    ZillitIconButton(
-        icon = ZillitIcons.Add,
-        contentDescription = if (documentsOnly) "Attach a document" else "Attach a file",
-        onClick = { onEvent(HomeFeedEvent.Attach) },
+    // The phones' attach sheet. On the call sheet it is documents only, and a
+    // sheet of one collapses to a plain button that picks straight away.
+    com.zillit.desktop.core.media.AttachMenu(
+        kinds = if (documentsOnly) {
+            listOf(com.zillit.desktop.core.media.PreviewKind.Document)
+        } else {
+            com.zillit.desktop.core.media.ALL_ATTACHMENT_KINDS
+        },
+        contentDescription = "Attach a file",
         enabled = enabled,
+        onPick = { kind -> onEvent(HomeFeedEvent.AttachKind(kind)) },
     )
     if (documentsOnly) return
     ZillitIconButton(

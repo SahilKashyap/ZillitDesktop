@@ -29,6 +29,8 @@ import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.TagTone
+import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
@@ -256,13 +258,28 @@ private fun CallLogRow(
     ) {
         ZillitAvatar(name = title, size = ROW_AVATAR)
         Column(modifier = Modifier.weight(1f)) {
-            ZillitText(
-                text = title,
-                style = ZillitTheme.typography.bodyMedium,
-                // A missed call is the one row worth finding at a glance.
-                color = if (entry.missed) colors.danger else colors.textPrimary,
-                maxLines = 1,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                ZillitText(
+                    text = title,
+                    style = ZillitTheme.typography.bodyMedium,
+                    // A missed call is the one row worth finding at a glance.
+                    color = if (entry.missed) colors.danger else colors.textPrimary,
+                    maxLines = 1,
+                    // Yields to the tag, never the other way round: a long name
+                    // ellipsises, and the line is still readable.
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                // Which line carried it, as the detail sheet already says and
+                // Android's rows leave to the sheet. On the row because the
+                // lines are different call stacks, and "which one rang me" is
+                // the first question when one of them is misbehaving. A tag,
+                // not a subtitle segment: the subtitle is one line at 320dp
+                // and the appended word is exactly what the ellipsis eats.
+                ZillitTag(entry.line.label, tone = TagTone.Neutral)
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),

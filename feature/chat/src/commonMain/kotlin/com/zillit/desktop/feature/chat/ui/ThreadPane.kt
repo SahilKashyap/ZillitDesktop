@@ -385,8 +385,12 @@ private fun ThreadHeader(
         ThreadIdentity(state = state, peer = peer, modifier = Modifier.weight(1f))
         // Callable when the peer has a device to ring (groups always do —
         // the room is the address). No device, no buttons: a call button
-        // that fails on press is worse than none.
-        if (onCall != null && (state.peerIsGroup || peer.deviceId != null)) {
+        // that fails on press is worse than none. Someone who has left the
+        // production keeps their device id on the crew row — the phone is
+        // still registered — but the call would be refused at the other end,
+        // so they get the thread and not the buttons.
+        val callable = state.peerIsGroup || (peer.deviceId != null && !peer.hasLeft)
+        if (onCall != null && callable) {
             CallLineButton(
                 icon = ZillitIcons.Phone,
                 label = "Start call",
@@ -1476,10 +1480,12 @@ private fun ComposerActions(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
     var emojiOpen by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(false)
     }
-    ZillitIconButton(
-        icon = ZillitIcons.Add,
+    // The phones' attach sheet, not a bare file dialog: Photo, Video,
+    // Document, Audio — the microphone and the pin stay their own buttons.
+    com.zillit.desktop.core.media.AttachMenu(
+        kinds = com.zillit.desktop.core.media.ALL_ATTACHMENT_KINDS,
         contentDescription = "Attach a file",
-        onClick = { onEvent(ChatEvent.AttachFile) },
+        onPick = { kind -> onEvent(ChatEvent.AttachKind(kind)) },
     )
     ZillitIconButton(
         icon = ZillitIcons.Mic,
