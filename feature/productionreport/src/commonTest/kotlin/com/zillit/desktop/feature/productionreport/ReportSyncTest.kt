@@ -47,6 +47,8 @@ class ReportSyncTest {
     @AfterTest fun tearDown() = Dispatchers.resetMain()
 
     private class FakeRepository(override val refreshes: Flow<Unit>) : ReportRepository {
+        override suspend fun postingRightsUserIds(toolIdentifier: String) = ZillitResult.Success(emptySet<String>())
+
         var listCalls = 0
 
         override suspend fun metadata(projectId: String) = ZillitResult.Success(SheetMetadata())

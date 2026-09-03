@@ -21,6 +21,9 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -42,6 +45,7 @@ import kotlinx.serialization.json.put
  *  - the embedded revision key is camelCase `currentRevision` amid an
  *    otherwise snake_case document — both spellings are read.
  */
+@Suppress("TooManyFunctions") // One function per endpoint the tool speaks; a split would only rename the host.
 class ReportRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
@@ -51,6 +55,9 @@ class ReportRepositoryImpl(
 ) : ReportRepository {
 
     private val base = config.apiV2(ZillitService.ProductionReport).trimEnd('/')
+
+    /** The project API — where `access/users` answers who holds which rights. */
+    private val core = config.apiV2(ZillitService.Core).trimEnd('/')
 
     /**
      * See [ReportRepository.refreshes]. Another production's frame is
@@ -336,6 +343,34 @@ class ReportRepositoryImpl(
             stage = obj.text("stage").ifBlank { "FINAL" },
             status = obj.text("status").ifBlank { "PENDING" },
             reason = obj.text("reason"),
+            round = (obj["round"] as? JsonPrimitive)?.let { it.intOrNull ?: it.contentOrNull?.toIntOrNull() } ?: 1,
         )
     }
+
+    /**
+     * Who may be picked as an approver: the users holding posting rights on
+     * the tool — `GET v2/access/users?toolIdentifier=…&posting_access=true`,
+     * the web's `fetchuserapproveringrights`. The answer is an id array;
+     * ids that arrive as objects are read by their `user_id`.
+     */
+    override suspend fun postingRightsUserIds(toolIdentifier: String): ZillitResult<Set<String>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "$core/access/users?toolIdentifier=$toolIdentifier&posting_access=true",
+            serializer = JsonElement.serializer(),
+            module = RequestModule.ProjectUser,
+        ).map { payload ->
+            val data = (payload as? JsonObject)?.get("data") ?: payload
+            (data as? JsonArray).orEmpty().mapNotNullTo(mutableSetOf()) { element ->
+                when (element) {
+                    is JsonPrimitive -> element.contentOrNull?.takeIf { it.isNotBlank() }
+                    is JsonObject -> element.idText()
+                    else -> null
+                }
+            }
+        }
 }
+
+/** `user_id` or `_id` of a rights row, blank-safe. */
+private fun JsonObject.idText(): String? =
+    ((this["user_id"] ?: this["_id"]) as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
