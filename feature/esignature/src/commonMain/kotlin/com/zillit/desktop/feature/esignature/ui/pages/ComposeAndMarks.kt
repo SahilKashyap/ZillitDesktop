@@ -45,6 +45,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.esignature.domain.EsignPage
+import com.zillit.desktop.feature.esignature.domain.FieldStyle
+import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.feature.esignature.domain.FieldType
 import com.zillit.desktop.feature.esignature.ui.ComposeState
 import com.zillit.desktop.feature.esignature.ui.EsignEvent
@@ -110,6 +112,7 @@ private fun DetailsStep(compose: ComposeState, onEvent: (EsignEvent) -> Unit) {
             onValueChange = { onEvent(EsignEvent.EditCompose(compose.copy(description = it))) },
             label = "Message to signers",
         )
+        EnvelopeOptions(compose, onEvent)
         ZillitSectionLabel("SIGNERS, IN ORDER")
         if (compose.options.isEmpty()) {
             ZillitText(
@@ -188,11 +191,17 @@ private fun PlacementStep(compose: ComposeState, onEvent: (EsignEvent) -> Unit) 
                     FieldType.Text,
                     FieldType.FullName,
                     FieldType.Checkbox,
+                    FieldType.Phone,
+                    FieldType.Number,
+                    FieldType.Url,
+                    FieldType.Dropdown,
+                    FieldType.Attachment,
                 ),
                 onSelect = { onEvent(EsignEvent.EditCompose(compose.copy(activeType = it))) },
                 label = { it.label },
                 modifier = Modifier.width(TYPE_SELECT_WIDTH.dp),
             )
+            if (compose.activeType.isTyped) StyleRow(compose, onEvent)
             ZillitText(
                 text = "${compose.placedCount} field(s) placed — click a page to add, " +
                     "click a field to remove",
@@ -445,3 +454,63 @@ private const val RASTER_WIDTH = 800f
 private const val RASTER_HEIGHT = 300f
 private const val PEN_WIDTH = 3f
 private val INK = Color(0xFF162A60)
+
+/** The envelope-level options the phones added: initials on every page, and how often signers are reminded. */
+@Composable
+private fun EnvelopeOptions(compose: ComposeState, onEvent: (EsignEvent) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        ZillitCheckbox(
+            checked = compose.initialsOnAllPages,
+            onCheckedChange = { onEvent(EsignEvent.EditCompose(compose.copy(initialsOnAllPages = it))) },
+            label = "Initials on all pages",
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitText(text = "Remind signers", style = ZillitTheme.typography.bodySmall)
+            ZillitSelect(
+                value = compose.reminderCadenceDays,
+                options = REMINDER_CHOICES,
+                onSelect = { onEvent(EsignEvent.EditCompose(compose.copy(reminderCadenceDays = it))) },
+                label = { days -> reminderLabel(days) },
+                modifier = Modifier.width(TYPE_SELECT_WIDTH.dp),
+            )
+        }
+    }
+}
+
+/** Text styling for the typed field about to be placed — the phones' bold/italic/underline/size tab keys. */
+@Composable
+private fun StyleRow(compose: ComposeState, onEvent: (EsignEvent) -> Unit) {
+    val style = compose.activeStyle
+    fun set(next: FieldStyle) = onEvent(EsignEvent.EditCompose(compose.copy(activeStyle = next)))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitChoiceChip(label = "B", selected = style.bold, onClick = { set(style.copy(bold = !style.bold)) })
+        ZillitChoiceChip(label = "I", selected = style.italic, onClick = { set(style.copy(italic = !style.italic)) })
+        ZillitChoiceChip(
+            label = "U",
+            selected = style.underline,
+            onClick = { set(style.copy(underline = !style.underline)) },
+        )
+        ZillitSelect(
+            value = style.fontSize,
+            options = listOf<Int?>(null) + FieldStyle.FONT_SIZES,
+            onSelect = { set(style.copy(fontSize = it)) },
+            label = { size -> if (size == null) "Size" else "${size}pt" },
+            modifier = Modifier.width(STYLE_SIZE_WIDTH.dp),
+        )
+    }
+}
+
+private val REMINDER_CHOICES: List<Int?> = listOf(null, 1, 2, 3, 7)
+
+private fun reminderLabel(days: Int?): String = when (days) {
+    null -> "Server default"
+    1 -> "Every day"
+    else -> "Every $days days"
+}
+private const val STYLE_SIZE_WIDTH = 96

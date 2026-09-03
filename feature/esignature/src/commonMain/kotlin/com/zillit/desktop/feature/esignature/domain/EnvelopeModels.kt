@@ -128,6 +128,10 @@ data class EnvelopeField(
     val documentIndex: Int = 0,
     /** Filled value after signing, when the server echoes one. */
     val value: String = "",
+    /** How typed text is drawn — the phones' font/bold/italic/underline/colour tab keys. */
+    val style: FieldStyle = FieldStyle(),
+    /** A dropdown's choices, in order. */
+    val options: List<String> = emptyList(),
 )
 
 /**
@@ -144,11 +148,18 @@ enum class FieldType(val wire: String, val label: String) {
     FullName("fullName", "Full name"),
     Email("email", "Email"),
     Checkbox("checkbox", "Checkbox"),
+    // The phones' newer data fields (Android `DocuSignFieldType`, 2026-09).
+    Phone("phone", "Phone"),
+    Number("number", "Number"),
+    Url("url", "URL"),
+    Dropdown("dropdown", "Dropdown"),
+    Attachment("attachment", "Attachment"),
     Other("", "Field"),
     ;
 
     val isMark: Boolean get() = this == SignHere || this == InitialHere
-    val isTyped: Boolean get() = this == Text || this == FullName || this == Email
+    val isTyped: Boolean get() =
+        this == Text || this == FullName || this == Email || this == Phone || this == Number || this == Url
 
     companion object {
         const val DEFAULT_WIDTH = 160.0
@@ -280,3 +291,23 @@ data class SignerOptionLike(
     val fullName: String = "",
     val email: String = "",
 )
+
+/**
+ * Text styling on a tab — `font_family`, `font_size`, `font_color`, `bold`,
+ * `italic`, `underline` — as Android sends and the backend stores them.
+ * Absent keys mean "the document's default"; only what is set goes on the wire.
+ */
+data class FieldStyle(
+    val fontFamily: String? = null,
+    val fontSize: Int? = null,
+    val fontColor: String? = null,
+    val bold: Boolean = false,
+    val italic: Boolean = false,
+    val underline: Boolean = false,
+) {
+    val isDefault: Boolean get() = this == FieldStyle()
+
+    companion object {
+        val FONT_SIZES = listOf(8, 10, 12, 14, 16, 18, 24)
+    }
+}

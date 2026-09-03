@@ -146,7 +146,7 @@ class ComposeGateTest {
     @Test
     fun `a field type the port does not draw falls to Other, not to a signature`() {
         assertEquals(FieldType.SignHere, FieldType.fromWire("signHere"))
-        assertEquals(FieldType.Other, FieldType.fromWire("dropdown"))
+        assertEquals(FieldType.Other, FieldType.fromWire("radio"))
         assertEquals(FieldType.Other, FieldType.fromWire(""), "the empty wire is not a match")
         assertFalse(FieldType.Other.isMark, "an unknown field never demands a signature")
         assertFalse(FieldType.Other.isTyped)

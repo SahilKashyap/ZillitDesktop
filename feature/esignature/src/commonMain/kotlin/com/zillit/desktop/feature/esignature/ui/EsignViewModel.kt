@@ -15,6 +15,7 @@ import com.zillit.desktop.feature.esignature.domain.EsignPdf
 import com.zillit.desktop.feature.esignature.domain.EsignRepository
 import com.zillit.desktop.feature.esignature.domain.EsignViewer
 import com.zillit.desktop.feature.esignature.domain.FieldAnswer
+import com.zillit.desktop.feature.esignature.domain.FieldStyle
 import com.zillit.desktop.feature.esignature.domain.FieldType
 import com.zillit.desktop.feature.esignature.domain.NewField
 import com.zillit.desktop.feature.esignature.domain.SignedField
@@ -436,6 +437,7 @@ class EsignViewModel(
         val (xPt, yPt) = pageImage.pointFromTap(xPx, yPx)
         val field = PlacedField(
             type = compose.activeType,
+            style = if (compose.activeType.isTyped) compose.activeStyle else FieldStyle(),
             page = page,
             x = (xPt - FieldType.DEFAULT_WIDTH / 2)
                 .coerceIn(0.0, (pageImage.widthPt - FieldType.DEFAULT_WIDTH).coerceAtLeast(0.0)),
@@ -498,6 +500,7 @@ class EsignViewModel(
                     page = placed.page,
                     x = placed.x,
                     y = placed.y,
+                    style = placed.style,
                 )
             }
         }

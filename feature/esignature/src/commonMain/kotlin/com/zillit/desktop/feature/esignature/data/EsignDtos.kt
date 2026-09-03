@@ -11,6 +11,9 @@ import com.zillit.desktop.feature.esignature.domain.StoredFile
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import com.zillit.desktop.feature.esignature.domain.FieldStyle
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
@@ -105,6 +108,13 @@ internal data class FieldDto(
     val required: Boolean? = null,
     @SerialName("document_index") val documentIndex: JsonPrimitive? = null,
     val value: String? = null,
+    @SerialName("font_family") val fontFamily: String? = null,
+    @SerialName("font_size") val fontSize: JsonPrimitive? = null,
+    @SerialName("font_color") val fontColor: String? = null,
+    val bold: Boolean? = null,
+    val italic: Boolean? = null,
+    val underline: Boolean? = null,
+    val options: List<JsonElement> = emptyList(),
 ) {
     fun toDomain(): EnvelopeField? {
         val pageNo = page?.intOrNull ?: return null
@@ -122,6 +132,8 @@ internal data class FieldDto(
             required = required ?: true,
             documentIndex = documentIndex?.intOrNull ?: 0,
             value = value.orEmpty(),
+            style = readStyle(),
+            options = readOptions(),
         )
     }
 }
@@ -225,4 +237,22 @@ internal fun signedFieldWire(
             else -> put("value", "")
         }
     }
+}
+
+private fun FieldDto.readStyle(): FieldStyle = FieldStyle(
+    fontFamily = fontFamily?.takeIf { it.isNotBlank() },
+    fontSize = fontSize?.let { it.intOrNull ?: it.contentOrNull?.toIntOrNull() },
+    fontColor = fontColor?.takeIf { it.isNotBlank() },
+    bold = bold == true,
+    italic = italic == true,
+    underline = underline == true,
+)
+
+/** A dropdown's choices: bare strings, or objects with a `label`, `value` or `option_id`. */
+private fun FieldDto.readOptions(): List<String> = options.mapNotNull { option ->
+    when (option) {
+        is JsonPrimitive -> option.contentOrNull
+        is JsonObject -> ((option["label"] ?: option["value"] ?: option["option_id"]) as? JsonPrimitive)?.contentOrNull
+        else -> null
+    }?.takeIf { it.isNotBlank() }
 }

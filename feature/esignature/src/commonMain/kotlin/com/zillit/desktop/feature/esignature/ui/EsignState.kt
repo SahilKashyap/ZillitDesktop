@@ -7,6 +7,7 @@ import com.zillit.desktop.feature.esignature.domain.EnvelopeScope
 import com.zillit.desktop.feature.esignature.domain.EsignPage
 import com.zillit.desktop.feature.esignature.domain.EsignViewer
 import com.zillit.desktop.feature.esignature.domain.FieldAnswer
+import com.zillit.desktop.feature.esignature.domain.FieldStyle
 import com.zillit.desktop.feature.esignature.domain.FieldType
 import com.zillit.desktop.feature.esignature.domain.SavedSignature
 import com.zillit.desktop.feature.esignature.domain.SignerOptionLike
@@ -83,6 +84,11 @@ data class ComposeState(
      * the service refuses a recipient without one. Keyed by user id.
      */
     val emailOverrides: Map<String, String> = emptyMap(),
+    /** Text styling applied to typed fields placed from now on. */
+    val activeStyle: FieldStyle = FieldStyle(),
+    val initialsOnAllPages: Boolean = false,
+    /** Days between reminders; null = the server's default. */
+    val reminderCadenceDays: Int? = null,
     val sending: Boolean = false,
 ) {
     val placedCount: Int get() = placed.values.sumOf { it.size }
@@ -115,6 +121,7 @@ data class PlacedField(
     val page: Int,
     val x: Double,
     val y: Double,
+    val style: FieldStyle = FieldStyle(),
 )
 
 /** The saved-marks drawer state (list + the drawing dialog). */
