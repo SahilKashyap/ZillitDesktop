@@ -59,12 +59,16 @@ private class BacklogTally(private val readMarks: Map<String, Long>, private val
     private val newest = mutableMapOf<String, Long>()
     private val rooms = mutableSetOf<String>()
     private val messageKeys = mutableMapOf<String, String>()
+    private var windowStart: Long? = null
 
     fun add(row: JsonObject) {
         val key = row.conversationKey() ?: return
         if (row.text("unit") == GROUP_UNIT) rooms += key
         val created = row.createdMillis()
-        created?.let { at -> newest[key] = maxOf(newest[key] ?: 0L, at) }
+        created?.let { at ->
+            newest[key] = maxOf(newest[key] ?: 0L, at)
+            windowStart = minOf(windowStart ?: at, at)
+        }
         val messageId = row.messageId()
         if (messageId != null && messageId in silencedIds) return
         if (row.countsAsUnread(created, readMarks[key])) {
@@ -73,7 +77,13 @@ private class BacklogTally(private val readMarks: Map<String, Long>, private val
         }
     }
 
-    fun backlog() = ConversationBacklog(unread = counts, activity = newest, rooms = rooms, messageKeys = messageKeys)
+    fun backlog() = ConversationBacklog(
+        unread = counts,
+        activity = newest,
+        rooms = rooms,
+        messageKeys = messageKeys,
+        windowStart = windowStart,
+    )
 }
 
 /** Unread on the server, not our echo, and newer than what this device knows to be read. */

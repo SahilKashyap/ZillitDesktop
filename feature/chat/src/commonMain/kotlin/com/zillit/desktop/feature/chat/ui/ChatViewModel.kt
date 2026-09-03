@@ -437,7 +437,7 @@ class ChatViewModel(
             copy(
                 recents = ordered,
                 previews = previewsFor(ordered),
-                unread = combinedUnread(repository.unreadCounts(serverActivity)),
+                unread = combinedUnread(repository.unreadCounts(serverActivity, backlogWindowStart)),
                 activity = activity,
             )
         }
@@ -1101,6 +1101,9 @@ class ChatViewModel(
      */
     private val serverActivity = mutableMapOf<String, Long>()
 
+    /** Where the last backlog's window began; the cache counts nothing older. */
+    private var backlogWindowStart: Long = 0L
+
     /**
      * Seeds the server's word on unread per conversation, and the listing's
      * order, from the notification backlog. Runs on every listing refresh and
@@ -1116,6 +1119,7 @@ class ChatViewModel(
                 val counts = backlog.unread
                 serverUnread.putAll(currentState.peer?.userId?.let { counts - it } ?: counts)
                 setState { copy(ledgerRooms = backlog.rooms) }
+                backlog.windowStart?.let { backlogWindowStart = maxOf(backlogWindowStart, it) }
                 // The one line that says where a badge came from: read it before
                 // believing a count. Ids, not names, on purpose.
                 ZillitLog.d(TAG) {
@@ -1137,7 +1141,7 @@ class ChatViewModel(
 
     /** The cache's unread per conversation, as the seed line prints it. */
     private fun localSummary(): String =
-        repository.unreadCounts(serverActivity).entries.joinToString { "${it.key}:${it.value}" }
+        repository.unreadCounts(serverActivity, backlogWindowStart).entries.joinToString { "${it.key}:${it.value}" }
 
     /** What the rows show: the larger of the server's word and the cache's. */
     private fun combinedUnread(local: Map<String, Int>): Map<String, Int> =
@@ -1395,7 +1399,7 @@ class ChatViewModel(
         if (!isOpen && !message.isMine && other.isNotBlank()) {
             serverUnread[other] = (serverUnread[other] ?: 0) + 1
         }
-        val unread = combinedUnread(repository.unreadCounts(serverActivity))
+        val unread = combinedUnread(repository.unreadCounts(serverActivity, backlogWindowStart))
         setState {
             copy(
                 recents = sortedRecents(withPeer(recents, other), activity),

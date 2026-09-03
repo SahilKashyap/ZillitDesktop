@@ -148,8 +148,11 @@ interface ChatRepository {
      *   already knows about. The cache only adds what arrived after that —
      *   its whole purpose — so a thread read on the phone long ago, whose
      *   read mark here never moved, cannot outvote the server's zero.
+     * @param defaultFloor the floor for a conversation the backlog has no row for
+     *   at all — the window's start: anything older is history the server no
+     *   longer reports and the phones would never resurrect.
      */
-    fun unreadCounts(floor: Map<String, Long> = emptyMap()): Map<String, Int>
+    fun unreadCounts(floor: Map<String, Long> = emptyMap(), defaultFloor: Long = 0L): Map<String, Int>
 
     /** Each cached thread's newest activity, for recency ordering. */
     fun newestActivity(): Map<String, Long>
@@ -467,12 +470,12 @@ class ChatRepositoryImpl(
         projectId()?.let { disk?.markReadUntil(it, peerId, uptoMillis) }
     }
 
-    override fun unreadCounts(floor: Map<String, Long>): Map<String, Int> {
+    override fun unreadCounts(floor: Map<String, Long>, defaultFloor: Long): Map<String, Int> {
         val project = projectId() ?: return emptyMap()
         val store = disk ?: return emptyMap()
         val marks = store.readMarks(project)
         return store.lastPerPeer(project).associate { newest ->
-            val since = maxOf(marks[newest.peerId] ?: 0L, floor[newest.peerId] ?: 0L)
+            val since = maxOf(marks[newest.peerId] ?: 0L, floor[newest.peerId] ?: defaultFloor)
             newest.peerId to store.thread(project, newest.peerId)
                 .count { !it.isMine && it.createdAt > since }
         }.filterValues { it > 0 }

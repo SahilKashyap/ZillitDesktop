@@ -93,5 +93,6 @@ class ConversationUnreadTest {
         assertEquals(mapOf("u1" to 1, "room9" to 1), backlog.unread, "m1 is older than the mark, m4 was silenced")
         assertEquals(mapOf("m2" to "u1", "m3" to "room9"), backlog.messageKeys)
         assertEquals(600L, backlog.activity["room9"], "activity still follows every row, read or not")
+        assertEquals(100L, backlog.windowStart, "the window starts at the oldest row")
     }
 }
