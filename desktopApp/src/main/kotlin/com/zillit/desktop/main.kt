@@ -1002,6 +1002,12 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
         // is showing. Both land in the same conflated channel, so a burst is
         // still one request after the settle.
         launch { windowActivations().collect { arrivals.trySend(Unit) } }
+        // The frame the web really refetches chat badges on: the room-level
+        // read-until, rebroadcast to every device, with me as the reader
+        // (receiver for a DM, user_id for a group). The chat repository
+        // already filters it to my own reads from elsewhere; the badges just
+        // never listened.
+        launch { ready.chatRepository.selfReads.collect { arrivals.trySend(Unit) } }
         launch {
             while (true) {
                 delay(BADGE_POLL_MILLIS)
@@ -1493,16 +1499,35 @@ private fun buildMailbox(ready: AppGraph.Ready): EmailViewModel {
  */
 private suspend fun pickChatAttachment(
     ready: AppGraph.Ready,
+    kind: com.zillit.desktop.core.media.PreviewKind? = null,
 ): com.zillit.desktop.feature.chat.domain.ChatPick {
     // Chat's own ceiling, not mail's 25 MB: both other clients carry files up
     // to 70 MB, and a desktop that stops at 25 refuses what a phone sends.
     var refusal: String? = null
-    val picked = com.zillit.desktop.feature.email.data.FilePicker(
-        maxBytes = com.zillit.desktop.feature.chat.domain.ChatComposerRules.MAX_ATTACHMENT_BYTES,
-        onRefused = { _, _ ->
-            refusal = com.zillit.desktop.feature.chat.domain.ChatComposerRules.ATTACHMENT_TOO_LARGE
-        },
-    ).pick().firstOrNull()
+    val picked = if (kind == null) {
+        com.zillit.desktop.feature.email.data.FilePicker(
+            maxBytes = com.zillit.desktop.feature.chat.domain.ChatComposerRules.MAX_ATTACHMENT_BYTES,
+            onRefused = { _, _ ->
+                refusal = com.zillit.desktop.feature.chat.domain.ChatComposerRules.ATTACHMENT_TOO_LARGE
+            },
+        ).pick().firstOrNull()?.let { PickedBytes(it.name, it.contentType, it.bytes) }
+    } else {
+        // The attach sheet's kind: the same 70 MB ceiling, plus a wrong-kind
+        // refusal the phones word as "Please select a valid file type".
+        attachmentPicker.pick(
+            kind = kind,
+            multiple = false,
+            maxBytes = com.zillit.desktop.feature.chat.domain.ChatComposerRules.MAX_ATTACHMENT_BYTES,
+            onRefused = { why ->
+                refusal = when (why) {
+                    is com.zillit.desktop.core.media.PickRefusal.TooLarge ->
+                        com.zillit.desktop.feature.chat.domain.ChatComposerRules.ATTACHMENT_TOO_LARGE
+                    is com.zillit.desktop.core.media.PickRefusal.WrongKind ->
+                        com.zillit.desktop.feature.chat.domain.ChatComposerRules.ATTACHMENT_REFUSED_TYPE
+                }
+            },
+        ).firstOrNull()?.let { PickedBytes(it.name, it.contentType, it.bytes) }
+    }
 
     val reason = refusal
     if (picked == null) {
@@ -1604,6 +1629,11 @@ private fun mailProvider(
         crew = { ready.projectContext?.context?.value?.crewContacts().orEmpty() },
         uploader = ready.attachmentUploader,
         chooseFiles = { FilePicker().pick() },
+        chooseFilesOf = { kind ->
+            attachmentPicker.pick(kind).map {
+                com.zillit.desktop.feature.email.domain.PickedFile(it.name, it.contentType, it.bytes)
+            }
+        },
         newAttachmentId = { UUID.randomUUID().toString() },
         // Reply-all drops this address, so a reply never goes to the person
         // sending it.
@@ -1662,6 +1692,13 @@ private fun driveProvider(
     onPickFiles = { report ->
         scope.launch {
             val picked = DriveFilePicker().pick()
+            if (picked.isNotEmpty()) report(picked)
+        }
+    },
+    // Paths, not bytes — a Drive upload can be 10 GB.
+    onPickFilesOf = { kind, report ->
+        scope.launch {
+            val picked = attachmentPicker.pickPaths(kind).map { it.toDrivePick() }
             if (picked.isNotEmpty()) report(picked)
         }
     },
@@ -2299,6 +2336,7 @@ private fun rememberAppViewModels(
                     // The same picker and routed uploader mail and the board
                     // use; the stored key rides the message envelope.
                     pickAttachment = { pickChatAttachment(it) },
+                    pickAttachmentOf = { kind -> pickChatAttachment(it, kind) },
                     // Pasted images take the same route to storage.
                     uploadMedia = { name, type, bytes, onProgress ->
                         uploadChatMedia(it, name, type, bytes, onProgress)
@@ -3415,6 +3453,9 @@ private fun buildAccount(ready: AppGraph.Ready): AccountViewModel =
 
 /** `project_type` for a personal production, whose only member administers it. */
 private const val PERSONAL_PRODUCTION = "personal"
+
+/** What either chat picker hands on: the same three fields, whichever dialog opened. */
+private class PickedBytes(val name: String, val contentType: String, val bytes: ByteArray)
 
 /** Asking to join a production: code lookup, details, request. */
 private fun buildJoin(ready: AppGraph.Ready) = JoinProductionViewModel(
