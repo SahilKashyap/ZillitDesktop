@@ -15,6 +15,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.email.rules.EmailRulesUiState
+import com.zillit.desktop.feature.email.rules.EmailRulesPage
+import com.zillit.desktop.feature.email.rules.EmailRulesEvent
 
 /**
  * Email Settings — Android `GeneralSettingsActivity`
@@ -33,6 +36,7 @@ internal fun EmailSettingsScreen(
     bccPresets: SectionBinding<BccPresetsUiState, BccPresetsEvent>,
     forwarding: SectionBinding<EmailForwardingUiState, EmailForwardingEvent>,
     credentials: SectionBinding<MailboxCredentialsUiState, MailboxCredentialsEvent>,
+    rules: SectionBinding<EmailRulesUiState, EmailRulesEvent>,
     onOpenSignatures: () -> Unit,
     onCopy: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -41,6 +45,7 @@ internal fun EmailSettingsScreen(
         val back = { onEvent(EmailSettingsEvent.Back) }
         when (state.section) {
             null -> SettingsCards(state, onEvent, onOpenSignatures)
+            EmailSettingsSection.Rules -> EmailRulesPage(rules.state, rules.onEvent, back)
             EmailSettingsSection.Groups -> EmailGroupsPage(groups.state, groups.onEvent, back)
             EmailSettingsSection.BccPresets -> BccPresetsPage(bccPresets.state, bccPresets.onEvent, back)
             EmailSettingsSection.Forwarding -> EmailForwardingPage(forwarding.state, forwarding.onEvent, back)
@@ -124,6 +129,12 @@ private fun SettingsCardList(
             onClick = { onEvent(EmailSettingsEvent.Open(EmailSettingsSection.Groups)) },
         )
     }
+    SettingsCard(
+        icon = ZillitIcons.Filter,
+        title = "Email rules",
+        detail = "Sort, save, forward or mark incoming mail automatically",
+        onClick = { onEvent(EmailSettingsEvent.Open(EmailSettingsSection.Rules)) },
+    )
     SettingsCard(
         icon = ZillitIcons.UserPlus,
         title = "BCC Presets",

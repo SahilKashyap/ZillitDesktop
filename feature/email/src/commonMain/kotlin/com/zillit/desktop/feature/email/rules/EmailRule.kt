@@ -1,0 +1,265 @@
+package com.zillit.desktop.feature.email.rules
+
+/**
+ * An inbox rule — the web's `email_v2/emailRules` and Android's
+ * `EmailRule`, on the same wire (`/v2/email-rules`): when a message matching
+ * the conditions arrives, the actions run in order, and `stopOnMatch` ends
+ * the run at this rule. Rules run in [priority] order, lowest first.
+ */
+data class EmailRule(
+    val id: String = "",
+    val name: String = "",
+    val enabled: Boolean = true,
+    val priority: Int = 0,
+    val stopOnMatch: Boolean = false,
+    val matchType: RuleMatchType = RuleMatchType.All,
+    val conditions: List<RuleCondition> = listOf(RuleCondition()),
+    val actions: List<RuleAction> = listOf(RuleAction.SaveAttachmentsToDrive()),
+    val createdMillis: Long = 0,
+    val updatedMillis: Long = 0,
+) {
+    val isNew: Boolean get() = id.isBlank()
+
+    /** Why the rule cannot be saved, or null. Mirrors Android's `RuleValidationIssue`. */
+    val validationIssue: String?
+        get() = when {
+            name.isBlank() -> "Give the rule a name."
+            name.length > NAME_MAX_LENGTH -> "The name is too long."
+            conditions.isEmpty() -> "Add at least one condition."
+            conditions.any { !it.isValid } -> "Every condition with a value needs one."
+            actions.isEmpty() -> "Add at least one action."
+            actions.any { !it.isValid } -> actions.first { !it.isValid }.invalidReason
+            else -> null
+        }
+
+    val isValid: Boolean get() = validationIssue == null
+
+    /** One line that says what the rule does — Android's `RuleSummary`. */
+    fun summary(): String {
+        val joiner = if (matchType == RuleMatchType.All) " and " else " or "
+        val whenPart = conditions.joinToString(joiner) { it.describe() }
+        val thenPart = actions.joinToString(", ") { it.describe() }
+        return "$whenPart → $thenPart"
+    }
+
+    companion object {
+        const val NAME_MAX_LENGTH = 80
+        const val MAX_RULES = 50
+    }
+}
+
+enum class RuleMatchType(val wire: String, val label: String) {
+    All("all", "All conditions"),
+    Any("any", "Any condition"),
+    ;
+
+    companion object {
+        fun fromWire(raw: String?): RuleMatchType =
+            entries.firstOrNull { it.wire.equals(raw, ignoreCase = true) } ?: All
+    }
+}
+
+enum class ConditionOperator(val wire: String, val label: String) {
+    Is("is", "is"),
+    IsNot("is_not", "is not"),
+    Contains("contains", "contains"),
+    NotContains("not_contains", "does not contain"),
+    StartsWith("starts_with", "starts with"),
+    EndsWith("ends_with", "ends with"),
+    IsTrue("is_true", "is true"),
+    IsFalse("is_false", "is false"),
+    ;
+
+    companion object {
+        val TEXT: List<ConditionOperator> = listOf(Is, IsNot, Contains, NotContains, StartsWith, EndsWith)
+        fun fromWire(raw: String?): ConditionOperator? = entries.firstOrNull { it.wire.equals(raw, ignoreCase = true) }
+    }
+}
+
+/** What a condition looks at; the operators it takes; whether it needs a value. The web's `CONDITION_FIELDS`. */
+enum class ConditionField(
+    val wire: String,
+    val label: String,
+    val operators: List<ConditionOperator>,
+    val needsValue: Boolean,
+) {
+    Always("always", "Any email (no filter)", listOf(ConditionOperator.IsTrue), needsValue = false),
+    From("from", "From", ConditionOperator.TEXT, needsValue = true),
+    FromDomain("from_domain", "From domain", ConditionOperator.TEXT, needsValue = true),
+    Subject("subject", "Subject", ConditionOperator.TEXT, needsValue = true),
+    Body("body", "Body", ConditionOperator.TEXT, needsValue = true),
+    SubjectOrBody("subject_or_body", "Subject or body", ConditionOperator.TEXT, needsValue = true),
+    HasAttachment(
+        "has_attachment",
+        "Has attachment",
+        listOf(ConditionOperator.IsTrue, ConditionOperator.IsFalse),
+        needsValue = false,
+    ),
+    ;
+
+    val defaultOperator: ConditionOperator get() = operators.first()
+
+    companion object {
+        fun fromWire(raw: String?): ConditionField? = entries.firstOrNull { it.wire.equals(raw, ignoreCase = true) }
+    }
+}
+
+data class RuleCondition(
+    val field: ConditionField = ConditionField.From,
+    val operator: ConditionOperator = ConditionOperator.Is,
+    val value: String = "",
+) {
+    val isValid: Boolean get() = !this.field.needsValue || value.isNotBlank()
+
+    /** The operator kept, or the field's first when it does not apply — the web's `operatorForField`. */
+    fun withField(next: ConditionField): RuleCondition =
+        copy(
+            field = next,
+            operator = if (operator in next.operators) operator else next.defaultOperator,
+            value = if (next.needsValue) value else "",
+        )
+
+    fun describe(): String = when {
+        field == ConditionField.Always -> "any email"
+        field.needsValue -> "${field.label.lowercase()} ${operator.label} \"$value\""
+        else -> "${field.label.lowercase()} ${operator.label}"
+    }
+}
+
+enum class RuleActionType(val wire: String, val label: String) {
+    SaveAttachmentsToDrive("save_attachments_to_drive", "Save attachments to Drive"),
+    MoveToFolder("move_to_folder", "Move to folder"),
+    ForwardTo("forward_to", "Forward to"),
+    MarkRead("mark_read", "Mark as read"),
+    ;
+
+    companion object {
+        fun fromWire(raw: String?): RuleActionType? = entries.firstOrNull { it.wire.equals(raw, ignoreCase = true) }
+    }
+}
+
+/** What a rule does with a matching message. The web's `ACTION_TYPES` with their payloads. */
+sealed interface RuleAction {
+    val type: RuleActionType
+    val isValid: Boolean
+    val invalidReason: String?
+    fun describe(): String
+
+    data class SaveAttachmentsToDrive(
+        val driveFolderId: String = "",
+        val driveFolderName: String = "",
+        /** Lower-case, no leading dot; empty means every attachment. */
+        val extensions: List<String> = emptyList(),
+        /** 0 means no limit. */
+        val maxSizeBytes: Long = 0,
+    ) : RuleAction {
+        override val type = RuleActionType.SaveAttachmentsToDrive
+        override val invalidReason: String?
+            get() = when {
+                driveFolderId.isBlank() -> "Pick the Drive folder to save attachments to."
+                extensions.size > MAX_EXTENSIONS -> "Too many file types; keep it to $MAX_EXTENSIONS."
+                maxSizeBytes !in 0..MAX_ATTACHMENT_SIZE_BYTES -> "The size limit is out of range."
+                else -> null
+            }
+        override val isValid: Boolean get() = invalidReason == null
+        override fun describe(): String = "save attachments to Drive" +
+            driveFolderName.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
+
+        companion object {
+            const val MAX_EXTENSIONS = 20
+            const val MAX_ATTACHMENT_SIZE_BYTES = 100L * 1024 * 1024
+
+            /** "pdf, .PNG ,docx" → ["pdf", "png", "docx"] — what the web sends. */
+            fun parseExtensions(text: String): List<String> =
+                text.split(',')
+                    .map { it.trim().removePrefix(".").lowercase() }
+                    .filter { it.isNotEmpty() }
+                    .distinct()
+        }
+    }
+
+    data class MoveToFolder(val folderName: String = "") : RuleAction {
+        override val type = RuleActionType.MoveToFolder
+        override val invalidReason: String?
+            get() = when {
+                folderName.isBlank() -> "Pick the folder to move messages to."
+                folderName.uppercase() in MOVE_EXCLUDED_FOLDERS ->
+                    "Messages cannot be moved into ${folderName.uppercase()}."
+                else -> null
+            }
+        override val isValid: Boolean get() = invalidReason == null
+        override fun describe(): String = "move to $folderName"
+
+        companion object {
+            /** The web's `MOVE_EXCLUDED_FOLDERS`: system folders a rule may not move into. */
+            val MOVE_EXCLUDED_FOLDERS = setOf("INBOX", "DRAFTS", "SENT")
+        }
+    }
+
+    data class ForwardTo(val email: String = "") : RuleAction {
+        override val type = RuleActionType.ForwardTo
+        override val invalidReason: String?
+            get() = if (EMAIL.matches(email.trim())) null else "Enter the address to forward to."
+        override val isValid: Boolean get() = invalidReason == null
+        override fun describe(): String = "forward to ${email.trim()}"
+
+        companion object {
+            private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
+        }
+    }
+
+    data object MarkRead : RuleAction {
+        override val type = RuleActionType.MarkRead
+        override val invalidReason: String? = null
+        override val isValid: Boolean = true
+        override fun describe(): String = "mark as read"
+    }
+
+    companion object {
+        fun blank(type: RuleActionType): RuleAction = when (type) {
+            RuleActionType.SaveAttachmentsToDrive -> SaveAttachmentsToDrive()
+            RuleActionType.MoveToFolder -> MoveToFolder()
+            RuleActionType.ForwardTo -> ForwardTo()
+            RuleActionType.MarkRead -> MarkRead
+        }
+    }
+}
+
+/** Which folders a Move action may target: the mailbox's folders minus the system ones. */
+fun selectableMoveFolders(folderNames: List<String>): List<String> =
+    folderNames
+        .filter { it.isNotBlank() && it.uppercase() !in RuleAction.MoveToFolder.MOVE_EXCLUDED_FOLDERS }
+        .distinct()
+
+enum class ExecutionStatus(val wire: String, val label: String) {
+    Pending("pending", "Pending"),
+    Success("success", "Done"),
+    Partial("partial", "Partly done"),
+    Failed("failed", "Failed"),
+    ;
+
+    companion object {
+        fun fromWire(raw: String?): ExecutionStatus =
+            entries.firstOrNull { it.wire.equals(raw, ignoreCase = true) } ?: Pending
+    }
+}
+
+/** One run of a rule against one message — the History drawer's row. */
+data class RuleExecution(
+    val id: String,
+    val ruleId: String,
+    val mailboxEmail: String = "",
+    val messageId: String = "",
+    val status: ExecutionStatus = ExecutionStatus.Pending,
+    val attempts: Int = 0,
+    val results: List<ExecutionActionResult> = emptyList(),
+    val error: String? = null,
+    val createdMillis: Long = 0,
+)
+
+data class ExecutionActionResult(val type: RuleActionType?, val status: ExecutionStatus, val detail: String? = null)
+
+data class RuleExecutionPage(val executions: List<RuleExecution>, val total: Int)
+
+/** A Drive folder as the "Save attachments" picker lists it. */
+data class DriveFolderOption(val id: String, val name: String)

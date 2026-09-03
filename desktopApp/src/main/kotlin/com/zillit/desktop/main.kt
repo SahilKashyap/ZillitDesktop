@@ -102,6 +102,8 @@ import com.zillit.desktop.feature.home.calendar.EventInvitee
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import com.zillit.desktop.core.session.ProjectContext
+import com.zillit.desktop.feature.email.rules.DriveFolderOption
+import com.zillit.desktop.feature.email.rules.DriveFolderSource
 import com.zillit.desktop.feature.email.domain.ContactSource
 import com.zillit.desktop.feature.email.domain.EmailContact
 import com.zillit.desktop.feature.email.domain.EmailDraft
@@ -264,6 +266,8 @@ import com.zillit.desktop.feature.formsignature.domain.FormSignatureViewer
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureToolProvider
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureViewModel
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistViewModel
+import com.zillit.desktop.feature.drive.domain.DriveItemKind
+import com.zillit.desktop.feature.drive.domain.DriveQuery
 import com.zillit.desktop.feature.drive.domain.DriveViewer
 import com.zillit.desktop.feature.drive.ui.DriveToolProvider
 import com.zillit.desktop.feature.drive.ui.DriveViewModel
@@ -2972,6 +2976,10 @@ private fun buildRegistry(
             crew = { ready.projectContext?.context?.value?.crewContacts().orEmpty() },
             isAdmin = { ready.projectContext?.context?.value?.isAdmin == true },
             onCopy = ::copyToClipboard,
+            // Email rules: a Move action picks from the mailbox's folders, a Save
+            // action browses the Drive one folder level at a time.
+            folders = { ready.emailRepository.folders() },
+            driveFolders = DriveFolderSource { parent -> ready.driveFolderOptions(parent) },
         )
     }
     val mailContacts = (graph as? AppGraph.Ready)?.let { ready ->
@@ -3557,3 +3565,9 @@ private const val GLOBAL_BADGE_SEGMENT = "global_label"
 private const val SOS_BADGE_SEGMENT = "sos_label"
 
 private const val CRASH_TAG = "Crash"
+
+/** The Drive's folders under [parentId] (null = the root), as the email-rules picker lists them. */
+private suspend fun AppGraph.Ready.driveFolderOptions(parentId: String?): ZillitResult<List<DriveFolderOption>> =
+    driveRepository.contents(DriveQuery(folderId = parentId)).map { page ->
+        page.items.filter { it.kind == DriveItemKind.Folder }.map { DriveFolderOption(it.id, it.name) }
+    }
