@@ -45,6 +45,18 @@ object ZillitPreferences {
     val WindowY = PreferenceKey.IntKey("window.y", UNSET_POSITION, PreferenceScope.Device)
     val WindowMaximized = PreferenceKey.BooleanKey("window.maximized", false, PreferenceScope.Device)
 
+    /** The floating call card with Accept and Decline, shown while Zillit's window is not in front. */
+    val CallWidget = PreferenceKey.BooleanKey("widget.calls", true, PreferenceScope.Device)
+
+    /** The floating message card, shown while Zillit's window is not in front. */
+    val MessageWidget = PreferenceKey.BooleanKey("widget.messages", true, PreferenceScope.Device)
+
+    /** Closing the window hides it; Zillit keeps running in the tray until Quit. */
+    val CloseToTray = PreferenceKey.BooleanKey("app.close_to_tray", true, PreferenceScope.Device)
+
+    /** Start Zillit hidden when the user signs in to this computer. Mirrors the OS login item. */
+    val StartAtLogin = PreferenceKey.BooleanKey("app.start_at_login", false, PreferenceScope.Device)
+
     /** `Tabs` | `Cascade` — the workspace layout mode (plan §3). */
     val WorkspaceLayoutMode = PreferenceKey.StringKey("workspace.layout", "Tabs", PreferenceScope.Device)
 

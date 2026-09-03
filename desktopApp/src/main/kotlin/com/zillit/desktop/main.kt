@@ -25,6 +25,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.isTraySupported
 import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import com.zillit.desktop.core.common.ZillitLog
@@ -38,6 +39,7 @@ import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.PreferenceStoreFactory
 import com.zillit.desktop.core.datastore.WindowGeometry
 import com.zillit.desktop.core.datastore.ZillitPreferences
+import com.zillit.desktop.core.notifications.DesktopNotification
 import com.zillit.desktop.core.datastore.loadWindowGeometry
 import com.zillit.desktop.core.datastore.saveWindowGeometry
 import kotlinx.coroutines.delay
@@ -282,22 +284,29 @@ import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.runBlocking
 
 fun main(args: Array<String>) {
     installCrashLogging()
     val wantsDriveWidget = DriveWidgetLaunch.requestedBy(args)
+    val startHidden = BackgroundLaunch.requestedBy(args)
     // Before anything opens the database or the preference file — the point of
     // the guard is that the second copy touches neither. See SingleInstance.
     if (!SingleInstance.claim()) {
         // A "Zillit Drive" shortcut while Zillit is up: hand the request to
         // the running copy and go quietly — a dialog here would be noise.
-        if (wantsDriveWidget) DriveWidgetLaunch.signalRunningApp() else reportAlreadyRunning()
+        when {
+            wantsDriveWidget -> DriveWidgetLaunch.signalRunningApp()
+            // The login item found Zillit already up: a dialog at every sign-in is worse than none.
+            startHidden -> Unit
+            else -> reportAlreadyRunning()
+        }
         return
     }
     installDockIcon()
     DriveWidgetLaunch.installUriHandler()
-    runZillit(openDriveWidget = wantsDriveWidget)
+    runZillit(openDriveWidget = wantsDriveWidget, startHidden = startHidden)
 }
 
 /**
@@ -382,7 +391,7 @@ private fun installDockIcon() {
 }
 
 @Suppress("LongMethod") // The application's wiring, in the order it must happen; splitting it hides that.
-private fun runZillit(openDriveWidget: Boolean) = application {
+private fun runZillit(openDriveWidget: Boolean, startHidden: Boolean) = application {
     val graph = remember { AppGraph.build() }
     val preferences = remember {
         (graph as? AppGraph.Ready)?.preferences ?: PreferenceStoreFactory.create()
@@ -427,6 +436,19 @@ private fun runZillit(openDriveWidget: Boolean) = application {
     // inside the window it acts on. Before the windows, too: reminders must
     // arrive whether or not the calendar is on screen.
     var mainFrame by remember { mutableStateOf<ComposeWindow?>(null) }
+    // Hidden means "in the tray": the socket, the call card and the message card
+    // carry on, and the tray, the Dock and a widget bring the window back.
+    var mainVisible by remember { mutableStateOf(!startHidden) }
+    val showMain: () -> Unit = {
+        mainVisible = true
+        showMainWindow(mainFrame, windowState)
+    }
+    val closeToTray by preferences.observe(ZillitPreferences.CloseToTray).collectAsState(initial = true)
+    val crewName: (String) -> String? = { id ->
+        (graph as? AppGraph.Ready)?.projectContext?.context?.value?.user(id)?.fullName
+    }
+    LaunchedEffect(Unit) { DockReopen.watch(showMain) }
+    LaunchedEffect(preferences) { LoginItem.reconcile(preferences) }
 
     val trayState = rememberTrayState()
 
@@ -445,8 +467,7 @@ private fun runZillit(openDriveWidget: Boolean) = application {
         trayState = trayState,
         graph = graph,
         preferences = preferences,
-        windowState = windowState,
-        frame = mainFrame,
+        onShow = showMain,
         driveWidgetOpen = driveWidgetOpen,
         onToggleDriveWidget = { driveWidgetOpen = !driveWidgetOpen },
         // The same shutdown the close button runs, geometry and all — a second
@@ -463,9 +484,7 @@ private fun runZillit(openDriveWidget: Boolean) = application {
         frame = mainFrame,
         chat = viewModels.chat,
         email = viewModels.email,
-        crewName = { id ->
-            (graph as? AppGraph.Ready)?.projectContext?.context?.value?.user(id)?.fullName
-        },
+        crewName = crewName,
     )
 
     ZillitWindows(
@@ -480,10 +499,27 @@ private fun runZillit(openDriveWidget: Boolean) = application {
             host = driveWidgetHost,
             open = driveWidgetOpen,
             onClose = { driveWidgetOpen = false },
-            showMain = { showMainWindow(mainFrame, windowState) },
+            showMain = showMain,
         ),
-        showMain = { showMainWindow(mainFrame, windowState) },
+        showMain = showMain,
         onFrame = { mainFrame = it },
+        frame = mainFrame,
+        crewName = crewName,
+        mainVisible = mainVisible,
+        onCloseMain = {
+            if (closeToTray && isTraySupported) {
+                mainVisible = false
+                TrayNotifier(trayState).post(
+                    DesktopNotification(
+                        title = "Zillit is still running",
+                        body = "Calls and messages still reach you. Quit from the tray icon.",
+                    ),
+                )
+            } else {
+                quitZillit(windowState)
+            }
+        },
+        openChat = { workspaceViewModel.onEvent(WorkspaceEvent.Open(WorkspaceRoute.Tool("/cnc"))) },
     )
 }
 
@@ -550,6 +586,11 @@ private fun ApplicationScope.ZillitWindows(
     /** Raises and focuses the main frame. See [showMainWindow]. */
     showMain: () -> Unit,
     onFrame: (ComposeWindow) -> Unit,
+    frame: ComposeWindow?,
+    crewName: (String) -> String?,
+    mainVisible: Boolean,
+    onCloseMain: () -> Unit,
+    openChat: () -> Unit,
 ) {
     val workspace by viewModel.state.collectAsState()
     val themeMode by preferences
@@ -578,8 +619,9 @@ private fun ApplicationScope.ZillitWindows(
     }
 
     Window(
-        onCloseRequest = { quitZillit(windowState) },
+        onCloseRequest = onCloseMain,
         state = windowState,
+        visible = mainVisible,
         title = "Zillit-Desktop",
         icon = androidx.compose.ui.res.painterResource("icons/zillit-icon.png"),
         // Preview so shortcuts beat focused controls, but unhandled keys fall
@@ -624,6 +666,24 @@ private fun ApplicationScope.ZillitWindows(
     // same reason — it must outlive being behind the main frame.
     (graph as? AppGraph.Ready)?.let { ready ->
         CallWindow(ready = ready, calls = viewModels.calls, darkTheme = isDark)
+        IncomingCallWidget(
+            ready = ready,
+            calls = viewModels.calls,
+            preferences = preferences,
+            frame = frame,
+            darkTheme = isDark,
+            showMain = showMain,
+        )
+        MessageWidget(
+            ready = ready,
+            chat = viewModels.chat,
+            preferences = preferences,
+            frame = frame,
+            darkTheme = isDark,
+            crewName = crewName,
+            showMain = showMain,
+            openChat = openChat,
+        )
     }
 
     /*
@@ -933,6 +993,21 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
             val moved = ZillitSocketEvents.Badges.All + ZillitSocketEvents.Calls.MissedCall
             ready.socketEvents.onAny(moved).collect { arrivals.trySend(Unit) }
         }
+        // Reads on another device: the server never sends this socket the
+        // `notification:read:sync` the phones and the web refetch on (the log's
+        // catch-all has not seen one, ever), so a phone read would leave a badge
+        // lit here for good. Two stand-ins until the backend fans it out: a
+        // refetch when any Zillit window becomes active again — the moment a
+        // person looks back from their phone — and a slow tick while a badge
+        // is showing. Both land in the same conflated channel, so a burst is
+        // still one request after the settle.
+        launch { windowActivations().collect { arrivals.trySend(Unit) } }
+        launch {
+            while (true) {
+                delay(BADGE_POLL_MILLIS)
+                if (socketState.isConnected && !ready.badgeStore.counts.value.isEmpty) arrivals.trySend(Unit)
+            }
+        }
         for (@Suppress("UNUSED_VARIABLE") signal in arrivals) {
             delay(BADGE_EVENT_SETTLE_MILLIS)
             ready.badgeStore.refresh()
@@ -940,8 +1015,19 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
     }
 }
 
+/** Emits each time one of this app's windows becomes the active window. */
+private fun windowActivations(): kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.callbackFlow {
+    val manager = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
+    val listener = java.beans.PropertyChangeListener { event -> if (event.newValue != null) trySend(Unit) }
+    manager.addPropertyChangeListener("activeWindow", listener)
+    awaitClose { manager.removePropertyChangeListener("activeWindow", listener) }
+}
+
 /** Coalesces a burst of notification events into one counts refetch. */
 private const val BADGE_EVENT_SETTLE_MILLIS = 600L
+
+/** How often a lit badge is re-asked about, in case a read elsewhere was never announced. */
+private const val BADGE_POLL_MILLIS = 60_000L
 
 /**
  * Rereads the tool grid when the production's tool set moves under it — a
@@ -3191,12 +3277,21 @@ private fun notificationSettings(
     updates = preferences.observe(ZillitPreferences.NotifyUpdates),
     calls = preferences.observe(ZillitPreferences.NotifyCalls),
     activity = preferences.observe(ZillitPreferences.NotifyActivity),
+    callWidget = preferences.observe(ZillitPreferences.CallWidget),
+    messageWidget = preferences.observe(ZillitPreferences.MessageWidget),
+    closeToTray = preferences.observe(ZillitPreferences.CloseToTray),
+    startAtLogin = preferences.observe(ZillitPreferences.StartAtLogin),
+    startAtLoginAvailable = LoginItem.available,
     setMuted = { muted -> scope.launch { preferences.set(ZillitPreferences.MuteNotifications, muted) } },
     setMessages = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyMessages, on) } },
     setMail = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyMail, on) } },
     setUpdates = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyUpdates, on) } },
     setCalls = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyCalls, on) } },
     setActivity = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyActivity, on) } },
+    setCallWidget = { on -> scope.launch { preferences.set(ZillitPreferences.CallWidget, on) } },
+    setMessageWidget = { on -> scope.launch { preferences.set(ZillitPreferences.MessageWidget, on) } },
+    setCloseToTray = { on -> scope.launch { preferences.set(ZillitPreferences.CloseToTray, on) } },
+    setStartAtLogin = { on -> scope.launch { LoginItem.sync(preferences, on) } },
 )
 
 private fun buildSettings(

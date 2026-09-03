@@ -190,7 +190,7 @@ private fun MessageAlerts(
             notifier.post(
                 DesktopNotification(
                     title = crewName(message.senderId) ?: "New message",
-                    body = message.preview(),
+                    body = message.cardPreview(crewName),
                 ),
             )
         }
@@ -238,10 +238,6 @@ private fun MailAlerts(
 
 /** Null before the frame exists, and false while it sits behind something. */
 private fun ComposeWindow?.hasFocus(): Boolean = this?.isFocused == true
-
-/** What the banner says a message was, without opening it. */
-private fun ChatMessage.preview(): String =
-    attachment?.let { "Sent ${it.name}" } ?: body.ifBlank { "Sent a message" }
 
 /** The inbox's unread count, or null when the mailbox cannot say. */
 private suspend fun com.zillit.desktop.feature.email.domain.EmailRepository.inboxUnread(): Int? =

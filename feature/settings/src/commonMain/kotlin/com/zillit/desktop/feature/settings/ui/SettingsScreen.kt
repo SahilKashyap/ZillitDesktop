@@ -89,6 +89,7 @@ fun SettingsScreen(
                 AppearanceSection(state, onEvent)
                 ProductionSection(state, onEvent)
                 NotificationsSection(state, onEvent)
+                DesktopSection(state, onEvent)
             }
         }
 
@@ -283,6 +284,45 @@ private fun ProductionSection(state: SettingsUiState, onEvent: (SettingsEvent) -
 }
 
 /** One category of banner, on or off. */
+
+/** What Zillit does on this computer when its window is not in front, or not open at all. */
+@Composable
+private fun DesktopSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
+    Section("Desktop", ZillitIcons.Monitor) {
+        NotifyToggle(
+            title = "Incoming call card",
+            detail = "A small card with Accept and Decline floats over whatever you are " +
+                "doing when a call rings and Zillit's window is not in front.",
+            on = state.callWidget,
+            onChange = { onEvent(SettingsEvent.CallWidgetChanged(it)) },
+        )
+        NotifyToggle(
+            title = "New message card",
+            detail = "The sender and the first line float over your work when a message " +
+                "arrives and Zillit's window is not in front. Click the card to open the thread.",
+            on = state.messageWidget,
+            onChange = { onEvent(SettingsEvent.MessageWidgetChanged(it)) },
+        )
+        NotifyToggle(
+            title = "Keep running when the window is closed",
+            detail = "Closing the window hides it. Zillit stays in the menu bar or tray so " +
+                "calls and messages still reach you; Quit lives on the tray icon.",
+            on = state.closeToTray,
+            onChange = { onEvent(SettingsEvent.CloseToTrayChanged(it)) },
+        )
+        NotifyToggle(
+            title = "Start Zillit when you sign in",
+            detail = if (state.startAtLoginAvailable) {
+                "Zillit opens in the background at sign-in, window hidden, so you are " +
+                    "reachable before you open it. Also listed under the system's Login Items."
+            } else {
+                "Available from the installed Zillit app, not from a development run."
+            },
+            on = state.startAtLogin && state.startAtLoginAvailable,
+            onChange = { onEvent(SettingsEvent.StartAtLoginChanged(it)) },
+        )
+    }
+}
 @Composable
 private fun NotifyToggle(
     title: String,

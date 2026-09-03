@@ -37,6 +37,11 @@ data class SettingsUiState(
     val notifyUpdates: Boolean = true,
     val notifyCalls: Boolean = true,
     val notifyActivity: Boolean = true,
+    val callWidget: Boolean = true,
+    val messageWidget: Boolean = true,
+    val closeToTray: Boolean = true,
+    val startAtLogin: Boolean = false,
+    val startAtLoginAvailable: Boolean = true,
     val unit: UnitSelection = UnitSelection(),
     /** Asked before signing out — it drops the local cache with it. */
     val isConfirmingSignOut: Boolean = false,
@@ -138,6 +143,14 @@ sealed interface SettingsEvent {
     data class NotifyUpdatesChanged(val on: Boolean) : SettingsEvent
     data class NotifyCallsChanged(val on: Boolean) : SettingsEvent
     data class NotifyActivityChanged(val on: Boolean) : SettingsEvent
+    /** The Desktop section: four switches with one shape, so one branch can route them. */
+    sealed interface DesktopSwitch : SettingsEvent {
+        val on: Boolean
+    }
+    data class CallWidgetChanged(override val on: Boolean) : DesktopSwitch
+    data class MessageWidgetChanged(override val on: Boolean) : DesktopSwitch
+    data class CloseToTrayChanged(override val on: Boolean) : DesktopSwitch
+    data class StartAtLoginChanged(override val on: Boolean) : DesktopSwitch
 
     /** Attaches the user to a different production unit. */
     data class UnitChanged(val unitId: String) : SettingsEvent
@@ -222,10 +235,20 @@ class NotificationSettings(
     val updates: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val calls: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val activity: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+    val callWidget: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+    val messageWidget: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+    val closeToTray: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+    val startAtLogin: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false),
+    /** False under a development run, where there is no installed app for the OS to start. */
+    val startAtLoginAvailable: Boolean = true,
     val setMuted: (Boolean) -> Unit = {},
     val setMessages: (Boolean) -> Unit = {},
     val setMail: (Boolean) -> Unit = {},
     val setUpdates: (Boolean) -> Unit = {},
     val setCalls: (Boolean) -> Unit = {},
     val setActivity: (Boolean) -> Unit = {},
+    val setCallWidget: (Boolean) -> Unit = {},
+    val setMessageWidget: (Boolean) -> Unit = {},
+    val setCloseToTray: (Boolean) -> Unit = {},
+    val setStartAtLogin: (Boolean) -> Unit = {},
 )

@@ -31,11 +31,11 @@ import java.awt.Desktop
 fun ApplicationScope.AppTray(
     graph: AppGraph,
     preferences: PreferenceStore,
-    windowState: WindowState,
-    frame: ComposeWindow?,
     // Hoisted: alerts post through the same tray presence, and a second
     // TrayState would be a second (invisible) delivery channel.
     trayState: TrayState,
+    /** Shows the main window, un-hiding it if a close sent it to the tray. */
+    onShow: () -> Unit,
     /** The Drive widget's state and switch — the tray is where it lives when the main window is away. */
     driveWidgetOpen: Boolean,
     onToggleDriveWidget: () -> Unit,
@@ -50,9 +50,9 @@ fun ApplicationScope.AppTray(
             // The click that does *not* open the menu — right-click on macOS,
             // double-click on Windows — still does the obvious thing rather
             // than nothing.
-            onAction = { showMainWindow(frame, windowState) },
+            onAction = onShow,
         ) {
-            Item("Show Zillit", onClick = { showMainWindow(frame, windowState) })
+            Item("Show Zillit", onClick = onShow)
             Item(if (driveWidgetOpen) "Hide Drive widget" else "Show Drive widget", onClick = onToggleDriveWidget)
             Separator()
             /*

@@ -65,6 +65,11 @@ class SettingsViewModel(
         launch { notifications.updates.collect { on -> setState { copy(notifyUpdates = on) } } }
         launch { notifications.calls.collect { on -> setState { copy(notifyCalls = on) } } }
         launch { notifications.activity.collect { on -> setState { copy(notifyActivity = on) } } }
+        launch { notifications.callWidget.collect { on -> setState { copy(callWidget = on) } } }
+        launch { notifications.messageWidget.collect { on -> setState { copy(messageWidget = on) } } }
+        launch { notifications.closeToTray.collect { on -> setState { copy(closeToTray = on) } } }
+        launch { notifications.startAtLogin.collect { on -> setState { copy(startAtLogin = on) } } }
+        setState { copy(startAtLoginAvailable = notifications.startAtLoginAvailable) }
         launch { unitContext.collect(::onUnitContext) }
         // Only once there is something to show. The profile loads after the
         // window does, and an empty summary arriving first would blank a card
@@ -138,6 +143,7 @@ class SettingsViewModel(
                 notifications.setActivity(event.on)
             }
 
+            is SettingsEvent.DesktopSwitch -> onDesktopSwitch(event)
             is SettingsEvent.UnitChanged -> changeUnit(event.unitId)
 
 
@@ -166,6 +172,27 @@ class SettingsViewModel(
                     signOut()
                     sendEffect(SettingsEffect.SignedOut)
                 }
+            }
+        }
+    }
+
+    private fun onDesktopSwitch(event: SettingsEvent.DesktopSwitch) {
+        when (event) {
+            is SettingsEvent.CallWidgetChanged -> {
+                setState { copy(callWidget = event.on) }
+                notifications.setCallWidget(event.on)
+            }
+            is SettingsEvent.MessageWidgetChanged -> {
+                setState { copy(messageWidget = event.on) }
+                notifications.setMessageWidget(event.on)
+            }
+            is SettingsEvent.CloseToTrayChanged -> {
+                setState { copy(closeToTray = event.on) }
+                notifications.setCloseToTray(event.on)
+            }
+            is SettingsEvent.StartAtLoginChanged -> {
+                setState { copy(startAtLogin = event.on) }
+                notifications.setStartAtLogin(event.on)
             }
         }
     }
