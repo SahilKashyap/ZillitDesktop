@@ -41,7 +41,10 @@ data class ProfileSnapshot(
     val designationName: String? = null,
     /** Producers and main cast may withhold their name from the crew list. */
     val keepNamePrivate: Boolean = false,
-    /** Consent to show the Zillit mailbox address on the crew list (`zillit_email_enable`); null = the server's default, ON. */
+    /**
+     * Consent to show the Zillit mailbox address on the crew list
+     * (`zillit_email_enable`); null = the server's default, ON.
+     */
     val showMailboxInCrewList: Boolean? = null,
     /** The Zillit mailbox this user was given, when one exists (`mail_box_detail.email_address`). */
     val mailboxAddress: String? = null,
