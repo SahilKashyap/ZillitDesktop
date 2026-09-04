@@ -233,7 +233,12 @@ data class MessageHit(
  * The app's one chat socket is the notification socket — both live on the
  * chat host, exactly as Android runs one `ChatSocketHelper` connection.
  */
-@Suppress("TooManyFunctions") // One function per wire operation; see the interface.
+@Suppress(
+    "TooManyFunctions", // One function per wire operation; see the interface.
+    // One parameter per collaborator the wire needs — client, config, socket,
+    // identity, cipher, cache, surface, production. A bag would only rename them.
+    "LongParameterList",
+)
 class ChatRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
@@ -251,7 +256,21 @@ class ChatRepositoryImpl(
      */
     private val scope: com.zillit.desktop.feature.chat.domain.ChatScope =
         com.zillit.desktop.feature.chat.domain.ChatScope(),
+    /**
+     * Which production every call is about, when that is not the one the app
+     * is open on — the Chat widget showing another production.
+     *
+     * The read cache keys on the same override, so a widget on one production
+     * and the rail on another do not answer each other's questions from cache.
+     */
+    private val callOptions: () -> CallOptions = { CallOptions() },
 ) : ChatRepository, ReplyAwareChatRepository {
+
+    /** [base] with this repository's production and identity stamped on it. */
+    private fun scoped(base: CallOptions = CallOptions()): CallOptions {
+        val to = callOptions()
+        return base.copy(projectId = to.projectId, userId = to.userId)
+    }
 
     // Every event this repository speaks, under its own surface's names.
     private val privateChat = scoped(PRIVATE_CHAT)
@@ -559,8 +578,10 @@ class ChatRepositoryImpl(
                 "${kotlin.time.Clock.System.now().toEpochMilliseconds()}/previous",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
-            options = CallOptions(
-                cacheAs = "${config.apiV2(ZillitService.Notification)}project/all/notifications/newest",
+            options = scoped(
+                CallOptions(
+                    cacheAs = "${config.apiV2(ZillitService.Notification)}project/all/notifications/newest",
+                ),
             ),
         ).map { payload ->
             val marks = projectId()?.let { disk?.readMarks(it) }.orEmpty()
@@ -590,6 +611,7 @@ class ChatRepositoryImpl(
             url = "${config.apiV2(ZillitService.Chat)}chat-room",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
+            options = scoped(),
             // C&C sends `cnc_section` with an empty department; the budget
             // tools name their tool, department and document. The web's
             // `getChatList` omits the document (`budgetApi/api.js:82-88`) —
@@ -612,6 +634,7 @@ class ChatRepositoryImpl(
             verb = HttpVerb.Delete,
             url = "${config.apiV2(ZillitService.Chat)}chat-room/$roomId",
             module = RequestModule.ProjectUser,
+            options = scoped(),
         ).refuseStatusZero().map { }
 
     override suspend fun createRoom(
@@ -626,6 +649,7 @@ class ChatRepositoryImpl(
             url = "${config.apiV2(ZillitService.Chat)}chat-room",
             module = RequestModule.ProjectUser,
             body = createRoomBody(name, me, memberIds, scope),
+            options = scoped(),
         ).refuseStatusZero().flatMap { envelope ->
             createdRoomFrom(envelope.data)
                 ?.let { ZillitResult.Success(it) }
@@ -663,10 +687,12 @@ class ChatRepositoryImpl(
             // Always the newest window, from "now": one name per thread so
             // the read cache answers it offline (the disk cache does too;
             // this keeps the fetch itself from failing).
-            options = CallOptions(
-                cacheAs = "${config.apiV2(ZillitService.Chat)}" +
-                    (if (isGroup) "group-chat" else "private-chat") +
-                    "/messages/$otherUserId/newest/${scope.cacheKey()}",
+            options = scoped(
+                CallOptions(
+                    cacheAs = "${config.apiV2(ZillitService.Chat)}" +
+                        (if (isGroup) "group-chat" else "private-chat") +
+                        "/messages/$otherUserId/newest/${scope.cacheKey()}",
+                ),
             ),
         ).map { body ->
             chatRows(body)

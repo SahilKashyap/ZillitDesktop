@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -125,6 +126,8 @@ fun ChatScreen(
      * the whole window once something is picked, with a way back to the list.
      */
     compact: Boolean = false,
+    /** Opens the Chat widget; null inside the widget itself, and in tests. */
+    onOpenWidget: (() -> Unit)? = null,
 ) {
     val chatState = viewModel?.state?.collectAsState()?.value
     // Opens on Chats, as Android's pager does (ChatAndCall.kt:81-140 — page 0
@@ -169,6 +172,7 @@ fun ChatScreen(
                 onNewGroup = ({ groupEditorOpen = true }).takeIf { createRoom != null },
                 modifier = if (compact) Modifier.fillMaxWidth() else Modifier.width(LIST_WIDTH),
                 compact = compact,
+                onOpenWidget = onOpenWidget,
             )
 
             if (!showDirectory || !compact) {
@@ -246,6 +250,30 @@ private fun RowScope.DetailSide(
             DetailPane(
                 chatState, viewModel, crew, selectedId, onOpenAttachment,
                 loadAvatar, loadThumbnail, onCall, player, loadAudio,
+            )
+        }
+    }
+}
+
+/**
+ * The pane's own title, and the way out to the widget.
+ *
+ * Not shown in the widget: its bar already names the tool, and a second
+ * heading in a 420px window is a line of chrome where a conversation could be.
+ */
+@Composable
+private fun DirectoryHeading(onOpenWidget: (() -> Unit)?) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitText(text = "Chat & Calls", style = ZillitTheme.typography.titleLarge)
+        if (onOpenWidget != null) {
+            Spacer(Modifier.weight(1f))
+            ZillitIconButton(
+                icon = ZillitIcons.Detach,
+                contentDescription = "Open the Chat widget",
+                onClick = onOpenWidget,
             )
         }
     }
@@ -402,6 +430,8 @@ private fun DirectoryPane(
     modifier: Modifier = Modifier.width(LIST_WIDTH),
     /** In a widget the bar above carries the name, so the pane drops its heading. */
     compact: Boolean = false,
+    /** Opens the Chat widget, beside the heading. */
+    onOpenWidget: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -410,11 +440,7 @@ private fun DirectoryPane(
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        // The widget's own bar already names the tool; a second heading in a
-        // 420px window is a line of chrome where a conversation could be.
-        if (!compact) {
-            ZillitText(text = "Chat & Calls", style = ZillitTheme.typography.titleLarge)
-        }
+        if (!compact) DirectoryHeading(onOpenWidget)
 
         DirectoryTabs(tab, chatState, callLog != null, onTab)
 

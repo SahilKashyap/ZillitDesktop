@@ -422,7 +422,13 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
     val widgets = rememberWidgetSwitches(preferences, openWidget, scope)
 
     val tools = remember(viewModels) {
-        buildRegistry(graph, viewModels, scope, openDriveWidget = { widgets.open(ZillitWidget.Drive) })
+        buildRegistry(
+            graph,
+            viewModels,
+            scope,
+            openDriveWidget = { widgets.open(ZillitWidget.Drive) },
+            openWidget = { widget -> widgets.open(widget) },
+        )
     }
     val registry = tools.registry
 
@@ -466,6 +472,36 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
         }
     }
 
+    // Each tool widget's own production, switched from its picker without
+    // moving the main window. The open production hands back the rail's own
+    // provider; any other gets a scoped one. See ToolWidgetHost.
+    val chatWidgetHost = remember(graph, viewModels, tools) {
+        (graph as? AppGraph.Ready)?.let { ready ->
+            ToolWidgetHost(
+                ready = ready,
+                scope = scope,
+                openProjectId = { authViewModel?.currentState?.activeProject?.id },
+                tag = "ChatWidget",
+                openProvider = { tools.chatWidget },
+                scopedProvider = { project, _, permissions -> ready.scopedChatProvider(project, permissions) },
+            )
+        }
+    }
+    val crewWidgetHost = remember(graph, viewModels, tools) {
+        (graph as? AppGraph.Ready)?.let { ready ->
+            ToolWidgetHost(
+                ready = ready,
+                scope = scope,
+                openProjectId = { authViewModel?.currentState?.activeProject?.id },
+                tag = "CrewWidget",
+                openProvider = { tools.crewWidget },
+                scopedProvider = { project, options, permissions ->
+                    ready.scopedCrewProvider(project, options, permissions)
+                },
+            )
+        }
+    }
+
     AppTray(
         trayState = trayState,
         graph = graph,
@@ -499,8 +535,8 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
         authViewModel = authViewModel,
         widgetMount = WidgetMount(
             driveHost = driveWidgetHost,
-            chat = tools.chatWidget,
-            crew = tools.crewWidget,
+            chatHost = chatWidgetHost,
+            crewHost = crewWidgetHost,
             switches = widgets,
             showMain = showMain,
         ),
@@ -529,8 +565,8 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
 /** What the widget windows need from the application, gathered so ZillitWindows stays readable. */
 private class WidgetMount(
     val driveHost: DriveWidgetHost?,
-    val chat: ToolProvider?,
-    val crew: ToolProvider?,
+    val chatHost: ToolWidgetHost?,
+    val crewHost: ToolWidgetHost?,
     val switches: WidgetSwitches,
     val showMain: () -> Unit,
 )
@@ -777,7 +813,8 @@ private fun ApplicationScope.ZillitWindows(
         title = "Zillit Chat",
         what = "The Chat widget",
         keys = ZillitPreferences.ChatWidget,
-        provider = widgetMount.chat,
+        projectKey = ZillitPreferences.ChatWidgetProject,
+        host = widgetMount.chatHost,
         route = WorkspaceRoute.Tool("/cnc"),
         auth = authViewModel,
         preferences = preferences,
@@ -790,7 +827,8 @@ private fun ApplicationScope.ZillitWindows(
         title = "Zillit Crew",
         what = "The Crew List widget",
         keys = ZillitPreferences.CrewWidget,
-        provider = widgetMount.crew,
+        projectKey = ZillitPreferences.CrewWidgetProject,
+        host = widgetMount.crewHost,
         route = WorkspaceRoute.Tool(CrewListToolProvider.CREW_LIST_PATH),
         auth = authViewModel,
         preferences = preferences,
@@ -1876,8 +1914,10 @@ private fun chatProvider(
     canDownload: () -> Boolean = { true },
     /** One pane at a time — the Chat widget's copy. */
     compact: Boolean = false,
+    onOpenWidget: (() -> Unit)? = null,
 ) = ChatToolProvider(
     compact = compact,
+    onOpenWidget = onOpenWidget,
     player = audioPlayer,
     loadAudio = { file -> fetchChatAudio(ready, file) },
     canDownload = canDownload,
@@ -2780,6 +2820,8 @@ private fun buildRegistry(
     scope: CoroutineScope,
     /** Opens the desktop Drive widget — offered from the Drive tool's header. */
     openDriveWidget: () -> Unit,
+    /** Opens a tool widget from the tool itself — the Drive header's button, for the other two. */
+    openWidget: (ZillitWidget) -> Unit,
 ): AppTools {
     val homeViewModel = viewModels.home
     val chatViewModel = viewModels.chat
@@ -2889,7 +2931,7 @@ private fun buildRegistry(
         com.zillit.desktop.feature.distribution.ui.DistributionToolProvider(it)
     }
     val crewList = viewModels.crewList?.let {
-        CrewListToolProvider(it)
+        CrewListToolProvider(it, onOpenWidget = { openWidget(ZillitWidget.Crew) })
     }
     val assetRegister = viewModels.assetRegister?.let {
         com.zillit.desktop.feature.assetreport.ui.AssetToolProvider(it)
@@ -3011,7 +3053,10 @@ private fun buildRegistry(
         }
     }
     val chat = (graph as? AppGraph.Ready)?.let {
-        chatProvider(it, chatViewModel, viewModels.calls, audioPlayer, cncDownloadRight(viewModels))
+        chatProvider(
+            it, chatViewModel, viewModels.calls, audioPlayer, cncDownloadRight(viewModels),
+            onOpenWidget = { openWidget(ZillitWidget.Chat) },
+        )
     }
     val signatures = (graph as? AppGraph.Ready)?.let {
         SignatureToolProvider(it.signatureRepository)

@@ -24,28 +24,38 @@ internal fun AppGraph.Ready.buildCrewList(
         bus = socketEvents,
         currentProjectId = { projectContext?.context?.value?.project?.projectId },
     ),
-    transfer = CrewListTransfer { pdf ->
-        val stored = NoticeAttachment(
-            media = pdf.media,
-            fileName = pdf.name,
-            bucket = pdf.bucket,
-            region = pdf.region,
-        )
-        when (val fetched = noticeMedia.fetch(stored, preview = false)) {
-            is ZillitResult.Failure -> fetched
-            is ZillitResult.Success -> {
-                val name = pdf.name.ifBlank { "Crew List.pdf" }
-                    .let { if (it.endsWith(".pdf", ignoreCase = true)) it else "$it.pdf" }
-                when (val saved = DownloadsAttachmentStore().save(name, fetched.data)) {
-                    is ZillitResult.Failure -> saved
-                    is ZillitResult.Success -> {
-                        openSavedFile(saved.data)
-                        ZillitResult.Success(Unit)
-                    }
-                }
-            }
-        }
-    },
+    transfer = crewListTransfer(),
     resolveViewer = { CrewListViewer.from(permissions()) },
     translate = { key -> key.localised() },
 )
+
+/**
+ * The generated PDF's journey: a stored S3 object, fetched with the board's
+ * signed reader, saved to Downloads and opened — exactly the recce report's.
+ *
+ * Shared with the Crew List widget, which builds a roster per production but
+ * saves its PDF the same way.
+ */
+internal fun AppGraph.Ready.crewListTransfer(): CrewListTransfer = CrewListTransfer { pdf ->
+    val stored = NoticeAttachment(
+        media = pdf.media,
+        fileName = pdf.name,
+        bucket = pdf.bucket,
+        region = pdf.region,
+    )
+    when (val fetched = noticeMedia.fetch(stored, preview = false)) {
+        is ZillitResult.Failure -> fetched
+        is ZillitResult.Success -> {
+            val name = pdf.name.ifBlank { "Crew List.pdf" }
+                .let { if (it.endsWith(".pdf", ignoreCase = true)) it else "$it.pdf" }
+            when (val saved = DownloadsAttachmentStore().save(name, fetched.data)) {
+                is ZillitResult.Failure -> saved
+                is ZillitResult.Success -> {
+                    openSavedFile(saved.data)
+                    ZillitResult.Success(Unit)
+                }
+            }
+        }
+    }
+
+}

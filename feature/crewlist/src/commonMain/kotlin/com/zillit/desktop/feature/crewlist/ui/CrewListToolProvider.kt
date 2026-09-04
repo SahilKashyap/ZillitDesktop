@@ -24,6 +24,8 @@ class CrewListToolProvider(
      * in their own columns. Both copies share this one [CrewListViewModel].
      */
     private val compact: Boolean = false,
+    /** Opens the Crew List widget — the tool's own way to it, as Drive has. */
+    private val onOpenWidget: (() -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = CREW_LIST_PATH
@@ -51,6 +53,7 @@ class CrewListToolProvider(
             visibleUnits = viewModel::visibleUnits,
             onEvent = viewModel::onEvent,
             compact = compact,
+            onOpenWidget = onOpenWidget,
         )
         ZillitErrorToast(message = notice ?: state.error, onDismiss = {
             notice = null

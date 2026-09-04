@@ -1,37 +1,61 @@
 package com.zillit.desktop
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.ApplicationScope
+import com.zillit.desktop.core.datastore.PreferenceKey
 import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.WidgetKeys
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
+import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
+import com.zillit.desktop.core.designsystem.component.ZillitErrorState
+import com.zillit.desktop.core.designsystem.component.ZillitSelect
+import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.workspace.ToolProvider
-import com.zillit.desktop.core.workspace.WindowId
-import com.zillit.desktop.core.workspace.WindowNavigator
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.feature.auth.domain.Project
 import com.zillit.desktop.feature.auth.ui.AuthViewModel
+import kotlinx.coroutines.launch
 
 /**
- * A widget onto one of the app's own tools — Chat & Calls, the Crew List.
+ * A widget onto one of the app's own tools — Chat & Calls, the Crew List —
+ * with a production picker of its own, like the Drive widget's.
  *
- * Unlike the Drive widget, these show the production the app is **open on**,
- * and they show it through the very [ToolProvider] the rail uses, holding the
- * same ViewModel. That is the whole point: the widget's chat is not a second
- * chat. One socket, one set of unread badges, one call in flight — a message
- * read in the widget is read in the tool, because there is only one of each.
+ * ## Choosing the open production costs nothing
  *
- * A production picker like the Drive widget's would need a second socket and a
- * second badge ledger, which is a different feature; switching productions
- * stays the main window's job, and this follows it.
+ * On the production the app is already on, the widget renders over the rail's
+ * own ViewModel: one socket, one badge ledger, one call in flight. A message
+ * read in the widget is read in the tool, because there is only one of each —
+ * only the layout differs.
+ *
+ * ## Another production is a scoped copy
+ *
+ * Pick a different production and the widget builds its own stack for it —
+ * every call naming that production and the user's id there
+ * ([ToolWidgetHost]). Live messages still arrive: the chat socket is
+ * registered per **user**, not per production, and each repository keeps only
+ * the frames naming its own project.
+ *
+ * What a scoped copy cannot do is anything routed through the open
+ * production's ambient context — uploading an attachment, recording a voice
+ * note, placing a call. Those seams carry no production of their own, so they
+ * would quietly act on the wrong one; the widget says so rather than
+ * pretending ([ScopedNote]).
  */
 @Composable
 @Suppress("LongParameterList") // Every seam is a distinct host concern; a holder object would just rename them.
@@ -40,7 +64,9 @@ internal fun ApplicationScope.ToolWidgetWindow(
     /** Names the widget in the signed-out sentence — "The Chat widget". */
     what: String,
     keys: WidgetKeys,
-    provider: ToolProvider?,
+    /** Remembers the production this widget last showed, across restarts. */
+    projectKey: PreferenceKey.StringKey,
+    host: ToolWidgetHost?,
     route: WorkspaceRoute,
     auth: AuthViewModel?,
     preferences: PreferenceStore,
@@ -58,35 +84,152 @@ internal fun ApplicationScope.ToolWidgetWindow(
         darkTheme = darkTheme,
         onClose = onClose,
     ) { chrome ->
-        val authState = auth?.state?.collectAsState()?.value
-        val signedIn = authState?.step?.isSignedIn == true
+        WidgetToolContent(
+            what = what,
+            projectKey = projectKey,
+            host = host,
+            route = route,
+            auth = auth,
+            preferences = preferences,
+            chrome = chrome,
+            showMain = showMain,
+        )
+    }
+}
 
-        // Signed out while the widget is up: nothing here works any more, and
-        // the main window is where the QR code is.
-        LaunchedEffect(signedIn) { if (!signedIn) showMain() }
+@Composable
+@Suppress("LongParameterList")
+private fun WidgetToolContent(
+    what: String,
+    projectKey: PreferenceKey.StringKey,
+    host: ToolWidgetHost?,
+    route: WorkspaceRoute,
+    auth: AuthViewModel?,
+    preferences: PreferenceStore,
+    chrome: WidgetChrome,
+    showMain: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val authState = auth?.state?.collectAsState()?.value
+    val signedIn = authState?.step?.isSignedIn == true
+    val session by (host?.session ?: NO_TOOL_SESSION).collectAsState()
 
-        Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
-            if (provider == null || !signedIn) {
-                WidgetSignedOut(what = what, onOpenZillit = showMain)
-                return@Column
-            }
+    // Signed out while the widget is up: nothing here works any more. The main
+    // window comes forward on its own — that is where the QR code is — and the
+    // production is dropped, so a later sign-in as someone else starts clean.
+    LaunchedEffect(signedIn) {
+        if (!signedIn) {
+            host?.close()
+            showMain()
+        }
+    }
 
-            WidgetBar(chrome = chrome, onOpenZillit = showMain) {
-                ZillitText(
-                    text = provider.title,
-                    style = ZillitTheme.typography.titleSmall,
-                    color = ZillitTheme.colors.textPrimary,
-                    maxLines = 1,
+    Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
+        if (host == null || authState == null || !signedIn) {
+            WidgetSignedOut(what = what, onOpenZillit = showMain)
+            return@Column
+        }
+
+        val projects = authState.projects.filter { it.isOpenable }
+        // The production the widget shows: last time's, else the open one,
+        // else the first. Persisted so it survives a restart.
+        LaunchedEffect(projects, authState.activeProject?.id) {
+            if (session != null || projects.isEmpty()) return@LaunchedEffect
+            val remembered = preferences.get(projectKey)
+            val chosen = projects.firstOrNull { it.id == remembered }
+                ?: projects.firstOrNull { it.id == authState.activeProject?.id }
+                ?: projects.first()
+            host.select(chosen)
+        }
+
+        WidgetBar(chrome = chrome, onOpenZillit = showMain) {
+            if (projects.isNotEmpty()) {
+                ZillitSelect(
+                    value = session?.project ?: projects.first(),
+                    options = projects,
+                    onSelect = { project ->
+                        scope.launch { preferences.set(projectKey, project.id) }
+                        host.select(project)
+                    },
+                    label = { it.name },
                     modifier = Modifier.weight(1f),
                 )
+            } else {
+                Box(Modifier.weight(1f))
             }
-            ZillitDivider()
+        }
+        ZillitDivider()
+        WidgetToolBody(
+            projects = projects,
+            session = session,
+            route = route,
+            onRetry = { host.retry() },
+        )
+    }
+}
+
+/** Empty, loading, failed, or the tool. */
+@Composable
+private fun WidgetToolBody(
+    projects: List<Project>,
+    session: ToolWidgetHost.Session?,
+    route: WorkspaceRoute,
+    onRetry: () -> Unit,
+) {
+    when {
+        projects.isEmpty() -> ZillitEmptyState(
+            title = "No productions",
+            message = "This device is not on any production yet.",
+            icon = ZillitIcons.Users,
+        )
+
+        session == null || session.loading ->
+            Box(Modifier.fillMaxSize(), Alignment.Center) { ZillitSpinner() }
+
+        session.error != null -> ZillitErrorState(
+            title = "Could not open this production",
+            message = session.error,
+            onRetry = onRetry,
+        )
+
+        session.provider != null -> Column(Modifier.fillMaxSize()) {
+            if (!session.isOpenProject) ScopedNote()
             Box(Modifier.weight(1f).fillMaxSize()) {
-                provider.Content(route = route, navigator = WidgetNavigator)
+                session.provider.Content(route = route, navigator = WidgetNavigator)
             }
         }
     }
 }
+
+/**
+ * Says what a production other than the open one cannot do here.
+ *
+ * Attachments, voice notes and calls travel through seams that carry no
+ * production of their own — they would act on whichever one the main window
+ * happens to be showing. Rather than upload a file into the wrong
+ * production's storage, the widget names the limit and leaves the main window
+ * as the way to do it.
+ */
+@Composable
+private fun ScopedNote() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ZillitTheme.colors.surfaceRaised)
+            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitText(
+            text = "Another production — messages only. Open it in Zillit to send files or call.",
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.textMuted,
+            maxLines = 2,
+        )
+    }
+}
+
+private val NO_TOOL_SESSION = kotlinx.coroutines.flow.MutableStateFlow<ToolWidgetHost.Session?>(null)
 
 /**
  * The navigator a widget hands its tool.
@@ -96,8 +239,8 @@ internal fun ApplicationScope.ToolWidgetWindow(
  * an error because a tool may make them incidentally — the Crew List sets a
  * title on load — and none of them mean anything here.
  */
-private object WidgetNavigator : WindowNavigator {
-    override val windowId: WindowId = WindowId("widget")
+private object WidgetNavigator : com.zillit.desktop.core.workspace.WindowNavigator {
+    override val windowId = com.zillit.desktop.core.workspace.WindowId("widget")
     override val canGoBack: Boolean = false
 
     override fun navigate(route: WorkspaceRoute) = Unit

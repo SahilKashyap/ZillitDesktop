@@ -47,11 +47,13 @@ fun CrewListScreen(
      * their labels. The same rows, the same rules — only narrower.
      */
     compact: Boolean = false,
+    /** Opens the Crew List widget; null inside the widget itself, and in tests. */
+    onOpenWidget: (() -> Unit)? = null,
 ) {
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         when {
             state.viewer.isBlocked -> Centred("You don't have access to the Crew List.")
-            else -> Roster(state, visibleUnits, onEvent, compact)
+            else -> Roster(state, visibleUnits, onEvent, compact, onOpenWidget)
         }
 
         state.generating?.let { dialog ->
@@ -93,6 +95,7 @@ private fun Roster(
     visibleUnits: () -> List<com.zillit.desktop.feature.crewlist.domain.CrewUnit>,
     onEvent: (CrewListEvent) -> Unit,
     compact: Boolean,
+    onOpenWidget: (() -> Unit)?,
 ) {
     Column(
         modifier = Modifier
@@ -100,56 +103,75 @@ private fun Roster(
             .padding(if (compact) ZillitTheme.spacing.sm else ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            if (compact) {
-                // The widget's own bar already names the tool; the search is
-                // what the width is worth spending on.
-                ZillitSearchField(
-                    value = state.query,
-                    onValueChange = { onEvent(CrewListEvent.Search(it)) },
-                    placeholder = "Search name or role",
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitIconButton(
-                    icon = ZillitIcons.Reload,
-                    contentDescription = "Refresh the crew list",
-                    onClick = { onEvent(CrewListEvent.Refresh) },
-                )
-                ZillitIconButton(
-                    icon = ZillitIcons.File,
-                    contentDescription = "Generate PDF",
-                    onClick = { onEvent(CrewListEvent.OpenGenerate) },
-                )
-            } else {
-                ZillitText(text = "Crew List", style = ZillitTheme.typography.titleLarge)
-                Spacer(Modifier.weight(1f))
-                ZillitSearchField(
-                    value = state.query,
-                    onValueChange = { onEvent(CrewListEvent.Search(it)) },
-                    placeholder = "Search name or role",
-                    modifier = Modifier.width(SEARCH_WIDTH),
-                )
-                ZillitButton(
-                    text = "Refresh",
-                    variant = ButtonVariant.Secondary,
-                    onClick = { onEvent(CrewListEvent.Refresh) },
-                )
-                ZillitButton(
-                    text = "Generate PDF",
-                    leadingIcon = ZillitIcons.File,
-                    onClick = { onEvent(CrewListEvent.OpenGenerate) },
-                )
-            }
-        }
+        RosterHeader(state, onEvent, compact, onOpenWidget)
 
         val units = visibleUnits()
         when {
             state.isLoading && state.units.isEmpty() -> Centred("Loading crew…")
             units.isEmpty() -> Centred("No users found.")
             else -> GroupedRows(units, compact)
+        }
+    }
+}
+
+/** The roster's own header: search, refresh, the PDF, and the way out to the widget. */
+@Composable
+private fun RosterHeader(
+    state: CrewListUiState,
+    onEvent: (CrewListEvent) -> Unit,
+    compact: Boolean,
+    onOpenWidget: (() -> Unit)?,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        if (compact) {
+            // The widget's own bar already names the tool; the search is
+            // what the width is worth spending on.
+            ZillitSearchField(
+                value = state.query,
+                onValueChange = { onEvent(CrewListEvent.Search(it)) },
+                placeholder = "Search name or role",
+                modifier = Modifier.weight(1f),
+            )
+            ZillitIconButton(
+                icon = ZillitIcons.Reload,
+                contentDescription = "Refresh the crew list",
+                onClick = { onEvent(CrewListEvent.Refresh) },
+            )
+            ZillitIconButton(
+                icon = ZillitIcons.File,
+                contentDescription = "Generate PDF",
+                onClick = { onEvent(CrewListEvent.OpenGenerate) },
+            )
+        } else {
+            ZillitText(text = "Crew List", style = ZillitTheme.typography.titleLarge)
+            Spacer(Modifier.weight(1f))
+            ZillitSearchField(
+                value = state.query,
+                onValueChange = { onEvent(CrewListEvent.Search(it)) },
+                placeholder = "Search name or role",
+                modifier = Modifier.width(SEARCH_WIDTH),
+            )
+            ZillitButton(
+                text = "Refresh",
+                variant = ButtonVariant.Secondary,
+                onClick = { onEvent(CrewListEvent.Refresh) },
+            )
+            ZillitButton(
+                text = "Generate PDF",
+                leadingIcon = ZillitIcons.File,
+                onClick = { onEvent(CrewListEvent.OpenGenerate) },
+            )
+            if (onOpenWidget != null) {
+                ZillitButton(
+                    text = "Widget",
+                    variant = ButtonVariant.Tertiary,
+                    leadingIcon = ZillitIcons.Detach,
+                    onClick = onOpenWidget,
+                )
+            }
         }
     }
 }

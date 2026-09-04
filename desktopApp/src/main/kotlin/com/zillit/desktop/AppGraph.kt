@@ -14,6 +14,7 @@ import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.PreferenceStoreFactory
 import com.zillit.desktop.core.datastore.PreferenceScope
 import com.zillit.desktop.core.datastore.ZillitPreferences
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.OkHttpEngineProvider
@@ -459,6 +460,8 @@ sealed interface AppGraph {
          * socket, the cipher and the disk cache with C&C.
          */
         val chatRepositoryFor: (com.zillit.desktop.feature.chat.domain.ChatScope) -> ChatRepository,
+        /** Conversations on another production entirely — `(projectId, myUserIdThere)`. */
+        val chatRepositoryForProject: (String, String) -> ChatRepository,
         /** The chat header's green-dot feed; null without Firebase configuration. */
         val chatPresence: com.zillit.desktop.feature.chat.data.DevicePresenceSource?,
         /** Whether a newer desktop build exists. Never throws; never nags on doubt. */
@@ -992,6 +995,36 @@ sealed interface AppGraph {
                 }
             }
 
+            /*
+             * The same conversations, for a production the app is NOT open on
+             * — the Chat widget's picker.
+             *
+             * Built here because the cipher and the at-rest cache live here.
+             * Remembered per production so switching back and forth keeps one
+             * repository, and so one thread cache, rather than growing a new
+             * one each time the picker moves.
+             *
+             * `myUserId` is the user's id ON that production, not the profile's
+             * here: the same person carries a different id on each, and a
+             * message attributed to the wrong one is not our own line.
+             */
+            val projectChats = mutableMapOf<String, ChatRepository>()
+            val chatRepositoryForProject: (String, String) -> ChatRepository = { otherProject, meThere ->
+                projectChats.getOrPut(otherProject) {
+                    ChatRepositoryImpl(
+                        apiClient = apiClient,
+                        config = config,
+                        bus = socketEvents,
+                        myUserId = { meThere },
+                        projectId = { otherProject },
+                        encrypt = { plain -> (cryptoEngine.encryptToHex(plain) as? ZillitResult.Success)?.data },
+                        decrypt = { cipher -> (cryptoEngine.decryptFromHex(cipher) as? ZillitResult.Success)?.data },
+                        disk = chatCache,
+                        callOptions = { CallOptions(projectId = otherProject, userId = meThere) },
+                    )
+                }
+            }
+
             // The notification list — the phones' bell page. Same cipher as
             // the boards: a row's body arrives encrypted like a notice's.
             val notificationsRepository = NotificationsRepositoryImpl(
@@ -1129,6 +1162,7 @@ sealed interface AppGraph {
                 noticeDecryptor = noticeDecryptor,
                 chatRepository = chatRepository,
                 chatRepositoryFor = chatRepositoryFor,
+                chatRepositoryForProject = chatRepositoryForProject,
                 chatPresence = chatPresence,
                 appUpdateChecker = appUpdateChecker,
                 homeRealtime = homeRealtime,

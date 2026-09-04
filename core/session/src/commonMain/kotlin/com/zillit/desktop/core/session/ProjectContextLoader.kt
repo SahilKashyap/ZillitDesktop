@@ -1,12 +1,14 @@
 package com.zillit.desktop.core.session
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.database.ProfileSnapshot
 import com.zillit.desktop.core.database.ProjectCache
 import com.zillit.desktop.core.database.ProjectSnapshot
 import com.zillit.desktop.core.database.UserSnapshot
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
@@ -136,6 +138,23 @@ class ProjectContextLoader(
             is ZillitResult.Failure -> warn("project details", result)
         }
     }
+
+    /**
+     * Another production's crew, without moving this loader onto it.
+     *
+     * The Chat widget needs names and designations for the production it is
+     * showing, which is not necessarily the one the app is open on. The call
+     * names that production **and the user's id on it** — a project override
+     * without the matching identity answers for the wrong person.
+     */
+    suspend fun usersOf(projectId: String, userId: String): ZillitResult<List<UserSnapshot>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${api}project/users",
+            serializer = ListSerializer(ProjectUserDto.serializer()),
+            module = RequestModule.ProjectUser,
+            options = CallOptions(projectId = projectId, userId = userId),
+        ).map { rows -> rows.mapNotNull { it.toSnapshot() } }
 
     private suspend fun refreshUsers(projectId: String) {
         val result = apiClient.request(

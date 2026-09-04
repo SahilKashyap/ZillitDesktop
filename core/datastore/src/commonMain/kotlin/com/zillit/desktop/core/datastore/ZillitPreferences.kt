@@ -96,6 +96,10 @@ object ZillitPreferences {
 
     val CrewWidget = WidgetKeys.named("crew.widget")
 
+    /** The production each tool widget last showed; falls back to the open one. */
+    val ChatWidgetProject = PreferenceKey.StringKey("chat.widget.project", "", PreferenceScope.User)
+    val CrewWidgetProject = PreferenceKey.StringKey("crew.widget.project", "", PreferenceScope.User)
+
     // -- security (device-scoped) ------------------------------------------
 
     /** Android's `appLock`. */
@@ -235,7 +239,7 @@ object ZillitPreferences {
         BoxScheduleView, BoxScheduleCalendarMode, BoxScheduleListMode,
         EmailTrailingEnabled, ToolGroupOrder, RecentMentions, ChatFavourites,
         CallWidget, MessageWidget, CloseToTray, StartAtLogin,
-        DriveWidgetProject,
+        DriveWidgetProject, ChatWidgetProject, CrewWidgetProject,
     ) + DriveWidget.all + ChatWidget.all + CrewWidget.all
 
     const val UNSET_POSITION = -1

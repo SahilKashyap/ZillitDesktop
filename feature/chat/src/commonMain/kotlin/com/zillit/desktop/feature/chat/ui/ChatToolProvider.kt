@@ -66,6 +66,8 @@ class ChatToolProvider(
      * is read in both.
      */
     private val compact: Boolean = false,
+    /** Opens the Chat widget — the tool's own way to it, as Drive has. */
+    private val onOpenWidget: (() -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = "/cnc"
@@ -101,6 +103,7 @@ class ChatToolProvider(
                 searchMessages = searchMessages,
                 deleteRoom = deleteRoom,
                 compact = compact,
+                onOpenWidget = onOpenWidget,
             )
         }
     }
