@@ -294,6 +294,10 @@ data class CallSheetPrompt(
     val dropped: List<PickedMedia> = emptyList(),
     /** Which kind was chosen on the sheet, so the answer opens the right dialog. */
     val kind: PreviewKind? = null,
+    /** The "Replace one document" picker is showing. */
+    val picking: Boolean = false,
+    /** What that picker offers — see [replaceTargets]. */
+    val targets: List<Notice> = emptyList(),
 )
 
 /**
@@ -802,6 +806,8 @@ class HomeFeedViewModel(
         replace: Boolean? = null,
         /** The attach sheet's kind; null opens the untyped dialog. */
         kind: PreviewKind? = null,
+        /** "Replace one document": the live message the upload retires. */
+        replaceChatId: String? = null,
     ) {
         if (!requirePostingRights()) return
         if (media.upload == null || currentState.replyTo != null) return
