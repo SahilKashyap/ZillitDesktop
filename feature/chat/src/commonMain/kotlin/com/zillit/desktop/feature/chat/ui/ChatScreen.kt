@@ -168,6 +168,7 @@ fun ChatScreen(
                 deleteRoom = deleteRoom,
                 onNewGroup = ({ groupEditorOpen = true }).takeIf { createRoom != null },
                 modifier = if (compact) Modifier.fillMaxWidth() else Modifier.width(LIST_WIDTH),
+                compact = compact,
             )
 
             if (!showDirectory || !compact) {
@@ -399,6 +400,8 @@ private fun DirectoryPane(
     onNewGroup: (() -> Unit)?,
     /** Its width: the fixed list column beside a thread, or the whole widget. */
     modifier: Modifier = Modifier.width(LIST_WIDTH),
+    /** In a widget the bar above carries the name, so the pane drops its heading. */
+    compact: Boolean = false,
 ) {
     Column(
         modifier = modifier
@@ -407,7 +410,11 @@ private fun DirectoryPane(
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitText(text = "Chat & Calls", style = ZillitTheme.typography.titleLarge)
+        // The widget's own bar already names the tool; a second heading in a
+        // 420px window is a line of chrome where a conversation could be.
+        if (!compact) {
+            ZillitText(text = "Chat & Calls", style = ZillitTheme.typography.titleLarge)
+        }
 
         DirectoryTabs(tab, chatState, callLog != null, onTab)
 
