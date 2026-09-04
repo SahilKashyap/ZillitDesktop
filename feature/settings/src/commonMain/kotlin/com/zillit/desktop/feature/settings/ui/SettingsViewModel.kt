@@ -69,6 +69,7 @@ class SettingsViewModel(
         launch { notifications.messageWidget.collect { on -> setState { copy(messageWidget = on) } } }
         launch { notifications.closeToTray.collect { on -> setState { copy(closeToTray = on) } } }
         launch { notifications.startAtLogin.collect { on -> setState { copy(startAtLogin = on) } } }
+        launch { notifications.widgets.collect { list -> setState { copy(widgets = list) } } }
         setState { copy(startAtLoginAvailable = notifications.startAtLoginAvailable) }
         launch { unitContext.collect(::onUnitContext) }
         // Only once there is something to show. The profile loads after the
@@ -193,6 +194,12 @@ class SettingsViewModel(
             is SettingsEvent.StartAtLoginChanged -> {
                 setState { copy(startAtLogin = event.on) }
                 notifications.setStartAtLogin(event.on)
+            }
+            is SettingsEvent.WidgetChanged -> {
+                setState {
+                    copy(widgets = widgets.map { if (it.id == event.id) it.copy(on = event.on) else it })
+                }
+                notifications.setWidget(event.id, event.on)
             }
         }
     }

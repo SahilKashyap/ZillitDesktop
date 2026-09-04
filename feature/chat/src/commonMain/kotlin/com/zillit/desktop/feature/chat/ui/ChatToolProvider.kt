@@ -60,6 +60,12 @@ class ChatToolProvider(
      * Behind "Open in Maps" on a shared-location bubble; null hides it.
      */
     private val onOpenUrl: ((String) -> Unit)? = null,
+    /**
+     * One pane at a time — the Chat widget's shape. The rail's copy stays
+     * wide; both share this one [ChatViewModel], so a message read in either
+     * is read in both.
+     */
+    private val compact: Boolean = false,
 ) : ToolProvider {
 
     override val path: String = "/cnc"
@@ -94,6 +100,7 @@ class ChatToolProvider(
                 createRoom = createRoom,
                 searchMessages = searchMessages,
                 deleteRoom = deleteRoom,
+                compact = compact,
             )
         }
     }

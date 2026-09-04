@@ -41,6 +41,8 @@ data class SettingsUiState(
     val messageWidget: Boolean = true,
     val closeToTray: Boolean = true,
     val startAtLogin: Boolean = false,
+    /** The desktop widgets and whether each is on screen — see [WidgetToggle]. */
+    val widgets: List<WidgetToggle> = emptyList(),
     val startAtLoginAvailable: Boolean = true,
     val unit: UnitSelection = UnitSelection(),
     /** Asked before signing out — it drops the local cache with it. */
@@ -152,6 +154,9 @@ sealed interface SettingsEvent {
     data class CloseToTrayChanged(override val on: Boolean) : DesktopSwitch
     data class StartAtLoginChanged(override val on: Boolean) : DesktopSwitch
 
+    /** One of the desktop widgets was switched on or off. [id] is a `ZillitWidget` name. */
+    data class WidgetChanged(val id: String, override val on: Boolean) : DesktopSwitch
+
     /** Attaches the user to a different production unit. */
     data class UnitChanged(val unitId: String) : SettingsEvent
 
@@ -238,6 +243,8 @@ class NotificationSettings(
     val callWidget: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val messageWidget: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val closeToTray: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+    val widgets: kotlinx.coroutines.flow.Flow<List<WidgetToggle>> =
+        kotlinx.coroutines.flow.flowOf(emptyList()),
     val startAtLogin: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false),
     /** False under a development run, where there is no installed app for the OS to start. */
     val startAtLoginAvailable: Boolean = true,
@@ -251,4 +258,19 @@ class NotificationSettings(
     val setMessageWidget: (Boolean) -> Unit = {},
     val setCloseToTray: (Boolean) -> Unit = {},
     val setStartAtLogin: (Boolean) -> Unit = {},
+    val setWidget: (String, Boolean) -> Unit = { _, _ -> },
+)
+
+/**
+ * One desktop widget's switch, as Settings shows it.
+ *
+ * A list rather than a field per widget: the widgets are a set that grows, and
+ * every one of them is the same question — is this small window on screen.
+ */
+data class WidgetToggle(
+    /** The `ZillitWidget` entry's name, which is what an event carries back. */
+    val id: String,
+    val label: String,
+    val detail: String,
+    val on: Boolean,
 )

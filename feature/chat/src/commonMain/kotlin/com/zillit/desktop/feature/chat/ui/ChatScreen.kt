@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -118,6 +119,12 @@ fun ChatScreen(
      * (`InfoSiderGroup.jsx:119,798`); null hides the affordance.
      */
     deleteRoom: (suspend (roomId: String) -> ZillitResult<Unit>)? = null,
+    /**
+     * One pane at a time instead of directory-beside-thread — what the Chat
+     * widget needs, and what the phones do at every size. The thread takes
+     * the whole window once something is picked, with a way back to the list.
+     */
+    compact: Boolean = false,
 ) {
     val chatState = viewModel?.state?.collectAsState()?.value
     // Opens on Chats, as Android's pager does (ChatAndCall.kt:81-140 — page 0
@@ -130,9 +137,14 @@ fun ChatScreen(
 
     // A Box rather than the Row alone so the create-group dialog's scrim
     // covers the whole screen, not just the 320dp pane its button lives in.
+    // Compact shows the directory until something is picked, then the thread
+    // in its place. `peer` is a thread; `selectedId` a contact's card.
+    val detailOpen = chatState?.peer != null || selectedId != null
+    val showDirectory = !compact || !detailOpen
+
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         Row(Modifier.fillMaxSize()) {
-            DirectoryPane(
+            if (showDirectory) DirectoryPane(
                 crew = crew,
                 selfId = selfId,
                 tab = tab,
@@ -155,19 +167,17 @@ fun ChatScreen(
                 searchMessages = searchMessages,
                 deleteRoom = deleteRoom,
                 onNewGroup = ({ groupEditorOpen = true }).takeIf { createRoom != null },
+                modifier = if (compact) Modifier.fillMaxWidth() else Modifier.width(LIST_WIDTH),
             )
 
-            Box(
-                Modifier
-                    .width(HAIRLINE)
-                    .fillMaxHeight()
-                    .background(ZillitTheme.colors.border),
-            )
-
-            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                DetailPane(
-                    chatState, viewModel, crew, selectedId, onOpenAttachment,
+            if (!showDirectory || !compact) {
+                DetailSide(
+                    compact, chatState, viewModel, crew, selectedId, onOpenAttachment,
                     loadAvatar, loadThumbnail, onCall, player, loadAudio,
+                    onBack = {
+                        viewModel?.onEvent(ChatEvent.CloseThread)
+                        selectedId = null
+                    },
                 )
             }
         }
@@ -188,6 +198,82 @@ fun ChatScreen(
                 },
             )
         }
+    }
+}
+
+/**
+ * The detail half: the thread or card, with the hairline that separates it
+ * from the directory when both are on screen, and the way back when they are
+ * not.
+ */
+@Composable
+@Suppress("LongParameterList")
+private fun RowScope.DetailSide(
+    compact: Boolean,
+    chatState: ChatUiState?,
+    viewModel: ChatViewModel?,
+    crew: List<CrewContact>,
+    selectedId: String?,
+    onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)?,
+    player: com.zillit.desktop.core.designsystem.component.AudioPlayer?,
+    loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray?,
+    onBack: () -> Unit,
+) {
+    if (!compact) {
+        Box(
+            Modifier
+                .width(HAIRLINE)
+                .fillMaxHeight()
+                .background(ZillitTheme.colors.border),
+        )
+    }
+
+    Column(Modifier.weight(1f).fillMaxHeight()) {
+        // Compact has no list beside the thread, so the way back to it has to
+        // live here.
+        if (compact) {
+            CompactBackRow(
+                title = chatState?.peer?.fullName
+                    ?: crew.firstOrNull { it.userId == selectedId }?.fullName.orEmpty(),
+                onBack = onBack,
+            )
+        }
+        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            DetailPane(
+                chatState, viewModel, crew, selectedId, onOpenAttachment,
+                loadAvatar, loadThumbnail, onCall, player, loadAudio,
+            )
+        }
+    }
+}
+
+/**
+ * Compact's way back to the directory: the only affordance that changes
+ * between the two layouts, because the wide one never loses sight of the list.
+ */
+@Composable
+private fun CompactBackRow(title: String, onBack: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ZillitTheme.colors.surface)
+            .padding(horizontal = ZillitTheme.spacing.xs, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitIconButton(
+            icon = ZillitIcons.ChevronLeft,
+            contentDescription = "Back to conversations",
+            onClick = onBack,
+        )
+        ZillitText(
+            text = title.ifBlank { "Back" },
+            style = ZillitTheme.typography.titleSmall,
+            maxLines = 1,
+        )
     }
 }
 
@@ -311,10 +397,11 @@ private fun DirectoryPane(
     deleteRoom: (suspend (String) -> ZillitResult<Unit>)? = null,
     /** Opens the create-group dialog; null hides the affordance. */
     onNewGroup: (() -> Unit)?,
+    /** Its width: the fixed list column beside a thread, or the whole widget. */
+    modifier: Modifier = Modifier.width(LIST_WIDTH),
 ) {
     Column(
-        modifier = Modifier
-            .width(LIST_WIDTH)
+        modifier = modifier
             .fillMaxHeight()
             .background(ZillitTheme.colors.surface)
             .padding(ZillitTheme.spacing.md),

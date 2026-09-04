@@ -22,6 +22,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitTag
@@ -40,11 +41,17 @@ fun CrewListScreen(
     visibleUnits: () -> List<com.zillit.desktop.feature.crewlist.domain.CrewUnit>,
     onEvent: (CrewListEvent) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * The Crew List widget's shape: no room for three columns, so a member's
+     * phone and email sit under their name and the header's buttons lose
+     * their labels. The same rows, the same rules — only narrower.
+     */
+    compact: Boolean = false,
 ) {
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         when {
             state.viewer.isBlocked -> Centred("You don't have access to the Crew List.")
-            else -> Roster(state, visibleUnits, onEvent)
+            else -> Roster(state, visibleUnits, onEvent, compact)
         }
 
         state.generating?.let { dialog ->
@@ -85,46 +92,70 @@ private fun Roster(
     state: CrewListUiState,
     visibleUnits: () -> List<com.zillit.desktop.feature.crewlist.domain.CrewUnit>,
     onEvent: (CrewListEvent) -> Unit,
+    compact: Boolean,
 ) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(ZillitTheme.spacing.md),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(if (compact) ZillitTheme.spacing.sm else ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            ZillitText(text = "Crew List", style = ZillitTheme.typography.titleLarge)
-            Spacer(Modifier.weight(1f))
-            ZillitSearchField(
-                value = state.query,
-                onValueChange = { onEvent(CrewListEvent.Search(it)) },
-                placeholder = "Search name or role",
-                modifier = Modifier.width(SEARCH_WIDTH),
-            )
-            ZillitButton(
-                text = "Refresh",
-                variant = ButtonVariant.Secondary,
-                onClick = { onEvent(CrewListEvent.Refresh) },
-            )
-            ZillitButton(
-                text = "Generate PDF",
-                leadingIcon = ZillitIcons.File,
-                onClick = { onEvent(CrewListEvent.OpenGenerate) },
-            )
+            if (compact) {
+                // The widget's own bar already names the tool; the search is
+                // what the width is worth spending on.
+                ZillitSearchField(
+                    value = state.query,
+                    onValueChange = { onEvent(CrewListEvent.Search(it)) },
+                    placeholder = "Search name or role",
+                    modifier = Modifier.weight(1f),
+                )
+                ZillitIconButton(
+                    icon = ZillitIcons.Reload,
+                    contentDescription = "Refresh the crew list",
+                    onClick = { onEvent(CrewListEvent.Refresh) },
+                )
+                ZillitIconButton(
+                    icon = ZillitIcons.File,
+                    contentDescription = "Generate PDF",
+                    onClick = { onEvent(CrewListEvent.OpenGenerate) },
+                )
+            } else {
+                ZillitText(text = "Crew List", style = ZillitTheme.typography.titleLarge)
+                Spacer(Modifier.weight(1f))
+                ZillitSearchField(
+                    value = state.query,
+                    onValueChange = { onEvent(CrewListEvent.Search(it)) },
+                    placeholder = "Search name or role",
+                    modifier = Modifier.width(SEARCH_WIDTH),
+                )
+                ZillitButton(
+                    text = "Refresh",
+                    variant = ButtonVariant.Secondary,
+                    onClick = { onEvent(CrewListEvent.Refresh) },
+                )
+                ZillitButton(
+                    text = "Generate PDF",
+                    leadingIcon = ZillitIcons.File,
+                    onClick = { onEvent(CrewListEvent.OpenGenerate) },
+                )
+            }
         }
 
         val units = visibleUnits()
         when {
             state.isLoading && state.units.isEmpty() -> Centred("Loading crew…")
             units.isEmpty() -> Centred("No users found.")
-            else -> GroupedRows(units)
+            else -> GroupedRows(units, compact)
         }
     }
 }
 
 @Composable
-private fun GroupedRows(units: List<com.zillit.desktop.feature.crewlist.domain.CrewUnit>) {
+private fun GroupedRows(units: List<com.zillit.desktop.feature.crewlist.domain.CrewUnit>, compact: Boolean) {
     val listState = rememberLazyListState()
 
     ZillitLazyColumn(
@@ -144,7 +175,7 @@ private fun GroupedRows(units: List<com.zillit.desktop.feature.crewlist.domain.C
                     count = department.members.size,
                     key = { i -> "m-${unit.unitName}-${department.departmentName}-${department.members[i].userId}" },
                 ) { index ->
-                    MemberRow(department.members[index])
+                    MemberRow(department.members[index], compact)
                 }
             }
         }
@@ -165,7 +196,7 @@ private fun Banner(text: String, background: androidx.compose.ui.graphics.Color)
 }
 
 @Composable
-private fun MemberRow(member: CrewMember) {
+private fun MemberRow(member: CrewMember, compact: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -174,45 +205,74 @@ private fun MemberRow(member: CrewMember) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         ZillitAvatar(name = member.fullName)
-        Column(Modifier.weight(NAME_SHARE)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-            ) {
+        val phone = listOf(member.countryCode, member.phone)
+            .filter { it.isNotBlank() }
+            .joinToString("")
+            .ifBlank { "-" }
+        MemberIdentity(
+            member = member,
+            phone = phone,
+            compact = compact,
+            modifier = Modifier.weight(if (compact) 1f else NAME_SHARE),
+        )
+        if (!compact) {
+            ZillitText(
+                text = phone,
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textSecondary,
+                maxLines = 1,
+                modifier = Modifier.weight(PHONE_SHARE),
+            )
+            ZillitText(
+                text = member.primaryEmail.ifBlank { "-" },
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textSecondary,
+                maxLines = 1,
+                modifier = Modifier.weight(EMAIL_SHARE),
+            )
+        }
+    }
+}
+
+/** A member's name, role, and — where the row is too narrow for columns — their contact line. */
+@Composable
+private fun MemberIdentity(member: CrewMember, phone: String, compact: Boolean, modifier: Modifier) {
+    Column(modifier) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            ZillitText(
+                text = member.fullName,
+                style = ZillitTheme.typography.bodyMedium,
+                color = ZillitTheme.colors.textPrimary,
+                maxLines = 1,
+            )
+            if (member.isExternal) ZillitTag("Not on Zillit", tone = TagTone.Neutral)
+        }
+        member.designationName.takeIf { it.isNotBlank() }?.let { designation ->
+            ZillitText(
+                text = designation.localised(),
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+                maxLines = 1,
+            )
+        }
+        // Compact has no columns to put these in, so they ride under the
+        // name — still one line, still in this order.
+        if (compact) {
+            val contact = listOf(phone, member.primaryEmail)
+                .filter { it.isNotBlank() && it != "-" }
+                .joinToString(" · ")
+            if (contact.isNotBlank()) {
                 ZillitText(
-                    text = member.fullName,
-                    style = ZillitTheme.typography.bodyMedium,
-                    color = ZillitTheme.colors.textPrimary,
-                    maxLines = 1,
-                )
-                if (member.isExternal) ZillitTag("Not on Zillit", tone = TagTone.Neutral)
-            }
-            member.designationName.takeIf { it.isNotBlank() }?.let { designation ->
-                ZillitText(
-                    text = designation.localised(),
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
+                    text = contact,
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textSecondary,
                     maxLines = 1,
                 )
             }
         }
-        ZillitText(
-            text = listOf(member.countryCode, member.phone)
-                .filter { it.isNotBlank() }
-                .joinToString("")
-                .ifBlank { "-" },
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textSecondary,
-            maxLines = 1,
-            modifier = Modifier.weight(PHONE_SHARE),
-        )
-        ZillitText(
-            text = member.primaryEmail.ifBlank { "-" },
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textSecondary,
-            maxLines = 1,
-            modifier = Modifier.weight(EMAIL_SHARE),
-        )
     }
 }
 

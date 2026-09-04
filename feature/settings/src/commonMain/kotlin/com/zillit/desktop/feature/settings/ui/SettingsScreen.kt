@@ -321,6 +321,14 @@ private fun DesktopSection(state: SettingsUiState, onEvent: (SettingsEvent) -> U
             on = state.startAtLogin && state.startAtLoginAvailable,
             onChange = { onEvent(SettingsEvent.StartAtLoginChanged(it)) },
         )
+        state.widgets.forEach { widget ->
+            NotifyToggle(
+                title = widget.label,
+                detail = widget.detail,
+                on = widget.on,
+                onChange = { onEvent(SettingsEvent.WidgetChanged(widget.id, it)) },
+            )
+        }
     }
 }
 @Composable

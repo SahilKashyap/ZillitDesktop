@@ -47,6 +47,8 @@ import com.zillit.desktop.core.datastore.observeAs
 import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.workspace.FileWorkspaceSessionStore
+import com.zillit.desktop.feature.crewlist.ui.CrewListToolProvider
+import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.ToolRegistry
 import com.zillit.desktop.core.workspace.WorkspaceShortcuts
 import com.zillit.desktop.core.workspace.WorkspaceEvent
@@ -293,7 +295,7 @@ import kotlinx.coroutines.runBlocking
 
 fun main(args: Array<String>) {
     installCrashLogging()
-    val wantsDriveWidget = DriveWidgetLaunch.requestedBy(args)
+    val wantsWidget = WidgetLaunch.requestedBy(args)
     val startHidden = BackgroundLaunch.requestedBy(args)
     // Before anything opens the database or the preference file — the point of
     // the guard is that the second copy touches neither. See SingleInstance.
@@ -301,7 +303,7 @@ fun main(args: Array<String>) {
         // A "Zillit Drive" shortcut while Zillit is up: hand the request to
         // the running copy and go quietly — a dialog here would be noise.
         when {
-            wantsDriveWidget -> DriveWidgetLaunch.signalRunningApp()
+            wantsWidget != null -> WidgetLaunch.signalRunningApp(wantsWidget)
             // The login item found Zillit already up: a dialog at every sign-in is worse than none.
             startHidden -> Unit
             else -> reportAlreadyRunning()
@@ -309,8 +311,8 @@ fun main(args: Array<String>) {
         return
     }
     installDockIcon()
-    DriveWidgetLaunch.installUriHandler()
-    runZillit(openDriveWidget = wantsDriveWidget, startHidden = startHidden)
+    WidgetLaunch.installUriHandler()
+    runZillit(openWidget = wantsWidget, startHidden = startHidden)
 }
 
 /**
@@ -395,7 +397,7 @@ private fun installDockIcon() {
 }
 
 @Suppress("LongMethod") // The application's wiring, in the order it must happen; splitting it hides that.
-private fun runZillit(openDriveWidget: Boolean, startHidden: Boolean) = application {
+private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = application {
     val graph = remember { AppGraph.build() }
     val preferences = remember {
         (graph as? AppGraph.Ready)?.preferences ?: PreferenceStoreFactory.create()
@@ -414,18 +416,15 @@ private fun runZillit(openDriveWidget: Boolean, startHidden: Boolean) = applicat
     val scope = rememberCoroutineScope()
     val viewModels = rememberAppViewModels(graph, preferences, scope)
 
-    // The Drive widget: open if asked for on the command line, or if it was
-    // open when the app last quit. Toggled from the tray, the Drive tool, and
-    // a second launch with `--drive-widget`.
-    var driveWidgetOpen by remember {
-        mutableStateOf(openDriveWidget || runBlocking { preferences.get(ZillitPreferences.DriveWidgetOpen) })
-    }
-    LaunchedEffect(driveWidgetOpen) { preferences.set(ZillitPreferences.DriveWidgetOpen, driveWidgetOpen) }
-    LaunchedEffect(Unit) { DriveWidgetLaunch.watch { driveWidgetOpen = true } }
+    // The widgets: open if asked for on the command line, or if they were open
+    // when the app last quit. Toggled from the tray, from Settings, from the
+    // Drive tool, and by a second launch carrying a widget's flag.
+    val widgets = rememberWidgetSwitches(preferences, openWidget, scope)
 
-    val registry = remember(viewModels) {
-        buildRegistry(graph, viewModels, scope, openDriveWidget = { driveWidgetOpen = true })
+    val tools = remember(viewModels) {
+        buildRegistry(graph, viewModels, scope, openDriveWidget = { widgets.open(ZillitWidget.Drive) })
     }
+    val registry = tools.registry
 
     val workspaceViewModel = remember(registry) {
         WorkspaceViewModel(
@@ -472,8 +471,7 @@ private fun runZillit(openDriveWidget: Boolean, startHidden: Boolean) = applicat
         graph = graph,
         preferences = preferences,
         onShow = showMain,
-        driveWidgetOpen = driveWidgetOpen,
-        onToggleDriveWidget = { driveWidgetOpen = !driveWidgetOpen },
+        widgets = widgets,
         // The same shutdown the close button runs, geometry and all — a second
         // way out of the app must not be a way to lose your window layout.
         onQuit = { quitZillit(windowState) },
@@ -499,10 +497,11 @@ private fun runZillit(openDriveWidget: Boolean, startHidden: Boolean) = applicat
         registry = registry,
         viewModel = workspaceViewModel,
         authViewModel = authViewModel,
-        driveWidget = DriveWidgetMount(
-            host = driveWidgetHost,
-            open = driveWidgetOpen,
-            onClose = { driveWidgetOpen = false },
+        widgetMount = WidgetMount(
+            driveHost = driveWidgetHost,
+            chat = tools.chatWidget,
+            crew = tools.crewWidget,
+            switches = widgets,
             showMain = showMain,
         ),
         showMain = showMain,
@@ -527,13 +526,56 @@ private fun runZillit(openDriveWidget: Boolean, startHidden: Boolean) = applicat
     )
 }
 
-/** What the widget window needs from the application, gathered so ZillitWindows stays readable. */
-private class DriveWidgetMount(
-    val host: DriveWidgetHost?,
-    val open: Boolean,
-    val onClose: () -> Unit,
+/** What the widget windows need from the application, gathered so ZillitWindows stays readable. */
+private class WidgetMount(
+    val driveHost: DriveWidgetHost?,
+    val chat: ToolProvider?,
+    val crew: ToolProvider?,
+    val switches: WidgetSwitches,
     val showMain: () -> Unit,
 )
+
+/**
+ * Whether each widget is on screen.
+ *
+ * The preference file is the one source of truth, not a copy of it: the tray,
+ * Settings, the command line and the windows' own close buttons all write the
+ * same key and all read it back. A widget that could be "open" in two places
+ * at once would flicker between them.
+ */
+internal class WidgetSwitches(
+    private val open: Map<ZillitWidget, Boolean>,
+    private val onSet: (ZillitWidget, Boolean) -> Unit,
+) {
+    fun isOpen(widget: ZillitWidget): Boolean = open[widget] == true
+
+    fun open(widget: ZillitWidget) = set(widget, true)
+
+    fun close(widget: ZillitWidget) = set(widget, false)
+
+    fun toggle(widget: ZillitWidget) = set(widget, !isOpen(widget))
+
+    fun set(widget: ZillitWidget, open: Boolean) = onSet(widget, open)
+}
+
+/** The switches, kept in step with the preference file and with a second launch's flag. */
+@Composable
+private fun rememberWidgetSwitches(
+    preferences: PreferenceStore,
+    opened: ZillitWidget?,
+    scope: CoroutineScope,
+): WidgetSwitches {
+    val open = ZillitWidget.entries.associateWith { widget ->
+        preferences.observe(widget.keys.open)
+            .collectAsState(initial = remember { runBlocking { preferences.get(widget.keys.open) } })
+            .value
+    }
+    // A widget named on the command line opens once, at startup; from then on
+    // it is the stored switch like any other.
+    LaunchedEffect(opened) { if (opened != null) preferences.set(opened.keys.open, true) }
+    LaunchedEffect(Unit) { WidgetLaunch.watch { widget -> scope.launch { preferences.set(widget.keys.open, true) } } }
+    return WidgetSwitches(open) { widget, on -> scope.launch { preferences.set(widget.keys.open, on) } }
+}
 
 /**
  * Ends the session.
@@ -586,7 +628,7 @@ private fun ApplicationScope.ZillitWindows(
     registry: ToolRegistry,
     viewModel: WorkspaceViewModel,
     authViewModel: AuthViewModel?,
-    driveWidget: DriveWidgetMount,
+    widgetMount: WidgetMount,
     /** Raises and focuses the main frame. See [showMainWindow]. */
     showMain: () -> Unit,
     onFrame: (ComposeWindow) -> Unit,
@@ -719,16 +761,43 @@ private fun ApplicationScope.ZillitWindows(
         }
     }
 
-    // The Drive widget: the desktop's own small window onto one production's
-    // drive, tied to the main window's session. See DriveWidgetWindow.
+    // The widgets: the desktop's own small windows, tied to the main window's
+    // session. Drive picks its own production; chat and the crew list follow
+    // the one the app is open on. See WidgetShell.
     DriveWidgetWindow(
-        host = driveWidget.host,
+        host = widgetMount.driveHost,
         auth = authViewModel,
         preferences = preferences,
-        visible = driveWidget.open,
+        visible = widgetMount.switches.isOpen(ZillitWidget.Drive),
         darkTheme = isDark,
-        onClose = driveWidget.onClose,
-        showMain = driveWidget.showMain,
+        onClose = { widgetMount.switches.close(ZillitWidget.Drive) },
+        showMain = widgetMount.showMain,
+    )
+    ToolWidgetWindow(
+        title = "Zillit Chat",
+        what = "The Chat widget",
+        keys = ZillitPreferences.ChatWidget,
+        provider = widgetMount.chat,
+        route = WorkspaceRoute.Tool("/cnc"),
+        auth = authViewModel,
+        preferences = preferences,
+        visible = widgetMount.switches.isOpen(ZillitWidget.Chat),
+        darkTheme = isDark,
+        onClose = { widgetMount.switches.close(ZillitWidget.Chat) },
+        showMain = widgetMount.showMain,
+    )
+    ToolWidgetWindow(
+        title = "Zillit Crew",
+        what = "The Crew List widget",
+        keys = ZillitPreferences.CrewWidget,
+        provider = widgetMount.crew,
+        route = WorkspaceRoute.Tool(CrewListToolProvider.CREW_LIST_PATH),
+        auth = authViewModel,
+        preferences = preferences,
+        visible = widgetMount.switches.isOpen(ZillitWidget.Crew),
+        darkTheme = isDark,
+        onClose = { widgetMount.switches.close(ZillitWidget.Crew) },
+        showMain = widgetMount.showMain,
     )
 }
 
@@ -1805,7 +1874,10 @@ private fun chatProvider(
     calls: CallViewModel?,
     audioPlayer: com.zillit.desktop.core.designsystem.component.AudioPlayer?,
     canDownload: () -> Boolean = { true },
+    /** One pane at a time — the Chat widget's copy. */
+    compact: Boolean = false,
 ) = ChatToolProvider(
+    compact = compact,
     player = audioPlayer,
     loadAudio = { file -> fetchChatAudio(ready, file) },
     canDownload = canDownload,
@@ -2708,7 +2780,7 @@ private fun buildRegistry(
     scope: CoroutineScope,
     /** Opens the desktop Drive widget — offered from the Drive tool's header. */
     openDriveWidget: () -> Unit,
-): ToolRegistry {
+): AppTools {
     val homeViewModel = viewModels.home
     val chatViewModel = viewModels.chat
     // One speaker for the whole app: the board pausing when a chat voice
@@ -2817,7 +2889,7 @@ private fun buildRegistry(
         com.zillit.desktop.feature.distribution.ui.DistributionToolProvider(it)
     }
     val crewList = viewModels.crewList?.let {
-        com.zillit.desktop.feature.crewlist.ui.CrewListToolProvider(it)
+        CrewListToolProvider(it)
     }
     val assetRegister = viewModels.assetRegister?.let {
         com.zillit.desktop.feature.assetreport.ui.AssetToolProvider(it)
@@ -2939,21 +3011,7 @@ private fun buildRegistry(
         }
     }
     val chat = (graph as? AppGraph.Ready)?.let {
-        chatProvider(
-            it, chatViewModel, viewModels.calls, audioPlayer,
-            // The C&C tool's download right (Android gates saves with
-            // msg_download_right on the same flag). A production whose tools
-            // list never mentions the tool leaves chat ungated, as the
-            // phones' chat page is.
-            canDownload = canDownload@{
-                val permissions = viewModels.home?.state?.value?.permissions
-                    ?: return@canDownload true
-                if (permissions.tools.none { tool -> tool.identifier == CNC_TOOL_IDENTIFIER }) {
-                    return@canDownload true
-                }
-                permissions.canDownload(CNC_TOOL_IDENTIFIER)
-            },
-        )
+        chatProvider(it, chatViewModel, viewModels.calls, audioPlayer, cncDownloadRight(viewModels))
     }
     val signatures = (graph as? AppGraph.Ready)?.let {
         SignatureToolProvider(it.signatureRepository)
@@ -3164,7 +3222,43 @@ private fun buildRegistry(
         scheduleDistribution, scriptDistribution, scheduleDod,
     ) + castingTools + wardrobeTools + saPortal
     val realPaths = real.map { it.path }.toSet()
-    return ToolRegistry(real + placeholderTools().filterNot { it.path in realPaths })
+    return AppTools(
+        registry = ToolRegistry(real + placeholderTools().filterNot { it.path in realPaths }),
+        // The widgets' own copies: the same ViewModels — and the same single
+        // audio player — in their one-pane shape. Built here because that is
+        // where those instances live; building them outside would mint a
+        // second speaker and a second chat.
+        chatWidget = chatViewModel?.let {
+            chatProvider(
+                graph as AppGraph.Ready, it, viewModels.calls, audioPlayer,
+                canDownload = cncDownloadRight(viewModels),
+                compact = true,
+            )
+        },
+        crewWidget = viewModels.crewList?.let { CrewListToolProvider(it, compact = true) },
+    )
+}
+
+/** The registry, plus the compact providers the Chat and Crew List widgets show. */
+private class AppTools(
+    val registry: ToolRegistry,
+    val chatWidget: ToolProvider?,
+    val crewWidget: ToolProvider?,
+)
+
+/**
+ * The C&C tool's download right (Android gates saves with `msg_download_right`
+ * on the same flag). A production whose tools list never mentions the tool
+ * leaves chat ungated, as the phones' chat page is.
+ *
+ * Shared by the rail's chat and the widget's, so one grid change moves both.
+ */
+private fun cncDownloadRight(viewModels: AppViewModels): () -> Boolean = canDownload@{
+    val permissions = viewModels.home?.state?.value?.permissions ?: return@canDownload true
+    if (permissions.tools.none { tool -> tool.identifier == CNC_TOOL_IDENTIFIER }) {
+        return@canDownload true
+    }
+    permissions.canDownload(CNC_TOOL_IDENTIFIER)
 }
 
 /**
@@ -3338,6 +3432,13 @@ private fun notificationSettings(
     setMessageWidget = { on -> scope.launch { preferences.set(ZillitPreferences.MessageWidget, on) } },
     setCloseToTray = { on -> scope.launch { preferences.set(ZillitPreferences.CloseToTray, on) } },
     setStartAtLogin = { on -> scope.launch { LoginItem.sync(preferences, on) } },
+    // The widgets' switches, read and written where the tray and the windows
+    // read and write them — the preference file, not a copy.
+    widgets = widgetToggles(preferences),
+    setWidget = { id, on ->
+        ZillitWidget.entries.firstOrNull { it.name == id }
+            ?.let { widget -> scope.launch { preferences.set(widget.keys.open, on) } }
+    },
 )
 
 private fun buildSettings(
@@ -3570,4 +3671,37 @@ private const val CRASH_TAG = "Crash"
 private suspend fun AppGraph.Ready.driveFolderOptions(parentId: String?): ZillitResult<List<DriveFolderOption>> =
     driveRepository.contents(DriveQuery(folderId = parentId)).map { page ->
         page.items.filter { it.kind == DriveItemKind.Folder }.map { DriveFolderOption(it.id, it.name) }
+    }
+
+/**
+ * The desktop widgets as Settings lists them, live from the preference file.
+ *
+ * Combined rather than one flow each so the section repaints once when a
+ * switch moves, wherever it was moved from.
+ */
+private fun widgetToggles(
+    preferences: PreferenceStore,
+): kotlinx.coroutines.flow.Flow<List<com.zillit.desktop.feature.settings.ui.WidgetToggle>> =
+    kotlinx.coroutines.flow.combine(
+        ZillitWidget.entries.map { widget -> preferences.observe(widget.keys.open) },
+    ) { open ->
+        ZillitWidget.entries.mapIndexed { index, widget ->
+            com.zillit.desktop.feature.settings.ui.WidgetToggle(
+                id = widget.name,
+                label = "${widget.label} widget",
+                detail = widget.widgetDetail,
+                on = open[index],
+            )
+        }
+    }
+
+/** What each widget's Settings row says it does. */
+private val ZillitWidget.widgetDetail: String
+    get() = when (this) {
+        ZillitWidget.Drive -> "A small window onto one production's drive — browse, upload and " +
+            "download beside whatever else you are working in. It can pick a production of its own."
+        ZillitWidget.Chat -> "Conversations and calls in a small window that stays on top, so a " +
+            "thread is one glance away while you work in something else."
+        ZillitWidget.Crew -> "The production's crew — names, roles, phone and email — in a small " +
+            "window you can search without leaving what you are doing."
     }

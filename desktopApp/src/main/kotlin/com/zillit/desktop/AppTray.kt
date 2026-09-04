@@ -28,7 +28,7 @@ import java.awt.Desktop
  */
 @Composable
 @Suppress("LongParameterList") // Each is a distinct tray concern.
-fun ApplicationScope.AppTray(
+internal fun ApplicationScope.AppTray(
     graph: AppGraph,
     preferences: PreferenceStore,
     // Hoisted: alerts post through the same tray presence, and a second
@@ -36,9 +36,8 @@ fun ApplicationScope.AppTray(
     trayState: TrayState,
     /** Shows the main window, un-hiding it if a close sent it to the tray. */
     onShow: () -> Unit,
-    /** The Drive widget's state and switch — the tray is where it lives when the main window is away. */
-    driveWidgetOpen: Boolean,
-    onToggleDriveWidget: () -> Unit,
+    /** The widgets' switches — the tray is where they live when the main window is away. */
+    widgets: WidgetSwitches,
     onQuit: () -> Unit,
 ) {
 
@@ -53,7 +52,13 @@ fun ApplicationScope.AppTray(
             onAction = onShow,
         ) {
             Item("Show Zillit", onClick = onShow)
-            Item(if (driveWidgetOpen) "Hide Drive widget" else "Show Drive widget", onClick = onToggleDriveWidget)
+            ZillitWidget.entries.forEach { widget ->
+                val shown = widgets.isOpen(widget)
+                Item(
+                    if (shown) "Hide ${widget.label} widget" else "Show ${widget.label} widget",
+                    onClick = { widgets.toggle(widget) },
+                )
+            }
             Separator()
             /*
              * Posts a banner on demand, straight into TrayNotifier.
