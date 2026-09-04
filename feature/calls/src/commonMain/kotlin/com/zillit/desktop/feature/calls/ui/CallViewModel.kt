@@ -252,6 +252,14 @@ sealed interface CallEvent {
         val isCalendarCall: Boolean = false,
         /** A call to the 24x7 support team. See placeCall. */
         val is247Call: Boolean = false,
+        /**
+         * The production the call belongs to, when it is not the open one —
+         * a call placed from a widget showing another production. Null is
+         * every call from the main window.
+         */
+        val projectId: String? = null,
+        /** The caller's id ON [projectId]; project-scoped, so not the ambient one. */
+        val callerUserId: String = "",
     ) : CallEvent
 
     data object Accept : CallEvent
@@ -667,6 +675,8 @@ class CallViewModel(
         receiverUserId = event.receiverUserId,
         isCalendarCall = event.isCalendarCall,
         is247Call = event.is247Call,
+        projectId = event.projectId,
+        callerUserId = event.callerUserId,
     )
 
     /** Everything a call leaves behind, cleared in one place. */

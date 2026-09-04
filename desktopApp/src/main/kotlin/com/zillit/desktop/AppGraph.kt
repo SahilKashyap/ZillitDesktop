@@ -23,6 +23,7 @@ import com.zillit.desktop.core.network.ReadScope
 import com.zillit.desktop.core.network.S3Presigner
 import com.zillit.desktop.core.network.HeaderCrypto
 import com.zillit.desktop.core.badges.BadgeStore
+import com.zillit.desktop.core.database.ProjectSnapshot
 import com.zillit.desktop.core.database.LabelCache
 import com.zillit.desktop.core.database.ProjectCache
 import com.zillit.desktop.core.database.ProjectListCache
@@ -477,6 +478,8 @@ sealed interface AppGraph {
         val signatureRepository: SignatureRepository,
         val folderRepository: FolderRepository,
         val attachmentUploader: AttachmentUploader,
+        /** An uploader that puts files in ANOTHER production's storage. */
+        val uploaderForProject: (ProjectSnapshot, CallOptions) -> AttachmentUploader,
         val projectContext: ProjectContextLoader?,
         val projectCache: ProjectCache?,
         /** The picker's last list, so productions show without a network. */
@@ -1056,6 +1059,19 @@ sealed interface AppGraph {
             // every other attachment uses.
             val attachmentUploader =
                 uploader(storageClient, apiClient, config, remoteConfigRepository, projectContext)
+            /*
+             * The same routing, for a production the app is NOT open on — a
+             * widget posting into another production.
+             *
+             * Which storage a file belongs in is a fact about the production
+             * receiving it, so the snapshot comes from that production
+             * (`projectOf`) rather than the open one. The S3 target itself is
+             * device-scoped (`suitable-region` is a RequestModule.Device
+             * call), so only the Box half needs the production named.
+             */
+            val uploaderForProject: (ProjectSnapshot, CallOptions) -> AttachmentUploader = { snapshot, options ->
+                projectUploader(storageClient, apiClient, config, remoteConfigRepository, snapshot, options)
+            }
             // One instance, shared: the coordinator and the call-log list are
             // the same surface talking to the same production.
             val callApi = CallApi(apiClient, config)
@@ -1174,6 +1190,7 @@ sealed interface AppGraph {
                 signatureRepository = SignatureRepositoryImpl(apiClient, config),
                 folderRepository = FolderRepositoryImpl(apiClient, config),
                 attachmentUploader = attachmentUploader,
+                uploaderForProject = uploaderForProject,
                 noticeMedia = S3NoticeMediaSource(
                     httpClient = storageClient,
                     credentials = { awsKeyPair(remoteConfigRepository) },
@@ -1371,6 +1388,45 @@ private fun uploader(
         ),
     )
 }
+
+/**
+ * [uploader], for a named production instead of the open one.
+ *
+ * Same two backends and the same routing rule; the difference is only where
+ * the storage facts come from — a snapshot fetched for that production — and
+ * that the Box token call names it, since that one is project-scoped.
+ */
+private fun projectUploader(
+    storageClient: io.ktor.client.HttpClient,
+    apiClient: ApiClient,
+    config: AppConfig,
+    remoteConfig: RemoteConfigRepository,
+    project: ProjectSnapshot,
+    options: CallOptions,
+): AttachmentUploader = RoutingAttachmentUploader(
+    kind = { storageKindOf(project.storageType) },
+    aws = S3AttachmentUploader(
+        httpClient = storageClient,
+        credentials = {
+            awsKeyPair(remoteConfig)?.let { (access, secret) -> AwsCredentials(access, secret) }
+        },
+        // Device-scoped on the wire, so it answers for this machine whichever
+        // production the file is going to.
+        storage = SuitableRegionSource(apiClient, config),
+    ),
+    box = BoxAttachmentUploader(
+        httpClient = storageClient,
+        settings = {
+            project.enterpriseClientId?.let { enterprise ->
+                BoxSettings(
+                    enterpriseClientId = enterprise,
+                    folderId = project.storageFolders[EMAIL_BOX_FOLDER] ?: BOX_ROOT_FOLDER,
+                )
+            }
+        },
+        tokens = BoxAuthSource(apiClient, config, callOptions = { options }),
+    ),
+)
 
 /**
  * Which of the production's Box folders attachments go in.

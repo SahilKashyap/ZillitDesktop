@@ -56,6 +56,8 @@ class CallApi(
      * blank string for the unused one is not the same as omitting it — a blank
      * receiver has been seen to produce a call nobody is invited to.
      */
+    // One parameter per field the endpoint takes; a wrapper would only rename them.
+    @Suppress("LongParameterList")
     suspend fun createCall(
         chatRoomId: String,
         receiverDeviceId: String,
@@ -64,6 +66,8 @@ class CallApi(
         selfUserId: String,
         selfDeviceId: String,
         projectId: String?,
+        /** The caller's id ON [projectId]; blank uses the ambient pair. See [send]. */
+        callerUserId: String = "",
     ): ZillitResult<CallSession?> {
         val body = buildJsonObject {
             put("call_mode", mode.wire)
@@ -72,7 +76,7 @@ class CallApi(
             if (receiverDeviceId.isNotBlank()) put("receiver_device_id", receiverDeviceId)
             if (chatRoomId.isNotBlank()) put("chat_room_id", chatRoomId)
         }
-        return post("call/new-call", body, projectId).map { data ->
+        return post("call/new-call", body, projectId, callerUserId).map { data ->
             data?.let {
                 readCallSession(it, selfUserId, selfDeviceId, CallDirection.Outgoing)
                     ?.copy(mode = mode, type = type)
@@ -223,6 +227,8 @@ class CallApi(
      * addressing Line 2 uses; passing a device id produces a call nobody is
      * invited to, with no error.
      */
+    // One parameter per field the endpoint takes; a wrapper would only rename them.
+    @Suppress("LongParameterList")
     suspend fun createMediasoupCall(
         chatRoomId: String,
         receiverUserIds: List<String>,
@@ -231,6 +237,8 @@ class CallApi(
         selfUserId: String,
         selfDeviceId: String,
         projectId: String?,
+        /** The caller's id ON [projectId]; blank uses the ambient pair. See [send]. */
+        callerUserId: String = "",
     ): ZillitResult<CallSession?> {
         val body = buildJsonObject {
             put("callerId", selfUserId)
@@ -243,7 +251,7 @@ class CallApi(
             // capability we do not implement would have the server elect a
             // direct connection and then nobody answers it.
         }
-        return post("mediasoup-call/initiate-call", body, projectId).map { data ->
+        return post("mediasoup-call/initiate-call", body, projectId, callerUserId).map { data ->
             val session = data?.let {
                 readCallSession(it, selfUserId, selfDeviceId, CallDirection.Outgoing)
             }
@@ -303,6 +311,14 @@ class CallApi(
          * later pages read back from a row's own timestamp and key themselves.
          */
         newestPage: Boolean = false,
+        /**
+         * The production whose history to read, when it is not the open one —
+         * a widget showing another production's Calls tab. Null is the
+         * ambient pair, which is every call log in the main window.
+         */
+        projectId: String? = null,
+        /** The reader's id ON [projectId]; blank uses the ambient pair. See [send]. */
+        callerUserId: String = "",
     ): ZillitResult<List<CallLogEntry>> {
         val direction = if (older) "previous" else "next"
         val query = if (missedOnly) "?missed=yes" else ""
@@ -310,10 +326,11 @@ class CallApi(
             verb = HttpVerb.Get,
             url = "${base}call/$cursorMillis/$direction$query",
             module = RequestModule.ProjectUser,
-            // No project override: history is the open production's, unlike a
-            // live call which carries its own.
+            // Named only by a widget reading another production; blank means
+            // the open one, which every main-window read is.
             options = CallOptions(
-                projectId = null,
+                projectId = projectId,
+                userId = callerUserId.takeIf(String::isNotBlank),
                 cacheAs = if (newestPage) "${base}call/newest/$direction$query" else null,
             ),
         ).map { envelope -> readCallLogs(envelope.data ?: JsonObject(emptyMap()), selfUserId) }
@@ -328,22 +345,35 @@ class CallApi(
      * one slash more than `GET_CALL_LOGS` on the line above; the server
      * tolerates the double, but the single spelling is what the path is.
      */
-    suspend fun deleteRecentCallLogs(): ZillitResult<Unit> = deleteLogs("recent")
+    suspend fun deleteRecentCallLogs(
+        projectId: String? = null,
+        callerUserId: String = "",
+    ): ZillitResult<Unit> = deleteLogs("recent", projectId, callerUserId)
 
     /**
      * Wipes the missed-calls history — the same call for the missed view.
      * Android's Recent tab sends both; its Missed tab only this one
      * (`RecentCallFragment.kt:203-209`).
      */
-    suspend fun deleteMissedCallLogs(): ZillitResult<Unit> = deleteLogs("missed")
+    suspend fun deleteMissedCallLogs(
+        projectId: String? = null,
+        callerUserId: String = "",
+    ): ZillitResult<Unit> = deleteLogs("missed", projectId, callerUserId)
 
-    private suspend fun deleteLogs(which: String): ZillitResult<Unit> =
+    private suspend fun deleteLogs(
+        which: String,
+        projectId: String? = null,
+        callerUserId: String = "",
+    ): ZillitResult<Unit> =
         apiClient.envelope(
             verb = HttpVerb.Delete,
             url = "${base}call/$which",
             module = RequestModule.ProjectUser,
-            // History is the open production's — see callLogs.
-            options = CallOptions(projectId = null),
+            // Named only by a widget clearing another production — see callLogs.
+            options = CallOptions(
+                projectId = projectId,
+                userId = callerUserId.takeIf(String::isNotBlank),
+            ),
         ).map { }
 
     /** Admits or refuses a guest waiting outside a room. */
@@ -444,7 +474,8 @@ internal suspend fun CallApi.createOnLine(request: NewCall): ZillitResult<CallSe
             type = request.type,
             selfUserId = request.selfUserId,
             selfDeviceId = request.selfDeviceId,
-            projectId = null,
+            projectId = request.projectId,
+            callerUserId = request.callerUserId,
         )
     } else {
         createCall(
@@ -454,7 +485,8 @@ internal suspend fun CallApi.createOnLine(request: NewCall): ZillitResult<CallSe
             type = request.type,
             selfUserId = request.selfUserId,
             selfDeviceId = request.selfDeviceId,
-            projectId = null,
+            projectId = request.projectId,
+            callerUserId = request.callerUserId,
         )
     }
 
@@ -470,6 +502,15 @@ internal data class NewCall(
     val type: CallType,
     val selfUserId: String,
     val selfDeviceId: String,
+    /**
+     * The production the call belongs to, when it is not the open one — a
+     * call placed from a widget showing another production.
+     *
+     * Null means the ambient pair, which is every call from the main window.
+     */
+    val projectId: String? = null,
+    /** The caller's id ON [projectId]; project-scoped, so it is not the ambient one. */
+    val callerUserId: String = "",
 )
 
 /**

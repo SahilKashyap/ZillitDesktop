@@ -221,12 +221,23 @@ internal fun crewFaceLoader(
  * another's screen.
  */
 @Composable
-internal fun CallLogTab(ready: AppGraph.Ready, calls: CallViewModel) {
-    val projectId = ready.projectContext?.context?.collectAsState()?.value?.project?.projectId
+internal fun CallLogTab(
+    ready: AppGraph.Ready,
+    calls: CallViewModel,
+    /** Another production's history — a widget showing one. Null is the open production's. */
+    otherProjectId: String? = null,
+    /** The reader's id ON [otherProjectId]. */
+    otherUserId: String = "",
+) {
+    val openProjectId = ready.projectContext?.context?.collectAsState()?.value?.project?.projectId
+    val projectId = otherProjectId ?: openProjectId
     val logs = remember(ready, projectId) {
         CallLogViewModel(
             api = ready.callApi,
-            selfUserId = { ready.projectContext?.context?.value?.profile?.userId },
+            selfUserId = {
+                otherUserId.takeIf { it.isNotBlank() }
+                    ?: ready.projectContext?.context?.value?.profile?.userId
+            },
             nowMillis = System::currentTimeMillis,
             onRedial = { entry ->
                 calls.onEvent(
@@ -239,9 +250,13 @@ internal fun CallLogTab(ready: AppGraph.Ready, calls: CallViewModel) {
                         mode = entry.mode,
                         type = entry.type,
                         displayName = entry.displayTitle { id -> crewNameOf(ready, id) },
+                        projectId = otherProjectId,
+                        callerUserId = otherUserId,
                     ),
                 )
             },
+            projectId = otherProjectId,
+            callerUserId = otherUserId,
         )
     }
     // A call that just ended belongs in Recents now, not after the user

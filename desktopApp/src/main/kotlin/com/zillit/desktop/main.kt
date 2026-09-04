@@ -483,7 +483,9 @@ private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = applica
                 openProjectId = { authViewModel?.currentState?.activeProject?.id },
                 tag = "ChatWidget",
                 openProvider = { tools.chatWidget },
-                scopedProvider = { project, _, permissions -> ready.scopedChatProvider(project, permissions) },
+                scopedProvider = { project, options, permissions ->
+                    ready.scopedChatProvider(project, options, permissions, viewModels.calls)
+                },
             )
         }
     }
@@ -1608,9 +1610,11 @@ private fun buildMailbox(ready: AppGraph.Ready): EmailViewModel {
  * slow half — poster extraction, then the routed store — after the thread
  * has its bubble up, reporting percent into the bubble's bar.
  */
-private suspend fun pickChatAttachment(
+internal suspend fun pickChatAttachment(
     ready: AppGraph.Ready,
     kind: com.zillit.desktop.core.media.PreviewKind? = null,
+    /** Where the bytes go — another production's storage for a widget on one. */
+    capture: com.zillit.desktop.feature.home.ui.MediaCapture = homeMediaCapture(ready),
 ): com.zillit.desktop.feature.chat.domain.ChatPick {
     // Chat's own ceiling, not mail's 25 MB: both other clients carry files up
     // to 70 MB, and a desktop that stops at 25 refuses what a phone sends.
@@ -1655,7 +1659,7 @@ private suspend fun pickChatAttachment(
             contentType = picked.contentType,
             bytes = picked.bytes,
         ) { bytes, onProgress ->
-            uploadChatMedia(ready, picked.name, picked.contentType, bytes, onProgress)
+            uploadChatMedia(ready, picked.name, picked.contentType, bytes, onProgress, capture)
         },
     )
 }
@@ -1672,8 +1676,10 @@ internal suspend fun uploadChatMedia(
     contentType: String,
     bytes: ByteArray,
     onProgress: (Int) -> Unit,
+    /** Where the bytes go — another production's storage for a widget on one. */
+    capture: com.zillit.desktop.feature.home.ui.MediaCapture = homeMediaCapture(ready),
 ): ChatAttachment? {
-    val media = homeMediaCapture(ready)
+    val media = capture
     val withPoster = media.videoThumbnail(
         com.zillit.desktop.feature.home.domain.PickedMedia(
             name = name,

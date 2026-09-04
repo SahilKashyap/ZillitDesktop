@@ -147,6 +147,22 @@ class ProjectContextLoader(
      * names that production **and the user's id on it** — a project override
      * without the matching identity answers for the wrong person.
      */
+    /**
+     * Another production's details — its storage above all.
+     *
+     * Which bucket, or which Box enterprise and folder, a file belongs in is a
+     * fact about the production it is posted to, so a widget uploading into
+     * another production has to ask that production, not the open one.
+     */
+    suspend fun projectOf(projectId: String, userId: String): ZillitResult<ProjectSnapshot> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${api}project/$projectId",
+            serializer = ProjectDetailDto.serializer(),
+            module = RequestModule.ProjectUser,
+            options = CallOptions(projectId = projectId, userId = userId),
+        ).map { it.toSnapshot(projectId) }
+
     suspend fun usersOf(projectId: String, userId: String): ZillitResult<List<UserSnapshot>> =
         apiClient.request(
             verb = HttpVerb.Get,

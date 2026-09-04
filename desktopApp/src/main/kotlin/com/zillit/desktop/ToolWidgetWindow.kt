@@ -51,11 +51,13 @@ import kotlinx.coroutines.launch
  * registered per **user**, not per production, and each repository keeps only
  * the frames naming its own project.
  *
- * What a scoped copy cannot do is anything routed through the open
- * production's ambient context — uploading an attachment, recording a voice
- * note, placing a call. Those seams carry no production of their own, so they
- * would quietly act on the wrong one; the widget says so rather than
- * pretending ([ScopedNote]).
+ * Attachments, voice notes and calls work on a scoped copy too, each told
+ * which production it is acting on — files land in that production's own
+ * storage, and a call carries its id and the caller's id there.
+ *
+ * The one thing that stays the open production's is the unread badge count,
+ * so a widget on another production reads its messages without a count to
+ * clear ([ScopedNote]).
  */
 @Composable
 @Suppress("LongParameterList") // Every seam is a distinct host concern; a holder object would just rename them.
@@ -193,7 +195,7 @@ private fun WidgetToolBody(
         )
 
         session.provider != null -> Column(Modifier.fillMaxSize()) {
-            if (!session.isOpenProject) ScopedNote()
+            if (!session.isOpenProject) ScopedNote(session.project.name)
             Box(Modifier.weight(1f).fillMaxSize()) {
                 session.provider.Content(route = route, navigator = WidgetNavigator)
             }
@@ -202,16 +204,15 @@ private fun WidgetToolBody(
 }
 
 /**
- * Says what a production other than the open one cannot do here.
+ * Names the production a widget is showing when it is not the open one.
  *
- * Attachments, voice notes and calls travel through seams that carry no
- * production of their own — they would act on whichever one the main window
- * happens to be showing. Rather than upload a file into the wrong
- * production's storage, the widget names the limit and leaves the main window
- * as the way to do it.
+ * Messages, files and calls all work here; what does not follow is the unread
+ * count, which belongs to the production the main window shows. Saying which
+ * production this is matters more than the caveat: two widgets side by side
+ * are otherwise identical.
  */
 @Composable
-private fun ScopedNote() {
+private fun ScopedNote(projectName: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -221,7 +222,7 @@ private fun ScopedNote() {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = "Another production — messages only. Open it in Zillit to send files or call.",
+            text = "$projectName — unread counts stay with the production Zillit is open on.",
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
             maxLines = 2,

@@ -6,6 +6,7 @@ import com.zillit.desktop.core.datastore.ZillitPreferences
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.flatMap
 import com.zillit.desktop.core.common.map
+import com.zillit.desktop.feature.email.domain.AttachmentUploader
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 import com.zillit.desktop.feature.email.data.FilePicker
 import com.zillit.desktop.feature.email.domain.StorageKind
@@ -125,8 +126,19 @@ internal suspend fun fetchStaticMapBytes(ready: AppGraph.Ready, lat: Double, lng
 private const val STATIC_MAP_NAME = "location-map.png"
 private const val STATIC_MAP_TYPE = "image/png"
 
-/** What the composer can capture: picker, uploader, microphone, poster frames. */
-internal fun homeMediaCapture(ready: AppGraph.Ready) = MediaCapture(
+/**
+ * What the composer can capture: picker, uploader, microphone, poster frames.
+ *
+ * [uploader] and [storageType] default to the open production's. A widget
+ * posting into another production passes that production's pair instead —
+ * which storage a file belongs in is a fact about the production receiving
+ * it, not about the window doing the sending.
+ */
+internal fun homeMediaCapture(
+    ready: AppGraph.Ready,
+    uploader: AttachmentUploader = ready.attachmentUploader,
+    storageType: () -> String? = { ready.projectContext?.context?.value?.project?.storageType },
+) = MediaCapture(
     // The same OS dialog mail attachments use. Several files become several
     // posts — the wire takes one attachment per message, as the phones send.
     pick = { FilePicker().pick().map { it.toNoticeMedia() } },
@@ -139,19 +151,17 @@ internal fun homeMediaCapture(ready: AppGraph.Ready) = MediaCapture(
     upload = { picked, onProgress ->
         // The poster read path signs S3 GETs; a poster keyed into Box could
         // never be fetched. The web skips it there for the same reason.
-        val storageIsAws = storageKindOf(
-            ready.projectContext?.context?.value?.project?.storageType,
-        ) == StorageKind.Aws
+        val storageIsAws = storageKindOf(storageType()) == StorageKind.Aws
         val thumbnailKey = picked.thumbnailBytes
             ?.takeIf { storageIsAws }
             ?.let { poster ->
-                ready.attachmentUploader
+                uploader
                     .upload(picked.name + "_thumb.jpg", "image/jpeg", poster)
                     .getOrNull()?.media
             }
         // Only the main file reports progress: the poster above is a few
         // kilobytes, and a bar that restarts for it would read as a glitch.
-        ready.attachmentUploader
+        uploader
             .upload(picked.name, picked.contentType, picked.bytes, onProgress)
             .map { stored ->
                 UploadedNoticeMedia(
@@ -386,9 +396,12 @@ private const val READ_SETTLE_MILLIS = 1_500L
  * ending in a [ChatAttachment] ready to ride a message envelope. One capture
  * pipeline for every place the crew speaks.
  */
-internal fun chatVoice(ready: AppGraph.Ready): com.zillit.desktop.feature.chat.domain.ChatVoice =
+internal fun chatVoice(
+    ready: AppGraph.Ready,
+    capture: MediaCapture = homeMediaCapture(ready),
+): com.zillit.desktop.feature.chat.domain.ChatVoice =
     object : com.zillit.desktop.feature.chat.domain.ChatVoice {
-        private val capture = homeMediaCapture(ready)
+        private val capture = capture
 
         override suspend fun start() =
             capture.recorder?.start() ?: com.zillit.desktop.core.common.ZillitResult.Failure(

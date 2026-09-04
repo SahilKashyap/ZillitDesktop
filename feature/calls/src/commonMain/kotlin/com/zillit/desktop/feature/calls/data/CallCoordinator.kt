@@ -290,6 +290,16 @@ class CallCoordinator(
          * recorded.
          */
         is247Call: Boolean = false,
+        /**
+         * The production the call belongs to, when it is not the open one —
+         * a call placed from a widget showing another production.
+         *
+         * Carried on the session from the first moment, because every write
+         * that follows (end, miss, status) reads it back off the session.
+         */
+        projectId: String? = null,
+        /** The caller's id ON [projectId]; project-scoped, so not the ambient one. */
+        callerUserId: String = "",
     ) {
         if (_phase.value != CallPhase.Idle) return
         _phase.value = CallPhase.Outgoing
@@ -301,6 +311,7 @@ class CallCoordinator(
         _session.value = provisionalSession(
             chatRoomId, receiverDeviceId, receiverUserId,
             mode, type, displayName, provider, isCalendarCall, is247Call,
+            projectId.orEmpty(),
         )
         _cameraOn.value = type == CallType.Video
         scope.launch {
@@ -314,6 +325,8 @@ class CallCoordinator(
                     type = type,
                     selfUserId = selfUserId().orEmpty(),
                     selfDeviceId = selfDeviceId().orEmpty(),
+                    projectId = projectId,
+                    callerUserId = callerUserId,
                 ),
             ).onSuccess { session ->
                 if (session == null) {
@@ -341,6 +354,9 @@ class CallCoordinator(
                         // the caller just said about what kind of call this is.
                         isCalendarCall = isCalendarCall,
                         is247Call = is247Call,
+                        // The create response names no production, and every
+                        // later write reads it off the session.
+                        projectId = projectId?.takeIf(String::isNotBlank) ?: session.projectId,
                     )
                     _cameraOn.value = session.hasVideo
                     // A calendar room rings nobody — the caller walks into it —
@@ -605,6 +621,7 @@ class CallCoordinator(
         provider: CallProvider,
         isCalendarCall: Boolean,
         is247Call: Boolean,
+        projectId: String,
     ) = CallSession(
         // Blank until the server names it. Every id-scoped write already
         // guards on blank — the doc's "must have a valid ObjectId" rule — so
@@ -628,6 +645,7 @@ class CallCoordinator(
         // second the request is in flight.
         isCalendarCall = isCalendarCall,
         is247Call = is247Call,
+        projectId = projectId,
     )
 
     /** Starts or stops recording the call's audio on this machine. */

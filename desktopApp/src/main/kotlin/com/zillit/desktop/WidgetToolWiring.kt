@@ -8,13 +8,20 @@ import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.feature.auth.domain.Project
+import com.zillit.desktop.feature.chat.domain.ChatPick
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.ui.ChatToolProvider
+import com.zillit.desktop.feature.calls.domain.CallMode
+import com.zillit.desktop.feature.calls.domain.CallProvider
+import com.zillit.desktop.feature.calls.domain.CallType
+import com.zillit.desktop.feature.calls.ui.CallEvent
+import com.zillit.desktop.feature.calls.ui.CallViewModel
 import com.zillit.desktop.feature.chat.ui.ChatViewModel
 import com.zillit.desktop.feature.crewlist.data.CrewListRepositoryImpl
 import com.zillit.desktop.feature.crewlist.domain.CrewListViewer
 import com.zillit.desktop.feature.crewlist.ui.CrewListToolProvider
 import com.zillit.desktop.feature.crewlist.ui.CrewListViewModel
+import com.zillit.desktop.feature.home.ui.MediaCapture
 import com.zillit.desktop.feature.home.ui.decodeImageBitmap
 import java.util.UUID
 
@@ -27,15 +34,18 @@ import java.util.UUID
  * socket frames are filtered to it, and the rights come from that
  * production's own tool grid.
  *
- * ## What is deliberately left out
+ * Attachments, voice notes and calls work here too, each told which
+ * production it is acting on: files go to that production's own storage
+ * (`uploaderForProject`, from its own storage settings), and a call carries
+ * that production's id and the caller's id there, which the call API has
+ * always been able to take.
  *
- * Attachments, voice notes, calls and badge counts all travel through seams
- * that carry no production of their own — the media uploader, the call
- * engine and the badge store act on whichever production the main window is
- * showing. Rather than upload a file into the wrong production's storage,
- * those seams are simply not wired here; `ChatViewModel`'s defaults refuse
- * them, and the widget says so above the tool. Opening the production in the
- * main window is the way to do those things.
+ * ## What is still the open production's
+ *
+ * Unread badges. The badge store counts for the production the main window
+ * shows, so a widget on another one reads its messages without a count to
+ * clear — the rail's numbers stay honest, which is the safer of the two
+ * wrongs.
  */
 
 /** The crew, as chat addresses them — the same rules the rail's chat applies. */
@@ -75,7 +85,9 @@ internal fun List<UserSnapshot>.toCrewContacts(): List<CrewContact> = this
  */
 internal suspend fun AppGraph.Ready.scopedChatProvider(
     project: Project,
+    options: CallOptions,
     permissions: ProjectPermissions,
+    calls: CallViewModel?,
 ): ToolProvider? {
     val loader = projectContext ?: return null
     val meThere = project.userId.orEmpty().ifBlank { return null }
@@ -84,15 +96,20 @@ internal suspend fun AppGraph.Ready.scopedChatProvider(
         is ZillitResult.Failure -> return null
     }
 
-    val viewModel = ChatViewModel(
-        repository = chatRepositoryForProject(project.id, meThere),
-        nowMillis = System::currentTimeMillis,
-        newUniqueId = { UUID.randomUUID().toString() },
-        // Presence is a per-device fact, not a per-production one, so it
-        // carries over; the id it reports against is this production's.
-        presence = chatPresence,
-        presenceProjectId = { project.id },
-    )
+    // This production's own storage decides where a file lands, so its
+    // details are asked of it rather than of the open production. Without
+    // them there is nowhere safe to put a file — better no attach button than
+    // one that uploads into the wrong production — so the media seams are
+    // left at their refusing defaults.
+    val capture = (loader.projectOf(project.id, meThere) as? ZillitResult.Success)?.data?.let { snapshot ->
+        homeMediaCapture(
+            ready = this,
+            uploader = uploaderForProject(snapshot, options),
+            storageType = { snapshot.storageType },
+        )
+    }
+
+    val viewModel = scopedChatViewModel(project.id, meThere, capture)
 
     return ChatToolProvider(
         crew = { crew },
@@ -105,13 +122,58 @@ internal suspend fun AppGraph.Ready.scopedChatProvider(
             permissions.tools.none { it.identifier == CNC_WIDGET_TOOL } ||
                 permissions.canDownload(CNC_WIDGET_TOOL)
         },
-        // No calls, no call log: the call engine speaks for the open
-        // production only. See this file's header.
-        onCall = null,
-        callLog = null,
+        // One call at a time whichever production it belongs to, so this is
+        // the app's own CallViewModel — told which production to place it on.
+        onCall = calls?.let { vm ->
+            { peer, isGroup, video, mediasoup ->
+                vm.onEvent(
+                    CallEvent.Place(
+                        chatRoomId = if (isGroup) peer.userId else "",
+                        receiverDeviceId = if (isGroup) "" else peer.deviceId.orEmpty(),
+                        mode = if (isGroup) CallMode.Group else CallMode.Private,
+                        type = if (video) CallType.Video else CallType.Audio,
+                        displayName = peer.fullName,
+                        provider = if (mediasoup) CallProvider.Mediasoup else CallProvider.Agora,
+                        receiverUserId = if (isGroup) "" else peer.userId,
+                        projectId = project.id,
+                        callerUserId = meThere,
+                    ),
+                )
+            }
+        },
+        callLog = calls?.let { vm ->
+            { CallLogTab(this, vm, otherProjectId = project.id, otherUserId = meThere) }
+        },
         compact = true,
     )
 }
+
+/**
+ * The conversations themselves, for one production.
+ *
+ * Split out so [scopedChatProvider] reads as what it assembles rather than
+ * how; the seams here are the ones that had to be told which production.
+ */
+private fun AppGraph.Ready.scopedChatViewModel(
+    projectId: String,
+    meThere: String,
+    capture: MediaCapture?,
+) = ChatViewModel(
+    repository = chatRepositoryForProject(projectId, meThere),
+    nowMillis = System::currentTimeMillis,
+    newUniqueId = { UUID.randomUUID().toString() },
+    // Presence is a per-device fact, not a per-production one, so it carries
+    // over; the id it reports against is this production's.
+    presence = chatPresence,
+    presenceProjectId = { projectId },
+    pickAttachment = { capture?.let { pickChatAttachment(this, capture = it) } ?: ChatPick.Cancelled },
+    pickAttachmentOf = { kind -> capture?.let { pickChatAttachment(this, kind, it) } ?: ChatPick.Cancelled },
+    uploadMedia = { name, type, bytes, onProgress ->
+        capture?.let { uploadChatMedia(this, name, type, bytes, onProgress, it) }
+    },
+    staticMap = { lat, lng -> fetchStaticMapBytes(this, lat, lng) },
+    voice = capture?.let { chatVoice(this, it) },
+)
 
 /** The Crew List for another production — the roster and its PDF, both scoped. */
 internal fun AppGraph.Ready.scopedCrewProvider(

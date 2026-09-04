@@ -5,6 +5,7 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
@@ -30,6 +31,8 @@ fun interface BoxTokenSource {
 class BoxAuthSource(
     private val apiClient: ApiClient,
     private val config: AppConfig,
+    /** Which production the token is for, when that is not the open one. */
+    private val callOptions: () -> CallOptions = { CallOptions() },
 ) : BoxTokenSource {
 
     override suspend fun token(enterpriseClientId: String): ZillitResult<String> =
@@ -39,6 +42,7 @@ class BoxAuthSource(
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
             body = jsonBody(buildJsonObject { put("enterprise_client_id", enterpriseClientId) }),
+            options = callOptions(),
         ).map { payload -> (payload as? JsonObject)?.str("access_token").orEmpty() }
             .flatMapBlank()
 }
