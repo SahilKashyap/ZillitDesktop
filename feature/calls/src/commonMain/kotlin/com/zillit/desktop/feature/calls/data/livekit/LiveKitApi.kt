@@ -94,6 +94,33 @@ class LiveKitApi(
         callerId,
     ).reading("a call") { it.readCredentials() }
 
+    /**
+     * `POST /v1/calls` with nobody to ring — the web's `createCall`, and what
+     * the socket-first flow mints its call id with. The body says `group` and
+     * names no callees whatever the call will be; the socket's `startCall`
+     * carries the real mode, type and callees a moment later. Observed on
+     * prod (2026-09-05): the same body with `type: private` and no callees is
+     * refused with 400 `bad_request`, so the mint must not describe the call.
+     */
+    suspend fun mintCall(
+        callerId: String,
+        callerName: String,
+        projectId: String?,
+    ): ZillitResult<LiveKitCallCredentials> =
+        http.call(
+            HttpVerb.Post,
+            "$baseUrl/v1/calls",
+            buildJsonObject {
+                put("callerId", JsonPrimitive(callerId))
+                put("callerName", JsonPrimitive(callerName))
+                put("type", JsonPrimitive(CallMode.Group.wire))
+                put("callMode", JsonPrimitive(CallMode.Group.wire))
+                put("calleeIds", JsonArray(emptyList()))
+            },
+            projectId,
+            callerId,
+        ).reading("a call") { it.readCredentials() }
+
     /** `POST /v1/calls/{id}/accept` — the callee's own credentials for the room. */
     suspend fun acceptCall(
         callId: String,
@@ -197,11 +224,15 @@ class LiveKitApi(
 
 private fun JsonObject.bool(key: String): Boolean? = (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
 
+private const val ERROR_BODY_EXCERPT = 300
+
 /** The phones' `ApiException` as an error: the body's `error` word is the message. */
 fun liveKitHttpError(status: Int, body: String?): ZillitError {
     val word = body?.let { raw ->
         runCatching { LIVEKIT_JSON.parseToJsonElement(raw) as? JsonObject }.getOrNull()
             ?.let { it.text("error") ?: it.text("message") }
     }
-    return ZillitError.Http(status = status, serverMessage = word, technical = "call-api $status ${word.orEmpty()}")
+    // The body verbatim (bounded), because `bad_request` alone says nothing about which field.
+    val excerpt = body?.replace(Regex("\\s+"), " ")?.take(ERROR_BODY_EXCERPT).orEmpty()
+    return ZillitError.Http(status = status, serverMessage = word, technical = "call-api $status $excerpt")
 }

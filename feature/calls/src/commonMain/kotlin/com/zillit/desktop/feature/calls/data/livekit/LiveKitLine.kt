@@ -300,16 +300,11 @@ class LiveKitLine(
      * the REST ring when the socket cannot.
      */
     suspend fun place(dial: LiveKitDial): ZillitResult<LiveKitJoin> {
-        val created = when (val outcome = create(dial, ring = false)) {
-            is ZillitResult.Failure -> return outcome
-            is ZillitResult.Success -> outcome.data
-        }
-        created.switchToCallId?.let { existing ->
-            ZillitLog.i(TAG) { "createCall -> already in $existing; joining that instead of dialling" }
-        }
+        // Socket down: one REST create that also rings, as the phones do — no
+        // point minting an id nobody will `startCall` with.
         val rung = when (val live = peer) {
             null -> create(dial, ring = true)
-            else -> ringOverSocket(live, dial, created)
+            else -> mintThenRing(live, dial)
         }
         return when (rung) {
             is ZillitResult.Failure -> rung
@@ -318,13 +313,37 @@ class LiveKitLine(
         }
     }
 
-    /** `POST /v1/calls` — with callees it also rings; without, it only creates. */
-    private suspend fun create(dial: LiveKitDial, ring: Boolean): ZillitResult<LiveKitCallCredentials> =
-        api.createCall(
-            dial.callerUserId, dial.callerName, dial.mode, dial.type,
-            if (ring) dial.ringIds else emptyList(),
-            dial.chatRoomId, dial.projectId, dial.projectName,
-        )
+    private suspend fun mintThenRing(live: LiveKitPeer, dial: LiveKitDial): ZillitResult<LiveKitCallCredentials> {
+        val created = when (val outcome = create(dial, ring = false)) {
+            is ZillitResult.Failure -> return outcome
+            is ZillitResult.Success -> outcome.data
+        }
+        created.switchToCallId?.let { existing ->
+            ZillitLog.i(TAG) { "createCall -> already in $existing; joining that instead of dialling" }
+        }
+        return ringOverSocket(live, dial, created)
+    }
+
+    /**
+     * `POST /v1/calls`. Ringing, it carries the whole call and the server rings
+     * the callees itself (the socket-down fallback). Not ringing, it is the
+     * bare mint — `group`, nobody named — that the socket's `startCall` then
+     * describes; a mint that says `private` with no callees is refused.
+     */
+    private suspend fun create(dial: LiveKitDial, ring: Boolean): ZillitResult<LiveKitCallCredentials> {
+        val outcome = if (ring) {
+            api.createCall(
+                dial.callerUserId, dial.callerName, dial.mode, dial.type,
+                dial.ringIds, dial.chatRoomId, dial.projectId, dial.projectName,
+            )
+        } else {
+            api.mintCall(dial.callerUserId, dial.callerName, dial.projectId)
+        }
+        if (outcome is ZillitResult.Failure) {
+            ZillitLog.w(TAG) { "createCall(ring=$ring) refused: ${outcome.error.technical}" }
+        }
+        return outcome
+    }
 
     /**
      * `startCall` over the socket, with the web's recoveries: a fresh call
