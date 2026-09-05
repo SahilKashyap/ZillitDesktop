@@ -86,11 +86,26 @@ sealed interface LiveKitEvent {
 
     data class ParticipantLeft(val userId: String) : LiveKitEvent
 
-    /** The server's list of calls this user is in or invited to — the heartbeat's answer. */
-    data class ActiveCalls(val callIds: List<String>) : LiveKitEvent
+    /** The server's list of calls this user is in or invited to — the heartbeat's answer, or its own broadcast. */
+    data class ActiveCalls(val calls: List<LiveKitActiveCall>) : LiveKitEvent
 
     data class Notice(val text: String) : LiveKitEvent
 }
+
+/** One call on the server's active list: who is actually in it, as opposed to invited. */
+data class LiveKitActiveCall(val callId: String, val inCallUserIds: List<String>)
+
+/**
+ * `{calls: [{callId, inCallUsers: [{userId}]}]}` — the `listActiveCalls`
+ * answer and the `activeCallsChanged` event alike.
+ */
+fun readActiveCalls(obj: JsonObject): List<LiveKitActiveCall> =
+    (obj["calls"] as? JsonArray).orEmpty().mapNotNull { call ->
+        val row = call as? JsonObject ?: return@mapNotNull null
+        val callId = row.text("callId") ?: return@mapNotNull null
+        val inCall = (row["inCallUsers"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.text("userId") }
+        LiveKitActiveCall(callId, inCall)
+    }
 
 /** An `incomingCall` event: who is calling, on which production, and the room to join. */
 data class LiveKitInvite(
@@ -198,9 +213,7 @@ private fun readEvent(type: String, obj: JsonObject): LiveKitEvent? = when (type
         LiveKitEvent.ParticipantJoined(p.text("userId") ?: return null, p.text("displayName").orEmpty())
     }
     "participantLeft" -> obj.text("userId")?.let(LiveKitEvent::ParticipantLeft)
-    "activeCallsChanged" -> LiveKitEvent.ActiveCalls(
-        (obj["calls"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.text("callId") },
-    )
+    "activeCallsChanged" -> LiveKitEvent.ActiveCalls(readActiveCalls(obj))
     "notice" -> obj.text("text")?.let(LiveKitEvent::Notice)
     else -> null
 }

@@ -54,6 +54,13 @@ interface LiveKitLineListener {
 
     /** The server's roster for a call, when it was asked for. */
     fun onRoster(callId: String, participants: List<CallParticipant>)
+
+    /**
+     * The server's active-call list — every heartbeat's answer, and its own
+     * broadcast. Server truth for a ring this device is showing: see
+     * [LiveKitRingWatch].
+     */
+    fun onActiveCalls(calls: List<LiveKitActiveCall>)
 }
 
 /** The credentials a placed or accepted call joins with. */
@@ -243,8 +250,12 @@ class LiveKitLine(
         }
     }
 
-    private suspend fun refreshActiveCalls(fresh: LiveKitPeer): Boolean =
-        runCatching { fresh.request("listActiveCalls") }.isSuccess
+    private suspend fun refreshActiveCalls(fresh: LiveKitPeer): Boolean {
+        val answer = runCatching { fresh.request("listActiveCalls") }.getOrElse { return false }
+        // The answer is the same list the server broadcasts on its own; hand it on as that event.
+        if (peer === fresh) (answer as? JsonObject)?.let { dispatch(LiveKitEvent.ActiveCalls(readActiveCalls(it))) }
+        return true
+    }
 
     private fun dropConnection(reason: String) {
         heartbeat?.cancel()
@@ -265,21 +276,44 @@ class LiveKitLine(
                 sink.onRingState(event.callId, event.userId, "", event.status, event.busy)
             is LiveKitEvent.UserState ->
                 sink.onRingState(event.callId, event.userId, event.displayName, event.status, busy = false)
-            is LiveKitEvent.Cancelled -> sink.onDismissed(event.callId, LiveKitDismissal.Cancelled)
-            is LiveKitEvent.HandledElsewhere -> sink.onDismissed(event.callId, LiveKitDismissal.HandledElsewhere)
-            is LiveKitEvent.Removed -> sink.onDismissed(event.callId, LiveKitDismissal.Removed)
+            is LiveKitEvent.Cancelled -> dismissed(event.callId, LiveKitDismissal.Cancelled, sink)
+            is LiveKitEvent.HandledElsewhere -> dismissed(event.callId, LiveKitDismissal.HandledElsewhere, sink)
+            is LiveKitEvent.Removed -> dismissed(event.callId, LiveKitDismissal.Removed, sink)
             is LiveKitEvent.Ended -> sink.onEnded(event.reason)
+            is LiveKitEvent.ActiveCalls -> sink.onActiveCalls(event.calls)
             is LiveKitEvent.Notice -> ZillitLog.i(TAG) { "notice: ${event.text}" }
             is LiveKitEvent.ParticipantJoined,
             is LiveKitEvent.ParticipantLeft,
-            is LiveKitEvent.ActiveCalls,
             -> Unit
         }
+    }
+
+    private fun dismissed(callId: String, why: LiveKitDismissal, sink: LiveKitLineListener) {
+        markResolved(callId)
+        sink.onDismissed(callId, why)
+    }
+
+    /**
+     * Rings this device has already answered, declined or seen dismissed. The
+     * server re-emits `incomingCall` on reconnect, and a push and the socket
+     * can both carry one; a ring the user already dealt with must not sound
+     * again — the phones' `isCallResolved`.
+     */
+    private val resolved = ArrayDeque<String>()
+
+    private fun markResolved(callId: String) {
+        if (callId.isBlank() || callId in resolved) return
+        resolved.addLast(callId)
+        while (resolved.size > RESOLVED_REMEMBERED) resolved.removeFirst()
     }
 
     private fun onIncoming(invite: LiveKitInvite, sink: LiveKitLineListener) {
         if (invite.isExpired(nowMillis())) {
             ZillitLog.i(TAG) { "stale ring dropped ${invite.callId}" }
+            return
+        }
+        if (invite.callId in resolved) {
+            ZillitLog.i(TAG) { "ring ${invite.callId} was already dealt with here; not again" }
             return
         }
         val session = invite.toSession(
@@ -289,6 +323,11 @@ class LiveKitLine(
         sink.onInvite(session)
         // The popup is up: say so, so the caller's screen moves from "calling" to "ringing".
         scope.launch { ringingAck(invite.callId, invite.projectId, session.selfUserId) }
+        // A ring can arrive late — after another device answered, or after the
+        // caller gave up — with the event that said so already missed. Ask for
+        // the server's list now rather than at the next heartbeat; the listener
+        // judges the ring against it.
+        scope.launch { peer?.let { refreshActiveCalls(it) } }
     }
 
     // ── Outgoing ────────────────────────────────────────────────────────────
@@ -416,6 +455,7 @@ class LiveKitLine(
      */
     suspend fun accept(session: CallSession, displayName: String): ZillitResult<LiveKitJoin> {
         val callId = session.callUuid
+        markResolved(callId)
         val me = session.selfUserId
         val projectId = session.projectId.takeIf { it.isNotBlank() }
         val bundled = LiveKitCredentials(session.livekitToken, session.livekitUrl).takeIf { it.isUsable }
@@ -432,6 +472,7 @@ class LiveKitLine(
     }
 
     suspend fun decline(session: CallSession) {
+        markResolved(session.callUuid)
         overSocketOrRest(session.callUuid, "declineCall") {
             api.hangup(session.callUuid, session.projectId.takeIf { it.isNotBlank() }, session.selfUserId)
         }
@@ -523,6 +564,7 @@ class LiveKitLine(
     companion object {
         const val HEADER_MODULE_DATA = "moduledata"
         private const val HEARTBEAT_MILLIS = 15_000L
+        private const val RESOLVED_REMEMBERED = 32
         private const val SIGNED_OUT_POLL_MILLIS = 5_000L
         private const val BACKOFF_BASE_MILLIS = 3_000L
         private const val BACKOFF_CAP_MILLIS = 30_000L

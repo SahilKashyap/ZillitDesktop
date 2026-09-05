@@ -7,10 +7,12 @@ import com.zillit.desktop.core.common.onSuccess
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.ZillitSocketEvents
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitActiveCall
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitDial
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitDismissal
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitLine
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitLineListener
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitRingWatch
 import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf
 import com.zillit.desktop.feature.calls.data.protoo.toJoin
@@ -230,6 +232,9 @@ class CallCoordinator(
 
     /** The pending "is anyone still here?" re-check, if one is armed. */
     private var emptyRoomCheck: Job? = null
+
+    /** Server truth for a Line 3 ring this device is showing — see [LiveKitRingWatch]. */
+    private val line3Ring = LiveKitRingWatch()
 
     /** Runs only while the media link is down; cancelled the moment it returns. */
     /** Ends a call the media stack never brought back. */
@@ -1442,6 +1447,7 @@ class CallCoordinator(
         emptyRoomCheck?.cancel()
         emptyRoomCheck = null
         everConnected.clear()
+        line3Ring.reset()
         // A hand does not carry into the next call; neither does a recording.
         _handRaised.value = false
         recorder.reset()
@@ -1596,6 +1602,7 @@ class CallCoordinator(
     /** What Line 3 reports, in the statuses the machine already speaks. */
     private inner class Line3Listener : LiveKitLineListener {
         override fun onInvite(session: CallSession) {
+            line3Ring.reset()
             onInvite(session.copy(selfDeviceId = selfDeviceId().orEmpty()))
         }
 
@@ -1649,6 +1656,25 @@ class CallCoordinator(
             participants.forEach { rememberIfConnected(it.userId, status = it.status) }
             if (merged.any { it.isSomeoneElseLive(current) }) onSomeoneAnswered()
             checkRoomStillOccupied()
+        }
+
+        /**
+         * A ring this device is showing, judged against the server's list:
+         * gone from it, or answered on another of this user's devices, and it
+         * stops — the one signal that reaches a device whose socket missed the
+         * `callCancelled` or `callHandledElsewhere` that should have.
+         */
+        override fun onActiveCalls(calls: List<LiveKitActiveCall>) {
+            val current = _session.value ?: return
+            if (current.provider != CallProvider.LiveKit || _phase.value != CallPhase.Incoming) return
+            val verdict = line3Ring.judge(current.callUuid, current.selfUserId, calls) ?: return
+            val reason = when (verdict) {
+                LiveKitRingWatch.Verdict.AnsweredElsewhere -> CallEndReason.PickedElsewhere
+                LiveKitRingWatch.Verdict.Stale -> CallEndReason.RemoteEnded
+            }
+            ZillitLog.i(TAG) { "ring ${current.callUuid} is $verdict by the server's active list; stopping" }
+            scope.launch { engine.leave() }
+            finish(current, reason)
         }
     }
 

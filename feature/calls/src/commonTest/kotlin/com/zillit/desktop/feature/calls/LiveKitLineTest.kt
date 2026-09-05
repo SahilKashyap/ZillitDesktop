@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.calls
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitApi
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitActiveCall
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitDial
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitDismissal
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitIdentity
@@ -113,6 +114,7 @@ class LiveKitLineTest {
         val dismissed = mutableListOf<Pair<String, LiveKitDismissal>>()
         val ended = mutableListOf<String>()
         val rosters = mutableListOf<List<CallParticipant>>()
+        val activeCalls = mutableListOf<List<LiveKitActiveCall>>()
         override fun onInvite(session: CallSession) { invites += session }
         override fun onRingState(
             callId: String,
@@ -126,6 +128,7 @@ class LiveKitLineTest {
         override fun onDismissed(callId: String, why: LiveKitDismissal) { dismissed += callId to why }
         override fun onEnded(reason: String) { ended += reason }
         override fun onRoster(callId: String, participants: List<CallParticipant>) { rosters += participants }
+        override fun onActiveCalls(calls: List<LiveKitActiveCall>) { activeCalls += calls }
     }
 
     private fun kotlinx.coroutines.test.TestScope.line(
@@ -378,6 +381,45 @@ class LiveKitLineTest {
         assertTrue(!LiveKitLine.isRemoteRoomUrl("ws://localhost:7880"))
         assertTrue(!LiveKitLine.isRemoteRoomUrl("ws://127.0.0.1:7880"))
         assertTrue(!LiveKitLine.isRemoteRoomUrl("/livekit"))
+    }
+
+    @Test
+    fun `the heartbeat's answer reaches the listener as the server's active calls`() = runTest {
+        val socket = FakeSocket()
+        val (line, listener) = line(socket, FakeHttp())
+        line.start()
+        runCurrent()
+        socket.answer(
+            "listActiveCalls",
+            """{"calls":[{"callId":"c1","inCallUsers":[{"userId":"me","displayName":"Me"}]},""" +
+                """{"callId":"c2","inCallUsers":[]}]}""",
+        )
+        runCurrent()
+        assertEquals(listOf("c1", "c2"), listener.activeCalls.single().map { it.callId })
+        assertEquals(listOf("me"), listener.activeCalls.single().first().inCallUserIds)
+    }
+
+    @Test
+    fun `a ring already dealt with here does not sound again`() = runTest {
+        val socket = FakeSocket()
+        val (line, listener) = line(socket, FakeHttp())
+        line.start()
+        runCurrent()
+        val ring = """{"type":"incomingCall","callId":"c1","callType":"audio","callMode":"private",""" +
+            """"from":{"userId":"u","displayName":"X"}}"""
+        socket.push(ring)
+        runCurrent()
+        assertEquals(1, listener.invites.size)
+        assertTrue(
+            socket.sentTypes().count { it == "listActiveCalls" } >= 2,
+            "a ring asks for the server's list at once",
+        )
+        socket.push("""{"type":"callHandledElsewhere","callId":"c1"}""")
+        runCurrent()
+        socket.push(ring)
+        runCurrent()
+        assertEquals(1, listener.invites.size, "the re-emitted ring is ignored")
+        assertEquals(listOf("c1" to LiveKitDismissal.HandledElsewhere), listener.dismissed)
     }
 
     @Test
