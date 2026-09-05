@@ -175,6 +175,7 @@ data class CallUiState(
         get() = when (session?.provider) {
             CallProvider.Mediasoup -> "Line 1"
             CallProvider.Agora -> "Line 2"
+            CallProvider.LiveKit -> "Line 3"
             else -> ""
         }
 

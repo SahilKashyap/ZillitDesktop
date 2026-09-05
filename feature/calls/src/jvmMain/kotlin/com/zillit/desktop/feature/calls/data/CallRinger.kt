@@ -28,6 +28,12 @@ import kotlinx.coroutines.withContext
 class CallRinger(
     coordinator: CallCoordinator,
     scope: CoroutineScope,
+    /**
+     * Whether the incoming ring may sound. Read at each ring, so a switch in
+     * Settings takes effect on the next call without a restart. The ringback
+     * for our own outgoing call is not gated: nobody else hears it.
+     */
+    private val ringEnabled: suspend () -> Boolean = { true },
 ) {
 
     private enum class Sound(val resource: String) {
@@ -47,7 +53,9 @@ class CallRinger(
                         session?.direction == CallDirection.Outgoing -> Sound.Outgoing
                     else -> null
                 }
-            }.collect { wanted -> retune(wanted) }
+            }.collect { wanted ->
+                retune(if (wanted == Sound.Incoming && !ringEnabled()) null else wanted)
+            }
         }
     }
 

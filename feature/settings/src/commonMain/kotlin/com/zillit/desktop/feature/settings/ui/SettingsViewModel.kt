@@ -64,6 +64,7 @@ class SettingsViewModel(
         launch { notifications.mail.collect { on -> setState { copy(notifyMail = on) } } }
         launch { notifications.updates.collect { on -> setState { copy(notifyUpdates = on) } } }
         launch { notifications.calls.collect { on -> setState { copy(notifyCalls = on) } } }
+        launch { notifications.ringtone.collect { on -> setState { copy(ringOnIncomingCall = on) } } }
         launch { notifications.activity.collect { on -> setState { copy(notifyActivity = on) } } }
         launch { notifications.callWidget.collect { on -> setState { copy(callWidget = on) } } }
         launch { notifications.messageWidget.collect { on -> setState { copy(messageWidget = on) } } }
@@ -135,10 +136,8 @@ class SettingsViewModel(
                 setState { copy(notifyUpdates = event.on) }
                 notifications.setUpdates(event.on)
             }
-            is SettingsEvent.NotifyCallsChanged -> {
-                setState { copy(notifyCalls = event.on) }
-                notifications.setCalls(event.on)
-            }
+            is SettingsEvent.NotifyCallsChanged -> onCallSwitch(banner = event.on)
+            is SettingsEvent.RingtoneChanged -> onCallSwitch(ring = event.on)
             is SettingsEvent.NotifyActivityChanged -> {
                 setState { copy(notifyActivity = event.on) }
                 notifications.setActivity(event.on)
@@ -174,6 +173,18 @@ class SettingsViewModel(
                     sendEffect(SettingsEffect.SignedOut)
                 }
             }
+        }
+    }
+
+    /** The two call switches: the banner and the ring are separate decisions, saved separately. */
+    private fun onCallSwitch(banner: Boolean? = null, ring: Boolean? = null) {
+        banner?.let { on ->
+            setState { copy(notifyCalls = on) }
+            notifications.setCalls(on)
+        }
+        ring?.let { on ->
+            setState { copy(ringOnIncomingCall = on) }
+            notifications.setRingtone(on)
         }
     }
 

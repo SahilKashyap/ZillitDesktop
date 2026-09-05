@@ -213,6 +213,15 @@ data class CallSession(
      * tokenless dial, and iOS documents that as the backward-safe case.
      */
     val sfuToken: String = "",
+    /**
+     * Line 3. The room URL and the callee's own token, bundled into the ring
+     * (`livekit: {token, url}`) or minted on accept. [livekitPreconnectToken]
+     * is the locked one for warming the media path during the ring —
+     * hidden, no publish, no subscribe — which the server upgrades on accept.
+     */
+    val livekitUrl: String = "",
+    val livekitToken: String = "",
+    val livekitPreconnectToken: String = "",
 
     /**
      * `sfu` or `p2p` — but not the field to branch on. See [isPeerToPeer].
@@ -282,7 +291,9 @@ data class CallSession(
             // empty, which is the backward-safe tokenless case rather than a
             // missing credential.
             CallProvider.Mediasoup -> sfuHost.isNotBlank() && sfuRoomId.isNotBlank()
-            CallProvider.LiveKit -> false
+            // A room and a token for it. The URL the ring carries may be the
+            // node's internal one; the line swaps it before joining.
+            CallProvider.LiveKit -> livekitUrl.isNotBlank() && livekitToken.isNotBlank()
         }
 
     /**

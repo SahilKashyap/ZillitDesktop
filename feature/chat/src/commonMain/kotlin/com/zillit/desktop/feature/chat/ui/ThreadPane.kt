@@ -99,8 +99,10 @@ internal fun ThreadPane(
     loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap? = { null },
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) ->
     androidx.compose.ui.graphics.ImageBitmap? = { null },
-    /** Rings the open thread. Null hides the call buttons entirely. */
-    onCall: ((video: Boolean, mediasoup: Boolean) -> Unit)? = null,
+    /** Rings the open thread on the chosen line. Null hides the call buttons entirely. */
+    onCall: ((video: Boolean, line: CallLine) -> Unit)? = null,
+    /** Which lines this production offers — Line 3 only where remote config lists it. */
+    lines: List<CallLine> = CallLine.DEFAULT,
     /** The one shared speaker; null renders voice notes as plain chips. */
     player: com.zillit.desktop.core.designsystem.component.AudioPlayer? = null,
     /** Fetches a voice note's bytes for decoding. Null disables playback. */
@@ -122,7 +124,7 @@ internal fun ThreadPane(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            ThreadHeader(state, peer, loadAvatar, onCall, onEvent)
+            ThreadHeader(state, peer, loadAvatar, onCall, lines, onEvent)
             Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
 
             val media = BubbleMedia(
@@ -365,7 +367,8 @@ private fun ThreadHeader(
     state: ChatUiState,
     peer: com.zillit.desktop.feature.chat.domain.CrewContact,
     loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap?,
-    onCall: ((video: Boolean, mediasoup: Boolean) -> Unit)?,
+    onCall: ((video: Boolean, line: CallLine) -> Unit)?,
+    lines: List<CallLine>,
     onEvent: (ChatEvent) -> Unit,
 ) {
     val face = androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(
@@ -395,13 +398,15 @@ private fun ThreadHeader(
                 icon = ZillitIcons.Phone,
                 label = "Start call",
                 tint = ZillitTheme.colors.success,
-                onPick = { mediasoup -> onCall(false, mediasoup) },
+                lines = lines,
+                onPick = { line -> onCall(false, line) },
             )
             CallLineButton(
                 icon = ZillitIcons.Camera,
                 label = "Start video call",
                 tint = ZillitTheme.colors.accentText,
-                onPick = { mediasoup -> onCall(true, mediasoup) },
+                lines = lines,
+                onPick = { line -> onCall(true, line) },
             )
         }
         ZillitIconButton(
@@ -429,7 +434,8 @@ private fun CallLineButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     tint: androidx.compose.ui.graphics.Color,
-    onPick: (mediasoup: Boolean) -> Unit,
+    lines: List<CallLine>,
+    onPick: (line: CallLine) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
@@ -447,8 +453,9 @@ private fun CallLineButton(
                 RoundedCornerShape(LINE_MENU_RADIUS),
             ),
         ) {
-            CallLineRow("Line 2") { open = false; onPick(false) }
-            CallLineRow("Line 1") { open = false; onPick(true) }
+            lines.forEach { line ->
+                CallLineRow(line.label) { open = false; onPick(line) }
+            }
         }
     }
 }

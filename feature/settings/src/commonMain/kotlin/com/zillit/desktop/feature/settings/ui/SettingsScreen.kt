@@ -402,6 +402,13 @@ private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent
             on = state.notifyCalls,
             onChange = { onEvent(SettingsEvent.NotifyCallsChanged(it)) },
         )
+        NotifyToggle(
+            title = "Ringtone",
+            detail = "The ring itself while a call comes in, on every line. Off, the call still " +
+                "shows — the card and the banner — it just makes no sound.",
+            on = state.ringOnIncomingCall,
+            onChange = { onEvent(SettingsEvent.RingtoneChanged(it)) },
+        )
     }
 }
 

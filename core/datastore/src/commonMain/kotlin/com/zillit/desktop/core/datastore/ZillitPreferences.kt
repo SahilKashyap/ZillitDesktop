@@ -140,6 +140,13 @@ object ZillitPreferences {
     val NotifyCalls = PreferenceKey.BooleanKey("notify.calls", true, PreferenceScope.User)
 
     /**
+     * The ringtone itself — the sound that plays while a call rings this
+     * device, on every line. Separate from [NotifyCalls], which is the banner:
+     * a desk that wants the card but not the noise is a real desk.
+     */
+    val RingOnIncomingCall = PreferenceKey.BooleanKey("notify.ringtone", true, PreferenceScope.User)
+
+    /**
      * Everything else the production did — the phones' bell list, as banners:
      * a purchase order approved, a document shared, an SOS raised. Chat, mail,
      * notices and calls stay on their own switches above; this one covers the
@@ -232,7 +239,7 @@ object ZillitPreferences {
         WorkspaceLayoutMode, RestoreWorkspaceOnLaunch,
         AppLockEnabled, IdleLockMinutes,
         MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired, UpdateInstanceId,
-        NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity,
+        NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity, RingOnIncomingCall,
         WeatherPlace,
         CallMicrophoneId, CallSpeakerId,
         LastProjectId, LastUnitId,

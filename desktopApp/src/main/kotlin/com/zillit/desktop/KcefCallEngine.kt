@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.feature.calls.data.EngineBridge
 import com.zillit.desktop.feature.calls.domain.CallDeviceKind
 import com.zillit.desktop.feature.calls.domain.CallJoin
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitScripts
 import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.data.protoo.MediasoupPage
 import com.zillit.desktop.feature.calls.data.protoo.MediasoupScripts
@@ -162,6 +163,8 @@ class KcefCallEngine(
      * different things: the first joins, the second must rebuild first.
      */
     private var line1Connected = false
+    /** A Line 3 room is up in the page; mic, camera and share commands go to `zillitLk`. */
+    private var livekitActive = false
 
     private val _surface = MutableStateFlow<Component?>(null)
 
@@ -377,6 +380,10 @@ class KcefCallEngine(
             joinMediasoup(params)
             return
         }
+        if (params.provider == CallProvider.LiveKit) {
+            joinLiveKit(params)
+            return
+        }
         if (params.provider != CallProvider.Agora) {
             ZillitLog.w(TAG) { "no engine for ${params.provider.wire}; staying signalling-only" }
             return
@@ -398,6 +405,24 @@ class KcefCallEngine(
      * halves and hands each the other's seam. Nothing here is Agora's — the
      * two lines share a page and a browser and no state beyond that.
      */
+    /**
+     * Line 3: the page connects the LiveKit room itself — URL and token are
+     * the whole handshake, so unlike Line 1 nothing of it runs in Kotlin.
+     */
+    private fun joinLiveKit(params: CallJoin) {
+        val target = browser ?: run {
+            _events.tryEmit(CallEngineEvent.Failed("media engine is not ready"))
+            return
+        }
+        if (params.livekitUrl.isBlank() || params.livekitToken.isBlank()) {
+            _events.tryEmit(CallEngineEvent.Failed("no LiveKit room to join"))
+            return
+        }
+        livekitActive = true
+        ZillitLog.i(TAG) { "line 3: joining ${params.livekitUrl} as ${params.identity} video=${params.hasVideo}" }
+        run(target, LiveKitScripts.join(params, chosenMicrophoneId))
+    }
+
     private fun joinMediasoup(params: CallJoin) {
         val relays = turn ?: run {
             ZillitLog.w(TAG) { "no calling API for turn credentials; not joining line 1" }
@@ -544,8 +569,10 @@ class KcefCallEngine(
             // its file is delivered rather than dying with the tracks. The
             // page's stop is a no-op when nothing records.
             run(it, EngineBridge.STOP_RECORDING_SCRIPT)
+            if (livekitActive) run(it, LiveKitScripts.LEAVE)
             run(it, EngineBridge.LEAVE_SCRIPT)
         }
+        livekitActive = false
     }
 
     /**
@@ -557,15 +584,19 @@ class KcefCallEngine(
      * is the one bug in a call app that is worse than no audio.
      */
     override fun setMicrophoneMuted(muted: Boolean) {
-        val script = if (mediasoup != null) MediasoupScripts.setMic(muted) else EngineBridge.micScript(muted)
+        val script = when {
+            mediasoup != null -> MediasoupScripts.setMic(muted)
+            livekitActive -> LiveKitScripts.setMic(muted)
+            else -> EngineBridge.micScript(muted)
+        }
         browser?.let { run(it, script) }
     }
 
     override fun setCameraEnabled(enabled: Boolean) {
-        val script = if (mediasoup != null) {
-            MediasoupScripts.setCam(enabled)
-        } else {
-            EngineBridge.camScript(enabled)
+        val script = when {
+            mediasoup != null -> MediasoupScripts.setCam(enabled)
+            livekitActive -> LiveKitScripts.setCam(enabled)
+            else -> EngineBridge.camScript(enabled)
         }
         browser?.let { run(it, script) }
     }
@@ -584,7 +615,16 @@ class KcefCallEngine(
 
     override fun setDevice(kind: CallDeviceKind, deviceId: String) {
         if (kind == CallDeviceKind.Microphone) chosenMicrophoneId = deviceId
-        browser?.let { run(it, EngineBridge.deviceScript(kind, deviceId)) }
+        browser?.let { target ->
+            run(target, EngineBridge.deviceScript(kind, deviceId))
+            if (livekitActive) {
+                when (kind) {
+                    CallDeviceKind.Microphone -> run(target, LiveKitScripts.setMicrophoneDevice(deviceId))
+                    CallDeviceKind.Camera -> run(target, LiveKitScripts.setCameraDevice(deviceId))
+                    CallDeviceKind.Speaker -> Unit
+                }
+            }
+        }
     }
 
     /**
@@ -599,25 +639,30 @@ class KcefCallEngine(
         val target = browser ?: return false
         run(
             target,
-            if (mediasoup != null) {
-                MediasoupScripts.produceScreenScript(sourceId)
-            } else {
-                EngineBridge.startScreenShareScript(sourceId)
+            when {
+                mediasoup != null -> MediasoupScripts.produceScreenScript(sourceId)
+                livekitActive -> LiveKitScripts.startScreenShare(sourceId)
+                else -> EngineBridge.startScreenShareScript(sourceId)
             },
         )
         return true
     }
 
     override suspend fun stopScreenShare() {
-        val script =
-            if (mediasoup != null) MediasoupScripts.STOP_SCREEN else EngineBridge.STOP_SCREEN_SHARE_SCRIPT
+        val script = when {
+            mediasoup != null -> MediasoupScripts.STOP_SCREEN
+            livekitActive -> LiveKitScripts.STOP_SCREEN_SHARE
+            else -> EngineBridge.STOP_SCREEN_SHARE_SCRIPT
+        }
         browser?.let { run(it, script) }
     }
 
     override fun setHandRaised(raised: Boolean) {
         // Line 1 announces it over protoo, the way the phones do. Line 2 needs
         // nothing here: the coordinator's Firestore mirror is the transport.
+        // Line 3 sets a participant attribute, which every LiveKit client reads.
         mediasoup?.sendHandRaise(raised)
+        if (livekitActive) browser?.let { run(it, LiveKitScripts.setHandRaised(raised)) }
     }
 
     /**
@@ -815,6 +860,9 @@ private val PAGE_FILES = listOf(
     // signalling is Kotlin's, so no WebSocket client is shipped here.
     "mediasoup-client.js",
     "mediasoup.js",
+    // Line 3. LiveKit's browser SDK and the page half that drives it.
+    "livekit-client-2.22.2.umd.js",
+    "livekit.js",
 )
 
 /**

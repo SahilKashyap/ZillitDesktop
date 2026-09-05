@@ -124,8 +124,9 @@ internal suspend fun AppGraph.Ready.scopedChatProvider(
         },
         // One call at a time whichever production it belongs to, so this is
         // the app's own CallViewModel — told which production to place it on.
+        lines = { callLines(project.id) },
         onCall = calls?.let { vm ->
-            { peer, isGroup, video, mediasoup ->
+            { peer, isGroup, video, line ->
                 vm.onEvent(
                     CallEvent.Place(
                         chatRoomId = if (isGroup) peer.userId else "",
@@ -133,7 +134,7 @@ internal suspend fun AppGraph.Ready.scopedChatProvider(
                         mode = if (isGroup) CallMode.Group else CallMode.Private,
                         type = if (video) CallType.Video else CallType.Audio,
                         displayName = peer.fullName,
-                        provider = if (mediasoup) CallProvider.Mediasoup else CallProvider.Agora,
+                        provider = line.toProvider(),
                         receiverUserId = if (isGroup) "" else peer.userId,
                         projectId = project.id,
                         callerUserId = meThere,

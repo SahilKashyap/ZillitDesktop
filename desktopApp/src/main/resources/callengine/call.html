@@ -242,5 +242,13 @@
 -->
 <script src="mediasoup-client.js"></script>
 <script src="mediasoup.js"></script>
+<!--
+  Line 3's media stack. LiveKit's browser SDK (UMD, global `LivekitClient`)
+  beside the other two, for the same reason mediasoup is: a call's line is not
+  known until it rings. It shares the page's tile chrome through
+  `zillitCall.attachRemote`, so a Line 3 peer looks like any other.
+-->
+<script src="livekit-client-2.22.2.umd.js"></script>
+<script src="livekit.js"></script>
 </body>
 </html>

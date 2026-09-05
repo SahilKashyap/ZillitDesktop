@@ -152,6 +152,7 @@ import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.home.ui.decodeImageBitmap
 import com.zillit.desktop.feature.chat.ui.ChatEvent
+import com.zillit.desktop.feature.chat.ui.CallLine
 import com.zillit.desktop.feature.chat.ui.ChatToolProvider
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallProvider
@@ -1962,8 +1963,11 @@ private fun chatProvider(
     selfId = { ready.projectContext?.context?.value?.profile?.userId },
     loadAvatar = { userId -> fetchAvatar(ready, userId)?.let(::decodeImageBitmap) },
     viewModel = viewModel,
+    // Which lines the call buttons offer: the two every production has, and
+    // Line 3 where remote config lists this one.
+    lines = { ready.callLines(ready.projectContext?.context?.value?.project?.projectId) },
     onCall = calls?.let { vm ->
-        { peer, isGroup, video, mediasoup ->
+        { peer, isGroup, video, line ->
             vm.onEvent(
                 CallEvent.Place(
                     // A group is rung by its room; a person by their device.
@@ -1972,7 +1976,7 @@ private fun chatProvider(
                     mode = if (isGroup) CallMode.Group else CallMode.Private,
                     type = if (video) CallType.Video else CallType.Audio,
                     displayName = peer.fullName,
-                    provider = if (mediasoup) CallProvider.Mediasoup else CallProvider.Agora,
+                    provider = line.toProvider(),
                     // Line 1 rings a person rather than one of their devices
                     // — and a group has no person to name. For a group `peer`
                     // IS the room, so passing its id here would put a room id
@@ -3467,6 +3471,7 @@ private fun notificationSettings(
     mail = preferences.observe(ZillitPreferences.NotifyMail),
     updates = preferences.observe(ZillitPreferences.NotifyUpdates),
     calls = preferences.observe(ZillitPreferences.NotifyCalls),
+    ringtone = preferences.observe(ZillitPreferences.RingOnIncomingCall),
     activity = preferences.observe(ZillitPreferences.NotifyActivity),
     callWidget = preferences.observe(ZillitPreferences.CallWidget),
     messageWidget = preferences.observe(ZillitPreferences.MessageWidget),
@@ -3478,6 +3483,7 @@ private fun notificationSettings(
     setMail = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyMail, on) } },
     setUpdates = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyUpdates, on) } },
     setCalls = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyCalls, on) } },
+    setRingtone = { on -> scope.launch { preferences.set(ZillitPreferences.RingOnIncomingCall, on) } },
     setActivity = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyActivity, on) } },
     setCallWidget = { on -> scope.launch { preferences.set(ZillitPreferences.CallWidget, on) } },
     setMessageWidget = { on -> scope.launch { preferences.set(ZillitPreferences.MessageWidget, on) } },
@@ -3756,3 +3762,14 @@ private val ZillitWidget.widgetDetail: String
         ZillitWidget.Crew -> "The production's crew — names, roles, phone and email — in a small " +
             "window you can search without leaving what you are doing."
     }
+
+/** The chat module names a line by its wire word; the calls module by its provider. */
+internal fun CallLine.toProvider(): CallProvider = when (this) {
+    CallLine.One -> CallProvider.Mediasoup
+    CallLine.Two -> CallProvider.Agora
+    CallLine.Three -> CallProvider.LiveKit
+}
+
+/** The lines a production offers. Line 3 only where the roll-out list names it — see LineThreeGate. */
+internal fun AppGraph.Ready.callLines(projectId: String?): List<CallLine> =
+    if (lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.Three else CallLine.DEFAULT

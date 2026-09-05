@@ -101,7 +101,9 @@ fun ChatScreen(
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap? =
         { null },
     /** Rings the open thread; null hides the call buttons. */
-    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)? = null,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, line: CallLine) -> Unit)? = null,
+    /** Which lines the call buttons offer. */
+    lines: () -> List<CallLine> = { CallLine.DEFAULT },
     /** The call history pane; null hides the Calls tab. */
     callLog: (@Composable () -> Unit)? = null,
     /**
@@ -178,7 +180,7 @@ fun ChatScreen(
             if (!showDirectory || !compact) {
                 DetailSide(
                     compact, chatState, viewModel, crew, selectedId, onOpenAttachment,
-                    loadAvatar, loadThumbnail, onCall, player, loadAudio,
+                    loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
                     onBack = {
                         viewModel?.onEvent(ChatEvent.CloseThread)
                         selectedId = null
@@ -222,7 +224,8 @@ private fun RowScope.DetailSide(
     onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap?,
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?,
-    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)?,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, line: CallLine) -> Unit)?,
+    lines: () -> List<CallLine>,
     player: com.zillit.desktop.core.designsystem.component.AudioPlayer?,
     loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray?,
     onBack: () -> Unit,
@@ -249,7 +252,7 @@ private fun RowScope.DetailSide(
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             DetailPane(
                 chatState, viewModel, crew, selectedId, onOpenAttachment,
-                loadAvatar, loadThumbnail, onCall, player, loadAudio,
+                loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
             )
         }
     }
@@ -317,7 +320,8 @@ private fun DetailPane(
     onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap?,
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?,
-    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)?,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, line: CallLine) -> Unit)?,
+    lines: () -> List<CallLine>,
     player: com.zillit.desktop.core.designsystem.component.AudioPlayer?,
     loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray?,
 ) {
@@ -326,7 +330,7 @@ private fun DetailPane(
         chatState?.peer != null && viewModel != null ->
             OpenThread(
                 chatState, viewModel, crew, onOpenAttachment,
-                loadAvatar, loadThumbnail, onCall, player, loadAudio,
+                loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
             )
 
         selected != null -> ContactCard(selected, loadAvatar) { contact ->
@@ -349,7 +353,8 @@ private fun OpenThread(
     onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap?,
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?,
-    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)?,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, line: CallLine) -> Unit)?,
+    lines: () -> List<CallLine>,
     player: com.zillit.desktop.core.designsystem.component.AudioPlayer? = null,
     loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray? =
         { null },
@@ -376,13 +381,14 @@ private fun OpenThread(
         player = player,
         loadAudio = loadAudio,
         onCall = onCall?.let { ring ->
-            { video, mediasoup ->
+            { video, line ->
                 chatState.peer?.let { open ->
-                    ring(open, chatState.peerIsGroup, video, mediasoup)
+                    ring(open, chatState.peerIsGroup, video, line)
                 }
                 Unit
             }
         },
+        lines = lines(),
     )
 }
 

@@ -109,7 +109,9 @@ private fun bindUids(
     media: CallMedia,
     selfUid: Int,
 ): Map<String, Int> {
-    if (session.provider == CallProvider.Mediasoup) {
+    // Lines 1 and 3 number a peer by hashing their identity — the page and
+    // Kotlin agree on the hash — so a roster row binds without a uid on it.
+    if (session.provider == CallProvider.Mediasoup || session.provider == CallProvider.LiveKit) {
         return roster.associate { it.userId to mediasoupUidOf(it.userId) }
     }
     val known = roster.filter { it.numericUid != 0 }.associate { it.userId to it.numericUid }

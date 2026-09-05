@@ -172,6 +172,12 @@ import com.zillit.desktop.feature.home.domain.HomeFeedRepository
 import com.zillit.desktop.feature.home.domain.ToolsRepository
 import com.zillit.desktop.feature.auth.domain.ProjectRepository
 import com.zillit.desktop.core.appupdate.AppUpdateChecker
+import com.zillit.desktop.feature.calls.data.livekit.OkHttpLiveKitSocket
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitLine
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitIdentity
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitApi
+import com.zillit.desktop.core.config.ZillitRealtimeEndpoint
+import com.zillit.desktop.core.appupdate.FirebaseRemoteFlags
 import com.zillit.desktop.core.remoteconfig.RemoteConfigRepository
 import com.zillit.desktop.core.remoteconfig.RemoteConfigRepositoryImpl
 import com.zillit.desktop.feature.auth.domain.QrLoginRepository
@@ -538,6 +544,8 @@ sealed interface AppGraph {
         val callApi: CallApi,
         /** The media stack behind it — the host embeds its video surface. */
         val callEngine: com.zillit.desktop.feature.calls.domain.CallEngine,
+        /** Whether Line 3 is offered on a production — remote config's roll-out list. See LineThreeGate. */
+        val lineThreeEnabled: (projectId: String?) -> Boolean,
         /**
          * The Maps tool's canvas — embedded Chromium drawing Google's map.
          * Idle until the tool first opens; its surface is embedded by
@@ -838,6 +846,11 @@ sealed interface AppGraph {
             val projectContext =
                 ProjectContextLoader(apiClient = apiClient, config = config, cache = projectCache)
 
+            // Line 3's pieces are built after the coordinator's; the lambdas
+            // below run later than either, so they read these at call time.
+            var liveKitLine: LiveKitLine? = null
+            var lineThreeGate: LineThreeGate? = null
+            var primaryDeviceForHandshake: String? = null
             val authRepository = AuthRepositoryImpl(
                 apiClient = apiClient,
                 secureStore = secureStore,
@@ -853,6 +866,10 @@ sealed interface AppGraph {
                     remoteConfigRepository.clear()
                     badgeStore.clear()
                     projectListCache?.clear()
+                    // The presence socket is this device's standing as reachable; signed out, it is not.
+                    liveKitLine?.disconnect("signed out")
+                    lineThreeGate?.clear()
+                    primaryDeviceForHandshake = null
                     // …and every cached row of theirs — boards, threads, mail,
                     // the read cache, the outbox — so the next person to sign
                     // in here starts clean (Android wipes Realm on logout).
@@ -916,6 +933,12 @@ sealed interface AppGraph {
                         projectContext = projectContext,
                         scope = appScope,
                     )
+                    // Line 3, per production: which productions offer it, and
+                    // the region warm the phones fire on every switch.
+                    appScope.launch {
+                        lineThreeGate?.refresh()
+                        liveKitLine?.warmRegion()
+                    }
                 },
             )
 
@@ -1074,6 +1097,11 @@ sealed interface AppGraph {
             }
             // One instance, shared: the coordinator and the call-log list are
             // the same surface talking to the same production.
+            val accountRepository = AccountRepositoryImpl(
+                apiClient = apiClient,
+                config = config,
+                thisDeviceId = { headerContext.value.deviceId.takeIf { it.isNotBlank() } },
+            )
             val callApi = CallApi(apiClient, config)
             // Built after the API because Line 1 needs it: the SFU transports
             // want relay credentials, and they must be in hand before a
@@ -1089,8 +1117,68 @@ sealed interface AppGraph {
                     userId = projectContext?.context?.value?.profile?.userId,
                 )
             }
+            /*
+             * Line 3 — the LiveKit calling backend. Both halves must be
+             * configured (`CALL_API_URL`, `RTC_WS_URL`) or the line is absent
+             * and the call menu never offers it.
+             *
+             * The presence handshake is the phones' `{primary_device_id,
+             * device_id}` under the header key: the PRIMARY device is the
+             * phone this desktop was linked from — the one dev-calls rings —
+             * read once per sign-in from the account's device list, and this
+             * device's own id when no other is marked primary (the web's
+             * fallback too).
+             */
+            val callSocketUrl = config.realtime[ZillitRealtimeEndpoint.CallSocket]?.takeIf { it.isNotBlank() }
+            val callApiBase = config.services[ZillitService.CallApi]?.trimEnd('/')?.takeIf { it.isNotBlank() }
+            lineThreeGate = LineThreeGate(
+                flags = FirebaseRemoteFlags(storageClient, config.firebase, { updateInstanceId(preferences) }),
+                configured = callSocketUrl != null && callApiBase != null,
+            )
+            liveKitLine = if (callSocketUrl != null && callApiBase != null) {
+                LiveKitLine(
+                    scope = appScope,
+                    api = LiveKitApi(LiveKitHttp(storageClient, headerProvider), callApiBase),
+                    sockets = OkHttpLiveKitSocket(),
+                    socketUrl = { callSocketUrl },
+                    handshake = {
+                        val deviceId = headerContext.value.deviceId.takeIf { it.isNotBlank() }
+                        if (deviceId == null) {
+                            null
+                        } else {
+                            val primary = primaryDeviceForHandshake
+                                ?: (accountRepository.linkedDevices() as? ZillitResult.Success)?.data
+                                    ?.firstOrNull { it.isPrimary && !it.isThisDevice }?.id
+                                    ?.also { primaryDeviceForHandshake = it }
+                                ?: deviceId
+                            val payload = """{"primary_device_id":"$primary","device_id":"$deviceId"}"""
+                            (cryptoEngine.encryptToHex(payload) as? ZillitResult.Success)?.data
+                        }
+                    },
+                    identity = {
+                        val project = activeProject.value
+                        val me = projectContext?.context?.value?.profile
+                        if (project == null || me == null) {
+                            null
+                        } else {
+                            LiveKitIdentity(
+                                userId = project.userId?.takeIf { it.isNotBlank() } ?: me.userId.orEmpty(),
+                                displayName = me.fullName,
+                                projectId = project.id,
+                                projectName = project.name,
+                            )
+                        }
+                    },
+                    roomUrlOverride = { config.realtime[ZillitRealtimeEndpoint.LiveKit] },
+                    nowMillis = System::currentTimeMillis,
+                )
+            } else {
+                ZillitLog.i("Startup") { "Line 3 off: CALL_API_URL / RTC_WS_URL not configured" }
+                null
+            }
             val callCoordinator = buildCallCoordinator(
                 callEngine, callApi, config, socketEvents, appScope,
+                line3 = liveKitLine,
                 // Firestore rides the plain client: it is not the Zillit API,
                 // so the moduledata/bodyhash headers must never ride along.
                 planeClient = storageClient,
@@ -1103,7 +1191,11 @@ sealed interface AppGraph {
                 share = callRecordingShare(attachmentUploader, chatRepository),
             )
 
-            com.zillit.desktop.feature.calls.data.CallRinger(callCoordinator, appScope)
+            com.zillit.desktop.feature.calls.data.CallRinger(
+                coordinator = callCoordinator,
+                scope = appScope,
+                ringEnabled = { preferences.get(ZillitPreferences.RingOnIncomingCall) },
+            )
 
             // Home's socket traffic, decoded into events the board understands.
             val homeRealtime = HomeRealtimeSource(
@@ -1209,11 +1301,7 @@ sealed interface AppGraph {
                 adminRepository = adminRepository,
                 // Marks its own row in the linked-devices list, so nobody signs
                 // themselves out looking for a phone they lost.
-                accountRepository = AccountRepositoryImpl(
-                    apiClient = apiClient,
-                    config = config,
-                    thisDeviceId = { headerContext.value.deviceId.takeIf { it.isNotBlank() } },
-                ),
+                accountRepository = accountRepository,
                 // Each on its own service host, both reached through the same
                 // signed client — see ZillitService.
                 cashRepository = CashRepositoryImpl(apiClient, config),
@@ -1276,6 +1364,7 @@ sealed interface AppGraph {
                 callCoordinator = callCoordinator,
                 callApi = callApi,
                 callEngine = callEngine,
+                lineThreeEnabled = { id -> lineThreeGate?.isEnabledFor(id) == true },
                 mapCanvas = mapCanvas,
                 locationPicker = locationPicker,
                 remoteConfigRepository = remoteConfigRepository,
@@ -1456,7 +1545,9 @@ private fun buildCallCoordinator(
     selfName: () -> String?,
     preferences: PreferenceStore,
     share: com.zillit.desktop.feature.calls.domain.CallRecordingShare,
+    line3: LiveKitLine?,
 ): CallCoordinator = CallCoordinator(
+    line3 = line3,
     api = callApi,
     bus = socketEvents,
     engine = engine,

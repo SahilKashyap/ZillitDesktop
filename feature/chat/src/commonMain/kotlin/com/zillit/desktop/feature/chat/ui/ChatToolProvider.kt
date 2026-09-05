@@ -23,7 +23,9 @@ class ChatToolProvider(
     private val onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit = {},
     private val loadThumbnail:
     suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap? = { null },
-    private val onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)? = null,
+    private val onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, line: CallLine) -> Unit)? = null,
+    /** Which lines the call buttons offer — Line 3 only where the host says the production has it. */
+    private val lines: () -> List<CallLine> = { CallLine.DEFAULT },
     /** The one shared speaker; null renders voice notes as plain chips. */
     private val player: com.zillit.desktop.core.designsystem.component.AudioPlayer? = null,
     private val loadAudio:
@@ -104,6 +106,7 @@ class ChatToolProvider(
                 deleteRoom = deleteRoom,
                 compact = compact,
                 onOpenWidget = onOpenWidget,
+                lines = lines,
             )
         }
     }

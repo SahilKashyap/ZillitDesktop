@@ -36,6 +36,8 @@ data class SettingsUiState(
     val notifyMail: Boolean = true,
     val notifyUpdates: Boolean = true,
     val notifyCalls: Boolean = true,
+    /** The ringtone while a call rings this device. */
+    val ringOnIncomingCall: Boolean = true,
     val notifyActivity: Boolean = true,
     val callWidget: Boolean = true,
     val messageWidget: Boolean = true,
@@ -144,6 +146,8 @@ sealed interface SettingsEvent {
     data class NotifyMailChanged(val on: Boolean) : SettingsEvent
     data class NotifyUpdatesChanged(val on: Boolean) : SettingsEvent
     data class NotifyCallsChanged(val on: Boolean) : SettingsEvent
+    /** The ringtone switch — `ZillitPreferences.RingOnIncomingCall`. */
+    data class RingtoneChanged(val on: Boolean) : SettingsEvent
     data class NotifyActivityChanged(val on: Boolean) : SettingsEvent
     /** The Desktop section: four switches with one shape, so one branch can route them. */
     sealed interface DesktopSwitch : SettingsEvent {
@@ -239,6 +243,7 @@ class NotificationSettings(
     val mail: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val updates: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val calls: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+    val ringtone: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val activity: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val callWidget: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val messageWidget: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
@@ -253,6 +258,7 @@ class NotificationSettings(
     val setMail: (Boolean) -> Unit = {},
     val setUpdates: (Boolean) -> Unit = {},
     val setCalls: (Boolean) -> Unit = {},
+    val setRingtone: (Boolean) -> Unit = {},
     val setActivity: (Boolean) -> Unit = {},
     val setCallWidget: (Boolean) -> Unit = {},
     val setMessageWidget: (Boolean) -> Unit = {},

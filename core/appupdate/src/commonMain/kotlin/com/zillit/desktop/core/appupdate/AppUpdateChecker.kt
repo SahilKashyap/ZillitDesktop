@@ -237,7 +237,7 @@ private data class Readiness(
  * rather than generated per launch.
  */
 @Serializable
-private data class FetchRequest(
+internal data class FetchRequest(
     @SerialName("appId") val appId: String,
     @SerialName("appInstanceId") val appInstanceId: String,
     @SerialName("languageCode") val languageCode: String,
