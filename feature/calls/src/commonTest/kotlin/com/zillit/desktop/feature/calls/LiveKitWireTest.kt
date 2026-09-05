@@ -4,6 +4,7 @@ import com.zillit.desktop.feature.calls.data.livekit.LiveKitEvent
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitFrame
 import com.zillit.desktop.feature.calls.data.livekit.liveKitRequestFrame
 import com.zillit.desktop.feature.calls.data.livekit.parseLiveKitFrame
+import com.zillit.desktop.feature.calls.data.livekit.userStateStatus
 import com.zillit.desktop.feature.calls.data.livekit.readLiveKitRoster
 import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.domain.CallMode
@@ -134,4 +135,13 @@ class LiveKitWireTest {
     }
 
     private fun event(raw: String): LiveKitEvent = assertIs<LiveKitFrame.Event>(parseLiveKitFrame(raw)).event
+
+    @Test
+    fun `a state word this build does not know is dropped, not read as a departure`() {
+        assertEquals(CallStatus.InCall, userStateStatus("accepted"))
+        assertEquals(CallStatus.Left, userStateStatus("left"))
+        assertEquals(null, userStateStatus("on_hold"))
+        val frame = parseLiveKitFrame("""{"type":"callUserStateChanged","callId":"c","userId":"u","state":"on_hold"}""")
+        assertTrue(frame is LiveKitFrame.Unknown, "an unknown state is an unread event: $frame")
+    }
 }

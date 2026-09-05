@@ -192,7 +192,7 @@ private fun readEvent(type: String, obj: JsonObject): LiveKitEvent? = when (type
         callId = obj.text("callId").orEmpty(),
         userId = obj.text("userId") ?: return null,
         displayName = obj.text("displayName").orEmpty(),
-        status = userStateStatus(obj.text("state")),
+        status = userStateStatus(obj.text("state")) ?: return null,
     )
     "participantJoined" -> (obj["participant"] as? JsonObject)?.let { p ->
         LiveKitEvent.ParticipantJoined(p.text("userId") ?: return null, p.text("displayName").orEmpty())
@@ -217,13 +217,16 @@ private fun ringState(obj: JsonObject, status: CallStatus, busy: Boolean = false
  * the same as having left; `busy` and `unreachable` are a ring that will not
  * be answered, which is what Declined and NotAnswered already mean.
  */
-fun userStateStatus(wire: String?): CallStatus = when (wire?.trim()?.lowercase()) {
+fun userStateStatus(wire: String?): CallStatus? = when (wire?.trim()?.lowercase()) {
     "calling" -> CallStatus.Caller
     "ringing" -> CallStatus.Ringing
-    "in_call" -> CallStatus.InCall
+    "in_call", "accepted" -> CallStatus.InCall
     "declined", "busy" -> CallStatus.Declined
     "missed", "unreachable" -> CallStatus.NotAnswered
-    else -> CallStatus.Left
+    "left", "available" -> CallStatus.Left
+    // A word this build does not know is not a departure: read as Left it
+    // would end a 1:1 call on the spot. Null, and the caller drops the delta.
+    else -> null
 }
 
 /** The `incomingCall` payload, which the phones parse with the same tolerance for absent fields. */
@@ -280,7 +283,7 @@ fun readLiveKitRoster(data: JsonElement?, callerId: String): List<CallParticipan
     return states.mapNotNull { row ->
         val state = row as? JsonObject ?: return@mapNotNull null
         val userId = state.text("userId") ?: return@mapNotNull null
-        val status = userStateStatus(state.text("state"))
+        val status = userStateStatus(state.text("state")) ?: return@mapNotNull null
         CallParticipant(
             userId = userId,
             name = state.text("displayName").orEmpty(),

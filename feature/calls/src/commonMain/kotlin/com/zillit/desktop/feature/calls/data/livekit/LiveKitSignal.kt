@@ -93,6 +93,7 @@ class LiveKitPeer(
 
     /** Every text frame off the socket, in order. */
     suspend fun onFrame(raw: String) {
+        ZillitLog.d(TAG) { "<- ${summarise(raw)}" }
         when (val frame = parseLiveKitFrame(raw)) {
             is LiveKitFrame.Response -> {
                 val waiter = take(frame.reqId)
@@ -128,12 +129,26 @@ class LiveKitPeer(
 
     private suspend fun take(reqId: String): Waiter? = lock.withLock { pending.remove(reqId) }
 
+    /**
+     * The frame's identifying words for the log — never the whole frame,
+     * which on an `incomingCall` carries the room token.
+     */
+    private fun summarise(raw: String): String {
+        val obj = runCatching { LIVEKIT_JSON.parseToJsonElement(raw) as? JsonObject }.getOrNull()
+            ?: return "(not an object)"
+        return LOGGED_FIELDS.mapNotNull { key -> obj.text(key)?.let { "$key=$it" } }.joinToString(" ")
+            .ifBlank { "(no known fields) ${raw.take(RAW_PREVIEW)}" }
+    }
+
     companion object {
         const val CODE_CLOSED = "notify_offline"
         const val CODE_TIMEOUT = "timeout"
         const val CODE_SEND_FAILED = "send_failed"
         const val REQUEST_TIMEOUT_MILLIS = 15_000L
         private const val EVENT_BUFFER = 64
+        private const val RAW_PREVIEW = 120
+        private val LOGGED_FIELDS =
+            listOf("type", "reqId", "ok", "error", "callId", "userId", "state", "reason", "toUserId")
         private const val TAG = "LiveKitPeer"
     }
 }

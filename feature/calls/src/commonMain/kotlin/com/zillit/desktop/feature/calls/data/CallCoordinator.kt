@@ -1426,6 +1426,7 @@ class CallCoordinator(
         // about stops a stale timeout from resetting its successor.
         val live = _session.value
         if (live != null && live.callUuid.isNotBlank() && live.callUuid != session.callUuid) return
+        ZillitLog.i(TAG) { "call ${session.callUuid} ended: $reason (${session.provider.wire}, was ${_phase.value})" }
         cancelRingTimeout()
         _ended.tryEmit(CallEndEvent(session, reason))
         reset()

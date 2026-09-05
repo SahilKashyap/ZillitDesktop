@@ -181,6 +181,9 @@
                 if (window.zillitCall && window.zillitCall.listDevices) { window.zillitCall.listDevices(); }
             } catch (e) {
                 if (room === r) { room = null; }
+                // Our own leave() during the connect (the call ended while the
+                // room was still dialling) is not a failure to report.
+                if (gen !== joinGeneration) { return; }
                 send({ type: 'error', message: 'LiveKit join failed: ' + (e && e.message ? e.message : e) });
             }
         },
