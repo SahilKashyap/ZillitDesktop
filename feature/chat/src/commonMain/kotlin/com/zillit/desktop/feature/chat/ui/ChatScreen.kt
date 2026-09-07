@@ -459,7 +459,11 @@ private fun DirectoryPane(
                 placeholder = "Search name, role, department",
             )
             CrewList(
-                crew = crew.filterNot { it.userId == selfId }.searchCrew(query),
+                // Someone who left or was removed is not a contact any more —
+                // Android's Contacts tab drops `left` and `removed`
+                // (`MembersVM.kt:473`). Their thread stays in the Chats list,
+                // captioned, because the history is still theirs to read.
+                crew = crew.filterNot { it.userId == selfId || it.hasLeft }.searchCrew(query),
                 // Follows whichever thread is open, however it was opened —
                 // picking someone in Chats and then switching to Contacts should
                 // show that person as the one being read, not nobody.

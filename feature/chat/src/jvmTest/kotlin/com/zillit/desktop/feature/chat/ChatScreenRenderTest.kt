@@ -98,13 +98,12 @@ class ChatScreenRenderTest {
     }
 
     /**
-     * Android's listing captions a person who left or was removed
-     * "Disconnected" under their designation (`disconnedtedTxtView`); the
-     * desktop only said so inside the open thread, so the list gave no hint
-     * which rows were history.
+     * Someone who left or was removed is not a contact any more: Android's
+     * Contacts tab drops `left` and `removed` (`MembersVM.kt:473`). The
+     * desktop listed them there as if nothing had happened.
      */
     @Test
-    fun `a departed crew member is captioned Disconnected in the listing`() = runComposeUiTest {
+    fun `a departed crew member is not offered as a contact`() = runComposeUiTest {
         val departed = CrewContact(userId = "u3", fullName = "Rohan Left", hasLeft = true)
         setContent {
             ZillitTheme {
@@ -114,8 +113,9 @@ class ChatScreenRenderTest {
 
         onNodeWithText("Contacts").performClick()
         waitForIdle()
-        onNodeWithText("Rohan Left").assertExists()
-        onAllNodesWithText("Disconnected").assertCountEquals(1)
+        onNodeWithText("Aisha Khan").assertExists()
+        onNodeWithText("Rohan Left").assertDoesNotExist()
+        onAllNodesWithText("Disconnected").assertCountEquals(0)
     }
 
     /**
@@ -373,6 +373,31 @@ class ChatsTabSearchAndGroupsTest {
 
         onNodeWithText("Aisha Khan").assertExists()
         onNodeWithText("Vivek Mishra").assertDoesNotExist()
+    }
+
+    /**
+     * The thread with someone who left stays in the Chats list — the history
+     * is still the user's to read — but Android's listing row captions it
+     * "Disconnected" in red (`disconnedtedTxtView`); the desktop only said so
+     * inside the open thread, so the list gave no hint which rows were history.
+     */
+    @Test
+    fun `a thread with someone who left is captioned Disconnected in the Chats list`() = runComposeUiTest {
+        val departed = CrewContact(userId = "u3", fullName = "Rohan Left", hasLeft = true)
+        val repository = StubChatRepository().apply { recentsAnswer = listOf("u1", "u3") }
+        val model = viewModel(repository)
+
+        setContent {
+            ZillitTheme {
+                ChatScreen(crew = crew + departed, loadAvatar = { null }, viewModel = model)
+            }
+        }
+
+        onNodeWithText("Chats").performClick()
+        waitForIdle()
+        onNodeWithText("Rohan Left").assertExists()
+        onNodeWithText("Aisha Khan").assertExists()
+        onAllNodesWithText("Disconnected").assertCountEquals(1)
     }
 
     /** QA#3: a room nobody has spoken in still lists under the Groups chip. */
