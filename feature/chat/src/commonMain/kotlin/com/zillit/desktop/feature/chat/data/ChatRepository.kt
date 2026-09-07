@@ -134,6 +134,13 @@ interface ChatRepository {
     val silenced: Flow<ChatSilence> get() = kotlinx.coroutines.flow.emptyFlow()
 
     /**
+     * Fires when the rows behind [conversationBacklog] moved without this
+     * repository's knowledge — the host's ledger seeded, or a frame it
+     * applied. Empty when the backlog is the server's own page.
+     */
+    val backlogChanges: Flow<Unit> get() = kotlinx.coroutines.flow.emptyFlow()
+
+    /**
      * Applies a silence the way the phones' local ledgers do: a lost room is
      * marked read to now, and a deleted message is forgotten and kept out of
      * every later backlog seed, so the count cannot come back from the server.
@@ -250,6 +257,15 @@ class ChatRepositoryImpl(
     /** The at-rest copy; null in tests. Bodies stay cipher-hex inside it. */
     private val disk: ChatCache? = null,
     /**
+     * The notification ledger's chat rows, when the host keeps one — the
+     * same wire rows the backlog call answers, but with this device's reads
+     * and prunes applied and no window that slides past an old unread. Null
+     * asks the server, as before.
+     */
+    private val ledgerBacklog: (suspend () -> JsonElement?)? = null,
+    /** When the ledger's rows moved — see [ChatRepository.backlogChanges]. */
+    private val ledgerChanges: Flow<Unit>? = null,
+    /**
      * Which surface this repository speaks for. The default is C&C, so every
      * existing caller behaves exactly as before; the budget tools pass their
      * own tool and department.
@@ -362,6 +378,8 @@ class ChatRepositoryImpl(
 
     override val silenced: Flow<ChatSilence> =
         bus.on(silentEvent).hereOnly().mapNotNull { message -> chatSilenceFrom(message.payload) }
+
+    override val backlogChanges: Flow<Unit> = ledgerChanges ?: kotlinx.coroutines.flow.emptyFlow()
 
     override fun silence(silence: ChatSilence) {
         val project = projectId() ?: return
@@ -571,8 +589,13 @@ class ChatRepositoryImpl(
      * `NotificationDataModel.kt:34`) — the newest per conversation is the
      * server's activity stamp for the listing's order.
      */
-    override suspend fun conversationBacklog(): ZillitResult<ConversationBacklog> =
-        apiClient.request(
+    override suspend fun conversationBacklog(): ZillitResult<ConversationBacklog> {
+        val marks = projectId()?.let { disk?.readMarks(it) }.orEmpty()
+        val ledger = ledgerBacklog?.invoke()
+        if (ledger != null) {
+            return ZillitResult.Success(conversationBacklogFrom(ledger, readMarks = marks, silencedIds = silencedIds))
+        }
+        return apiClient.request(
             verb = HttpVerb.Get,
             url = "${config.apiV2(ZillitService.Notification)}project/all/notifications/" +
                 "${kotlin.time.Clock.System.now().toEpochMilliseconds()}/previous",
@@ -583,10 +606,8 @@ class ChatRepositoryImpl(
                     cacheAs = "${config.apiV2(ZillitService.Notification)}project/all/notifications/newest",
                 ),
             ),
-        ).map { payload ->
-            val marks = projectId()?.let { disk?.readMarks(it) }.orEmpty()
-            conversationBacklogFrom(payload, readMarks = marks, silencedIds = silencedIds)
-        }
+        ).map { payload -> conversationBacklogFrom(payload, readMarks = marks, silencedIds = silencedIds) }
+    }
 
     override suspend fun recentPeers(): ZillitResult<List<String>> {
         val me = myUserId() ?: return ZillitResult.Success(emptyList())

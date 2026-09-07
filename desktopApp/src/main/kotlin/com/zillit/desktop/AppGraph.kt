@@ -97,7 +97,11 @@ import com.zillit.desktop.feature.calls.data.NoopCallStatusPlane
 import com.zillit.desktop.feature.calls.domain.NoopCallEngine
 import com.zillit.desktop.core.socket.SocketIoClient
 import com.zillit.desktop.core.socket.ZillitSocketEvents
-import com.zillit.desktop.feature.home.data.BadgeSourceImpl
+import com.zillit.desktop.feature.home.data.NotificationLedgerSeeder
+import com.zillit.desktop.core.badges.BadgeDrilldown
+import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.InMemoryNotificationLedgerStore
+import com.zillit.desktop.core.badges.SqlNotificationLedgerStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -359,6 +363,7 @@ private suspend fun onProjectOpened(
     activeProject: MutableStateFlow<com.zillit.desktop.feature.auth.domain.Project?>,
     remoteConfig: com.zillit.desktop.core.remoteconfig.RemoteConfigRepository,
     badges: BadgeStore,
+    seeder: NotificationLedgerSeeder,
     socket: SocketIoClient,
     socketUrl: String,
     socketAuth: suspend () -> Map<String, String>,
@@ -403,8 +408,13 @@ private suspend fun onProjectOpened(
     }
 
     socket.connect(SocketConfig(url = socketUrl, authHeaders = socketAuth, onAuthRejected = onSocketAuthRejected))
-    // Counts never gate the open; the rail draws them when they land.
-    scope.launch { badges.refresh() }
+    // Counts never gate the open; the rail draws them when they land. The
+    // ledger's own rows come first (last session's badges, instantly), then
+    // the page of what the server has since.
+    scope.launch {
+        badges.open(project.id)
+        seeder.seed(project.id)
+    }
 }
 
 /**
@@ -530,6 +540,10 @@ sealed interface AppGraph {
         /** The production's storage region/bucket, cached after first ask. */
         val storageTarget: StorageTargetSource,
         val badgeStore: BadgeStore,
+        /** Asks the notification service for the ledger rows it has not seen. */
+        val badgeSeeder: NotificationLedgerSeeder,
+        /** This device's server id, once registered; null before. */
+        val deviceId: () -> String?,
         /** The signed REST client — for host-level fetches with no feature home. */
         val apiClient: com.zillit.desktop.core.network.ApiClient,
         /**
@@ -788,8 +802,19 @@ sealed interface AppGraph {
 
             val unitRepository = UnitRepositoryImpl(apiClient, config)
 
-            val badgeStore = BadgeStore(BadgeSourceImpl(apiClient, config))
-            val badgeDrilldown = com.zillit.desktop.feature.home.data.BadgeDrilldownImpl(apiClient, config)
+            // The badge ledger — rows on disk, counts derived; the phones'
+            // model. Without a database (a launch whose keychain failed) the
+            // rows live for the session only, which is still a working rail.
+            val badgeStore = BadgeStore(
+                database?.let(::SqlNotificationLedgerStore) ?: InMemoryNotificationLedgerStore(),
+            )
+            val badgeDrilldown = BadgeDrilldown { query -> ZillitResult.Success(badgeStore.split(query)) }
+            val badgeSeeder = NotificationLedgerSeeder(
+                apiClient = apiClient,
+                config = config,
+                store = badgeStore,
+                myUserId = { headerContext.value.userId },
+            )
 
             // The finance repositories, built here because the offline
             // handlers below send through them.
@@ -993,6 +1018,7 @@ sealed interface AppGraph {
                         activeProject = activeProject,
                         remoteConfig = remoteConfigRepository,
                         badges = badgeStore,
+                        seeder = badgeSeeder,
                         socket = socketClient,
                         socketUrl = config.baseUrl(ZillitService.Chat),
                         socketAuth = socketHandshake,
@@ -1063,6 +1089,11 @@ sealed interface AppGraph {
                 encrypt = { plain -> (cryptoEngine.encryptToHex(plain) as? ZillitResult.Success)?.data },
                 decrypt = { cipher -> (cryptoEngine.decryptFromHex(cipher) as? ZillitResult.Success)?.data },
                 disk = chatCache,
+                // The listing's per-conversation counts come from the ledger's
+                // chat rows — this device's reads and prunes applied — not from
+                // a fresh backlog page that forgets an old unread.
+                ledgerBacklog = { badgeStore.wireRows(BadgeSections.CNC) },
+                ledgerChanges = badgeStore.changes,
             )
             // Messages written offline leave through the same send as live ones.
             syncHandlers.register(ChatSendHandler(chatRepository))
@@ -1126,7 +1157,7 @@ sealed interface AppGraph {
                 decoder = NotificationDecoder(
                     decrypt = { cipher -> (cryptoEngine.decryptFromHex(cipher) as? ZillitResult.Success)?.data },
                 ),
-            )
+            ).readingLedger(badgeStore)
 
             // The Maps tool's canvas. Constructing it costs nothing — Chromium
             // work begins on the tool's first open, and the runtime is shared
@@ -1425,6 +1456,8 @@ sealed interface AppGraph {
                 ),
                 httpClient = storageClient,
                 badgeStore = badgeStore,
+                badgeSeeder = badgeSeeder,
+                deviceId = { headerContext.value.deviceId.takeIf { it.isNotBlank() } },
                 badgeDrilldown = badgeDrilldown,
                 apiClient = apiClient,
                 headerProvider = headerProvider,

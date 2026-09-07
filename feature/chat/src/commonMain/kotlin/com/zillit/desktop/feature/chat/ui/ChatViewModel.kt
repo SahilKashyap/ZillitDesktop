@@ -342,6 +342,9 @@ class ChatViewModel(
                 refreshSectionBadges()
             }
         }
+        // The host's ledger seeded or moved under the listing: fold its rows
+        // again, or a badge that landed after the listing loaded never shows.
+        launch { repository.backlogChanges.collect { reloadBacklog() } }
         launch {
             repository.typing.collect { (peer, started) ->
                 onEvent(ChatEvent.PeerTyping(peer, started))

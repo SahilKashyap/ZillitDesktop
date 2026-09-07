@@ -13,10 +13,13 @@ import com.zillit.desktop.feature.email.domain.StorageKind
 import com.zillit.desktop.feature.email.domain.storageKindOf
 import com.zillit.desktop.feature.home.data.ClipAudioPlayer
 import com.zillit.desktop.feature.home.data.JvmAudioRecorder
-import com.zillit.desktop.feature.home.data.identifierToWireTool
-import com.zillit.desktop.feature.home.data.badgeSuppressionFrom
-import com.zillit.desktop.feature.home.data.badgeArrivalFrom
-import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.LedgerRead
+import com.zillit.desktop.core.badges.badgeSilenceFrom
+import com.zillit.desktop.core.badges.identifierToWireTool
+import com.zillit.desktop.core.badges.ledgerArrivalsFrom
+import com.zillit.desktop.core.badges.wireRecords
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import com.zillit.desktop.feature.home.data.pdfThumbnailJpeg
 import com.zillit.desktop.feature.home.data.videoThumbnailJpeg
 import com.zillit.desktop.core.common.ZillitLog
@@ -324,13 +327,12 @@ internal suspend fun emitBoardRead(ready: AppGraph.Ready, unitId: String) =
     emitSegmentRead(ready, segment = unitId, module = "home_label")
 
 /**
- * Tells the server one segment is read, then refetches the counts.
+ * Tells the server one segment is read, and the ledger the same.
  *
  * One helper for every surface that marks itself seen — boards, chat
- * threads, and whatever comes next — because the server does not echo a
- * badge event back to the reader for their own read (verified live: an
- * opened board's count stood for good). The beat gives the server time to
- * apply the read before being asked.
+ * threads, and whatever comes next. The ledger is the badge: the rows it
+ * flips stay flipped, whatever the server later says about them (the phones'
+ * rule; the server does not even echo a badge event back for one's own read).
  */
 internal suspend fun emitSegmentRead(
     ready: AppGraph.Ready,
@@ -339,11 +341,7 @@ internal suspend fun emitSegmentRead(
     referenceId: String? = null,
 ) {
     val projectId = ready.projectContext?.context?.value?.project?.projectId ?: return
-    // Out of the rail the moment the read is sent, not READ_SETTLE_MILLIS later
-    // — that wait is for the server's ledger, and the badge should not sit lit
-    // while it catches up. Only a whole section is cleared here: a finer
-    // segment would over-clear until the refresh put the rest back.
-    if (segment in BadgeSections.all) ready.badgeStore.clearSection(segment)
+    ready.badgeStore.markRead(ledgerReadFor(segment, referenceId))
     ready.socketEvents.emit(
         ZillitSocketEvents.Badges.NotificationRead,
         NotificationReadDto(
@@ -355,8 +353,6 @@ internal suspend fun emitSegmentRead(
         ),
         NotificationReadDto.serializer(),
     )
-    kotlinx.coroutines.delay(READ_SETTLE_MILLIS)
-    ready.badgeStore.refresh()
 }
 
 /**
@@ -383,13 +379,9 @@ internal suspend fun emitToolRead(ready: AppGraph.Ready, toolIdentifier: String)
         ),
         NotificationReadDto.serializer(),
     )
-    kotlinx.coroutines.delay(READ_SETTLE_MILLIS)
-    ready.badgeStore.refresh()
+    // Android `Info`/`Production`/`BoxSchedule`…: every row of the tool.
+    ready.badgeStore.markRead(LedgerRead.Tool(identifierToWireTool(toolIdentifier)))
 }
-
-
-/** How long the server gets to apply a read before we ask for counts. */
-private const val READ_SETTLE_MILLIS = 1_500L
 
 
 /**
@@ -619,31 +611,29 @@ private fun AppGraph.Ready.boardFeed(
 }
 
 /**
- * The two socket frames that change a badge without a refresh.
+ * The socket's word on the ledger, applied as the phones apply it.
  *
- * `notification:save` lifts the count at once — the conflated refresh confirms
- * it 600ms later, so a wrong guess is short-lived. `notification:silent`
- * forgets tools and units this person lost sight of, and re-sends each tool as
- * a read the way iOS's `emitForBadgeDelete` does, so the server's ledger
- * forgets too rather than handing the rows back on the next refresh.
+ * `notification:save` files its records; `notification:silent` drops what
+ * another device or the server already dropped — reads elsewhere, deleted
+ * messages and comments, rooms lost, tools and units this person may no
+ * longer see (each lost tool is also re-sent as a read, as iOS's
+ * `emitForBadgeDelete` does, so the server's ledger forgets too); the two
+ * `badges:cleared:*` frames empty a production or the device. No refetch
+ * follows any of them: the rows are the badges.
  */
 internal suspend fun badgeSocketEffects(ready: AppGraph.Ready) = kotlinx.coroutines.coroutineScope {
+    val open = { ready.projectContext?.context?.value?.project?.projectId }
     launch {
         ready.socketEvents.on(ZillitSocketEvents.Badges.Save).collect { message ->
-            // Only this production's unread lifts this production's badge —
-            // the socket is one per device, not one per production.
-            val open = ready.projectContext?.context?.value?.project?.projectId
-            badgeArrivalFrom(message.payload, open)?.let {
-                ready.badgeStore.bump(it.section, it.toolIdentifier, it.unit)
-            }
+            ready.badgeStore.arrived(ledgerArrivalsFrom(message.payload, fallbackProjectId = open()))
         }
     }
     launch {
         ready.socketEvents.on(ZillitSocketEvents.Badges.Silent).collect { message ->
-            val lost = badgeSuppressionFrom(message.payload) ?: return@collect
-            ready.badgeStore.suppress(lost.toolIdentifiers, lost.units)
-            val projectId = ready.projectContext?.context?.value?.project?.projectId ?: return@collect
-            lost.toolWireLabels.forEach { label ->
+            val silence = badgeSilenceFrom(message.payload) ?: return@collect
+            ready.badgeStore.silence(silence)
+            val projectId = open() ?: return@collect
+            silence.lostTools.forEach { label ->
                 ready.socketEvents.emit(
                     ZillitSocketEvents.Badges.NotificationRead,
                     NotificationReadDto(projectId = projectId, segment = label, timestamp = System.currentTimeMillis()),
@@ -651,5 +641,15 @@ internal suspend fun badgeSocketEffects(ready: AppGraph.Ready) = kotlinx.corouti
                 )
             }
         }
+    }
+    launch {
+        ready.socketEvents.on(ZillitSocketEvents.Badges.ClearedUser).collect { message ->
+            val named = message.payload.wireRecords().firstOrNull()
+                ?.let { (it["project_id"] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }
+            (named ?: open())?.let { ready.badgeStore.clearProject(it) }
+        }
+    }
+    launch {
+        ready.socketEvents.on(ZillitSocketEvents.Badges.ClearedDevice).collect { ready.badgeStore.clearEverything() }
     }
 }

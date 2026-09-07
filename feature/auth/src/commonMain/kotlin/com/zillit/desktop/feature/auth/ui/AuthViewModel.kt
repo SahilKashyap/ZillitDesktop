@@ -114,7 +114,7 @@ data class AuthUiState(
 
     /** Search + category + ordering, all in [filterProjects] so it is testable. */
     val visibleProjects: List<Project>
-        get() = projects.filterProjects(projectFilter, projectCategory)
+        get() = projects.filterProjects(projectFilter, projectCategory) { projectUnread[it.id] ?: 0 }
 
     companion object {
         const val MIN_OTP_LENGTH = 4
@@ -388,6 +388,11 @@ class AuthViewModel(
                 launch {
                     val counts = projectUnread()
                     setState { copy(projectUnread = counts) }
+                    // Names beside the numbers, for a comparison with a phone.
+                    ZillitLog.d(TAG) {
+                        "picker badges: " + currentState.projects
+                            .mapNotNull { p -> counts[p.id]?.takeIf { it > 0 }?.let { "${p.name}(${p.id})=$it" } }
+                    }
                 }
                 // A device attached to exactly one production has nothing to
                 // choose; making the user pick from a list of one is friction.

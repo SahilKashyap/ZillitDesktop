@@ -1,0 +1,74 @@
+-- The notification ledger: every badge row this device has been told about.
+--
+-- The phones keep the same table (Android Realm `NotificationModelDB`, iOS
+-- `NotificationLocalDBManager`, web Dexie `BadgeDB`) and derive every badge
+-- from it; the server is asked for rows, never for counts. `raw` keeps the
+-- row as the wire sent it so a rule that needs a field not lifted into a
+-- column can still read it.
+
+CREATE TABLE notificationLedger (
+    id           TEXT NOT NULL PRIMARY KEY,
+    projectId    TEXT NOT NULL,
+    deviceId     TEXT NOT NULL,
+    mongoId      TEXT NOT NULL,
+    section      TEXT NOT NULL,
+    tool         TEXT NOT NULL,
+    unit         TEXT NOT NULL,
+    level1       TEXT NOT NULL,
+    level2       TEXT NOT NULL,
+    level3       TEXT NOT NULL,
+    actionName   TEXT NOT NULL,
+    referenceId  TEXT NOT NULL,
+    sender       TEXT NOT NULL,
+    receiverId   TEXT NOT NULL,
+    created      INTEGER NOT NULL,
+    updated      INTEGER NOT NULL,
+    messageRead  INTEGER NOT NULL DEFAULT 0,
+    isGlobal     INTEGER NOT NULL DEFAULT 0,
+    ignored      INTEGER NOT NULL DEFAULT 0,
+    isSelf       INTEGER NOT NULL DEFAULT 0,
+    silent       INTEGER NOT NULL DEFAULT 0,
+    deleted      INTEGER NOT NULL DEFAULT 0,
+    chatRoomId   TEXT NOT NULL,
+    senderId     TEXT NOT NULL,
+    chatUnitId   TEXT NOT NULL,
+    calendarEnd  INTEGER,
+    fromApi      INTEGER NOT NULL DEFAULT 0,
+    raw          TEXT NOT NULL
+);
+
+CREATE INDEX notificationLedgerByProject ON notificationLedger (projectId, messageRead);
+
+upsert:
+INSERT OR REPLACE INTO notificationLedger
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectProject:
+SELECT * FROM notificationLedger WHERE projectId = ?;
+
+selectById:
+SELECT * FROM notificationLedger WHERE id = ?;
+
+markRead:
+UPDATE notificationLedger SET messageRead = 1 WHERE id IN ?;
+
+-- The seed watermark: the newest `updated` among rows the API handed over.
+-- Socket rows never move it (Android `AppBadgeDBManager.getTimeStamp`).
+-- A blank project id asks across every production — the picker's seed,
+-- made before any production is open.
+selectWatermark:
+SELECT MAX(updated) FROM notificationLedger WHERE (:projectId = '' OR projectId = :projectId) AND fromApi = 1;
+
+-- The production picker: unread per production, every production at once
+-- (Android `calculateAllProjectsBadges`: this device's unread rows grouped
+-- by project). An empty device id counts every device's rows.
+unreadByProject:
+SELECT projectId, COUNT(*) AS unread FROM notificationLedger
+WHERE messageRead = 0 AND ignored = 0 AND deleted = 0 AND (:deviceId = '' OR deviceId = :deviceId)
+GROUP BY projectId;
+
+deleteProject:
+DELETE FROM notificationLedger WHERE projectId = ?;
+
+deleteAll:
+DELETE FROM notificationLedger;

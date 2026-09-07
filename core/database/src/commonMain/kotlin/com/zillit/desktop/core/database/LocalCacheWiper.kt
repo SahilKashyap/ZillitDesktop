@@ -29,6 +29,7 @@ class LocalCacheWiper(
             with(database.chatCacheQueries) { deleteAllMessages(); deleteAllThreadReads() }
             with(database.emailCacheQueries) { deleteAllEmails(); deleteAllFolders() }
             database.readCacheQueries.deleteAll()
+            database.notificationLedgerQueries.deleteAll()
             database.projectListCacheQueries.deleteProjectList()
         }
         // Unsent operations and drafts are the person's too — the sign-out

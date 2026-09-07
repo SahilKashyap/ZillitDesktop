@@ -33,7 +33,9 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.common.currentPlatform
 import com.zillit.desktop.core.badges.BadgeCounts
+import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.badges.BadgeStore
+import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.PreferenceStoreFactory
@@ -647,7 +649,6 @@ private fun ApplicationScope.quitZillit(windowState: WindowState) {
 private const val GEOMETRY_SETTLE_MILLIS = 400L
 
 /** How long the server gets to apply a read before counts are refetched. */
-private const val READ_BADGE_SETTLE_MILLIS = 1_500L
 
 private fun WindowState.geometry() = WindowGeometry(
     width = size.width.value.toInt().coerceAtLeast(1),
@@ -1027,8 +1028,13 @@ private fun EmailRealtime(ready: AppGraph.Ready, mailbox: EmailViewModel?) {
  * unread called zero.
  */
 @Composable
-private fun DockBadge(ready: AppGraph.Ready) {
-    val total = ready.badgeStore.counts.collectAsState().value.total
+private fun DockBadge(ready: AppGraph.Ready, viewModels: AppViewModels) {
+    val counts by ready.badgeStore.counts.collectAsState()
+    // The rail's C&C number, not the ledger's raw section: the rail also drops
+    // rooms `chat-room` no longer lists, and the dock must not disagree with it.
+    val chatState by (viewModels.chat?.state
+        ?: MutableStateFlow(com.zillit.desktop.feature.chat.ui.ChatUiState())).collectAsState()
+    val total = counts.totalWith(BadgeSections.CNC, chatState.chatsBadge + chatState.callsBadge)
     LaunchedEffect(total) {
         runCatching {
             val taskbar = java.awt.Taskbar.getTaskbar()
@@ -1099,45 +1105,46 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
     // socket event on the shared connection (found in QA: badges kept
     // arriving after logout). Keying on `signedIn` cancels both effects.
     if (!signedIn) return
-    // The socket only ever says "changed" — someone must ask first; the
-    // asking is ProjectScopedLoads' (counts need a production in the
-    // headers — asked earlier the server answers 406).
-    // A reconnect may have swallowed any number of change events; what the
-    // counts are now is a question only the server can answer.
+    // The socket's frames are applied to the ledger as they arrive (see
+    // HomeWiring); a seed asks the server only for rows updated since the
+    // ledger's newest, so it is cheap enough to run on every doubt. A
+    // reconnect may have swallowed any number of frames, so it seeds.
     val socketState by ready.socketEvents.connectionState.collectAsState()
     LaunchedEffect(socketState.isConnected) {
-        if (socketState.isConnected) ready.badgeStore.refresh()
+        if (socketState.isConnected) ready.seedBadges()
     }
-    // The two frames that move a badge without a refresh — see HomeWiring.
     LaunchedEffect(ready) { badgeSocketEffects(ready) }
     LaunchedEffect(ready) {
-        // A burst of `notification:save` (one per record) must cost one
-        // refetch, not one each — but a *sustained* stream must not starve
-        // the refetch either, which is what a plain trailing debounce did.
-        // So: coalesce arrivals inside a window, refetch once per window.
+        // Coalesce the doubts inside a window, seed once per window.
         val arrivals = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
         launch {
-            // Missed calls ride their own event, not `notification:save` —
-            // iOS increments its CnC count directly off it. See
-            // `Calls.MissedCall`.
-            val moved = ZillitSocketEvents.Badges.All + ZillitSocketEvents.Calls.MissedCall
+            // Cross-device pings carry no records, and a missed call rides
+            // its own event with no `notification:save` behind it — the
+            // ledger learns of both from the next page.
+            val moved = listOf(
+                ZillitSocketEvents.Badges.ReadSync,
+                ZillitSocketEvents.Badges.DeleteSync,
+                ZillitSocketEvents.Badges.DeleteGlobalSync,
+                ZillitSocketEvents.Calls.MissedCall,
+            )
             ready.socketEvents.onAny(moved).collect { arrivals.trySend(Unit) }
         }
-        // Reads on another device: the server never sends this socket the
-        // `notification:read:sync` the phones and the web refetch on (the log's
-        // catch-all has not seen one, ever), so a phone read would leave a badge
-        // lit here for good. Two stand-ins until the backend fans it out: a
-        // refetch when any Zillit window becomes active again — the moment a
-        // person looks back from their phone — and a slow tick while a badge
-        // is showing. Both land in the same conflated channel, so a burst is
-        // still one request after the settle.
+        // Reads on another device reach the ledger as `notification:silent`
+        // read ids, as they reach the phones. The server has never sent this
+        // socket the `notification:read:sync` the phones also refetch on, so
+        // two stand-ins remain: a seed when any Zillit window becomes active
+        // again — the moment a person looks back from their phone — and a
+        // slow tick while a badge is showing; a row read elsewhere comes back
+        // read on the next page.
         launch { windowActivations().collect { arrivals.trySend(Unit) } }
-        // The frame the web really refetches chat badges on: the room-level
-        // read-until, rebroadcast to every device, with me as the reader
-        // (receiver for a DM, user_id for a group). The chat repository
-        // already filters it to my own reads from elsewhere; the badges just
-        // never listened.
-        launch { ready.chatRepository.selfReads.collect { arrivals.trySend(Unit) } }
+        // A thread read on the phone: the room-level read-until frame, which
+        // Android applies to its ledger by conversation
+        // (`ChatSocketHelper.kt:1288-1400`) — the same act here.
+        launch {
+            ready.chatRepository.selfReads.collect { conversationId ->
+                ready.badgeStore.markRead(LedgerRead.Conversation(conversationId))
+            }
+        }
         launch {
             while (true) {
                 delay(BADGE_POLL_MILLIS)
@@ -1146,9 +1153,15 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
         }
         for (@Suppress("UNUSED_VARIABLE") signal in arrivals) {
             delay(BADGE_EVENT_SETTLE_MILLIS)
-            ready.badgeStore.refresh()
+            ready.seedBadges()
         }
     }
+}
+
+/** The page of rows the ledger has not seen, for the open production. */
+private suspend fun AppGraph.Ready.seedBadges() {
+    val projectId = badgeStore.openProjectId ?: return
+    badgeSeeder.seed(projectId)
 }
 
 /** Emits each time one of this app's windows becomes the active window. */
@@ -1194,17 +1207,11 @@ private fun ProjectScopedLoads(
     projectId: String?,
     viewModels: AppViewModels,
     workspace: WorkspaceViewModel,
-    badges: BadgeStore? = null,
 ) {
-    // Counts belong to a production: the previous one's numbers are wrong the
-    // moment a different project opens, and showing them while the fetch is
-    // out would badge the new production with the old one's unread. Cleared
-    // here; fetched by the graph's open sequence once the headers carry the
-    // new project — a fetch from here raced that and doubled the requests.
-    LaunchedEffect(projectId) {
-        if (projectId == null) return@LaunchedEffect
-        badges?.clear()
-    }
+    // Counts belong to a production, and the graph's open sequence swaps the
+    // ledger to the new one's rows (`BadgeStore.open`). Not cleared here as
+    // well: a clear that landed after that swap emptied the rail until the
+    // next production open, and a swap cannot be caught the other way round.
     // Every screen here holds a production's data. The view models outlive a
     // switch — they are built once per graph — so each one is told, rather
     // than only the two that used to be, which left the previous production's
@@ -1304,7 +1311,7 @@ private fun BackgroundWork(
     AuthEffects(authViewModel, createViewModel, joinViewModel)
     BadgeRefresh(ready, signedIn = auth.step == AuthStep.Complete)
     ToolsRefresh(ready, viewModels.home)
-    DockBadge(ready)
+    DockBadge(ready, viewModels)
     ApprovalCounts(viewModels)
     ToolReadOnFocus(ready, viewModels, workspace)
     HomeRealtime(ready, viewModels.homeFeed)
@@ -1406,7 +1413,7 @@ private fun ZillitContent(
 
     // Rights are per production. Reloading on switch rather than rebuilding the
     // ViewModel keeps one owner of the permission set for the session.
-    ProjectScopedLoads(authState.activeProject?.id, viewModels, workspaceViewModel, ready.badgeStore)
+    ProjectScopedLoads(authState.activeProject?.id, viewModels, workspaceViewModel)
 
     BackgroundWork(ready, authViewModel, createViewModel, joinViewModel, viewModels, workspaceViewModel)
 
@@ -1893,6 +1900,15 @@ private suspend fun sectionSplit(ready: AppGraph.Ready, section: String, groupBy
         is ZillitResult.Failure -> null
     }
 
+/** The picker's seed: the last production opened here, else the first the cache lists. */
+private suspend fun seedFromLastProduction(ready: AppGraph.Ready) {
+    val known = ready.projectListCache?.let(::CachedProjectList)?.load().orEmpty()
+    val lastId = ready.preferences.get(ZillitPreferences.LastProjectId)
+    val project = known.firstOrNull { it.id == lastId } ?: known.firstOrNull() ?: return
+    val userId = project.userId?.takeIf { it.isNotBlank() } ?: return
+    ready.badgeSeeder.seed(project.id, userId)
+}
+
 /**
  * `GET device/unread` — unread per production, before any is open.
  *
@@ -1902,6 +1918,18 @@ private suspend fun sectionSplit(ready: AppGraph.Ready, section: String, groupBy
  * response shape immediately; unknown rows count nothing rather than fail.
  */
 private suspend fun fetchProjectUnread(ready: AppGraph.Ready): Map<String, Int> {
+    // Android's foreground fetch (`ZillitApplication.onStart` → `callBadgesApi`):
+    // one listing call under the last production's headers, before anything
+    // is open — the listing is user-wide, so it fills every production's
+    // rows. Then the ledger, as the phones' picker groups their own rows by
+    // production and never asks the server. The server's answer stands in
+    // only while the ledger is still empty.
+    seedFromLastProduction(ready)
+    val ledger = ready.badgeStore.projectCounts(ready.deviceId())
+    if (ledger.isNotEmpty()) {
+        ZillitLog.d("Badges") { "picker counts from ledger: $ledger" }
+        return ledger
+    }
     val rows = ready.apiClient.request(
         verb = com.zillit.desktop.core.network.HttpVerb.Get,
         url = "${ready.config.apiV2(com.zillit.desktop.core.config.ZillitService.Notification)}device/unread",
@@ -1921,6 +1949,7 @@ private suspend fun fetchProjectUnread(ready: AppGraph.Ready): Map<String, Int> 
             ?.content?.toIntOrNull() ?: 0
         if (unread > 0) counts[id] = (counts[id] ?: 0) + unread
     }
+    ZillitLog.d("Badges") { "picker counts from device/unread: $counts" }
     if (counts.isEmpty() && data.isNotEmpty()) {
         ZillitLog.w("Badges") {
             "device/unread rows carried no project ids (keys=${
@@ -2518,11 +2547,10 @@ private fun rememberAppViewModels(
                     },
                     // Chat reads ride the chat protocol itself (read-untill,
                     // emitted by the repository) — `notification:read` is not
-                    // chat's clearing mechanism on any client. This hook only
-                    // refetches the counts once the server has the read.
-                    onThreadRead = { _ ->
-                        delay(READ_BADGE_SETTLE_MILLIS)
-                        it.badgeStore.refresh()
+                    // chat's clearing mechanism on any client. The ledger is
+                    // told by conversation, as Android's `markReadyByChatRoomIdSenderId`.
+                    onThreadRead = { conversationId ->
+                        it.badgeStore.markRead(LedgerRead.Conversation(conversationId))
                     },
                     // The area's split by tool: chat_label / call_label —
                     // what the Chats and Calls tabs wear.
@@ -3142,7 +3170,7 @@ private fun buildRegistry(
     val sos = (graph as? AppGraph.Ready)?.let { ready ->
         SosToolProvider(
             viewModel = SosViewModel(
-                repository = SosRepositoryImpl(ready.apiClient, ready.config),
+                repository = SosRepositoryImpl(ready.apiClient, ready.config).readingLedger(ready.badgeStore),
                 nowMillis = System::currentTimeMillis,
                 viewer = { ready.projectContext?.context?.value.sosViewer() },
                 crew = { ready.projectContext?.context?.value.sosCrew() },
@@ -3176,8 +3204,9 @@ private fun buildRegistry(
                 repository = ready.notificationsRepository,
                 nowMillis = System::currentTimeMillis,
                 // Reading the list is what marks the global segment read on
-                // the phones; the badge store hears about it on the next poll.
-                onListRead = { ready.badgeStore.refresh() },
+                // the phones; the repository's read already flips the ledger
+                // (see `readingLedger`), so nothing more is owed here.
+                onListRead = {},
             ),
         )
     }
