@@ -119,6 +119,11 @@ class ApiClient(
     /** Who is asking right now — the key's first two parts. Null before sign-in. */
     private val readScope: () -> ReadScope? = { null },
     private val nowMillis: () -> Long = { 0L },
+    /**
+     * The Bearer credential in token mode, or null to stay on `moduledata`
+     * for every call — see [RequestAuthenticator].
+     */
+    private val authenticator: RequestAuthenticator? = null,
 ) {
 
     /**
@@ -261,18 +266,25 @@ class ApiClient(
         // Headers are resolved before the request builder runs: building them
         // can suspend (the provider may need to derive an encrypted header or
         // refresh a token) and the builder lambda is not a suspend context.
-        val resolvedHeaders = headerProvider.headersFor(module, bodyJson, options.projectId, options.userId)
+        //
+        // Token mode rides a Bearer and drops the encrypted header — the
+        // server reads one or the other, never both. Legacy mode, and any
+        // call the authenticator declines, carries `moduledata` as before.
+        val projectForAuth = options.projectId ?: readScope()?.projectId?.takeIf { it.isNotBlank() }
+        val token = authenticator?.bearerFor(module, projectForAuth)
+        val resolvedHeaders = if (token == null) {
+            headerProvider.headersFor(module, bodyJson, options.projectId, options.userId)
+        } else {
+            headerProvider.plainHeaders()
+        }
 
-        val response = httpClient.request(url) {
-            method = verb.toKtor()
-            resolvedHeaders.forEach { (name, value) -> headers.append(name, value) }
-            queryParameters.forEach { (key, value) -> value?.let { parameter(key, it) } }
-            if (bodyJson != null) {
-                contentType(ContentType.Application.Json)
-                // The already-serialised string, so the bytes on the wire are
-                // byte-identical to what `bodyhash` was computed over. Letting
-                // Ktor re-serialise could reorder keys and invalidate the hash.
-                setBody(bodyJson)
+        var response = perform(verb, url, resolvedHeaders, token, queryParameters, bodyJson)
+        if (token != null && response.status.value == STATUS_UNAUTHORIZED) {
+            // An expired token heals here, once, and the retry's answer is the
+            // one reported. A second 401 is the session really being gone.
+            val renewed = authenticator?.recoverFromUnauthorized(module, projectForAuth, token)
+            if (renewed != null && renewed != token) {
+                response = perform(verb, url, resolvedHeaders, renewed, queryParameters, bodyJson)
             }
         }
         response.toEnvelope(options.reportUnauthorized)
@@ -280,6 +292,28 @@ class ApiClient(
         throw cancellation
     } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
         ZillitResult.Failure(throwable.toZillitError())
+    }
+
+    @Suppress("LongParameterList") // The request's parts, already resolved; a wrapper would only rename them.
+    private suspend fun perform(
+        verb: HttpVerb,
+        url: String,
+        plain: Map<String, String>,
+        bearer: String?,
+        queryParameters: Map<String, Any?>,
+        bodyJson: String?,
+    ): HttpResponse = httpClient.request(url) {
+        method = verb.toKtor()
+        plain.forEach { (name, value) -> headers.append(name, value) }
+        bearer?.let { headers.append(ZillitHeaders.AUTHORIZATION, "Bearer $it") }
+        queryParameters.forEach { (key, value) -> value?.let { parameter(key, it) } }
+        if (bodyJson != null) {
+            contentType(ContentType.Application.Json)
+            // The already-serialised string, so the bytes on the wire are
+            // byte-identical to what `bodyhash` was computed over. Letting
+            // Ktor re-serialise could reorder keys and invalidate the hash.
+            setBody(bodyJson)
+        }
     }
 
     private suspend fun HttpResponse.toEnvelope(reportUnauthorized: Boolean): ZillitResult<ApiEnvelope> {

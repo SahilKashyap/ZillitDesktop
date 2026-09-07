@@ -103,6 +103,7 @@ internal fun ConfigDataDto.toCredentials(decrypt: SecretDecryptor): RemoteCreden
         // Passed through: Android does not decrypt this one, and it is a public
         // URL rather than a credential.
         appDownloadUrl = appDownloadUrl?.takeIf { it.isNotBlank() },
+        tokenAuthEnabled = tokenAuthEnabled == true,
     )
 }
 
@@ -147,4 +148,5 @@ internal data class ConfigDataDto(
     @SerialName("aws_secret_key") val awsSecretKey: String? = null,
     @SerialName("chat_gpt_translation_token") val chatGptTranslationToken: String? = null,
     @SerialName("app_download_url") val appDownloadUrl: String? = null,
+    @SerialName("token_auth_enabled") val tokenAuthEnabled: Boolean? = null,
 )

@@ -147,6 +147,13 @@ object ZillitPreferences {
     val RingOnIncomingCall = PreferenceKey.BooleanKey("notify.ringtone", true, PreferenceScope.User)
 
     /**
+     * The last `token_auth_enabled` the configuration answered, so a cold
+     * start knows which credential to send before the first configuration
+     * call has answered. Device-scoped: it describes the backend, not a user.
+     */
+    val TokenAuthMode = PreferenceKey.BooleanKey("net.session_mode", false, PreferenceScope.Device)
+
+    /**
      * Everything else the production did — the phones' bell list, as banners:
      * a purchase order approved, a document shared, an SOS raised. Chat, mail,
      * notices and calls stay on their own switches above; this one covers the
@@ -239,7 +246,7 @@ object ZillitPreferences {
         WorkspaceLayoutMode, RestoreWorkspaceOnLaunch,
         AppLockEnabled, IdleLockMinutes,
         MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired, UpdateInstanceId,
-        NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity, RingOnIncomingCall,
+        NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity, RingOnIncomingCall, TokenAuthMode,
         WeatherPlace,
         CallMicrophoneId, CallSpeakerId,
         LastProjectId, LastUnitId,

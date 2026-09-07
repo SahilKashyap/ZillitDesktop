@@ -178,6 +178,9 @@ import com.zillit.desktop.feature.calls.data.livekit.LiveKitIdentity
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitApi
 import com.zillit.desktop.core.config.ZillitRealtimeEndpoint
 import com.zillit.desktop.core.appupdate.FirebaseRemoteFlags
+import com.zillit.desktop.core.network.tokenauth.KtorSessionApi
+import com.zillit.desktop.core.network.tokenauth.TokenSessionManager
+import kotlinx.coroutines.flow.distinctUntilChanged
 import com.zillit.desktop.core.remoteconfig.RemoteConfigRepository
 import com.zillit.desktop.core.remoteconfig.RemoteConfigRepositoryImpl
 import com.zillit.desktop.feature.auth.domain.QrLoginRepository
@@ -358,7 +361,8 @@ private suspend fun onProjectOpened(
     badges: BadgeStore,
     socket: SocketIoClient,
     socketUrl: String,
-    headerProvider: ZillitHeaderProvider,
+    socketAuth: suspend () -> Map<String, String>,
+    onSocketAuthRejected: (detail: String) -> Unit,
     projectContext: ProjectContextLoader?,
     scope: CoroutineScope,
 ) {
@@ -398,14 +402,7 @@ private suspend fun onProjectOpened(
         }
     }
 
-    socket.connect(
-        SocketConfig(
-            url = socketUrl,
-            authHeaders = {
-                headerProvider.headersFor(RequestModule.SocketHandshake, bodyJson = null, projectId = null)
-            },
-        ),
-    )
+    socket.connect(SocketConfig(url = socketUrl, authHeaders = socketAuth, onAuthRejected = onSocketAuthRejected))
     // Counts never gate the open; the rail draws them when they land.
     scope.launch { badges.refresh() }
 }
@@ -689,6 +686,20 @@ sealed interface AppGraph {
                 probe = { storageClient.reaches(config.baseUrl(ZillitService.Core)) },
             ).also { it.start() }
 
+            // The token session: `moduledata` → Bearer, switched by the
+            // configuration's `token_auth_enabled`. Built before the REST
+            // client because every call asks it for a credential first. Its
+            // own calls ride the lean storage client — no body logging, no
+            // validator — because their answers carry live tokens, and their
+            // 401s are the session's to act on, not the app's to sign out on.
+            val tokenSession = TokenSessionManager(
+                api = KtorSessionApi(storageClient, headerProvider, config.apiV2()),
+                store = KeychainTokenAuthStore(secureStore, preferences),
+                scope = appScope,
+                activeProjectId = { headerContext.value.projectId },
+                nowMillis = System::currentTimeMillis,
+            )
+
             val apiClient = ApiClient(
                 httpClient = HttpClientFactory.create(
                     engineFactory = OkHttpEngineProvider(),
@@ -711,6 +722,7 @@ sealed interface AppGraph {
                     ReadScope(userId = context.userId.orEmpty(), projectId = context.projectId.orEmpty())
                 },
                 nowMillis = System::currentTimeMillis,
+                authenticator = tokenSession,
             )
 
             // Before the repositories that reference it in their callbacks.
@@ -721,6 +733,41 @@ sealed interface AppGraph {
             )
 
             val socketEvents = SocketEventBus(socketClient)
+
+            // The configuration says which credential to send; the session
+            // follows it, and warms the open production's token on every
+            // switch so the landing burst never pays a mint.
+            appScope.launch {
+                remoteConfigRepository.credentials.collect { loaded ->
+                    loaded?.let { tokenSession.onConfigFetched(it.tokenAuthEnabled) }
+                }
+            }
+            appScope.launch {
+                headerContext.map { it.projectId.orEmpty() }.distinctUntilChanged().collect { projectId ->
+                    if (projectId.isNotBlank()) tokenSession.onActiveProjectChanged(projectId)
+                }
+            }
+
+            // The socket handshake: the device token when token mode has one
+            // (`auth.token`, dual-accepted server-side), else `moduledata` as
+            // before. Rebuilt per attempt, so a token the server refused is
+            // not shown again while a fresh one is fetched.
+            var lastSocketToken: String? = null
+            val socketHandshake: suspend () -> Map<String, String> = {
+                val token = tokenSession.deviceTokenForSocket()
+                lastSocketToken = token
+                if (token != null) {
+                    mapOf("token" to token)
+                } else {
+                    headerProvider.headersFor(RequestModule.SocketHandshake, bodyJson = null, projectId = null)
+                }
+            }
+            val socketTokenRejected: (String) -> Unit = { detail ->
+                lastSocketToken?.let(tokenSession::socketTokenRejected)
+                ZillitLog.w("Socket") {
+                    "handshake refused the device token ($detail); the next attempt sends moduledata"
+                }
+            }
 
             // Document Distribution reaches its files by presigned URL: its
             // own byte proxy answers only to the app's encrypted headers, and
@@ -864,6 +911,7 @@ sealed interface AppGraph {
                     headerContext.value = HeaderContext(deviceId = "")
                     keyProvider.invalidate()
                     remoteConfigRepository.clear()
+                    tokenSession.clearSession()
                     badgeStore.clear()
                     projectListCache?.clear()
                     // The presence socket is this device's standing as reachable; signed out, it is not.
@@ -929,7 +977,8 @@ sealed interface AppGraph {
                         badges = badgeStore,
                         socket = socketClient,
                         socketUrl = config.baseUrl(ZillitService.Chat),
-                        headerProvider = headerProvider,
+                        socketAuth = socketHandshake,
+                        onSocketAuthRejected = socketTokenRejected,
                         projectContext = projectContext,
                         scope = appScope,
                     )

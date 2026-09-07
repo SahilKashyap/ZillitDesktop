@@ -67,6 +67,9 @@ fun isHandshakeUnauthorized(detail: String): Boolean =
 
 private val UNAUTHORIZED_STATUS = Regex("(?<!\\d)401(?!\\d)")
 
+/** The token verdict of the socket contract: the credential, not the device, was refused. */
+fun isSocketTokenRejected(detail: String): Boolean = detail.contains("invalid_token", ignoreCase = true)
+
 /**
  * How to connect.
  *
@@ -80,6 +83,13 @@ data class SocketConfig(
     val url: String,
     val authHeaders: suspend () -> Map<String, String>,
     val reconnect: ReconnectPolicy = ReconnectPolicy(),
+    /**
+     * The handshake refused the token it was shown (`libs_invalid_token`).
+     * Not a revoked device — the reconnect goes on — but the next
+     * [authHeaders] must not present the same token; the host swaps it for
+     * a fresh one, or for `moduledata`.
+     */
+    val onAuthRejected: ((detail: String) -> Unit)? = null,
 ) {
     init {
         require(url.startsWith("wss://") || url.startsWith("https://")) {

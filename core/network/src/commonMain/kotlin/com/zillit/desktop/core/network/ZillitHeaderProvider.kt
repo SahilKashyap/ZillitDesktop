@@ -74,6 +74,11 @@ class ZillitHeaderProvider(
         }
     }
 
+    override suspend fun plainHeaders(): Map<String, String> = mapOf(
+        ZillitHeaders.TIMEZONE to timeZoneId(),
+        ZillitHeaders.DEVICE_INFO to json.encodeToString(DeviceInfoPayload.serializer(), deviceDescription.toPayload()),
+    )
+
     /**
      * The `moduledata` contents for a given call.
      *
@@ -95,8 +100,10 @@ class ZillitHeaderProvider(
 
         return when (module) {
             // Pre-auth calls (device OTP, registration) — device id only.
+            // The session bootstrap sends the same, as the phones do.
             RequestModule.Device,
             RequestModule.Default,
+            RequestModule.SessionBootstrap,
             -> HeaderPayload(deviceId = current.deviceId, timeStamp = timestamp)
 
             RequestModule.Project -> HeaderPayload(
