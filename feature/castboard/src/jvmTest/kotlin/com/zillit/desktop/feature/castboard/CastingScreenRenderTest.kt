@@ -143,4 +143,31 @@ class CastingScreenRenderTest {
             ),
         ),
     )
+
+
+    /**
+     * The flip: the stage buttons stay on a unit this reader cannot post to.
+     *
+     * `CastingViewModel.move` answers the press by offering to ask an admin,
+     * which is a grant that exists — a casting unit's posting right is a row in
+     * the rights grid, unlike Payroll's designation-derived one.
+     */
+    @Test
+    fun `a reader without posting rights still sees the stage buttons`() {
+        val readOnlyUnit = CastingUnit(
+            BoardTool.Casting.units[1],
+            "unit-bg",
+            canPost = false,
+            serverLabel = "Background cast",
+        )
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    CastingScreen(state = loaded().copy(unit = readOnlyUnit), onEvent = {})
+                }
+            }
+            onAllNodesWithText("→ Shortlist").assertCountEquals(1)
+        }
+    }
 }

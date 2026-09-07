@@ -186,6 +186,13 @@ sealed interface CalendarEvent2Event {
 
     /** The confirmation's no: the drop is forgotten and the event stays put. */
     data object CancelReschedule : CalendarEvent2Event
+
+    /**
+     * Somebody else changed the calendar — reload rather than patch.
+     *
+     * Raised by the socket, never by the screen. See [CalendarRealtimeKind].
+     */
+    data class Realtime(val kind: CalendarRealtimeKind) : CalendarEvent2Event
 }
 
 /**
@@ -224,6 +231,9 @@ class CalendarViewModel(
     /** The server's timezone list, fetched once per session — it never moves. */
     private var timezoneCache: List<TimezoneOption> = emptyList()
 
+    // Exhaustive dispatch over the sealed event set — the branch count is the
+    // pattern, not a complexity problem (see ChatViewModel and LiveKitWire).
+    @Suppress("CyclomaticComplexMethod")
     override fun onEvent(event: CalendarEvent2Event) {
         when (event) {
             CalendarEvent2Event.Previous -> shift(-1)
@@ -232,6 +242,7 @@ class CalendarViewModel(
             is CalendarEvent2Event.Select -> setState { copy(selected = event.date) }
             is CalendarEvent2Event.SetMode -> setState { copy(mode = event.mode) }
             CalendarEvent2Event.Reload -> load()
+            is CalendarEvent2Event.Realtime -> onRealtime(event.kind)
             CalendarEvent2Event.ProjectChanged -> {
                 // Events, invitations and any open form belong to the
                 // production that was open when they were fetched.
@@ -355,6 +366,7 @@ class CalendarViewModel(
         launchResult(
             block = block,
             onSuccess = {
+                markSelfAction()
                 loadInvitations(currentState.invitationStatus)
                 load()
             },
@@ -420,6 +432,7 @@ class CalendarViewModel(
         launchResult(
             block = { repository.save(form.draft, checked.times!!, currentState.zone) },
             onSuccess = {
+                markSelfAction()
                 setState { copy(form = null) }
                 load()
             },
@@ -612,7 +625,10 @@ class CalendarViewModel(
             block = {
                 repository.save(event.toDraft(currentState.zone), EventTimes(newStart, newEnd), currentState.zone)
             },
-            onSuccess = { load() },
+            onSuccess = {
+                markSelfAction()
+                load()
+            },
             onError = { error ->
                 setState { copy(error = error.localised()) }
                 load()
@@ -627,6 +643,7 @@ class CalendarViewModel(
         launchResult(
             block = { repository.delete(detail.event.id) },
             onSuccess = {
+                markSelfAction()
                 setState { copy(detail = null) }
                 load()
             },
@@ -657,6 +674,40 @@ class CalendarViewModel(
         setState { copy(anchor = moved, selected = null) }
         // Only when the move leaves the fetched window.
         if (moved.monthsFrom(state.anchor) != 0) load()
+    }
+
+    /**
+     * The server echoing back a change this window just made.
+     *
+     * Every local mutation already reloads on its own success, so acting on
+     * the echo too would fetch the same window twice a second apart. Both
+     * phones and the web suppress it the same way and with the same two
+     * seconds (`CalendarSocketManager.isInSelfActionWindow`,
+     * `useCalendarSocketV3.markSelfAction`).
+     */
+    private var lastSelfActionMillis = 0L
+
+    private fun markSelfAction() {
+        lastSelfActionMillis = now().toEpochMilliseconds()
+    }
+
+    private val isEchoOfOwnChange: Boolean
+        get() = now().toEpochMilliseconds() - lastSelfActionMillis < SELF_ACTION_WINDOW_MILLIS
+
+    /**
+     * A change from somebody else.
+     *
+     * The board always reloads; the invitations list only when it is open,
+     * because that is a paged fetch nobody is looking at otherwise. The
+     * pending badge rides [load] either way.
+     */
+    private fun onRealtime(kind: CalendarRealtimeKind) {
+        if (isEchoOfOwnChange) return
+
+        load()
+        if (kind == CalendarRealtimeKind.Invitations && currentState.invitationsOpen) {
+            loadInvitations(currentState.invitationStatus)
+        }
     }
 
     /**
@@ -696,6 +747,9 @@ class CalendarViewModel(
         const val MINUTES_PER_DAY = 24 * 60
         const val MINUTES_PER_HOUR = 60
         const val MIN_EVENT_MILLIS = 15 * 60_000L
+
+        /** The phones' and the web's own suppression window, to the second. */
+        const val SELF_ACTION_WINDOW_MILLIS = 2_000L
 
         /** Months fetched either side of the anchor. */
         const val WINDOW_MONTHS = 3

@@ -18,22 +18,22 @@ import com.zillit.desktop.feature.settings.ui.SettingsDestination
  */
 enum class AdminDestination(val slug: String, val title: String) {
 
-    Departments("departments", "Departments"),
-    JobTitles("job-titles", "Job titles"),
-    CrewOrder("crew-order", "Crew list order"),
-    Crew("crew", "Crew and admins"),
-    Rights("rights", "Permission grid"),
-    PreApproved("pre-approved", "Pre-approved crew"),
-    ToolAvailability("tools", "Tools on this production"),
-    ToolGroups("tool-groups", "Tool groups"),
-    ProductionName("name", "Production name"),
-    CompanyDetails("company", "Company details"),
-    Watermark("watermark", "Watermark"),
-    Sos("sos", "SOS recipients"),
-    HomeUnits("home-units", "Home units"),
-    RemoteUnits("remote-units", "Remote unit"),
-    ShootingUnits("shooting-units", "Shooting units"),
-    DeleteProduction("delete", "Delete this production"),
+    Departments("departments", "Create New Department"),
+    JobTitles("job-titles", "Create New Designation"),
+    CrewOrder("crew-order", "Change Department Listing Order"),
+    Crew("crew", "User Management"),
+    Rights("rights", "User Viewing & Posting Rights Grid"),
+    PreApproved("pre-approved", "Pre-Approved Users"),
+    ToolAvailability("tools", "Customization of tools"),
+    ToolGroups("tool-groups", "Manage Tool Groups"),
+    ProductionName("name", "Edit Project Name"),
+    CompanyDetails("company", "Company Details"),
+    Watermark("watermark", "Watermark Logo of Company"),
+    Sos("sos", "Set/View SOS Receivers"),
+    HomeUnits("home-units", "Create/Update Home Units"),
+    RemoteUnits("remote-units", "Create Remote Shooting Units"),
+    ShootingUnits("shooting-units", "Create Additional Shooting Unit"),
+    DeleteProduction("delete", "Delete Project"),
     ;
 
     /**
@@ -49,9 +49,12 @@ enum class AdminDestination(val slug: String, val title: String) {
      */
     fun availableTo(production: ProductionFacts): Boolean = when (this) {
         // "Other" productions — corporate, events — run no second unit and no
-        // splinter, so the two shooting-unit pages go. The dashboard sections
-        // stay: every production has a home screen, whatever it is shooting.
-        ShootingUnits, RemoteUnits -> !production.isOtherType && !production.isPersonal
+        // splinter, so the two shooting-unit pages go. Nor can a remote unit
+        // spawn units of its own, which is the check Android makes on
+        // `parent_project_name`. The dashboard sections stay: every production
+        // has a home screen, whatever it is shooting.
+        ShootingUnits, RemoteUnits ->
+            !production.isOtherType && !production.isPersonal && !production.isRemoteUnit
 
         // A personal production has no crew, which takes most of the page with
         // it: nobody to approve, nobody to rank, nobody to grant rights to.
@@ -99,7 +102,7 @@ enum class AdminDestination(val slug: String, val title: String) {
             SettingsDestination.ApproveProfileChanges,
             SettingsDestination.Help,
             SettingsDestination.SetupNotes,
-            SettingsDestination.DealMemoOnboarding,
+            SettingsDestination.ProductionSetup,
             SettingsDestination.EditProfile,
             SettingsDestination.RecoveryEmail,
             SettingsDestination.LinkedDevices,

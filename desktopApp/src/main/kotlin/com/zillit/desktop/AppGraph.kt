@@ -497,6 +497,14 @@ sealed interface AppGraph {
         val adminRepository: AdminRepository,
         /** The reader's own profile, recovery address, devices and membership. */
         val accountRepository: AccountRepository,
+        /**
+         * Where a module raises "I cannot post here, ask an admin for me".
+         *
+         * Held on the graph rather than made per screen so every tool's
+         * request reaches the one dialog the frame hosts — see
+         * `RightsRequestSurface`.
+         */
+        val rightsRequests: com.zillit.desktop.core.permissions.RightsRequestBus,
         /** Petty cash and out-of-pocket: floats, receipt batches, reconciliation. */
         val cashRepository: CashRepository,
         /** Production expense cards: cards, statements, receipts, approvals. */
@@ -1360,6 +1368,7 @@ sealed interface AppGraph {
                 adminRepository = adminRepository,
                 // Marks its own row in the linked-devices list, so nobody signs
                 // themselves out looking for a phone they lost.
+                rightsRequests = com.zillit.desktop.core.permissions.RightsRequestBus(),
                 accountRepository = accountRepository,
                 // Each on its own service host, both reached through the same
                 // signed client — see ZillitService.

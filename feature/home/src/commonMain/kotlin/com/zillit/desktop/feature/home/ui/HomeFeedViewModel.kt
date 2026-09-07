@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.home.ui
 
+import com.zillit.desktop.core.permissions.RightsArea
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
@@ -327,6 +330,14 @@ data class PendingOpen(val attachment: NoticeAttachment, val nonce: Long)
 data class JumpTarget(val noticeId: String, val nonce: Long)
 
 sealed interface HomeFeedEvent {
+    /**
+     * "Ask for posting rights" under a board this person can only read.
+     *
+     * The board is the unit, so the request names the unit rather than the
+     * module: an admin granting "Home" wholesale is not what was asked for.
+     */
+    data object RequestPostingRights : HomeFeedEvent
+
     data object Load : HomeFeedEvent
 
     /**
@@ -514,6 +525,14 @@ class HomeFeedViewModel(
     private val defaultUnitId: () -> String? = { null },
     /** The library hand-off; null hides the menu item. See [DistributionHook]. */
     private val distribution: DistributionHook? = null,
+    /**
+     * Carries a refused press to the app frame, which offers to ask an admin.
+     *
+     * Boards are granted under Home in the rights grid rather than under
+     * Tools, which is why the request names [RightsArea.Home] — an admin sent
+     * to the wrong half of the grid finds nothing to switch on.
+     */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<HomeFeedUiState, HomeFeedEvent, Nothing>(HomeFeedUiState()) {
 
     /**
@@ -558,6 +577,7 @@ class HomeFeedViewModel(
             HomeFeedEvent.Load -> loadUnits()
             HomeFeedEvent.ProjectChanged -> forgetProject()
             HomeFeedEvent.Refresh -> currentState.selectedUnit?.let { loadNotices(it) }
+            HomeFeedEvent.RequestPostingRights -> askForPostingRights()
             is HomeFeedEvent.DraftChanged -> setState {
                 // `copy`, not a fresh draft: rebuilding it dropped whatever
                 // was attached beside the media — a shared place lost its
@@ -1395,6 +1415,26 @@ class HomeFeedViewModel(
      * must grant posting (`posting_access`, admin excepted), and a call sheet
      * takes only text and documents — the same filter its own composer applies.
      */
+    /**
+     * Asks an admin for the right to post to the board being read.
+     *
+     * Named for the unit rather than for Home: the rights grid grants boards
+     * one at a time, and "give me Home" is not a row anyone can switch on.
+     */
+    private fun askForPostingRights() {
+        val unit = currentState.selectedUnit ?: return
+        rights?.ask(unit.label, RightsKind.Post, RightsArea.Home)
+        setState {
+            copy(
+                error = if (rights == null) {
+                    noPostingRights(unit)
+                } else {
+                    "Asking an administrator for posting rights on ${unit.label}."
+                },
+            )
+        }
+    }
+
     private fun forwardTo(unitId: String) {
         val notice = currentState.forwarding ?: return
         val target = currentState.units.firstOrNull { it.id == unitId } ?: return

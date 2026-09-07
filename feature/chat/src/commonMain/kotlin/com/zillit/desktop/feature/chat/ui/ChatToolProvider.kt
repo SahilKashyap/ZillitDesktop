@@ -38,6 +38,8 @@ class ChatToolProvider(
      * every save-to-disk path; the in-app viewer stays free to look.
      */
     private val canDownload: () -> Boolean = { true },
+    /** Asks an admin for the download right, from the refusal. Null omits the offer. */
+    private val requestDownloadRights: (() -> Unit)? = null,
     /** The system clipboard's picture half — composer paste and "Copy image". */
     private val clipboard: ClipboardMediaSource? = systemClipboardMedia(),
     /** The full-size fetch behind the lightbox; null falls back to thumbnails. */
@@ -85,6 +87,7 @@ class ChatToolProvider(
         androidx.compose.runtime.CompositionLocalProvider(
             LocalChatSeams provides ChatSeams(
                 canDownload = canDownload,
+                requestDownloadRights = requestDownloadRights,
                 clipboard = clipboard,
                 loadFullImage = loadFullImage,
                 onOpenUrl = onOpenUrl,

@@ -101,4 +101,26 @@ class EsignScreenRenderTest {
             ),
         ),
     )
+
+
+    /**
+     * The flip: the send button stays for a reader without posting rights.
+     *
+     * Hiding it left them with a tool that looked broken. It is here, and
+     * `EsignViewModel.refusesPost` answers the press by offering to ask an
+     * admin — which is the only thing that changes the answer.
+     */
+    @Test
+    fun `a reader without posting rights still sees the send button`() {
+        val reader = envelopes().copy(
+            viewer = EsignViewer(canView = true, canPost = false, ready = true),
+        )
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) { EsignScreen(state = reader, onEvent = {}) }
+            }
+            onNodeWithText("Send for e-signature").assertExists()
+        }
+    }
 }

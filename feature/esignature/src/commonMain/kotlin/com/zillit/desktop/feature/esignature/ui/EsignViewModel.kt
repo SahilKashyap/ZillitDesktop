@@ -2,6 +2,9 @@
 
 package com.zillit.desktop.feature.esignature.ui
 
+import com.zillit.desktop.core.permissions.rightsRefusalMessage
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
@@ -40,6 +43,8 @@ class EsignViewModel(
     private val currentUserName: () -> String,
     private val signerOptions: () -> List<SignerOptionLike>,
     private val newId: () -> String,
+    /** Carries a refused press to the app frame, which offers to ask an admin. */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<EsignUiState, EsignEvent, EsignEffect>(EsignUiState()) {
 
     fun start() {
@@ -104,9 +109,9 @@ class EsignViewModel(
             EsignEvent.StartDecline -> setState { copy(detail = detail?.copy(declining = true)) }
             EsignEvent.CancelDecline -> setState { copy(detail = detail?.copy(declining = false)) }
             EsignEvent.ConfirmDecline -> confirmDecline()
-            is EsignEvent.DeleteDraft -> deleteDraft(event.envelopeId)
-            is EsignEvent.Remind -> remind(event.envelopeId, event.recipientId)
-            EsignEvent.StartCompose -> {
+            is EsignEvent.DeleteDraft -> if (!refusesPost()) deleteDraft(event.envelopeId)
+            is EsignEvent.Remind -> if (!refusesPost()) remind(event.envelopeId, event.recipientId)
+            EsignEvent.StartCompose -> if (refusesPost()) Unit else {
                 sendEffect(EsignEffect.PickPdf)
             }
             is EsignEvent.EditCompose -> setState { copy(compose = event.state) }
@@ -372,6 +377,20 @@ class EsignViewModel(
         )
     }
 
+    /**
+     * Refuses a write, and offers the one thing that changes the answer.
+     *
+     * Every control that reaches this is on screen for everyone — hiding them
+     * is what sent people to support rather than to an admin who could grant
+     * the right in a few seconds.
+     */
+    private fun refusesPost(): Boolean {
+        if (currentState.viewer.canPost) return false
+        rights?.ask(MODULE_LABEL, RightsKind.Post)
+        sendEffect(EsignEffect.Failed(rightsRefusalMessage(MODULE_LABEL, RightsKind.Post, rights != null)))
+        return true
+    }
+
     private fun deleteDraft(envelopeId: String) {
         launchResult(
             block = { repository.deleteDraft(envelopeId) },
@@ -597,3 +616,5 @@ class EsignViewModel(
         const val DRAW_HEIGHT = 300
     }
 }
+
+private const val MODULE_LABEL = "E-Signature"

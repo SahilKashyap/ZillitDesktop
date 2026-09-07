@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.settings
 
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithText
@@ -333,7 +335,9 @@ class AdminScreenRenderTest {
             state = state(AdminDestination.ShootingUnits),
             production = ProductionFacts(name = "Conference", isOtherType = true),
         ) {
-            onNodeWithText("Shooting units is not part of this production").assertExists()
+            onNodeWithText(
+                "Create Additional Shooting Unit is not part of this production",
+            ).assertExists()
         }
     }
 
@@ -350,7 +354,7 @@ class AdminScreenRenderTest {
             state = state(AdminDestination.HomeUnits),
             production = ProductionFacts(name = "Conference", isOtherType = true),
         ) {
-            onNodeWithText("Home units").assertExists()
+            onNodeWithText("Create/Update Home Units").assertExists()
         }
     }
 
@@ -477,4 +481,30 @@ class AdminScreenRenderTest {
             onNodeWithText("That department is in use.").assertExists()
         }
     }
+
+    /**
+     * A page's header says the same thing as the tab that opened it.
+     *
+     * Caught live: the tab read "User Management" while the page under it still
+     * said "Crew and admins", because the two were separate hardcoded strings.
+     * Every page now reads [AdminDestination.title], and this walks the whole
+     * enum so the next one added cannot quietly reintroduce the split.
+     */
+    @Test
+    fun `every admin page is headed by the name on its tab`() {
+        val production = ProductionFacts(name = "SG Document Distribution")
+        val skipped = setOf(
+            // Named for the production it belongs to, not for the enum entry.
+            AdminDestination.CrewOrder,
+        )
+
+        AdminDestination.entries
+            .filter { it.availableTo(production) && it !in skipped }
+            .forEach { page ->
+                render(page, state = state(page), production = production) {
+                    onAllNodesWithText(page.title).onFirst().assertExists()
+                }
+            }
+    }
+
 }

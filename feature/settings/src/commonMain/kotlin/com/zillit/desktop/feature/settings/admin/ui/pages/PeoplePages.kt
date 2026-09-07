@@ -31,6 +31,7 @@ import com.zillit.desktop.feature.settings.admin.domain.CrewMember
 import com.zillit.desktop.feature.settings.admin.domain.RightsSection
 import com.zillit.desktop.feature.settings.admin.domain.SosEntryType
 import com.zillit.desktop.feature.settings.admin.domain.ToolRights
+import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
 import com.zillit.desktop.feature.settings.admin.ui.AdminConfirmation
 import com.zillit.desktop.feature.settings.admin.ui.AdminEvent
 import com.zillit.desktop.feature.settings.admin.ui.AdminUiState
@@ -56,7 +57,7 @@ import com.zillit.desktop.feature.settings.admin.ui.RightsToggle
 @Composable
 fun CrewPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "Crew and admins",
+        title = AdminDestination.Crew.title,
         description = "Who is on this production, and who may administer it.",
         state = state,
         onEvent = onEvent,
@@ -151,7 +152,7 @@ private fun CrewRow(person: CrewMember, onEvent: (AdminEvent) -> Unit) {
 @Composable
 fun RightsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "Permission grid",
+        title = AdminDestination.Rights.title,
         description = "Per tool, per person: what they may see, post and download.",
         state = state,
         onEvent = onEvent,
@@ -304,7 +305,7 @@ private fun RightsRow(rights: ToolRights, onEvent: (AdminEvent) -> Unit) {
 @Composable
 fun PreApprovedPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "Pre-approved crew",
+        title = AdminDestination.PreApproved.title,
         description = "Let straight in when they use the production code, without waiting for approval.",
         state = state,
         onEvent = onEvent,
@@ -377,7 +378,7 @@ fun PreApprovedPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: 
 @Composable
 fun SosPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "SOS recipients",
+        title = AdminDestination.Sos.title,
         description = "Alerted when someone on this production raises an SOS.",
         state = state,
         onEvent = onEvent,

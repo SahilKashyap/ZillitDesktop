@@ -45,14 +45,12 @@ internal fun StandardFormsPage(
         description = "The production’s shared library. Add a form to your documents " +
             "to sign your own copy.",
         actions = {
-            if (state.viewer.canPost) {
-                ZillitButton(
-                    text = "Upload document",
-                    onClick = { onEvent(FormSignatureEvent.StartUploadForm) },
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Upload,
-                )
-            }
+            ZillitButton(
+                text = "Upload document",
+                onClick = { onEvent(FormSignatureEvent.StartUploadForm) },
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Upload,
+            )
             ZillitButton(
                 text = "Refresh",
                 onClick = { onEvent(FormSignatureEvent.Refresh) },
@@ -129,7 +127,8 @@ private fun RowActions(
             contentDescription = "History",
             onClick = { onEvent(FormSignatureEvent.ShowHistory(form.id)) },
         )
-        if (state.standard.tab == StandardTab.All && state.viewer.canPost) {
+        // Only the shared library holds forms that can be removed at all.
+        if (state.standard.tab == StandardTab.All) {
             ZillitIconButton(
                 icon = ZillitIcons.Trash,
                 contentDescription = "Delete",

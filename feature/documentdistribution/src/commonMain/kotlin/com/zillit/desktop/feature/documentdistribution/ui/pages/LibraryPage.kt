@@ -35,6 +35,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.gatedClick
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
 import com.zillit.desktop.feature.documentdistribution.domain.LibrarySort
@@ -137,7 +139,7 @@ private fun DocumentsCard(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit
             } else {
                 "No documents match \"${state.search}\""
             },
-            emptyMessage = if (state.search.isBlank() && state.viewer.canPost) {
+            emptyMessage = if (state.search.isBlank()) {
                 "Upload a document, or create a folder to organise what the production issues."
             } else {
                 null
@@ -180,15 +182,13 @@ private fun LibraryToolbar(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.End,
         ) {
-            if (state.viewer.canPost) {
-                ZillitButton(
-                    text = "New folder",
-                    onClick = onNewFolder,
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Add,
-                )
-            }
+            ZillitButton(
+                text = "New folder",
+                onClick = gatedClick(state.viewer.canPost, { onEvent(askPost) }, onNewFolder),
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Add,
+            )
         }
     }
 }
@@ -247,10 +247,12 @@ private fun SelectionActions(state: DocDistUiState, onEvent: (DocDistEvent) -> U
         variant = ButtonVariant.Tertiary,
         size = ButtonSize.Small,
     )
-    if (!state.viewer.canPost) return
+    val post = { action: DocDistEvent ->
+        gatedClick(state.viewer.canPost, { onEvent(askPost) }) { onEvent(action) }
+    }
     ZillitButton(
         text = "Move",
-        onClick = { onEvent(DocDistEvent.OpenMove) },
+        onClick = post(DocDistEvent.OpenMove),
         variant = ButtonVariant.Secondary,
         size = ButtonSize.Small,
     )
@@ -259,13 +261,13 @@ private fun SelectionActions(state: DocDistUiState, onEvent: (DocDistEvent) -> U
     if (state.selectedDocumentIds.isNotEmpty()) {
         ZillitButton(
             text = "Publish",
-            onClick = { onEvent(DocDistEvent.OpenPublish) },
+            onClick = post(DocDistEvent.OpenPublish),
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
         )
         ZillitButton(
             text = "Distribute",
-            onClick = { onEvent(DocDistEvent.Compose) },
+            onClick = post(DocDistEvent.Compose),
             size = ButtonSize.Small,
             leadingIcon = ZillitIcons.Send,
         )
@@ -276,20 +278,18 @@ private fun folderColumns(
     state: DocDistUiState,
     onEvent: (DocDistEvent) -> Unit,
 ): List<TableColumn<LibraryFolder>> = buildList {
-    if (state.viewer.canPost) {
-        add(
-            TableColumn(
-                header = "",
-                width = ColumnWidth.Fixed(CHECK_COLUMN.dp),
-                cell = { folder ->
-                    ZillitCheckbox(
-                        checked = folder.id in state.selectedFolderIds,
-                        onCheckedChange = { onEvent(DocDistEvent.ToggleFolder(folder.id)) },
-                    )
-                },
-            ),
-        )
-    }
+    add(
+        TableColumn(
+            header = "",
+            width = ColumnWidth.Fixed(CHECK_COLUMN.dp),
+            cell = { folder ->
+                ZillitCheckbox(
+                    checked = folder.id in state.selectedFolderIds,
+                    onCheckedChange = { onEvent(DocDistEvent.ToggleFolder(folder.id)) },
+                )
+            },
+        ),
+    )
     add(
         TableColumn(
             header = "Name",
@@ -313,22 +313,22 @@ private fun folderColumns(
         // `LibraryFolder.folderDate`. There is no created stamp on the wire.
         it.folderDate.ifBlank { "—" }
     })
-    if (state.viewer.canPost) {
-        add(
-            TableColumn(
-                header = "",
-                width = ColumnWidth.Fixed(ACTIONS_COLUMN.dp),
-                cell = { folder ->
-                    ZillitIconButton(
-                        icon = ZillitIcons.Trash,
-                        contentDescription = "Delete ${folder.name}",
-                        onClick = { onEvent(DocDistEvent.DeleteFolder(folder.id)) },
-                        tint = ZillitTheme.colors.danger,
-                    )
-                },
-            ),
-        )
-    }
+    add(
+        TableColumn(
+            header = "",
+            width = ColumnWidth.Fixed(ACTIONS_COLUMN.dp),
+            cell = { folder ->
+                ZillitIconButton(
+                    icon = ZillitIcons.Trash,
+                    contentDescription = "Delete ${folder.name}",
+                    onClick = gatedClick(state.viewer.canPost, { onEvent(askPost) }) {
+                        onEvent(DocDistEvent.DeleteFolder(folder.id))
+                    },
+                    tint = ZillitTheme.colors.danger,
+                )
+            },
+        ),
+    )
 }
 
 @Suppress("LongMethod") // A table of columns; splitting it separates each from its width.
@@ -381,21 +381,21 @@ private fun documentColumns(
             width = ColumnWidth.Fixed(ACTIONS_COLUMN.dp),
             cell = { document ->
                 Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                    if (state.viewer.canDownload) {
-                        ZillitIconButton(
-                            icon = ZillitIcons.Download,
-                            contentDescription = "Download ${document.name}",
-                            onClick = { onEvent(DocDistEvent.DownloadDocument(document.id)) },
-                        )
-                    }
-                    if (state.viewer.canPost) {
-                        ZillitIconButton(
-                            icon = ZillitIcons.Trash,
-                            contentDescription = "Delete ${document.name}",
-                            onClick = { onEvent(DocDistEvent.DeleteDocument(document.id)) },
-                            tint = ZillitTheme.colors.danger,
-                        )
-                    }
+                    ZillitIconButton(
+                        icon = ZillitIcons.Download,
+                        contentDescription = "Download ${document.name}",
+                        onClick = gatedClick(state.viewer.canDownload, { onEvent(askDownload) }) {
+                            onEvent(DocDistEvent.DownloadDocument(document.id))
+                        },
+                    )
+                    ZillitIconButton(
+                        icon = ZillitIcons.Trash,
+                        contentDescription = "Delete ${document.name}",
+                        onClick = gatedClick(state.viewer.canPost, { onEvent(askPost) }) {
+                            onEvent(DocDistEvent.DeleteDocument(document.id))
+                        },
+                        tint = ZillitTheme.colors.danger,
+                    )
                 }
             },
         ),
@@ -593,3 +593,12 @@ private const val FOLDER_ROW = 42
 private const val FOLDER_ROWS_SHOWN = 6
 
 private const val MOVE_LIST_HEIGHT = 280
+
+/**
+ * What a press without the right turns into.
+ *
+ * Held as values rather than built per press: they carry no state, and every
+ * control on this page raises one of exactly these two.
+ */
+private val askPost = DocDistEvent.RequestRights(RightsKind.Post)
+private val askDownload = DocDistEvent.RequestRights(RightsKind.Download)

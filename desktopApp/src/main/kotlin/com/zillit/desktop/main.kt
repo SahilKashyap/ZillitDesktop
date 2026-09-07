@@ -97,6 +97,7 @@ import com.zillit.desktop.feature.settings.ui.HelpToolProvider
 import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.ui.HomeFeedEvent
 import com.zillit.desktop.feature.home.ui.HomeFeedViewModel
+import com.zillit.desktop.feature.home.calendar.calendarRealtime
 import com.zillit.desktop.feature.home.calendar.CalendarEvent2Event
 import com.zillit.desktop.feature.home.calendar.CalendarEvent
 import com.zillit.desktop.feature.home.calendar.CalendarViewModel
@@ -198,6 +199,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.ui.CashExpensesToolProvider
 import com.zillit.desktop.feature.cashexpenses.ui.CashExpensesViewModel
 import com.zillit.desktop.core.localization.Labels
+import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.feature.dealmemo.domain.DealViewer
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoToolProvider
@@ -944,6 +946,20 @@ private fun BadgeCounts.forWindow(route: WorkspaceRoute, homeState: HomeUiState)
  * was closed or torn off.
  */
 @Composable
+private fun CalendarRealtime(ready: AppGraph.Ready, calendar: CalendarViewModel?) {
+    if (calendar == null) return
+
+    LaunchedEffect(ready, calendar) {
+        calendarRealtime(ready.socketEvents).collect { kind ->
+            calendar.onEvent(CalendarEvent2Event.Realtime(kind))
+        }
+    }
+}
+
+/**
+ * Feeds the board's socket events into the notice feed.
+ */
+@Composable
 private fun HomeRealtime(ready: AppGraph.Ready, feed: HomeFeedViewModel?) {
     if (feed == null) return
 
@@ -1292,6 +1308,7 @@ private fun BackgroundWork(
     ApprovalCounts(viewModels)
     ToolReadOnFocus(ready, viewModels, workspace)
     HomeRealtime(ready, viewModels.homeFeed)
+    CalendarRealtime(ready, viewModels.calendar)
     EmailRealtime(ready, viewModels.email)
     BoardRealtime(ready, "info", viewModels.info)
     BoardRealtime(ready, "confidentialinfo", viewModels.confidentialInfo)
@@ -1496,6 +1513,10 @@ private fun SignedInShell(
         )
 
         CallSurface(ready, viewModels.calls)
+        // Answers every module's "ask an admin for this right" — the phones'
+        // flow, hosted once here because no tool window can float a dialog
+        // over the frame or reach the chat socket.
+        RightsRequestSurface(ready, ready.rightsRequests)
         ready.syncEngine?.let { engine ->
             PendingChangesDialog(
                 engine = engine,
@@ -1928,6 +1949,9 @@ private fun chatProvider(
     player = audioPlayer,
     loadAudio = { file -> fetchChatAudio(ready, file) },
     canDownload = canDownload,
+    // Chat & Calls is a tool like any other, so a missing download right is
+    // something an admin can grant — the refusal offers to ask for it.
+    requestDownloadRights = { ready.rightsRequests.ask("Chat & Calls", RightsKind.Download) },
     // The keep-name-private honour is applied here, before the screen ever
     // sees the list — the same rule Android's members tab keeps.
     crew = {
@@ -2400,7 +2424,18 @@ internal class AppViewModels(
  * a server entry. Zillit Draft keeps its scripts on this machine, so it is on
  * every production and needs no rights.
  */
-private fun localToolSections(): List<ToolSection> = listOf(
+/**
+ * Whether Zillit Draft appears on the tools grid.
+ *
+ * Off for now, and **hidden rather than removed**: the module, its route, its
+ * view model and its provider all stay wired, so a workspace tab already open
+ * on it keeps working and turning the tile back on is this one flag. The
+ * section below is left whole for the same reason — there is nothing to
+ * reconstruct when it returns.
+ */
+private const val SHOW_ZILLIT_DRAFT = false
+
+private fun localToolSections(): List<ToolSection> = listOfNotNull(
     ToolSection(
         title = "Writing",
         tools = listOf(
@@ -2412,7 +2447,7 @@ private fun localToolSections(): List<ToolSection> = listOf(
             ),
         ),
         identifier = null,
-    ),
+    ).takeIf { SHOW_ZILLIT_DRAFT },
 )
 
 /**
@@ -2619,6 +2654,7 @@ private fun rememberAppViewModels(
                         graph.projectContext?.context?.value?.profile?.userId.orEmpty()
                     },
                     newId = { UUID.randomUUID().toString() },
+                    rights = graph.rightsRequests,
                 )
             },
             esignature = ready?.let { graph ->
@@ -2640,6 +2676,7 @@ private fun rememberAppViewModels(
                     },
                     signerOptions = { graph.esignSignerOptions() },
                     newId = { UUID.randomUUID().toString() },
+                    rights = graph.rightsRequests,
                 )
             },
             callSheet = ready?.let { graph ->
@@ -2712,6 +2749,7 @@ private fun rememberAppViewModels(
                             graph.projectContext?.context?.value?.project?.projectId
                         },
                     ),
+                    rights = graph.rightsRequests,
                 )
             },
             info = ready?.boardFeed(
@@ -2806,6 +2844,7 @@ private fun rememberAppViewModels(
                     repository = graph.docDistRepository,
                     viewer = { graph.docDistViewer(permissions()) },
                     today = ::today,
+                    rights = graph.rightsRequests,
                 )
             },
             drive = ready?.let { graph ->
@@ -2817,6 +2856,7 @@ private fun rememberAppViewModels(
                     // MultipartDriveUploader.
                     uploader = MultipartDriveUploader(graph.driveRepository, graph.httpClient),
                     newUploadId = { UUID.randomUUID().toString() },
+                    rights = graph.rightsRequests,
                 ).also(driveHolder::set)
             },
         )
@@ -3106,6 +3146,8 @@ private fun buildRegistry(
                 nowMillis = System::currentTimeMillis,
                 viewer = { ready.projectContext?.context?.value.sosViewer() },
                 crew = { ready.projectContext?.context?.value.sosCrew() },
+                // An alarm raised on set must not wait for a refresh.
+                events = ready.socketEvents,
             ),
             onOpenLink = ::openInBrowser,
             // An ordinary private call. Nothing about the wire is special —
@@ -3553,7 +3595,14 @@ private fun buildSettings(
             // event production runs no shooting units, and both phone clients
             // drop those rows rather than offer a unit that cannot exist.
             admin = AdminSettingsUiState(
-                production = productionFacts(context?.project?.name, context?.project?.type),
+                production = productionFacts(
+                    name = context?.project?.name,
+                    type = context?.project?.type,
+                    // Set only when this production is itself a remote unit,
+                    // which cannot spawn units of its own.
+                    parentName = context?.project?.parentName,
+                    markedForDeletion = context?.project?.markedForDeletion == true,
+                ),
             ),
         ),
     )

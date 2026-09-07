@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
+import com.zillit.desktop.core.permissions.RightsKind
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -130,6 +131,23 @@ private fun DocDistHeader(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit
                 text = restrictionText(state),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
+                // The banner named what was missing and left the reader with
+                // nowhere to go. The phones put the ask on exactly this
+                // notice — one press, for the right they are short of.
+                action = {
+                    ZillitButton(
+                        text = "Request access",
+                        variant = ButtonVariant.Tertiary,
+                        size = ButtonSize.Small,
+                        onClick = {
+                            onEvent(
+                                DocDistEvent.RequestRights(
+                                    if (!state.viewer.canPost) RightsKind.Post else RightsKind.Download,
+                                ),
+                            )
+                        },
+                    )
+                },
             )
         }
     }

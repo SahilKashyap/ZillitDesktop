@@ -233,6 +233,10 @@ class SettingsViewModel(
             SettingsDestination.Help -> sendEffect(SettingsEffect.OpenHelp)
             SettingsDestination.SetupNotes -> sendEffect(SettingsEffect.OpenExternal(SETUP_NOTES_URL))
 
+            // The page belongs to the Account Hub, which opens on it.
+            SettingsDestination.ProductionSetup ->
+                sendEffect(SettingsEffect.OpenTool(ACCOUNT_HUB_ROUTE))
+
             SettingsDestination.ApproveNewCrew ->
                 sendEffect(SettingsEffect.OpenApprovals(ApprovalQueue.NewCrew))
 

@@ -105,6 +105,12 @@ class AdminSettingsToolProvider(
                     is SettingsEffect.OpenAdminPage ->
                         navigator.navigate(WorkspaceRoute.Tool(effect.page.path))
 
+                    // A different tool's window, not this one: taking the
+                    // administration window over would mean the way back is to
+                    // close the page you just opened.
+                    is SettingsEffect.OpenTool ->
+                        navigator.openInNewWindow(WorkspaceRoute.Tool(effect.path))
+
                     // Raised by the Settings listing, in the other window. The
                     // view model is shared and its effects are a broadcast, so
                     // they arrive here too — and are not ours to act on.

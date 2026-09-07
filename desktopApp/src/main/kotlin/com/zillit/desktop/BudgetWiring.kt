@@ -71,6 +71,7 @@ private fun AppGraph.Ready.budgetViewModel(
     departmentId = { projectContext?.context?.value?.profile?.departmentId.orEmpty() },
     pickFile = { pickBudgetFile(this) },
     departmentName = { id -> departmentNames()[id] },
+    rights = rightsRequests,
 )
 
 internal fun AppGraph.Ready.budgetProvider(

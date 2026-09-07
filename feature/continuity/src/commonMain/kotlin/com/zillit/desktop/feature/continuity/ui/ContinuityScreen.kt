@@ -64,7 +64,6 @@ fun ContinuityScreen(
     formatDate: (Long) -> String,
 ) {
     val colors = ZillitTheme.colors
-    val canPost = state.viewer.canPost || state.viewer.isAdmin
     Box(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -79,10 +78,8 @@ fun ContinuityScreen(
                 actions = {
                     ZillitButton(text = "Refresh", onClick = { onEvent(ContinuityEvent.Refresh) },
                         variant = ButtonVariant.Tertiary, loading = state.loading)
-                    if (canPost) {
-                        ZillitButton(text = "Upload", onClick = { onEvent(ContinuityEvent.PickFiles) },
-                            leadingIcon = ZillitIcons.Upload)
-                    }
+                    ZillitButton(text = "Upload", onClick = { onEvent(ContinuityEvent.PickFiles) },
+                        leadingIcon = ZillitIcons.Upload)
                 },
             )
             if (state.viewer.isBlocked) ZillitNotice(text = "You do not have access to the Continuity tool.")
@@ -224,7 +221,6 @@ private fun CardsDialog(
     formatDate: (Long) -> String,
 ) {
     val colors = ZillitTheme.colors
-    val canPost = state.viewer.canPost || state.viewer.isAdmin
     val mine = open.tab == ContinuityTab.MyDepartment
     val subtitle = buildList {
         open.department?.let { add(state.departmentNames[it.id] ?: it.name) }
@@ -245,7 +241,7 @@ private fun CardsDialog(
                 placeholder = "Search cards",
                 modifier = Modifier.width(SEARCH_WIDTH),
             )
-            if (mine && canPost) {
+            if (mine) {
                 if (open.selecting) {
                     ZillitButton(text = "Forward to All (${open.selected.size})",
                         onClick = { onEvent(ContinuityEvent.ForwardSelected) }, variant = ButtonVariant.Secondary,
@@ -314,12 +310,12 @@ private fun SceneTile(
 ) {
     val colors = ZillitTheme.colors
     val selected = scene.id in open.selected
-    val canEdit = state.viewer.isAdmin ||
-        (
-            state.viewer.canPost && open.tab == ContinuityTab.MyDepartment &&
-                scene.departmentId == state.viewer.departmentId
-            )
-    val canDownload = state.viewer.canDownload || state.viewer.isAdmin
+    // Whose card this is. A card from another department is not this person's
+    // to edit at any rights level, so those controls are genuinely absent —
+    // unlike the posting right, which now leaves them on screen and answers a
+    // press with the offer to ask for it (see ContinuityViewModel.guardPost).
+    val owned = state.viewer.isAdmin ||
+        (open.tab == ContinuityTab.MyDepartment && scene.departmentId == state.viewer.departmentId)
     Column(
         modifier = Modifier
             .background(colors.surface, ZillitTheme.shapes.medium)
@@ -371,15 +367,15 @@ private fun SceneTile(
                 Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
                     ZillitIconButton(icon = ZillitIcons.Info, contentDescription = "Details",
                         onClick = { onEvent(ContinuityEvent.ShowDetails(scene)) })
-                    if (canEdit) {
+                    if (owned) {
                         ZillitIconButton(icon = ZillitIcons.Edit, contentDescription = "Edit",
                             onClick = { onEvent(ContinuityEvent.Edit(scene)) })
                     }
-                    if (canDownload && scene.attachment != null) {
+                    if (scene.attachment != null) {
                         ZillitIconButton(icon = ZillitIcons.Download, contentDescription = "Download",
                             onClick = { onEvent(ContinuityEvent.Download(scene)) })
                     }
-                    if (canEdit) {
+                    if (owned) {
                         ZillitIconButton(icon = ZillitIcons.Trash, contentDescription = "Remove", tint = colors.danger,
                             onClick = { onEvent(ContinuityEvent.RequestDelete(scene)) })
                     }
@@ -439,7 +435,6 @@ private fun ViewDialog(
     formatDate: (Long) -> String,
 ) {
     val colors = ZillitTheme.colors
-    val canDownload = state.viewer.canDownload || state.viewer.isAdmin
     ZillitDialogShell(
         title = "Scene ${scene.sceneNumber}" + if (scene.episode.isNotBlank()) " · Episode ${scene.episode}" else "",
         subtitle = scene.attachment?.name?.ifBlank { null },
@@ -452,7 +447,7 @@ private fun ViewDialog(
                 onClick = { onEvent(ContinuityEvent.ShowDetails(scene)) },
                 variant = ButtonVariant.Tertiary,
             )
-            if (canDownload && scene.attachment != null) {
+            if (scene.attachment != null) {
                 ZillitButton(text = "Download", onClick = { onEvent(ContinuityEvent.Download(scene)) },
                     variant = ButtonVariant.Secondary, loading = state.busy)
             }

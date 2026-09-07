@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.externalusers.ui
 
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.externalusers.domain.CREW_TYPE
@@ -110,6 +112,8 @@ class ExternalUsersViewModel(
      * treated as "assume it changed" — safe without wiring, precise with it.
      */
     private val projectId: () -> String? = { null },
+/** Carries a refused press to the app frame, which offers to ask an admin. */
+private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<ExternalUsersUiState, ExternalUsersEvent, ExternalUsersEffect>(ExternalUsersUiState()) {
 
     /** The production the rows on screen were fetched under. */
@@ -222,8 +226,25 @@ class ExternalUsersViewModel(
 
     private fun guardPost(block: () -> Unit) {
         if (currentState.viewer.canPost || currentState.viewer.isAdmin) block()
-        else sendEffect(ExternalUsersEffect.Notice("You don't have posting rights."))
+        else askForRights(RightsKind.Post)
     }
+    /**
+     * Refuses, and offers the one thing that changes the answer.
+     *
+     * The control that got here is on screen for everyone now — hiding it is
+     * what sent people to support instead of to an admin. Null when the host
+     * wired no bus (tests, previews), and then this is just the refusal.
+     */
+    private fun askForRights(kind: RightsKind) {
+        sendEffect(
+            ExternalUsersEffect.Notice(
+                "You do not have ${kind.verb} rights on $MODULE_LABEL" +
+                    if (rights == null) "." else " — asking an administrator.",
+            ),
+        )
+        rights?.ask(MODULE_LABEL, kind)
+    }
+
 
     private fun guardEdit(user: ExternalUser, block: () -> Unit) {
         if (currentState.viewer.mayEdit(user)) block()
@@ -325,3 +346,5 @@ class ExternalUsersViewModel(
         )
     }
 }
+
+private const val MODULE_LABEL = "External Users"

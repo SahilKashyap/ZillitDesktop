@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.budget.ui
 
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -32,6 +34,13 @@ class BudgetViewModel(
      * department budget with nothing to call itself.
      */
     private val departmentName: (String) -> String? = { null },
+    /**
+     * Where "ask an admin for this right" goes; null leaves the plain refusal.
+     *
+     * The frame answers it with the admin picker and sends the request as a
+     * chat message — the phones' flow, hosted once. See `RightsRequestSurface`.
+     */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<BudgetUiState, BudgetEvent, BudgetEffect>(BudgetUiState()) {
 
     override fun onEvent(event: BudgetEvent) {
@@ -103,6 +112,26 @@ class BudgetViewModel(
                 ?: document
         }
 
+
+    /**
+     * Refuses a write on this tab, and offers the one thing that changes it.
+     *
+     * Posting rights are per-tab here — main budget and department budget are
+     * separate grants — so the label names the tab that refused, which is what
+     * the admin has to find in the rights grid.
+     */
+    private fun refusesPost(): Boolean {
+        if (currentState.canPostHere) return false
+        rights?.ask(MODULE_LABEL, RightsKind.Post)
+        setState {
+            copy(
+                error = "You do not have posting rights for the ${tab.label.lowercase()} budget" +
+                    if (rights == null) "." else " — asking an administrator.",
+            )
+        }
+        return true
+    }
+
     /**
      * The file goes to storage first, then its descriptor to the service —
      * the same two steps the web takes, and the reason a failed upload never
@@ -110,7 +139,7 @@ class BudgetViewModel(
      */
     private fun upload() {
         val picker = pickFile ?: return
-        if (!currentState.canPostHere) return
+        if (refusesPost()) return
         val type = currentState.tab.type
         val department = if (type == BudgetType.Department) departmentId() else ""
         setState { copy(busy = true, error = null) }
@@ -133,7 +162,7 @@ class BudgetViewModel(
     }
 
     private fun delete(documentId: String) {
-        if (!currentState.canPostHere) return
+        if (refusesPost()) return
         setState { copy(busy = true, error = null) }
         launch {
             when (val answer = repository.delete(listOf(documentId))) {
@@ -161,7 +190,13 @@ class BudgetViewModel(
             return
         }
         if (save && !currentState.viewer.canDownload(document.type)) {
-            setState { copy(error = "You do not have download rights for this budget.") }
+            rights?.ask(MODULE_LABEL, RightsKind.Download)
+            setState {
+                copy(
+                    error = "You do not have download rights for this budget" +
+                        if (rights == null) "." else " — asking an administrator.",
+                )
+            }
             return
         }
         sendEffect(BudgetEffect.Open(document, save))
@@ -200,3 +235,5 @@ class BudgetViewModel(
         }
     }
 }
+
+private const val MODULE_LABEL = "Budget"

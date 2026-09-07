@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.permissiongrid.ui
 
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
+import com.zillit.desktop.core.permissions.rightsRefusalMessage
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.permissiongrid.domain.AccessKind
@@ -60,6 +63,15 @@ private const val PAGE_SIZE = 20
 sealed interface PermissionGridEvent {
     data class Start(val viewer: PermissionGridViewer) : PermissionGridEvent
     data object Reload : PermissionGridEvent
+
+    /**
+     * "Ask an admin" on the read-only notice.
+     *
+     * The ask lives on the notice rather than on the cells: a grid whose boxes
+     * tick and then untick reads as a broken screen, which is the same reason
+     * [PermissionGridViewModel.toggle] refuses silently.
+     */
+    data object RequestPostingRights : PermissionGridEvent
     data class SelectAxis(val axis: GridAxis) : PermissionGridEvent
     data class SelectSection(val section: GridSection) : PermissionGridEvent
     data class Search(val query: String) : PermissionGridEvent
@@ -86,6 +98,8 @@ sealed interface PermissionGridEffect
  */
 class PermissionGridViewModel(
     private val repository: PermissionGridRepository,
+    /** Carries a refused press to the app frame, which offers to ask an admin. */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<PermissionGridUiState, PermissionGridEvent, PermissionGridEffect>(
     PermissionGridUiState(),
 ) {
@@ -100,7 +114,22 @@ class PermissionGridViewModel(
             }
 
             PermissionGridEvent.Reload -> load()
+            PermissionGridEvent.RequestPostingRights -> askForPostingRights()
 
+            is PermissionGridEvent.Toggle -> toggle(event)
+
+            else -> narrow(event)
+        }
+    }
+
+    /**
+     * The four events that only change what is being looked at.
+     *
+     * Split out to keep [onEvent] under detekt's branch ceiling; they belong
+     * together anyway — each one re-reads the grid under a new slice.
+     */
+    private fun narrow(event: PermissionGridEvent) {
+        when (event) {
             is PermissionGridEvent.SelectAxis -> {
                 if (event.axis == currentState.axis) return
                 // Page one: row 40 of the people axis is not row 40 of the
@@ -124,9 +153,9 @@ class PermissionGridViewModel(
                 load()
             }
 
-            is PermissionGridEvent.Toggle -> toggle(event)
-
             PermissionGridEvent.DismissNotice -> setState { copy(notice = null) }
+
+            else -> Unit
         }
     }
 
@@ -196,6 +225,19 @@ class PermissionGridViewModel(
      * client set, and a box that ticks and then untocks reads as a broken
      * screen rather than a refused change.
      */
+    /**
+     * Asks an admin for the right to edit this grid.
+     *
+     * Raised from the read-only notice rather than from a cell: the boxes stay
+     * inert on purpose — see [toggle].
+     */
+    private fun askForPostingRights() {
+        rights?.ask(MODULE_LABEL, RightsKind.Post)
+        // This screen has no effect channel; its own notice bar is where
+        // everything else it has to say already goes.
+        setState { copy(notice = rightsRefusalMessage(MODULE_LABEL, RightsKind.Post, rights != null)) }
+    }
+
     private fun toggle(event: PermissionGridEvent.Toggle) {
         val state = currentState
         if (!state.canEdit) return
@@ -261,3 +303,5 @@ class PermissionGridViewModel(
         const val DEAL_MEMO = "deal_memo_label"
     }
 }
+
+private const val MODULE_LABEL = "Viewing & Posting Rights Grid"

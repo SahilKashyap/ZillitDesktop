@@ -3,7 +3,9 @@ package com.zillit.desktop.feature.sos.ui
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.sos.data.SosEndpoints
+import com.zillit.desktop.feature.sos.data.SOS_SYNC_EVENTS
 import com.zillit.desktop.feature.sos.domain.ExternalContactDraft
 import com.zillit.desktop.feature.sos.domain.SosAlert
 import com.zillit.desktop.feature.sos.domain.SosContactKind
@@ -48,6 +50,13 @@ class SosViewModel(
      * alarm still goes out — without coordinates rather than not at all.
      */
     private val locationFix: suspend () -> SosFix? = { null },
+    /**
+     * The socket, so an alarm raised on set appears without a refresh.
+     *
+     * Null in tests and on a build with no socket; the screen then behaves as
+     * it did before — correct, just not live.
+     */
+    private val events: SocketEventBus? = null,
     /** The page size the backend answers; a shorter page is the last one. */
     private val pageLimit: Int = SosEndpoints.PAGE_LIMIT,
 ) : ZillitViewModel<SosUiState, SosEvent, SosEffect>(SosUiState()) {
@@ -56,6 +65,29 @@ class SosViewModel(
         setState { copy(viewer = viewer(), contacts = contacts.copy(crew = crew())) }
         if (!currentState.loaded && !currentState.loading) refresh()
         if (!currentState.contacts.loading && currentState.contacts.rows.isEmpty()) loadContacts()
+        listenForAlerts()
+    }
+
+    /** Set up once: [start] runs on every visit to the screen. */
+    private var listening = false
+
+    /**
+     * An alarm raised by somebody else.
+     *
+     * Reloads rather than inserting the payload's row: the list is paged and
+     * newest-first, and the fetch already merges correctly. An SOS is the one
+     * thing on this wire where being a second late matters, so there is no
+     * debounce and no echo suppression — the sender's own alarm reloading
+     * their list is harmless, and suppressing it could hide a second alarm.
+     */
+    private fun listenForAlerts() {
+        val bus = events ?: return
+        if (listening) return
+        listening = true
+
+        launch {
+            bus.onAny(SOS_SYNC_EVENTS).collect { refresh() }
+        }
     }
 
     override fun onEvent(event: SosEvent) {

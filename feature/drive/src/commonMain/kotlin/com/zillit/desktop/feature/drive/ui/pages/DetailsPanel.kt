@@ -133,8 +133,10 @@ private fun DetailsActions(
             )
         }
         // A folder is the only thing files can be sent *into*, so this is the
-        // one place the ask makes sense.
-        if (item.isFolder && viewer.canPost) {
+        // one place the ask makes sense. Posting rights are not part of the
+        // condition: DriveViewModel.openFileRequests answers a press without
+        // them by offering to ask an admin.
+        if (item.isFolder) {
             ZillitButton(
                 text = "Request files",
                 onClick = { onEvent(DriveEvent.OpenFileRequests(item)) },

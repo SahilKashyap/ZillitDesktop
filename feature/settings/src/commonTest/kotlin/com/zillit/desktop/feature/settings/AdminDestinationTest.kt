@@ -148,32 +148,20 @@ class AdminDestinationTest {
     }
 
     /**
-     * The "Soon" notice explains a tag. It must not outlive the tag.
+     * No row is planned any more.
      *
-     * Caught by opening the real page: every administration row is built now,
-     * so on an ordinary production the notice was explaining something the
-     * reader could not find anywhere on screen.
+     * Deal-memo onboarding was the last one, and Android deleted it from Admin
+     * Settings on 2026-09-02. The notice explaining the tag must not appear
+     * over a page that has nothing tagged.
      */
     @Test
-    fun `the planned notice is only warranted when a planned row is visible`() {
-        // Deal-memo onboarding is the only planned row, and it needs the flag.
-        assertFalse(
-            adminSettingsEntries(film).anyPlanned,
-            "no row is planned here, so the Soon notice must not show",
-        )
-        assertTrue(
-            adminSettingsEntries(ProductionFacts(dealMemoEnabled = true)).anyPlanned,
-            "the deal-memo row is planned, so the notice is warranted",
-        )
-    }
-
-    /** Filtered away, the tag goes with it — and so must the notice. */
-    @Test
-    fun `a search that hides the planned row hides the notice`() {
-        val groups = adminSettingsEntries(ProductionFacts(dealMemoEnabled = true))
-
-        assertTrue(groups.anyPlanned)
-        assertFalse(groups.matching("departments").anyPlanned)
+    fun `no admin row is planned, so the Soon notice never shows`() {
+        listOf(film, corporate, personal).forEach { production ->
+            assertFalse(
+                adminSettingsEntries(production).anyPlanned,
+                "a planned row appeared on $production",
+            )
+        }
     }
 
     @Test
@@ -192,7 +180,7 @@ class AdminDestinationTest {
             .firstOrNull { it.destination == SettingsDestination.CrewListOrder }
 
         assertNotNull(row)
-        assertEquals("Staff list order", row.title)
+        assertEquals("Change Department Listing Order for Staff List", row.title)
     }
 
     private companion object {
@@ -200,14 +188,14 @@ class AdminDestinationTest {
          * Rows that are not administration pages.
          *
          * The approval queues have their own screens, the documentation links
-         * open a browser, and deal-memo onboarding is a separate subsystem.
+         * open a browser, and Production Setup is a page of the Account Hub.
          */
         val HANDLED_ELSEWHERE = setOf(
             SettingsDestination.ApproveNewCrew,
             SettingsDestination.ApproveProfileChanges,
             SettingsDestination.Help,
             SettingsDestination.SetupNotes,
-            SettingsDestination.DealMemoOnboarding,
+            SettingsDestination.ProductionSetup,
         )
     }
 }

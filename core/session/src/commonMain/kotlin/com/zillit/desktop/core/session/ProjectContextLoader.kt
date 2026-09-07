@@ -310,6 +310,10 @@ internal data class ProjectDetailDto(
      * with it. Found against QA, not in review.
      */
     @SerialName("storage_folders") val storageFolders: JsonElement? = null,
+    /** Set only on a remote unit, naming the production it hangs off. */
+    @SerialName("parent_project_name") val parentProjectName: String? = null,
+    /** A scheduled deletion, still counting down and still stoppable. */
+    @SerialName("mark_deleted") val markDeleted: Boolean? = null,
 ) {
     fun toSnapshot(projectId: String) = ProjectSnapshot(
         projectId = projectId,
@@ -321,6 +325,8 @@ internal data class ProjectDetailDto(
         storageType = storageType?.takeIf { it.isNotBlank() },
         enterpriseClientId = enterpriseClientId?.takeIf { it.isNotBlank() },
         storageFolders = readStorageFolders(storageFolders),
+        parentName = parentProjectName?.takeIf { it.isNotBlank() },
+        markedForDeletion = markDeleted == true,
     )
 }
 

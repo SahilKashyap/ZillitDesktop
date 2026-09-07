@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
+import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
@@ -12,6 +13,9 @@ import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 
 
 sealed interface DocDistEvent {
+    /** The restriction banner's button: ask an admin for the missing right. */
+    data class RequestRights(val kind: RightsKind) : DocDistEvent
+
 
     data object Refresh : DocDistEvent
     data object ClearNotice : DocDistEvent

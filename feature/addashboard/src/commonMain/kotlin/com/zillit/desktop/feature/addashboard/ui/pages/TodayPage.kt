@@ -82,7 +82,7 @@ internal fun ColumnScope.TodayPage(state: AdUiState, onEvent: (AdEvent) -> Unit)
         return
     }
 
-    state.dayList.forEach { entry -> DayRow(entry, state.canEditDay, onEvent) }
+    state.dayList.forEach { entry -> DayRow(entry, state.dayIsOpen, onEvent) }
 }
 
 @Composable
@@ -122,7 +122,7 @@ private fun ColumnScope.DayBar(state: AdUiState, onEvent: (AdEvent) -> Unit) {
             variant = ButtonVariant.Tertiary,
             size = ButtonSize.Small,
         )
-        if (state.canEditDay) {
+        if (state.dayIsOpen) {
             ZillitButton(
                 text = "Add artistes",
                 onClick = { onEvent(AdEvent.OpenAddToDay) },

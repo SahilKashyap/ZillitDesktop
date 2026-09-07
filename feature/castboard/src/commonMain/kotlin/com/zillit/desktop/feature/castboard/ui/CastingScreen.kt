@@ -259,22 +259,21 @@ private fun EntryCard(
             },
             maxLines = 2,
         )
-        // Where this one can go next. Only the stages it is not already at,
-        // and only for someone who may post to this list.
-        if (state.unit?.canPost == true) {
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-                CastingViewModel.STATUSES
-                    .filter { it != state.status }
-                    .forEach { target ->
-                        ZillitButton(
-                            text = "→ ${target.label}",
-                            onClick = { onEvent(CastingEvent.MoveTo(entry.id, target)) },
-                            variant = ButtonVariant.Tertiary,
-                            size = ButtonSize.Small,
-                            enabled = !state.busy,
-                        )
-                    }
-            }
+        // Where this one can go next: the stages it is not already at. Shown
+        // whatever the rights — CastingViewModel.move answers a press without
+        // them by offering to ask an admin, which is more use than no button.
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+            CastingViewModel.STATUSES
+                .filter { it != state.status }
+                .forEach { target ->
+                    ZillitButton(
+                        text = "→ ${target.label}",
+                        onClick = { onEvent(CastingEvent.MoveTo(entry.id, target)) },
+                        variant = ButtonVariant.Tertiary,
+                        size = ButtonSize.Small,
+                        enabled = !state.busy,
+                    )
+                }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
             entry.episode.takeIf { it.isNotBlank() }?.let {

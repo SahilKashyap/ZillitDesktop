@@ -120,7 +120,7 @@ class AdScreenRenderTest {
 
     /** A reader is told once rather than discovering it button by button. */
     @Test
-    fun `a viewer without posting rights is told so`() {
+    fun `a viewer without posting rights is told so, and keeps the controls`() {
         val reader = state(viewer = AdViewer(userId = "u1", canPost = false, ready = true))
 
         runComposeUiTest {
@@ -128,6 +128,26 @@ class AdScreenRenderTest {
                 ZillitTheme(darkTheme = false) { AdScreen(state = reader, onEvent = {}) }
             }
             onNodeWithText("You can see the roster and the day but not change them.").assertExists()
+            // Still on screen: an open day's controls belong to the day, and
+            // AdViewModel answers a press without the right by offering to ask
+            // an administrator. Only a submitted day takes them away.
+            onAllNodesWithText("Submit day").assertCountEquals(1)
+        }
+    }
+
+    @Test
+    fun `a submitted day takes the controls away from everyone`() {
+        val locked = state(
+            dayStatus = AdDayStatus.Submitted,
+            viewer = AdViewer(userId = "u1", canPost = true, ready = true),
+        )
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) { AdScreen(state = locked, onEvent = {}) }
+            }
+            // Not a rights question, so there is nothing to ask for: the day
+            // is shut to admins too.
             onAllNodesWithText("Submit day").assertCountEquals(0)
         }
     }

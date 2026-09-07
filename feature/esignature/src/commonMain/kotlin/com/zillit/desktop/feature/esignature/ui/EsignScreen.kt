@@ -54,7 +54,7 @@ fun EsignScreen(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
                 )
             }
 
-            state.detail != null -> EnvelopeDetailPage(state, state.detail, onEvent)
+            state.detail != null -> EnvelopeDetailPage(state.detail, onEvent)
 
             else -> ListsSurface(state, onEvent)
         }
@@ -72,14 +72,14 @@ private fun ListsSurface(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
         description = "Envelopes with placed fields — sign what reaches you, track " +
             "what you send.",
         actions = {
-            if (state.viewer.canPost) {
-                ZillitButton(
-                    text = "Send for e-signature",
-                    onClick = { onEvent(EsignEvent.StartCompose) },
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Send,
-                )
-            }
+            // On screen for everyone: EsignViewModel.refusesPost answers a
+            // press without posting rights by offering to ask an admin.
+            ZillitButton(
+                text = "Send for e-signature",
+                onClick = { onEvent(EsignEvent.StartCompose) },
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Send,
+            )
             ZillitButton(
                 text = "Saved marks",
                 onClick = { onEvent(EsignEvent.ToggleMarks) },
@@ -136,7 +136,9 @@ private fun ManageList(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
             ManageBucket.Completed -> "No completed envelopes yet"
             ManageBucket.Rejected -> "No rejected envelopes"
         },
-        showDelete = state.manage.bucket == ManageBucket.Draft && state.viewer.canPost,
+        // Drafts are the only bucket a delete makes sense in; the right to
+        // use it is answered by the view model, not by hiding the button.
+        showDelete = state.manage.bucket == ManageBucket.Draft,
         onEvent = onEvent,
     )
 }

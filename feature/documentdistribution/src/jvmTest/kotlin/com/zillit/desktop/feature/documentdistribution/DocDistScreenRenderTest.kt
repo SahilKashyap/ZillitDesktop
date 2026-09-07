@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.documentdistribution
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.test.ExperimentalTestApi
 import com.zillit.desktop.feature.documentdistribution.ui.pages.FOLDER_TABLE_TAG
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasScrollAction
@@ -14,6 +16,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runSkikoComposeUiTest
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.feature.documentdistribution.domain.DeliveryStatus
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
@@ -151,20 +154,36 @@ class DocDistScreenRenderTest {
     }
 
     @Test
-    fun `a read-only viewer gets the banner and no send affordance`() {
+    fun `a read-only viewer keeps the buttons, and each one asks`() {
+        val raised = mutableListOf<DocDistEvent>()
+
         runComposeUiTest {
             setContent {
                 ZillitTheme(darkTheme = false) {
                     DocDistScreen(
                         state = state(DocDistDestination.Library, readOnly)
                             .copy(selectedDocumentIds = setOf("doc-1")),
-                        onEvent = {},
+                        onEvent = { raised += it },
                     )
                 }
             }
-            onNodeWithText("New folder").assertDoesNotExist()
-            onNodeWithText("Distribute").assertDoesNotExist()
+            // The flip QA asked for on the phones: the controls stay, so
+            // somebody who cannot send can still find out why and fix it.
+            onNodeWithText("New folder").assertExists()
+            onNodeWithText("Distribute").assertExists()
+
+            onNodeWithText("Distribute").performClick()
+            onNodeWithText("New folder").performClick()
         }
+
+        // Neither press reached the action it names.
+        assertEquals(
+            listOf<DocDistEvent>(
+                DocDistEvent.RequestRights(RightsKind.Post),
+                DocDistEvent.RequestRights(RightsKind.Post),
+            ),
+            raised,
+        )
     }
 
     @Test
@@ -354,4 +373,73 @@ class DocDistScreenRenderTest {
         }
     }
 
+    /**
+     * The restriction banner offers a way forward, not just a diagnosis.
+     *
+     * QA's flip on the phones: a refusal that leaves the reader nowhere is
+     * the bug. The banner already said what was missing; the button is what
+     * lets them ask an admin for it, and it names the right they are short of
+     * rather than always asking for the same one.
+     */
+    @Test
+    fun `a restricted viewer is offered a way to ask for the missing right`() {
+        val noPosting = full.copy(canPost = false)
+        val asked = mutableListOf<DocDistEvent>()
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    DocDistScreen(
+                        state = state(DocDistDestination.Library).copy(viewer = noPosting),
+                        onEvent = { asked += it },
+                    )
+                }
+            }
+
+            onNodeWithText("Request access").performClick()
+        }
+
+        assertEquals<List<DocDistEvent>>(
+            listOf(DocDistEvent.RequestRights(RightsKind.Post)),
+            asked,
+            "the banner asked for the wrong right",
+        )
+    }
+
+    /** Short of download instead: the same button, the other request. */
+    @Test
+    fun `a viewer who cannot download asks for download`() {
+        val asked = mutableListOf<DocDistEvent>()
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    DocDistScreen(
+                        state = state(DocDistDestination.Library)
+                            .copy(viewer = full.copy(canDownload = false)),
+                        onEvent = { asked += it },
+                    )
+                }
+            }
+
+            onNodeWithText("Request access").performClick()
+        }
+
+        assertEquals<List<DocDistEvent>>(
+            listOf(DocDistEvent.RequestRights(RightsKind.Download)),
+            asked,
+        )
+    }
+
+    /** Nothing missing, nothing to ask for — and no banner to ask from. */
+    @Test
+    fun `a viewer with every right sees no request button`() = runComposeUiTest {
+        setContent {
+            ZillitTheme(darkTheme = false) {
+                DocDistScreen(state = state(DocDistDestination.Library), onEvent = {})
+            }
+        }
+
+        onAllNodesWithText("Request access").assertCountEquals(0)
+    }
 }

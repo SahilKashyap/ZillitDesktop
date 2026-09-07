@@ -384,4 +384,27 @@ class DriveScreenRenderTest {
             onNodeWithText("Still counts towards usage").assertIsDisplayed()
         }
     }
+
+
+    /**
+     * The flip: Request files stays on a folder for a read-only viewer.
+     *
+     * `DriveViewModel.openFileRequests` answers the press by offering to ask
+     * an admin for the drive's posting right.
+     */
+    @Test
+    fun `a read-only viewer still sees Request files on a folder`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    DriveScreen(
+                        state = state(DriveDestination.Browse, readOnly)
+                            .copy(details = DetailsState(item = folder)),
+                        onEvent = {},
+                    )
+                }
+            }
+            onNodeWithText("Request files").assertExists()
+        }
+    }
 }

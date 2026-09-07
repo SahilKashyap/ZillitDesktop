@@ -56,11 +56,7 @@ import com.zillit.desktop.feature.esignature.ui.tone
  * digital signature?" until the signer says yes.
  */
 @Composable
-internal fun EnvelopeDetailPage(
-    state: EsignUiState,
-    detail: EnvelopeDetailState,
-    onEvent: (EsignEvent) -> Unit,
-) {
+internal fun EnvelopeDetailPage(detail: EnvelopeDetailState, onEvent: (EsignEvent) -> Unit) {
     val envelope = detail.envelope
 
     ZillitPageHeader(
@@ -117,7 +113,7 @@ internal fun EnvelopeDetailPage(
                 }
             }
         }
-        TrackerRail(state, detail, onEvent)
+        TrackerRail(detail, onEvent)
     }
 
     DeclineDialog(detail, onEvent)
@@ -229,11 +225,7 @@ private fun FieldOverlay(
 
 /** Status, recipients, typed-field inputs and the audit trail. */
 @Composable
-private fun TrackerRail(
-    state: EsignUiState,
-    detail: EnvelopeDetailState,
-    onEvent: (EsignEvent) -> Unit,
-) {
+private fun TrackerRail(detail: EnvelopeDetailState, onEvent: (EsignEvent) -> Unit) {
     val envelope = detail.envelope
     ZillitScrollColumn(
         modifier = Modifier.width(RAIL_WIDTH.dp),
@@ -246,7 +238,7 @@ private fun TrackerRail(
             )
         }
 
-        RecipientsCard(state, detail, onEvent)
+        RecipientsCard(detail, onEvent)
 
         TypedFieldInputs(detail, onEvent)
 
@@ -269,11 +261,7 @@ private fun TrackerRail(
 }
 
 @Composable
-private fun RecipientsCard(
-    state: EsignUiState,
-    detail: EnvelopeDetailState,
-    onEvent: (EsignEvent) -> Unit,
-) {
+private fun RecipientsCard(detail: EnvelopeDetailState, onEvent: (EsignEvent) -> Unit) {
     val envelope = detail.envelope
     ZillitSectionCard(title = "Recipients", icon = ZillitIcons.Users) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
@@ -292,10 +280,9 @@ private fun RecipientsCard(
                         )
                     }
                     val outstanding = !recipient.signed && !recipient.declined
-                    if (
-                        outstanding && state.viewer.canPost &&
-                        envelope.status == EnvelopeStatus.Sent
-                    ) {
+                    // There is nobody to remind on a draft or a finished
+                    // envelope; the right to send one is the view model's call.
+                    if (outstanding && envelope.status == EnvelopeStatus.Sent) {
                         ZillitButton(
                             text = "Remind",
                             onClick = { onEvent(EsignEvent.Remind(envelope.id, recipient.id)) },

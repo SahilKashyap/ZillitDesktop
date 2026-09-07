@@ -259,7 +259,14 @@ data class PayrollViewer(
     /** Producers read the board; they do not operate it. */
     val canOperate: Boolean get() = isAccountant
 
-    /** Posting to the ledger is irreversible, so it takes the server's word. */
+    /**
+     * Posting to the ledger is irreversible, so it takes the server's word.
+     *
+     * Not a rights-grid grant, unlike every other `canPost` in this app: it is
+     * read off the designation, so there is no row an admin can switch on and
+     * nothing to request. That is why this button is still hidden rather than
+     * shown-and-prompting like the rest — see `core.permissions.gatedClick`.
+     */
     val canPost: Boolean get() = isAccountant && (isFinalApprover || isSenior)
 
     private companion object {

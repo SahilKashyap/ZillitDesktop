@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.home
 
+import kotlin.test.assertTrue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
@@ -284,5 +285,30 @@ class HomeBoardRenderTest {
 
     private companion object {
         const val FORTY_MINUTES = 40 * 60 * 1000L
+    }
+
+
+    /**
+     * The flip, on the board: the sentence under the feed now carries a button.
+     *
+     * It used to end at "ask a production admin", which named no admin and
+     * offered no way to reach one. `HomeFeedEvent.RequestPostingRights` picks
+     * the admin and writes the message — see `RightsRequestSurface`.
+     */
+    @Test
+    fun `a board with no posting rights offers to ask an admin`() = runComposeUiTest {
+        val raised = mutableListOf<HomeFeedEvent>()
+        val viewer = notices.copy(canPost = false)
+        setContent {
+            ZillitTheme { HomeFeedScreen(state = board(viewer, theirPhoto), onEvent = { raised += it }) }
+        }
+
+        onNodeWithText("You do not have posting rights for ${viewer.label}.").assertExists()
+        onNodeWithText("Ask an admin").performClick()
+
+        assertTrue(
+            raised.contains(HomeFeedEvent.RequestPostingRights),
+            "the button raised $raised instead of a rights request",
+        )
     }
 }

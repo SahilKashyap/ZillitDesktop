@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -91,6 +92,14 @@ fun PermissionGridScreen(
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
                 modifier = Modifier.padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
+                action = {
+                    ZillitButton(
+                        text = "Ask an admin",
+                        onClick = { onEvent(PermissionGridEvent.RequestPostingRights) },
+                        variant = ButtonVariant.Tertiary,
+                        size = ButtonSize.Small,
+                    )
+                },
             )
         }
 

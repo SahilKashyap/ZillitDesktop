@@ -39,7 +39,7 @@ import com.zillit.desktop.feature.settings.admin.ui.NameKind
 @Composable
 fun ProductionNamePage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "Production name",
+        title = AdminDestination.ProductionName.title,
         description = "What this production is called everywhere in Zillit.",
         state = state,
         onEvent = onEvent,
@@ -79,7 +79,7 @@ fun CompanyDetailsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBac
     val company = state.company
 
     AdminPage(
-        title = "Company details",
+        title = AdminDestination.CompanyDetails.title,
         description = "Printed at the head of the crew list and the documents this production sends.",
         state = state,
         onEvent = onEvent,
@@ -161,7 +161,7 @@ private fun HeaderLine(label: String, value: String) {
 @Composable
 fun WatermarkPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "Watermark",
+        title = AdminDestination.Watermark.title,
         description = "Stamped across documents this production sends out.",
         state = state,
         onEvent = onEvent,
@@ -330,7 +330,7 @@ private fun UnitRow(unit: AdminUnit, onEvent: (AdminEvent) -> Unit) {
 @Composable
 fun DeleteProductionPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "Delete this production",
+        title = AdminDestination.DeleteProduction.title,
         description = "Removes the production and everything in it, for everyone on it.",
         state = state,
         onEvent = onEvent,

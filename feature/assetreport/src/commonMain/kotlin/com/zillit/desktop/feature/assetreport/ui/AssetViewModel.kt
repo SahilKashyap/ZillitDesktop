@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.assetreport.ui
 
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.assetreport.domain.AssetCategory
@@ -100,6 +102,13 @@ class AssetViewModel(
     private val export: AssetExport,
     private val resolveViewer: () -> AssetViewer,
     private val loadDepartments: suspend () -> Map<String, String>,
+    /**
+     * Where "ask an admin for this right" goes; null leaves the plain refusal.
+     *
+     * The frame answers it with the admin picker and sends the request as a
+     * chat message — the phones' flow, hosted once. See `RightsRequestSurface`.
+     */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<AssetUiState, AssetEvent, AssetEffect>(AssetUiState()) {
 
     /** Lines whose record fetch already ran — re-opening must not refetch. */
@@ -195,11 +204,30 @@ class AssetViewModel(
 
     private fun saveNote() = save(note = true)
 
+    /**
+     * Refuses, and offers the way forward the phones offer on every refusal.
+     *
+     * The frame answers the request with its admin picker; without one wired
+     * the tool simply says what is missing, as it did before.
+     */
+    private fun refuseAndAsk() {
+        rights?.ask("Asset Register", RightsKind.Post)
+        sendEffect(
+            AssetEffect.Notice(
+                if (rights == null) {
+                    "You don't have posting rights on the Asset Register."
+                } else {
+                    "You don't have posting rights on the Asset Register — asking an administrator."
+                },
+            ),
+        )
+    }
+
     private fun save(note: Boolean) {
         val detail = currentState.detail ?: return
         if (detail.isHydrating || detail.isSaving) return
         if (!currentState.viewer.mayEdit) {
-            sendEffect(AssetEffect.Notice("You don't have posting rights on the Asset Register."))
+            refuseAndAsk()
             return
         }
         setState { copy(detail = detail.copy(isSaving = true)) }

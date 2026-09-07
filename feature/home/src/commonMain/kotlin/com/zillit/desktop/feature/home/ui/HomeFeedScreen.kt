@@ -1716,16 +1716,36 @@ private fun NoticeBoard(
         }
 
         if (!unit.canPost) {
-            item {
-                ZillitText(
-                    text = "You do not have posting rights for ${unit.label}. " +
-                        "Ask a production admin to grant them.",
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                    modifier = Modifier.padding(top = ZillitTheme.spacing.sm),
-                )
-            }
+            item { NoPostingRightsRow(unit, ui.onEvent) }
         }
+    }
+}
+
+/**
+ * What a reader without posting rights gets instead of the composer.
+ *
+ * The sentence used to end at "ask a production admin", which left the reader
+ * to work out which admin and what to say. The button does both — see
+ * `RightsRequestSurface`, which picks the admin and writes the message.
+ */
+@Composable
+private fun NoPostingRightsRow(unit: HomeUnit, onEvent: (HomeFeedEvent) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitText(
+            text = "You do not have posting rights for ${unit.label}.",
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.textMuted,
+        )
+        ZillitButton(
+            text = "Ask an admin",
+            onClick = { onEvent(HomeFeedEvent.RequestPostingRights) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+        )
     }
 }
 

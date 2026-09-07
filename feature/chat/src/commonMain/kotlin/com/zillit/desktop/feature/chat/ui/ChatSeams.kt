@@ -22,6 +22,14 @@ class ChatSeams(
      * `res/values/strings.xml:7884`).
      */
     val canDownload: () -> Boolean = { true },
+    /**
+     * Asks an administrator for the download right, from the refusal itself.
+     *
+     * The refusal used to end at Android's sentence, which names no admin and
+     * offers no way to reach one. Null leaves it at the sentence — tests and
+     * previews wire no bus.
+     */
+    val requestDownloadRights: (() -> Unit)? = null,
     /** The system clipboard's picture half; null pastes nothing and hides Copy image. */
     val clipboard: ClipboardMediaSource? = null,
     /**

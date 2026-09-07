@@ -260,6 +260,7 @@ internal fun buildHomeFeed(
     newLocalId = { UUID.randomUUID().toString() },
     // Admins post to any unit; the unit list does not pre-apply it.
     isAdmin = { ready.projectContext?.context?.value?.isAdmin == true },
+    rights = ready.rightsRequests,
     // Who may edit or delete their own replies.
     currentUserId = { ready.projectContext?.context?.value?.profile?.userId },
     media = homeMediaCapture(ready),
@@ -602,6 +603,7 @@ private fun AppGraph.Ready.boardFeed(
         nowMillis = System::currentTimeMillis,
         newLocalId = { UUID.randomUUID().toString() },
         isAdmin = { projectContext?.context?.value?.isAdmin == true },
+        rights = rightsRequests,
         currentUserId = { projectContext?.context?.value?.profile?.userId },
         media = homeMediaCapture(this),
         // The board's read receipt names its own module label — the web

@@ -44,4 +44,5 @@ internal fun AppGraph.Ready.buildAssetRegister(
             is ZillitResult.Failure -> emptyMap()
         }
     },
+    rights = rightsRequests,
 )

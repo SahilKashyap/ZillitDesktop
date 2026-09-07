@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.addashboard.ui
 
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
@@ -21,9 +23,30 @@ class AdViewModel(
     private val repository: AdRepository,
     private val viewer: () -> AdViewer,
     private val now: () -> Long,
+    /**
+     * Where "ask an admin for this right" goes; null leaves the plain refusal.
+     *
+     * The frame answers it with the admin picker and sends the request as a
+     * chat message — the phones' flow, hosted once. See `RightsRequestSurface`.
+     */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<AdUiState, AdEvent, AdEffect>(AdUiState(viewer = viewer())) {
 
     private var started = false
+
+    /** Refuses, and offers the way forward the phones offer on every refusal. */
+    private fun askForPostingRights() {
+        rights?.ask("AD Dashboard", RightsKind.Post)
+        sendEffect(
+            AdEffect.Failed(
+                if (rights == null) {
+                    NO_POSTING_RIGHTS
+                } else {
+                    "$NO_POSTING_RIGHTS Asking an administrator."
+                },
+            ),
+        )
+    }
 
     fun start() {
         if (started) return
@@ -110,7 +133,13 @@ class AdViewModel(
             is AdEvent.FilterStatus -> setState { copy(statusFilter = event.status) }
 
             is AdEvent.Verify -> mutate("Artiste verified") { repository.verify(event.id) }
-            is AdEvent.StartBlock -> setState { copy(block = BlockState(artiste = event.artiste)) }
+            // Asked before the reason is typed rather than after: the dialog
+            // exists to collect a reason for a write this person may not make.
+            is AdEvent.StartBlock -> if (currentState.viewer.canPost) {
+                setState { copy(block = BlockState(artiste = event.artiste)) }
+            } else {
+                askForPostingRights()
+            }
             is AdEvent.BlockReason -> setState { copy(block = block?.copy(reason = event.text)) }
             AdEvent.ConfirmBlock -> confirmBlock()
             AdEvent.CancelBlock -> setState { copy(block = null) }
@@ -178,7 +207,7 @@ class AdViewModel(
      */
     private fun editEntry(call: suspend () -> ZillitResult<Unit>) {
         if (!currentState.canEditDay) {
-            sendEffect(AdEffect.Failed(refusal()))
+            refuse()
             return
         }
         launch {
@@ -193,7 +222,7 @@ class AdViewModel(
         val open = currentState.addToDay ?: return
         if (!open.ready) return
         if (!currentState.canEditDay) {
-            sendEffect(AdEffect.Failed(refusal()))
+            refuse()
             return
         }
         setState { copy(addToDay = addToDay?.copy(saving = true)) }
@@ -233,7 +262,7 @@ class AdViewModel(
     private fun submitDay() {
         setState { copy(confirmSubmit = false) }
         if (!currentState.canEditDay) {
-            sendEffect(AdEffect.Failed(refusal()))
+            refuse()
             return
         }
         launch {
@@ -253,7 +282,7 @@ class AdViewModel(
     private fun confirmBlock() {
         val open = currentState.block ?: return
         if (!currentState.viewer.canPost) {
-            sendEffect(AdEffect.Failed("You do not have posting rights for the AD dashboard."))
+            askForPostingRights()
             return
         }
         setState { copy(block = block?.copy(saving = true)) }
@@ -275,7 +304,7 @@ class AdViewModel(
 
     private fun mutate(success: String, call: suspend () -> ZillitResult<Unit>) {
         if (!currentState.viewer.canPost) {
-            sendEffect(AdEffect.Failed("You do not have posting rights for the AD dashboard."))
+            askForPostingRights()
             return
         }
         launch {
@@ -292,11 +321,19 @@ class AdViewModel(
 
     // -- failure ---------------------------------------------------------------
 
-    /** Says which of the two gates refused, because they are fixed differently. */
-    private fun refusal(): String = if (!currentState.viewer.canPost) {
-        "You do not have posting rights for the AD dashboard."
-    } else {
-        "This day has been submitted and can no longer be changed."
+    /**
+     * Answers a refused edit by the gate that actually refused it.
+     *
+     * The two are fixed differently and only one of them is worth asking about:
+     * a missing right is something an admin can grant, while a submitted day is
+     * closed to everyone including them.
+     */
+    private fun refuse() {
+        if (!currentState.viewer.canPost) {
+            askForPostingRights()
+        } else {
+            sendEffect(AdEffect.Failed("This day has been submitted and can no longer be changed."))
+        }
     }
 
     private fun fail(error: ZillitError) {
@@ -307,3 +344,6 @@ class AdViewModel(
         sendEffect(AdEffect.Failed(error.localised()))
     }
 }
+
+/** One wording for the gate, used by the refusal and by the request. */
+private const val NO_POSTING_RIGHTS = "You do not have posting rights for the AD dashboard."

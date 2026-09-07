@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.distribution.ui
 
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.distribution.domain.DistributionRepository
@@ -61,6 +63,13 @@ class DistributionViewModel(
     private val resolveViewer: () -> DistributionViewer,
     /** `distribution:access:update` — another device flipped a switch. */
     private val changes: Flow<Unit>? = null,
+    /**
+     * Where "ask an admin for this right" goes; null leaves the plain refusal.
+     *
+     * The frame answers it with the admin picker and sends the request as a
+     * chat message — the phones' flow, hosted once. See `RightsRequestSurface`.
+     */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<DistributionUiState, DistributionEvent, DistributionEffect>(DistributionUiState()) {
 
     fun start() {
@@ -92,7 +101,16 @@ class DistributionViewModel(
 
     private fun toggle(event: DistributionEvent.Toggle) {
         if (!currentState.viewer.mayToggle) {
-            sendEffect(DistributionEffect.Notice("You don't have posting rights on Distribution."))
+            rights?.ask("Distribution", RightsKind.Post)
+            sendEffect(
+                DistributionEffect.Notice(
+                    if (rights == null) {
+                        "You don't have posting rights on Distribution."
+                    } else {
+                        "You don't have posting rights on Distribution — asking an administrator."
+                    },
+                ),
+            )
             return
         }
         val user = currentState.users.firstOrNull { it.userId == event.userId } ?: return

@@ -57,7 +57,17 @@ data class AdUiState(
      * Two gates, and both must pass: the viewer's posting right, and the
      * day's own status — a submitted day is read-only for everyone.
      */
-    val canEditDay: Boolean get() = viewer.canPost && (today?.editable ?: false)
+    val canEditDay: Boolean get() = viewer.canPost && dayIsOpen
+
+    /**
+     * Whether the day itself still accepts changes.
+     *
+     * Separate from [canEditDay] because the two halves are answered
+     * differently: a submitted day is shut to everyone and its controls are
+     * gone, while a missing posting right leaves them on screen and turns a
+     * press into a request — see `AdViewModel.editEntry`.
+     */
+    val dayIsOpen: Boolean get() = today?.editable ?: false
 
     val register: List<Artiste>
         get() = artistes

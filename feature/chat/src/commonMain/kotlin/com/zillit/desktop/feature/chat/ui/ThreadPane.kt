@@ -52,6 +52,9 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.StatusTone
@@ -147,7 +150,7 @@ internal fun ThreadPane(
             }
 
             if (refused) {
-                DownloadRefusedNotice(onDismiss = { refused = false })
+                DownloadRefusedNotice(seams.requestDownloadRights) { refused = false }
             }
 
             state.replyTo?.let { parent ->
@@ -206,7 +209,7 @@ private fun ChatPreviewHost(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
 
 /** Android's refusal (`msg_download_right`), dismissed with its X. */
 @Composable
-private fun DownloadRefusedNotice(onDismiss: () -> Unit) {
+private fun DownloadRefusedNotice(onAsk: (() -> Unit)?, onDismiss: () -> Unit) {
     ZillitNotice(
         text = DOWNLOAD_REFUSED,
         tone = StatusTone.Rejected,
@@ -215,6 +218,18 @@ private fun DownloadRefusedNotice(onDismiss: () -> Unit) {
             vertical = ZillitTheme.spacing.xxs,
         ),
         action = {
+            // The sentence names an admin without offering one. This does.
+            if (onAsk != null) {
+                ZillitButton(
+                    text = "Ask an admin",
+                    onClick = {
+                        onAsk()
+                        onDismiss()
+                    },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                )
+            }
             ZillitIconButton(
                 icon = ZillitIcons.Close,
                 contentDescription = "Dismiss",

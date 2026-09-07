@@ -114,6 +114,7 @@ internal fun AppGraph.Ready.buildContinuity(permissions: () -> ProjectPermission
     },
     newUniqueId = { UUID.randomUUID().toString() },
     nowMillis = System::currentTimeMillis,
+    rights = rightsRequests,
 )
 
 internal fun AppGraph.Ready.continuityProvider(viewModel: ContinuityViewModel, scope: CoroutineScope) =

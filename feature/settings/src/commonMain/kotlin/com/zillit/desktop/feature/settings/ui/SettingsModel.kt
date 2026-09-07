@@ -220,6 +220,17 @@ sealed interface SettingsEffect {
     data object OpenHelp : SettingsEffect
 
     /**
+     * Opens another tool's window — Production Setup, which lives in the
+     * Account Hub.
+     *
+     * Android reaches Production Setup from Admin Settings even though the
+     * screen belongs to the accounts console; a coordinator setting a
+     * production up looks here, not under a finance tool. Carried as a route
+     * rather than a module reference: this module knows no other feature.
+     */
+    data class OpenTool(val path: String) : SettingsEffect
+
+    /**
      * Hands a documentation link to the browser.
      *
      * Carried as an effect rather than opened here: this module is common code
