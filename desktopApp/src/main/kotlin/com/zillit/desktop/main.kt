@@ -1417,19 +1417,24 @@ private fun ZillitContent(
 
     BackgroundWork(ready, authViewModel, createViewModel, joinViewModel, viewModels, workspaceViewModel)
 
-    if (authState.step == AuthStep.Complete) {
-        SignedInShell(ready, registry, viewModels, workspaceViewModel, authViewModel, themeMode, onThemeModeChange)
-    } else {
-        AuthScreen(
-            viewModel = authViewModel,
-            // The production list carries the theme toggle, as on the web —
-            // it is the first screen a signed-in user sees, and the shell is
-            // not reachable until they pick a production.
-            themeMode = themeMode,
-            onThemeModeChange = onThemeModeChange,
-            createViewModel = createViewModel,
-            joinViewModel = joinViewModel,
-        )
+    Box {
+        if (authState.step == AuthStep.Complete) {
+            SignedInShell(ready, registry, viewModels, workspaceViewModel, authViewModel, themeMode, onThemeModeChange)
+        } else {
+            AuthScreen(
+                viewModel = authViewModel,
+                // The production list carries the theme toggle, as on the web —
+                // it is the first screen a signed-in user sees, and the shell is
+                // not reachable until they pick a production.
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                createViewModel = createViewModel,
+                joinViewModel = joinViewModel,
+            )
+        }
+        // Above either screen: the startup notification-permission check, as
+        // the phones make it, whatever the person is looking at.
+        NotificationPermissionPrompt()
     }
 }
 
@@ -1455,17 +1460,7 @@ private fun SignedInShell(
     val scope = rememberCoroutineScope()
     val syncStatus by (ready.syncEngine?.status ?: MutableStateFlow(SyncStatus())).collectAsState()
     var pendingChangesOpen by remember { mutableStateOf(false) }
-
-    // Once at sign-in, then every six hours. A desktop app stays open for
-    // days, so a launch-only check leaves someone on a stale build for a
-    // week; six hours is well inside Remote Config's own SDK default.
-    var updateStatus by remember { mutableStateOf<UpdateStatus>(UpdateStatus.Unknown) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            updateStatus = ready.appUpdateChecker.check()
-            delay(UPDATE_CHECK_INTERVAL_MILLIS)
-        }
-    }
+    val updateStatus = rememberUpdateStatus(ready)
 
     // Whether the rail offers Admin at all, and what is waiting behind it.
     // Read from the settings state rather than the project: it is the same
@@ -1533,6 +1528,23 @@ private fun SignedInShell(
             )
         }
     }
+}
+
+/**
+ * The update check: once at sign-in, then every six hours. A desktop app
+ * stays open for days, so a launch-only check leaves someone on a stale
+ * build for a week; six hours is well inside Remote Config's own SDK default.
+ */
+@Composable
+private fun rememberUpdateStatus(ready: AppGraph.Ready): UpdateStatus {
+    var updateStatus by remember { mutableStateOf<UpdateStatus>(UpdateStatus.Unknown) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            updateStatus = ready.appUpdateChecker.check()
+            delay(UPDATE_CHECK_INTERVAL_MILLIS)
+        }
+    }
+    return updateStatus
 }
 
 /**
