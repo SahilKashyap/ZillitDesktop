@@ -98,6 +98,27 @@ class ChatScreenRenderTest {
     }
 
     /**
+     * Android's listing captions a person who left or was removed
+     * "Disconnected" under their designation (`disconnedtedTxtView`); the
+     * desktop only said so inside the open thread, so the list gave no hint
+     * which rows were history.
+     */
+    @Test
+    fun `a departed crew member is captioned Disconnected in the listing`() = runComposeUiTest {
+        val departed = CrewContact(userId = "u3", fullName = "Rohan Left", hasLeft = true)
+        setContent {
+            ZillitTheme {
+                ChatScreen(crew = crew + departed, loadAvatar = { null })
+            }
+        }
+
+        onNodeWithText("Contacts").performClick()
+        waitForIdle()
+        onNodeWithText("Rohan Left").assertExists()
+        onAllNodesWithText("Disconnected").assertCountEquals(1)
+    }
+
+    /**
      * Android's pager order and landing page (`ChatAndCall.kt:81-140`): Chat,
      * Call, Contacts, opening on Chat. QA found the desktop opening on the
      * directory with Calls last.

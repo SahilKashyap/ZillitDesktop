@@ -907,6 +907,19 @@ private fun CrewIdentity(
                 maxLines = 1,
             )
         }
+        // "Disconnected", in red, under someone who left or was removed from
+        // the production — Android's listing row (`disconnedtedTxtView`,
+        // ChatAndGroupListingAdapter.kt:147-155) and its Members row, which
+        // suffixes the designation the same way. Their history still opens;
+        // the caption says why the composer will be gone.
+        if (contact.hasLeft) {
+            ZillitText(
+                text = "Disconnected",
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.danger,
+                maxLines = 1,
+            )
+        }
         meta?.takeIf { it.isNotBlank() }?.let {
             ZillitText(
                 text = it,
