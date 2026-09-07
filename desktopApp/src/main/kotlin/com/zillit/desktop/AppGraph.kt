@@ -925,7 +925,17 @@ sealed interface AppGraph {
                     socketClient.disconnect()
                 },
                 onDeviceIdentified = { identity ->
+                    val changed = headerContext.value.deviceId != identity.deviceId
                     headerContext.update { it.copy(deviceId = identity.deviceId) }
+                    // The presence socket registered whatever device id it was
+                    // opened with. A re-link (seen 2026-09-07: a prod-registered
+                    // desktop scanning into develop) gives this machine a new one,
+                    // and rings for it would go to a socket nobody holds — so the
+                    // line redials, and its handshake reads the new id.
+                    if (changed) {
+                        primaryDeviceForHandshake = null
+                        liveKitLine?.disconnect("device re-identified")
+                    }
                 },
             )
 
