@@ -58,7 +58,7 @@ fun AccountHubScreen(
             ZillitEmptyState(
                 title = "No access to the Account Hub",
                 message = "An administrator has not granted you view rights for the Account " +
-                    "Hub on this production.",
+                    "Hub on this project.",
                 icon = ZillitIcons.Shield,
             )
             return@Box

@@ -69,7 +69,7 @@ fun VendorsPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
         ZillitPageHeader(
             eyebrow = "Management",
             title = "Vendors",
-            description = "Suppliers this production buys from. Purchase orders and invoices " +
+            description = "Suppliers this project buys from. Purchase orders and invoices " +
                 "pick from this register.",
             actions = {
                 if (state.viewer.canEdit) {

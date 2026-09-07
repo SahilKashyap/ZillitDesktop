@@ -52,7 +52,7 @@ class DriveScreenRenderTest {
      * breadcrumb's root button, and a matcher that hits two nodes fails on the
      * ambiguity rather than on anything being wrong.
      */
-    private val header = "The production's shared files — upload, organise, share and " +
+    private val header = "The project's shared files — upload, organise, share and " +
         "version them."
 
     private val admin = DriveViewer(

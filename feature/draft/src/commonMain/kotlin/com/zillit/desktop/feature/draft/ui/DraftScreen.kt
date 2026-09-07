@@ -71,7 +71,7 @@ private fun ScriptsPage(state: DraftUiState, onEvent: (DraftEvent) -> Unit) {
                 eyebrow = "Writing",
                 title = "Zillit Draft",
                 description = "Write and format screenplays — scene headings, action, dialogue — the way " +
-                    "Final Draft does, saved on this production and exported to PDF, Final Draft or Fountain.",
+                    "Final Draft does, saved on this project and exported to PDF, Final Draft or Fountain.",
                 actions = {
                     ZillitButton(
                         text = "Import",
@@ -97,7 +97,7 @@ private fun ScriptsPage(state: DraftUiState, onEvent: (DraftEvent) -> Unit) {
                 loading = state.loading && state.scripts.isEmpty(),
                 columns = scriptColumns(onEvent),
                 onRowClick = { onEvent(DraftEvent.Open(it.id)) },
-                emptyTitle = "No scripts on this production yet",
+                emptyTitle = "No scripts on this project yet",
                 emptyMessage = "Start a new script, or import a .fountain or .fdx file.",
             )
         }

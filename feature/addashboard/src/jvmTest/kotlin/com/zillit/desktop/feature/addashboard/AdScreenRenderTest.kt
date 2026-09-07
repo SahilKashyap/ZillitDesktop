@@ -99,7 +99,7 @@ class AdScreenRenderTest {
                 ZillitTheme(darkTheme = false) { AdScreen(state = sent, onEvent = {}) }
             }
             onNodeWithText(
-                "This day has been submitted and can no longer be changed. Ask production to " +
+                "This day has been submitted and can no longer be changed. Ask project to " +
                     "reopen it if something is wrong.",
             ).assertExists()
             onAllNodesWithText("Submit day").assertCountEquals(0)

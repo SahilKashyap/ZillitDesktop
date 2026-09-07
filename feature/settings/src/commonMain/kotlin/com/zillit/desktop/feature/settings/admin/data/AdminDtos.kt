@@ -33,7 +33,7 @@ import kotlinx.serialization.json.intOrNull
  * `first_name`/`last_name` depending on how they joined, and units answer
  * `unit_name` on one service and `name` on the other. A strict reader turns any
  * of those into an empty page, and an empty administration page is unreadable
- * as "the call failed" — it reads as "this production has no departments".
+ * as "the call failed" — it reads as "this project has no departments".
  *
  * A row that cannot be identified at all is dropped rather than defaulted: an
  * id is what every action on these pages is keyed on, and a row with no id is a

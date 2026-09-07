@@ -180,8 +180,8 @@ private fun WidgetToolBody(
 ) {
     when {
         projects.isEmpty() -> ZillitEmptyState(
-            title = "No productions",
-            message = "This device is not on any production yet.",
+            title = "No projects",
+            message = "This device is not on any project yet.",
             icon = ZillitIcons.Users,
         )
 
@@ -189,7 +189,7 @@ private fun WidgetToolBody(
             Box(Modifier.fillMaxSize(), Alignment.Center) { ZillitSpinner() }
 
         session.error != null -> ZillitErrorState(
-            title = "Could not open this production",
+            title = "Could not open this project",
             message = session.error,
             onRetry = onRetry,
         )
@@ -222,7 +222,7 @@ private fun ScopedNote(projectName: String) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = "$projectName — unread counts stay with the production Zillit is open on.",
+            text = "$projectName — unread counts stay with the project Zillit is open on.",
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
             maxLines = 2,

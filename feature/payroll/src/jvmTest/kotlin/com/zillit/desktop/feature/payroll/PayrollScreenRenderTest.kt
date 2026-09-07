@@ -223,7 +223,7 @@ class PayrollScreenRenderTest {
             }
             onNodeWithText("Choose the settling account").assertExists()
             onNodeWithText(
-                "This production has no bank accounts set up, so nothing can be posted. " +
+                "This project has no bank accounts set up, so nothing can be posted. " +
                     "Add one in Production Setup → Accounting.",
             ).assertExists()
         }

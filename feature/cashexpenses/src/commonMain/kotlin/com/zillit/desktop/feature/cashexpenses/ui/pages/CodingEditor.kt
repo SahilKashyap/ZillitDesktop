@@ -84,7 +84,7 @@ fun CodingEditorDialog(state: CashUiState, onEvent: (CashEvent) -> Unit) {
 
         if (draft.lines.any { it.autoDeduction }) {
             ZillitNotice(
-                text = "Rows marked automatic are maintained by the production's deduction rules. " +
+                text = "Rows marked automatic are maintained by the project's deduction rules. " +
                     "They are re-applied on save and cannot be edited here.",
                 tone = StatusTone.Escalated,
                 icon = ZillitIcons.Info,

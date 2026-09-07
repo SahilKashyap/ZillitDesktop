@@ -316,7 +316,7 @@ private fun ColumnScope.LayersView(chart: ChartState) {
             title = "No layers",
             // Named for where they come from: a production with none has not
             // set any up, which is not the same as this screen failing.
-            message = "This production has no tracking dimensions configured.",
+            message = "This project has no tracking dimensions configured.",
         )
         return
     }

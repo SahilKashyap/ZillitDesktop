@@ -50,8 +50,8 @@ fun BudgetBuilderScreen(state: BudgetBuilderUiState, onEvent: (BudgetBuilderEven
             )
 
             state.viewer.isBlocked -> ZillitNotice(
-                text = "You don’t have access to Budget Builder on this production. " +
-                    "Access is granted per tool, by the production’s admin.",
+                text = "You don’t have access to Budget Builder on this project. " +
+                    "Access is granted per tool, by the project’s admin.",
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
             )
@@ -86,7 +86,7 @@ private fun LaunchCard(state: BudgetBuilderUiState, onEvent: (BudgetBuilderEvent
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
             ZillitText(
                 text = "Opens in its own window. Your Zillit session is the identity — " +
-                    "there is no separate sign-in, and the budget belongs to this production.",
+                    "there is no separate sign-in, and the budget belongs to this project.",
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
                 modifier = Modifier.fillMaxWidth(),

@@ -230,7 +230,7 @@ class SosViewModel(
         val sender = crew().firstOrNull { it.userId == alert.senderId }
         when {
             sender == null || sender.hasLeft ->
-                sendEffect(SosEffect.Notice("They are no longer on this production."))
+                sendEffect(SosEffect.Notice("They are no longer on this project."))
             sender.deviceId.isBlank() ->
                 sendEffect(SosEffect.Notice("They have no device to call."))
             else -> sendEffect(

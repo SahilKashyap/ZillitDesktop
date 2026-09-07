@@ -66,7 +66,7 @@ internal fun ColumnScope.RegisterPage(state: AdUiState, onEvent: (AdEvent) -> Un
             ZillitEmptyState(
                 title = if (state.artistes.isEmpty()) "No artistes yet" else "Nobody matches",
                 message = if (state.artistes.isEmpty()) {
-                    "Artistes appear here once they have been added to the production."
+                    "Artistes appear here once they have been added to the project."
                 } else {
                     "Try a different search or filter."
                 },

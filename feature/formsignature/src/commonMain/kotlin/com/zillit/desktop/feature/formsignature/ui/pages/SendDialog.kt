@@ -88,7 +88,7 @@ private fun EnvelopeStep(send: SendState, onEvent: (FormSignatureEvent) -> Unit)
         ZillitSectionLabel("Signers")
         if (send.options.isEmpty()) {
             ZillitText(
-                text = "Loading the production's crew…",
+                text = "Loading the project's crew…",
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )

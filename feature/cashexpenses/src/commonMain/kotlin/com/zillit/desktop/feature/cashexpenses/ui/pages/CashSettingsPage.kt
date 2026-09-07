@@ -41,7 +41,7 @@ import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
 fun CashSettingsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     val draft = state.settingsDraft ?: state.settings
     if (draft == null) {
-        ScrollingPage { ZillitNotice(text = "Loading the production's cash settings…") }
+        ScrollingPage { ZillitNotice(text = "Loading the project's cash settings…") }
         return
     }
 
@@ -49,7 +49,7 @@ fun CashSettingsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
 
     ScrollingPage {
         ZillitNotice(
-            text = "These settings apply to everyone on this production. " +
+            text = "These settings apply to everyone on this project. " +
                 "Changes take effect as soon as they are saved.",
             tone = StatusTone.Progress,
             icon = ZillitIcons.Info,

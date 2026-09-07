@@ -87,7 +87,7 @@ fun ExternalUsersScreen(
                 },
             ) {
                 ZillitText(
-                    text = "The contact is removed from this production's directory.",
+                    text = "The contact is removed from this project's directory.",
                     style = ZillitTheme.typography.bodyMedium,
                     color = ZillitTheme.colors.textSecondary,
                 )

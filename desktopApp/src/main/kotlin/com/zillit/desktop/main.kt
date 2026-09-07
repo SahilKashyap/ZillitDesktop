@@ -3429,7 +3429,7 @@ private fun callSupport(
             ?.id
             .orEmpty()
         when {
-            userId.isBlank() -> "Open a production first, then call support."
+            userId.isBlank() -> "Open a project first, then call support."
             // A blank receiver is dropped from the request body, so this would
             // place a call nobody was ever invited to.
             primary.isBlank() -> {
@@ -3804,11 +3804,11 @@ private fun widgetToggles(
 /** What each widget's Settings row says it does. */
 private val ZillitWidget.widgetDetail: String
     get() = when (this) {
-        ZillitWidget.Drive -> "A small window onto one production's drive — browse, upload and " +
-            "download beside whatever else you are working in. It can pick a production of its own."
+        ZillitWidget.Drive -> "A small window onto one project's drive — browse, upload and " +
+            "download beside whatever else you are working in. It can pick a project of its own."
         ZillitWidget.Chat -> "Conversations and calls in a small window that stays on top, so a " +
             "thread is one glance away while you work in something else."
-        ZillitWidget.Crew -> "The production's crew — names, roles, phone and email — in a small " +
+        ZillitWidget.Crew -> "The project's crew — names, roles, phone and email — in a small " +
             "window you can search without leaving what you are doing."
     }
 

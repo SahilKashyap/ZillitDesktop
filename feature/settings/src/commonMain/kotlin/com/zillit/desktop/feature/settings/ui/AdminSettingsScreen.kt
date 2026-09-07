@@ -140,7 +140,7 @@ private fun Header(production: ProductionFacts, onBack: (() -> Unit)?) {
                 // to know which one they are about to change.
                 text = production.name.takeIf { it.isNotBlank() }
                     ?.let { "What $it's coordinators control." }
-                    ?: "What this production's coordinators control.",
+                    ?: "What this project's coordinators control.",
                 style = ZillitTheme.typography.bodyMedium,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -170,7 +170,7 @@ private fun NotAnAdmin() {
             size = EMPTY_GLYPH,
         )
         ZillitText(
-            text = "This page is for the production's administrators.",
+            text = "This page is for the project's administrators.",
             style = ZillitTheme.typography.titleSmall,
         )
         ZillitText(

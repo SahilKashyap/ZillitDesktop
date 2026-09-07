@@ -443,7 +443,7 @@ class ChatLocationTest {
         val repository = FakeChatRepository()
         val model = viewModel(
             repository,
-            staticMap = { _, _ -> error("no key on this production") },
+            staticMap = { _, _ -> error("no key on this project") },
         )
         model.onEvent(ChatEvent.OpenThread(aisha))
         runCurrent()

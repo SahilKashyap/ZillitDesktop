@@ -8,7 +8,7 @@ package com.zillit.desktop.feature.auth.domain
  * apart.
  */
 enum class ProjectFilter(val label: String) {
-    All("All productions"),
+    All("All projects"),
     Entertainment("Entertainment"),
     Personal("Personal"),
     Favourites("Favourites"),

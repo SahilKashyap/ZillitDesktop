@@ -71,7 +71,7 @@ fun DepartmentsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: 
                     EmptyRow("No department matches “${state.query}”.")
 
                 rows.isEmpty() && state.hasLoaded ->
-                    EmptyRow("This production has no departments yet.")
+                    EmptyRow("This project has no departments yet.")
 
                 else -> rows.forEachIndexed { index, department ->
                     if (index > 0) RowRule()
@@ -286,7 +286,7 @@ fun CrewOrderPage(
 
         RowCard {
             if (order.isEmpty() && state.hasLoaded) {
-                EmptyRow("This production has no departments to order.")
+                EmptyRow("This project has no departments to order.")
             }
             order.forEachIndexed { index, department ->
                 if (index > 0) RowRule()
@@ -426,7 +426,7 @@ fun ToolGroupsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: (
         ZillitSectionLabel("Groups")
         RowCard {
             if (state.toolGroups.isEmpty() && state.hasLoaded) {
-                EmptyRow("No groups on this production.")
+                EmptyRow("No groups on this project.")
             }
             state.toolGroups.forEachIndexed { index, group ->
                 if (index > 0) RowRule()

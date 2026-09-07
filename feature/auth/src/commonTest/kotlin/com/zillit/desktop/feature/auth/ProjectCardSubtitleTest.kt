@@ -30,7 +30,7 @@ class ProjectCardSubtitleTest {
         parentName: String? = null,
     ) = Project(
         id = "p1",
-        name = "The Production",
+        name = "The Project",
         code = "EN1234",
         type = type,
         region = null,

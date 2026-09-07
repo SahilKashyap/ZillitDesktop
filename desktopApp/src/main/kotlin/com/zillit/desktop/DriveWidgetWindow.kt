@@ -154,8 +154,8 @@ private fun WidgetContent(
 private fun WidgetBody(projects: List<Project>, session: DriveWidgetHost.Session?, onRetry: () -> Unit) {
     when {
         projects.isEmpty() -> ZillitEmptyState(
-            title = "No productions",
-            message = "This device is not on any production yet.",
+            title = "No projects",
+            message = "This device is not on any project yet.",
             icon = ZillitIcons.Drive,
         )
         session == null || session.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { ZillitSpinner() }

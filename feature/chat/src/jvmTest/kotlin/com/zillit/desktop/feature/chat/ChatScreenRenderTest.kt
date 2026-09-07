@@ -138,7 +138,7 @@ class ChatScreenRenderTest {
 
         // Landed on Chats: its (view-model-less) message shows, and no crew
         // row does — the directory is one tab away.
-        onNodeWithText("Chats need a signed-in production.").assertExists()
+        onNodeWithText("Chats need a signed-in project.").assertExists()
         onNodeWithText("Aisha Khan").assertDoesNotExist()
     }
 

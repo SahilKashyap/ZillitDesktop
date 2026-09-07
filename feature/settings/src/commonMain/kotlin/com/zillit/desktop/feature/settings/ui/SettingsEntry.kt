@@ -187,7 +187,7 @@ private fun accountGroup(): SettingsGroup =
             SettingsEntry(
                 destination = SettingsDestination.InviteCrew,
                 title = "Invite crew",
-                detail = "Share this production's code so someone can ask to join it.",
+                detail = "Share this project's code so someone can ask to join it.",
                 icon = ZillitToolIcons.IcInviteUser,
             ),
         ),
@@ -195,7 +195,7 @@ private fun accountGroup(): SettingsGroup =
 
 private fun productionGroup(): SettingsGroup =
     SettingsGroup(
-        title = "This production",
+        title = "This project",
         icon = ZillitIcons.Home,
         entries = listOf(
             SettingsEntry(
@@ -206,7 +206,7 @@ private fun productionGroup(): SettingsGroup =
             ),
             SettingsEntry(
                 destination = SettingsDestination.LeaveProduction,
-                title = "Leave this production",
+                title = "Leave this project",
                 detail = "Takes you off the crew. An admin has to approve you again to come back.",
                 icon = ZillitIcons.Detach,
                 tone = EntryTone.Danger,
@@ -291,7 +291,7 @@ fun adminSettingsEntries(
             SettingsEntry(
                 destination = SettingsDestination.ApproveNewCrew,
                 title = "Approve New User Requests",
-                detail = "People who used this production's code and are waiting to be let in.",
+                detail = "People who used this project's code and are waiting to be let in.",
                 icon = ZillitToolIcons.IcInviteUser,
                 badge = pendingNewCrew,
             ),
@@ -305,7 +305,7 @@ fun adminSettingsEntries(
             SettingsEntry(
                 destination = SettingsDestination.PreApprovedCrew,
                 title = "Pre-Approved Users",
-                detail = "People let straight in when they use the production code, without waiting here.",
+                detail = "People let straight in when they use the project code, without waiting here.",
                 icon = ZillitIcons.Check,
             ),
         ),
@@ -317,7 +317,7 @@ fun adminSettingsEntries(
             SettingsEntry(
                 destination = SettingsDestination.CrewAndAdmins,
                 title = "User Management",
-                detail = "Who is on this production, who else may administer it, and who can be removed.",
+                detail = "Who is on this project, who else may administer it, and who can be removed.",
                 icon = ZillitToolIcons.CrewList,
             ),
             SettingsEntry(
@@ -329,7 +329,7 @@ fun adminSettingsEntries(
             SettingsEntry(
                 destination = SettingsDestination.Departments,
                 title = "Create New Department",
-                detail = "The departments this production runs. Crew choose one when they join.",
+                detail = "The departments this project runs. Crew choose one when they join.",
                 icon = ZillitIcons.LayoutCascade,
             ),
             SettingsEntry(
@@ -360,13 +360,13 @@ fun adminSettingsEntries(
                 SettingsEntry(
                     destination = SettingsDestination.ShootingUnits,
                     title = "Create/Update Home Units",
-                    detail = "The sections of this production's dashboard — bulletin, calendar, call sheet.",
+                    detail = "The sections of this project's dashboard — bulletin, calendar, call sheet.",
                     icon = ZillitToolIcons.IcContinuity,
                 ),
                 SettingsEntry(
                     destination = SettingsDestination.RemoteUnit,
                     title = "Create Remote Shooting Units",
-                    detail = "A unit shooting away from the main production, with its own board and call sheets.",
+                    detail = "A unit shooting away from the main project, with its own board and call sheets.",
                     icon = ZillitToolIcons.Location,
                 ),
                 SettingsEntry(
@@ -384,7 +384,7 @@ fun adminSettingsEntries(
             SettingsEntry(
                 destination = SettingsDestination.ToolAvailability,
                 title = "Customization of tools",
-                detail = "Which tools this production runs. Switching one off hides it for everyone.",
+                detail = "Which tools this project runs. Switching one off hides it for everyone.",
                 icon = ZillitIcons.Tools,
             ),
             SettingsEntry(
@@ -396,19 +396,19 @@ fun adminSettingsEntries(
         ),
     ),
     SettingsGroup(
-        title = "The production",
+        title = "The project",
         icon = ZillitIcons.File,
         entries = listOfNotNull(
             SettingsEntry(
                 destination = SettingsDestination.ProductionName,
                 title = "Edit Project Name",
-                detail = "What this production is called everywhere in Zillit.",
+                detail = "What this project is called everywhere in Zillit.",
                 icon = ZillitToolIcons.Script,
             ),
             SettingsEntry(
                 destination = SettingsDestination.ProductionSetup,
                 title = "Production Setup",
-                detail = "The companies behind this production, and the bank accounts they own.",
+                detail = "The companies behind this project, and the bank accounts they own.",
                 // Not ZillitToolIcons.Account — Company Details, the row below
                 // it, already wears that one, and two near-identical building
                 // marks on adjacent rows read as a duplicate.
@@ -423,19 +423,19 @@ fun adminSettingsEntries(
             SettingsEntry(
                 destination = SettingsDestination.Watermark,
                 title = "Watermark Logo of Company",
-                detail = "The logo stamped across documents this production sends out.",
+                detail = "The logo stamped across documents this project sends out.",
                 icon = ZillitToolIcons.IcSignedDocument,
             ),
             SettingsEntry(
                 destination = SettingsDestination.SosRecipients,
                 title = "Set/View SOS Receivers",
-                detail = "Who is alerted when someone on this production raises an SOS.",
+                detail = "Who is alerted when someone on this project raises an SOS.",
                 icon = ZillitIcons.Phone,
             ),
             SettingsEntry(
                 destination = SettingsDestination.SetupNotes,
                 title = "Project Set up Notes",
-                detail = "Zillit's own guide to setting a production up, opened in your browser.",
+                detail = "Zillit's own guide to setting a project up, opened in your browser.",
                 icon = ZillitIcons.Info,
             ),
         ),
@@ -452,9 +452,9 @@ fun adminSettingsEntries(
                 // under a button that cancels one is worse than no explanation.
                 title = if (production.markedForDeletion) "Stop Project Deletion" else "Delete Project",
                 detail = if (production.markedForDeletion) {
-                    "This production is counting down to deletion. Calls it off; nothing is lost."
+                    "This project is counting down to deletion. Calls it off; nothing is lost."
                 } else {
-                    "Removes the production and everything in it, for everyone. Scheduled, not immediate."
+                    "Removes the project and everything in it, for everyone. Scheduled, not immediate."
                 },
                 icon = ZillitIcons.Close,
                 tone = EntryTone.Danger,

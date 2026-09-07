@@ -54,7 +54,7 @@ private fun ZillitResult<String>.flatMapBlank(): ZillitResult<String> = when (th
         ZillitResult.Failure(
             ZillitError.Storage(
                 technical = "box/auth returned no access_token",
-                userMessage = "Could not reach this production's file storage.",
+                userMessage = "Could not reach this project's file storage.",
             ),
         )
     } else {

@@ -178,8 +178,8 @@ class TokenSessionManagerTest {
         assertEquals("proj-p1", manager.bearerFor(RequestModule.ProjectUser, "p1"))
         assertEquals("proj-p1", manager.bearerFor(RequestModule.Chat, "p1"))
         assertEquals(1, api.count("mint:p1"), "the warm-up minted it; nothing since")
-        assertEquals("proj-p2", manager.bearerFor(RequestModule.ProjectUser, "p2"), "another production, its own token")
-        assertNull(manager.bearerFor(RequestModule.ProjectUser, ""), "no production in context: legacy")
+        assertEquals("proj-p2", manager.bearerFor(RequestModule.ProjectUser, "p2"), "another project, its own token")
+        assertNull(manager.bearerFor(RequestModule.ProjectUser, ""), "no project in context: legacy")
     }
 
     @Test
@@ -276,7 +276,7 @@ class TokenSessionManagerTest {
 
         assertEquals(1, api.count("refresh"))
         assertEquals("dev-2", manager.bearerFor(RequestModule.Default, null))
-        assertEquals(2, api.count("mint:p1"), "the open production's token is kept warm too")
+        assertEquals(2, api.count("mint:p1"), "the open project's token is kept warm too")
     }
 
     private companion object {

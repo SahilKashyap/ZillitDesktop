@@ -152,7 +152,7 @@ data class NewPreApproval(
 /**
  * One tool, as the two tools pages see it.
  *
- * The same row serves both: "Tools on this production" reads [enabled] and
+ * The same row serves both: "Tools on this project" reads [enabled] and
  * writes it back, "Tool groups" reads [groupIdentifier] and moves it. One
  * fetch, two pages — the server offers the whole list either way.
  */
@@ -343,7 +343,7 @@ enum class UnitKind {
      *
      * "Home unit" is the server's word and it is not a shooting unit: these are
      * Bulletin, Calendar, Call Sheet and the like. Reading the route name as
-     * "the production's units" is the mistake this comment exists to stop; the
+     * "the project's units" is the mistake this comment exists to stop; the
      * page called them shooting units until someone opened it and found the
      * dashboard.
      */

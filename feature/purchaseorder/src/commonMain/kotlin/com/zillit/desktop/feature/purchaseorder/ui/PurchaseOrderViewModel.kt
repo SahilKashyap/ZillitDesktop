@@ -564,7 +564,7 @@ class PurchaseOrderViewModel(
         )
         if (enqueued == null) {
             setState { copy(busy = false) }
-            sendEffect(PoEffect.Failed("Open a production before raising an order."))
+            sendEffect(PoEffect.Failed("Open a project before raising an order."))
             return
         }
         forgetDraft()
@@ -644,7 +644,7 @@ class PurchaseOrderViewModel(
         val prompt = currentState.prompt ?: return
         setState { copy(prompt = null) }
         if (refusesPrompt(prompt)) {
-            sendEffect(PoEffect.Failed("You do not have the rights to do that on this production."))
+            sendEffect(PoEffect.Failed("You do not have the rights to do that on this project."))
             return
         }
         when (prompt) {

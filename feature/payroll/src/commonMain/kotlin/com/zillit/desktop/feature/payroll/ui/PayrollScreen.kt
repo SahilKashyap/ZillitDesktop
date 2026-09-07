@@ -191,7 +191,7 @@ private fun PayrollBody(
                     onRowClick = { onEvent(PayrollEvent.SelectWeek(it)) },
                     isSelected = { it == state.weekStarting },
                     emptyTitle = "No weeks",
-                    emptyMessage = "Weeks appear once the production has a pay period.",
+                    emptyMessage = "Weeks appear once the project has a pay period.",
                 )
             }
 
@@ -367,7 +367,7 @@ private fun PayrollPromptDialog(state: PayrollUiState, onEvent: (PayrollEvent) -
                 )
                 if (state.bankAccounts.isEmpty()) {
                     ZillitNotice(
-                        text = "This production has no bank accounts set up, so nothing can be posted. " +
+                        text = "This project has no bank accounts set up, so nothing can be posted. " +
                             "Add one in Production Setup → Accounting.",
                         tone = StatusTone.Escalated,
                         icon = ZillitIcons.Warning,

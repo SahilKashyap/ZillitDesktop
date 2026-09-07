@@ -244,7 +244,7 @@ class AuthViewModelTest {
         projects: ProjectRepository = FakeProjectRepository(listOf(project("a"), project("b"))),
     ) = AuthViewModel(auth, projects)
 
-    private fun project(id: String, name: String = "Production $id", code: String = "CODE-$id") =
+    private fun project(id: String, name: String = "Project $id", code: String = "CODE-$id") =
         Project(id = id, name = name, code = code, type = "Feature", region = "UK")
 }
 

@@ -84,7 +84,7 @@ object LocationPickerWire {
             // rejecting the file:// origin lands here. Without it the picker
             // is a silent grey slab with a search box on it.
             "auth-failed" -> LocationPickerEvent.Failed(
-                "Google rejected this production's Maps key, so the picker cannot load.",
+                "Google rejected this project's Maps key, so the picker cannot load.",
             )
             "error" -> LocationPickerEvent.Failed(body.str("message") ?: "map picker error")
             else -> null

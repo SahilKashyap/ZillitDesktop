@@ -168,8 +168,8 @@ private fun MessageBubble(message: QueryMessage) {
         ) {
             ZillitText(
                 // "You" rather than the artiste's own name: they know who they
-                // are, and the production's name is the one worth reading.
-                text = if (message.fromArtiste) "You" else message.authorName.ifBlank { "Production" },
+                // are, and the project's name is the one worth reading.
+                text = if (message.fromArtiste) "You" else message.authorName.ifBlank { "Project" },
                 style = ZillitTheme.typography.label,
                 modifier = Modifier.weight(1f),
             )

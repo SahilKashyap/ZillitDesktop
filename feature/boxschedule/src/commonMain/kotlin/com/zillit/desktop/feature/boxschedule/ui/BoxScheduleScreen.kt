@@ -76,7 +76,7 @@ fun BoxScheduleScreen(
 private fun Chrome(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> Unit) {
     ZillitPageHeader(
         title = "Box Schedule",
-        description = "The production diary — shoot days, prep, travel and what happens on each.",
+        description = "The project diary — shoot days, prep, travel and what happens on each.",
         actions = {
             if (state.viewer.mayEdit) {
                 ZillitButton(

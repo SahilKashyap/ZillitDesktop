@@ -140,7 +140,7 @@ private fun DocumentsCard(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit
                 "No documents match \"${state.search}\""
             },
             emptyMessage = if (state.search.isBlank()) {
-                "Upload a document, or create a folder to organise what the production issues."
+                "Upload a document, or create a folder to organise what the project issues."
             } else {
                 null
             },

@@ -42,7 +42,7 @@ internal fun StandardFormsPage(
     ZillitPageHeader(
         eyebrow = "Documents & Signature",
         title = "Standard forms & contracts",
-        description = "The production’s shared library. Add a form to your documents " +
+        description = "The project’s shared library. Add a form to your documents " +
             "to sign your own copy.",
         actions = {
             ZillitButton(
@@ -84,7 +84,7 @@ internal fun StandardFormsPage(
                 "Nothing in your documents yet"
             },
             emptyMessage = if (standard.tab == StandardTab.All) {
-                "Documents uploaded to the library appear here for the whole production."
+                "Documents uploaded to the library appear here for the whole project."
             } else {
                 "Use “Add to your documents” on the All documents tab."
             },

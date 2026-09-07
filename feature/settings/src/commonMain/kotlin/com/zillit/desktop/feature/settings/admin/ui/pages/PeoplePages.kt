@@ -58,7 +58,7 @@ import com.zillit.desktop.feature.settings.admin.ui.RightsToggle
 fun CrewPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.Crew.title,
-        description = "Who is on this production, and who may administer it.",
+        description = "Who is on this project, and who may administer it.",
         state = state,
         onEvent = onEvent,
         onBack = onBack,
@@ -71,7 +71,7 @@ fun CrewPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> U
                 EmptyRow("Nobody matches “${state.query}”.")
 
             rows.isEmpty() && state.hasLoaded ->
-                EmptyRow("Nobody has joined this production yet.")
+                EmptyRow("Nobody has joined this project yet.")
 
             else -> {
                 val listState = rememberLazyListState()
@@ -106,7 +106,7 @@ private fun CrewRow(person: CrewMember, onEvent: (AdminEvent) -> Unit) {
                 ZillitText(text = person.fullName, style = ZillitTheme.typography.titleSmall, maxLines = 1)
                 if (person.isAdmin) ZillitTag("Admin", tone = TagTone.Accent)
                 if (!person.isActive) {
-                    ZillitStatusPill(label = "Off the production", tone = StatusTone.Neutral)
+                    ZillitStatusPill(label = "Off the project", tone = StatusTone.Neutral)
                 }
             }
             // Department and role arrive as translation keys, like everywhere
@@ -127,7 +127,7 @@ private fun CrewRow(person: CrewMember, onEvent: (AdminEvent) -> Unit) {
             ZillitCheckbox(
                 checked = person.isActive,
                 onCheckedChange = { onEvent(AdminEvent.CrewActiveChanged(person.userId, it)) },
-                label = "On the production",
+                label = "On the project",
             )
         }
         ZillitCheckbox(
@@ -257,7 +257,7 @@ private fun RightsPanel(state: AdminUiState, onEvent: (AdminEvent) -> Unit, modi
         }
 
         if (RightsSection.entries.all { state.rights(it).isEmpty() }) {
-            item { RowCard { EmptyRow("This production has no tools to grant access to.") } }
+            item { RowCard { EmptyRow("This project has no tools to grant access to.") } }
         }
     }
 }
@@ -306,7 +306,7 @@ private fun RightsRow(rights: ToolRights, onEvent: (AdminEvent) -> Unit) {
 fun PreApprovedPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.PreApproved.title,
-        description = "Let straight in when they use the production code, without waiting for approval.",
+        description = "Let straight in when they use the project code, without waiting for approval.",
         state = state,
         onEvent = onEvent,
         onBack = onBack,
@@ -379,7 +379,7 @@ fun PreApprovedPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: 
 fun SosPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
         title = AdminDestination.Sos.title,
-        description = "Alerted when someone on this production raises an SOS.",
+        description = "Alerted when someone on this project raises an SOS.",
         state = state,
         onEvent = onEvent,
         onBack = onBack,
@@ -403,7 +403,7 @@ fun SosPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Un
                 // Not a neutral empty state. An SOS with nobody to alert is a
                 // safety gap, and the page should say so rather than look tidy.
                 EmptyRow(
-                    "Nobody is alerted on this production. An SOS raised here would reach no one.",
+                    "Nobody is alerted on this project. An SOS raised here would reach no one.",
                 )
                 return@RowCard
             }

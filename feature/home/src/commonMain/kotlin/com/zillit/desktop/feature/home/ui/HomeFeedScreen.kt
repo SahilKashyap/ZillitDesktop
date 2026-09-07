@@ -1724,7 +1724,7 @@ private fun NoticeBoard(
 /**
  * What a reader without posting rights gets instead of the composer.
  *
- * The sentence used to end at "ask a production admin", which left the reader
+ * The sentence used to end at "ask a project admin", which left the reader
  * to work out which admin and what to say. The button does both — see
  * `RightsRequestSurface`, which picks the admin and writes the message.
  */
@@ -2268,7 +2268,7 @@ private fun BoardArea(
         state.error != null && state.notices.isEmpty() -> Centred(state.error)
 
         unit == null -> Centred(
-            "No units are shared with you in this production yet.",
+            "No units are shared with you in this project yet.",
         )
 
         // The calendar unit renders the real calendar when the host supplies

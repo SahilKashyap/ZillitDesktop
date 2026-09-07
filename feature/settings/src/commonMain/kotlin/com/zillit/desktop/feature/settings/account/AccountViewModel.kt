@@ -502,7 +502,7 @@ class AccountViewModel(
                     copy(
                         leave = leave.copy(
                             isLeaving = false,
-                            error = "Could not leave this production. ${left.error.localised()}",
+                            error = "Could not leave this project. ${left.error.localised()}",
                         ),
                     )
                 }
@@ -522,7 +522,7 @@ private val ProfileSaveOutcome.announcement: String
     get() = when (this) {
         ProfileSaveOutcome.Saved -> "Profile saved."
         ProfileSaveOutcome.SentForApproval ->
-            "Sent to the production's admins. Your profile changes once one approves them."
+            "Sent to the project's admins. Your profile changes once one approves them."
     }
 
 /** The form as the session says it should be — the state a fresh open shows. */

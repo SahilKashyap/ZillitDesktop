@@ -42,6 +42,6 @@ class ProjectSwitchCloseTest {
     fun `switching production closes pinned windows too`() {
         val closed = WorkspaceReducer.closeAll(stateWithPinned(), includePinned = true)
 
-        assertTrue(closed.windows.isEmpty(), "a pinned window survived into another production")
+        assertTrue(closed.windows.isEmpty(), "a pinned window survived into another project")
     }
 }

@@ -62,7 +62,7 @@ fun DocDistScreen(
             ZillitEmptyState(
                 title = "No access to Document Distribution",
                 message = "An administrator has not granted you view rights for this tool on " +
-                    "this production.",
+                    "this project.",
                 icon = ZillitIcons.Shield,
             )
             return@Box
@@ -97,9 +97,9 @@ private fun DocDistHeader(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitPageHeader(
-            eyebrow = "Productions",
+            eyebrow = "Projects",
             title = "Document Distribution",
-            description = "Catalogue what the production issues, send it out watermarked, " +
+            description = "Catalogue what the project issues, send it out watermarked, " +
                 "and see who opened it.",
             actions = {
                 ZillitButton(

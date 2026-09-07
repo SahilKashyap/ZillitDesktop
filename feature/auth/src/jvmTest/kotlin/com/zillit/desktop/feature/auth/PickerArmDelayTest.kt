@@ -57,7 +57,7 @@ class PickerArmDelayTest {
         mainClock.advanceTimeBy(100)
         assertTrue(
             events.none { it is AuthEvent.SelectProject },
-            "a click during the arming window must not open a production",
+            "a click during the arming window must not open a project",
         )
 
         // Past the guard, the same click opens.

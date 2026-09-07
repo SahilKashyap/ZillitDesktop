@@ -460,7 +460,7 @@ class SettingsListingTest {
      * The danger row's explanation flips with its title.
      *
      * Caught by looking at the rendered page: "Stop Project Deletion" sat over
-     * "Removes the production and everything in it", which describes the
+     * "Removes the project and everything in it", which describes the
      * opposite of what pressing it does. A title and a detail that contradict
      * each other on a destructive row is worse than either alone.
      */

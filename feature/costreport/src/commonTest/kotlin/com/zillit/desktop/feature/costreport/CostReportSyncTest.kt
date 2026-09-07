@@ -74,7 +74,7 @@ class CostReportSyncTest {
             """{"project_id":"p1","user_id":"u2","data":{"po_id":"po-1"}}""",
         )
         assertTrue(envelope.inProject("p1"))
-        assertFalse(envelope.inProject("p2"), "another production's frame must drop")
+        assertFalse(envelope.inProject("p2"), "another project's frame must drop")
         assertTrue(CrSyncEnvelope().inProject("p1"), "an unnamed frame passes rather than starving the screen")
     }
 

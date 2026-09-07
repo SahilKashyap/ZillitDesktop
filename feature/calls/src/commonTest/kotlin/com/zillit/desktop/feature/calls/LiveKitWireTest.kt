@@ -71,7 +71,7 @@ class LiveKitWireTest {
         val session = invite.toSession(selfUserId = "ambient-me", selfDeviceId = "d")
         assertEquals(CallProvider.LiveKit, session.provider)
         assertEquals(CallDirection.Incoming, session.direction)
-        assertEquals("u-me", session.selfUserId, "the callee's id on that production, not the ambient one")
+        assertEquals("u-me", session.selfUserId, "the callee's id on that project, not the ambient one")
         assertEquals("Camera dept", session.title, "a group call is titled by its room")
         assertEquals(listOf("u-caller", "u-2"), session.participants.map { it.userId })
         assertEquals(CallStatus.Caller, session.participants.first().status)

@@ -1694,7 +1694,7 @@ private fun buildStatusPlane(
  */
 internal suspend fun AppGraph.Ready.crewPresets(): ZillitResult<CrewPresets> {
     val projectId = projectContext?.context?.value?.project?.projectId
-        ?: return ZillitResult.Failure(ZillitError.Validation("No production is open."))
+        ?: return ZillitResult.Failure(ZillitError.Validation("No project is open."))
 
     val departments = projectRepository.departments(projectId)
     val units = unitRepository.joinUnits(projectId)

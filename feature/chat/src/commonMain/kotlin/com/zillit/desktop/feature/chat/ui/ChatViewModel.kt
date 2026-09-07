@@ -547,7 +547,7 @@ class ChatViewModel(
             return
         }
         val projectId = presenceProjectId() ?: run {
-            ZillitLog.d(PRESENCE_TAG) { "no production resolved yet; opening again will retry" }
+            ZillitLog.d(PRESENCE_TAG) { "no project resolved yet; opening again will retry" }
             return
         }
 
@@ -697,7 +697,7 @@ class ChatViewModel(
         // a keyboard shortcut or a stale event must not message someone who
         // is no longer on the production (Android's userActive gate).
         if (!currentState.peerIsGroup && peer.hasLeft) {
-            setState { copy(error = "This person is no longer on the production.") }
+            setState { copy(error = "This person is no longer on the project.") }
             return
         }
         val typed = currentState.draft.trim()

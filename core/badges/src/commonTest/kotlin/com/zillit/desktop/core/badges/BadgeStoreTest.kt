@@ -134,7 +134,7 @@ class BadgeStoreTest {
 
         store.refresh()
 
-        assertEquals(4, store.counts.value["email_tool"], "the next production inherited a suppression")
+        assertEquals(4, store.counts.value["email_tool"], "the next project inherited a suppression")
     }
 
 }

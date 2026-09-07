@@ -105,7 +105,7 @@ internal class ToolWidgetHost(
 
         val provider = scopedProvider(project, options, permissions)
         if (provider == null) {
-            _session.update { it?.copy(loading = false, error = "This production could not be opened here.") }
+            _session.update { it?.copy(loading = false, error = "This project could not be opened here.") }
             return
         }
         publish(project, provider, isOpen = false)

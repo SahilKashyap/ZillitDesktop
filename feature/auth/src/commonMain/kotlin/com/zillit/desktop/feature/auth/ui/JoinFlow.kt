@@ -80,9 +80,9 @@ enum class JoinStep { Code, Details, Submitted }
  */
 val JoinStatus.joinMessage: String
     get() = when (this) {
-        JoinStatus.Approved -> "You are in. The production is ready to open."
+        JoinStatus.Approved -> "You are in. The project is ready to open."
         JoinStatus.Pending -> "Request sent. A coordinator has to approve it before " +
-            "the production opens — you will see it in your list marked as waiting."
-        JoinStatus.Rejected -> "That request was declined. Ask the production for the code again."
+            "the project opens — you will see it in your list marked as waiting."
+        JoinStatus.Rejected -> "That request was declined. Ask the project for the code again."
         JoinStatus.NotJoined -> "The request did not go through. Try again."
     }

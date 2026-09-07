@@ -72,7 +72,7 @@ fun CastingScreen(
         when {
             state.hasNoAccess -> ZillitEmptyState(
                 title = "No ${state.title(board.title).lowercase()} access",
-                message = "Neither list is shared with you on this production.",
+                message = "Neither list is shared with you on this project.",
                 icon = ZillitIcons.Shield,
                 modifier = Modifier.align(Alignment.Center),
             )

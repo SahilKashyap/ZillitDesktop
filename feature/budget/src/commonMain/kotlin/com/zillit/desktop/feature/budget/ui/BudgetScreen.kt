@@ -82,7 +82,7 @@ private fun Header(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
         ZillitPageHeader(
             title = "Budget",
             eyebrow = "Film tools",
-            description = "The production's budget and each department's, with who has seen them.",
+            description = "The project's budget and each department's, with who has seen them.",
             actions = {
                 ZillitButton(
                     text = "Members",

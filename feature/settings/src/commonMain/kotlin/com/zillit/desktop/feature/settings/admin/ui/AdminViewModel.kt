@@ -389,7 +389,7 @@ class AdminViewModel(
             return
         }
 
-        mutate("${form.firstName.trim()} can now join with the production code.") {
+        mutate("${form.firstName.trim()} can now join with the project code.") {
             repository.addPreApproved(
                 NewPreApproval(
                     firstName = form.firstName,
@@ -447,7 +447,7 @@ class AdminViewModel(
 
     private fun submitProductionName(form: AdminForm.ProductionName) {
         if (!form.isValid) {
-            setState { copy(form = form.copy(error = "A production name is three to twenty-five characters.")) }
+            setState { copy(form = form.copy(error = "A project name is three to twenty-five characters.")) }
             return
         }
 
@@ -516,7 +516,7 @@ class AdminViewModel(
         val device = person.deviceId ?: return
 
         if (event.isActive) {
-            mutate("${person.fullName} is back on the production.") {
+            mutate("${person.fullName} is back on the project.") {
                 repository.setCrewStatus(person.userId, device, CrewStatus.Accepted)
             }
         } else {
@@ -611,12 +611,12 @@ class AdminViewModel(
                 }
 
             is AdminConfirmation.RemoveFromCrew ->
-                mutate("${confirmation.name} is off the production.") {
+                mutate("${confirmation.name} is off the project.") {
                     repository.setCrewStatus(confirmation.userId, confirmation.deviceId, CrewStatus.Removed)
                 }
 
             is AdminConfirmation.GrantAdmin ->
-                mutate("${confirmation.name} can now administer this production.") {
+                mutate("${confirmation.name} can now administer this project.") {
                     repository.setAdminAccess(confirmation.userId, true)
                 }
 
@@ -654,7 +654,7 @@ class AdminViewModel(
      */
     private fun mutate(success: String, block: suspend () -> ZillitResult<Unit>) {
         if (!isAdmin()) {
-            setState { copy(error = "Only an administrator can change this production's settings.") }
+            setState { copy(error = "Only an administrator can change this project's settings.") }
             return
         }
         if (currentState.isSaving) return

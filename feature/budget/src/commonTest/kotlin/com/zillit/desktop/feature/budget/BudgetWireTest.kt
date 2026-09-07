@@ -89,7 +89,7 @@ class BudgetWireTest {
         val department = postBody(BudgetType.Department, departmentId = "d9", file = file)
 
         assertEquals("main", main["budget_type"]?.jsonPrimitive?.content)
-        assertTrue("department_id" !in main, "a main budget belongs to the production, not a department")
+        assertTrue("department_id" !in main, "a main budget belongs to the project, not a department")
         assertEquals("d9", department["department_id"]?.jsonPrimitive?.content)
         assertEquals("k/a.pdf", department["attachment"]?.jsonObject?.get("media")?.jsonPrimitive?.content)
     }

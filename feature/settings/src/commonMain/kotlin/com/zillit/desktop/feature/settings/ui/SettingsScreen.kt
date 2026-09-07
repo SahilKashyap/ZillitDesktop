@@ -140,7 +140,7 @@ private fun AccountCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit
                 account.email.takeIf { it.isNotBlank() && it != displayName },
                 account.productionName.takeIf { it.isNotBlank() },
             ).joinToString(" · ")
-                .ifBlank { "Signing out removes the mail and production data stored here." }
+                .ifBlank { "Signing out removes the mail and project data stored here." }
             ZillitText(
                 text = detail,
                 style = ZillitTheme.typography.bodySmall,
@@ -250,13 +250,13 @@ private fun ProductionSection(state: SettingsUiState, onEvent: (SettingsEvent) -
     val unit = state.unit
     if (!unit.isOfferable) return
 
-    Section("Production", ZillitIcons.Tools) {
+    Section("Project", ZillitIcons.Tools) {
         SettingRow(
             title = "Your unit",
             // Says what it changes. "Unit" alone is a word this industry uses
             // for four different things.
             detail = "Which unit's call sheets and notices you receive. " +
-                "Change it if you move between units on this production.",
+                "Change it if you move between units on this project.",
         ) {
             Column(horizontalAlignment = Alignment.End) {
                 ZillitSelect(
@@ -386,7 +386,7 @@ private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent
 
         NotifyToggle(
             title = "Production activity",
-            detail = "A banner for everything else the production did — a " +
+            detail = "A banner for everything else the project did — a " +
                 "purchase order approved, a document shared, an SOS raised. " +
                 "The bell list's rows, as they happen.",
             on = state.notifyActivity,
@@ -423,7 +423,7 @@ private fun SignOutDialog(visible: Boolean, unsent: Int, onEvent: (SettingsEvent
         width = DIALOG_WIDTH,
     ) {
         ZillitText(
-            text = "Mail and production data stored on this computer will be removed. " +
+            text = "Mail and project data stored on this computer will be removed. " +
                 "Nothing on the server is affected.",
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,

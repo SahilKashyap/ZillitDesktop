@@ -249,7 +249,7 @@ class AdminScreenRenderTest {
         render(AdminDestination.Crew) {
             onNodeWithText("Ada Lovelace").assertExists()
             onNodeWithText("Admin").assertExists()
-            onNodeWithText("Off the production").assertExists()
+            onNodeWithText("Off the project").assertExists()
         }
     }
 
@@ -296,7 +296,7 @@ class AdminScreenRenderTest {
         val none = state(AdminDestination.Sos).copy(sos = emptyList())
         render(AdminDestination.Sos, state = none) {
             onNodeWithText(
-                "Nobody is alerted on this production. An SOS raised here would reach no one.",
+                "Nobody is alerted on this project. An SOS raised here would reach no one.",
             ).assertExists()
         }
     }
@@ -307,7 +307,7 @@ class AdminScreenRenderTest {
             .copy(deletion = DeletionSchedule(isScheduled = true, hours = 24))
 
         render(AdminDestination.DeleteProduction, state = scheduled) {
-            onNodeWithText("This production is scheduled for deletion in 24 hours.").assertExists()
+            onNodeWithText("This project is scheduled for deletion in 24 hours.").assertExists()
             onNodeWithText("Call it off").assertExists()
         }
     }
@@ -336,7 +336,7 @@ class AdminScreenRenderTest {
             production = ProductionFacts(name = "Conference", isOtherType = true),
         ) {
             onNodeWithText(
-                "Create Additional Shooting Unit is not part of this production",
+                "Create Additional Shooting Unit is not part of this project",
             ).assertExists()
         }
     }
@@ -462,7 +462,7 @@ class AdminScreenRenderTest {
             AdminDestination.DeleteProduction,
             state = state(AdminDestination.DeleteProduction, confirming = confirming),
         ) {
-            onNodeWithText("Delete this production in 48 hours?").assertExists()
+            onNodeWithText("Delete this project in 48 hours?").assertExists()
             onNodeWithText(confirming.message).assertExists()
         }
     }

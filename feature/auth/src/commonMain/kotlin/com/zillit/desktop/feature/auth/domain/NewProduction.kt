@@ -105,7 +105,7 @@ private fun NewProductionDraft.rulesFor(
 ): Map<ProductionField, Rule> = buildMap {
     put(ProductionField.FirstName, Rule("Enter a first name.") { firstName.isNotBlank() })
     put(ProductionField.LastName, Rule("Enter a last name.") { lastName.isNotBlank() })
-    put(ProductionField.ProductionName, Rule("Enter a production name.") { productionName.isNotBlank() })
+    put(ProductionField.ProductionName, Rule("Enter a project name.") { productionName.isNotBlank() })
 
     put(
         ProductionField.Email,
@@ -116,7 +116,7 @@ private fun NewProductionDraft.rulesFor(
         },
     )
 
-    put(ProductionField.Type, Rule("Choose a production type.") { !typeId.isNullOrBlank() })
+    put(ProductionField.Type, Rule("Choose a project type.") { !typeId.isNullOrBlank() })
 
     // Only demanded when the chosen type actually offers sub-types — requiring
     // one unconditionally would block types that have none.

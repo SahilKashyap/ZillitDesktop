@@ -1797,7 +1797,7 @@ private fun HomeFeedUiState.withHistory(history: Boolean): HomeFeedUiState = cop
 /** iOS's PostingPermissionPopUp, as a composer error rather than a modal. */
 private fun noPostingRights(unit: HomeUnit): String =
     "You do not have posting rights for " + unit.label +
-        ". Ask a production admin to grant them."
+        ". Ask a project admin to grant them."
 
 /** The card shown before the server answers — the send's own local echo. */
 private fun optimisticNotice(localId: String, draft: NoticeDraft, now: Long): Notice = Notice(

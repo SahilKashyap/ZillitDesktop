@@ -97,7 +97,7 @@ internal fun CompanyDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
         ZillitSectionLabel("Bank accounts")
         if (state.setup.banks.isEmpty()) {
             ZillitText(
-                text = "No bank accounts on this production yet. Add one from the Bank " +
+                text = "No bank accounts on this project yet. Add one from the Bank " +
                     "Accounts section, then link it here.",
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,

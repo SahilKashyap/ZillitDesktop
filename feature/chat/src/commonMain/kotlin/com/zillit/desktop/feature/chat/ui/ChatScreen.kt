@@ -494,7 +494,7 @@ private fun DirectoryPane(
         } else {
             PaneMessage(
                 icon = ZillitIcons.Chat,
-                text = "Chats need a signed-in production.",
+                text = "Chats need a signed-in project.",
             )
         }
     }

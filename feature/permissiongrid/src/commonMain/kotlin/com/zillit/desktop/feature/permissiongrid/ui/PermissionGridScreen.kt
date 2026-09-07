@@ -71,7 +71,7 @@ fun PermissionGridScreen(
     ) {
         ZillitPageHeader(
             title = "Viewing & Posting Rights Grid",
-            description = "Who may see, post to and download from each tool on this production.",
+            description = "Who may see, post to and download from each tool on this project.",
         )
 
         Controls(state, onEvent)
@@ -130,7 +130,7 @@ private fun Body(state: PermissionGridUiState, onEvent: (PermissionGridEvent) ->
 
         state.grid.rows.isEmpty() -> ZillitEmptyState(
             title = "Nothing to show",
-            message = "This production has no ${state.axis.label.lowercase()} to grant rights to.",
+            message = "This project has no ${state.axis.label.lowercase()} to grant rights to.",
         )
 
         state.rows.isEmpty() -> Centred("No one matches \"${state.query.trim()}\".")

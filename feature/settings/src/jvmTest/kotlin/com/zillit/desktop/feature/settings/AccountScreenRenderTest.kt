@@ -203,7 +203,7 @@ class AccountScreenRenderTest {
         }
 
         onNodeWithText("Leave Dune?").assertExists()
-        onNodeWithText("You administer this production", substring = true).assertExists()
+        onNodeWithText("You administer this project", substring = true).assertExists()
     }
 
     @Test
@@ -256,6 +256,6 @@ class AccountScreenRenderTest {
             }
         }
 
-        onNodeWithText("No production code").assertExists()
+        onNodeWithText("No project code").assertExists()
     }
 }

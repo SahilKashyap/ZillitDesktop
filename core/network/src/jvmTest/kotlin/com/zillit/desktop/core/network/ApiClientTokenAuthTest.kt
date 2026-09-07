@@ -81,7 +81,7 @@ class ApiClientTokenAuthTest {
         assertNull(sent["moduledata"], "the server reads one credential or the other, never both")
         assertNull(sent["bodyhash"])
         assertEquals("Europe/London", sent["timezone"])
-        assertEquals(RequestModule.ProjectUser to "p-open", auth.asked.single(), "scoped to the open production")
+        assertEquals(RequestModule.ProjectUser to "p-open", auth.asked.single(), "scoped to the open project")
     }
 
     @Test

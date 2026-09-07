@@ -670,7 +670,7 @@ class CashExpensesViewModel(
             ConfirmAction.SignOffReconciliation -> viewer.isSenior
             else -> true
         }
-        return if (allowed) null else "You do not have the rights to do that on this production."
+        return if (allowed) null else "You do not have the rights to do that on this project."
     }
 
     @Suppress("CyclomaticComplexMethod") // One branch per confirmable action.

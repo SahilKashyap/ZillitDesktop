@@ -86,11 +86,11 @@ class AdminDestinationTest {
     @Test
     fun `a corporate production has no shooting units but keeps its dashboard`() {
         listOf(AdminDestination.ShootingUnits, AdminDestination.RemoteUnits).forEach { page ->
-            assertFalse(page.availableTo(corporate), "${page.name} should be absent on a corporate production")
+            assertFalse(page.availableTo(corporate), "${page.name} should be absent on a corporate project")
         }
         assertTrue(
             AdminDestination.HomeUnits.availableTo(corporate),
-            "every production has a dashboard, whatever it is shooting",
+            "every project has a dashboard, whatever it is shooting",
         )
 
         val offered = adminSettingsEntries(corporate).flatMap { it.entries }.map { it.destination }
@@ -118,7 +118,7 @@ class AdminDestinationTest {
             AdminDestination.PreApproved,
             AdminDestination.Sos,
         ).forEach { page ->
-            assertTrue(!page.availableTo(personal), "${page.name} should be absent on a personal production")
+            assertTrue(!page.availableTo(personal), "${page.name} should be absent on a personal project")
         }
 
         val offered = adminSettingsEntries(personal).flatMap { it.entries }.map { it.destination }

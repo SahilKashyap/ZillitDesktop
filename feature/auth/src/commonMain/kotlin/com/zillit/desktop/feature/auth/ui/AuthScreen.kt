@@ -101,7 +101,7 @@ private fun Branding() {
             color = ZillitTheme.colors.accent,
         )
         ZillitText(
-            text = "Production management",
+            text = "Project management",
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )

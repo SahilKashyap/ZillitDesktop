@@ -291,7 +291,7 @@ class HomeBoardRenderTest {
     /**
      * The flip, on the board: the sentence under the feed now carries a button.
      *
-     * It used to end at "ask a production admin", which named no admin and
+     * It used to end at "ask a project admin", which named no admin and
      * offered no way to reach one. `HomeFeedEvent.RequestPostingRights` picks
      * the admin and writes the message — see `RightsRequestSurface`.
      */

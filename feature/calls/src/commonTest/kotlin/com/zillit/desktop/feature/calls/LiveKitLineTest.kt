@@ -185,7 +185,7 @@ class LiveKitLineTest {
 
         val invite = listener.invites.single()
         assertEquals(CallProvider.LiveKit, invite.provider)
-        assertEquals("me-there", invite.selfUserId, "the callee's id on the ringing production")
+        assertEquals("me-there", invite.selfUserId, "the callee's id on the ringing project")
         assertTrue(socket.sentTypes().contains("ringingAck"), socket.sentTypes().toString())
     }
 
@@ -206,7 +206,7 @@ class LiveKitLineTest {
         assertEquals("group", mint["type"]!!.jsonPrimitive.content)
         assertEquals(0, (mint["calleeIds"] as JsonArray).size)
         assertEquals(null, mint["callType"], "the mint does not describe the call")
-        assertEquals("p1" to "me", http.calls.single().third, "signed as the caller on the call's production")
+        assertEquals("p1" to "me", http.calls.single().third, "signed as the caller on the call's project")
         val start = socket.frames.last { it["type"]!!.jsonPrimitive.content == "startCall" }
         assertEquals("c9", start["callId"]!!.jsonPrimitive.content)
         assertEquals("video", start["callType"]!!.jsonPrimitive.content)
@@ -332,7 +332,7 @@ class LiveKitLineTest {
         runCurrent()
         assertEquals("rest-tok", (accepted.await() as ZillitResult.Success).data.token)
         val (_, _, auth) = http.calls.last()
-        assertEquals("p2" to "me-there", auth, "signed as the call's production and the callee's id there")
+        assertEquals("p2" to "me-there", auth, "signed as the call's project and the callee's id there")
 
         line.decline(ring)
         assertTrue(http.paths().last().endsWith("/v1/calls/c1/hangup"))

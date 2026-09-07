@@ -159,7 +159,7 @@ private fun CompaniesSection(state: AccountHubUiState, onEvent: (AccountHubEvent
 
     SetupSectionCard(
         title = "Companies",
-        description = "The legal entities that own this production's bank accounts.",
+        description = "The legal entities that own this project's bank accounts.",
         dirty = setup.companies.dirty,
         saving = setup.companies.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Companies)) },
@@ -246,7 +246,7 @@ private fun BankAccountsSection(state: AccountHubUiState, onEvent: (AccountHubEv
         },
     ) {
         if (setup.banks.isEmpty()) {
-            EmptyLine("No bank accounts on this production yet.")
+            EmptyLine("No bank accounts on this project yet.")
             return@SetupInfoCard
         }
         setup.banks.forEach { bank ->
@@ -302,7 +302,7 @@ private fun CurrenciesSection(state: AccountHubUiState, onEvent: (AccountHubEven
 
     SetupSectionCard(
         title = "Project Currencies",
-        description = "Everything this production transacts in, and the one that pre-fills " +
+        description = "Everything this project transacts in, and the one that pre-fills " +
             "new transactions.",
         dirty = setup.currencies.dirty,
         saving = setup.currencies.saving,
@@ -562,7 +562,7 @@ private fun BudgetSection(state: AccountHubUiState, onEvent: (AccountHubEvent) -
 
     SetupSectionCard(
         title = "Project Budget",
-        description = "The production's overall figure, against which the cost report runs.",
+        description = "The project's overall figure, against which the cost report runs.",
         dirty = setup.budget.dirty,
         saving = setup.budget.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Budget)) },

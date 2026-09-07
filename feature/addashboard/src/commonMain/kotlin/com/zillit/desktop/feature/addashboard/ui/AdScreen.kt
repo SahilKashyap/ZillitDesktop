@@ -40,7 +40,7 @@ fun AdScreen(state: AdUiState, onEvent: (AdEvent) -> Unit) {
     if (state.viewer.isBlocked) {
         ZillitEmptyState(
             title = "No access",
-            message = "This production has not given you the AD dashboard.",
+            message = "This project has not given you the AD dashboard.",
             icon = ZillitIcons.Shield,
         )
         return

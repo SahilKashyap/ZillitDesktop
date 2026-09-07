@@ -93,7 +93,7 @@ private fun DriveScreenBody(
             ZillitEmptyState(
                 title = "No access to Drive",
                 message = "An administrator has not granted you view rights for the Drive on " +
-                    "this production.",
+                    "this project.",
                 icon = ZillitIcons.Shield,
             )
             return@Box
@@ -154,7 +154,7 @@ private fun DriveHeader(state: DriveUiState, onEvent: (DriveEvent) -> Unit, onOp
         ZillitPageHeader(
             eyebrow = "Admin",
             title = "Drive",
-            description = "The production's shared files — upload, organise, share and " +
+            description = "The project's shared files — upload, organise, share and " +
                 "version them.",
             actions = {
                 if (state.viewer.canCreate) {

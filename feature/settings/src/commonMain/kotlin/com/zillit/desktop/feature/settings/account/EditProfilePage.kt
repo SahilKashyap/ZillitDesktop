@@ -47,7 +47,7 @@ fun EditProfilePage(state: AccountUiState, onEvent: (AccountEvent) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
         if (!seed.isAdmin) {
             ZillitNotice(
-                text = "You are not an administrator on this production, so changes here are " +
+                text = "You are not an administrator on this project, so changes here are " +
                     "sent for approval rather than applied. Your profile updates once an " +
                     "admin accepts them.",
                 tone = StatusTone.Pending,
@@ -243,7 +243,7 @@ private fun PrivateNameRow(form: ProfileFormState, onEvent: (AccountEvent) -> Un
  */
 private fun departmentPlaceholder(form: ProfileFormState): String = when {
     form.isLoadingDepartments -> "Loading departments…"
-    form.departments.isEmpty() -> "No departments on this production"
+    form.departments.isEmpty() -> "No departments on this project"
     else -> "Choose a department"
 }
 

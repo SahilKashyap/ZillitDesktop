@@ -82,7 +82,7 @@ class ProjectListingTest {
 
         assertEquals(listOf("Family Chat"), personal.map { it.name })
         assertTrue(entertainment.none { it.name == "Family Chat" })
-        assertEquals(all.size, personal.size + entertainment.size, "every production lands in exactly one")
+        assertEquals(all.size, personal.size + entertainment.size, "every project lands in exactly one")
     }
 
     @Test

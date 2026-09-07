@@ -133,7 +133,7 @@ private fun ColumnScope.AssignFields(
     val eligible = BatchAssignment.eligible(assignees, batch)
     if (eligible.isEmpty()) {
         ZillitText(
-            text = "Nobody else on this production can take this batch.",
+            text = "Nobody else on this project can take this batch.",
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )

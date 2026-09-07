@@ -48,7 +48,7 @@ fun EsignScreen(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
             state.viewer.isBlocked -> {
                 ZillitPageHeader(eyebrow = "Film Tools", title = "E-Signature")
                 ZillitNotice(
-                    text = "You don’t have access to E-Signature on this production.",
+                    text = "You don’t have access to E-Signature on this project.",
                     tone = StatusTone.Pending,
                     icon = ZillitIcons.Info,
                 )

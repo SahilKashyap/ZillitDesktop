@@ -123,8 +123,8 @@ class FormSignatureScreenRenderTest {
                 }
             }
             onNodeWithText(
-                "You don’t have access to Documents & Signature on this production. " +
-                    "Access is granted per tool, by the production’s admin.",
+                "You don’t have access to Documents & Signature on this project. " +
+                    "Access is granted per tool, by the project’s admin.",
             ).assertExists()
         }
     }

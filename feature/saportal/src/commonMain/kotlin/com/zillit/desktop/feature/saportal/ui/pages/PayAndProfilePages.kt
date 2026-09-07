@@ -99,7 +99,7 @@ internal fun ColumnScope.ProfilePage(state: SaUiState) {
         if (!state.loading) {
             ZillitEmptyState(
                 title = "No record found",
-                message = "This production has no artiste record for you.",
+                message = "This project has no artiste record for you.",
                 icon = ZillitIcons.Info,
             )
         }

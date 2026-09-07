@@ -89,7 +89,7 @@ class CallScopeWireTest {
         )
 
         val (project, user) = asked.single()
-        assertNull(project, "the open production is the ambient one, not a named override")
+        assertNull(project, "the open project is the ambient one, not a named override")
         // Blank is never sent: an empty string would be a user id the server
         // cannot resolve, which is worse than saying nothing.
         assertNull(user, "a blank caller id must not reach the headers")

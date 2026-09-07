@@ -210,7 +210,7 @@ class KcefMapEngine(
             if (key.isNullOrBlank()) {
                 ZillitLog.w(TAG) { "no Google Maps key in remote config; map stays blank" }
                 _events.tryEmit(
-                    MapCanvasEvent.Failed("This production has no Google Maps key, so the map cannot load."),
+                    MapCanvasEvent.Failed("This project has no Google Maps key, so the map cannot load."),
                 )
                 return@launch
             }

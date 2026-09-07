@@ -659,7 +659,7 @@ private fun ReceiptActions(state: CardUiState, receipt: CardReceipt, onEvent: (C
                                     CardConfirmAction.FlagPersonal,
                                     receipt.id,
                                     "Flag as personal spend",
-                                    "It leaves the production's expense workflow and the holder is charged back.",
+                                    "It leaves the project's expense workflow and the holder is charged back.",
                                 ),
                             )
                         },

@@ -212,7 +212,7 @@ private fun ReadingChoices() {
     ) {
         ZillitSpinner(size = SMALL_SPINNER)
         ZillitText(
-            text = "Reading this production's departments…",
+            text = "Reading this project's departments…",
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -235,7 +235,7 @@ private fun ChoicesUnavailable() {
         ZillitText(
             // Approving is still the right thing to be able to do: what the
             // person asked for is usually what they should get.
-            text = "The production's departments could not be read. " +
+            text = "The project's departments could not be read. " +
                 "Approving keeps what they asked for.",
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
@@ -326,7 +326,7 @@ private fun PendingApproval.asRole(id: String?): List<CrewRole> =
 
 private val ApprovalQueue.reviewTitle: String
     get() = when (this) {
-        ApprovalQueue.NewCrew -> "Let them onto the production?"
+        ApprovalQueue.NewCrew -> "Let them onto the project?"
         ApprovalQueue.ProfileChanges -> "Approve this change?"
     }
 

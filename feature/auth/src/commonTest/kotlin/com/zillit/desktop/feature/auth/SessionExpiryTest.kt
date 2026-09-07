@@ -149,7 +149,7 @@ class SessionExpiryTest {
         advanceUntilIdle()
 
         assertEquals(AuthStep.Complete, model.state.value.step)
-        assertEquals(0, projects.leaveCount, "the production must not be torn down")
+        assertEquals(0, projects.leaveCount, "the project must not be torn down")
     }
 
     @Test
@@ -255,7 +255,7 @@ class SessionExpiryTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         assertIs<AuthStep.QrLogin>(model.state.value.step)
-        assertEquals(1, projects.leaveCount, "the production is left")
+        assertEquals(1, projects.leaveCount, "the project is left")
         assertEquals(codesBefore + 1, qr.startCount, "a fresh code to sign back in with")
         assertEquals(null, model.state.value.activeProject)
     }

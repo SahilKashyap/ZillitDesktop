@@ -59,7 +59,7 @@ class HomeLoadTimingTest {
         HomeViewModel(repository)
         advanceUntilIdle()
 
-        assertEquals(0, repository.calls, "the tools call fired before a production was open")
+        assertEquals(0, repository.calls, "the tools call fired before a project was open")
     }
 
     @Test
