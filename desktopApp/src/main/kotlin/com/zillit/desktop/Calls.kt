@@ -166,6 +166,11 @@ internal fun callVideoSurface(ready: AppGraph.Ready): (@Composable () -> Unit)? 
              * preferred to depending on that order.
              */
             val holder = remember(awtComponent) { JPanel(BorderLayout()) }
+            // Whether the picture ever reaches a window is the first
+            // question about "video is not rendering"; say when it does.
+            androidx.compose.runtime.LaunchedEffect(holder) {
+                com.zillit.desktop.core.common.ZillitLog.i("Calls") { "video surface mounted in a window" }
+            }
             // Taken as this host mounts and handed back as it leaves, so a
             // host that has already been superseded cannot park a component
             // the next one is holding. See [KcefCallEngine.hostSurface].

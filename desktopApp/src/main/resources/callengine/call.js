@@ -661,23 +661,40 @@
 
     /** Puts every Line 1 video into its (possibly rebuilt) cell. */
     function line1Mount() {
+        const report = [];
         line1Media.forEach((entry) => {
             if (entry.kind !== 'video') { return; }
             const cell = line1Tile(entry.peerId);
-            if (!cell) { return; }
-            if (entry.element && entry.element.parentNode === cell.mount) { return; }
+            if (!cell) { report.push('no tile for ' + entry.peerId); return; }
+            if (entry.element && entry.element.parentNode === cell.mount) { report.push(videoState(entry.peerId, entry.element)); return; }
             if (!entry.element) { entry.element = line1VideoElement(entry.stream); }
             cell.mount.innerHTML = '';
             cell.mount.appendChild(entry.element);
+            report.push('mounted ' + entry.peerId);
         });
         if (line1Local) {
             const cell = selfCell();
+            if (!cell) { report.push('no self tile'); }
             if (cell && (!line1Local.element || line1Local.element.parentNode !== cell.mount)) {
                 if (!line1Local.element) { line1Local.element = line1VideoElement(line1Local.stream); }
                 cell.mount.innerHTML = '';
                 cell.mount.appendChild(line1Local.element);
+                report.push('mounted self');
+            } else if (cell && line1Local.element) {
+                report.push(videoState('self', line1Local.element));
             }
         }
+        // The state of every mounted video, said out loud: a picture that is
+        // playing in the DOM and still not on screen is the surface's fault,
+        // one that is not playing is this file's.
+        if (report.length) {
+            send({ type: 'warning', where: 'call:mount', message: 'cells=' + cells.size + ' ' + report.join('; ') });
+        }
+    }
+
+    function videoState(who, video) {
+        return who + '=' + video.videoWidth + 'x' + video.videoHeight + ' rs' + video.readyState +
+            (video.paused ? ' paused' : ' playing') + ' at ' + (video.parentNode ? video.parentNode.className : 'nowhere');
     }
 
     window.zillitCall = {
