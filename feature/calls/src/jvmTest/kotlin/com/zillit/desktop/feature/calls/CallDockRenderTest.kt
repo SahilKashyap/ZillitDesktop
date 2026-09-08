@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallSession
 import com.zillit.desktop.feature.calls.ui.CallDock
 import com.zillit.desktop.feature.calls.ui.CallEvent
+import com.zillit.desktop.feature.calls.ui.CallMorePanel
 import com.zillit.desktop.feature.calls.ui.CallUiState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -56,16 +57,23 @@ class CallDockRenderTest {
     }
 
     @Test
-    fun `the overflow menu holds recording and the window moves`() = runComposeUiTest {
+    fun `the overflow button opens the panel, which holds recording and the window moves`() = runComposeUiTest {
         val events = mutableListOf<CallEvent>()
         setContent { ZillitTheme(darkTheme = true, animateThemeChange = false) { CallDock(state(), events::add) } }
-
         onNodeWithContentDescription("More options").performClick()
+        assertEquals(listOf<CallEvent>(CallEvent.ToggleMore), events)
+
+        events.clear()
+        setContent {
+            ZillitTheme(darkTheme = true, animateThemeChange = false) {
+                CallMorePanel(state().copy(moreOpen = true), events::add)
+            }
+        }
         onNodeWithText("Start recording").assertIsDisplayed()
         onNodeWithText("Open in its own window").assertIsDisplayed()
         onNodeWithText("Start recording").performClick()
 
-        assertEquals(listOf<CallEvent>(CallEvent.ToggleRecording), events)
+        assertEquals(listOf<CallEvent>(CallEvent.ToggleMore, CallEvent.ToggleRecording), events)
     }
 
     /** During a ring the bar stays put but its room verbs are inert. */

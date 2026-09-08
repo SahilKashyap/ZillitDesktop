@@ -149,6 +149,8 @@ data class CallUiState(
     val recordedBy: String = "",
     /** The audio picker, and the hardware it offers. */
     val audioPickerOpen: Boolean = false,
+    /** The ⋮ panel — recording, people and the window moves — open beside the picture. */
+    val moreOpen: Boolean = false,
     val devices: com.zillit.desktop.feature.calls.domain.CallDevices =
         com.zillit.desktop.feature.calls.domain.CallDevices(),
     /** Latched once video is expected; see `projectCallUi`. */
@@ -302,6 +304,7 @@ sealed interface CallEvent {
 
     /** Opens the microphone/speaker picker, re-reading the hardware as it opens. */
     data object ToggleAudioPicker : CallEvent
+    data object ToggleMore : CallEvent
     data class ChooseMicrophone(val deviceId: String) : CallEvent
     data class ChooseSpeaker(val deviceId: String) : CallEvent
     data class AddPerson(
@@ -634,6 +637,10 @@ class CallViewModel(
             CallEvent.DismissSharePicker -> setState { copy(sharePicker = null) }
             CallEvent.ToggleHand -> coordinator.toggleHand()
             CallEvent.ToggleRecording -> coordinator.toggleRecording()
+            // A panel beside the picture, not a popup over it: a heavyweight
+            // video surface paints over anything Compose floats above it, so
+            // a menu opened upward from the dock was simply never seen.
+            CallEvent.ToggleMore -> setState { copy(moreOpen = !moreOpen) }
             CallEvent.ToggleAudioPicker -> {
                 // Re-read on open: a headset plugged in while the menu was
                 // shut is otherwise invisible until the SDK happens to notice.
@@ -703,6 +710,7 @@ class CallViewModel(
         pillOffsetX = 0f,
         pillOffsetY = 0f,
         rosterOpen = false,
+        moreOpen = false,
         videoSeen = false,
         recording = false,
         recordedBy = "",

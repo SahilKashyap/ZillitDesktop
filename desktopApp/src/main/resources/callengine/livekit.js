@@ -44,6 +44,17 @@
         send({ type: 'warning', where: 'livekit:' + where, message: text });
     }
 
+    /**
+     * The person behind a LiveKit identity. The token's subject is
+     * `<userId>#<device>_<ts>` on this backend (one identity per device), and
+     * every roster row, tile and Kotlin uid is keyed by the user id alone —
+     * matched whole, a participant bound to nothing and stood on the stage
+     * as a third, nameless tile beside two real people.
+     */
+    function userIdOf(identity) {
+        return String(identity || '').split('#')[0];
+    }
+
     /** Line 1's numbering, so `mediasoupUidOf(identity)` in Kotlin agrees. */
     function uidOf(key) {
         var h = 0;
@@ -65,13 +76,14 @@
         if (!track || !track.mediaStreamTrack) { return; }
         var stream = new MediaStream([track.mediaStreamTrack]);
         var key = trackKey(participant.sid, publication.source);
-        var uid = uidOf(participant.identity);
+        var user = userIdOf(participant.identity);
+        var uid = uidOf(user);
         if (window.zillitCall && window.zillitCall.attachRemote) {
-            // The page finds a video's tile by the participant's identity —
-            // the roster's user id, which Line 1 passes here too. The numeric
-            // uid never matched (a number against the tile's string), so a
-            // remote camera on Line 3 was received and never shown.
-            window.zillitCall.attachRemote(key, participant.identity, kindOf(track), stream);
+            // The page finds a video's tile by the roster's user id, which
+            // Line 1 passes here too. The numeric uid never matched (a number
+            // against the tile's string), so a remote camera on Line 3 was
+            // received and never shown.
+            window.zillitCall.attachRemote(key, user, kindOf(track), stream);
         }
         if (publication.source === LK.Track.Source.ScreenShare) {
             send({ type: 'peer-screen-share', uid: uid, sharing: true });
@@ -84,7 +96,7 @@
             window.zillitCall.detachRemote(key);
         }
         if (publication.source === LK.Track.Source.ScreenShare) {
-            send({ type: 'peer-screen-share', uid: uidOf(participant.identity), sharing: false });
+            send({ type: 'peer-screen-share', uid: uidOf(userIdOf(participant.identity)), sharing: false });
         }
     }
 
@@ -100,7 +112,7 @@
     }
 
     function peerJoined(p) {
-        send({ type: 'peer-joined', uid: uidOf(p.identity), peerId: p.identity });
+        send({ type: 'peer-joined', uid: uidOf(userIdOf(p.identity)), peerId: userIdOf(p.identity) });
         p.trackPublications.forEach(function (pub) {
             if (pub.isSubscribed && pub.track) { attachRemote(p, pub); }
         });
@@ -110,7 +122,7 @@
     function reportMuted(p) {
         var mic = p.getTrackPublication(LK.Track.Source.Microphone);
         var cam = p.getTrackPublication(LK.Track.Source.Camera);
-        var uid = uidOf(p.identity);
+        var uid = uidOf(userIdOf(p.identity));
         send({ type: 'peer-audio', uid: uid, muted: !mic || mic.isMuted });
         send({ type: 'peer-video', uid: uid, muted: !cam || cam.isMuted });
     }
@@ -120,7 +132,7 @@
         r.on(E.ParticipantConnected, function (p) { peerJoined(p); });
         r.on(E.ParticipantDisconnected, function (p) {
             p.trackPublications.forEach(function (pub) { detachRemote(p, pub); });
-            send({ type: 'peer-left', uid: uidOf(p.identity) });
+            send({ type: 'peer-left', uid: uidOf(userIdOf(p.identity)) });
         });
         r.on(E.TrackSubscribed, function (track, pub, p) { attachRemote(p, pub); reportMuted(p); });
         r.on(E.TrackUnsubscribed, function (track, pub, p) { detachRemote(p, pub); reportMuted(p); });
@@ -128,7 +140,7 @@
         r.on(E.TrackUnmuted, function (pub, p) { if (p !== r.localParticipant) { reportMuted(p); } });
         r.on(E.ActiveSpeakersChanged, function (speakers) {
             var uids = [];
-            speakers.forEach(function (p) { if (p !== r.localParticipant) { uids.push(uidOf(p.identity)); } });
+            speakers.forEach(function (p) { if (p !== r.localParticipant) { uids.push(uidOf(userIdOf(p.identity))); } });
             send({ type: 'speakers', uids: uids });
         });
         r.on(E.ConnectionStateChanged, function (state) {
@@ -143,6 +155,24 @@
                 room = null;
                 send({ type: 'left', channel: identity });
             }
+        });
+        // In-call chat rides LiveKit's reliable data channel, as the web's
+        // `ChatChannel` sends it: `{t:"chat", id, text, ts}` and `{t:"del", id}`.
+        // Attributed to the SFU-set identity, never a userId in the payload.
+        r.on(E.DataReceived, function (payload, participant) {
+            if (!participant) { return; }
+            var msg;
+            try { msg = JSON.parse(new TextDecoder().decode(payload)); } catch (e) { return; }
+            if (!msg || (msg.t !== 'chat' && msg.t !== 'del')) { return; }
+            send({
+                type: 'lk-chat',
+                from: userIdOf(participant.identity),
+                name: participant.name || '',
+                id: String(msg.id || ''),
+                text: String(msg.text || ''),
+                ts: Number(msg.ts || Date.now()),
+                deleted: msg.t === 'del',
+            });
         });
         r.on(E.LocalTrackPublished, function () { showLocalPreview(); });
         r.on(E.LocalTrackUnpublished, function () { showLocalPreview(); });
@@ -174,7 +204,7 @@
                 await r.connect(url, token);
                 if (gen !== joinGeneration) { await r.disconnect(); return; }
                 r.remoteParticipants.forEach(function (p) { peerJoined(p); });
-                send({ type: 'joined', channel: identity, uid: uidOf(identity) });
+                send({ type: 'joined', channel: identity, uid: uidOf(userIdOf(identity)) });
                 try {
                     await r.localParticipant.setMicrophoneEnabled(true, chosenMic ? { deviceId: chosenMic } : undefined);
                 } catch (e) { warn('microphone', e); }
@@ -270,6 +300,14 @@
                 await room.localParticipant.unpublishTrack(pub.track, true);
             } catch (e) { warn('stopScreenShare', e); }
             send({ type: 'screen-share', sharing: false });
+        },
+
+        /** One line of in-call chat to everyone, in the web's packet shape. */
+        sendChat(id, text, ts) {
+            if (!room) { return; }
+            var packet = JSON.stringify({ t: 'chat', id: id, text: text, ts: ts });
+            room.localParticipant.publishData(new TextEncoder().encode(packet), { reliable: true })
+                .catch(function (e) { warn('sendChat', e); });
         },
 
         setHand(raised) {

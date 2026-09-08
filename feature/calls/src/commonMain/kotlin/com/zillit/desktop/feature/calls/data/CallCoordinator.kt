@@ -158,6 +158,13 @@ class CallCoordinator(
         selfName = selfName,
         selfDeviceId = selfDeviceId,
         now = now,
+        // Line 3's chat rides the room's data channel, as the web's does; a
+        // socket relay would reach no phone on that line.
+        direct = { data ->
+            _session.value?.provider == CallProvider.LiveKit &&
+                data.kind == IN_CALL_KIND_MESSAGE &&
+                engine.sendChat(data.id, data.text, data.atMillis)
+        },
     )
 
     /** Reactions and lines, inbound and our own echoed back. Never persisted. */
@@ -698,6 +705,25 @@ class CallCoordinator(
     )
 
     /** Starts or stops recording the call's audio on this machine. */
+    /** A Line 3 line, named from the roster where the token carried no name. */
+    private fun onChatReceived(event: CallEngineEvent.ChatReceived) {
+        if (event.deleted || event.text.isBlank()) return
+        val current = _session.value ?: return
+        val name = current.participants.firstOrNull { it.userId == event.fromUserId }?.name
+            ?.takeIf { it.isNotBlank() } ?: event.name
+        inCall.receive(
+            InCallData(
+                roomId = current.roomId.ifBlank { current.callUuid },
+                kind = IN_CALL_KIND_MESSAGE,
+                fromUserId = event.fromUserId,
+                name = name,
+                text = event.text,
+                id = event.id.ifBlank { "${event.fromUserId}:${event.atMillis}" },
+                atMillis = event.atMillis,
+            ),
+        )
+    }
+
     fun toggleRecording() {
         if (_phase.value != CallPhase.InCall) return
         val session = _session.value ?: return
@@ -1104,17 +1130,25 @@ class CallCoordinator(
                 }
                 is CallEngineEvent.Devices -> audio.onEngineDevices(event)
                 is CallEngineEvent.Failed -> fail(event.message)
-                // A peer's media going away is the other half of "is anyone
-                // still here": the roster can lag, and on Line 1 a departure
-                // reaches this side as a closed consumer well before any row
-                // moves.
-                is CallEngineEvent.PeerLeft -> checkRoomStillOccupied()
                 is CallEngineEvent.Degraded -> onDegraded(event)
-                is CallEngineEvent.PeerHand -> onPeerHand(event)
-                is CallEngineEvent.PeerRecording -> onPeerRecording(event)
-                is CallEngineEvent.RecordingSaved -> onRecordingSaved(event)
-                else -> Unit
+                else -> onPeerEvent(event)
             }
+        }
+    }
+
+    /** What the other people on the call did, as the engine saw it. */
+    private fun onPeerEvent(event: CallEngineEvent) {
+        when (event) {
+            // A peer's media going away is the other half of "is anyone
+            // still here": the roster can lag, and on Line 1 a departure
+            // reaches this side as a closed consumer well before any row
+            // moves.
+            is CallEngineEvent.PeerLeft -> checkRoomStillOccupied()
+            is CallEngineEvent.PeerHand -> onPeerHand(event)
+            is CallEngineEvent.ChatReceived -> onChatReceived(event)
+            is CallEngineEvent.PeerRecording -> onPeerRecording(event)
+            is CallEngineEvent.RecordingSaved -> onRecordingSaved(event)
+            else -> Unit
         }
     }
 

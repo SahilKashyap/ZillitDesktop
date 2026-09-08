@@ -657,6 +657,14 @@ class KcefCallEngine(
         browser?.let { run(it, script) }
     }
 
+    /** Line 3 only: the other lines' chat rides the Zillit socket relay. */
+    override fun sendChat(id: String, text: String, atMillis: Long): Boolean {
+        if (!livekitActive) return false
+        val target = browser ?: return false
+        run(target, LiveKitScripts.sendChat(id, text, atMillis))
+        return true
+    }
+
     override fun setHandRaised(raised: Boolean) {
         // Line 1 announces it over protoo, the way the phones do. Line 2 needs
         // nothing here: the coordinator's Firestore mirror is the transport.

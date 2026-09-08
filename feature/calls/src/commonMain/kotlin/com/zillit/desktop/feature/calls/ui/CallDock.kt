@@ -9,34 +9,27 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -138,82 +131,19 @@ private fun RoomVerbs(state: CallUiState, onEvent: (CallEvent) -> Unit, connecte
 }
 
 /**
- * The ⋮ menu: recording, people and where the window lives — the verbs the
- * web keeps off the bar (`CallRoom.tsx:1726-1826`).
+ * The ⋮ button: recording, people and where the window lives — the verbs
+ * the web keeps off the bar (`CallRoom.tsx:1726-1826`), opened as a panel
+ * beside the picture ([CallMorePanel]), never a popup over it.
  */
 @Composable
 private fun OverflowMenu(state: CallUiState, onEvent: (CallEvent) -> Unit, connected: Boolean) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        DockButton(
-            icon = ZillitIcons.MoreHorizontal,
-            label = "More options",
-            active = open,
-            enabled = connected,
-            onClick = { open = !open },
-        )
-        if (open) {
-            Popup(
-                alignment = Alignment.BottomCenter,
-                offset = IntOffset(0, -MENU_LIFT),
-                onDismissRequest = { open = false },
-            ) {
-                DockMenu(state) { event ->
-                    open = false
-                    onEvent(event)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DockMenu(state: CallUiState, onEvent: (CallEvent) -> Unit) {
-    Column(
-        modifier = Modifier
-            .widthIn(min = MENU_WIDTH)
-            .shadow(MENU_ELEVATION, RoundedCornerShape(MENU_CORNER))
-            .clip(RoundedCornerShape(MENU_CORNER))
-            .background(CallPalette.menu)
-            .padding(vertical = ZillitTheme.spacing.sm),
-    ) {
-        // One recording per call is the rule every platform enforces; while
-        // somebody else holds it the row says so. Never on a support call.
-        if (state.session?.is247Call != true) {
-            val recordLabel = when {
-                state.recording -> "Stop recording"
-                state.recordedBy.isNotBlank() -> "${state.recordedBy} is recording"
-                else -> "Start recording"
-            }
-            MenuRow(ZillitIcons.Record, recordLabel, enabled = state.recording || state.recordedBy.isBlank()) {
-                onEvent(CallEvent.ToggleRecording)
-            }
-            MenuRow(ZillitIcons.UserPlus, "Add people") { onEvent(CallEvent.ToggleAddPeople) }
-        }
-        if (state.pipOpen) {
-            MenuRow(ZillitIcons.Minimize, "Picture-in-picture") { onEvent(CallEvent.ToggleCallCompact) }
-            MenuRow(ZillitIcons.Restore, "Move back into Zillit") { onEvent(CallEvent.TogglePip) }
-        } else {
-            MenuRow(ZillitIcons.Detach, "Open in its own window") { onEvent(CallEvent.TogglePip) }
-            MenuRow(ZillitIcons.Minimize, "Minimise call") { onEvent(CallEvent.ToggleStage) }
-        }
-    }
-}
-
-@Composable
-private fun MenuRow(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .alpha(if (enabled) 1f else INERT_ALPHA)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-    ) {
-        ZillitIcon(icon = icon, contentDescription = null, tint = CallPalette.text, size = MENU_ICON)
-        ZillitText(text = label, style = ZillitTheme.typography.bodyMedium, color = CallPalette.text, maxLines = 1)
-    }
+    DockButton(
+        icon = ZillitIcons.MoreHorizontal,
+        label = "More options",
+        active = state.moreOpen,
+        enabled = connected,
+        onClick = { onEvent(CallEvent.ToggleMore) },
+    )
 }
 
 /** The red pill: 58×44, "Leave call" (`CallRoom.tsx:1856-1864`). */
@@ -404,11 +334,6 @@ private val CARET_WIDTH = 28.dp
 private val CARET_ICON = 14.dp
 private val BADGE = 18.dp
 private val BADGE_FONT = 10.sp
-private val MENU_WIDTH = 220.dp
-private val MENU_CORNER = 12.dp
-private val MENU_ELEVATION = 16.dp
-private val MENU_ICON = 18.dp
-private const val MENU_LIFT = 8
 private const val UNREAD_CAP = 9
 private const val INERT_ALPHA = 0.4f
 private const val HOVER_MS = 120

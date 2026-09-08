@@ -32,6 +32,11 @@ class InCallDataChannel(
     private val selfName: () -> String?,
     private val selfDeviceId: () -> String?,
     private val now: () -> Long,
+    /**
+     * A line the media engine can carry itself — Line 3's data channel.
+     * True means it went that way and the socket relay is not used.
+     */
+    private val direct: (InCallData) -> Boolean = { false },
 ) {
     /**
      * What arrived, and what we sent — one stream, so the sender's view and
@@ -78,6 +83,13 @@ class InCallDataChannel(
         send(kind = IN_CALL_KIND_MESSAGE, emoji = "", text = trimmed, nowMillis = now())
     }
 
+    /** A line the engine received on its own channel, shown like a relayed one. */
+    fun receive(incoming: InCallData) {
+        val current = session() ?: return
+        if (!remember(incoming.id)) return
+        scope.launch { _data.emit(incoming.copy(roomId = incoming.roomId.ifBlank { current.callUuid })) }
+    }
+
     /** Called when a call ends. Nothing said in one call reaches the next. */
     fun reset() {
         seen.clear()
@@ -104,6 +116,7 @@ class InCallDataChannel(
         remember(outgoing.id)
         scope.launch { _data.emit(outgoing) }
 
+        if (direct(outgoing)) return
         val recipients = recipientsOf(current)
         if (recipients.isEmpty()) return
         scope.launch {

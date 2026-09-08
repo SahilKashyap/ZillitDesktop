@@ -206,4 +206,16 @@ class EngineBridgeTest {
 
         assertEquals("""u2"); alert("x""", Json.decodeFromString(String.serializer(), id))
     }
+
+    /** Line 3's chat arrives on the room's data channel, attributed by the SFU. */
+    @Test
+    fun `a line of Line 3 chat parses with its sender and time`() {
+        val event = EngineBridge.parse(
+            """{"type":"lk-chat","from":"u2","name":"Aisha","id":"m1","text":"on my way","ts":1700000000000}""",
+        )
+        assertEquals(
+            CallEngineEvent.ChatReceived("u2", "Aisha", "m1", "on my way", 1_700_000_000_000L, deleted = false),
+            event,
+        )
+    }
 }

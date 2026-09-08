@@ -35,6 +35,9 @@ object LiveKitScripts {
 
     fun setHandRaised(raised: Boolean): String = "zillitLk.setHand($raised)"
 
+    fun sendChat(id: String, text: String, atMillis: Long): String =
+        "zillitLk.sendChat(${id.js()}, ${text.js()}, $atMillis)"
+
     /** A JS string literal: quoted, with the characters that would end it or the script escaped. */
     private fun String.js(): String = buildString {
         append('"')

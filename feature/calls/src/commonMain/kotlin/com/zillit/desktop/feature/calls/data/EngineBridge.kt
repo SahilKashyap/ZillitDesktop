@@ -59,6 +59,14 @@ object EngineBridge {
             "peer-left" -> CallEngineEvent.PeerLeft(obj.int("uid"))
             "peer-audio" -> CallEngineEvent.PeerAudioMuted(obj.int("uid"), obj.bool("muted"))
             "peer-video" -> CallEngineEvent.PeerVideoMuted(obj.int("uid"), obj.bool("muted"))
+            "lk-chat" -> CallEngineEvent.ChatReceived(
+                fromUserId = obj.str("from").orEmpty(),
+                name = obj.str("name").orEmpty(),
+                id = obj.str("id").orEmpty(),
+                text = obj.str("text").orEmpty(),
+                atMillis = obj.long("ts"),
+                deleted = obj.bool("deleted"),
+            )
             "speakers" -> CallEngineEvent.ActiveSpeakers(obj.intList("uids"))
             "network" -> CallEngineEvent.NetworkQuality(obj.int("uid"), obj.int("tx"), obj.int("rx"))
             "connection" -> CallEngineEvent.ConnectionChanged(

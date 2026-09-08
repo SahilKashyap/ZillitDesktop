@@ -174,6 +174,13 @@ private fun StageBody(
                 modifier = Modifier.width(ROSTER_WIDTH).fillMaxSize(),
             )
         }
+        if (state.moreOpen) {
+            CallMorePanel(
+                state = state,
+                onEvent = onEvent,
+                modifier = Modifier.width(ROSTER_WIDTH).fillMaxSize(),
+            )
+        }
         if (state.chatOpen) {
             CallChatPanel(
                 lines = state.chat,

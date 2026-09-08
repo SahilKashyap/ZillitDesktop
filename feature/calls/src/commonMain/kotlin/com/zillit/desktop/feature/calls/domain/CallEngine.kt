@@ -50,6 +50,20 @@ sealed interface CallEngineEvent {
      */
     data class PeerHand(val userId: String, val raised: Boolean) : CallEngineEvent
 
+    /**
+     * A line of in-call chat over the media engine's own data channel —
+     * Line 3, where the web's `ChatChannel` rides LiveKit data rather than
+     * the Zillit socket relay. [fromUserId] is the SFU-verified sender.
+     */
+    data class ChatReceived(
+        val fromUserId: String,
+        val name: String,
+        val id: String,
+        val text: String,
+        val atMillis: Long,
+        val deleted: Boolean = false,
+    ) : CallEngineEvent
+
     /** A remote participant started or stopped recording the call, by USER id. */
     data class PeerRecording(val userId: String, val recording: Boolean) : CallEngineEvent
 
@@ -228,6 +242,13 @@ interface CallEngine {
 
     /** Asks the engine to publish [CallEngineEvent.Devices]. */
     fun listDevices() = Unit
+
+    /**
+     * Sends one line of in-call chat over the engine's own data channel.
+     * True when the engine carried it; false means the caller should relay
+     * it the socket way (Lines 1 and 2).
+     */
+    fun sendChat(id: String, text: String, atMillis: Long): Boolean = false
 
     /**
      * Switches one live device by id, or arms the choice for the next join.

@@ -76,6 +76,8 @@ fun CallMedia.reduce(event: CallEngineEvent): CallMedia = when (event) {
     is CallEngineEvent.PeerLeft -> copy(peers = peers - event.uid, speaking = speaking - event.uid)
     is CallEngineEvent.PeerAudioMuted -> withPeer(event.uid) { it.copy(audioMuted = event.muted) }
     is CallEngineEvent.PeerVideoMuted -> withPeer(event.uid) { it.copy(videoOn = !event.muted) }
+    // A chat line changes nobody's media; the coordinator carries it to the panel.
+    is CallEngineEvent.ChatReceived -> this
     is CallEngineEvent.PeerScreenShare -> withPeer(event.uid) { it.copy(sharing = event.sharing) }
     is CallEngineEvent.ActiveSpeakers -> copy(speaking = event.uids.toSet())
     is CallEngineEvent.NetworkQuality -> withQuality(event.uid, LinkQuality.ofAgora(event.tx, event.rx))
