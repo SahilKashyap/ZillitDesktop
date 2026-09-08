@@ -606,7 +606,7 @@ compose.desktop {
             // 3.x installed) — see docs/WINDOWS_BUILD.md.
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb)
             packageName = desktopPackageName
-            packageVersion = "1.0.0"
+            packageVersion = "1.0.1"
 
             // Set only when bundling was asked for. Pointing at the staging
             // directory unconditionally means a build with no flag still ships
