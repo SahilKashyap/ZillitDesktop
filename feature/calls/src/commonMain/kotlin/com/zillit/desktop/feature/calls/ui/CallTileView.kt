@@ -53,8 +53,10 @@ fun CallTileView(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(TILE_CORNER))
-            .background(if (ringing) colors.surfaceSunken else colors.surface)
-            .border(TILE_BORDER, colors.border, RoundedCornerShape(TILE_CORNER))
+            // The web's tile: #3c4043 at radius 12 with a 2px transparent border
+            // the speaking ring paints into (`styles.css:447-457`).
+            .background(if (ringing) CallPalette.tileIdle else CallPalette.control)
+            .border(TILE_BORDER, Color.Transparent, RoundedCornerShape(TILE_CORNER))
             // Someone who has not picked up yet is present but not here; the
             // whole tile recedes rather than growing a second visual language.
             .alpha(if (ringing) RINGING_ALPHA else 1f),
@@ -138,7 +140,7 @@ private fun SpeakingRing(speaking: Boolean, avatarSize: Dp, pulse: Float) {
         label = "speaking-ring",
     )
     if (alpha <= 0f) return
-    val colour = ZillitTheme.colors.success
+    val colour = CallPalette.green
     val diameter = avatarSize + RING_GAP * 2
     Canvas(modifier = Modifier.size(diameter + HALO_ROOM)) {
         val radius = (avatarSize.toPx() / 2f) + RING_GAP.toPx()
@@ -163,7 +165,7 @@ private fun MuteBadge(modifier: Modifier = Modifier) {
         modifier = modifier
             .size(BADGE_SIZE)
             .clip(CircleShape)
-            .background(ZillitTheme.colors.danger),
+            .background(CallPalette.scrim),
         contentAlignment = Alignment.Center,
     ) {
         ZillitIcon(
@@ -180,13 +182,13 @@ private fun NameChip(text: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(CHIP_CORNER))
-            .background(ZillitTheme.colors.surfaceSunken.copy(alpha = CHIP_ALPHA))
+            .background(CallPalette.scrim)
             .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
     ) {
         ZillitText(
             text = text,
             style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textPrimary,
+            color = CallPalette.text,
             maxLines = 1,
         )
     }
@@ -198,7 +200,7 @@ private fun HandChip(modifier: Modifier = Modifier) {
         modifier = modifier
             .size(BADGE_SIZE + 4.dp)
             .clip(CircleShape)
-            .background(ZillitTheme.colors.warning),
+            .background(CallPalette.amber),
         contentAlignment = Alignment.Center,
     ) {
         ZillitIcon(
@@ -230,15 +232,14 @@ private fun SharingChip(modifier: Modifier = Modifier) {
 /** Below this the chip crowds the face out; the roster panel carries names instead. */
 val NAME_MIN_WIDTH = 120.dp
 
-private val TILE_CORNER = 16.dp
-private val TILE_BORDER = 1.dp
+private val TILE_CORNER = 12.dp
+private val TILE_BORDER = 2.dp
 private val RING_STROKE = 2.5.dp
 private val RING_GAP = 4.dp
 private val HALO_ROOM = 24.dp
 private val BADGE_SIZE = 20.dp
 private val BADGE_ICON = 12.dp
 private val CHIP_CORNER = 8.dp
-private const val CHIP_ALPHA = 0.85f
 private const val RINGING_ALPHA = 0.55f
 private const val RING_IN_MS = 90
 private const val RING_OUT_MS = 480

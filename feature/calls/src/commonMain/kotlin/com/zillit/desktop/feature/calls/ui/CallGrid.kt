@@ -129,13 +129,13 @@ private fun OverflowCell(count: Int, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(CELL_CORNER))
-            .background(ZillitTheme.colors.surfaceSunken),
+            .background(CallPalette.control),
         contentAlignment = Alignment.Center,
     ) {
         ZillitText(
             text = "+$count",
             style = ZillitTheme.typography.titleMedium,
-            color = ZillitTheme.colors.textSecondary,
+            color = CallPalette.text,
         )
     }
 }
@@ -162,7 +162,7 @@ fun WaitingForOthers(modifier: Modifier = Modifier) {
         ZillitText(
             text = "Waiting for others to join",
             style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textMuted,
+            color = CallPalette.muted,
         )
     }
 }
@@ -180,7 +180,7 @@ private val GAP = 8.dp
 private val TILE_MAX_WIDTH = 560.dp
 private val AVATAR_MIN = 40.dp
 private val AVATAR_MAX = 96.dp
-private val CELL_CORNER = 16.dp
+private val CELL_CORNER = 12.dp
 private const val TILE_ASPECT = 16f / 9f
 private const val AVATAR_RATIO = 0.42f
 private const val PULSE_MS = 1_400

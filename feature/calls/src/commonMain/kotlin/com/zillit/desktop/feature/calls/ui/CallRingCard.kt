@@ -8,11 +8,13 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,27 +25,29 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import kotlin.math.roundToInt
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallSession
+import com.zillit.desktop.feature.calls.domain.CallStatus
+import kotlin.math.roundToInt
 
 /**
- * The ring, incoming or outgoing.
- *
- * One card for both because visually it is one: the same person, the same
- * room, a different set of verbs underneath.
+ * The ring, incoming or outgoing — the web's callee card and incoming toast
+ * (`OutgoingCall.tsx:29-77`, `CallOverlays.tsx:60-96`) on one dark card.
  *
  * A floating corner card, never a scrim: an outgoing ring can stand for
  * forty seconds and an incoming one for thirty, and locking the whole
@@ -59,7 +63,6 @@ fun CallRingCard(
     loadAvatar: suspend (String) -> ImageBitmap?,
 ) {
     val session = state.session ?: return
-    val colors = ZillitTheme.colors
     Box(
         modifier = Modifier.fillMaxSize().padding(ZillitTheme.spacing.lg),
         contentAlignment = Alignment.BottomEnd,
@@ -69,12 +72,7 @@ fun CallRingCard(
                 // Draggable, sharing the pill's offset: a ring that lands on
                 // top of the thing you were reading can be pushed aside, and
                 // the pill it becomes stays where you put it.
-                .offset {
-                    androidx.compose.ui.unit.IntOffset(
-                        state.pillOffsetX.roundToInt(),
-                        state.pillOffsetY.roundToInt(),
-                    )
-                }
+                .offset { IntOffset(state.pillOffsetX.roundToInt(), state.pillOffsetY.roundToInt()) }
                 // The card floats over a live workspace; a drag moves it, and
                 // any other press stops here rather than reaching the tool
                 // underneath.
@@ -87,33 +85,40 @@ fun CallRingCard(
                 .width(CARD_WIDTH)
                 .shadow(CARD_ELEVATION, RoundedCornerShape(CARD_CORNER))
                 .clip(RoundedCornerShape(CARD_CORNER))
-                .background(colors.surfaceRaised)
+                .background(CallPalette.surface)
                 .padding(ZillitTheme.spacing.xl),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            RipplingAvatar(session, incoming, loadAvatar)
+            session.ringContext(incoming)?.let { context ->
+                ZillitText(
+                    text = context.uppercase(),
+                    style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = CallPalette.muted,
+                    maxLines = 1,
+                )
+            }
+            PulsingAvatar(session, loadAvatar)
             ZillitText(
                 text = session.ringTitle,
-                style = ZillitTheme.typography.titleLarge,
-                color = colors.textPrimary,
+                style = ZillitTheme.typography.titleLarge.copy(fontSize = NAME_FONT, fontWeight = FontWeight.SemiBold),
+                color = CallPalette.text,
                 maxLines = 1,
             )
             ZillitText(
-                text = session.ringSubtitle(incoming),
+                text = if (incoming) session.incomingRingSubtitle() else session.outgoingRingStatus(),
                 style = ZillitTheme.typography.bodySmall,
-                color = colors.textMuted,
+                color = CallPalette.muted,
                 maxLines = 1,
             )
-            RingActions(incoming, onEvent)
+            RingActions(incoming, session.hasVideo, onEvent)
         }
     }
 }
 
 /** Accept and decline, or a lone cancel — the ring's whole vocabulary. */
 @Composable
-private fun RingActions(incoming: Boolean, onEvent: (CallEvent) -> Unit) {
-    val colors = ZillitTheme.colors
+private fun RingActions(incoming: Boolean, video: Boolean, onEvent: (CallEvent) -> Unit) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxl),
         verticalAlignment = Alignment.CenterVertically,
@@ -124,20 +129,23 @@ private fun RingActions(incoming: Boolean, onEvent: (CallEvent) -> Unit) {
             CaptionedAction(
                 icon = ZillitIcons.PhoneDown,
                 caption = "Decline",
-                background = colors.danger,
+                background = CallPalette.danger,
                 onClick = { onEvent(CallEvent.Decline) },
             )
+            // Green and breathing, with the camera glyph for a video call —
+            // the web's `incomingPulse` (`CallOverlays.tsx:84-93`).
             CaptionedAction(
-                icon = ZillitIcons.Phone,
+                icon = if (video) ZillitIcons.Camera else ZillitIcons.Phone,
                 caption = "Accept",
-                background = colors.success,
+                background = CallPalette.green,
+                pulsing = true,
                 onClick = { onEvent(CallEvent.Accept) },
             )
         } else {
             CaptionedAction(
                 icon = ZillitIcons.PhoneDown,
                 caption = "Cancel",
-                background = colors.danger,
+                background = CallPalette.danger,
                 onClick = { onEvent(CallEvent.HangUp) },
             )
         }
@@ -145,39 +153,35 @@ private fun RingActions(incoming: Boolean, onEvent: (CallEvent) -> Unit) {
 }
 
 /**
- * Expanding rings behind the face.
+ * The face, with two green rings growing out of it (`styles.css:2218-2229`:
+ * `outPulse` 1.8s, the second ring 0.9s behind).
  *
  * Rings rather than a pulsing scale: scaling a photograph distorts a face
  * fifty times a second, and the thing that should read as "live" is the
  * signal, not the person.
  */
 @Composable
-private fun RipplingAvatar(
-    session: CallSession,
-    incoming: Boolean,
-    loadAvatar: suspend (String) -> ImageBitmap?,
-) {
-    val colour = if (incoming) ZillitTheme.colors.success else ZillitTheme.colors.accent
-    val transition = rememberInfiniteTransition(label = "ring-ripple")
+private fun PulsingAvatar(session: CallSession, loadAvatar: suspend (String) -> ImageBitmap?) {
+    val transition = rememberInfiniteTransition(label = "ring-pulse")
     val phase by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(RIPPLE_MS, easing = LinearEasing), RepeatMode.Restart),
-        label = "ring-ripple-phase",
+        animationSpec = infiniteRepeatable(tween(PULSE_MS, easing = LinearEasing), RepeatMode.Restart),
+        label = "ring-pulse-phase",
     )
     val face by produceState<ImageBitmap?>(null, session.displayUserId) {
         value = session.displayUserId.takeIf(String::isNotBlank)?.let { loadAvatar(it) }
     }
     Box(contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.size(RING_AVATAR + RIPPLE_ROOM)) {
+        Canvas(modifier = Modifier.size(RING_AVATAR + PULSE_ROOM)) {
             val base = RING_AVATAR.toPx() / 2f
-            RIPPLE_OFFSETS.forEach { offset ->
+            PULSE_OFFSETS.forEach { offset ->
                 val progress = (phase + offset) % 1f
                 drawCircle(
-                    color = colour,
-                    radius = base * (1f + RIPPLE_GROWTH * progress),
-                    alpha = RIPPLE_ALPHA * (1f - progress),
-                    style = Stroke(width = RIPPLE_STROKE.toPx()),
+                    color = CallPalette.green,
+                    radius = base * (1f + PULSE_GROWTH * progress),
+                    alpha = PULSE_ALPHA * (1f - progress),
+                    style = Stroke(width = PULSE_STROKE.toPx()),
                 )
             }
         }
@@ -187,11 +191,19 @@ private fun RipplingAvatar(
 
 @Composable
 private fun CaptionedAction(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     caption: String,
     background: Color,
     onClick: () -> Unit,
+    pulsing: Boolean = false,
 ) {
+    val transition = rememberInfiniteTransition(label = "accept-pulse")
+    val breath by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (pulsing) ACCEPT_BREATH else 1f,
+        animationSpec = infiniteRepeatable(tween(ACCEPT_PULSE_MS), RepeatMode.Reverse),
+        label = "accept-breath",
+    )
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -201,38 +213,54 @@ private fun CaptionedAction(
             label = caption,
             background = background,
             size = RING_BUTTON,
+            modifier = Modifier.scale(breath),
             onClick = onClick,
         )
         ZillitText(
             text = caption,
             style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textMuted,
+            color = CallPalette.muted,
         )
     }
 }
 
-private val CallSession.ringTitle: String
+internal val CallSession.ringTitle: String
     get() = displayName.ifBlank { "Unknown caller" }
 
-private fun CallSession.ringSubtitle(incoming: Boolean): String {
-    if (!incoming) return "Calling…"
-    val what = if (hasVideo) "Incoming video call" else "Incoming call"
-    val where = if (mode == CallMode.Group) {
-        title.takeIf { it.isNotBlank() && it != ringTitle }?.let { " · $it" }.orEmpty()
-    } else {
-        ""
-    }
-    return "$what$where"
+/**
+ * Where the ring comes from, above the name: the room on a group ring
+ * (`CallOverlays.tsx:34-54`); nothing on a 1:1 ring, where the name is the story.
+ */
+internal fun CallSession.ringContext(incoming: Boolean): String? {
+    if (!incoming || mode != CallMode.Group) return null
+    return title.takeIf { it.isNotBlank() && it != ringTitle }
+}
+
+/**
+ * The web's monotonic outgoing status (`CallOverlays.tsx:132-142`): `Calling…`
+ * until the far end has answered, `Joining…` once someone is in the room.
+ */
+internal fun CallSession.outgoingRingStatus(): String =
+    if (participants.any { it.userId != selfUserId && it.status == CallStatus.InCall }) "Joining…" else "Calling…"
+
+/** "Incoming [group ]{audio|video} call…" (`CallOverlays.tsx:39`). */
+internal fun CallSession.incomingRingSubtitle(): String {
+    val group = if (mode == CallMode.Group) "group " else ""
+    val kind = if (hasVideo) "video" else "audio"
+    return "Incoming ${group}$kind call…"
 }
 
 private val CARD_WIDTH = 380.dp
-private val CARD_CORNER = 24.dp
+private val CARD_CORNER = 18.dp
 private val CARD_ELEVATION = 24.dp
 private val RING_AVATAR = 96.dp
-private val RING_BUTTON = 60.dp
-private val RIPPLE_ROOM = 96.dp
-private val RIPPLE_STROKE = 2.dp
-private const val RIPPLE_MS = 2_200
-private const val RIPPLE_GROWTH = 0.9f
-private const val RIPPLE_ALPHA = 0.35f
-private val RIPPLE_OFFSETS = listOf(0f, 0.33f, 0.66f)
+private val RING_BUTTON = 44.dp
+private val NAME_FONT = 24.sp
+private val PULSE_ROOM = 120.dp
+private val PULSE_STROKE = 2.dp
+private const val PULSE_MS = 1_800
+private const val PULSE_GROWTH = 1.1f
+private const val PULSE_ALPHA = 0.55f
+private val PULSE_OFFSETS = listOf(0f, 0.5f)
+private const val ACCEPT_PULSE_MS = 800
+private const val ACCEPT_BREATH = 1.08f

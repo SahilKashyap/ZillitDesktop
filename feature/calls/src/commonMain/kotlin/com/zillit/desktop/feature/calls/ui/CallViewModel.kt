@@ -742,18 +742,17 @@ class CallViewModel(
         }
     }
 
-    private fun notice(event: CallEndEvent): String {
-        val who = event.session.callerName.ifBlank { event.session.title }.ifBlank { "The call" }
-        return when (event.reason) {
+    /** The web's ended wording (`CallOverlays.tsx:132-142`, `App.tsx:2456-2457`). */
+    private fun notice(event: CallEndEvent): String =
+        when (event.reason) {
             CallEndReason.Hungup -> "Call ended"
             CallEndReason.RemoteEnded -> "Call ended"
-            CallEndReason.Declined -> "Call declined"
-            CallEndReason.Busy -> "$who is on another call"
+            CallEndReason.Declined -> "Declined"
+            CallEndReason.Busy -> "Busy on another call"
             CallEndReason.Timeout -> "No answer"
             CallEndReason.PickedElsewhere -> "Answered on another device"
             CallEndReason.Error -> "Call failed"
         }
-    }
 
     /**
      * Drops reactions whose flight is already over.

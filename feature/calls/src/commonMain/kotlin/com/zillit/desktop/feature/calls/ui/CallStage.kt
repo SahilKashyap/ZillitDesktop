@@ -2,7 +2,6 @@ package com.zillit.desktop.feature.calls.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,11 +22,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -56,19 +59,16 @@ fun CallStage(
     videoAvailable: Boolean,
     onSlot: (LayoutCoordinates) -> Unit,
 ) {
-    val colors = ZillitTheme.colors
     val showsVideo = state.stage == CallStageKind.Video && videoAvailable
 
-    Box(modifier = Modifier.fillMaxSize().background(colors.scrim)) {
+    // The web's one dark surface (`styles.css:3-19`), whatever the workspace theme.
+    Box(modifier = Modifier.fillMaxSize().background(CallPalette.surface)) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(ZillitTheme.spacing.lg),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            CallStageHeader(state, onEvent)
-            ConnectionBanner(state, videoAvailable)
-            RecordingBanner(state)
-            HandRaisedBanner(state)
+            CallTopBar(state, onEvent, videoAvailable)
             NoticeBanner(state, onEvent)
             StageBody(
                 state = state,
@@ -76,7 +76,7 @@ fun CallStage(
                 loadAvatar = loadAvatar,
                 showsVideo = showsVideo,
                 onSlot = onSlot,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).padding(horizontal = STAGE_GUTTER),
             )
             /*
              * A row of its own, never a float over the picture.
@@ -184,59 +184,188 @@ private fun StageBody(
     }
 }
 
+/**
+ * The 54px top bar (`CallRoom.tsx:1349-1503`): the timer, the call's name as
+ * a pill, and one pill per standing fact — reconnecting, recording, a hand up,
+ * the line's health — then the people button and the window controls.
+ *
+ * Pills rather than banners: the web keeps every standing fact in this one
+ * row so the picture below never moves when a fact appears.
+ */
 @Composable
-private fun CallStageHeader(state: CallUiState, onEvent: (CallEvent) -> Unit) {
-    val colors = ZillitTheme.colors
+private fun CallTopBar(state: CallUiState, onEvent: (CallEvent) -> Unit, videoAvailable: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(HEADER_HEIGHT)
-            .clip(RoundedCornerShape(PANEL_CORNER))
-            .background(colors.surfaceRaised)
-            .border(HAIRLINE, colors.border, RoundedCornerShape(PANEL_CORNER))
-            .padding(horizontal = ZillitTheme.spacing.lg),
+            .height(TOP_BAR_HEIGHT)
+            .padding(horizontal = STAGE_GUTTER),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitAvatar(name = state.headerTitle, size = HEADER_AVATAR)
-        // Which line, as the phones label it. The two fail differently, and
-        // the first question about any call problem is which one it was on —
-        // so it is on the surface rather than in a log.
-        if (state.lineLabel.isNotBlank()) {
-            ZillitText(
-                text = state.lineLabel,
-                style = ZillitTheme.typography.labelSmall,
-                color = colors.textMuted,
-            )
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            ZillitText(
-                text = state.headerTitle,
-                style = ZillitTheme.typography.titleSmall,
-                color = colors.textPrimary,
-                maxLines = 1,
-            )
-            ZillitText(
-                text = state.headerSubtitle,
-                style = ZillitTheme.typography.labelSmall,
-                color = colors.textMuted,
-                maxLines = 1,
-            )
-        }
-        // Always present, unlike the tile pips: a reading the user can glance
-        // at is the point of asking for a network indicator, and one that
-        // appears only when things break cannot be trusted when it is absent.
-        NetworkPip(quality = state.media.selfQuality, showLabel = true)
-        RoundAction(
-            icon = ZillitIcons.Users,
-            label = "Participants",
-            background = if (state.rosterOpen) colors.surfaceSelected else colors.surfaceHover,
-            tint = colors.textPrimary,
-            size = HEADER_BUTTON,
-            onClick = { onEvent(CallEvent.ToggleRoster) },
-        )
+        CallTimer(state)
+        TitlePill(state)
+        ConnectionPill(state, videoAvailable)
+        RecordingPill(state)
+        HandPill(state, onEvent)
+        Box(modifier = Modifier.weight(1f))
+        NetworkPip(quality = state.media.selfQuality, showLabel = false)
+        PeopleButton(state, onEvent)
         WindowControls(state = state, onEvent = onEvent)
     }
+}
+
+/** 17px bold tabular, a 2px rule on its right; "Connecting…" until the first peer (`CallRoom.tsx:259-273`). */
+@Composable
+private fun CallTimer(state: CallUiState) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        ZillitText(
+            text = state.timerText.ifBlank { "Connecting…" },
+            style = ZillitTheme.typography.numeric
+                .copy(fontSize = TIMER_FONT, fontWeight = FontWeight.Bold),
+            color = CallPalette.text,
+            maxLines = 1,
+        )
+        Box(
+            modifier = Modifier
+                .padding(start = ZillitTheme.spacing.md)
+                .width(TIMER_RULE)
+                .height(TIMER_RULE_HEIGHT)
+                .background(Color.White),
+        )
+    }
+}
+
+/** The room's name, or the person's, in the web's translucent pill (`.projPill`). */
+@Composable
+private fun TitlePill(state: CallUiState) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(PILL_CORNER))
+            .background(CallPalette.pill)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitText(
+            text = state.headerTitle,
+            style = ZillitTheme.typography.labelSmall,
+            color = CallPalette.text,
+            maxLines = 1,
+        )
+        // Which line, as the phones label it: the first question about any
+        // call problem is which one it was on.
+        if (state.lineLabel.isNotBlank()) {
+            ZillitText(
+                text = "· ${state.lineLabel}",
+                style = ZillitTheme.typography.labelSmall,
+                color = CallPalette.muted,
+            )
+        }
+    }
+}
+
+/** The people button with its count, top right (`CallRoom.tsx:1473-1482`). */
+@Composable
+private fun PeopleButton(state: CallUiState, onEvent: (CallEvent) -> Unit) {
+    val count = state.connected
+    ZillitTooltip(if (state.session?.is247Call == true) "Call users" else "Call users · Add users") {
+        Box(contentAlignment = Alignment.TopEnd) {
+            RoundAction(
+                icon = ZillitIcons.Users,
+                label = "Call users",
+                background = if (state.rosterOpen) CallPalette.accent else CallPalette.control,
+                tint = if (state.rosterOpen) CallPalette.onAccent else CallPalette.text,
+                size = HEADER_BUTTON,
+                onClick = { onEvent(CallEvent.ToggleRoster) },
+            )
+            if (count > 0) {
+                Box(
+                    modifier = Modifier.size(COUNT_BADGE).clip(CircleShape).background(CallPalette.accent),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ZillitText(
+                        text = count.toString(),
+                        style = ZillitTheme.typography.labelSmall
+                            .copy(fontSize = BADGE_FONT, fontWeight = FontWeight.Bold),
+                        color = CallPalette.onAccent,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** One standing fact, as the web draws it: a dot or icon, a few words, a tinted pill. */
+@Composable
+private fun StatusPill(text: String, background: Color, foreground: Color, icon: ImageVector? = null) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(PILL_CORNER))
+            .background(background)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        if (icon != null) {
+            ZillitIcon(icon = icon, contentDescription = null, tint = foreground, size = PILL_ICON)
+        } else {
+            Box(modifier = Modifier.size(BANNER_DOT).clip(CircleShape).background(foreground))
+        }
+        ZillitText(text = text, style = ZillitTheme.typography.labelSmall, color = foreground, maxLines = 1)
+    }
+}
+
+/**
+ * Recording is the one call fact nobody may miss: red, and named — whoever
+ * holds the recorder, everybody on the call is told (`CallRoom.tsx:1414-1418`).
+ */
+@Composable
+private fun RecordingPill(state: CallUiState) {
+    val text = when {
+        state.recording -> "You are recording"
+        state.recordedBy.isNotBlank() -> "${state.recordedBy} is recording"
+        else -> return
+    }
+    StatusPill(text = text, background = CallPalette.danger, foreground = Color.White)
+}
+
+/**
+ * Who has their hand up, named, amber (`CallRoom.tsx:1419-1439`). Opens the
+ * roster: that is where the hand can be seen against the person.
+ */
+@Composable
+private fun HandPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
+    val others = state.session?.participants.orEmpty().filter { it.handRaised }.map { it.name }
+    val names = (if (state.handRaised) listOf("You") else emptyList()) + others.filter { it.isNotBlank() }
+    if (names.isEmpty()) return
+    val text = if (names.size == 1) "${names.first()} raised their hand" else "${names.size} users raised their hands"
+    Box(modifier = Modifier.clickable { onEvent(CallEvent.ToggleRoster) }) {
+        StatusPill(
+            text = text,
+            background = CallPalette.amber,
+            foreground = CallPalette.onAccent,
+            icon = ZillitIcons.Hand,
+        )
+    }
+}
+
+/** One pill about the call's health, or nothing (`CallRoom.tsx:1390-1413`). */
+@Composable
+private fun ConnectionPill(state: CallUiState, videoAvailable: Boolean) {
+    val (background, foreground, text) = when {
+        state.media.connection == EngineConnection.Reconnecting ->
+            Triple(CallPalette.control, CallPalette.text, "Reconnecting…")
+        state.media.connection == EngineConnection.Disconnected ||
+            state.media.connection == EngineConnection.Failed ->
+            Triple(CallPalette.danger, Color.White, "Connection lost — trying again")
+        state.mediaDegraded ->
+            Triple(CallPalette.amberSoft, CallPalette.onAccent, "No audio on this call")
+        state.session?.hasVideo == true && !videoAvailable ->
+            Triple(CallPalette.control, CallPalette.text, "Video is unavailable in this build")
+        else -> return
+    }
+    StatusPill(text = text, background = background, foreground = foreground)
 }
 
 /** The dock, with the emoji bar stacked above it when it is open. */
@@ -264,23 +393,22 @@ private fun StageControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
  */
 @Composable
 private fun WindowControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
-    val colors = ZillitTheme.colors
     if (state.pipOpen) {
         // Already in its own window: shrink to the always-on-top thumbnail,
         // or hand the call back to the main window.
         RoundAction(
             icon = ZillitIcons.Minimize,
             label = "Shrink to thumbnail",
-            background = colors.surfaceHover,
-            tint = colors.textPrimary,
+            background = CallPalette.control,
+            tint = CallPalette.text,
             size = HEADER_BUTTON,
             onClick = { onEvent(CallEvent.ToggleCallCompact) },
         )
         RoundAction(
             icon = ZillitIcons.Restore,
             label = "Move back into Zillit",
-            background = colors.surfaceHover,
-            tint = colors.textPrimary,
+            background = CallPalette.control,
+            tint = CallPalette.text,
             size = HEADER_BUTTON,
             onClick = { onEvent(CallEvent.TogglePip) },
         )
@@ -290,67 +418,22 @@ private fun WindowControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
         RoundAction(
             icon = ZillitIcons.Detach,
             label = "Open in its own window",
-            background = colors.surfaceHover,
-            tint = colors.textPrimary,
+            background = CallPalette.control,
+            tint = CallPalette.text,
             size = HEADER_BUTTON,
             onClick = { onEvent(CallEvent.TogglePip) },
         )
         RoundAction(
             icon = ZillitIcons.Minimize,
             label = "Minimise call",
-            background = colors.surfaceHover,
-            tint = colors.textPrimary,
+            background = CallPalette.control,
+            tint = CallPalette.text,
             size = HEADER_BUTTON,
             onClick = { onEvent(CallEvent.ToggleStage) },
         )
     }
 }
 
-/**
- * One line about the call's health, or nothing.
- *
- * A `Column` child rather than an overlay: anything floating over the stage
- * body would be swallowed by the video surface exactly when a video call is
- * the thing going wrong.
- */
-/**
- * Who has their hand up, named.
- *
- * A badge on a tile is easy to miss on a busy grid and invisible on an audio
- * call, where there are no tiles worth scanning — so the names are said out
- * loud, the way the phones say them. This user's own hand is included: the
- * dock button already shows it, but a hand raised five minutes ago is exactly
- * the thing people forget they are still holding up.
- */
-/**
- * Recording is the one call fact nobody may miss, so it is a standing banner
- * rather than a badge: whoever holds the recorder, everybody on the call is
- * told by name — the phones announce it the same way.
- */
-@Composable
-private fun RecordingBanner(state: CallUiState) {
-    val colors = ZillitTheme.colors
-    val text = when {
-        state.recording -> "You are recording this call"
-        state.recordedBy.isNotBlank() -> "${state.recordedBy} is recording this call"
-        else -> return
-    }
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(BANNER_CORNER))
-            .background(colors.dangerSoft)
-            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        Box(modifier = Modifier.size(BANNER_DOT).clip(CircleShape).background(colors.danger))
-        ZillitText(
-            text = text,
-            style = ZillitTheme.typography.bodySmall,
-            color = colors.danger,
-        )
-    }
-}
 
 /**
  * One line about something that did not work, with a way to dismiss it.
@@ -361,88 +444,30 @@ private fun RecordingBanner(state: CallUiState) {
 @Composable
 private fun NoticeBanner(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val text = state.notice ?: return
-    val colors = ZillitTheme.colors
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(BANNER_CORNER))
-            .background(colors.warningSoft)
+            .background(CallPalette.menu)
             .clickable { onEvent(CallEvent.DismissNotice) }
             .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitIcon(icon = ZillitIcons.Warning, contentDescription = null, tint = colors.warning)
+        ZillitIcon(icon = ZillitIcons.Warning, contentDescription = null, tint = CallPalette.amber)
         ZillitText(
             text = text,
             style = ZillitTheme.typography.bodySmall,
-            color = colors.warning,
+            color = CallPalette.text,
         )
         ZillitText(
             text = "Dismiss",
             style = ZillitTheme.typography.labelSmall,
-            color = colors.textMuted,
+            color = CallPalette.muted,
         )
     }
 }
 
-@Composable
-private fun HandRaisedBanner(state: CallUiState) {
-    val colors = ZillitTheme.colors
-    val others = state.session?.participants.orEmpty().filter { it.handRaised }.map { it.name }
-    val names = (if (state.handRaised) listOf("You") else emptyList()) + others.filter { it.isNotBlank() }
-    if (names.isEmpty()) return
 
-    val text = when {
-        names.size == 1 -> "${names.first()} raised a hand"
-        names.size == 2 -> "${names[0]} and ${names[1]} raised their hands"
-        else -> "${names[0]} and ${names.size - 1} others raised their hands"
-    }
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(BANNER_CORNER))
-            .background(colors.warningSoft)
-            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        ZillitIcon(icon = ZillitIcons.Hand, contentDescription = null, tint = colors.warning)
-        ZillitText(
-            text = text,
-            style = ZillitTheme.typography.bodySmall,
-            color = colors.warning,
-        )
-    }
-}
-
-@Composable
-private fun ConnectionBanner(state: CallUiState, videoAvailable: Boolean) {
-    val colors = ZillitTheme.colors
-    val (background, foreground, text) = when {
-        state.media.connection == EngineConnection.Reconnecting ->
-            Triple(colors.warningSoft, colors.warning, "Reconnecting…")
-        state.media.connection == EngineConnection.Disconnected ||
-            state.media.connection == EngineConnection.Failed ->
-            Triple(colors.dangerSoft, colors.danger, "Connection lost — trying again")
-        state.mediaDegraded ->
-            Triple(colors.warningSoft, colors.warning, "No audio on this call")
-        state.session?.hasVideo == true && !videoAvailable ->
-            Triple(colors.infoSoft, colors.info, "Video is unavailable in this build")
-        else -> return
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(BANNER_HEIGHT)
-            .clip(RoundedCornerShape(BANNER_CORNER))
-            .background(background)
-            .padding(horizontal = ZillitTheme.spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        Box(modifier = Modifier.size(BANNER_DOT).clip(CircleShape).background(foreground))
-        ZillitText(text = text, style = ZillitTheme.typography.labelSmall, color = foreground)
-    }
-}
 
 /** 1:1 calls are titled by the person; a group by the room. */
 val CallUiState.headerTitle: String
@@ -462,13 +487,18 @@ internal val CallUiState.headerSubtitle: String
         return "$timer · $connected in call"
     }
 
-private val HEADER_HEIGHT = 56.dp
-private val HEADER_AVATAR = 32.dp
-private val HEADER_BUTTON = 44.dp
-private val BANNER_HEIGHT = 32.dp
+/** The web's bar: 54px, 32px circles, 12px name pill (`styles.css:1246-1262`). */
+private val TOP_BAR_HEIGHT = 54.dp
+private val HEADER_BUTTON = 32.dp
+private val STAGE_GUTTER = 8.dp
+private val TIMER_FONT = 17.sp
+private val TIMER_RULE = 2.dp
+private val TIMER_RULE_HEIGHT = 18.dp
+private val PILL_CORNER = 16.dp
+private val PILL_ICON = 14.dp
+private val COUNT_BADGE = 17.dp
+private val BADGE_FONT = 10.sp
 private val BANNER_CORNER = 10.dp
-private val BANNER_DOT = 12.dp
-private val PANEL_CORNER = 16.dp
-private val HAIRLINE = 1.dp
+private val BANNER_DOT = 8.dp
 
 /** How long the picture goes untouched before the chrome steps aside. */

@@ -23,16 +23,17 @@
         /* Defaults for a page opened outside the app — the demo harness runs
            in a plain browser, where nothing ever calls setTheme. */
         :root {
-            --bg: #14161a;
-            --tile: #1e2126;
-            --tile-idle: #191c21;
-            --border: #2a2f37;
+            /* The web's Line 3 stage (`lineTwo/ui/styles.css:3-19`, tile #3c4043 at radius 12). */
+            --bg: #202124;
+            --tile: #3c4043;
+            --tile-idle: #2b2d31;
+            --border: transparent;
             --text: #e8eaed;
             --muted: #9aa0a6;
             --speaking: #34a853;
             --danger: #ea4335;
             --gap: 8px;
-            --radius: 16px;
+            --radius: 12px;
         }
 
         html, body {
