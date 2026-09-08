@@ -633,11 +633,14 @@
      * what survives rejoins, so it is the only stable key.
      */
     function line1Tile(peerId) {
-        const identity = String(peerId || '').split(':')[0];
+        const asText = String(peerId || '');
+        const identity = asText.split(':')[0];
         for (const cell of cells.values()) {
             if (!cell.model) { continue; }
-            if (cell.model.peerId === identity || cell.model.peerId === peerId ||
-                String(cell.model.uid) === peerId) {
+            // By identity first; by numeric uid as text second, so a caller
+            // that hands over the hash rather than the identity still lands.
+            if (cell.model.peerId === identity || cell.model.peerId === asText ||
+                String(cell.model.uid) === asText) {
                 return cell;
             }
         }

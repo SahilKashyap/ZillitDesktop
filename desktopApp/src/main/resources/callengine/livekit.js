@@ -67,7 +67,11 @@
         var key = trackKey(participant.sid, publication.source);
         var uid = uidOf(participant.identity);
         if (window.zillitCall && window.zillitCall.attachRemote) {
-            window.zillitCall.attachRemote(key, uid, kindOf(track), stream);
+            // The page finds a video's tile by the participant's identity —
+            // the roster's user id, which Line 1 passes here too. The numeric
+            // uid never matched (a number against the tile's string), so a
+            // remote camera on Line 3 was received and never shown.
+            window.zillitCall.attachRemote(key, participant.identity, kindOf(track), stream);
         }
         if (publication.source === LK.Track.Source.ScreenShare) {
             send({ type: 'peer-screen-share', uid: uid, sharing: true });
