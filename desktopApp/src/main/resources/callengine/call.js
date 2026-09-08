@@ -670,10 +670,10 @@
         return video;
     }
 
-    /** A few readings of every mounted video after a mount, so a paused or 0x0 element is seen in the log. */
+    /** One reading of every mounted video after a mount, so a paused or 0x0 element is seen in the log. */
     let mountReports = 0;
     function scheduleMountReports() {
-        mountReports = 4;
+        mountReports = 1;
         const tick = function () {
             if (mountReports-- <= 0) { return; }
             const lines = [];

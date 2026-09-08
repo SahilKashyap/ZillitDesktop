@@ -191,18 +191,16 @@ if (jbrFrameworks.isDirectory) {
          *
          * Chromium captures the camera in a utility process — `jcef Helper` —
          * not in the app. JetBrains ships that helper with the hardened
-         * runtime and no `com.apple.security.device.camera`, and on macOS 26
-         * a hardened process without the entitlement is not refused the
-         * camera: it gets a running capture session that delivers no frames,
-         * ever. getUserMedia succeeds, the track reads live at 1280x720, the
-         * camera light stays off and every tile stays black. The microphone
-         * works throughout because the audio service runs in the app
-         * process, which jpackage signed with the audio-input entitlement.
-         * Measured 2026-09-08: a hardened capture process without the
-         * entitlement got 0 frames in 4 s; the same binary with it got 42.
+         * runtime and no `com.apple.security.device.camera`, and a hardened
+         * process without the entitlement gets a running capture session
+         * that delivers no frames (measured 2026-09-08: 0 frames in 4 s
+         * without it, 42 with it). The signed build re-signs these anyway
+         * (resignWithFrameworks); this covers the ad-hoc bundle everyone
+         * develops against.
          *
-         * The signed build re-signs these anyway (resignWithFrameworks);
-         * this covers the ad-hoc bundle everyone develops against.
+         * Necessary, not sufficient: the black video of 2026-09-08 was
+         * finally the camera grant itself, which Chromium never requests —
+         * see MediaAccess.kt.
          *
          * Without `--options runtime`: a helper with no hardened runtime is
          * not subject to the entitlement check at all, so the camera works
