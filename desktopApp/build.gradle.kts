@@ -203,6 +203,18 @@ if (jbrFrameworks.isDirectory) {
          *
          * The signed build re-signs these anyway (resignWithFrameworks);
          * this covers the ad-hoc bundle everyone develops against.
+         *
+         * Without `--options runtime`: a helper with no hardened runtime is
+         * not subject to the entitlement check at all, so the camera works
+         * either way, and this is the variant verified live. The
+         * entitlements are kept so the two builds' helpers read the same.
+         *
+         * If every launch traps in CrBrowserMain right after "call page
+         * loading", suspect Chromium's shared profile before this signing:
+         * every JCEF instance on the machine shares
+         * ~/Library/Application Support/CEF/User Data, and one that crashed
+         * mid-start leaves it in a state the next start dies on. Moving that
+         * directory aside cured exactly that on 2026-09-08.
          */
         val entitlements = project.file("entitlements.plist").absolutePath
         commandLine(
@@ -213,7 +225,7 @@ if (jbrFrameworks.isDirectory) {
             ditto "${'$'}src" "${'$'}dest"
             for helper in "${'$'}dest"/jcef\ Helper*.app; do
                 [ -d "${'$'}helper" ] || continue
-                codesign --force --options runtime --entitlements "${'$'}entitlements" --sign - "${'$'}helper"
+                codesign --force --entitlements "${'$'}entitlements" --sign - "${'$'}helper"
             done
             """.trimIndent(),
             "copyCefFrameworks",
