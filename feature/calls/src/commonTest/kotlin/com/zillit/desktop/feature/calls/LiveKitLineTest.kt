@@ -268,6 +268,31 @@ class LiveKitLineTest {
         assertEquals("wss://calls.zillit.com/livekit", (placed.await() as ZillitResult.Success).data.url)
     }
 
+    /**
+     * Android and the web join whatever reachable address the server names;
+     * the configured one is only the stand-in for an unreachable one.
+     */
+    @Test
+    fun `a reachable room from the server beats the configured one`() = runTest {
+        val socket = FakeSocket()
+        val http = FakeHttp().apply {
+            answers["/v1/calls"] = """{"callId":"c9","livekit":{"token":"t","url":"wss://node-eu.zillit.com"}}"""
+        }
+        val (line, _) = line(socket, http, override = "wss://calls.zillit.com/livekit")
+        line.start()
+        runCurrent()
+
+        val placed = async {
+            line.place(dial(emptyList(), chatRoomId = "room-1", mode = CallMode.Group, type = CallType.Audio))
+        }
+        runCurrent()
+        socket.answer("startCall")
+        runCurrent()
+
+        assertEquals("wss://node-eu.zillit.com", (placed.await() as ZillitResult.Success).data.url)
+        assertTrue(!http.paths().contains("/v1/livekit/token"), "nothing to mint: the ring's room is reachable")
+    }
+
     @Test
     fun `without a usable room the token is minted`() = runTest {
         val socket = FakeSocket()

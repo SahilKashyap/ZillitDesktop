@@ -122,9 +122,12 @@ class LiveKitLine(
     private val handshake: suspend () -> String?,
     private val identity: () -> LiveKitIdentity?,
     /**
-     * A configured public room URL (`LIVEKIT_URL`). Wins over what the ring
-     * carries, as the web's `VITE_LIVEKIT_URL` does, because the server may
-     * name the node's internal address in the invite.
+     * A configured public room URL (`LIVEKIT_URL`) — the stand-in for a room
+     * address the server names that no client could reach (a node's own
+     * loopback). It does NOT replace a reachable one: Android joins whatever
+     * URL the ring or the token answer carries (`isUsableLivekitUrl`), the web
+     * likewise, and on develop the configured path answered 404 while the
+     * server's own did not (2026-09-08).
      */
     private val roomUrlOverride: () -> String?,
     private val nowMillis: () -> Long,
@@ -526,16 +529,33 @@ class LiveKitLine(
         displayName: String,
         projectId: String?,
     ): ZillitResult<LiveKitJoin> {
-        val override = roomUrlOverride()?.takeIf { it.isNotBlank() }
         if (bundled != null && bundled.token.isNotBlank()) {
-            val url = override ?: bundled.url.takeIf { isRemoteRoomUrl(it) }
-            if (url != null) return ZillitResult.Success(LiveKitJoin(callId, url, bundled.token))
+            roomUrl(bundled.url, "the ring")?.let { url ->
+                return ZillitResult.Success(LiveKitJoin(callId, url, bundled.token))
+            }
         }
         return when (val minted = api.mintToken(callId, userId, displayName, projectId)) {
-            is ZillitResult.Success -> ZillitResult.Success(
-                LiveKitJoin(callId, override ?: minted.data.url, minted.data.token),
-            )
+            is ZillitResult.Success -> when (val url = roomUrl(minted.data.url, "the token answer")) {
+                null -> ZillitResult.Failure(ZillitError.Unknown("no reachable room url for $callId"))
+                else -> ZillitResult.Success(LiveKitJoin(callId, url, minted.data.token))
+            }
             is ZillitResult.Failure -> minted
+        }
+    }
+
+    /**
+     * The room to join: the server's own address when a client can reach it,
+     * else the configured public one, else nothing. Logged either way — the
+     * join line that follows names only the winner.
+     */
+    private fun roomUrl(fromServer: String, source: String): String? {
+        val override = roomUrlOverride()?.takeIf { it.isNotBlank() }
+        return when {
+            isRemoteRoomUrl(fromServer) -> fromServer.also { ZillitLog.i(TAG) { "room from $source: $it" } }
+            override != null -> override.also {
+                ZillitLog.i(TAG) { "room from config: $it ($source said '${fromServer.ifBlank { "nothing" }}')" }
+            }
+            else -> null
         }
     }
 
