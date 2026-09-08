@@ -931,6 +931,7 @@ sealed interface AppGraph {
             var liveKitLine: LiveKitLine? = null
             var lineThreeGate: LineThreeGate? = null
             var primaryDeviceForHandshake: String? = null
+            var handshakeRecord: com.zillit.desktop.feature.auth.domain.DeviceIdentity? = null
             val authRepository = AuthRepositoryImpl(
                 apiClient = apiClient,
                 secureStore = secureStore,
@@ -945,6 +946,7 @@ sealed interface AppGraph {
                     keyProvider.invalidate()
                     remoteConfigRepository.clear()
                     tokenSession.clearSession()
+                    handshakeRecord = null
                     badgeStore.clear()
                     projectListCache?.clear()
                     // The presence socket is this device's standing as reachable; signed out, it is not.
@@ -971,6 +973,7 @@ sealed interface AppGraph {
                     // line redials, and its handshake reads the new id.
                     if (changed) {
                         primaryDeviceForHandshake = null
+                        handshakeRecord = null
                         liveKitLine?.disconnect("device re-identified")
                     }
                 },
@@ -1248,26 +1251,35 @@ sealed interface AppGraph {
                         if (deviceId == null) {
                             null
                         } else {
-                            // The record's own word first (set on identification
-                            // above); the linked list's guess only when it has
-                            // none — that guess picks any row marked primary,
-                            // and with a dozen linked devices it named the
-                            // wrong one, so no ring ever reached this socket
-                            // (2026-09-08: not one `incomingCall` in any log).
-                            val fromRecord = primaryDeviceForHandshake
+                            // The device record, as Android reads it
+                            // (`CallingHelper.getDeviceDetails`): the socket
+                            // names this device by the record's `_id` and its
+                            // account device by `primary_device_id`. The
+                            // header's id is the `device_id` form the REST
+                            // routes take, which the linked list does not
+                            // carry — so it matched no row and the old guess
+                            // (first row marked primary) stood in. Fetched
+                            // once per identification; the linked list stays
+                            // the fallback for a record that names no primary.
+                            val record = handshakeRecord
+                                ?: (authRepository.deviceRecord() as? ZillitResult.Success)?.data
+                                    ?.also { handshakeRecord = it }
+                            val socketDeviceId = record?.recordId?.takeIf { it.isNotBlank() } ?: deviceId
+                            val fromRecord = primaryDeviceForHandshake ?: record?.primaryDeviceId
+                                ?.also { primaryDeviceForHandshake = it }
                             val primary = fromRecord
                                 ?: (accountRepository.linkedDevices() as? ZillitResult.Success)?.data
                                     ?.firstOrNull { it.isPrimary && !it.isThisDevice }?.id
                                     ?.also { primaryDeviceForHandshake = it }
-                                ?: deviceId
+                                ?: socketDeviceId
                             ZillitLog.i("LiveKitLine") {
                                 "handshake primary from " + when {
                                     fromRecord != null -> "the device record"
-                                    primary != deviceId -> "the linked list"
+                                    primary != socketDeviceId -> "the linked list"
                                     else -> "this device"
-                                }
+                                } + ", device id from " + if (socketDeviceId == deviceId) "the header" else "the record"
                             }
-                            val payload = """{"primary_device_id":"$primary","device_id":"$deviceId"}"""
+                            val payload = """{"primary_device_id":"$primary","device_id":"$socketDeviceId"}"""
                             (cryptoEngine.encryptToHex(payload) as? ZillitResult.Success)?.data
                         }
                     },

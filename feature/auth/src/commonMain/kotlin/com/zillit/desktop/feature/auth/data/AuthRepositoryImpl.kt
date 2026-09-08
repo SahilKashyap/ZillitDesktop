@@ -178,6 +178,15 @@ class AuthRepositoryImpl(
         }
     }
 
+    override suspend fun deviceRecord(): ZillitResult<DeviceIdentity?> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = endpoints.device,
+            serializer = DeviceDto.serializer(),
+            module = RequestModule.Device,
+            options = CallOptions(reportUnauthorized = false),
+        ).map { it.toDomain() }
+
     /** Restores a session from the keychain at launch, if one exists. */
     suspend fun restoreSession(): ZillitResult<AuthSession?> {
         val stored = when (val result = secureStore.get(SecureKey.DeviceKey)) {

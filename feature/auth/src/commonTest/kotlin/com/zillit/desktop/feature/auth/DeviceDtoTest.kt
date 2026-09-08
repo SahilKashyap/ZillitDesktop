@@ -20,6 +20,18 @@ class DeviceDtoTest {
 
         assertEquals("d-desk", identity?.deviceId)
         assertEquals("d-phone", identity?.primaryDeviceId)
+        assertEquals("d-desk", identity?.recordId)
+    }
+
+    @Test
+    fun `the record id is the underscore id, whatever device_id says`() {
+        val identity = json.decodeFromString(
+            DeviceDto.serializer(),
+            """{"_id":"mongo","device_id":"hashed","primary_device_id":"d-phone"}""",
+        ).toDomain()
+
+        assertEquals("hashed", identity?.deviceId, "REST keeps the device_id form")
+        assertEquals("mongo", identity?.recordId, "the socket names the record")
     }
 
     @Test

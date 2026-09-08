@@ -21,6 +21,11 @@ data class DeviceIdentity(
     val isPrimary: Boolean,
     /** The account device this one was linked from, when the server says; null for the primary itself. */
     val primaryDeviceId: String? = null,
+    /**
+     * The record's `_id`, when the answer carried one beside `device_id`.
+     * The calling socket names a device by this (Android `SharedPref.setDeviceID(device._id)`).
+     */
+    val recordId: String? = null,
 )
 
 /**

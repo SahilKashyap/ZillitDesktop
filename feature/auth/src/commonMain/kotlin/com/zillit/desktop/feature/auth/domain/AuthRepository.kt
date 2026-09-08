@@ -45,6 +45,13 @@ interface AuthRepository {
      */
     suspend fun confirmDevice(): DeviceStatus
 
+    /**
+     * `GET device` — this device's record as the server holds it, for the
+     * two ids the calling socket registers under (Android
+     * `CallingHelper.getDeviceDetails`). Null when the server knows no record.
+     */
+    suspend fun deviceRecord(): ZillitResult<DeviceIdentity?> = ZillitResult.Success(null)
+
     /** Starts recovery for a device the user has lost access to. */
     suspend fun requestRecovery(email: String): ZillitResult<kotlin.Unit>
 

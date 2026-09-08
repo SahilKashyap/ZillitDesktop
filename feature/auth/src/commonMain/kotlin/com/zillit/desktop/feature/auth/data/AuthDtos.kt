@@ -69,6 +69,7 @@ internal data class DeviceDto(
             email = record.email.orEmpty(),
             isPrimary = record.isPrimary,
             primaryDeviceId = record.primaryDeviceId?.takeIf { it.isNotBlank() },
+            recordId = record.id?.takeIf { it.isNotBlank() },
         )
     }
 }
