@@ -1,6 +1,8 @@
 package com.zillit.desktop.core.media
 
+import com.zillit.desktop.core.common.OperatingSystem
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.currentPlatform
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
@@ -16,10 +18,12 @@ import kotlinx.coroutines.withContext
  * machine and understands the sidebar, recents and tags the user already has.
  * `JFileChooser` draws its own, and on macOS it looks a decade out of date.
  *
- * The kind does two jobs. It filters the dialog, so "Video" shows videos —
- * advisory on macOS, which greys rather than hides. And it is checked again
- * after the choice, by extension *and* by the type the name resolves to,
- * because a filter the OS may ignore is not a rule.
+ * The kind does two jobs. It filters the dialog, so "Video" shows videos:
+ * through macOS's own panel by content type ([MacFileChooser] — AWT's
+ * `FilenameFilter` is ignored there), through the file pattern on Windows,
+ * and through the filter everywhere else. And it is checked again after the
+ * choice, by extension *and* by the type the name resolves to, because a
+ * filter the OS may ignore is not a rule.
  */
 class AwtAttachmentPicker : AttachmentPicker {
 
@@ -41,13 +45,19 @@ class AwtAttachmentPicker : AttachmentPicker {
     }
 
     private fun chosen(kind: PreviewKind, multiple: Boolean): List<File> {
+        val native = if (currentPlatform().os == OperatingSystem.MacOs) MacFileChooser.choose(kind, multiple) else null
+        return (native ?: awtChosen(kind, multiple)).filter { it.isFile }
+    }
+
+    private fun awtChosen(kind: PreviewKind, multiple: Boolean): List<File> {
         val dialog = FileDialog(null as Frame?, kind.pickerTitle, FileDialog.LOAD)
         dialog.isMultipleMode = multiple
         kind.extensions?.let { allowed ->
             dialog.setFilenameFilter { _, name -> name.substringAfterLast('.', "").lowercase() in allowed }
         }
+        if (currentPlatform().os == OperatingSystem.Windows) kind.windowsFilePattern()?.let { dialog.file = it }
         dialog.isVisible = true
-        return dialog.files.orEmpty().filter { it.isFile }
+        return dialog.files.orEmpty().toList()
     }
 
     private fun read(
