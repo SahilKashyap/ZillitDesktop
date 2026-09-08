@@ -371,6 +371,10 @@ class KcefCallEngine(
     }
 
     override suspend fun join(params: CallJoin) {
+        // macOS grants are settled before the page opens a device; see
+        // [MediaAccess] for why the page cannot do this itself.
+        MediaAccess.ensureMicrophone()
+        if (params.hasVideo) MediaAccess.ensureCamera()
         // Line 1 reaches the page but is not joined from here yet. Saying so
         // and staying signalling-only is the honest degrade: an Agora join
         // built from a mediasoup invite would dial an empty channel, which
@@ -598,7 +602,16 @@ class KcefCallEngine(
             livekitActive -> LiveKitScripts.setCam(enabled)
             else -> EngineBridge.camScript(enabled)
         }
-        browser?.let { run(it, script) }
+        if (!enabled) {
+            browser?.let { run(it, script) }
+            return
+        }
+        // Turning the camera on waits for the macOS grant first; the answer
+        // is remembered, so this is one helper run per launch, not per toggle.
+        scope.launch {
+            MediaAccess.ensureCamera()
+            withContext(Dispatchers.Swing) { browser?.let { run(it, script) } }
+        }
     }
 
     override fun setSpeakerEnabled(enabled: Boolean) {

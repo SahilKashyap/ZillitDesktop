@@ -17,6 +17,16 @@
 //   zillit-notify <title> <body>   post one banner
 //   zillit-notify --status         print the authorisation state and exit
 //   zillit-notify --request        ask (the system prompt, if undecided), print granted|denied
+//   zillit-notify --camera         ask macOS for camera access as this app; print the state
+//   zillit-notify --microphone     the same for the microphone
+//
+// The media modes exist because Chromium never asks. Chrome's own browser
+// process calls AVCaptureDevice.requestAccess before a capture; CEF does not,
+// and its capture helper simply opens the device. On macOS 26 a capture opened
+// without the responsible app ever having asked is not refused: the session
+// runs and delivers no frames, so getUserMedia succeeds and every tile stays
+// black. Asking here, from a process whose Bundle.main is the app, settles the
+// grant under the app's identity before the page touches the camera.
 //
 // `--status` prints one of authorized|denied|notDetermined|provisional|
 // ephemeral on stdout — the app's startup check reads it to decide whether to
@@ -29,6 +39,7 @@
 // stderr for the Kotlin side to log.
 
 import AppKit
+import AVFoundation
 import Foundation
 import UserNotifications
 
@@ -67,7 +78,25 @@ func name(of status: UNAuthorizationStatus) -> String {
 
 let mode = arguments.count > 1 ? arguments[1] : ""
 
-if mode == "--status" {
+func name(of status: AVAuthorizationStatus) -> String {
+    switch status {
+    case .authorized: return "authorized"
+    case .denied: return "denied"
+    case .restricted: return "restricted"
+    case .notDetermined: return "notDetermined"
+    @unknown default: return "unknown"
+    }
+}
+
+if mode == "--camera" || mode == "--microphone" {
+    let media: AVMediaType = mode == "--camera" ? .video : .audio
+    let before = AVCaptureDevice.authorizationStatus(for: media)
+    report("\(mode) before asking: \(name(of: before))")
+    AVCaptureDevice.requestAccess(for: media) { granted in
+        report("\(mode) asked: granted=\(granted)")
+        answer(name(of: AVCaptureDevice.authorizationStatus(for: media)))
+    }
+} else if mode == "--status" {
     center.getNotificationSettings { settings in answer(name(of: settings.authorizationStatus)) }
 } else if mode == "--request" {
     center.requestAuthorization(options: [.alert, .sound]) { granted, error in
@@ -115,7 +144,8 @@ center.requestAuthorization(options: [.alert, .sound]) { granted, error in
 // The completion handlers arrive on the framework's own queue, but the main run
 // loop has to keep turning for them to be delivered at all. Bounded, so a
 // wedged notification daemon cannot leave this process alive behind the app.
-let deadline = Date().addingTimeInterval(mode == "--request" ? 120 : 10)
+let asks = mode == "--request" || mode == "--camera" || mode == "--microphone"
+let deadline = Date().addingTimeInterval(asks ? 120 : 10)
 while !finished && Date() < deadline {
     RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
 }

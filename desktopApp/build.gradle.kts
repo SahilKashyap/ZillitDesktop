@@ -301,6 +301,7 @@ if (jbrFrameworks.isDirectory) {
                 "-o", File(destination, "zillit-notify").absolutePath,
                 notifyHelperSource.absolutePath,
                 "-framework", "UserNotifications",
+                "-framework", "AVFoundation",
                 "-framework", "AppKit",
             )
         }
