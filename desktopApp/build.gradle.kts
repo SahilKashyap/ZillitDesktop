@@ -185,7 +185,42 @@ if (jbrFrameworks.isDirectory) {
         val destination = layout.buildDirectory
             .dir("compose/binaries/main/app/$desktopPackageName.app/Contents/runtime/Contents/Frameworks")
 
-        commandLine("ditto", jbrFrameworks.absolutePath, destination.get().asFile.absolutePath)
+        /*
+         * The helpers are re-signed ad hoc with this app's entitlements right
+         * after the copy, and not only in the signed build.
+         *
+         * Chromium captures the camera in a utility process — `jcef Helper` —
+         * not in the app. JetBrains ships that helper with the hardened
+         * runtime and no `com.apple.security.device.camera`, and on macOS 26
+         * a hardened process without the entitlement is not refused the
+         * camera: it gets a running capture session that delivers no frames,
+         * ever. getUserMedia succeeds, the track reads live at 1280x720, the
+         * camera light stays off and every tile stays black. The microphone
+         * works throughout because the audio service runs in the app
+         * process, which jpackage signed with the audio-input entitlement.
+         * Measured 2026-09-08: a hardened capture process without the
+         * entitlement got 0 frames in 4 s; the same binary with it got 42.
+         *
+         * The signed build re-signs these anyway (resignWithFrameworks);
+         * this covers the ad-hoc bundle everyone develops against.
+         */
+        val entitlements = project.file("entitlements.plist").absolutePath
+        commandLine(
+            "bash", "-c",
+            """
+            set -euo pipefail
+            src="${'$'}1"; dest="${'$'}2"; entitlements="${'$'}3"
+            ditto "${'$'}src" "${'$'}dest"
+            for helper in "${'$'}dest"/jcef\ Helper*.app; do
+                [ -d "${'$'}helper" ] || continue
+                codesign --force --options runtime --entitlements "${'$'}entitlements" --sign - "${'$'}helper"
+            done
+            """.trimIndent(),
+            "copyCefFrameworks",
+            jbrFrameworks.absolutePath,
+            destination.get().asFile.absolutePath,
+            entitlements,
+        )
     }
 
     /*
