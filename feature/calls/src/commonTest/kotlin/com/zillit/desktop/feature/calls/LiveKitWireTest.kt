@@ -129,7 +129,7 @@ class LiveKitWireTest {
             callerId = "u-caller",
         )
         assertEquals(
-            listOf(CallStatus.Caller, CallStatus.Ringing, CallStatus.Declined, CallStatus.Left),
+            listOf(CallStatus.Caller, CallStatus.Ringing, CallStatus.Declined),
             roster.map { it.status },
         )
     }
@@ -140,6 +140,8 @@ class LiveKitWireTest {
     fun `a state word this build does not know is dropped, not read as a departure`() {
         assertEquals(CallStatus.InCall, userStateStatus("accepted"))
         assertEquals(CallStatus.Left, userStateStatus("left"))
+        assertEquals(CallStatus.Ringing, userStateStatus("calling"), "being rung reads as ringing")
+        assertEquals(null, userStateStatus("available"), "not on the call is not a departure")
         assertEquals(null, userStateStatus("on_hold"))
         val frame = parseLiveKitFrame("""{"type":"callUserStateChanged","callId":"c","userId":"u","state":"on_hold"}""")
         assertTrue(frame is LiveKitFrame.Unknown, "an unknown state is an unread event: $frame")

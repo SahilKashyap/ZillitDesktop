@@ -231,14 +231,18 @@ private fun ringState(obj: JsonObject, status: CallStatus, busy: Boolean = false
  * be answered, which is what Declined and NotAnswered already mean.
  */
 fun userStateStatus(wire: String?): CallStatus? = when (wire?.trim()?.lowercase()) {
-    "calling" -> CallStatus.Caller
-    "ringing" -> CallStatus.Ringing
+    // `calling` is the callee being rung before their device acknowledged;
+    // to everyone watching, that is ringing.
+    "calling", "ringing" -> CallStatus.Ringing
     "in_call", "accepted" -> CallStatus.InCall
     "declined", "busy" -> CallStatus.Declined
     "missed", "unreachable" -> CallStatus.NotAnswered
-    "left", "available" -> CallStatus.Left
-    // A word this build does not know is not a departure: read as Left it
-    // would end a 1:1 call on the spot. Null, and the caller drops the delta.
+    "left" -> CallStatus.Left
+    // `available` is someone NOT on the call — the roster's "could be added"
+    // row, broadcast for the whole production the moment a call starts. It
+    // is not a departure: read as Left it ended every 1:1 call within a
+    // second of dialling (seen on develop, 2026-09-08). Null drops it, as it
+    // drops any word this build does not know.
     else -> null
 }
 
