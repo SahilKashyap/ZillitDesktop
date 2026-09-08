@@ -126,7 +126,10 @@ internal fun permissionFrom(answer: String): NotificationPermission = when (answ
  * Whether the startup check ends in the in-app dialog.
  *
  * An undecided state gets the system's own prompt first ([request]); only a
- * refusal — then or before — sends the person to settings. Unknown stays quiet.
+ * refusal — "Don't Allow" then, or a denied state from before — sends the
+ * person to settings. Unknown stays quiet, and so does a request the system
+ * could not process (the helper answers `error`): that is not a refusal, and
+ * a dialog for it came back on every launch.
  */
 internal inline fun startupDecision(
     status: NotificationPermission,

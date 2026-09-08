@@ -16,6 +16,8 @@ class NotificationPermissionTest {
         assertEquals(NotificationPermission.Denied, permissionFrom("denied"))
         assertEquals(NotificationPermission.NotDetermined, permissionFrom("notDetermined"))
         assertEquals(NotificationPermission.Unknown, permissionFrom(""))
+        // A request the system could not process is not a person's refusal.
+        assertEquals(NotificationPermission.Unknown, permissionFrom("error"))
         assertEquals(NotificationPermission.Unknown, permissionFrom("zillit-notify: authorization failed"))
     }
 
@@ -25,6 +27,12 @@ class NotificationPermissionTest {
         assertFalse(startupDecision(NotificationPermission.Granted) { error("not asked") })
         // A build that cannot know must not send anyone to a pane that says "allowed".
         assertFalse(startupDecision(NotificationPermission.Unknown) { error("not asked") })
+    }
+
+    /** The unsigned build's case: the request errors on every launch; the dialog must not follow it. */
+    @Test
+    fun `a request the system could not process opens nothing`() {
+        assertFalse(startupDecision(NotificationPermission.NotDetermined) { permissionFrom("error") })
     }
 
     @Test

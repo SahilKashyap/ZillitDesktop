@@ -71,7 +71,15 @@ if mode == "--status" {
     center.getNotificationSettings { settings in answer(name(of: settings.authorizationStatus)) }
 } else if mode == "--request" {
     center.requestAuthorization(options: [.alert, .sound]) { granted, error in
-        if let error = error { report("authorization failed: \(error.localizedDescription)") }
+        // An error is not a person's answer: an unsigned build has no
+        // notification identity and fails here on every launch
+        // (UNErrorDomain error 1), and a dialog for that would come back
+        // forever. Only "Don't Allow" reads as denied.
+        if let error = error {
+            report("authorization failed: \(error.localizedDescription)")
+            answer("error")
+            return
+        }
         answer(granted ? "granted" : "denied")
     }
 } else {
