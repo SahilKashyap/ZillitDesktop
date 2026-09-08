@@ -960,6 +960,10 @@ sealed interface AppGraph {
                 onDeviceIdentified = { identity ->
                     val changed = headerContext.value.deviceId != identity.deviceId
                     headerContext.update { it.copy(deviceId = identity.deviceId) }
+                    // The device record names the account device it was linked
+                    // from — the phones' source (Android `CallingHelper`). A
+                    // record that names none is the primary itself.
+                    identity.primaryDeviceId?.let { primaryDeviceForHandshake = it }
                     // The presence socket registered whatever device id it was
                     // opened with. A re-link (seen 2026-09-07: a prod-registered
                     // desktop scanning into develop) gives this machine a new one,
@@ -1244,11 +1248,25 @@ sealed interface AppGraph {
                         if (deviceId == null) {
                             null
                         } else {
-                            val primary = primaryDeviceForHandshake
+                            // The record's own word first (set on identification
+                            // above); the linked list's guess only when it has
+                            // none — that guess picks any row marked primary,
+                            // and with a dozen linked devices it named the
+                            // wrong one, so no ring ever reached this socket
+                            // (2026-09-08: not one `incomingCall` in any log).
+                            val fromRecord = primaryDeviceForHandshake
+                            val primary = fromRecord
                                 ?: (accountRepository.linkedDevices() as? ZillitResult.Success)?.data
                                     ?.firstOrNull { it.isPrimary && !it.isThisDevice }?.id
                                     ?.also { primaryDeviceForHandshake = it }
                                 ?: deviceId
+                            ZillitLog.i("LiveKitLine") {
+                                "handshake primary from " + when {
+                                    fromRecord != null -> "the device record"
+                                    primary != deviceId -> "the linked list"
+                                    else -> "this device"
+                                }
+                            }
                             val payload = """{"primary_device_id":"$primary","device_id":"$deviceId"}"""
                             (cryptoEngine.encryptToHex(payload) as? ZillitResult.Success)?.data
                         }

@@ -171,7 +171,9 @@ internal data class LinkedDeviceDto(
             osVersion = info?.osVersion?.takeIf { it.isNotBlank() },
             appVersion = appVersion?.takeIf { it.isNotBlank() },
             lastActiveMillis = lastActivity?.takeIf { it > 0 },
-            isThisDevice = thisDeviceId != null && thisDeviceId == resolved,
+            // By either id: the header carries whichever of `device_id`/`_id`
+            // the registration answered with, and a row can spell it the other way.
+            isThisDevice = thisDeviceId != null && (thisDeviceId == resolved || thisDeviceId == id),
             /*
              * The account's own device — the one the others were linked *to*.
              *

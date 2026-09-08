@@ -19,6 +19,8 @@ data class DeviceIdentity(
     val deviceId: String,
     val email: String,
     val isPrimary: Boolean,
+    /** The account device this one was linked from, when the server says; null for the primary itself. */
+    val primaryDeviceId: String? = null,
 )
 
 /**

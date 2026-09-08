@@ -46,6 +46,14 @@ internal data class DeviceDto(
     @SerialName("_id") val id: String? = null,
     @SerialName("email") val email: String? = null,
     @SerialName("is_primary") val isPrimary: Boolean = false,
+    /**
+     * The account device this one was linked from — what the calling socket
+     * registers under (Android `DeviceResponseModel.primaryDeviceId`,
+     * `CallingHelper.kt:90-108`). Null on the primary device itself.
+     */
+    @SerialName("primary_device_id") val primaryDeviceId: String? = null,
+    /** Android reads the record under `data.device`; accepted here too, whichever nesting a route uses. */
+    @SerialName("device") val device: DeviceDto? = null,
 ) {
     /**
      * Returns null when the payload has no usable identity.
@@ -54,8 +62,14 @@ internal data class DeviceDto(
      * others; accepting either here keeps that inconsistency out of the domain.
      */
     fun toDomain(): DeviceIdentity? {
-        val resolvedId = deviceId ?: id ?: return null
-        return DeviceIdentity(deviceId = resolvedId, email = email.orEmpty(), isPrimary = isPrimary)
+        val record = device?.takeIf { it.deviceId != null || it.id != null } ?: this
+        val resolvedId = record.deviceId ?: record.id ?: return null
+        return DeviceIdentity(
+            deviceId = resolvedId,
+            email = record.email.orEmpty(),
+            isPrimary = record.isPrimary,
+            primaryDeviceId = record.primaryDeviceId?.takeIf { it.isNotBlank() },
+        )
     }
 }
 
