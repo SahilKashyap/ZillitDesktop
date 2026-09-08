@@ -32,8 +32,10 @@ import com.zillit.desktop.feature.boxschedule.domain.DiaryClock
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleDayRow
+import com.zillit.desktop.feature.boxschedule.domain.isPersonalNote
 import com.zillit.desktop.feature.boxschedule.ui.pages.BlockEditorDialog
 import com.zillit.desktop.feature.boxschedule.ui.pages.DiaryEditorDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.PdfOptionsDialog
 import com.zillit.desktop.feature.boxschedule.ui.pages.TypesDialog
 import com.zillit.desktop.feature.boxschedule.ui.pages.hexColor
 
@@ -69,6 +71,7 @@ fun BoxScheduleScreen(
         state.blockEditor?.let { BlockEditorDialog(state = state, editor = it, onEvent = onEvent) }
         state.diaryEditor?.let { DiaryEditorDialog(state = state, editor = it, onEvent = onEvent) }
         if (state.manageTypes) TypesDialog(state = state, onEvent = onEvent)
+        state.pdfSheet?.let { PdfOptionsDialog(sheet = it, onEvent = onEvent) }
     }
 }
 
@@ -78,6 +81,15 @@ private fun Chrome(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> Uni
         title = "Box Schedule",
         description = "The project diary — shoot days, prep, travel and what happens on each.",
         actions = {
+            // Anyone who can read the diary can take it away as a file — the
+            // dialog decides what of theirs goes into it.
+            if (!state.viewer.isBlocked) {
+                ZillitButton(
+                    text = "PDF",
+                    onClick = { onEvent(BoxScheduleEvent.OpenPdf) },
+                    variant = ButtonVariant.Tertiary,
+                )
+            }
             if (state.viewer.mayEdit) {
                 ZillitButton(
                     text = "Types",
@@ -270,7 +282,10 @@ private fun EventLine(
             val meta = buildList {
                 if (showDate) add(DiaryClock.dayLabel(event.date))
                 if (event.kind == DiaryKind.Note) {
-                    add("note")
+                    // The server's own label for the type — "Personal Note"
+                    // since the rename — so the row says what the dropdown says.
+                    val typeLabel = state.noteTypes.firstOrNull { it.value == event.noteType }?.label
+                    add(if (event.isPersonalNote) (typeLabel ?: "Personal Note").lowercase() else "note")
                 } else if (!event.fullDay) {
                     add("${DiaryClock.hm(event.startDateTime)}–${DiaryClock.hm(event.endDateTime)}")
                 } else {

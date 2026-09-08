@@ -50,4 +50,4 @@ internal fun distributionHook(
 )
 
 /** `Constants.DOC_DISTRIBUTION_TOOL_LABEL` on Android — the rights row the gate reads. */
-private const val DOC_DISTRIBUTION_TOOL = "document_distribution_tool"
+internal const val DOC_DISTRIBUTION_TOOL = "document_distribution_tool"

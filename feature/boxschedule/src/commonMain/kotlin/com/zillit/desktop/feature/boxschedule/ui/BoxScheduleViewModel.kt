@@ -3,6 +3,7 @@
 package com.zillit.desktop.feature.boxschedule.ui
 
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.boxschedule.domain.BlockDraft
@@ -14,6 +15,10 @@ import com.zillit.desktop.feature.boxschedule.domain.DiaryClock
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
 import com.zillit.desktop.feature.boxschedule.domain.DiaryMath
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdf
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfAction
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfPublisher
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfTransfer
 import com.zillit.desktop.feature.boxschedule.domain.MainCalendarLookup
 import com.zillit.desktop.feature.boxschedule.domain.RecurrenceScope
 import kotlinx.coroutines.async
@@ -33,6 +38,14 @@ class BoxScheduleViewModel(
     private val calendar: MainCalendarLookup,
     private val resolveViewer: () -> BoxScheduleViewer,
     private val nowMillis: () -> Long,
+    /** Saves the generated PDF and opens it; null on a host without Downloads. */
+    private val transfer: DiaryPdfTransfer? = null,
+    /** Publishes it into Document Distribution; null on a host without the library. */
+    private val publisher: DiaryPdfPublisher? = null,
+    /** Posting rights on Document Distribution, read when the dialog opens. */
+    private val canPublish: () -> Boolean = { false },
+    /** Stamped onto the PDF — the phones send the user's full name. */
+    private val watermark: () -> String = { "" },
 ) : ZillitViewModel<BoxScheduleUiState, BoxScheduleEvent, BoxScheduleEffect>(BoxScheduleUiState()) {
 
     fun start() {
@@ -153,7 +166,52 @@ class BoxScheduleViewModel(
             BoxScheduleEvent.SaveType -> saveType()
             BoxScheduleEvent.CloseTypeEditor -> setState { copy(typeEditor = null) }
             is BoxScheduleEvent.DeleteType -> run({ repository.deleteType(event.typeId) }, "Type removed")
+            BoxScheduleEvent.OpenPdf -> setState {
+                copy(pdfSheet = PdfSheet(canPublish = publisher != null && canPublish()))
+            }
+            is BoxScheduleEvent.PdfChanged -> setState {
+                copy(
+                    pdfSheet = pdfSheet?.copy(
+                        options = pdfSheet.options.copy(
+                            layout = event.layout ?: pdfSheet.options.layout,
+                            includePersonalNotes = event.includePersonalNotes ?: pdfSheet.options.includePersonalNotes,
+                        ),
+                    ),
+                )
+            }
+            BoxScheduleEvent.ClosePdf -> setState { copy(pdfSheet = null) }
+            BoxScheduleEvent.SavePdf -> deliverPdf(done = null) { transfer?.open(it) }
+            BoxScheduleEvent.PublishPdf ->
+                deliverPdf(done = "Published to Document Distribution") { publisher?.publish(it) }
             BoxScheduleEvent.DismissError -> setState { copy(error = null) }
+        }
+    }
+
+    /**
+     * Asks the server for the diary as chosen, then hands the staged file to
+     * one destination. `action=print` for the library as well: the phones
+     * send the same, and the server only logs the verb.
+     */
+    private fun deliverPdf(done: String?, deliver: suspend (DiaryPdf) -> ZillitResult<Unit>?) {
+        val sheet = state.value.pdfSheet ?: return
+        if (sheet.busy) return
+        setState { copy(pdfSheet = sheet.copy(busy = true)) }
+        launch {
+            val outcome = when (val pdf = repository.pdf(sheet.options, DiaryPdfAction.Print, watermark())) {
+                is ZillitResult.Failure -> pdf
+                is ZillitResult.Success -> deliver(pdf.data)
+                    ?: ZillitResult.Failure(ZillitError.Validation("This is not available here."))
+            }
+            when (outcome) {
+                is ZillitResult.Failure -> {
+                    setState { copy(pdfSheet = pdfSheet?.copy(busy = false)) }
+                    sendEffect(BoxScheduleEffect.Notice(outcome.error.userMessage))
+                }
+                is ZillitResult.Success -> {
+                    setState { copy(pdfSheet = null) }
+                    done?.let { sendEffect(BoxScheduleEffect.Notice(it)) }
+                }
+            }
         }
     }
 

@@ -6,6 +6,7 @@ import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
@@ -17,6 +18,9 @@ import com.zillit.desktop.feature.boxschedule.domain.DateConflict
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdf
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfAction
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfOptions
 import com.zillit.desktop.feature.boxschedule.domain.NoteType
 import com.zillit.desktop.feature.boxschedule.domain.RecurrenceScope
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleBlock
@@ -234,6 +238,27 @@ class BoxScheduleRepositoryImpl(
 
     // Transport ------------------------------------------------------------
 
+    override suspend fun pdf(
+        options: DiaryPdfOptions,
+        action: DiaryPdfAction,
+        watermark: String,
+    ): ZillitResult<DiaryPdf> {
+        // Never from the read cache: the server stages a fresh file per ask,
+        // and a kept answer would name a file that may since have gone.
+        val envelope = apiClient.envelope(
+            HttpVerb.Get,
+            "$base/pdf",
+            RequestModule.ProjectUser,
+            queryParameters = diaryPdfQuery(options, action, watermark),
+            options = CallOptions(readCache = false),
+        )
+        return when (val parsed = envelope.mapData { data -> parseDiaryPdf(data as? JsonObject) }) {
+            is ZillitResult.Failure -> parsed
+            is ZillitResult.Success -> parsed.data?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Serialization("the diary PDF answer named no file"))
+        }
+    }
+
     private suspend fun get(url: String, query: Map<String, Any?> = emptyMap()): ZillitResult<ApiEnvelope> =
         apiClient.envelope(HttpVerb.Get, url, RequestModule.ProjectUser, queryParameters = query)
 
@@ -418,3 +443,36 @@ private fun JsonArray?.items(): List<JsonElement> = this?.toList() ?: emptyList(
 
 private const val SECONDS_CEILING = 1_000_000_000_000L
 private const val MS_PER_SECOND = 1_000L
+
+/**
+ * The `/pdf` query, as the phones send it: `watermark`, `action` and
+ * `format` always, and `includePersonalNotes=false` only when the user
+ * chose Without. Omitting it is the server's include-everything default, so
+ * the default request is byte-identical to the one sent before the option
+ * existed (box-schedule-personal-notes.md §2.1).
+ */
+internal fun diaryPdfQuery(options: DiaryPdfOptions, action: DiaryPdfAction, watermark: String): Map<String, Any?> =
+    buildMap {
+        put("watermark", watermark)
+        put("action", action.wire)
+        put("format", options.layout.wire)
+        if (!options.includePersonalNotes) put("includePersonalNotes", "false")
+    }
+
+/** The staged file off the attachment shape, or null when the answer names no storage key. */
+internal fun parseDiaryPdf(obj: JsonObject?): DiaryPdf? {
+    val media = obj?.text("media")?.takeIf { it.isNotBlank() } ?: return null
+    return DiaryPdf(
+        media = media,
+        name = obj.text("name").ifBlank { DEFAULT_PDF_NAME },
+        bucket = obj.text("bucket"),
+        region = obj.text("region"),
+        contentType = obj.text("content_type"),
+        contentSubtype = obj.text("content_subtype"),
+        thumbnail = obj.text("thumbnail"),
+        caption = obj.text("caption"),
+        fileSizeBytes = obj.text("file_size").toLongOrNull() ?: 0L,
+    )
+}
+
+private const val DEFAULT_PDF_NAME = "Box Schedule.pdf"

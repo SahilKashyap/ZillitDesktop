@@ -2819,6 +2819,10 @@ private fun rememberAppViewModels(
                     calendar = graph.diaryCalendarLookup(),
                     resolveViewer = { graph.boxScheduleViewer(permissions()) },
                     nowMillis = System::currentTimeMillis,
+                    transfer = graph.diaryPdfTransfer(),
+                    publisher = graph.diaryPdfPublisher(permissions),
+                    canPublish = { permissions().canPost(DOC_DISTRIBUTION_TOOL) },
+                    watermark = { graph.projectContext?.context?.value?.profile?.fullName.orEmpty() },
                 )
             },
             maps = ready?.let { graph ->

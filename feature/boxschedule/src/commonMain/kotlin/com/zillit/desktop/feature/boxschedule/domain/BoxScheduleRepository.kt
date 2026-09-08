@@ -59,6 +59,13 @@ interface BoxScheduleRepository {
     /** The note kinds the server offers, with their labels. */
     suspend fun noteTypes(): ZillitResult<List<NoteType>>
 
+    /**
+     * `GET box-schedule/pdf` — the server renders the diary and stages the
+     * file. Personal Notes are left out only when [options] say so; omitting
+     * the parameter is the server's include-everything default.
+     */
+    suspend fun pdf(options: DiaryPdfOptions, action: DiaryPdfAction, watermark: String): ZillitResult<DiaryPdf>
+
     suspend fun createEvent(draft: DiaryDraft): ZillitResult<Unit>
 
     /**

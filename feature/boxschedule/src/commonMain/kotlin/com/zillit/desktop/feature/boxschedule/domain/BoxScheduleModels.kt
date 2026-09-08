@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.boxschedule.domain
 
+import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
 
 /**
@@ -229,4 +230,70 @@ data class BoxScheduleViewer(
             )
         }
     }
+}
+
+/**
+ * The stored slug of the note type labelled "Personal Note" — "Crew Start"
+ * until the backend's rename. Only the label changed: the slug is what is
+ * saved, sent and compared, and must never be renamed.
+ */
+const val PERSONAL_NOTE_TYPE = "crew_start"
+
+/** A note only its author sees. Untyped notes, from before the type field existed, are General. */
+val DiaryEvent.isPersonalNote: Boolean
+    get() = kind == DiaryKind.Note && noteType == PERSONAL_NOTE_TYPE
+
+/**
+ * The order a day's entries are read in: Personal Notes first, then General
+ * notes, then the events — the web's `groupNotesByType` (ZL-21253), with
+ * the order inside each group preserved.
+ */
+fun List<DiaryEvent>.inDiaryOrder(): List<DiaryEvent> {
+    val (notes, events) = partition { it.kind == DiaryKind.Note }
+    val (personal, general) = notes.partition { it.isPersonalNote }
+    return personal + general + events
+}
+
+/** How the diary PDF is laid out — the server's `format`. */
+enum class DiaryPdfLayout(val wire: String, val label: String) {
+    Calendar("calendar", "Calendar"),
+    List("list", "List"),
+}
+
+/** What the PDF is for. The server logs the verb and renders the same file either way. */
+enum class DiaryPdfAction(val wire: String) {
+    Print("print"),
+    Share("share"),
+}
+
+/**
+ * What the user chose before the PDF was asked for. The defaults reproduce
+ * the file the server always sent: Calendar, Personal Notes included.
+ */
+data class DiaryPdfOptions(
+    val layout: DiaryPdfLayout = DiaryPdfLayout.Calendar,
+    val includePersonalNotes: Boolean = true,
+)
+
+/** The generated PDF, staged in the production's storage — the phones' `AttachmentModel`. */
+data class DiaryPdf(
+    val media: String,
+    val name: String,
+    val bucket: String = "",
+    val region: String = "",
+    val contentType: String = "",
+    val contentSubtype: String = "",
+    val thumbnail: String = "",
+    val caption: String = "",
+    val fileSizeBytes: Long = 0,
+)
+
+/** Saves the generated PDF and opens it — the host's storage reader and Downloads. */
+fun interface DiaryPdfTransfer {
+    suspend fun open(pdf: DiaryPdf): ZillitResult<Unit>
+}
+
+/** Registers the generated PDF in Document Distribution by its storage keys; nothing is re-uploaded. */
+fun interface DiaryPdfPublisher {
+    suspend fun publish(pdf: DiaryPdf): ZillitResult<Unit>
 }

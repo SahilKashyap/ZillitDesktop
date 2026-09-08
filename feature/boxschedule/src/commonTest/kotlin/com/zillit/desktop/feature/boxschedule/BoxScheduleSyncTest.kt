@@ -10,6 +10,9 @@ import com.zillit.desktop.feature.boxschedule.domain.ConflictAction
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
 import com.zillit.desktop.feature.boxschedule.domain.MainCalendarLookup
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdf
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfAction
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfOptions
 import com.zillit.desktop.feature.boxschedule.domain.NoteType
 import com.zillit.desktop.feature.boxschedule.domain.RecurrenceScope
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleBlock
@@ -70,6 +73,8 @@ class BoxScheduleSyncTest {
         override suspend fun events(scheduleDayId: String?) =
             ZillitResult.Success(emptyList<DiaryEvent>())
         override suspend fun noteTypes() = ZillitResult.Success(emptyList<NoteType>())
+        override suspend fun pdf(options: DiaryPdfOptions, action: DiaryPdfAction, watermark: String) =
+            ZillitResult.Success(DiaryPdf(media = "box/diary.pdf", name = "Box Schedule.pdf"))
         override suspend fun createEvent(draft: DiaryDraft) = ZillitResult.Success(Unit)
         override suspend fun updateEvent(
             id: String, draft: DiaryDraft, scope: RecurrenceScope, occurrenceDate: Long?,

@@ -35,10 +35,12 @@ import com.zillit.desktop.core.locationpicker.ZillitLocationField
 import com.zillit.desktop.feature.boxschedule.domain.DiaryClock
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfLayout
 import com.zillit.desktop.feature.boxschedule.ui.BlockEditor
 import com.zillit.desktop.feature.boxschedule.ui.BoxScheduleEvent
 import com.zillit.desktop.feature.boxschedule.ui.BoxScheduleUiState
 import com.zillit.desktop.feature.boxschedule.ui.DiaryEditor
+import com.zillit.desktop.feature.boxschedule.ui.PdfSheet
 
 /** Create or edit a block: type, date range, optional detail line. */
 @Composable
@@ -373,3 +375,76 @@ private val SWATCH_PICK = 22.dp
 private const val HEX_DIGITS = 6
 private const val HEX_RADIX = 16
 private const val OPAQUE = 0xFF000000L
+
+/**
+ * The diary PDF: layout and Personal Notes in one prompt, one Submit — the
+ * spec's placement, and Android's `showPdfOptionsChooser`. Defaults are
+ * Calendar and With Personal Notes, which is the file the server always
+ * sent; Without is the one choice that changes the request. Each open
+ * re-asks: a remembered Without would silently drop content from a later
+ * export.
+ */
+@Composable
+internal fun PdfOptionsDialog(
+    sheet: PdfSheet,
+    onEvent: (BoxScheduleEvent) -> Unit,
+) {
+    ZillitDialogShell(
+        title = "Diary PDF",
+        onDismiss = { onEvent(BoxScheduleEvent.ClosePdf) },
+        visible = true,
+        actions = {
+            ZillitButton(
+                text = "Cancel",
+                onClick = { onEvent(BoxScheduleEvent.ClosePdf) },
+                variant = ButtonVariant.Tertiary,
+            )
+            if (sheet.canPublish) {
+                ZillitButton(
+                    text = "Publish to Document Distribution",
+                    onClick = { onEvent(BoxScheduleEvent.PublishPdf) },
+                    variant = ButtonVariant.Secondary,
+                    loading = sheet.busy,
+                )
+            }
+            ZillitButton(
+                text = "Save PDF",
+                onClick = { onEvent(BoxScheduleEvent.SavePdf) },
+                loading = sheet.busy,
+            )
+        },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            ZillitText(
+                text = "Layout",
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+            ZillitSelect(
+                value = sheet.options.layout,
+                options = DiaryPdfLayout.entries,
+                onSelect = { onEvent(BoxScheduleEvent.PdfChanged(layout = it)) },
+                label = { it.label },
+                modifier = Modifier.width(SELECT_WIDTH),
+            )
+            ZillitText(
+                text = "Personal notes",
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+            ZillitSelect(
+                value = sheet.options.includePersonalNotes,
+                options = listOf(true, false),
+                onSelect = { onEvent(BoxScheduleEvent.PdfChanged(includePersonalNotes = it)) },
+                label = { if (it) "With Personal Notes" else "Without Personal Notes" },
+                modifier = Modifier.width(SELECT_WIDTH),
+            )
+            ZillitText(
+                text = "Personal Notes are only ever yours. This decides whether they go into a file " +
+                    "that can be printed, forwarded or published.",
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+    }
+}

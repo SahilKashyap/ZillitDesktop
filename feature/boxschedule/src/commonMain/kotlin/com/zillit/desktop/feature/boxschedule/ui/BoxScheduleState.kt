@@ -4,7 +4,10 @@ import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleViewer
 import com.zillit.desktop.feature.boxschedule.domain.DateConflict
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfLayout
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfOptions
 import com.zillit.desktop.feature.boxschedule.domain.NoteType
+import com.zillit.desktop.feature.boxschedule.domain.inDiaryOrder
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleBlock
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleDayRow
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleType
@@ -47,6 +50,14 @@ data class DiaryEditor(
     val isRecurring: Boolean = false,
 )
 
+/** The diary PDF dialog: what was picked, and whether the file is on its way. */
+data class PdfSheet(
+    val options: DiaryPdfOptions = DiaryPdfOptions(),
+    /** Posting rights on Document Distribution, read when the dialog opened. */
+    val canPublish: Boolean = false,
+    val busy: Boolean = false,
+)
+
 /** A new type being added inline. */
 data class TypeEditor(
     val typeId: String? = null,
@@ -69,9 +80,10 @@ data class BoxScheduleUiState(
     val diaryEditor: DiaryEditor? = null,
     val typeEditor: TypeEditor? = null,
     val manageTypes: Boolean = false,
+    val pdfSheet: PdfSheet? = null,
 ) {
-    /** Events and notes for one date, standalone or linked. */
-    fun eventsOn(date: Long): List<DiaryEvent> = events.filter { it.date == date }
+    /** Events and notes for one date, standalone or linked — Personal Notes first, then General, then events. */
+    fun eventsOn(date: Long): List<DiaryEvent> = events.filter { it.date == date }.inDiaryOrder()
 
     /** Events not pinned to any date row shown (their date has no block). */
     val orphanEvents: List<DiaryEvent>
@@ -134,6 +146,18 @@ sealed interface BoxScheduleEvent {
     data object SaveType : BoxScheduleEvent
     data object CloseTypeEditor : BoxScheduleEvent
     data class DeleteType(val typeId: String) : BoxScheduleEvent
+
+    /** The diary PDF: one dialog for the layout and the Personal Notes choice, then a destination. */
+    data object OpenPdf : BoxScheduleEvent
+    data class PdfChanged(val layout: DiaryPdfLayout? = null, val includePersonalNotes: Boolean? = null) :
+        BoxScheduleEvent
+    data object ClosePdf : BoxScheduleEvent
+
+    /** Saves the PDF to Downloads and opens it. */
+    data object SavePdf : BoxScheduleEvent
+
+    /** Publishes the PDF into Document Distribution. */
+    data object PublishPdf : BoxScheduleEvent
 
     data object DismissError : BoxScheduleEvent
 }
