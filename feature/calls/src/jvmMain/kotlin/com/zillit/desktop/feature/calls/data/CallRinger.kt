@@ -15,9 +15,18 @@ import kotlinx.coroutines.withContext
 /**
  * Rings while a call rings, and only then.
  *
- * Two cadences, synthesized into the bundle (`callsounds/`): the 440+480 Hz
- * pair for an incoming ring, and the single-tone ringback while our own call
- * waits. Driven purely off the coordinator's phase, so there is no separate
+ * Two cadences, synthesized into the bundle (`callsounds/`): a two-tone
+ * 740/880 Hz ring for an incoming call, and a 425 Hz ringback while our own
+ * call waits. Both are ports of the web client's WebAudio tones
+ * (`zillit_web .../lineTwo/ui/callSounds.ts`) so a call sounds the same
+ * whichever client you answer it on — regenerate with
+ * `scripts/make-call-sounds.py` rather than editing the WAVs by hand.
+ *
+ * Each clip holds exactly ONE period of its cadence, trailing silence
+ * included, because [Clip.LOOP_CONTINUOUSLY] below repeats the whole file:
+ * the silence between rings IS part of the asset.
+ *
+ * Driven purely off the coordinator's phase, so there is no separate
  * "remember to stop the sound" call anywhere — teardown of the phase IS
  * teardown of the sound, which is how a ring can never outlive its call
  * (the Android bug class this design avoids).
