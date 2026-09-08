@@ -62,15 +62,25 @@ fun reactionJson(reaction: CallReaction): String = buildJsonObject {
     put("id", reaction.key)
 }.toString()
 
+/**
+ * The page's colours — the call palette, not the workspace theme.
+ *
+ * The workspace's light theme used to be pushed in here, which painted a
+ * white stage with white tiles around the picture (seen 2026-09-08); the
+ * web's stage is one dark surface whatever the app's theme (`styles.css:3-19`),
+ * and so is every phone's. [colors] is kept for the signature's sake and
+ * decides nothing.
+ */
+@Suppress("UNUSED_PARAMETER")
 fun themeJson(colors: ZillitColors): String = buildJsonObject {
-    put("bg", hex(colors.canvas))
-    put("tile", hex(colors.surface))
-    put("tileIdle", hex(colors.surfaceSunken))
-    put("border", hex(colors.border))
-    put("text", hex(colors.textPrimary))
-    put("muted", hex(colors.textMuted))
-    put("speaking", hex(colors.success))
-    put("danger", hex(colors.danger))
+    put("bg", hex(CallPalette.surface))
+    put("tile", hex(CallPalette.control))
+    put("tileIdle", hex(CallPalette.tileIdle))
+    put("border", hex(CallPalette.surface))
+    put("text", hex(CallPalette.text))
+    put("muted", hex(CallPalette.muted))
+    put("speaking", hex(CallPalette.green))
+    put("danger", hex(CallPalette.danger))
 }.toString()
 
 /** `#rrggbb`, alpha dropped — CSS gets its transparency from its own rules. */

@@ -149,7 +149,7 @@ private fun CallVideoLayer(slot: Rect, videoSurface: @Composable () -> Unit) {
                 height = with(density) { slot.height.toDp() },
             )
             .clip(RoundedCornerShape(VIDEO_CORNER))
-            .background(ZillitTheme.colors.canvas),
+            .background(CallPalette.surface),
     ) {
         videoSurface()
     }
