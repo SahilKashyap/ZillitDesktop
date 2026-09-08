@@ -506,7 +506,7 @@ class AdminRepositoryImpl(
         block: suspend (String) -> ZillitResult<T>,
     ): ZillitResult<T> {
         val project = projectId()?.takeIf { it.isNotBlank() }
-            ?: return ZillitResult.Failure(ZillitError.Validation("No production is open."))
+            ?: return ZillitResult.Failure(ZillitError.Validation("No project is open."))
         return block(project)
     }
 

@@ -72,6 +72,12 @@ data class RemoteCredentials(
     val chatGptTranslationToken: String? = null,
     /** Not encrypted server-side, and not a secret — the public download page. */
     val appDownloadUrl: String? = null,
+    /**
+     * `token_auth_enabled`: whether requests carry a Bearer token instead of
+     * the encrypted `moduledata` header. Not a credential either; it rides
+     * the same answer because that is where the phones read it.
+     */
+    val tokenAuthEnabled: Boolean = false,
 ) {
     /**
      * Never prints a credential.
@@ -85,7 +91,7 @@ data class RemoteCredentials(
         "googleMapsKey=${mask(googleMapsKey)}, googlePlacesKey=${mask(googlePlacesKey)}, " +
         "awsAccessKey=${mask(awsAccessKey)}, awsSecretKey=${mask(awsSecretKey)}, " +
         "chatGptTranslationToken=${mask(chatGptTranslationToken)}, " +
-        "appDownloadUrl=$appDownloadUrl)"
+        "appDownloadUrl=$appDownloadUrl, tokenAuthEnabled=$tokenAuthEnabled)"
 
     private fun mask(value: String?) = if (value == null) "null" else "***"
 }

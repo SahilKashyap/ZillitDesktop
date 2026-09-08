@@ -28,17 +28,16 @@ import java.awt.Desktop
  */
 @Composable
 @Suppress("LongParameterList") // Each is a distinct tray concern.
-fun ApplicationScope.AppTray(
+internal fun ApplicationScope.AppTray(
     graph: AppGraph,
     preferences: PreferenceStore,
-    windowState: WindowState,
-    frame: ComposeWindow?,
     // Hoisted: alerts post through the same tray presence, and a second
     // TrayState would be a second (invisible) delivery channel.
     trayState: TrayState,
-    /** The Drive widget's state and switch — the tray is where it lives when the main window is away. */
-    driveWidgetOpen: Boolean,
-    onToggleDriveWidget: () -> Unit,
+    /** Shows the main window, un-hiding it if a close sent it to the tray. */
+    onShow: () -> Unit,
+    /** The widgets' switches — the tray is where they live when the main window is away. */
+    widgets: WidgetSwitches,
     onQuit: () -> Unit,
 ) {
 
@@ -50,10 +49,16 @@ fun ApplicationScope.AppTray(
             // The click that does *not* open the menu — right-click on macOS,
             // double-click on Windows — still does the obvious thing rather
             // than nothing.
-            onAction = { showMainWindow(frame, windowState) },
+            onAction = onShow,
         ) {
-            Item("Show Zillit", onClick = { showMainWindow(frame, windowState) })
-            Item(if (driveWidgetOpen) "Hide Drive widget" else "Show Drive widget", onClick = onToggleDriveWidget)
+            Item("Show Zillit", onClick = onShow)
+            ZillitWidget.entries.forEach { widget ->
+                val shown = widgets.isOpen(widget)
+                Item(
+                    if (shown) "Hide ${widget.label} widget" else "Show ${widget.label} widget",
+                    onClick = { widgets.toggle(widget) },
+                )
+            }
             Separator()
             /*
              * Posts a banner on demand, straight into TrayNotifier.

@@ -43,8 +43,8 @@ class BoxAttachmentUploader(
     ): ZillitResult<StoredFile> = withContext(Dispatchers.IO) {
         val box = settings()?.takeIf { it.isUsable } ?: return@withContext ZillitResult.Failure(
             ZillitError.Storage(
-                technical = "no Box enterprise id on the open production",
-                userMessage = "Attachments are unavailable — this production has no file storage configured.",
+                technical = "no Box enterprise id on the open project",
+                userMessage = "Attachments are unavailable — this project has no file storage configured.",
             ),
         )
 

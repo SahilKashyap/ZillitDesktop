@@ -14,7 +14,15 @@
 // than to a sidecar. It must be signed with the app's identifier for the
 // notification daemon to accept that claim — see resignWithFrameworks.
 //
-//   zillit-notify <title> <body>
+//   zillit-notify <title> <body>   post one banner
+//   zillit-notify --status         print the authorisation state and exit
+//   zillit-notify --request        ask (the system prompt, if undecided), print granted|denied
+//
+// `--status` prints one of authorized|denied|notDetermined|provisional|
+// ephemeral on stdout — the app's startup check reads it to decide whether to
+// send the person to System Settings. Only this process can answer: the JVM
+// has no bundle identity, and the notification daemon files its answer under
+// the bundle that asks.
 //
 // Exit code is 0 whether or not the banner appeared; a notification is an
 // aside, and the caller treats delivery as best-effort. Diagnostics go to
@@ -40,6 +48,41 @@ func report(_ message: String) {
 let center = UNUserNotificationCenter.current()
 var finished = false
 
+func answer(_ line: String) {
+    print(line)
+    fflush(stdout)
+    finished = true
+}
+
+func name(of status: UNAuthorizationStatus) -> String {
+    switch status {
+    case .authorized: return "authorized"
+    case .denied: return "denied"
+    case .notDetermined: return "notDetermined"
+    case .provisional: return "provisional"
+    case .ephemeral: return "ephemeral"
+    @unknown default: return "unknown"
+    }
+}
+
+let mode = arguments.count > 1 ? arguments[1] : ""
+
+if mode == "--status" {
+    center.getNotificationSettings { settings in answer(name(of: settings.authorizationStatus)) }
+} else if mode == "--request" {
+    center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+        // An error is not a person's answer: an unsigned build has no
+        // notification identity and fails here on every launch
+        // (UNErrorDomain error 1), and a dialog for that would come back
+        // forever. Only "Don't Allow" reads as denied.
+        if let error = error {
+            report("authorization failed: \(error.localizedDescription)")
+            answer("error")
+            return
+        }
+        answer(granted ? "granted" : "denied")
+    }
+} else {
 center.requestAuthorization(options: [.alert, .sound]) { granted, error in
     if let error = error {
         report("authorization failed: \(error.localizedDescription)")
@@ -67,11 +110,12 @@ center.requestAuthorization(options: [.alert, .sound]) { granted, error in
         finished = true
     }
 }
+}
 
 // The completion handlers arrive on the framework's own queue, but the main run
 // loop has to keep turning for them to be delivered at all. Bounded, so a
 // wedged notification daemon cannot leave this process alive behind the app.
-let deadline = Date().addingTimeInterval(10)
+let deadline = Date().addingTimeInterval(mode == "--request" ? 120 : 10)
 while !finished && Date() < deadline {
     RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
 }

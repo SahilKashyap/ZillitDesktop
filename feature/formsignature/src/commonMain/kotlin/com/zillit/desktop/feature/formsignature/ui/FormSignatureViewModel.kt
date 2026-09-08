@@ -2,6 +2,9 @@
 
 package com.zillit.desktop.feature.formsignature.ui
 
+import com.zillit.desktop.core.permissions.rightsRefusalMessage
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -40,6 +43,8 @@ class FormSignatureViewModel(
     private val resolveViewer: () -> FormSignatureViewer,
     private val currentUserId: () -> String,
     private val newId: () -> String,
+    /** Carries a refused press to the app frame, which offers to ask an admin. */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<FormSignatureUiState, FormSignatureEvent, FormSignatureEffect>(
     FormSignatureUiState(),
 ) {
@@ -104,19 +109,20 @@ class FormSignatureViewModel(
                 placeFreeSpot(event.page, event.xPx, event.yPx)
             FormSignatureEvent.SignOpenDocument -> signOpenDocument()
             is FormSignatureEvent.SelfAssign -> selfAssign(event.formId)
-            is FormSignatureEvent.DeleteStandardForm -> deleteStandardForm(event.formId)
+            is FormSignatureEvent.DeleteStandardForm ->
+                if (!refusesPost()) deleteStandardForm(event.formId)
             is FormSignatureEvent.DeleteDocument -> deleteDocument(event.documentId)
             is SignerEditorEvent -> onSignerEditorEvent(event)
             is FormSignatureEvent.ShowHistory -> showHistory(event.documentId)
             FormSignatureEvent.CloseHistory -> setState { copy(history = null) }
-            FormSignatureEvent.StartUploadForm -> {
+            FormSignatureEvent.StartUploadForm -> if (refusesPost()) Unit else {
                 pendingPick = PickTarget.StandardForm
                 sendEffect(FormSignatureEffect.PickPdf)
             }
             is FormSignatureEvent.EditUploadForm -> setState { copy(uploadForm = event.state) }
             FormSignatureEvent.SubmitUploadForm -> submitUploadForm()
             FormSignatureEvent.CancelUploadForm -> setState { copy(uploadForm = null) }
-            FormSignatureEvent.StartSend -> {
+            FormSignatureEvent.StartSend -> if (refusesPost()) Unit else {
                 pendingPick = PickTarget.SendDocument
                 sendEffect(FormSignatureEffect.PickPdf)
             }
@@ -375,6 +381,20 @@ class FormSignatureViewModel(
         )
     }
 
+    /**
+     * Refuses a write, and offers the one thing that changes the answer.
+     *
+     * Every control that reaches this is on screen for everyone — hiding them
+     * is what sent people to support rather than to an admin who could grant
+     * the right in a few seconds.
+     */
+    private fun refusesPost(): Boolean {
+        if (currentState.viewer.canPost) return false
+        rights?.ask(MODULE_LABEL, RightsKind.Post)
+        sendEffect(FormSignatureEffect.Failed(rightsRefusalMessage(MODULE_LABEL, RightsKind.Post, rights != null)))
+        return true
+    }
+
     private fun deleteStandardForm(formId: String) {
         launchResult(
             block = { repository.deleteStandardForm(formId) },
@@ -385,7 +405,7 @@ class FormSignatureViewModel(
 
     /** The signer editor's four events, kept off the main list. */
     private fun onSignerEditorEvent(event: SignerEditorEvent) = when (event) {
-        is FormSignatureEvent.EditSigners -> openSignerEditor(event.document)
+        is FormSignatureEvent.EditSigners -> if (refusesPost()) Unit else openSignerEditor(event.document)
         is FormSignatureEvent.ToggleSigner -> toggleSigner(event.userId)
         FormSignatureEvent.SaveSigners -> saveSigners()
         FormSignatureEvent.CloseSignerEditor -> setState { copy(signerEditor = null) }
@@ -715,3 +735,5 @@ class FormSignatureViewModel(
         const val DRAW_HEIGHT = 300
     }
 }
+
+private const val MODULE_LABEL = "Documents & Signature"

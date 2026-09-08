@@ -36,7 +36,16 @@ data class SettingsUiState(
     val notifyMail: Boolean = true,
     val notifyUpdates: Boolean = true,
     val notifyCalls: Boolean = true,
+    /** The ringtone while a call rings this device. */
+    val ringOnIncomingCall: Boolean = true,
     val notifyActivity: Boolean = true,
+    val callWidget: Boolean = true,
+    val messageWidget: Boolean = true,
+    val closeToTray: Boolean = true,
+    val startAtLogin: Boolean = false,
+    /** The desktop widgets and whether each is on screen — see [WidgetToggle]. */
+    val widgets: List<WidgetToggle> = emptyList(),
+    val startAtLoginAvailable: Boolean = true,
     val unit: UnitSelection = UnitSelection(),
     /** Asked before signing out — it drops the local cache with it. */
     val isConfirmingSignOut: Boolean = false,
@@ -137,7 +146,20 @@ sealed interface SettingsEvent {
     data class NotifyMailChanged(val on: Boolean) : SettingsEvent
     data class NotifyUpdatesChanged(val on: Boolean) : SettingsEvent
     data class NotifyCallsChanged(val on: Boolean) : SettingsEvent
+    /** The ringtone switch — `ZillitPreferences.RingOnIncomingCall`. */
+    data class RingtoneChanged(val on: Boolean) : SettingsEvent
     data class NotifyActivityChanged(val on: Boolean) : SettingsEvent
+    /** The Desktop section: four switches with one shape, so one branch can route them. */
+    sealed interface DesktopSwitch : SettingsEvent {
+        val on: Boolean
+    }
+    data class CallWidgetChanged(override val on: Boolean) : DesktopSwitch
+    data class MessageWidgetChanged(override val on: Boolean) : DesktopSwitch
+    data class CloseToTrayChanged(override val on: Boolean) : DesktopSwitch
+    data class StartAtLoginChanged(override val on: Boolean) : DesktopSwitch
+
+    /** One of the desktop widgets was switched on or off. [id] is a `ZillitWidget` name. */
+    data class WidgetChanged(val id: String, override val on: Boolean) : DesktopSwitch
 
     /** Attaches the user to a different production unit. */
     data class UnitChanged(val unitId: String) : SettingsEvent
@@ -198,6 +220,17 @@ sealed interface SettingsEffect {
     data object OpenHelp : SettingsEffect
 
     /**
+     * Opens another tool's window — Production Setup, which lives in the
+     * Account Hub.
+     *
+     * Android reaches Production Setup from Admin Settings even though the
+     * screen belongs to the accounts console; a coordinator setting a
+     * production up looks here, not under a finance tool. Carried as a route
+     * rather than a module reference: this module knows no other feature.
+     */
+    data class OpenTool(val path: String) : SettingsEffect
+
+    /**
      * Hands a documentation link to the browser.
      *
      * Carried as an effect rather than opened here: this module is common code
@@ -221,11 +254,40 @@ class NotificationSettings(
     val mail: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val updates: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val calls: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+    val ringtone: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
     val activity: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+    val callWidget: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+    val messageWidget: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+    val closeToTray: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+    val widgets: kotlinx.coroutines.flow.Flow<List<WidgetToggle>> =
+        kotlinx.coroutines.flow.flowOf(emptyList()),
+    val startAtLogin: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false),
+    /** False under a development run, where there is no installed app for the OS to start. */
+    val startAtLoginAvailable: Boolean = true,
     val setMuted: (Boolean) -> Unit = {},
     val setMessages: (Boolean) -> Unit = {},
     val setMail: (Boolean) -> Unit = {},
     val setUpdates: (Boolean) -> Unit = {},
     val setCalls: (Boolean) -> Unit = {},
+    val setRingtone: (Boolean) -> Unit = {},
     val setActivity: (Boolean) -> Unit = {},
+    val setCallWidget: (Boolean) -> Unit = {},
+    val setMessageWidget: (Boolean) -> Unit = {},
+    val setCloseToTray: (Boolean) -> Unit = {},
+    val setStartAtLogin: (Boolean) -> Unit = {},
+    val setWidget: (String, Boolean) -> Unit = { _, _ -> },
+)
+
+/**
+ * One desktop widget's switch, as Settings shows it.
+ *
+ * A list rather than a field per widget: the widgets are a set that grows, and
+ * every one of them is the same question — is this small window on screen.
+ */
+data class WidgetToggle(
+    /** The `ZillitWidget` entry's name, which is what an event carries back. */
+    val id: String,
+    val label: String,
+    val detail: String,
+    val on: Boolean,
 )

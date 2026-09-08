@@ -114,6 +114,7 @@ internal fun AppGraph.Ready.buildContinuity(permissions: () -> ProjectPermission
     },
     newUniqueId = { UUID.randomUUID().toString() },
     nowMillis = System::currentTimeMillis,
+    rights = rightsRequests,
 )
 
 internal fun AppGraph.Ready.continuityProvider(viewModel: ContinuityViewModel, scope: CoroutineScope) =
@@ -121,7 +122,10 @@ internal fun AppGraph.Ready.continuityProvider(viewModel: ContinuityViewModel, s
         viewModel = viewModel,
         onPickFiles = { onPicked ->
             scope.launch {
-                onPicked(FilePicker().pick().map { PickedContinuityFile(it.name, it.contentType, it.bytes) })
+                onPicked(
+                    attachmentPicker.pick(com.zillit.desktop.core.media.PreviewKind.Document)
+                        .map { PickedContinuityFile(it.name, it.contentType, it.bytes) },
+                )
             }
         },
         // Thumbnails ride the notice-media cache; the viewer asks for the full file.

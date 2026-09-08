@@ -47,7 +47,7 @@ fun EditProfilePage(state: AccountUiState, onEvent: (AccountEvent) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
         if (!seed.isAdmin) {
             ZillitNotice(
-                text = "You are not an administrator on this production, so changes here are " +
+                text = "You are not an administrator on this project, so changes here are " +
                     "sent for approval rather than applied. Your profile updates once an " +
                     "admin accepts them.",
                 tone = StatusTone.Pending,
@@ -186,6 +186,7 @@ private fun PlacementCard(
 
         if (form.offersPrivateName(seed.designationName)) {
             PrivateNameRow(form, onEvent)
+            if (form.mailboxAddress != null && !form.isPersonal) MailboxConsentRow(form, onEvent)
         }
     }
 }
@@ -242,7 +243,7 @@ private fun PrivateNameRow(form: ProfileFormState, onEvent: (AccountEvent) -> Un
  */
 private fun departmentPlaceholder(form: ProfileFormState): String = when {
     form.isLoadingDepartments -> "Loading departments…"
-    form.departments.isEmpty() -> "No departments on this production"
+    form.departments.isEmpty() -> "No departments on this project"
     else -> "Choose a department"
 }
 
@@ -253,3 +254,25 @@ private fun rolePlaceholder(form: ProfileFormState): String = when {
 }
 
 private val AVATAR = 44.dp
+
+/**
+ * ZL-21078: whether the crew list shows this user's Zillit mailbox address.
+ * Offered only to someone who has a mailbox, and never on a personal
+ * production (no crew list there). The server's default is ON.
+ */
+@Composable
+private fun MailboxConsentRow(form: ProfileFormState, onEvent: (AccountEvent) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        ZillitCheckbox(
+            checked = form.showMailboxInCrewList,
+            onCheckedChange = { onEvent(AccountEvent.MailboxConsentChanged(it)) },
+            label = "Show my Zillit mailbox address in the crew list",
+            enabled = !form.isSaving,
+        )
+        ZillitText(
+            text = "${form.mailboxAddress.orEmpty()} appears next to your name so the crew can write to it.",
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textMuted,
+        )
+    }
+}

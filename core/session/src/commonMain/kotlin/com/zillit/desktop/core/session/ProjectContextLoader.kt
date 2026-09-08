@@ -1,12 +1,14 @@
 package com.zillit.desktop.core.session
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.database.ProfileSnapshot
 import com.zillit.desktop.core.database.ProjectCache
 import com.zillit.desktop.core.database.ProjectSnapshot
 import com.zillit.desktop.core.database.UserSnapshot
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
@@ -137,6 +139,39 @@ class ProjectContextLoader(
         }
     }
 
+    /**
+     * Another production's crew, without moving this loader onto it.
+     *
+     * The Chat widget needs names and designations for the production it is
+     * showing, which is not necessarily the one the app is open on. The call
+     * names that production **and the user's id on it** — a project override
+     * without the matching identity answers for the wrong person.
+     */
+    /**
+     * Another production's details — its storage above all.
+     *
+     * Which bucket, or which Box enterprise and folder, a file belongs in is a
+     * fact about the production it is posted to, so a widget uploading into
+     * another production has to ask that production, not the open one.
+     */
+    suspend fun projectOf(projectId: String, userId: String): ZillitResult<ProjectSnapshot> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${api}project/$projectId",
+            serializer = ProjectDetailDto.serializer(),
+            module = RequestModule.ProjectUser,
+            options = CallOptions(projectId = projectId, userId = userId),
+        ).map { it.toSnapshot(projectId) }
+
+    suspend fun usersOf(projectId: String, userId: String): ZillitResult<List<UserSnapshot>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${api}project/users",
+            serializer = ListSerializer(ProjectUserDto.serializer()),
+            module = RequestModule.ProjectUser,
+            options = CallOptions(projectId = projectId, userId = userId),
+        ).map { rows -> rows.mapNotNull { it.toSnapshot() } }
+
     private suspend fun refreshUsers(projectId: String) {
         val result = apiClient.request(
             verb = HttpVerb.Get,
@@ -218,6 +253,9 @@ internal data class ProfileDto(
     @SerialName("designation_id") val designationId: String? = null,
     @SerialName("designation_name") val designationName: String? = null,
     @SerialName("keep_name_private") val keepNamePrivate: Boolean? = null,
+    /** ZL-21078: show the Zillit mailbox address on the crew list. Absent means the server default, ON. */
+    @SerialName("zillit_email_enable") val zillitEmailEnable: Boolean? = null,
+    @SerialName("mail_box_detail") val mailBoxDetail: MailBoxDetailDto? = null,
     // Which production unit this user is on. Set from the unit picker in
     // settings; the web reads the same two fields back to seed it.
     @SerialName("join_unit_id") val joinUnitId: String? = null,
@@ -236,6 +274,8 @@ internal data class ProfileDto(
             designationId = designationId?.takeIf { it.isNotBlank() },
             designationName = designationName?.takeIf { it.isNotBlank() },
             keepNamePrivate = keepNamePrivate == true,
+            showMailboxInCrewList = zillitEmailEnable,
+            mailboxAddress = mailBoxDetail?.emailAddress?.takeIf { it.isNotBlank() },
             fullName = listOfNotNull(firstName, lastName)
                 .filter { it.isNotBlank() }
                 .joinToString(" ")
@@ -270,6 +310,10 @@ internal data class ProjectDetailDto(
      * with it. Found against QA, not in review.
      */
     @SerialName("storage_folders") val storageFolders: JsonElement? = null,
+    /** Set only on a remote unit, naming the production it hangs off. */
+    @SerialName("parent_project_name") val parentProjectName: String? = null,
+    /** A scheduled deletion, still counting down and still stoppable. */
+    @SerialName("mark_deleted") val markDeleted: Boolean? = null,
 ) {
     fun toSnapshot(projectId: String) = ProjectSnapshot(
         projectId = projectId,
@@ -281,6 +325,8 @@ internal data class ProjectDetailDto(
         storageType = storageType?.takeIf { it.isNotBlank() },
         enterpriseClientId = enterpriseClientId?.takeIf { it.isNotBlank() },
         storageFolders = readStorageFolders(storageFolders),
+        parentName = parentProjectName?.takeIf { it.isNotBlank() },
+        markedForDeletion = markDeleted == true,
     )
 }
 
@@ -379,3 +425,9 @@ private fun JsonElement?.toImageUrl(): String? = when (this) {
 
 /** In preference order — a thumbnail is the right size for an avatar. */
 private val IMAGE_KEYS = listOf("thumbnail", "media", "url", "path", "file_name")
+
+/** The profile's mailbox block — only the address is read here; credentials live in the email module. */
+@Serializable
+internal data class MailBoxDetailDto(
+    @SerialName("email_address") val emailAddress: String? = null,
+)

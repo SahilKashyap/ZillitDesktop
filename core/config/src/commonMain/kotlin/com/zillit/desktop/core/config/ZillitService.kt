@@ -35,6 +35,14 @@ enum class ZillitService(val configKey: String) {
 
     Calendar("CALENDAR_BASE_URL"),
     Calling("CALLING_BASE_URL"),
+
+    /**
+     * Line 3's own backend — `https://<env>-calls.zillit.com/api`, the LiveKit
+     * call API (`/v1/calls`, `/v1/livekit/token`). Not [Calling], which is
+     * Lines 1 and 2; the phones keep the two apart as `CALL_API_URL` versus
+     * `CALLING_BASE_URL`, and so does this.
+     */
+    CallApi("CALL_API_URL"),
     CallSheet("CALLSHEET_BASE_URL"),
     CardExpenses("CARD_EXPENSES_BASE_URL"),
     CashExpenses("CASH_EXPENSES_BASE_URL"),
@@ -128,6 +136,9 @@ enum class ZillitRealtimeEndpoint(val configKey: String) {
     Socket("URL"),
     LiveKit("LIVEKIT_URL"),
     Call("CALL_URL"),
+
+    /** Line 3's presence socket — `wss://<env>-calls.zillit.com/ws`, the phones' `RTC_WS_URL`. */
+    CallSocket("RTC_WS_URL"),
     ;
 
     companion object {

@@ -45,7 +45,7 @@ enum class DriveDestination(val slug: String, val label: String) {
     fun visibleTo(viewer: DriveViewer): Boolean = when {
         !viewer.canView && viewer.ready -> false
         // Project-wide usage figures are an administrator's view; a crew member
-        // is told nothing useful by "the production has used 4.2 TB".
+        // is told nothing useful by "the project has used 4.2 TB".
         this == Storage -> viewer.isAdmin || viewer.canPost
         else -> true
     }

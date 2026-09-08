@@ -9,6 +9,7 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":core:common"))
             implementation(project(":core:designsystem"))
+            implementation(project(":core:media"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:permissions"))
             implementation(project(":core:workspace"))

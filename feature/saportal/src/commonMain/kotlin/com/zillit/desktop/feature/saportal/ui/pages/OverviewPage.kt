@@ -80,7 +80,7 @@ internal fun ColumnScope.OverviewPage(state: SaUiState, onEvent: (SaEvent) -> Un
         if (!state.loading) {
             ZillitEmptyState(
                 title = "Nothing here yet",
-                message = "Once you have worked a day on this production it will appear here.",
+                message = "Once you have worked a day on this project it will appear here.",
                 icon = ZillitIcons.Info,
             )
         }

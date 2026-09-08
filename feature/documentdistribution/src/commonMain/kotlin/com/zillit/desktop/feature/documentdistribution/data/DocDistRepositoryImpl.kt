@@ -14,6 +14,7 @@ import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.DeliveryStatus
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
+import com.zillit.desktop.feature.documentdistribution.domain.DistributionSender
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistRefresh
@@ -339,11 +340,12 @@ class DocDistRepositoryImpl(
      * server that ignores the parameters would otherwise decode to nothing and
      * show an empty History with no error.
      */
-    override suspend fun history(page: Int, search: String): ZillitResult<List<Distribution>> {
+    override suspend fun history(page: Int, search: String, senderIds: Set<String>): ZillitResult<List<Distribution>> {
         val query = buildMap<String, Any?> {
             put("page", page)
             put("limit", HISTORY_PAGE)
             search.trim().takeIf { it.isNotEmpty() }?.let { put("q", it) }
+            senderParam(senderIds)?.let { put("sent_by", it) }
         }
         val paged = get("$base/distributions", DistributionPageDto.serializer(), query)
         if (paged is ZillitResult.Success) {
@@ -352,6 +354,10 @@ class DocDistRepositoryImpl(
         return get("$base/distributions", ListSerializer(DistributionDto.serializer()), query)
             .map { rows -> rows.mapNotNull { it.toDomain() } }
     }
+
+    override suspend fun senders(): ZillitResult<List<DistributionSender>> =
+        get("$base/distributions/senders", DistributionSendersDto.serializer())
+            .map { dto -> dto.senders.mapNotNull { it.toDomain() } }
 
     override suspend fun distribution(id: String): ZillitResult<Distribution> =
         get("$base/distributions/$id", DistributionDto.serializer()).flatMap { dto ->
@@ -532,3 +538,7 @@ private fun Map<String, WatermarkStyle>.toJsonObject(): JsonObject = buildJsonOb
 @Suppress("unused")
 private fun JsonObject.idsOf(key: String): List<String> =
     this[key]?.jsonArray?.mapNotNull { (it as? JsonPrimitive)?.content }.orEmpty()
+
+/** `sent_by` as the wire wants it: comma-joined ids, blanks dropped, null when there is nothing to send. */
+internal fun senderParam(senderIds: Collection<String>): String? =
+    senderIds.map(String::trim).filter { it.isNotEmpty() }.distinct().takeIf { it.isNotEmpty() }?.joinToString(",")

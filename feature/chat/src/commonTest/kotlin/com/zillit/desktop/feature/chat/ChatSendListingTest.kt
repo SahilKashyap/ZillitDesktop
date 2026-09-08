@@ -219,7 +219,7 @@ internal class FakeChatRepository(
         delivered2 += peerId to messageId
     }
     override fun markThreadRead(peerId: String, uptoMillis: Long) = Unit
-    override fun unreadCounts(): Map<String, Int> = emptyMap()
+    override fun unreadCounts(floor: Map<String, Long>, defaultFloor: Long): Map<String, Int> = emptyMap()
     override fun newestActivity(): Map<String, Long> = activityByPeer.toMap()
     override suspend fun sendTyping(receiverId: String, started: Boolean) = Unit
 

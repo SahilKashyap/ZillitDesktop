@@ -286,7 +286,7 @@ class AccountHubScreenRenderTest {
             setContent {
                 ZillitTheme(darkTheme = false) { AccountHubScreen(state = none, onEvent = {}) }
             }
-            onNodeWithText("This production has no tracking dimensions configured.").assertExists()
+            onNodeWithText("This project has no tracking dimensions configured.").assertExists()
         }
     }
 

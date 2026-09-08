@@ -67,6 +67,8 @@ data class PublishDialog(
 data class ReportUiState(
     val kind: ReportKind = ReportKind.Production,
     val viewer: ReportViewer = ReportViewer(),
+    /** Who holds posting rights on the tool. Null while unknown (loading or failed): fail closed. */
+    val approverEligibleIds: Set<String>? = null,
     val destination: ReportDestination = ReportDestination.Drafts,
     val bucket: ApprovalBucket = ApprovalBucket.Sent,
     val loading: Boolean = false,
@@ -84,6 +86,16 @@ data class ReportUiState(
     val send: SendDialog? = null,
     val publish: PublishDialog? = null,
 ) {
+    /**
+     * Who may be picked as an approver: crew holding posting rights on the
+     * tool, never the viewer. Empty while the rights are unknown — fail
+     * closed, as the web does (`approverCandidates`).
+     */
+    val approverCandidates: List<SheetMember>
+        get() {
+            val eligible = approverEligibleIds ?: return emptyList()
+            return members.filter { it.userId in eligible && it.userId != viewer.userId }
+        }
     val listFor: List<ReportSummary>
         get() = when (destination) {
             ReportDestination.Drafts -> drafts

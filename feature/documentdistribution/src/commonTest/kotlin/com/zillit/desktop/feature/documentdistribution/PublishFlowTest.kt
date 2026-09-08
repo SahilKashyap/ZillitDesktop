@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.documentdistribution.data.DOC_DIST_REFRESH_BY_
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.DeliveryStatus
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
+import com.zillit.desktop.feature.documentdistribution.domain.DistributionSender
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistRefresh
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistRepository
@@ -97,7 +98,14 @@ class PublishFlowTest {
         override suspend fun saveTemplate(template: EmailTemplate) = ZillitResult.Success(Unit)
         override suspend fun deleteTemplate(templateId: String) = ZillitResult.Success(Unit)
         override suspend fun send(distribution: NewDistribution) = ZillitResult.Success(Unit)
-        override suspend fun history(page: Int, search: String): ZillitResult<List<Distribution>> {
+        override suspend fun senders(): ZillitResult<List<DistributionSender>> =
+            ZillitResult.Success(emptyList())
+
+        override suspend fun history(
+            page: Int,
+            search: String,
+            senderIds: Set<String>,
+        ): ZillitResult<List<Distribution>> {
             historyLoads++
             return ZillitResult.Success(emptyList())
         }

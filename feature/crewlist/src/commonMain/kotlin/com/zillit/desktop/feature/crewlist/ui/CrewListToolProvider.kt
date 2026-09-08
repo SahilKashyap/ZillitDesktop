@@ -19,6 +19,13 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 /** The Crew List as a workspace tool, at the catalogue's route. */
 class CrewListToolProvider(
     private val viewModel: CrewListViewModel,
+    /**
+     * The Crew List widget's shape: contact details under the name instead of
+     * in their own columns. Both copies share this one [CrewListViewModel].
+     */
+    private val compact: Boolean = false,
+    /** Opens the Crew List widget — the tool's own way to it, as Drive has. */
+    private val onOpenWidget: (() -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = CREW_LIST_PATH
@@ -45,6 +52,8 @@ class CrewListToolProvider(
             state = state,
             visibleUnits = viewModel::visibleUnits,
             onEvent = viewModel::onEvent,
+            compact = compact,
+            onOpenWidget = onOpenWidget,
         )
         ZillitErrorToast(message = notice ?: state.error, onDismiss = {
             notice = null

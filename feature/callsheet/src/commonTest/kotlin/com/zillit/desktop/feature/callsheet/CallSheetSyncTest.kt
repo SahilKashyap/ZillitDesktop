@@ -173,7 +173,7 @@ class CallSheetSyncTest {
         assertTrue(repo.queries.isNotEmpty(), "the bucket made no query")
         assertTrue(
             repo.queries.all { (createdBy, approver) -> createdBy != null || approver != null },
-            "an unscoped query would list the whole production: ${repo.queries}",
+            "an unscoped query would list the whole project: ${repo.queries}",
         )
     }
 

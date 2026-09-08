@@ -91,7 +91,7 @@ fun DealMemoScreen(
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             ) {
                 ZillitPageHeader(
-                    eyebrow = "Production",
+                    eyebrow = "Project",
                     title = "Deal Memos",
                     description = "The agreed terms behind every timecard, payroll line and budget commitment.",
                     actions = {
@@ -312,7 +312,7 @@ private fun DealsPage(state: DealUiState, onEvent: (DealEvent) -> Unit) {
                     onRowClick = { onEvent(DealEvent.Select(it.id)) },
                     isSelected = { it.id == state.selectedId },
                     emptyTitle = if (state.search.isBlank()) "No deals yet" else "Nothing matches that search",
-                    emptyMessage = "Deals written for this production appear here.",
+                    emptyMessage = "Deals written for this project appear here.",
                 )
             }
 
@@ -396,25 +396,26 @@ private fun DealDetail(state: DealUiState, deal: Deal, onEvent: (DealEvent) -> U
             }
         }
 
-        // The server rejects any write on a cancelled deal (the web gates its
-        // autosave on exactly this — `DMCreatePage.jsx` autosaveEnabled), and a
-        // deactivated one is terminal (`dealStatus.js:31-35`).
+        // Chase is for a deal that is out and unanswered: the server refuses it
+        // on any other status (`deal_chase_invalid_status`), and both phones
+        // show it on exactly this row — issued, posting rights, not your own
+        // deal (`DealMemoListAdapter.kt:161-178`).
         if (state.viewer.canWriteDeals &&
-            deal.status != DealStatus.Cancelled &&
-            deal.status != DealStatus.Deactivated
+            deal.status == DealStatus.Issued &&
+            deal.userId != state.viewer.userId
         ) {
             ZillitDivider()
             ZillitButton(
-                text = "Send to crew member",
+                text = "Remind crew member",
                 onClick = {
                     onEvent(
                         DealEvent.Ask(
                             DealPrompt.Confirm(
-                                DealConfirmAction.SendToCrew,
+                                DealConfirmAction.Chase,
                                 deal.id,
-                                "Send these terms",
-                                "${deal.crewName.ifBlank { "The crew member" }} is notified and asked " +
-                                    "to confirm them.",
+                                "Remind them to confirm",
+                                "${deal.crewName.ifBlank { "The crew member" }} is notified again and " +
+                                    "asked to confirm these terms.",
                             ),
                         ),
                     )
@@ -614,7 +615,7 @@ private fun RateLookupPanel(state: DealUiState, onEvent: (DealEvent) -> Unit) {
                 onValueChange = {
                     onEvent(DealEvent.EditDraft(state.draft.copy(productionType = it.takeIf(String::isNotBlank))))
                 },
-                label = "Production type",
+                label = "Project type",
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
@@ -762,7 +763,7 @@ private fun RateCardPage(state: DealUiState, onEvent: (DealEvent) -> Unit) {
                 key = { it.id },
                 loading = state.loading,
                 emptyTitle = "No rates published",
-                emptyMessage = "Rates appear here once a union's card is loaded for this production.",
+                emptyMessage = "Rates appear here once a union's card is loaded for this project.",
             )
         }
     }
@@ -772,7 +773,7 @@ private fun RateCardPage(state: DealUiState, onEvent: (DealEvent) -> Unit) {
 private fun rateColumns(): List<TableColumn<RateCardEntry>> = listOf(
     textColumn("Department", ColumnWidth.Weight(1.3f)) { it.departmentIdentifier },
     textColumn("Role", ColumnWidth.Weight(1.5f)) { it.designationIdentifier },
-    textColumn("Production", ColumnWidth.Weight(1f), muted = true) { it.productionType ?: "Any" },
+    textColumn("Project", ColumnWidth.Weight(1f), muted = true) { it.productionType ?: "Any" },
     TableColumn(
         header = "Budget band",
         width = ColumnWidth.Weight(1.2f),

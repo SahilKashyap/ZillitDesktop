@@ -242,3 +242,7 @@ private fun RandomAccessFile.readPart(range: LongRange): ByteArray {
 
 /** 256 KB, matching the slice size mail's uploader settled on. */
 private const val WRITE_SLICE = 256 * 1024
+
+/** The shared picker's path onto Drive's own row. */
+internal fun com.zillit.desktop.core.media.PickedPath.toDrivePick() =
+    PickedFile(path = path, name = name, sizeBytes = sizeBytes, mimeType = contentType)

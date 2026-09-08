@@ -82,7 +82,7 @@ private fun Header(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
         ZillitPageHeader(
             title = "Budget",
             eyebrow = "Film tools",
-            description = "The production's budget and each department's, with who has seen them.",
+            description = "The project's budget and each department's, with who has seen them.",
             actions = {
                 ZillitButton(
                     text = "Members",
@@ -90,14 +90,14 @@ private fun Header(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
                     variant = ButtonVariant.Secondary,
                     leadingIcon = ZillitIcons.Users,
                 )
-                if (state.canPostHere) {
-                    ZillitButton(
-                        text = "Upload budget",
-                        onClick = { onEvent(BudgetEvent.Upload) },
-                        leadingIcon = ZillitIcons.Upload,
-                        loading = state.busy,
-                    )
-                }
+                // Shown whatever the rights: BudgetViewModel.refusesPost
+                // answers a press without them by offering to ask an admin.
+                ZillitButton(
+                    text = "Upload budget",
+                    onClick = { onEvent(BudgetEvent.Upload) },
+                    leadingIcon = ZillitIcons.Upload,
+                    loading = state.busy,
+                )
             },
         )
         // One tab and nothing to switch to is a control that only takes up
@@ -188,11 +188,7 @@ private fun DocumentPane(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit, m
 
             document?.file?.isPresent != true -> ZillitEmptyState(
                 title = "No budget uploaded",
-                message = if (state.canPostHere) {
-                    "Upload a budget and everyone with access will see it here."
-                } else {
-                    "Nobody has uploaded this budget yet."
-                },
+                message = "Upload a budget and everyone with access will see it here.",
                 icon = ZillitIcons.File,
             )
 
@@ -245,23 +241,19 @@ private fun FileRow(state: BudgetUiState, document: BudgetDocument, onEvent: (Bu
             variant = ButtonVariant.Secondary,
             leadingIcon = ZillitIcons.Eye,
         )
-        if (state.viewer.canDownload(document.type)) {
-            ZillitButton(
-                text = "Download",
-                onClick = { onEvent(BudgetEvent.DownloadFile) },
-                variant = ButtonVariant.Secondary,
-                leadingIcon = ZillitIcons.Download,
-            )
-        }
-        if (state.canPostHere) {
-            ZillitButton(
-                text = "Remove",
-                onClick = { onEvent(BudgetEvent.Delete(document.id)) },
-                variant = ButtonVariant.Tertiary,
-                leadingIcon = ZillitIcons.Trash,
-                enabled = !state.busy,
-            )
-        }
+        ZillitButton(
+            text = "Download",
+            onClick = { onEvent(BudgetEvent.DownloadFile) },
+            variant = ButtonVariant.Secondary,
+            leadingIcon = ZillitIcons.Download,
+        )
+        ZillitButton(
+            text = "Remove",
+            onClick = { onEvent(BudgetEvent.Delete(document.id)) },
+            variant = ButtonVariant.Tertiary,
+            leadingIcon = ZillitIcons.Trash,
+            enabled = !state.busy,
+        )
     }
 }
 

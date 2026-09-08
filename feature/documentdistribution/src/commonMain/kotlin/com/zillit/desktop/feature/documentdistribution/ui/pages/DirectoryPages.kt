@@ -26,6 +26,8 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.gatedClick
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
 import com.zillit.desktop.feature.documentdistribution.domain.EmailTemplate
@@ -51,15 +53,15 @@ fun ListsPage(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
             icon = ZillitIcons.Users,
             padded = false,
             action = {
-                if (state.viewer.canPost) {
                     ZillitButton(
                         text = "New list",
-                        onClick = { editing = DistributionList(id = "", name = "") },
+                        onClick = gatedClick(state.viewer.canPost, { onEvent(ask) }) {
+                            editing = DistributionList(id = "", name = "")
+                        },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
                         leadingIcon = ZillitIcons.Add,
                     )
-                }
             },
         ) {
             ZillitDataTable(
@@ -79,7 +81,7 @@ fun ListsPage(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
                             it.name.ifBlank { it.email }
                         } + if (list.recipients.size > PREVIEW) " +${list.recipients.size - PREVIEW}" else ""
                     },
-                    deleteColumn(state.viewer.canPost) { list ->
+                    deleteColumn(state.viewer.canPost, { onEvent(ask) }) { list ->
                         onEvent(DocDistEvent.DeleteList(list.id))
                     },
                 ),
@@ -158,15 +160,13 @@ fun AddressBookPage(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
             icon = ZillitIcons.User,
             padded = false,
             action = {
-                if (state.viewer.canPost) {
                     ZillitButton(
                         text = "Add contact",
-                        onClick = { editing = Contact(email = "") },
+                        onClick = gatedClick(state.viewer.canPost, { onEvent(ask) }) { editing = Contact(email = "") },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
                         leadingIcon = ZillitIcons.UserPlus,
                     )
-                }
             },
         ) {
             ZillitDataTable(
@@ -180,7 +180,7 @@ fun AddressBookPage(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
                     textColumn("Job", ColumnWidth.Weight(1f), muted = true) {
                         it.jobTitle.ifBlank { "—" }
                     },
-                    deleteColumn(state.viewer.canPost) { contact ->
+                    deleteColumn(state.viewer.canPost, { onEvent(ask) }) { contact ->
                         onEvent(DocDistEvent.DeleteContact(contact.email))
                     },
                 ),
@@ -244,15 +244,15 @@ fun TemplatesPage(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
             icon = ZillitIcons.Mail,
             padded = false,
             action = {
-                if (state.viewer.canPost) {
                     ZillitButton(
                         text = "New template",
-                        onClick = { editing = EmailTemplate(id = "", name = "") },
+                        onClick = gatedClick(state.viewer.canPost, { onEvent(ask) }) {
+                            editing = EmailTemplate(id = "", name = "")
+                        },
                         variant = ButtonVariant.Secondary,
                         size = ButtonSize.Small,
                         leadingIcon = ZillitIcons.Add,
                     )
-                }
             },
         ) {
             ZillitDataTable(
@@ -265,7 +265,7 @@ fun TemplatesPage(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
                     textColumn("Subject", ColumnWidth.Weight(2f), muted = true) {
                         it.subject.ifBlank { "—" }
                     },
-                    deleteColumn(state.viewer.canPost) { template ->
+                    deleteColumn(state.viewer.canPost, { onEvent(ask) }) { template ->
                         onEvent(DocDistEvent.DeleteTemplate(template.id))
                     },
                 ),
@@ -339,23 +339,26 @@ private fun TemplateEditorDialog(
  * with each other whichever rights the viewer holds — a table that loses its
  * last column re-flows every other one.
  */
-private fun <T> deleteColumn(enabled: Boolean, onDelete: (T) -> Unit): TableColumn<T> =
+private fun <T> deleteColumn(
+    granted: Boolean,
+    onDenied: () -> Unit,
+    onDelete: (T) -> Unit,
+): TableColumn<T> =
     TableColumn(
         header = "",
         width = ColumnWidth.Fixed(ACTION_COLUMN.dp),
         cell = { row ->
-            if (enabled) {
-                ZillitIconButton(
-                    icon = ZillitIcons.Trash,
-                    contentDescription = "Delete",
-                    onClick = { onDelete(row) },
-                    tint = ZillitTheme.colors.danger,
-                )
-            } else {
-                Column {}
-            }
+            ZillitIconButton(
+                icon = ZillitIcons.Trash,
+                contentDescription = "Delete",
+                onClick = gatedClick(granted, onDenied) { onDelete(row) },
+                tint = ZillitTheme.colors.danger,
+            )
         },
     )
+
+/** The one thing a reader without posting rights can usefully do here. */
+private val ask = DocDistEvent.RequestRights(RightsKind.Post)
 
 private const val COUNT_COLUMN = 110
 private const val ACTION_COLUMN = 56

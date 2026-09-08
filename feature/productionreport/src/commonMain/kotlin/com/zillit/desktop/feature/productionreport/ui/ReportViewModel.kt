@@ -12,6 +12,8 @@ import com.zillit.desktop.feature.productionreport.domain.ReportSummary
 import com.zillit.desktop.feature.productionreport.domain.ComposeReport
 import com.zillit.desktop.feature.productionreport.domain.InternalApprover
 import com.zillit.desktop.feature.productionreport.domain.SheetMember
+import com.zillit.desktop.feature.productionreport.domain.pendingFor
+import com.zillit.desktop.feature.productionreport.domain.ReportViewer
 import com.zillit.desktop.feature.productionreport.domain.ReportKind
 import com.zillit.desktop.feature.productionreport.domain.ReportPopulate
 import com.zillit.desktop.feature.productionreport.domain.ReportTemplates
@@ -42,6 +44,11 @@ class ReportViewModel(
     private val todayYmd: () -> String,
 ) : ZillitViewModel<ReportUiState, ReportEvent, ReportEffect>(ReportUiState()) {
 
+    private fun loadApproverEligibility() = launch {
+        val got = repository.postingRightsUserIds(ReportViewer.TOOL_IDENTIFIER)
+        setState { copy(approverEligibleIds = (got as? ZillitResult.Success)?.data) }
+    }
+
     fun start() {
         val viewer = resolveViewer()
         setState {
@@ -57,6 +64,7 @@ class ReportViewModel(
             )
         }
         refresh()
+        loadApproverEligibility()
         listenOnce()
     }
 
@@ -424,11 +432,7 @@ class ReportViewModel(
                 }
             }
             val me = state.value.viewer.userId
-            val finalStage = detail.summary.status == ReportStatus.PendingApproval
-            val mine = detail.approvals.firstOrNull { request ->
-                request.isPending && request.assigneeId == me &&
-                    (!finalStage || request.isFinalStage)
-            }
+            val mine = detail.approvals.pendingFor(me)
             if (mine == null) {
                 setState { copy(busy = false) }
                 sendEffect(ReportEffect.Notice("No pending review names you on this sheet"))

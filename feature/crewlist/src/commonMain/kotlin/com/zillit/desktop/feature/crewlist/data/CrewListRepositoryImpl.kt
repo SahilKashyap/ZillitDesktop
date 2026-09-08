@@ -5,6 +5,7 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
@@ -37,6 +38,11 @@ class CrewListRepositoryImpl(
     /** Null keeps the tool socket-less — tests, and hosts without a bus. */
     private val bus: SocketEventBus? = null,
     private val currentProjectId: () -> String? = { null },
+    /**
+     * Which production the roster is about, when that is not the one the app
+     * is open on — the Crew List widget showing another production.
+     */
+    private val callOptions: () -> CallOptions = { CallOptions() },
 ) : CrewListRepository {
 
     /**
@@ -55,6 +61,7 @@ class CrewListRepositoryImpl(
             url = "${config.apiV2(ZillitService.Units)}crewlist/list",
             serializer = ListSerializer(UnitDto.serializer()),
             module = RequestModule.ProjectUser,
+            options = callOptions(),
         ).map { rows -> rows.map { it.toModel() } }
 
     override suspend fun generate(hideExternalLabel: Boolean): ZillitResult<CrewListPdf> =
@@ -62,6 +69,7 @@ class CrewListRepositoryImpl(
             verb = HttpVerb.Post,
             url = "${config.apiV2(ZillitService.Units)}crewlist",
             module = RequestModule.ProjectUser,
+            options = callOptions(),
             // The phones' whole body. The web adds its header-designer keys;
             // omitted they render the default letterhead, which is exactly
             // the phones' output.

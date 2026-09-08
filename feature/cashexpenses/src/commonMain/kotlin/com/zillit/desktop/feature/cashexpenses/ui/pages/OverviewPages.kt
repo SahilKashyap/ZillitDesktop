@@ -161,7 +161,7 @@ fun PettyCashOverviewPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             }
         }
 
-        ZillitSectionCard(title = "Floats on this production", icon = ZillitIcons.Users, padded = false) {
+        ZillitSectionCard(title = "Floats on this project", icon = ZillitIcons.Users, padded = false) {
             ZillitDataTable(
                 rows = overview?.floats.orEmpty(),
                 columns = floatColumns(),

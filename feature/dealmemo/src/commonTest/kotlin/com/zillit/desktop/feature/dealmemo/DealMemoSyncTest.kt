@@ -13,6 +13,9 @@ import com.zillit.desktop.feature.dealmemo.domain.DealViewer
 import com.zillit.desktop.feature.dealmemo.domain.NewDeal
 import com.zillit.desktop.feature.dealmemo.domain.RateCardEntry
 import com.zillit.desktop.feature.dealmemo.domain.Union
+import com.zillit.desktop.feature.dealmemo.domain.DealRates
+import com.zillit.desktop.feature.dealmemo.ui.DealConfirmAction
+import com.zillit.desktop.feature.dealmemo.ui.DealPrompt
 import com.zillit.desktop.feature.dealmemo.ui.DealDestination
 import com.zillit.desktop.feature.dealmemo.ui.DealEvent
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoViewModel
@@ -56,7 +59,7 @@ class DealMemoSyncTest {
         )
         assertEquals("p1", envelope.projectId)
         assertTrue(envelope.inProject("p1"))
-        assertFalse(envelope.inProject("p2"), "another production's frame must drop")
+        assertFalse(envelope.inProject("p2"), "another project's frame must drop")
         assertTrue(DealSyncEnvelope().inProject("p1"), "an unnamed frame passes rather than starving the screen")
     }
 
@@ -64,6 +67,28 @@ class DealMemoSyncTest {
         userId = "user-1",
         departmentIdentifier = "accounts_department_label",
         designationIdentifier = "production accountant",
+    )
+
+    private val issued = Deal(
+        id = "deal-1",
+        userId = "user-9",
+        crewName = "Ada Lovelace",
+        email = null,
+        departmentId = null,
+        departmentName = null,
+        designation = null,
+        status = DealStatus.Issued,
+        currency = "GBP",
+        rates = DealRates(),
+        startDate = null,
+        endDate = null,
+        unionName = null,
+        agreementName = null,
+        nominalCode = null,
+        notes = null,
+        amendedAt = null,
+        acknowledgedAt = null,
+        createdAt = null,
     )
 
     @Test
@@ -81,6 +106,32 @@ class DealMemoSyncTest {
         advanceTimeBy(DealMemoViewModel.SYNC_DEBOUNCE_MILLIS)
         runCurrent()
         assertEquals(2, repository.dealsLoads, "four frames collapse into one reload")
+    }
+
+    /**
+     * Re-notifying used to PUT the deal back, built from the row on screen —
+     * which carries the terms and none of the crew member's own entries, so the
+     * write blanked their legal name, bank, emergency contacts and passport
+     * uploads. Both phones send a bodyless chase instead.
+     */
+    @Test
+    fun `reminding a crew member chases and never writes the deal back`() = runTest(dispatcher) {
+        val repository = FakeDeals(MutableSharedFlow())
+        repository.rows = listOf(issued)
+        val model = DealMemoViewModel(repository) { accountant }
+        model.start()
+        runCurrent()
+
+        model.onEvent(
+            DealEvent.Ask(
+                DealPrompt.Confirm(DealConfirmAction.Chase, issued.id, "Remind them", "…"),
+            ),
+        )
+        model.onEvent(DealEvent.ConfirmPrompt)
+        runCurrent()
+
+        assertEquals(1, repository.chases)
+        assertEquals(0, repository.updates, "a re-notify must not carry a payload")
     }
 
     @Test
@@ -106,10 +157,13 @@ class DealMemoSyncTest {
     ) : DealMemoRepository {
         var dealsLoads = 0
         var rateCardLoads = 0
+        var chases = 0
+        var updates = 0
+        var rows: List<Deal> = emptyList()
 
         override suspend fun deals(status: DealStatus?): ZillitResult<List<Deal>> {
             dealsLoads++
-            return ZillitResult.Success(emptyList())
+            return ZillitResult.Success(rows)
         }
 
         override suspend fun rateCard(
@@ -126,8 +180,16 @@ class DealMemoSyncTest {
         override suspend fun history(id: String): ZillitResult<List<DealHistoryEntry>> =
             ZillitResult.Success(emptyList())
         override suspend fun create(deal: NewDeal, notify: Boolean): ZillitResult<Unit> = unsupported()
-        override suspend fun update(id: String, deal: NewDeal, notify: Boolean): ZillitResult<Unit> = unsupported()
+        override suspend fun update(id: String, deal: NewDeal, notify: Boolean): ZillitResult<Unit> {
+            updates++
+            return ZillitResult.Success(Unit)
+        }
         override suspend fun acknowledge(id: String): ZillitResult<Unit> = unsupported()
+
+        override suspend fun chase(id: String): ZillitResult<Unit> {
+            chases++
+            return ZillitResult.Success(Unit)
+        }
         override suspend fun unions(): ZillitResult<List<Union>> = ZillitResult.Success(emptyList())
         override suspend fun agreements(unionId: String?): ZillitResult<List<Agreement>> =
             ZillitResult.Success(emptyList())

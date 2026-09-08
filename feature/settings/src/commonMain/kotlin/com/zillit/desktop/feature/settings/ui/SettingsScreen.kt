@@ -89,6 +89,7 @@ fun SettingsScreen(
                 AppearanceSection(state, onEvent)
                 ProductionSection(state, onEvent)
                 NotificationsSection(state, onEvent)
+                DesktopSection(state, onEvent)
             }
         }
 
@@ -139,7 +140,7 @@ private fun AccountCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit
                 account.email.takeIf { it.isNotBlank() && it != displayName },
                 account.productionName.takeIf { it.isNotBlank() },
             ).joinToString(" · ")
-                .ifBlank { "Signing out removes the mail and production data stored here." }
+                .ifBlank { "Signing out removes the mail and project data stored here." }
             ZillitText(
                 text = detail,
                 style = ZillitTheme.typography.bodySmall,
@@ -249,13 +250,13 @@ private fun ProductionSection(state: SettingsUiState, onEvent: (SettingsEvent) -
     val unit = state.unit
     if (!unit.isOfferable) return
 
-    Section("Production", ZillitIcons.Tools) {
+    Section("Project", ZillitIcons.Tools) {
         SettingRow(
             title = "Your unit",
             // Says what it changes. "Unit" alone is a word this industry uses
             // for four different things.
             detail = "Which unit's call sheets and notices you receive. " +
-                "Change it if you move between units on this production.",
+                "Change it if you move between units on this project.",
         ) {
             Column(horizontalAlignment = Alignment.End) {
                 ZillitSelect(
@@ -283,6 +284,53 @@ private fun ProductionSection(state: SettingsUiState, onEvent: (SettingsEvent) -
 }
 
 /** One category of banner, on or off. */
+
+/** What Zillit does on this computer when its window is not in front, or not open at all. */
+@Composable
+private fun DesktopSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
+    Section("Desktop", ZillitIcons.Monitor) {
+        NotifyToggle(
+            title = "Incoming call card",
+            detail = "A small card with Accept and Decline floats over whatever you are " +
+                "doing when a call rings and Zillit's window is not in front.",
+            on = state.callWidget,
+            onChange = { onEvent(SettingsEvent.CallWidgetChanged(it)) },
+        )
+        NotifyToggle(
+            title = "New message card",
+            detail = "The sender and the first line float over your work when a message " +
+                "arrives and Zillit's window is not in front. Click the card to open the thread.",
+            on = state.messageWidget,
+            onChange = { onEvent(SettingsEvent.MessageWidgetChanged(it)) },
+        )
+        NotifyToggle(
+            title = "Keep running when the window is closed",
+            detail = "Closing the window hides it. Zillit stays in the menu bar or tray so " +
+                "calls and messages still reach you; Quit lives on the tray icon.",
+            on = state.closeToTray,
+            onChange = { onEvent(SettingsEvent.CloseToTrayChanged(it)) },
+        )
+        NotifyToggle(
+            title = "Start Zillit when you sign in",
+            detail = if (state.startAtLoginAvailable) {
+                "Zillit opens in the background at sign-in, window hidden, so you are " +
+                    "reachable before you open it. Also listed under the system's Login Items."
+            } else {
+                "Available from the installed Zillit app, not from a development run."
+            },
+            on = state.startAtLogin && state.startAtLoginAvailable,
+            onChange = { onEvent(SettingsEvent.StartAtLoginChanged(it)) },
+        )
+        state.widgets.forEach { widget ->
+            NotifyToggle(
+                title = widget.label,
+                detail = widget.detail,
+                on = widget.on,
+                onChange = { onEvent(SettingsEvent.WidgetChanged(widget.id, it)) },
+            )
+        }
+    }
+}
 @Composable
 private fun NotifyToggle(
     title: String,
@@ -338,7 +386,7 @@ private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent
 
         NotifyToggle(
             title = "Production activity",
-            detail = "A banner for everything else the production did — a " +
+            detail = "A banner for everything else the project did — a " +
                 "purchase order approved, a document shared, an SOS raised. " +
                 "The bell list's rows, as they happen.",
             on = state.notifyActivity,
@@ -354,6 +402,13 @@ private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent
             on = state.notifyCalls,
             onChange = { onEvent(SettingsEvent.NotifyCallsChanged(it)) },
         )
+        NotifyToggle(
+            title = "Ringtone",
+            detail = "The ring itself while a call comes in, on every line. Off, the call still " +
+                "shows — the card and the banner — it just makes no sound.",
+            on = state.ringOnIncomingCall,
+            onChange = { onEvent(SettingsEvent.RingtoneChanged(it)) },
+        )
     }
 }
 
@@ -368,7 +423,7 @@ private fun SignOutDialog(visible: Boolean, unsent: Int, onEvent: (SettingsEvent
         width = DIALOG_WIDTH,
     ) {
         ZillitText(
-            text = "Mail and production data stored on this computer will be removed. " +
+            text = "Mail and project data stored on this computer will be removed. " +
                 "Nothing on the server is affected.",
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,

@@ -332,7 +332,7 @@ private fun ProjectSwitcher(projectName: String?, onClick: () -> Unit) {
             .clickable(
                 interactionSource = interaction,
                 indication = null,
-                onClickLabel = "Switch production",
+                onClickLabel = "Switch project",
                 onClick = onClick,
             )
             .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
@@ -340,14 +340,14 @@ private fun ProjectSwitcher(projectName: String?, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = projectName ?: "No production selected",
+            text = projectName ?: "No project selected",
             style = ZillitTheme.typography.bodySmall,
             color = if (hovered) colors.textPrimary else colors.textSecondary,
             maxLines = 1,
         )
         ZillitIcon(
             icon = ZillitIcons.ChevronDown,
-            contentDescription = "Switch production",
+            contentDescription = "Switch project",
             tint = if (hovered) colors.textPrimary else colors.textMuted,
             size = SWITCHER_CHEVRON,
         )

@@ -23,7 +23,9 @@ class ChatToolProvider(
     private val onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit = {},
     private val loadThumbnail:
     suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap? = { null },
-    private val onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)? = null,
+    private val onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, line: CallLine) -> Unit)? = null,
+    /** Which lines the call buttons offer — Line 3 only where the host says the production has it. */
+    private val lines: () -> List<CallLine> = { CallLine.DEFAULT },
     /** The one shared speaker; null renders voice notes as plain chips. */
     private val player: com.zillit.desktop.core.designsystem.component.AudioPlayer? = null,
     private val loadAudio:
@@ -36,6 +38,8 @@ class ChatToolProvider(
      * every save-to-disk path; the in-app viewer stays free to look.
      */
     private val canDownload: () -> Boolean = { true },
+    /** Asks an admin for the download right, from the refusal. Null omits the offer. */
+    private val requestDownloadRights: (() -> Unit)? = null,
     /** The system clipboard's picture half — composer paste and "Copy image". */
     private val clipboard: ClipboardMediaSource? = systemClipboardMedia(),
     /** The full-size fetch behind the lightbox; null falls back to thumbnails. */
@@ -60,6 +64,14 @@ class ChatToolProvider(
      * Behind "Open in Maps" on a shared-location bubble; null hides it.
      */
     private val onOpenUrl: ((String) -> Unit)? = null,
+    /**
+     * One pane at a time — the Chat widget's shape. The rail's copy stays
+     * wide; both share this one [ChatViewModel], so a message read in either
+     * is read in both.
+     */
+    private val compact: Boolean = false,
+    /** Opens the Chat widget — the tool's own way to it, as Drive has. */
+    private val onOpenWidget: (() -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = "/cnc"
@@ -75,6 +87,7 @@ class ChatToolProvider(
         androidx.compose.runtime.CompositionLocalProvider(
             LocalChatSeams provides ChatSeams(
                 canDownload = canDownload,
+                requestDownloadRights = requestDownloadRights,
                 clipboard = clipboard,
                 loadFullImage = loadFullImage,
                 onOpenUrl = onOpenUrl,
@@ -94,6 +107,9 @@ class ChatToolProvider(
                 createRoom = createRoom,
                 searchMessages = searchMessages,
                 deleteRoom = deleteRoom,
+                compact = compact,
+                onOpenWidget = onOpenWidget,
+                lines = lines,
             )
         }
     }

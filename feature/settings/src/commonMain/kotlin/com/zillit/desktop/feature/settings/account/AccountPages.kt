@@ -64,7 +64,7 @@ fun RecoveryEmailPage(state: RecoveryEmailState, onEvent: (AccountEvent) -> Unit
                 // having typed yet.
                 errorText = "That does not look like an email address."
                     .takeIf { state.email.isNotBlank() && !state.isValid },
-                helperText = "The production never sees this address; it is not your Zillit mailbox.",
+                helperText = "The project never sees this address; it is not your Zillit mailbox.",
                 onImeAction = { onEvent(AccountEvent.SaveRecoveryEmail) },
             )
 
@@ -238,7 +238,7 @@ fun UnlinkDialog(state: DevicesState, onEvent: (AccountEvent) -> Unit) {
         ZillitText(
             text = if (here) {
                 "This is the computer you are using. Signing it out closes Zillit here and " +
-                    "removes the mail and production data stored on it. Your other devices " +
+                    "removes the mail and project data stored on it. Your other devices " +
                     "stay signed in."
             } else {
                 "That device is signed out the next time it contacts Zillit. Nothing it has " +
@@ -280,7 +280,7 @@ fun UnlinkDialog(state: DevicesState, onEvent: (AccountEvent) -> Unit) {
 @Composable
 fun InviteCrewPage(seed: ProfileSeed, onEvent: (AccountEvent) -> Unit) {
     val code = seed.productionCode
-    val production = seed.productionName.ifBlank { "this production" }
+    val production = seed.productionName.ifBlank { "this project" }
     val invite = inviteText(production, code)
 
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
@@ -288,15 +288,15 @@ fun InviteCrewPage(seed: ProfileSeed, onEvent: (AccountEvent) -> Unit) {
             // Nothing to share, said plainly. A copy button that copies "Code: "
             // is worse than an absent one.
             ZillitEmptyState(
-                title = "No production code",
-                message = "This production has no join code, so nobody can be invited with " +
-                    "one. An administrator can check the production's setup.",
+                title = "No project code",
+                message = "This project has no join code, so nobody can be invited with " +
+                    "one. An administrator can check the project's setup.",
                 icon = ZillitIcons.Info,
             )
             return@Column
         }
 
-        ZillitSectionCard(title = "Production code", icon = ZillitIcons.Tools) {
+        ZillitSectionCard(title = "Project code", icon = ZillitIcons.Tools) {
             // Large and spaced, because this gets read aloud across a set as
             // often as it gets pasted.
             ZillitText(
@@ -347,7 +347,7 @@ fun InviteCrewPage(seed: ProfileSeed, onEvent: (AccountEvent) -> Unit) {
  * can act on and nobody notices sending.
  */
 internal fun inviteText(production: String, code: String): String =
-    "Join $production on Zillit. Install the app, choose “Join a production”, " +
+    "Join $production on Zillit. Install the app, choose “Join a project”, " +
         "and enter the code $code. An administrator will approve you."
 
 /**
@@ -373,8 +373,8 @@ fun LeaveProductionDialog(
         width = DIALOG_WIDTH,
     ) {
         ZillitText(
-            text = "You stop receiving this production's notices, call sheets and messages, " +
-                "and it disappears from your list. Coming back means using the production " +
+            text = "You stop receiving this project's notices, call sheets and messages, " +
+                "and it disappears from your list. Coming back means using the project " +
                 "code again and waiting for an administrator to approve you.",
             style = ZillitTheme.typography.bodyMedium,
             color = ZillitTheme.colors.textSecondary,
@@ -384,7 +384,7 @@ fun LeaveProductionDialog(
             // The one case the other clients warn about, because a production
             // whose last admin leaves cannot approve anyone back in.
             ZillitNotice(
-                text = "You administer this production. Make sure someone else is an " +
+                text = "You administer this project. Make sure someone else is an " +
                     "administrator before you leave, or nobody can approve new crew.",
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
@@ -406,7 +406,7 @@ fun LeaveProductionDialog(
                 onClick = { onEvent(AccountEvent.DismissLeave) },
             )
             ZillitButton(
-                text = "Leave production",
+                text = "Leave project",
                 variant = ButtonVariant.Danger,
                 loading = state.isLeaving,
                 onClick = { onEvent(AccountEvent.ConfirmLeave) },

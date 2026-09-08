@@ -55,13 +55,13 @@ internal fun CreateProductionDialog(
     ZillitDialogShell(
         visible = visible,
         title = when (state.stage) {
-            CreateStage.Editing -> "Start a production"
+            CreateStage.Editing -> "Start a project"
             is CreateStage.VerifyingEmail -> "Confirm your email"
-            is CreateStage.Created -> "Production created"
+            is CreateStage.Created -> "Project created"
         },
         subtitle = when (state.stage) {
             CreateStage.Editing -> "Name it and say who runs it — a minute of form."
-            is CreateStage.VerifyingEmail -> "One code, and the production is yours."
+            is CreateStage.VerifyingEmail -> "One code, and the project is yours."
             is CreateStage.Created -> "Share the code and the crew can join."
         },
         icon = when (state.stage) {
@@ -134,7 +134,7 @@ private fun ColumnScope.ProductionForm(
     ) {
         SectionLabel("Who you are")
         WhoSection(state, ::update)
-        SectionLabel("The production")
+        SectionLabel("The project")
         WhatSection(state, ::update)
         SectionLabel("Contact")
         ContactSection(state, ::update)
@@ -186,11 +186,11 @@ private fun ColumnScope.WhatSection(
     ZillitTextField(
         value = draft.productionName,
         onValueChange = { v -> update { copy(productionName = v) } },
-        label = "Production name",
+        label = "Project name",
         errorText = state.fieldErrors[ProductionField.ProductionName],
     )
 
-    LabelledSelect("Production type", state.fieldErrors[ProductionField.Type]) {
+    LabelledSelect("Project type", state.fieldErrors[ProductionField.Type]) {
         ZillitSelect(
             value = state.selectedType,
             options = state.types,
@@ -293,7 +293,7 @@ private fun EmailVerification(
     onEvent: (CreateProductionEvent) -> Unit,
 ) {
     ZillitText(
-        text = "We sent a code to $email. Enter it to create the production.",
+        text = "We sent a code to $email. Enter it to create the project.",
         style = ZillitTheme.typography.bodyMedium,
         color = ZillitTheme.colors.textSecondary,
     )
@@ -311,7 +311,7 @@ private fun EmailVerification(
     )
 
     ZillitButton(
-        text = "Create production",
+        text = "Create project",
         onClick = { onEvent(CreateProductionEvent.VerifyOtp) },
         modifier = Modifier.fillMaxWidth(),
         enabled = state.canSubmitOtp,

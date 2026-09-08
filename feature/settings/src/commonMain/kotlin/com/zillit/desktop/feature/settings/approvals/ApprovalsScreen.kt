@@ -417,8 +417,8 @@ private fun DeclineDialog(
         ZillitText(
             text = when (queue) {
                 ApprovalQueue.NewCrew ->
-                    "They will not be let onto this production. Nothing tells them why, and " +
-                        "they can ask again with the production code."
+                    "They will not be let onto this project. Nothing tells them why, and " +
+                        "they can ask again with the project code."
 
                 ApprovalQueue.ProfileChanges ->
                     "Their profile stays as it is. They can ask for the change again."

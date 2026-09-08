@@ -81,7 +81,7 @@ class ProjectRepositoryImpl(
         ).flatMapNotNull { body ->
             body.toCodeLookup()
                 ?.let { ZillitResult.Success(it) }
-                ?: ZillitResult.Failure(ZillitError.Validation("No production found for that code."))
+                ?: ZillitResult.Failure(ZillitError.Validation("No project found for that code."))
         }
     }
 
@@ -101,7 +101,7 @@ class ProjectRepositoryImpl(
             dto.toDomain()
                 ?.let { ZillitResult.Success(it) }
                 ?: ZillitResult.Failure(
-                    ZillitError.Serialization("the production was created but the response had no id"),
+                    ZillitError.Serialization("the project was created but the response had no id"),
                 )
         }
 

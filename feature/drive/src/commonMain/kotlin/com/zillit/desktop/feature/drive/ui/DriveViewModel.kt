@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.drive.ui
 
+import com.zillit.desktop.core.permissions.rightsRefusalMessage
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
@@ -52,6 +55,8 @@ class DriveViewModel(
     private val uploader: DriveUploader = DriveUploader.Unsupported,
     /** Ids for queued uploads. Injected so a test can predict them. */
     private val newUploadId: () -> String = { "upload-" + (uploadCounter++) },
+    /** Carries a refused press to the app frame, which offers to ask an admin. */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<DriveUiState, DriveEvent, DriveEffect>(DriveUiState(viewer = viewer())) {
 
     private var loadJob: Job? = null
@@ -328,6 +333,7 @@ class DriveViewModel(
             // -- uploads ---------------------------------------------------
 
             DriveEvent.PickFiles -> sendEffect(DriveEffect.PickFiles)
+            is DriveEvent.PickFilesOf -> sendEffect(DriveEffect.PickFilesOf(event.kind))
             is DriveEvent.Upload -> enqueue(event.files)
             is DriveEvent.CancelUpload -> cancelUpload(event.uploadId)
             DriveEvent.ClearFinishedUploads -> setState {
@@ -686,9 +692,16 @@ class DriveViewModel(
      * to invite the world to write into it (the web gates its own button the
      * same way, ZL-18294). The transforms live in [FileRequests].
      */
+
+    /** Refuses, and offers the one thing that changes the answer. */
+    private fun askForRights(kind: RightsKind) {
+        rights?.ask(MODULE_LABEL, kind)
+        sendEffect(DriveEffect.Failed(rightsRefusalMessage(MODULE_LABEL, kind, rights != null)))
+    }
+
     private fun openFileRequests(folder: DriveItem) {
         if (!currentState.viewer.canPost) {
-            sendEffect(DriveEffect.Failed("You do not have posting rights on this drive."))
+            askForRights(RightsKind.Post)
             return
         }
         setState { copy(fileRequests = FileRequests.opening(folder)) }
@@ -933,3 +946,5 @@ internal fun List<DriveItem>.refs(): List<DriveRef> = map { DriveRef(it.id, it.k
 /** Unused today; kept beside the other converters so the set stays together. */
 @Suppress("unused")
 internal fun DriveRef.isFolder(): Boolean = kind == DriveItemKind.Folder
+
+private const val MODULE_LABEL = "Drive"

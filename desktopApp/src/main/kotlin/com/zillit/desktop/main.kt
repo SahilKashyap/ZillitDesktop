@@ -25,6 +25,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.isTraySupported
 import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import com.zillit.desktop.core.common.ZillitLog
@@ -32,12 +33,15 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.common.currentPlatform
 import com.zillit.desktop.core.badges.BadgeCounts
+import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.badges.BadgeStore
+import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.PreferenceStoreFactory
 import com.zillit.desktop.core.datastore.WindowGeometry
 import com.zillit.desktop.core.datastore.ZillitPreferences
+import com.zillit.desktop.core.notifications.DesktopNotification
 import com.zillit.desktop.core.datastore.loadWindowGeometry
 import com.zillit.desktop.core.datastore.saveWindowGeometry
 import kotlinx.coroutines.delay
@@ -45,6 +49,8 @@ import com.zillit.desktop.core.datastore.observeAs
 import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.workspace.FileWorkspaceSessionStore
+import com.zillit.desktop.feature.crewlist.ui.CrewListToolProvider
+import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.ToolRegistry
 import com.zillit.desktop.core.workspace.WorkspaceShortcuts
 import com.zillit.desktop.core.workspace.WorkspaceEvent
@@ -93,6 +99,7 @@ import com.zillit.desktop.feature.settings.ui.HelpToolProvider
 import com.zillit.desktop.feature.home.domain.HomeUnitKind
 import com.zillit.desktop.feature.home.ui.HomeFeedEvent
 import com.zillit.desktop.feature.home.ui.HomeFeedViewModel
+import com.zillit.desktop.feature.home.calendar.calendarRealtime
 import com.zillit.desktop.feature.home.calendar.CalendarEvent2Event
 import com.zillit.desktop.feature.home.calendar.CalendarEvent
 import com.zillit.desktop.feature.home.calendar.CalendarViewModel
@@ -100,6 +107,8 @@ import com.zillit.desktop.feature.home.calendar.EventInvitee
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import com.zillit.desktop.core.session.ProjectContext
+import com.zillit.desktop.feature.email.rules.DriveFolderOption
+import com.zillit.desktop.feature.email.rules.DriveFolderSource
 import com.zillit.desktop.feature.email.domain.ContactSource
 import com.zillit.desktop.feature.email.domain.EmailContact
 import com.zillit.desktop.feature.email.domain.EmailDraft
@@ -146,6 +155,7 @@ import com.zillit.desktop.feature.chat.domain.ChatAttachment
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.home.ui.decodeImageBitmap
 import com.zillit.desktop.feature.chat.ui.ChatEvent
+import com.zillit.desktop.feature.chat.ui.CallLine
 import com.zillit.desktop.feature.chat.ui.ChatToolProvider
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallProvider
@@ -191,6 +201,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.ui.CashExpensesToolProvider
 import com.zillit.desktop.feature.cashexpenses.ui.CashExpensesViewModel
 import com.zillit.desktop.core.localization.Labels
+import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.feature.dealmemo.domain.DealViewer
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoToolProvider
@@ -262,6 +273,8 @@ import com.zillit.desktop.feature.formsignature.domain.FormSignatureViewer
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureToolProvider
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureViewModel
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistViewModel
+import com.zillit.desktop.feature.drive.domain.DriveItemKind
+import com.zillit.desktop.feature.drive.domain.DriveQuery
 import com.zillit.desktop.feature.drive.domain.DriveViewer
 import com.zillit.desktop.feature.drive.ui.DriveToolProvider
 import com.zillit.desktop.feature.drive.ui.DriveViewModel
@@ -282,22 +295,29 @@ import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.runBlocking
 
 fun main(args: Array<String>) {
     installCrashLogging()
-    val wantsDriveWidget = DriveWidgetLaunch.requestedBy(args)
+    val wantsWidget = WidgetLaunch.requestedBy(args)
+    val startHidden = BackgroundLaunch.requestedBy(args)
     // Before anything opens the database or the preference file — the point of
     // the guard is that the second copy touches neither. See SingleInstance.
     if (!SingleInstance.claim()) {
         // A "Zillit Drive" shortcut while Zillit is up: hand the request to
         // the running copy and go quietly — a dialog here would be noise.
-        if (wantsDriveWidget) DriveWidgetLaunch.signalRunningApp() else reportAlreadyRunning()
+        when {
+            wantsWidget != null -> WidgetLaunch.signalRunningApp(wantsWidget)
+            // The login item found Zillit already up: a dialog at every sign-in is worse than none.
+            startHidden -> Unit
+            else -> reportAlreadyRunning()
+        }
         return
     }
     installDockIcon()
-    DriveWidgetLaunch.installUriHandler()
-    runZillit(openDriveWidget = wantsDriveWidget)
+    WidgetLaunch.installUriHandler()
+    runZillit(openWidget = wantsWidget, startHidden = startHidden)
 }
 
 /**
@@ -382,7 +402,7 @@ private fun installDockIcon() {
 }
 
 @Suppress("LongMethod") // The application's wiring, in the order it must happen; splitting it hides that.
-private fun runZillit(openDriveWidget: Boolean) = application {
+private fun runZillit(openWidget: ZillitWidget?, startHidden: Boolean) = application {
     val graph = remember { AppGraph.build() }
     val preferences = remember {
         (graph as? AppGraph.Ready)?.preferences ?: PreferenceStoreFactory.create()
@@ -401,18 +421,21 @@ private fun runZillit(openDriveWidget: Boolean) = application {
     val scope = rememberCoroutineScope()
     val viewModels = rememberAppViewModels(graph, preferences, scope)
 
-    // The Drive widget: open if asked for on the command line, or if it was
-    // open when the app last quit. Toggled from the tray, the Drive tool, and
-    // a second launch with `--drive-widget`.
-    var driveWidgetOpen by remember {
-        mutableStateOf(openDriveWidget || runBlocking { preferences.get(ZillitPreferences.DriveWidgetOpen) })
-    }
-    LaunchedEffect(driveWidgetOpen) { preferences.set(ZillitPreferences.DriveWidgetOpen, driveWidgetOpen) }
-    LaunchedEffect(Unit) { DriveWidgetLaunch.watch { driveWidgetOpen = true } }
+    // The widgets: open if asked for on the command line, or if they were open
+    // when the app last quit. Toggled from the tray, from Settings, from the
+    // Drive tool, and by a second launch carrying a widget's flag.
+    val widgets = rememberWidgetSwitches(preferences, openWidget, scope)
 
-    val registry = remember(viewModels) {
-        buildRegistry(graph, viewModels, scope, openDriveWidget = { driveWidgetOpen = true })
+    val tools = remember(viewModels) {
+        buildRegistry(
+            graph,
+            viewModels,
+            scope,
+            openDriveWidget = { widgets.open(ZillitWidget.Drive) },
+            openWidget = { widget -> widgets.open(widget) },
+        )
     }
+    val registry = tools.registry
 
     val workspaceViewModel = remember(registry) {
         WorkspaceViewModel(
@@ -427,6 +450,19 @@ private fun runZillit(openDriveWidget: Boolean) = application {
     // inside the window it acts on. Before the windows, too: reminders must
     // arrive whether or not the calendar is on screen.
     var mainFrame by remember { mutableStateOf<ComposeWindow?>(null) }
+    // Hidden means "in the tray": the socket, the call card and the message card
+    // carry on, and the tray, the Dock and a widget bring the window back.
+    var mainVisible by remember { mutableStateOf(!startHidden) }
+    val showMain: () -> Unit = {
+        mainVisible = true
+        showMainWindow(mainFrame, windowState)
+    }
+    val closeToTray by preferences.observe(ZillitPreferences.CloseToTray).collectAsState(initial = true)
+    val crewName: (String) -> String? = { id ->
+        (graph as? AppGraph.Ready)?.projectContext?.context?.value?.user(id)?.fullName
+    }
+    LaunchedEffect(Unit) { DockReopen.watch(showMain) }
+    LaunchedEffect(preferences) { LoginItem.reconcile(preferences) }
 
     val trayState = rememberTrayState()
 
@@ -441,14 +477,44 @@ private fun runZillit(openDriveWidget: Boolean) = application {
         }
     }
 
+    // Each tool widget's own production, switched from its picker without
+    // moving the main window. The open production hands back the rail's own
+    // provider; any other gets a scoped one. See ToolWidgetHost.
+    val chatWidgetHost = remember(graph, viewModels, tools) {
+        (graph as? AppGraph.Ready)?.let { ready ->
+            ToolWidgetHost(
+                ready = ready,
+                scope = scope,
+                openProjectId = { authViewModel?.currentState?.activeProject?.id },
+                tag = "ChatWidget",
+                openProvider = { tools.chatWidget },
+                scopedProvider = { project, options, permissions ->
+                    ready.scopedChatProvider(project, options, permissions, viewModels.calls)
+                },
+            )
+        }
+    }
+    val crewWidgetHost = remember(graph, viewModels, tools) {
+        (graph as? AppGraph.Ready)?.let { ready ->
+            ToolWidgetHost(
+                ready = ready,
+                scope = scope,
+                openProjectId = { authViewModel?.currentState?.activeProject?.id },
+                tag = "CrewWidget",
+                openProvider = { tools.crewWidget },
+                scopedProvider = { project, options, permissions ->
+                    ready.scopedCrewProvider(project, options, permissions)
+                },
+            )
+        }
+    }
+
     AppTray(
         trayState = trayState,
         graph = graph,
         preferences = preferences,
-        windowState = windowState,
-        frame = mainFrame,
-        driveWidgetOpen = driveWidgetOpen,
-        onToggleDriveWidget = { driveWidgetOpen = !driveWidgetOpen },
+        onShow = showMain,
+        widgets = widgets,
         // The same shutdown the close button runs, geometry and all — a second
         // way out of the app must not be a way to lose your window layout.
         onQuit = { quitZillit(windowState) },
@@ -463,9 +529,7 @@ private fun runZillit(openDriveWidget: Boolean) = application {
         frame = mainFrame,
         chat = viewModels.chat,
         email = viewModels.email,
-        crewName = { id ->
-            (graph as? AppGraph.Ready)?.projectContext?.context?.value?.user(id)?.fullName
-        },
+        crewName = crewName,
     )
 
     ZillitWindows(
@@ -476,24 +540,85 @@ private fun runZillit(openDriveWidget: Boolean) = application {
         registry = registry,
         viewModel = workspaceViewModel,
         authViewModel = authViewModel,
-        driveWidget = DriveWidgetMount(
-            host = driveWidgetHost,
-            open = driveWidgetOpen,
-            onClose = { driveWidgetOpen = false },
-            showMain = { showMainWindow(mainFrame, windowState) },
+        widgetMount = WidgetMount(
+            driveHost = driveWidgetHost,
+            chatHost = chatWidgetHost,
+            crewHost = crewWidgetHost,
+            switches = widgets,
+            showMain = showMain,
         ),
-        showMain = { showMainWindow(mainFrame, windowState) },
+        showMain = showMain,
         onFrame = { mainFrame = it },
+        frame = mainFrame,
+        crewName = crewName,
+        mainVisible = mainVisible,
+        onCloseMain = {
+            if (closeToTray && isTraySupported) {
+                mainVisible = false
+                TrayNotifier(trayState).post(
+                    DesktopNotification(
+                        title = "Zillit is still running",
+                        body = "Calls and messages still reach you. Quit from the tray icon.",
+                    ),
+                )
+            } else {
+                quitZillit(windowState)
+            }
+        },
+        openChat = { workspaceViewModel.onEvent(WorkspaceEvent.Open(WorkspaceRoute.Tool("/cnc"))) },
     )
 }
 
-/** What the widget window needs from the application, gathered so ZillitWindows stays readable. */
-private class DriveWidgetMount(
-    val host: DriveWidgetHost?,
-    val open: Boolean,
-    val onClose: () -> Unit,
+/** What the widget windows need from the application, gathered so ZillitWindows stays readable. */
+private class WidgetMount(
+    val driveHost: DriveWidgetHost?,
+    val chatHost: ToolWidgetHost?,
+    val crewHost: ToolWidgetHost?,
+    val switches: WidgetSwitches,
     val showMain: () -> Unit,
 )
+
+/**
+ * Whether each widget is on screen.
+ *
+ * The preference file is the one source of truth, not a copy of it: the tray,
+ * Settings, the command line and the windows' own close buttons all write the
+ * same key and all read it back. A widget that could be "open" in two places
+ * at once would flicker between them.
+ */
+internal class WidgetSwitches(
+    private val open: Map<ZillitWidget, Boolean>,
+    private val onSet: (ZillitWidget, Boolean) -> Unit,
+) {
+    fun isOpen(widget: ZillitWidget): Boolean = open[widget] == true
+
+    fun open(widget: ZillitWidget) = set(widget, true)
+
+    fun close(widget: ZillitWidget) = set(widget, false)
+
+    fun toggle(widget: ZillitWidget) = set(widget, !isOpen(widget))
+
+    fun set(widget: ZillitWidget, open: Boolean) = onSet(widget, open)
+}
+
+/** The switches, kept in step with the preference file and with a second launch's flag. */
+@Composable
+private fun rememberWidgetSwitches(
+    preferences: PreferenceStore,
+    opened: ZillitWidget?,
+    scope: CoroutineScope,
+): WidgetSwitches {
+    val open = ZillitWidget.entries.associateWith { widget ->
+        preferences.observe(widget.keys.open)
+            .collectAsState(initial = remember { runBlocking { preferences.get(widget.keys.open) } })
+            .value
+    }
+    // A widget named on the command line opens once, at startup; from then on
+    // it is the stored switch like any other.
+    LaunchedEffect(opened) { if (opened != null) preferences.set(opened.keys.open, true) }
+    LaunchedEffect(Unit) { WidgetLaunch.watch { widget -> scope.launch { preferences.set(widget.keys.open, true) } } }
+    return WidgetSwitches(open) { widget, on -> scope.launch { preferences.set(widget.keys.open, on) } }
+}
 
 /**
  * Ends the session.
@@ -524,7 +649,6 @@ private fun ApplicationScope.quitZillit(windowState: WindowState) {
 private const val GEOMETRY_SETTLE_MILLIS = 400L
 
 /** How long the server gets to apply a read before counts are refetched. */
-private const val READ_BADGE_SETTLE_MILLIS = 1_500L
 
 private fun WindowState.geometry() = WindowGeometry(
     width = size.width.value.toInt().coerceAtLeast(1),
@@ -546,10 +670,15 @@ private fun ApplicationScope.ZillitWindows(
     registry: ToolRegistry,
     viewModel: WorkspaceViewModel,
     authViewModel: AuthViewModel?,
-    driveWidget: DriveWidgetMount,
+    widgetMount: WidgetMount,
     /** Raises and focuses the main frame. See [showMainWindow]. */
     showMain: () -> Unit,
     onFrame: (ComposeWindow) -> Unit,
+    frame: ComposeWindow?,
+    crewName: (String) -> String?,
+    mainVisible: Boolean,
+    onCloseMain: () -> Unit,
+    openChat: () -> Unit,
 ) {
     val workspace by viewModel.state.collectAsState()
     val themeMode by preferences
@@ -578,8 +707,9 @@ private fun ApplicationScope.ZillitWindows(
     }
 
     Window(
-        onCloseRequest = { quitZillit(windowState) },
+        onCloseRequest = onCloseMain,
         state = windowState,
+        visible = mainVisible,
         title = "Zillit-Desktop",
         icon = androidx.compose.ui.res.painterResource("icons/zillit-icon.png"),
         // Preview so shortcuts beat focused controls, but unhandled keys fall
@@ -624,6 +754,24 @@ private fun ApplicationScope.ZillitWindows(
     // same reason — it must outlive being behind the main frame.
     (graph as? AppGraph.Ready)?.let { ready ->
         CallWindow(ready = ready, calls = viewModels.calls, darkTheme = isDark)
+        IncomingCallWidget(
+            ready = ready,
+            calls = viewModels.calls,
+            preferences = preferences,
+            frame = frame,
+            darkTheme = isDark,
+            showMain = showMain,
+        )
+        MessageWidget(
+            ready = ready,
+            chat = viewModels.chat,
+            preferences = preferences,
+            frame = frame,
+            darkTheme = isDark,
+            crewName = crewName,
+            showMain = showMain,
+            openChat = openChat,
+        )
     }
 
     /*
@@ -655,16 +803,45 @@ private fun ApplicationScope.ZillitWindows(
         }
     }
 
-    // The Drive widget: the desktop's own small window onto one production's
-    // drive, tied to the main window's session. See DriveWidgetWindow.
+    // The widgets: the desktop's own small windows, tied to the main window's
+    // session. Drive picks its own production; chat and the crew list follow
+    // the one the app is open on. See WidgetShell.
     DriveWidgetWindow(
-        host = driveWidget.host,
+        host = widgetMount.driveHost,
         auth = authViewModel,
         preferences = preferences,
-        visible = driveWidget.open,
+        visible = widgetMount.switches.isOpen(ZillitWidget.Drive),
         darkTheme = isDark,
-        onClose = driveWidget.onClose,
-        showMain = driveWidget.showMain,
+        onClose = { widgetMount.switches.close(ZillitWidget.Drive) },
+        showMain = widgetMount.showMain,
+    )
+    ToolWidgetWindow(
+        title = "Zillit Chat",
+        what = "The Chat widget",
+        keys = ZillitPreferences.ChatWidget,
+        projectKey = ZillitPreferences.ChatWidgetProject,
+        host = widgetMount.chatHost,
+        route = WorkspaceRoute.Tool("/cnc"),
+        auth = authViewModel,
+        preferences = preferences,
+        visible = widgetMount.switches.isOpen(ZillitWidget.Chat),
+        darkTheme = isDark,
+        onClose = { widgetMount.switches.close(ZillitWidget.Chat) },
+        showMain = widgetMount.showMain,
+    )
+    ToolWidgetWindow(
+        title = "Zillit Crew",
+        what = "The Crew List widget",
+        keys = ZillitPreferences.CrewWidget,
+        projectKey = ZillitPreferences.CrewWidgetProject,
+        host = widgetMount.crewHost,
+        route = WorkspaceRoute.Tool(CrewListToolProvider.CREW_LIST_PATH),
+        auth = authViewModel,
+        preferences = preferences,
+        visible = widgetMount.switches.isOpen(ZillitWidget.Crew),
+        darkTheme = isDark,
+        onClose = { widgetMount.switches.close(ZillitWidget.Crew) },
+        showMain = widgetMount.showMain,
     )
 }
 
@@ -770,6 +947,20 @@ private fun BadgeCounts.forWindow(route: WorkspaceRoute, homeState: HomeUiState)
  * was closed or torn off.
  */
 @Composable
+private fun CalendarRealtime(ready: AppGraph.Ready, calendar: CalendarViewModel?) {
+    if (calendar == null) return
+
+    LaunchedEffect(ready, calendar) {
+        calendarRealtime(ready.socketEvents).collect { kind ->
+            calendar.onEvent(CalendarEvent2Event.Realtime(kind))
+        }
+    }
+}
+
+/**
+ * Feeds the board's socket events into the notice feed.
+ */
+@Composable
 private fun HomeRealtime(ready: AppGraph.Ready, feed: HomeFeedViewModel?) {
     if (feed == null) return
 
@@ -837,8 +1028,13 @@ private fun EmailRealtime(ready: AppGraph.Ready, mailbox: EmailViewModel?) {
  * unread called zero.
  */
 @Composable
-private fun DockBadge(ready: AppGraph.Ready) {
-    val total = ready.badgeStore.counts.collectAsState().value.total
+private fun DockBadge(ready: AppGraph.Ready, viewModels: AppViewModels) {
+    val counts by ready.badgeStore.counts.collectAsState()
+    // The rail's C&C number, not the ledger's raw section: the rail also drops
+    // rooms `chat-room` no longer lists, and the dock must not disagree with it.
+    val chatState by (viewModels.chat?.state
+        ?: MutableStateFlow(com.zillit.desktop.feature.chat.ui.ChatUiState())).collectAsState()
+    val total = counts.totalWith(BadgeSections.CNC, chatState.chatsBadge + chatState.callsBadge)
     LaunchedEffect(total) {
         runCatching {
             val taskbar = java.awt.Taskbar.getTaskbar()
@@ -909,37 +1105,78 @@ private fun BadgeRefresh(ready: AppGraph.Ready, signedIn: Boolean) {
     // socket event on the shared connection (found in QA: badges kept
     // arriving after logout). Keying on `signedIn` cancels both effects.
     if (!signedIn) return
-    // The socket only ever says "changed" — someone must ask first; the
-    // asking is ProjectScopedLoads' (counts need a production in the
-    // headers — asked earlier the server answers 406).
-    // A reconnect may have swallowed any number of change events; what the
-    // counts are now is a question only the server can answer.
+    // The socket's frames are applied to the ledger as they arrive (see
+    // HomeWiring); a seed asks the server only for rows updated since the
+    // ledger's newest, so it is cheap enough to run on every doubt. A
+    // reconnect may have swallowed any number of frames, so it seeds.
     val socketState by ready.socketEvents.connectionState.collectAsState()
     LaunchedEffect(socketState.isConnected) {
-        if (socketState.isConnected) ready.badgeStore.refresh()
+        if (socketState.isConnected) ready.seedBadges()
     }
+    LaunchedEffect(ready) { badgeSocketEffects(ready) }
     LaunchedEffect(ready) {
-        // A burst of `notification:save` (one per record) must cost one
-        // refetch, not one each — but a *sustained* stream must not starve
-        // the refetch either, which is what a plain trailing debounce did.
-        // So: coalesce arrivals inside a window, refetch once per window.
+        // Coalesce the doubts inside a window, seed once per window.
         val arrivals = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
         launch {
-            // Missed calls ride their own event, not `notification:save` —
-            // iOS increments its CnC count directly off it. See
-            // `Calls.MissedCall`.
-            val moved = ZillitSocketEvents.Badges.All + ZillitSocketEvents.Calls.MissedCall
+            // Cross-device pings carry no records, and a missed call rides
+            // its own event with no `notification:save` behind it — the
+            // ledger learns of both from the next page.
+            val moved = listOf(
+                ZillitSocketEvents.Badges.ReadSync,
+                ZillitSocketEvents.Badges.DeleteSync,
+                ZillitSocketEvents.Badges.DeleteGlobalSync,
+                ZillitSocketEvents.Calls.MissedCall,
+            )
             ready.socketEvents.onAny(moved).collect { arrivals.trySend(Unit) }
+        }
+        // Reads on another device reach the ledger as `notification:silent`
+        // read ids, as they reach the phones. The server has never sent this
+        // socket the `notification:read:sync` the phones also refetch on, so
+        // two stand-ins remain: a seed when any Zillit window becomes active
+        // again — the moment a person looks back from their phone — and a
+        // slow tick while a badge is showing; a row read elsewhere comes back
+        // read on the next page.
+        launch { windowActivations().collect { arrivals.trySend(Unit) } }
+        // A thread read on the phone: the room-level read-until frame, which
+        // Android applies to its ledger by conversation
+        // (`ChatSocketHelper.kt:1288-1400`) — the same act here.
+        launch {
+            ready.chatRepository.selfReads.collect { conversationId ->
+                ready.badgeStore.markRead(LedgerRead.Conversation(conversationId))
+            }
+        }
+        launch {
+            while (true) {
+                delay(BADGE_POLL_MILLIS)
+                if (socketState.isConnected && !ready.badgeStore.counts.value.isEmpty) arrivals.trySend(Unit)
+            }
         }
         for (@Suppress("UNUSED_VARIABLE") signal in arrivals) {
             delay(BADGE_EVENT_SETTLE_MILLIS)
-            ready.badgeStore.refresh()
+            ready.seedBadges()
         }
     }
 }
 
+/** The page of rows the ledger has not seen, for the open production. */
+private suspend fun AppGraph.Ready.seedBadges() {
+    val projectId = badgeStore.openProjectId ?: return
+    badgeSeeder.seed(projectId)
+}
+
+/** Emits each time one of this app's windows becomes the active window. */
+private fun windowActivations(): kotlinx.coroutines.flow.Flow<Unit> = kotlinx.coroutines.flow.callbackFlow {
+    val manager = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
+    val listener = java.beans.PropertyChangeListener { event -> if (event.newValue != null) trySend(Unit) }
+    manager.addPropertyChangeListener("activeWindow", listener)
+    awaitClose { manager.removePropertyChangeListener("activeWindow", listener) }
+}
+
 /** Coalesces a burst of notification events into one counts refetch. */
 private const val BADGE_EVENT_SETTLE_MILLIS = 600L
+
+/** How often a lit badge is re-asked about, in case a read elsewhere was never announced. */
+private const val BADGE_POLL_MILLIS = 60_000L
 
 /**
  * Rereads the tool grid when the production's tool set moves under it — a
@@ -970,17 +1207,11 @@ private fun ProjectScopedLoads(
     projectId: String?,
     viewModels: AppViewModels,
     workspace: WorkspaceViewModel,
-    badges: BadgeStore? = null,
 ) {
-    // Counts belong to a production: the previous one's numbers are wrong the
-    // moment a different project opens, and showing them while the fetch is
-    // out would badge the new production with the old one's unread. Cleared
-    // here; fetched by the graph's open sequence once the headers carry the
-    // new project — a fetch from here raced that and doubled the requests.
-    LaunchedEffect(projectId) {
-        if (projectId == null) return@LaunchedEffect
-        badges?.clear()
-    }
+    // Counts belong to a production, and the graph's open sequence swaps the
+    // ledger to the new one's rows (`BadgeStore.open`). Not cleared here as
+    // well: a clear that landed after that swap emptied the rail until the
+    // next production open, and a swap cannot be caught the other way round.
     // Every screen here holds a production's data. The view models outlive a
     // switch — they are built once per graph — so each one is told, rather
     // than only the two that used to be, which left the previous production's
@@ -1080,10 +1311,11 @@ private fun BackgroundWork(
     AuthEffects(authViewModel, createViewModel, joinViewModel)
     BadgeRefresh(ready, signedIn = auth.step == AuthStep.Complete)
     ToolsRefresh(ready, viewModels.home)
-    DockBadge(ready)
+    DockBadge(ready, viewModels)
     ApprovalCounts(viewModels)
     ToolReadOnFocus(ready, viewModels, workspace)
     HomeRealtime(ready, viewModels.homeFeed)
+    CalendarRealtime(ready, viewModels.calendar)
     EmailRealtime(ready, viewModels.email)
     BoardRealtime(ready, "info", viewModels.info)
     BoardRealtime(ready, "confidentialinfo", viewModels.confidentialInfo)
@@ -1181,23 +1413,28 @@ private fun ZillitContent(
 
     // Rights are per production. Reloading on switch rather than rebuilding the
     // ViewModel keeps one owner of the permission set for the session.
-    ProjectScopedLoads(authState.activeProject?.id, viewModels, workspaceViewModel, ready.badgeStore)
+    ProjectScopedLoads(authState.activeProject?.id, viewModels, workspaceViewModel)
 
     BackgroundWork(ready, authViewModel, createViewModel, joinViewModel, viewModels, workspaceViewModel)
 
-    if (authState.step == AuthStep.Complete) {
-        SignedInShell(ready, registry, viewModels, workspaceViewModel, authViewModel, themeMode, onThemeModeChange)
-    } else {
-        AuthScreen(
-            viewModel = authViewModel,
-            // The production list carries the theme toggle, as on the web —
-            // it is the first screen a signed-in user sees, and the shell is
-            // not reachable until they pick a production.
-            themeMode = themeMode,
-            onThemeModeChange = onThemeModeChange,
-            createViewModel = createViewModel,
-            joinViewModel = joinViewModel,
-        )
+    Box {
+        if (authState.step == AuthStep.Complete) {
+            SignedInShell(ready, registry, viewModels, workspaceViewModel, authViewModel, themeMode, onThemeModeChange)
+        } else {
+            AuthScreen(
+                viewModel = authViewModel,
+                // The production list carries the theme toggle, as on the web —
+                // it is the first screen a signed-in user sees, and the shell is
+                // not reachable until they pick a production.
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                createViewModel = createViewModel,
+                joinViewModel = joinViewModel,
+            )
+        }
+        // Above either screen: the startup notification-permission check, as
+        // the phones make it, whatever the person is looking at.
+        NotificationPermissionPrompt()
     }
 }
 
@@ -1223,17 +1460,7 @@ private fun SignedInShell(
     val scope = rememberCoroutineScope()
     val syncStatus by (ready.syncEngine?.status ?: MutableStateFlow(SyncStatus())).collectAsState()
     var pendingChangesOpen by remember { mutableStateOf(false) }
-
-    // Once at sign-in, then every six hours. A desktop app stays open for
-    // days, so a launch-only check leaves someone on a stale build for a
-    // week; six hours is well inside Remote Config's own SDK default.
-    var updateStatus by remember { mutableStateOf<UpdateStatus>(UpdateStatus.Unknown) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            updateStatus = ready.appUpdateChecker.check()
-            delay(UPDATE_CHECK_INTERVAL_MILLIS)
-        }
-    }
+    val updateStatus = rememberUpdateStatus(ready)
 
     // Whether the rail offers Admin at all, and what is waiting behind it.
     // Read from the settings state rather than the project: it is the same
@@ -1288,6 +1515,10 @@ private fun SignedInShell(
         )
 
         CallSurface(ready, viewModels.calls)
+        // Answers every module's "ask an admin for this right" — the phones'
+        // flow, hosted once here because no tool window can float a dialog
+        // over the frame or reach the chat socket.
+        RightsRequestSurface(ready, ready.rightsRequests)
         ready.syncEngine?.let { engine ->
             PendingChangesDialog(
                 engine = engine,
@@ -1297,6 +1528,23 @@ private fun SignedInShell(
             )
         }
     }
+}
+
+/**
+ * The update check: once at sign-in, then every six hours. A desktop app
+ * stays open for days, so a launch-only check leaves someone on a stale
+ * build for a week; six hours is well inside Remote Config's own SDK default.
+ */
+@Composable
+private fun rememberUpdateStatus(ready: AppGraph.Ready): UpdateStatus {
+    var updateStatus by remember { mutableStateOf<UpdateStatus>(UpdateStatus.Unknown) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            updateStatus = ready.appUpdateChecker.check()
+            delay(UPDATE_CHECK_INTERVAL_MILLIS)
+        }
+    }
+    return updateStatus
 }
 
 /**
@@ -1403,18 +1651,39 @@ private fun buildMailbox(ready: AppGraph.Ready): EmailViewModel {
  * slow half — poster extraction, then the routed store — after the thread
  * has its bubble up, reporting percent into the bubble's bar.
  */
-private suspend fun pickChatAttachment(
+internal suspend fun pickChatAttachment(
     ready: AppGraph.Ready,
+    kind: com.zillit.desktop.core.media.PreviewKind? = null,
+    /** Where the bytes go — another production's storage for a widget on one. */
+    capture: com.zillit.desktop.feature.home.ui.MediaCapture = homeMediaCapture(ready),
 ): com.zillit.desktop.feature.chat.domain.ChatPick {
     // Chat's own ceiling, not mail's 25 MB: both other clients carry files up
     // to 70 MB, and a desktop that stops at 25 refuses what a phone sends.
     var refusal: String? = null
-    val picked = com.zillit.desktop.feature.email.data.FilePicker(
-        maxBytes = com.zillit.desktop.feature.chat.domain.ChatComposerRules.MAX_ATTACHMENT_BYTES,
-        onRefused = { _, _ ->
-            refusal = com.zillit.desktop.feature.chat.domain.ChatComposerRules.ATTACHMENT_TOO_LARGE
-        },
-    ).pick().firstOrNull()
+    val picked = if (kind == null) {
+        com.zillit.desktop.feature.email.data.FilePicker(
+            maxBytes = com.zillit.desktop.feature.chat.domain.ChatComposerRules.MAX_ATTACHMENT_BYTES,
+            onRefused = { _, _ ->
+                refusal = com.zillit.desktop.feature.chat.domain.ChatComposerRules.ATTACHMENT_TOO_LARGE
+            },
+        ).pick().firstOrNull()?.let { PickedBytes(it.name, it.contentType, it.bytes) }
+    } else {
+        // The attach sheet's kind: the same 70 MB ceiling, plus a wrong-kind
+        // refusal the phones word as "Please select a valid file type".
+        attachmentPicker.pick(
+            kind = kind,
+            multiple = false,
+            maxBytes = com.zillit.desktop.feature.chat.domain.ChatComposerRules.MAX_ATTACHMENT_BYTES,
+            onRefused = { why ->
+                refusal = when (why) {
+                    is com.zillit.desktop.core.media.PickRefusal.TooLarge ->
+                        com.zillit.desktop.feature.chat.domain.ChatComposerRules.ATTACHMENT_TOO_LARGE
+                    is com.zillit.desktop.core.media.PickRefusal.WrongKind ->
+                        com.zillit.desktop.feature.chat.domain.ChatComposerRules.ATTACHMENT_REFUSED_TYPE
+                }
+            },
+        ).firstOrNull()?.let { PickedBytes(it.name, it.contentType, it.bytes) }
+    }
 
     val reason = refusal
     if (picked == null) {
@@ -1431,7 +1700,7 @@ private suspend fun pickChatAttachment(
             contentType = picked.contentType,
             bytes = picked.bytes,
         ) { bytes, onProgress ->
-            uploadChatMedia(ready, picked.name, picked.contentType, bytes, onProgress)
+            uploadChatMedia(ready, picked.name, picked.contentType, bytes, onProgress, capture)
         },
     )
 }
@@ -1448,8 +1717,10 @@ internal suspend fun uploadChatMedia(
     contentType: String,
     bytes: ByteArray,
     onProgress: (Int) -> Unit,
+    /** Where the bytes go — another production's storage for a widget on one. */
+    capture: com.zillit.desktop.feature.home.ui.MediaCapture = homeMediaCapture(ready),
 ): ChatAttachment? {
-    val media = homeMediaCapture(ready)
+    val media = capture
     val withPoster = media.videoThumbnail(
         com.zillit.desktop.feature.home.domain.PickedMedia(
             name = name,
@@ -1516,6 +1787,11 @@ private fun mailProvider(
         crew = { ready.projectContext?.context?.value?.crewContacts().orEmpty() },
         uploader = ready.attachmentUploader,
         chooseFiles = { FilePicker().pick() },
+        chooseFilesOf = { kind ->
+            attachmentPicker.pick(kind).map {
+                com.zillit.desktop.feature.email.domain.PickedFile(it.name, it.contentType, it.bytes)
+            }
+        },
         newAttachmentId = { UUID.randomUUID().toString() },
         // Reply-all drops this address, so a reply never goes to the person
         // sending it.
@@ -1577,6 +1853,13 @@ private fun driveProvider(
             if (picked.isNotEmpty()) report(picked)
         }
     },
+    // Paths, not bytes — a Drive upload can be 10 GB.
+    onPickFilesOf = { kind, report ->
+        scope.launch {
+            val picked = attachmentPicker.pickPaths(kind).map { it.toDrivePick() }
+            if (picked.isNotEmpty()) report(picked)
+        }
+    },
     onCopy = ::copyToClipboard,
     onOpenEditor = { url, fileName ->
         DocumentEditorWindow.open(
@@ -1629,6 +1912,15 @@ private suspend fun sectionSplit(ready: AppGraph.Ready, section: String, groupBy
         is ZillitResult.Failure -> null
     }
 
+/** The picker's seed: the last production opened here, else the first the cache lists. */
+private suspend fun seedFromLastProduction(ready: AppGraph.Ready) {
+    val known = ready.projectListCache?.let(::CachedProjectList)?.load().orEmpty()
+    val lastId = ready.preferences.get(ZillitPreferences.LastProjectId)
+    val project = known.firstOrNull { it.id == lastId } ?: known.firstOrNull() ?: return
+    val userId = project.userId?.takeIf { it.isNotBlank() } ?: return
+    ready.badgeSeeder.seed(project.id, userId)
+}
+
 /**
  * `GET device/unread` — unread per production, before any is open.
  *
@@ -1638,6 +1930,18 @@ private suspend fun sectionSplit(ready: AppGraph.Ready, section: String, groupBy
  * response shape immediately; unknown rows count nothing rather than fail.
  */
 private suspend fun fetchProjectUnread(ready: AppGraph.Ready): Map<String, Int> {
+    // Android's foreground fetch (`ZillitApplication.onStart` → `callBadgesApi`):
+    // one listing call under the last production's headers, before anything
+    // is open — the listing is user-wide, so it fills every production's
+    // rows. Then the ledger, as the phones' picker groups their own rows by
+    // production and never asks the server. The server's answer stands in
+    // only while the ledger is still empty.
+    seedFromLastProduction(ready)
+    val ledger = ready.badgeStore.projectCounts(ready.deviceId())
+    if (ledger.isNotEmpty()) {
+        ZillitLog.d("Badges") { "picker counts from ledger: $ledger" }
+        return ledger
+    }
     val rows = ready.apiClient.request(
         verb = com.zillit.desktop.core.network.HttpVerb.Get,
         url = "${ready.config.apiV2(com.zillit.desktop.core.config.ZillitService.Notification)}device/unread",
@@ -1657,6 +1961,7 @@ private suspend fun fetchProjectUnread(ready: AppGraph.Ready): Map<String, Int> 
             ?.content?.toIntOrNull() ?: 0
         if (unread > 0) counts[id] = (counts[id] ?: 0) + unread
     }
+    ZillitLog.d("Badges") { "picker counts from device/unread: $counts" }
     if (counts.isEmpty() && data.isNotEmpty()) {
         ZillitLog.w("Badges") {
             "device/unread rows carried no project ids (keys=${
@@ -1676,10 +1981,18 @@ private fun chatProvider(
     calls: CallViewModel?,
     audioPlayer: com.zillit.desktop.core.designsystem.component.AudioPlayer?,
     canDownload: () -> Boolean = { true },
+    /** One pane at a time — the Chat widget's copy. */
+    compact: Boolean = false,
+    onOpenWidget: (() -> Unit)? = null,
 ) = ChatToolProvider(
+    compact = compact,
+    onOpenWidget = onOpenWidget,
     player = audioPlayer,
     loadAudio = { file -> fetchChatAudio(ready, file) },
     canDownload = canDownload,
+    // Chat & Calls is a tool like any other, so a missing download right is
+    // something an admin can grant — the refusal offers to ask for it.
+    requestDownloadRights = { ready.rightsRequests.ask("Chat & Calls", RightsKind.Download) },
     // The keep-name-private honour is applied here, before the screen ever
     // sees the list — the same rule Android's members tab keeps.
     crew = {
@@ -1715,8 +2028,11 @@ private fun chatProvider(
     selfId = { ready.projectContext?.context?.value?.profile?.userId },
     loadAvatar = { userId -> fetchAvatar(ready, userId)?.let(::decodeImageBitmap) },
     viewModel = viewModel,
+    // Which lines the call buttons offer: the two every production has, and
+    // Line 3 where remote config lists this one.
+    lines = { ready.callLines(ready.projectContext?.context?.value?.project?.projectId) },
     onCall = calls?.let { vm ->
-        { peer, isGroup, video, mediasoup ->
+        { peer, isGroup, video, line ->
             vm.onEvent(
                 CallEvent.Place(
                     // A group is rung by its room; a person by their device.
@@ -1725,7 +2041,7 @@ private fun chatProvider(
                     mode = if (isGroup) CallMode.Group else CallMode.Private,
                     type = if (video) CallType.Video else CallType.Audio,
                     displayName = peer.fullName,
-                    provider = if (mediasoup) CallProvider.Mediasoup else CallProvider.Agora,
+                    provider = line.toProvider(),
                     // Line 1 rings a person rather than one of their devices
                     // — and a group has no person to name. For a group `peer`
                     // IS the room, so passing its id here would put a room id
@@ -2149,7 +2465,18 @@ internal class AppViewModels(
  * a server entry. Zillit Draft keeps its scripts on this machine, so it is on
  * every production and needs no rights.
  */
-private fun localToolSections(): List<ToolSection> = listOf(
+/**
+ * Whether Zillit Draft appears on the tools grid.
+ *
+ * Off for now, and **hidden rather than removed**: the module, its route, its
+ * view model and its provider all stay wired, so a workspace tab already open
+ * on it keeps working and turning the tile back on is this one flag. The
+ * section below is left whole for the same reason — there is nothing to
+ * reconstruct when it returns.
+ */
+private const val SHOW_ZILLIT_DRAFT = false
+
+private fun localToolSections(): List<ToolSection> = listOfNotNull(
     ToolSection(
         title = "Writing",
         tools = listOf(
@@ -2161,7 +2488,7 @@ private fun localToolSections(): List<ToolSection> = listOf(
             ),
         ),
         identifier = null,
-    ),
+    ).takeIf { SHOW_ZILLIT_DRAFT },
 )
 
 /**
@@ -2211,6 +2538,7 @@ private fun rememberAppViewModels(
                     // The same picker and routed uploader mail and the board
                     // use; the stored key rides the message envelope.
                     pickAttachment = { pickChatAttachment(it) },
+                    pickAttachmentOf = { kind -> pickChatAttachment(it, kind) },
                     // Pasted images take the same route to storage.
                     uploadMedia = { name, type, bytes, onProgress ->
                         uploadChatMedia(it, name, type, bytes, onProgress)
@@ -2231,11 +2559,10 @@ private fun rememberAppViewModels(
                     },
                     // Chat reads ride the chat protocol itself (read-untill,
                     // emitted by the repository) — `notification:read` is not
-                    // chat's clearing mechanism on any client. This hook only
-                    // refetches the counts once the server has the read.
-                    onThreadRead = { _ ->
-                        delay(READ_BADGE_SETTLE_MILLIS)
-                        it.badgeStore.refresh()
+                    // chat's clearing mechanism on any client. The ledger is
+                    // told by conversation, as Android's `markReadyByChatRoomIdSenderId`.
+                    onThreadRead = { conversationId ->
+                        it.badgeStore.markRead(LedgerRead.Conversation(conversationId))
                     },
                     // The area's split by tool: chat_label / call_label —
                     // what the Chats and Calls tabs wear.
@@ -2367,6 +2694,7 @@ private fun rememberAppViewModels(
                         graph.projectContext?.context?.value?.profile?.userId.orEmpty()
                     },
                     newId = { UUID.randomUUID().toString() },
+                    rights = graph.rightsRequests,
                 )
             },
             esignature = ready?.let { graph ->
@@ -2388,6 +2716,7 @@ private fun rememberAppViewModels(
                     },
                     signerOptions = { graph.esignSignerOptions() },
                     newId = { UUID.randomUUID().toString() },
+                    rights = graph.rightsRequests,
                 )
             },
             callSheet = ready?.let { graph ->
@@ -2460,6 +2789,7 @@ private fun rememberAppViewModels(
                             graph.projectContext?.context?.value?.project?.projectId
                         },
                     ),
+                    rights = graph.rightsRequests,
                 )
             },
             info = ready?.boardFeed(
@@ -2554,6 +2884,7 @@ private fun rememberAppViewModels(
                     repository = graph.docDistRepository,
                     viewer = { graph.docDistViewer(permissions()) },
                     today = ::today,
+                    rights = graph.rightsRequests,
                 )
             },
             drive = ready?.let { graph ->
@@ -2565,6 +2896,7 @@ private fun rememberAppViewModels(
                     // MultipartDriveUploader.
                     uploader = MultipartDriveUploader(graph.driveRepository, graph.httpClient),
                     newUploadId = { UUID.randomUUID().toString() },
+                    rights = graph.rightsRequests,
                 ).also(driveHolder::set)
             },
         )
@@ -2578,7 +2910,9 @@ private fun buildRegistry(
     scope: CoroutineScope,
     /** Opens the desktop Drive widget — offered from the Drive tool's header. */
     openDriveWidget: () -> Unit,
-): ToolRegistry {
+    /** Opens a tool widget from the tool itself — the Drive header's button, for the other two. */
+    openWidget: (ZillitWidget) -> Unit,
+): AppTools {
     val homeViewModel = viewModels.home
     val chatViewModel = viewModels.chat
     // One speaker for the whole app: the board pausing when a chat voice
@@ -2687,7 +3021,7 @@ private fun buildRegistry(
         com.zillit.desktop.feature.distribution.ui.DistributionToolProvider(it)
     }
     val crewList = viewModels.crewList?.let {
-        com.zillit.desktop.feature.crewlist.ui.CrewListToolProvider(it)
+        CrewListToolProvider(it, onOpenWidget = { openWidget(ZillitWidget.Crew) })
     }
     val assetRegister = viewModels.assetRegister?.let {
         com.zillit.desktop.feature.assetreport.ui.AssetToolProvider(it)
@@ -2810,19 +3144,8 @@ private fun buildRegistry(
     }
     val chat = (graph as? AppGraph.Ready)?.let {
         chatProvider(
-            it, chatViewModel, viewModels.calls, audioPlayer,
-            // The C&C tool's download right (Android gates saves with
-            // msg_download_right on the same flag). A production whose tools
-            // list never mentions the tool leaves chat ungated, as the
-            // phones' chat page is.
-            canDownload = canDownload@{
-                val permissions = viewModels.home?.state?.value?.permissions
-                    ?: return@canDownload true
-                if (permissions.tools.none { tool -> tool.identifier == CNC_TOOL_IDENTIFIER }) {
-                    return@canDownload true
-                }
-                permissions.canDownload(CNC_TOOL_IDENTIFIER)
-            },
+            it, chatViewModel, viewModels.calls, audioPlayer, cncDownloadRight(viewModels),
+            onOpenWidget = { openWidget(ZillitWidget.Chat) },
         )
     }
     val signatures = (graph as? AppGraph.Ready)?.let {
@@ -2846,6 +3169,10 @@ private fun buildRegistry(
             crew = { ready.projectContext?.context?.value?.crewContacts().orEmpty() },
             isAdmin = { ready.projectContext?.context?.value?.isAdmin == true },
             onCopy = ::copyToClipboard,
+            // Email rules: a Move action picks from the mailbox's folders, a Save
+            // action browses the Drive one folder level at a time.
+            folders = { ready.emailRepository.folders() },
+            driveFolders = DriveFolderSource { parent -> ready.driveFolderOptions(parent) },
         )
     }
     val mailContacts = (graph as? AppGraph.Ready)?.let { ready ->
@@ -2855,10 +3182,12 @@ private fun buildRegistry(
     val sos = (graph as? AppGraph.Ready)?.let { ready ->
         SosToolProvider(
             viewModel = SosViewModel(
-                repository = SosRepositoryImpl(ready.apiClient, ready.config),
+                repository = SosRepositoryImpl(ready.apiClient, ready.config).readingLedger(ready.badgeStore),
                 nowMillis = System::currentTimeMillis,
                 viewer = { ready.projectContext?.context?.value.sosViewer() },
                 crew = { ready.projectContext?.context?.value.sosCrew() },
+                // An alarm raised on set must not wait for a refresh.
+                events = ready.socketEvents,
             ),
             onOpenLink = ::openInBrowser,
             // An ordinary private call. Nothing about the wire is special —
@@ -2887,8 +3216,9 @@ private fun buildRegistry(
                 repository = ready.notificationsRepository,
                 nowMillis = System::currentTimeMillis,
                 // Reading the list is what marks the global segment read on
-                // the phones; the badge store hears about it on the next poll.
-                onListRead = { ready.badgeStore.refresh() },
+                // the phones; the repository's read already flips the ledger
+                // (see `readingLedger`), so nothing more is owed here.
+                onListRead = {},
             ),
         )
     }
@@ -3030,7 +3360,43 @@ private fun buildRegistry(
         scheduleDistribution, scriptDistribution, scheduleDod,
     ) + castingTools + wardrobeTools + saPortal
     val realPaths = real.map { it.path }.toSet()
-    return ToolRegistry(real + placeholderTools().filterNot { it.path in realPaths })
+    return AppTools(
+        registry = ToolRegistry(real + placeholderTools().filterNot { it.path in realPaths }),
+        // The widgets' own copies: the same ViewModels — and the same single
+        // audio player — in their one-pane shape. Built here because that is
+        // where those instances live; building them outside would mint a
+        // second speaker and a second chat.
+        chatWidget = chatViewModel?.let {
+            chatProvider(
+                graph as AppGraph.Ready, it, viewModels.calls, audioPlayer,
+                canDownload = cncDownloadRight(viewModels),
+                compact = true,
+            )
+        },
+        crewWidget = viewModels.crewList?.let { CrewListToolProvider(it, compact = true) },
+    )
+}
+
+/** The registry, plus the compact providers the Chat and Crew List widgets show. */
+private class AppTools(
+    val registry: ToolRegistry,
+    val chatWidget: ToolProvider?,
+    val crewWidget: ToolProvider?,
+)
+
+/**
+ * The C&C tool's download right (Android gates saves with `msg_download_right`
+ * on the same flag). A production whose tools list never mentions the tool
+ * leaves chat ungated, as the phones' chat page is.
+ *
+ * Shared by the rail's chat and the widget's, so one grid change moves both.
+ */
+private fun cncDownloadRight(viewModels: AppViewModels): () -> Boolean = canDownload@{
+    val permissions = viewModels.home?.state?.value?.permissions ?: return@canDownload true
+    if (permissions.tools.none { tool -> tool.identifier == CNC_TOOL_IDENTIFIER }) {
+        return@canDownload true
+    }
+    permissions.canDownload(CNC_TOOL_IDENTIFIER)
 }
 
 /**
@@ -3104,7 +3470,7 @@ private fun callSupport(
             ?.id
             .orEmpty()
         when {
-            userId.isBlank() -> "Open a production first, then call support."
+            userId.isBlank() -> "Open a project first, then call support."
             // A blank receiver is dropped from the request body, so this would
             // place a call nobody was ever invited to.
             primary.isBlank() -> {
@@ -3188,13 +3554,31 @@ private fun notificationSettings(
     mail = preferences.observe(ZillitPreferences.NotifyMail),
     updates = preferences.observe(ZillitPreferences.NotifyUpdates),
     calls = preferences.observe(ZillitPreferences.NotifyCalls),
+    ringtone = preferences.observe(ZillitPreferences.RingOnIncomingCall),
     activity = preferences.observe(ZillitPreferences.NotifyActivity),
+    callWidget = preferences.observe(ZillitPreferences.CallWidget),
+    messageWidget = preferences.observe(ZillitPreferences.MessageWidget),
+    closeToTray = preferences.observe(ZillitPreferences.CloseToTray),
+    startAtLogin = preferences.observe(ZillitPreferences.StartAtLogin),
+    startAtLoginAvailable = LoginItem.available,
     setMuted = { muted -> scope.launch { preferences.set(ZillitPreferences.MuteNotifications, muted) } },
     setMessages = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyMessages, on) } },
     setMail = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyMail, on) } },
     setUpdates = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyUpdates, on) } },
     setCalls = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyCalls, on) } },
+    setRingtone = { on -> scope.launch { preferences.set(ZillitPreferences.RingOnIncomingCall, on) } },
     setActivity = { on -> scope.launch { preferences.set(ZillitPreferences.NotifyActivity, on) } },
+    setCallWidget = { on -> scope.launch { preferences.set(ZillitPreferences.CallWidget, on) } },
+    setMessageWidget = { on -> scope.launch { preferences.set(ZillitPreferences.MessageWidget, on) } },
+    setCloseToTray = { on -> scope.launch { preferences.set(ZillitPreferences.CloseToTray, on) } },
+    setStartAtLogin = { on -> scope.launch { LoginItem.sync(preferences, on) } },
+    // The widgets' switches, read and written where the tray and the windows
+    // read and write them — the preference file, not a copy.
+    widgets = widgetToggles(preferences),
+    setWidget = { id, on ->
+        ZillitWidget.entries.firstOrNull { it.name == id }
+            ?.let { widget -> scope.launch { preferences.set(widget.keys.open, on) } }
+    },
 )
 
 private fun buildSettings(
@@ -3252,7 +3636,14 @@ private fun buildSettings(
             // event production runs no shooting units, and both phone clients
             // drop those rows rather than offer a unit that cannot exist.
             admin = AdminSettingsUiState(
-                production = productionFacts(context?.project?.name, context?.project?.type),
+                production = productionFacts(
+                    name = context?.project?.name,
+                    type = context?.project?.type,
+                    // Set only when this production is itself a remote unit,
+                    // which cannot spawn units of its own.
+                    parentName = context?.project?.parentName,
+                    markedForDeletion = context?.project?.markedForDeletion == true,
+                ),
             ),
         ),
     )
@@ -3306,6 +3697,9 @@ private fun buildAccount(ready: AppGraph.Ready): AccountViewModel =
                 // The untranslated key, which is what the privacy toggle gates on.
                 designationName = profile?.designationName,
                 keepNamePrivate = profile?.keepNamePrivate == true,
+                showMailboxInCrewList = profile?.showMailboxInCrewList ?: true,
+                mailboxAddress = profile?.mailboxAddress,
+                isPersonal = context.project?.type.equals(PERSONAL_PRODUCTION, ignoreCase = true),
                 // A personal production has one member, who runs it — the web
                 // makes the same substitution rather than reading the flag.
                 isAdmin = context.isAdmin ||
@@ -3318,6 +3712,9 @@ private fun buildAccount(ready: AppGraph.Ready): AccountViewModel =
 
 /** `project_type` for a personal production, whose only member administers it. */
 private const val PERSONAL_PRODUCTION = "personal"
+
+/** What either chat picker hands on: the same three fields, whichever dialog opened. */
+private class PickedBytes(val name: String, val contentType: String, val bytes: ByteArray)
 
 /** Asking to join a production: code lookup, details, request. */
 private fun buildJoin(ready: AppGraph.Ready) = JoinProductionViewModel(
@@ -3416,3 +3813,53 @@ private const val GLOBAL_BADGE_SEGMENT = "global_label"
 private const val SOS_BADGE_SEGMENT = "sos_label"
 
 private const val CRASH_TAG = "Crash"
+
+/** The Drive's folders under [parentId] (null = the root), as the email-rules picker lists them. */
+private suspend fun AppGraph.Ready.driveFolderOptions(parentId: String?): ZillitResult<List<DriveFolderOption>> =
+    driveRepository.contents(DriveQuery(folderId = parentId)).map { page ->
+        page.items.filter { it.kind == DriveItemKind.Folder }.map { DriveFolderOption(it.id, it.name) }
+    }
+
+/**
+ * The desktop widgets as Settings lists them, live from the preference file.
+ *
+ * Combined rather than one flow each so the section repaints once when a
+ * switch moves, wherever it was moved from.
+ */
+private fun widgetToggles(
+    preferences: PreferenceStore,
+): kotlinx.coroutines.flow.Flow<List<com.zillit.desktop.feature.settings.ui.WidgetToggle>> =
+    kotlinx.coroutines.flow.combine(
+        ZillitWidget.entries.map { widget -> preferences.observe(widget.keys.open) },
+    ) { open ->
+        ZillitWidget.entries.mapIndexed { index, widget ->
+            com.zillit.desktop.feature.settings.ui.WidgetToggle(
+                id = widget.name,
+                label = "${widget.label} widget",
+                detail = widget.widgetDetail,
+                on = open[index],
+            )
+        }
+    }
+
+/** What each widget's Settings row says it does. */
+private val ZillitWidget.widgetDetail: String
+    get() = when (this) {
+        ZillitWidget.Drive -> "A small window onto one project's drive — browse, upload and " +
+            "download beside whatever else you are working in. It can pick a project of its own."
+        ZillitWidget.Chat -> "Conversations and calls in a small window that stays on top, so a " +
+            "thread is one glance away while you work in something else."
+        ZillitWidget.Crew -> "The project's crew — names, roles, phone and email — in a small " +
+            "window you can search without leaving what you are doing."
+    }
+
+/** The chat module names a line by its wire word; the calls module by its provider. */
+internal fun CallLine.toProvider(): CallProvider = when (this) {
+    CallLine.One -> CallProvider.Mediasoup
+    CallLine.Two -> CallProvider.Agora
+    CallLine.Three -> CallProvider.LiveKit
+}
+
+/** The lines a production offers. Line 3 only where the roll-out list names it — see LineThreeGate. */
+internal fun AppGraph.Ready.callLines(projectId: String?): List<CallLine> =
+    if (lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.Three else CallLine.DEFAULT

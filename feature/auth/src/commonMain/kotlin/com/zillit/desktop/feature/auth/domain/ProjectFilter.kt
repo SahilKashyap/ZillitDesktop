@@ -8,7 +8,7 @@ package com.zillit.desktop.feature.auth.domain
  * apart.
  */
 enum class ProjectFilter(val label: String) {
-    All("All productions"),
+    All("All projects"),
     Entertainment("Entertainment"),
     Personal("Personal"),
     Favourites("Favourites"),
@@ -36,13 +36,15 @@ enum class ProjectFilter(val label: String) {
 fun List<Project>.filterProjects(
     query: String,
     filter: ProjectFilter,
+    /** Each production's badge — the ledger's number, not the listing's stale `unread` field. */
+    unread: (Project) -> Int = { it.unreadCount },
 ): List<Project> {
     val trimmed = query.trim()
 
     return asSequence()
         .filter(filter::matches)
         .filter { it.matchesQuery(trimmed) }
-        .sortedWith(PROJECT_ORDER)
+        .sortedWith(projectOrder(unread))
         .toList()
 }
 
@@ -54,16 +56,21 @@ private fun Project.matchesQuery(query: String): Boolean {
 }
 
 /**
- * Favourites first, then pending last, then alphabetical.
+ * Most unread first, then pending last, then favourites, then alphabetical.
  *
+ * Android's order, as the phone actually shows it: `ProjectListActivity`
+ * runs four stable sorts (name, favourite, unread, pending — 271-274) and
+ * its adapter then re-sorts by unread (`ProjectListAdapter.kt:189`), so
+ * unread ends up the primary key and the activity's order breaks ties.
  * Pending productions sink because they cannot be opened — leaving them
- * interleaved means the one production a user can actually enter may sit below
- * three they cannot. The web preserves server order, which puts them wherever
- * the backend happened to return them.
+ * interleaved means the one production a user can actually enter may sit
+ * below three they cannot.
  */
-private val PROJECT_ORDER = compareByDescending<Project> { it.isFavourite }
-    .thenBy { it.isPending }
-    .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+private fun projectOrder(unread: (Project) -> Int): Comparator<Project> =
+    compareByDescending<Project> { unread(it) }
+        .thenBy { it.isPending }
+        .thenByDescending { it.isFavourite }
+        .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
 
 /**
  * The ranges of [text] that match [query], for highlighting.

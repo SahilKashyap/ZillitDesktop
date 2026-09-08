@@ -42,6 +42,7 @@ data class NoticeDraft(
      * iOS `ProductionVC+Audio.swift:394`).
      */
     val replacePrevious: Boolean? = null,
+    val replaceChatId: String? = null,
 ) {
 
     val trimmed: String get() = text.trim()

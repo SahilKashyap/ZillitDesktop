@@ -87,7 +87,7 @@ fun ExternalUsersScreen(
                 },
             ) {
                 ZillitText(
-                    text = "The contact is removed from this production's directory.",
+                    text = "The contact is removed from this project's directory.",
                     style = ZillitTheme.typography.bodyMedium,
                     color = ZillitTheme.colors.textSecondary,
                 )
@@ -108,13 +108,13 @@ private fun Roster(state: ExternalUsersUiState, onEvent: (ExternalUsersEvent) ->
         ) {
             ZillitText(text = "External Users", style = ZillitTheme.typography.titleLarge)
             Spacer(Modifier.weight(1f))
-            if (state.viewer.canPost || state.viewer.isAdmin) {
-                ZillitButton(
-                    text = "Add User",
-                    leadingIcon = ZillitIcons.Add,
-                    onClick = { onEvent(ExternalUsersEvent.New) },
-                )
-            }
+            // Shown to everyone: without posting rights the press is answered
+            // by ExternalUsersViewModel.guardPost, which offers to ask an admin.
+            ZillitButton(
+                text = "Add User",
+                leadingIcon = ZillitIcons.Add,
+                onClick = { onEvent(ExternalUsersEvent.New) },
+            )
         }
 
         Row(

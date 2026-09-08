@@ -74,7 +74,12 @@ internal fun SendSheetDialog(
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textMuted,
                 )
-                state.members.forEach { member ->
+                when {
+                    state.approverEligibleIds == null -> SheetHint("Checking who holds posting rights…")
+                    state.approverCandidates.isEmpty() ->
+                        SheetHint("Nobody else on the crew holds posting rights for this tool.")
+                }
+                state.approverCandidates.forEach { member ->
                     ZillitCheckbox(
                         checked = member.userId in dialog.selectedIds,
                         onCheckedChange = { onEvent(ReportEvent.ToggleReviewer(member.userId)) },
@@ -181,4 +186,9 @@ internal fun SheetPdfOverlay(
             }
         }
     }
+}
+
+@Composable
+private fun SheetHint(text: String) {
+    ZillitText(text = text, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted)
 }

@@ -10,6 +10,8 @@ import com.zillit.desktop.feature.email.domain.ConversationViewRepository
  * a window of its own already, and the card opens it.
  */
 enum class EmailSettingsSection {
+    /** Inbox rules — `/v2/email-rules`. */
+    Rules,
     Groups,
     BccPresets,
     Forwarding,

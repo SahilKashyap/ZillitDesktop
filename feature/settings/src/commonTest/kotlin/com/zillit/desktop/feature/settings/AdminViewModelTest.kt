@@ -710,7 +710,7 @@ class AdminViewModelTest {
 
         assertTrue(
             repository.calls.isEmpty(),
-            "a non-admin changed the production: ${repository.calls}",
+            "a non-admin changed the project: ${repository.calls}",
         )
         assertNotNull(model.state.value.error)
     }

@@ -60,7 +60,7 @@ class AppShellTest {
         setShell()
 
         onNodeWithText("Zillit").assertIsDisplayed()
-        onNodeWithText("No production selected").assertIsDisplayed()
+        onNodeWithText("No project selected").assertIsDisplayed()
         onNodeWithText("0 open").assertIsDisplayed()
         onNodeWithText("Nothing open").assertIsDisplayed()
     }
@@ -155,9 +155,9 @@ class AppShellTest {
         var switched = 0
         setShell(onSwitchProject = { switched++ })
 
-        onNodeWithText("No production selected").performClick()
+        onNodeWithText("No project selected").performClick()
 
-        assertEquals(1, switched, "clicking the production name should offer the picker")
+        assertEquals(1, switched, "clicking the project name should offer the picker")
     }
 
     @Test

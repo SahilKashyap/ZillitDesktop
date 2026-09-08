@@ -235,7 +235,7 @@ sealed interface AdminConfirmation {
     data class RemoveDepartment(val id: String, val name: String) : AdminConfirmation {
         override val title = "Delete this department?"
         override val message =
-            "“$name” goes from this production. Crew filed under it keep their job title " +
+            "“$name” goes from this project. Crew filed under it keep their job title " +
                 "but lose their department until someone gives them a new one."
         override val confirmLabel = "Delete department"
     }
@@ -259,20 +259,20 @@ sealed interface AdminConfirmation {
     data class RemoveUnit(val kind: UnitKind, val id: String, val name: String) : AdminConfirmation {
         override val title = "Delete this unit?"
         override val message =
-            "“$name” goes from this production. Crew attached to it stop receiving its " +
+            "“$name” goes from this project. Crew attached to it stop receiving its " +
                 "call sheets and notices."
         override val confirmLabel = "Delete unit"
     }
 
     data class RemoveSos(val id: String, val name: String) : AdminConfirmation {
         override val title = "Remove this recipient?"
-        override val message = "$name stops being alerted when someone on this production raises an SOS."
+        override val message = "$name stops being alerted when someone on this project raises an SOS."
         override val confirmLabel = "Remove"
     }
 
     data class RemoveFromCrew(val userId: String, val deviceId: String, val name: String) :
         AdminConfirmation {
-        override val title = "Take this person off the production?"
+        override val title = "Take this person off the project?"
         override val message =
             "$name loses access to everything on it. They can be put back from this page, " +
                 "and nothing they posted is deleted."
@@ -284,13 +284,13 @@ sealed interface AdminConfirmation {
         override val title = "Make this person an administrator?"
         override val message =
             "$name will be able to change everything on this page — crew, departments, " +
-                "permissions — and to delete the production."
+                "permissions — and to delete the project."
         override val confirmLabel = "Grant admin rights"
     }
 
     data class ClearWatermark(val nothing: Unit = Unit) : AdminConfirmation {
         override val title = "Remove the watermark?"
-        override val message = "Documents this production sends out stop being stamped."
+        override val message = "Documents this project sends out stop being stamped."
         override val confirmLabel = "Remove watermark"
     }
 
@@ -307,7 +307,7 @@ sealed interface AdminConfirmation {
      * visible and the deletion can be called off until it elapses.
      */
     data class DeleteProduction(val hours: Int, val name: String) : AdminConfirmation {
-        override val title = "Delete this production in $hours hours?"
+        override val title = "Delete this project in $hours hours?"
         override val message =
             "Everything on “$name” goes, for everyone on it — every notice, document, " +
                 "timecard and message. It can be called off from this page until the " +

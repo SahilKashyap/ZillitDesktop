@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -99,7 +101,9 @@ fun ChatScreen(
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap? =
         { null },
     /** Rings the open thread; null hides the call buttons. */
-    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)? = null,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, line: CallLine) -> Unit)? = null,
+    /** Which lines the call buttons offer. */
+    lines: () -> List<CallLine> = { CallLine.DEFAULT },
     /** The call history pane; null hides the Calls tab. */
     callLog: (@Composable () -> Unit)? = null,
     /**
@@ -118,6 +122,14 @@ fun ChatScreen(
      * (`InfoSiderGroup.jsx:119,798`); null hides the affordance.
      */
     deleteRoom: (suspend (roomId: String) -> ZillitResult<Unit>)? = null,
+    /**
+     * One pane at a time instead of directory-beside-thread — what the Chat
+     * widget needs, and what the phones do at every size. The thread takes
+     * the whole window once something is picked, with a way back to the list.
+     */
+    compact: Boolean = false,
+    /** Opens the Chat widget; null inside the widget itself, and in tests. */
+    onOpenWidget: (() -> Unit)? = null,
 ) {
     val chatState = viewModel?.state?.collectAsState()?.value
     // Opens on Chats, as Android's pager does (ChatAndCall.kt:81-140 — page 0
@@ -130,9 +142,14 @@ fun ChatScreen(
 
     // A Box rather than the Row alone so the create-group dialog's scrim
     // covers the whole screen, not just the 320dp pane its button lives in.
+    // Compact shows the directory until something is picked, then the thread
+    // in its place. `peer` is a thread; `selectedId` a contact's card.
+    val detailOpen = chatState?.peer != null || selectedId != null
+    val showDirectory = !compact || !detailOpen
+
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         Row(Modifier.fillMaxSize()) {
-            DirectoryPane(
+            if (showDirectory) DirectoryPane(
                 crew = crew,
                 selfId = selfId,
                 tab = tab,
@@ -155,19 +172,19 @@ fun ChatScreen(
                 searchMessages = searchMessages,
                 deleteRoom = deleteRoom,
                 onNewGroup = ({ groupEditorOpen = true }).takeIf { createRoom != null },
+                modifier = if (compact) Modifier.fillMaxWidth() else Modifier.width(LIST_WIDTH),
+                compact = compact,
+                onOpenWidget = onOpenWidget,
             )
 
-            Box(
-                Modifier
-                    .width(HAIRLINE)
-                    .fillMaxHeight()
-                    .background(ZillitTheme.colors.border),
-            )
-
-            Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                DetailPane(
-                    chatState, viewModel, crew, selectedId, onOpenAttachment,
-                    loadAvatar, loadThumbnail, onCall, player, loadAudio,
+            if (!showDirectory || !compact) {
+                DetailSide(
+                    compact, chatState, viewModel, crew, selectedId, onOpenAttachment,
+                    loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
+                    onBack = {
+                        viewModel?.onEvent(ChatEvent.CloseThread)
+                        selectedId = null
+                    },
                 )
             }
         }
@@ -191,6 +208,107 @@ fun ChatScreen(
     }
 }
 
+/**
+ * The detail half: the thread or card, with the hairline that separates it
+ * from the directory when both are on screen, and the way back when they are
+ * not.
+ */
+@Composable
+@Suppress("LongParameterList")
+private fun RowScope.DetailSide(
+    compact: Boolean,
+    chatState: ChatUiState?,
+    viewModel: ChatViewModel?,
+    crew: List<CrewContact>,
+    selectedId: String?,
+    onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
+    loadAvatar: suspend (String) -> ImageBitmap?,
+    loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, line: CallLine) -> Unit)?,
+    lines: () -> List<CallLine>,
+    player: com.zillit.desktop.core.designsystem.component.AudioPlayer?,
+    loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray?,
+    onBack: () -> Unit,
+) {
+    if (!compact) {
+        Box(
+            Modifier
+                .width(HAIRLINE)
+                .fillMaxHeight()
+                .background(ZillitTheme.colors.border),
+        )
+    }
+
+    Column(Modifier.weight(1f).fillMaxHeight()) {
+        // Compact has no list beside the thread, so the way back to it has to
+        // live here.
+        if (compact) {
+            CompactBackRow(
+                title = chatState?.peer?.fullName
+                    ?: crew.firstOrNull { it.userId == selectedId }?.fullName.orEmpty(),
+                onBack = onBack,
+            )
+        }
+        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            DetailPane(
+                chatState, viewModel, crew, selectedId, onOpenAttachment,
+                loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
+            )
+        }
+    }
+}
+
+/**
+ * The pane's own title, and the way out to the widget.
+ *
+ * Not shown in the widget: its bar already names the tool, and a second
+ * heading in a 420px window is a line of chrome where a conversation could be.
+ */
+@Composable
+private fun DirectoryHeading(onOpenWidget: (() -> Unit)?) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitText(text = "Chat & Calls", style = ZillitTheme.typography.titleLarge)
+        if (onOpenWidget != null) {
+            Spacer(Modifier.weight(1f))
+            ZillitIconButton(
+                icon = ZillitIcons.Detach,
+                contentDescription = "Open the Chat widget",
+                onClick = onOpenWidget,
+            )
+        }
+    }
+}
+
+/**
+ * Compact's way back to the directory: the only affordance that changes
+ * between the two layouts, because the wide one never loses sight of the list.
+ */
+@Composable
+private fun CompactBackRow(title: String, onBack: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ZillitTheme.colors.surface)
+            .padding(horizontal = ZillitTheme.spacing.xs, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitIconButton(
+            icon = ZillitIcons.ChevronLeft,
+            contentDescription = "Back to conversations",
+            onClick = onBack,
+        )
+        ZillitText(
+            text = title.ifBlank { "Back" },
+            style = ZillitTheme.typography.titleSmall,
+            maxLines = 1,
+        )
+    }
+}
+
 /** The right pane: the open thread, a picked contact's card, or the invite. */
 @Composable
 @Suppress("LongParameterList")
@@ -202,7 +320,8 @@ private fun DetailPane(
     onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap?,
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?,
-    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)?,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, line: CallLine) -> Unit)?,
+    lines: () -> List<CallLine>,
     player: com.zillit.desktop.core.designsystem.component.AudioPlayer?,
     loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray?,
 ) {
@@ -211,7 +330,7 @@ private fun DetailPane(
         chatState?.peer != null && viewModel != null ->
             OpenThread(
                 chatState, viewModel, crew, onOpenAttachment,
-                loadAvatar, loadThumbnail, onCall, player, loadAudio,
+                loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
             )
 
         selected != null -> ContactCard(selected, loadAvatar) { contact ->
@@ -234,7 +353,8 @@ private fun OpenThread(
     onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap?,
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?,
-    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, mediasoup: Boolean) -> Unit)?,
+    onCall: ((peer: CrewContact, isGroup: Boolean, video: Boolean, line: CallLine) -> Unit)?,
+    lines: () -> List<CallLine>,
     player: com.zillit.desktop.core.designsystem.component.AudioPlayer? = null,
     loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray? =
         { null },
@@ -261,13 +381,14 @@ private fun OpenThread(
         player = player,
         loadAudio = loadAudio,
         onCall = onCall?.let { ring ->
-            { video, mediasoup ->
+            { video, line ->
                 chatState.peer?.let { open ->
-                    ring(open, chatState.peerIsGroup, video, mediasoup)
+                    ring(open, chatState.peerIsGroup, video, line)
                 }
                 Unit
             }
         },
+        lines = lines(),
     )
 }
 
@@ -311,16 +432,21 @@ private fun DirectoryPane(
     deleteRoom: (suspend (String) -> ZillitResult<Unit>)? = null,
     /** Opens the create-group dialog; null hides the affordance. */
     onNewGroup: (() -> Unit)?,
+    /** Its width: the fixed list column beside a thread, or the whole widget. */
+    modifier: Modifier = Modifier.width(LIST_WIDTH),
+    /** In a widget the bar above carries the name, so the pane drops its heading. */
+    compact: Boolean = false,
+    /** Opens the Chat widget, beside the heading. */
+    onOpenWidget: (() -> Unit)? = null,
 ) {
     Column(
-        modifier = Modifier
-            .width(LIST_WIDTH)
+        modifier = modifier
             .fillMaxHeight()
             .background(ZillitTheme.colors.surface)
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitText(text = "Chat & Calls", style = ZillitTheme.typography.titleLarge)
+        if (!compact) DirectoryHeading(onOpenWidget)
 
         DirectoryTabs(tab, chatState, callLog != null, onTab)
 
@@ -333,7 +459,11 @@ private fun DirectoryPane(
                 placeholder = "Search name, role, department",
             )
             CrewList(
-                crew = crew.filterNot { it.userId == selfId }.searchCrew(query),
+                // Someone who left or was removed is not a contact any more —
+                // Android's Contacts tab drops `left` and `removed`
+                // (`MembersVM.kt:473`). Their thread stays in the Chats list,
+                // captioned, because the history is still theirs to read.
+                crew = crew.filterNot { it.userId == selfId || it.hasLeft }.searchCrew(query),
                 // Follows whichever thread is open, however it was opened —
                 // picking someone in Chats and then switching to Contacts should
                 // show that person as the one being read, not nobody.
@@ -364,7 +494,7 @@ private fun DirectoryPane(
         } else {
             PaneMessage(
                 icon = ZillitIcons.Chat,
-                text = "Chats need a signed-in production.",
+                text = "Chats need a signed-in project.",
             )
         }
     }
@@ -778,6 +908,19 @@ private fun CrewIdentity(
                 } else {
                     ZillitTheme.colors.textMuted
                 },
+                maxLines = 1,
+            )
+        }
+        // "Disconnected", in red, under someone who left or was removed from
+        // the production — Android's listing row (`disconnedtedTxtView`,
+        // ChatAndGroupListingAdapter.kt:147-155) and its Members row, which
+        // suffixes the designation the same way. Their history still opens;
+        // the caption says why the composer will be gone.
+        if (contact.hasLeft) {
+            ZillitText(
+                text = "Disconnected",
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.danger,
                 maxLines = 1,
             )
         }

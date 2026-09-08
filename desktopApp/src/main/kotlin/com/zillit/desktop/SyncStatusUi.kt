@@ -53,7 +53,7 @@ fun syncStatusAction(sync: SyncStatus, onClick: () -> Unit): StatusAction? {
         sync.syncing -> "Sending ${sync.pending.changes()}…"
         sync.failed > 0 -> "${sync.failed.changes()} need attention"
         sync.pending > 0 -> "${sync.pending.changes()} waiting to send"
-        sync.elsewhere > 0 -> "${sync.elsewhere.changes()} waiting in other productions"
+        sync.elsewhere > 0 -> "${sync.elsewhere.changes()} waiting in other projects"
         else -> return null
     }
     return StatusAction(text = text, attention = sync.failed > 0, onClick = onClick)

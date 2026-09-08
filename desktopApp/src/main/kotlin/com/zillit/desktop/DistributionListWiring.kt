@@ -18,4 +18,5 @@ internal fun AppGraph.Ready.buildDistributionList(
     repository = DistributionRepositoryImpl(apiClient, config),
     resolveViewer = { DistributionViewer.from(permissions()) },
     changes = socketEvents.signals(ZillitSocketEvents.Distribution.AccessUpdate),
+    rights = rightsRequests,
 )

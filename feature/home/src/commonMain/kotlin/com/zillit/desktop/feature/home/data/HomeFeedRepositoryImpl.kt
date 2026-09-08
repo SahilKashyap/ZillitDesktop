@@ -166,7 +166,8 @@ class HomeFeedRepositoryImpl(
         localId: String,
         attachment: UploadedNoticeMedia?,
         location: GeoPoint?,
-    ): ZillitResult<Notice> = postNotice(unitId, text, localId, attachment, location, replacePrevious = null)
+    ): ZillitResult<Notice> =
+        postNotice(unitId, text, localId, attachment, location, replacePrevious = null, replaceChatId = null)
 
     @Suppress("LongParameterList") // The wire body's fields, one each; a holder would rename, not reduce.
     override suspend fun postNotice(
@@ -176,6 +177,7 @@ class HomeFeedRepositoryImpl(
         attachment: UploadedNoticeMedia?,
         location: GeoPoint?,
         replacePrevious: Boolean?,
+        replaceChatId: String?,
     ): ZillitResult<Notice> {
         // Captions are encrypted exactly like message bodies — the web's
         // `generate-message-payload` runs both through `encryptMessage`.
@@ -213,6 +215,7 @@ class HomeFeedRepositoryImpl(
                     attachment = attachment?.toDto(),
                     location = location?.toDto(),
                     replacePreviousChats = replacePrevious,
+                    replaceChatId = replaceChatId,
                 ),
             ),
         ).flatMap { row ->
@@ -509,6 +512,12 @@ internal data class NewNoticeDto(
      * (`HomeChatRequest.kt:43`) and iOS spells it the same (`ChatAPIModel.swift:426`).
      */
     @SerialName("replacePreviousChats") val replacePreviousChats: Boolean? = null,
+    /**
+     * "Replace one document": the live message this post retires — Android's
+     * `HomeChatRequest.replace_chat_id`. Sent with `replacePreviousChats`
+     * false; the answer names it back as `replaced_chat_id`.
+     */
+    @SerialName("replace_chat_id") val replaceChatId: String? = null,
 )
 
 /**
@@ -686,6 +695,7 @@ internal fun readNotice(row: JsonElement, decryptBody: (String) -> String): Noti
 
     return Notice(
         id = id,
+        replacedNoticeId = row.string("replaced_chat_id")?.takeIf { it.isNotBlank() },
         body = body,
         // Blank, not "Unknown": system rows (project invites) name nobody, and
         // the screen hides a blank author line rather than labelling it.

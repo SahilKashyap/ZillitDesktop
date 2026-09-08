@@ -82,7 +82,7 @@ class ProjectListingTest {
 
         assertEquals(listOf("Family Chat"), personal.map { it.name })
         assertTrue(entertainment.none { it.name == "Family Chat" })
-        assertEquals(all.size, personal.size + entertainment.size, "every production lands in exactly one")
+        assertEquals(all.size, personal.size + entertainment.size, "every project lands in exactly one")
     }
 
     @Test
@@ -106,6 +106,15 @@ class ProjectListingTest {
         val result = all.filterProjects("", ProjectFilter.All)
 
         assertEquals("Dune", result.last().name)
+    }
+
+    /** Android: the adapter's final sort is by unread, above favourites and pending alike. */
+    @Test
+    fun `unread sorts first, above favourites and even a pending production`() {
+        val unread = mapOf("dune" to 3, "sicario" to 1)
+        val result = all.filterProjects("", ProjectFilter.All) { unread[it.id] ?: 0 }
+
+        assertEquals(listOf("Dune", "Sicario", "Arrival"), result.take(3).map { it.name })
     }
 
     @Test

@@ -19,6 +19,12 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.TableColumn
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDataTable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
@@ -48,6 +54,7 @@ fun HistoryPage(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
             placeholder = "Search subject or recipient",
             modifier = Modifier.width(SEARCH_WIDTH.dp),
         )
+        SentByMenu(state, onEvent)
 
         // Weighted so the expanded detail below has room. Without this the
         // table takes its natural height, the detail card is laid out past the
@@ -250,3 +257,74 @@ private const val COUNT_COLUMN = 90
 private const val OPENED_COLUMN = 150
 private const val STATUS_COLUMN = 160
 private const val ACTION_COLUMN = 110
+
+/**
+ * The "Sent by" filter (ZL-21138): a button that says All or how many are
+ * ticked, opening a checkbox list of every sender; a search box appears once
+ * the list is long enough to need one. Multi-select, OR semantics, the same
+ * shape as the web's drawer control.
+ */
+@Composable
+private fun SentByMenu(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
+    val colors = ZillitTheme.colors
+    val picked = state.historySenderIds.size
+    Box {
+        ZillitButton(
+            text = if (picked == 0) "Sent by: All" else "Sent by: $picked selected",
+            onClick = { onEvent(DocDistEvent.HistorySenderMenu(!state.historySenderMenuOpen)) },
+            variant = ButtonVariant.Secondary,
+            enabled = state.historySenders.isNotEmpty(),
+        )
+        DropdownMenu(
+            expanded = state.historySenderMenuOpen,
+            onDismissRequest = { onEvent(DocDistEvent.HistorySenderMenu(false)) },
+        ) {
+            Column(
+                Modifier
+                    .width(SENDER_MENU_WIDTH)
+                    .heightIn(max = SENDER_MENU_HEIGHT)
+                    .verticalScroll(rememberScrollState())
+                    .padding(ZillitTheme.spacing.xs),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+            ) {
+                if (state.historySenders.size > SENDER_SEARCH_THRESHOLD) {
+                    ZillitSearchField(
+                        value = state.historySenderQuery,
+                        onValueChange = { onEvent(DocDistEvent.SearchHistorySenders(it)) },
+                        placeholder = "Search senders",
+                    )
+                }
+                val query = state.historySenderQuery.trim()
+                val shown = state.historySenders.filter {
+                    query.isBlank() || it.name.contains(query, ignoreCase = true)
+                }
+                if (picked > 0) {
+                    ZillitButton(
+                        text = "Clear",
+                        onClick = { onEvent(DocDistEvent.ClearHistorySenders) },
+                        variant = ButtonVariant.Tertiary,
+                    )
+                }
+                shown.forEach { sender ->
+                    ZillitCheckbox(
+                        checked = sender.id in state.historySenderIds,
+                        onCheckedChange = { onEvent(DocDistEvent.ToggleHistorySender(sender.id)) },
+                        label = sender.name.ifBlank { sender.id } +
+                            sender.designation.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(),
+                    )
+                }
+                if (shown.isEmpty()) {
+                    ZillitText(
+                        text = "No sender matches.",
+                        style = ZillitTheme.typography.bodySmall,
+                        color = colors.textMuted,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val SENDER_MENU_WIDTH = 320.dp
+private val SENDER_MENU_HEIGHT = 360.dp
+private const val SENDER_SEARCH_THRESHOLD = 6

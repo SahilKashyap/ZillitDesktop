@@ -28,4 +28,11 @@ data class ConversationBacklog(
      * server's garbage, not unread — see `liveChatUnread`.
      */
     val rooms: Set<String> = emptySet(),
+    /** Each unread row's message id and the conversation it counts toward — what a later deletion subtracts from. */
+    val messageKeys: Map<String, String> = emptyMap(),
+    /**
+     * The oldest row's `created` — where the server's window begins. Anything
+     * older is history it no longer reports.
+     */
+    val windowStart: Long? = null,
 )

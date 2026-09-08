@@ -2,6 +2,8 @@
 
 package com.zillit.desktop.feature.continuity.ui
 
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -26,6 +28,13 @@ class ContinuityViewModel(
     private val newUniqueId: () -> String,
     private val nowMillis: () -> Long,
     private val onSegmentViewed: (segment: String, level1: String, level2: String?) -> Unit = { _, _, _ -> },
+    /**
+     * Where "ask an admin for this right" goes; null leaves the plain refusal.
+     *
+     * The frame answers it with the admin picker and sends the request as a
+     * chat message — the phones' flow, hosted once. See `RightsRequestSurface`.
+     */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<ContinuityUiState, ContinuityEvent, ContinuityEffect>(ContinuityUiState()) {
 
     fun start() {
@@ -97,14 +106,16 @@ class ContinuityViewModel(
                     ),
                 )
             }
-            ContinuityEvent.ForwardSelected -> if (state.value.open?.selected.orEmpty().isNotEmpty()) {
-                setState { copy(confirmForward = true) }
+            ContinuityEvent.ForwardSelected -> guardPost {
+                if (state.value.open?.selected.orEmpty().isNotEmpty()) {
+                    setState { copy(confirmForward = true) }
+                }
             }
-            ContinuityEvent.ConfirmForward -> forwardSelected()
-            ContinuityEvent.ArchiveSelected -> archiveSelected()
+            ContinuityEvent.ConfirmForward -> guardPost { forwardSelected() }
+            ContinuityEvent.ArchiveSelected -> guardPost { archiveSelected() }
             ContinuityEvent.CancelForward -> setState { copy(confirmForward = false) }
-            is ContinuityEvent.RequestDelete -> setState { copy(confirmDelete = event.scene) }
-            ContinuityEvent.ConfirmDelete -> deleteConfirmed()
+            is ContinuityEvent.RequestDelete -> guardPost { setState { copy(confirmDelete = event.scene) } }
+            ContinuityEvent.ConfirmDelete -> guardPost { deleteConfirmed() }
             ContinuityEvent.CancelDelete -> setState { copy(confirmDelete = null) }
             ContinuityEvent.PickFiles -> guardPost { sendEffect(ContinuityEffect.PickFiles) }
             is ContinuityEvent.FilesPicked -> filesPicked(event)
@@ -125,7 +136,7 @@ class ContinuityViewModel(
                 val kept = e.draft.talentInfo.filterIndexed { i, _ -> i != event.index }
                 copy(editor = e.copy(draft = e.draft.copy(talentInfo = kept)))
             }
-            ContinuityEvent.Save -> save()
+            ContinuityEvent.Save -> guardPost { save() }
             ContinuityEvent.CancelEdit -> setState { copy(editor = null) }
         }
     }
@@ -300,7 +311,13 @@ class ContinuityViewModel(
 
     private fun download(scene: ContinuityScene) {
         if (!state.value.viewer.canDownload && !state.value.viewer.isAdmin) {
-            setState { copy(error = "You do not have download rights for Continuity") }
+            rights?.ask("Continuity", RightsKind.Download)
+            setState {
+                copy(
+                    error = "You do not have download rights for Continuity" +
+                        if (rights == null) "" else " — asking an administrator.",
+                )
+            }
             return
         }
         val attachment = scene.attachment ?: return
@@ -416,7 +433,13 @@ class ContinuityViewModel(
         if (viewer.canPost || viewer.isAdmin) {
             block()
         } else {
-            setState { copy(error = "You do not have posting rights for Continuity") }
+            rights?.ask("Continuity", RightsKind.Post)
+            setState {
+                copy(
+                    error = "You do not have posting rights for Continuity" +
+                        if (rights == null) "" else " — asking an administrator.",
+                )
+            }
         }
     }
 

@@ -77,7 +77,7 @@ fun DistributionScreen(
                 description = when {
                     state.mode == ListMode.History -> "Records of deleted and replaced documents."
                     state.isDod -> "D.O.D reports as PDFs, filed into named folders."
-                    else -> "PDFs the production issues — one current copy per list, pages by scene."
+                    else -> "PDFs the project issues — one current copy per list, pages by scene."
                 },
                 actions = {
                     ZillitButton(

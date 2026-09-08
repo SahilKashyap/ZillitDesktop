@@ -336,6 +336,28 @@ object ZillitIcons {
         moveTo(9f, 21f); lineTo(15f, 21f)
     }
 
+    /** An audio file: a note on a page corner, for the attach sheet's "Audio". */
+    val Audio: ImageVector = stroked("Audio") {
+        // Stem and flag of a single quaver.
+        moveTo(10f, 18f)
+        lineTo(10f, 6f)
+        lineTo(19f, 4f)
+        lineTo(19f, 16f)
+        // The two note heads.
+        moveTo(10f, 18f)
+        curveTo(10f, 19.7f, 8.7f, 21f, 7f, 21f)
+        curveTo(5.3f, 21f, 4f, 19.7f, 4f, 18f)
+        curveTo(4f, 16.3f, 5.3f, 15f, 7f, 15f)
+        curveTo(8.7f, 15f, 10f, 16.3f, 10f, 18f)
+        close()
+        moveTo(19f, 16f)
+        curveTo(19f, 17.7f, 17.7f, 19f, 16f, 19f)
+        curveTo(14.3f, 19f, 13f, 17.7f, 13f, 16f)
+        curveTo(13f, 14.3f, 14.3f, 13f, 16f, 13f)
+        curveTo(17.7f, 13f, 19f, 14.3f, 19f, 16f)
+        close()
+    }
+
     val Search: ImageVector = stroked("Search") {
         moveTo(11f, 4f); arcToRelative(7f, 7f, 0f, true, false, 0.1f, 0f)
         moveTo(16f, 16f); lineTo(21f, 21f)

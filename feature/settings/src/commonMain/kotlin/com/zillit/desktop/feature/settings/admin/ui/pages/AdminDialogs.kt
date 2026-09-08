@@ -94,7 +94,7 @@ private fun ProductionNameDialog(
     onEvent: (AdminEvent) -> Unit,
 ) {
     ZillitDialogShell(
-        title = "Rename this production",
+        title = "Rename this project",
         subtitle = "Everyone on it sees the new name.",
         visible = true,
         onDismiss = { onEvent(AdminEvent.CloseForm) },
@@ -103,7 +103,7 @@ private fun ProductionNameDialog(
         ZillitTextField(
             value = form.value,
             onValueChange = { onEvent(AdminEvent.FieldChanged(AdminField.Name, it)) },
-            label = "Production name",
+            label = "Project name",
             helperText = "Three to twenty-five characters.",
             errorText = form.error,
             modifier = Modifier.fillMaxWidth(),
@@ -131,7 +131,7 @@ private fun PreApprovalDialog(
 
     ZillitDialogShell(
         title = "Pre-approve someone",
-        subtitle = "They join with the production code and skip the approval queue.",
+        subtitle = "They join with the project code and skip the approval queue.",
         visible = true,
         onDismiss = { onEvent(AdminEvent.CloseForm) },
         actions = { FormActions(state, form.isValid, onEvent, submitLabel = "Pre-approve") },
@@ -209,7 +209,7 @@ private fun SosDialog(form: AdminForm.Sos, state: AdminUiState, onEvent: (AdminE
     ZillitDialogShell(
         title = when (draft.entryType) {
             SosEntryType.Crew -> "Alert someone on the crew"
-            SosEntryType.Outsider -> "Alert someone outside the production"
+            SosEntryType.Outsider -> "Alert someone outside the project"
         },
         visible = true,
         onDismiss = { onEvent(AdminEvent.CloseForm) },
@@ -244,7 +244,7 @@ private fun SosDialog(form: AdminForm.Sos, state: AdminUiState, onEvent: (AdminE
                 ZillitTextField(
                     value = draft.relationship,
                     onValueChange = { onEvent(AdminEvent.SosDraftChanged(draft.copy(relationship = it))) },
-                    label = "Relationship to the production",
+                    label = "Relationship to the project",
                     placeholder = "Unit nurse, local fixer, hospital",
                     modifier = Modifier.fillMaxWidth(),
                 )

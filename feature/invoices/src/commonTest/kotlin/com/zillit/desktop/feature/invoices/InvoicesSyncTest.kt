@@ -76,7 +76,7 @@ class InvoicesSyncTest {
         )
         assertEquals("p1", envelope.projectId)
         assertTrue(envelope.inProject("p1"))
-        assertFalse(envelope.inProject("p2"), "another production's frame must drop")
+        assertFalse(envelope.inProject("p2"), "another project's frame must drop")
         assertTrue(InvoiceSyncEnvelope().inProject("p1"), "an unnamed frame passes rather than starving the screen")
     }
 

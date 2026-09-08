@@ -94,7 +94,7 @@ class ProjectCacheTest {
         assertTrue(cache.tools(projectA).isEmpty())
         assertNull(cache.profile(projectA))
         assertTrue(cache.notices(projectA, "u1").isEmpty())
-        assertEquals(1, cache.tools(projectB).size, "the other production was cleared too")
+        assertEquals(1, cache.tools(projectB).size, "the other project was cleared too")
     }
 
     @Test

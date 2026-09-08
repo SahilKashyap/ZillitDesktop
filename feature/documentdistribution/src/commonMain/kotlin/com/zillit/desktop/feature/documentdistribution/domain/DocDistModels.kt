@@ -168,6 +168,8 @@ data class Distribution(
     val subject: String,
     val sentAt: Long? = null,
     val sentByName: String = "",
+    /** Who sent it, as the server keys senders — the History "Sent by" filter matches on this, not the name. */
+    val senderId: String = "",
     val recipients: List<DeliveryStatus> = emptyList(),
     val attachmentNames: List<String> = emptyList(),
     /** Names of the lists that fed this send, for the History row's subtitle. */
@@ -204,3 +206,9 @@ data class PublishedFile(
     val name: String,
     val publishedAt: Long? = null,
 )
+
+/** One entry of the History "Sent by" filter: a sender the project's distributions were sent by. */
+data class DistributionSender(val id: String, val name: String, val designation: String = "") {
+    val initials: String get() = name.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.take(2)
+        .joinToString("") { it.first().uppercaseChar().toString() }.ifBlank { "?" }
+}

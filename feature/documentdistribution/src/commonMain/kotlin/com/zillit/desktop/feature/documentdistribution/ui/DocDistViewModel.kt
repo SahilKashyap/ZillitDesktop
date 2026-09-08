@@ -2,9 +2,13 @@ package com.zillit.desktop.feature.documentdistribution.ui
 
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.feature.documentdistribution.domain.Distribution
+import com.zillit.desktop.feature.documentdistribution.domain.DistributionSender
 import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
 import com.zillit.desktop.feature.documentdistribution.domain.PublishTarget
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.DistributionList
@@ -40,7 +44,7 @@ import kotlinx.datetime.LocalDate
  * [start], never a constructor snapshot. Capturing it at construction fixes
  * every user as "rights unknown" for the life of the process.
  */
-@Suppress("TooManyFunctions") // One handler per user action; see detekt.yml.
+@Suppress("TooManyFunctions", "LargeClass") // One handler per user action; see detekt.yml.
 class DocDistViewModel(
     private val repository: DocDistRepository,
     /** Who is looking, read at start rather than at construction. See the class doc. */
@@ -53,6 +57,13 @@ class DocDistViewModel(
      * that reads the clock itself cannot be pinned by a test.
      */
     private val today: () -> LocalDate,
+    /**
+     * Where "ask an admin for this right" goes.
+     *
+     * Null in tests and in any host with no chat to send on; the tool then
+     * simply says what is missing, as it did before.
+     */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<DocDistUiState, DocDistEvent, DocDistEffect>(
     DocDistUiState(viewer = viewer()),
 ) {
@@ -135,6 +146,7 @@ class DocDistViewModel(
     @Suppress("LongMethod", "CyclomaticComplexMethod") // One branch per user action.
     override fun onEvent(event: DocDistEvent) {
         when (event) {
+            is DocDistEvent.RequestRights -> askForRights(event.kind)
             DocDistEvent.Refresh -> load(currentState.destination)
             DocDistEvent.ClearNotice -> setState { copy(notice = null) }
             DocDistEvent.DismissPrompt -> setState { copy(prompt = null) }
@@ -294,6 +306,10 @@ class DocDistViewModel(
 
             // -- history ---------------------------------------------------
 
+            is DocDistEvent.ToggleHistorySender -> reloadHistory { togglingSender(event.senderId) }
+            DocDistEvent.ClearHistorySenders -> reloadHistory { clearingSenders() }
+            is DocDistEvent.SearchHistorySenders -> setState { copy(historySenderQuery = event.text) }
+            is DocDistEvent.HistorySenderMenu -> setState { copy(historySenderMenuOpen = event.open) }
             is DocDistEvent.SearchHistory -> {
                 setState { copy(historySearch = event.text) }
                 debounced(::loadHistory)
@@ -444,9 +460,20 @@ class DocDistViewModel(
      * unknown, and floating it to the top puts the least informative row where
      * the most recent one belongs.
      */
-    private fun loadHistory() = fetch(
-        { repository.history(page = 0, search = currentState.historySearch) },
-    ) { rows -> copy(history = rows.sortedByDescending { it.sentAt ?: Long.MIN_VALUE }) }
+    private fun loadHistory() {
+        val ids = currentState.historySenderIds
+        fetch({ repository.history(page = 0, search = currentState.historySearch, senderIds = ids) }) { rows ->
+            historyLoaded(rows, ids)
+        }
+        senders.askOnce { fetched -> setState { copy(historySenders = mergedSenders(fetched, history)) } }
+    }
+
+    private fun reloadHistory(change: DocDistUiState.() -> DocDistUiState) {
+        setState(change)
+        loadHistory()
+    }
+
+    private val senders = HistorySenderSource(repository, ::launch)
 
     /**
      * Runs [block] once the user stops typing.
@@ -639,16 +666,17 @@ class DocDistViewModel(
     }
 
     /**
-     * Refuses a write this person has no posting rights for.
+     * Refuses a write this person has no posting rights for, and offers the ask.
      *
-     * The buttons are already hidden without them, but the web keeps the same
-     * two layers deliberately (`requirePost()` in every handler) — a stale
-     * window, a socket-driven reload or a repeated action can reach a handler
-     * whose button is long gone.
+     * The buttons all stay on screen and gate their own presses, so most
+     * refusals never get here. This is the second layer the web keeps
+     * deliberately (`requirePost()` in every handler): a stale window, a
+     * socket-driven reload or a dialog opened before a rights change can still
+     * reach a handler, and the answer should be the same offer either way.
      */
     private fun refusesWrite(): Boolean {
         if (currentState.viewer.canPost) return false
-        sendEffect(DocDistEffect.Failed("You do not have posting rights for Document Distribution."))
+        askForRights(RightsKind.Post)
         return true
     }
 
@@ -760,11 +788,11 @@ class DocDistViewModel(
             sendEffect(DocDistEffect.Failed(reason))
             return
         }
-        // Rights are checked here as well as by the server: the button is
-        // hidden without posting rights, but a keyboard shortcut or a
-        // duplicated send would otherwise reach this with no gate at all.
+        // Checked here as well as on the button, which gates its own press:
+        // the composer can be left open across a rights change, and a
+        // keyboard shortcut reaches this with no button involved at all.
         if (!state.viewer.canPost) {
-            sendEffect(DocDistEffect.Failed("You do not have permission to send from this tool."))
+            askForRights(RightsKind.Post)
             return
         }
         composer { copy(sending = true) }
@@ -845,9 +873,30 @@ class DocDistViewModel(
 
     // -- shared ------------------------------------------------------------
 
+    /**
+     * Raises the request the frame answers with its admin picker.
+     *
+     * Says so on screen too: the dialog opens over the tool window, and a
+     * click that produced only a dialog somewhere else would read as the
+     * button having done nothing.
+     */
+    private fun askForRights(kind: RightsKind) {
+        val asked = rights != null
+        if (asked) rights.ask(MODULE_LABEL, kind)
+        sendEffect(
+            DocDistEffect.Failed(
+                if (asked) {
+                    "You do not have ${kind.verb} rights on $MODULE_LABEL — asking an administrator."
+                } else {
+                    "You do not have ${kind.verb} rights on $MODULE_LABEL."
+                },
+            ),
+        )
+    }
+
     private fun openUrl(documentId: String) {
         if (!currentState.viewer.canDownload) {
-            sendEffect(DocDistEffect.Failed("You do not have download rights for this tool."))
+            askForRights(RightsKind.Download)
             return
         }
         // Found on the rows in hand: where a document's bytes live comes back
@@ -889,3 +938,37 @@ internal fun Recipient.sameAs(other: Contact): Boolean =
 
 /** Templates carry no id until saved; blank means "new". */
 internal val EmailTemplate.isNew: Boolean get() = id.isBlank()
+
+/** The menu's senders: the endpoint's list, plus anyone a loaded row names that it did not, by id. */
+internal fun mergedSenders(known: List<DistributionSender>, rows: List<Distribution>): List<DistributionSender> {
+    val byId = linkedMapOf<String, DistributionSender>()
+    known.forEach { if (it.id.isNotBlank()) byId[it.id] = it }
+    rows.forEach { row ->
+        if (row.senderId.isNotBlank() && row.senderId !in byId) {
+            byId[row.senderId] = DistributionSender(row.senderId, row.sentByName)
+        }
+    }
+    return byId.values.sortedBy { it.name.lowercase() }
+}
+
+private fun DocDistUiState.togglingSender(id: String): DocDistUiState =
+    copy(historySenderIds = if (id in historySenderIds) historySenderIds - id else historySenderIds + id)
+
+private fun DocDistUiState.clearingSenders(): DocDistUiState =
+    copy(historySenderIds = emptySet(), historySenderQuery = "")
+
+/**
+ * The filter is applied here as well as pushed as `sent_by`: a backend that
+ * ignores the param still answers, and the rows must not show senders the
+ * menu says are off.
+ */
+private fun DocDistUiState.historyLoaded(rows: List<Distribution>, ids: Set<String>): DocDistUiState {
+    val kept = if (ids.isEmpty()) rows else rows.filter { it.senderId in ids }
+    return copy(
+        history = kept.sortedByDescending { it.sentAt ?: Long.MIN_VALUE },
+        historySenders = mergedSenders(historySenders, rows),
+    )
+}
+
+/** What the reader calls this tool; it reaches an admin's chat verbatim. */
+private const val MODULE_LABEL = "Document Distribution"

@@ -40,6 +40,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
@@ -531,17 +533,53 @@ private fun CallSheetPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEven
     val unitLabel = state.selectedUnit?.label ?: "Call Sheet"
     // Remembered across the exit so the fading card keeps its last words.
     var confirming by remember { mutableStateOf(false) }
-    if (prompt != null) confirming = prompt.confirmingReplace
-
+    var picking by remember { mutableStateOf(false) }
+    if (prompt != null) {
+        confirming = prompt.confirmingReplace
+        picking = prompt.picking
+    }
     ZillitDialogShell(
-        title = "Alert",
+        title = if (picking) "Replace which document?" else "Alert",
         icon = ZillitIcons.Warning,
         visible = prompt != null,
         onDismiss = { onEvent(HomeFeedEvent.CallSheetDismiss) },
         width = CALL_SHEET_PROMPT_WIDTH,
-        actions = {
-            Spacer(Modifier.weight(1f))
-            if (!confirming) {
+        actions = { PromptActions(prompt, confirming, picking, onEvent) },
+    ) {
+        when {
+            picking -> ReplaceTargetList(prompt?.targets.orEmpty(), onEvent)
+            else -> ZillitText(
+                text = if (!confirming) {
+                    "Are you uploading a document in continuation of the existing $unitLabel, " +
+                        "or uploading a new $unitLabel? Please choose below."
+                } else {
+                    "Doing this will send all current data posted here to History. " +
+                        "It will be replaced with the new upload. Do you still want to proceed?"
+                },
+                style = ZillitTheme.typography.bodyMedium,
+                color = ZillitTheme.colors.textPrimary,
+            )
+        }
+    }
+}
+
+
+/** The prompt's buttons per mode: the three answers, the "New" confirmation, or the picker's Cancel. */
+@Composable
+private fun RowScope.PromptActions(
+    prompt: CallSheetPrompt?,
+    confirming: Boolean,
+    picking: Boolean,
+    onEvent: (HomeFeedEvent) -> Unit,
+) {
+        Spacer(Modifier.weight(1f))
+        when {
+            picking -> ZillitButton(
+                text = "Cancel",
+                variant = ButtonVariant.Tertiary,
+                onClick = { onEvent(HomeFeedEvent.CallSheetDismiss) },
+            )
+            !confirming -> {
                 ZillitButton(
                     text = "Cancel",
                     variant = ButtonVariant.Tertiary,
@@ -552,8 +590,18 @@ private fun CallSheetPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEven
                     variant = ButtonVariant.Secondary,
                     onClick = { onEvent(HomeFeedEvent.CallSheetContinuation) },
                 )
+                // "Replace one document" — the phones' third answer: swap a
+                // single live document rather than send the whole unit to
+                // History. Only offered when there is something to swap.
+                ZillitButton(
+                    text = "Replace one…",
+                    variant = ButtonVariant.Secondary,
+                    enabled = prompt?.targets?.isNotEmpty() == true,
+                    onClick = { onEvent(HomeFeedEvent.CallSheetPickReplacement) },
+                )
                 ZillitButton(text = "New", onClick = { onEvent(HomeFeedEvent.CallSheetNew) })
-            } else {
+            }
+            else -> {
                 ZillitButton(
                     text = "No",
                     variant = ButtonVariant.Secondary,
@@ -565,21 +613,33 @@ private fun CallSheetPromptDialog(state: HomeFeedUiState, onEvent: (HomeFeedEven
                     onClick = { onEvent(HomeFeedEvent.CallSheetReplaceConfirmed) },
                 )
             }
-        },
+        }
+}
+
+/** The live documents a "Replace one" upload may retire — a click is the answer. */
+@Composable
+private fun ReplaceTargetList(targets: List<Notice>, onEvent: (HomeFeedEvent) -> Unit) {
+    Column(
+        Modifier.heightIn(max = REPLACE_LIST_HEIGHT).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         ZillitText(
-            text = if (!confirming) {
-                "Are you uploading a document in continuation of the existing $unitLabel, " +
-                    "or uploading a new $unitLabel? Please choose below."
-            } else {
-                "Doing this will send all current data posted here to History. " +
-                    "It will be replaced with the new upload. Do you still want to proceed?"
-            },
-            style = ZillitTheme.typography.bodyMedium,
-            color = ZillitTheme.colors.textPrimary,
+            text = "The chosen document goes to History; your upload takes its place.",
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textMuted,
         )
+        targets.forEach { target ->
+            ZillitButton(
+                text = target.attachment?.fileName?.ifBlank { null } ?: target.body.ifBlank { "Document" },
+                variant = ButtonVariant.Secondary,
+                onClick = { onEvent(HomeFeedEvent.CallSheetReplaceOne(target.id)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
+
+private val REPLACE_LIST_HEIGHT = 320.dp
 
 /**
  * Who has and hasn't read a post — the web's `ReadByUsersModal`, as a card
@@ -1015,11 +1075,17 @@ private fun ReplyBar(parent: Notice, authorLabel: String?, onCancel: () -> Unit)
  */
 @Composable
 private fun MediaButtons(enabled: Boolean, documentsOnly: Boolean, onEvent: (HomeFeedEvent) -> Unit) {
-    ZillitIconButton(
-        icon = ZillitIcons.Add,
-        contentDescription = if (documentsOnly) "Attach a document" else "Attach a file",
-        onClick = { onEvent(HomeFeedEvent.Attach) },
+    // The phones' attach sheet. On the call sheet it is documents only, and a
+    // sheet of one collapses to a plain button that picks straight away.
+    com.zillit.desktop.core.media.AttachMenu(
+        kinds = if (documentsOnly) {
+            listOf(com.zillit.desktop.core.media.PreviewKind.Document)
+        } else {
+            com.zillit.desktop.core.media.ALL_ATTACHMENT_KINDS
+        },
+        contentDescription = "Attach a file",
         enabled = enabled,
+        onPick = { kind -> onEvent(HomeFeedEvent.AttachKind(kind)) },
     )
     if (documentsOnly) return
     ZillitIconButton(
@@ -1650,16 +1716,36 @@ private fun NoticeBoard(
         }
 
         if (!unit.canPost) {
-            item {
-                ZillitText(
-                    text = "You do not have posting rights for ${unit.label}. " +
-                        "Ask a production admin to grant them.",
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                    modifier = Modifier.padding(top = ZillitTheme.spacing.sm),
-                )
-            }
+            item { NoPostingRightsRow(unit, ui.onEvent) }
         }
+    }
+}
+
+/**
+ * What a reader without posting rights gets instead of the composer.
+ *
+ * The sentence used to end at "ask a project admin", which left the reader
+ * to work out which admin and what to say. The button does both — see
+ * `RightsRequestSurface`, which picks the admin and writes the message.
+ */
+@Composable
+private fun NoPostingRightsRow(unit: HomeUnit, onEvent: (HomeFeedEvent) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitText(
+            text = "You do not have posting rights for ${unit.label}.",
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.textMuted,
+        )
+        ZillitButton(
+            text = "Ask an admin",
+            onClick = { onEvent(HomeFeedEvent.RequestPostingRights) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+        )
     }
 }
 
@@ -2182,7 +2268,7 @@ private fun BoardArea(
         state.error != null && state.notices.isEmpty() -> Centred(state.error)
 
         unit == null -> Centred(
-            "No units are shared with you in this production yet.",
+            "No units are shared with you in this project yet.",
         )
 
         // The calendar unit renders the real calendar when the host supplies

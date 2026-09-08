@@ -206,6 +206,15 @@ class SocketIoClient(
     private fun onConnectError(args: Array<out Any?>, attempt: Int) {
         val detail = args.firstOrNull()?.toString().orEmpty()
 
+        // A refused token is the credential's problem, not the device's: say
+        // so, and let the retry present a different one.
+        if (isSocketTokenRejected(detail)) {
+            ZillitLog.w(TAG) { "handshake refused the token; retrying with another credential" }
+            config?.onAuthRejected?.invoke(detail)
+            scheduleReconnect(attempt + 1, ZillitError.NoConnection(detail))
+            return
+        }
+
         // A rejected handshake is not a network problem — retrying cannot fix a
         // revoked device, and hammering the server while signed out is worse
         // than stopping. The app signs out on this.

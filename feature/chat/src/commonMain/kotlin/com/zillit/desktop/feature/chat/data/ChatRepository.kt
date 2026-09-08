@@ -14,6 +14,7 @@ import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.database.ChatCache
 import com.zillit.desktop.core.database.ChatMessageRow
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.socket.SocketMessage
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import kotlinx.coroutines.flow.Flow
@@ -125,11 +126,41 @@ interface ChatRepository {
      */
     val selfReads: Flow<String>
 
+    /**
+     * `notification:silent`'s chat instruction — rooms lost and messages
+     * deleted — as the phones and the web receive it. Feed it to [silence];
+     * the repository does not act on the flow by itself.
+     */
+    val silenced: Flow<ChatSilence> get() = kotlinx.coroutines.flow.emptyFlow()
+
+    /**
+     * Fires when the rows behind [conversationBacklog] moved without this
+     * repository's knowledge — the host's ledger seeded, or a frame it
+     * applied. Empty when the backlog is the server's own page.
+     */
+    val backlogChanges: Flow<Unit> get() = kotlinx.coroutines.flow.emptyFlow()
+
+    /**
+     * Applies a silence the way the phones' local ledgers do: a lost room is
+     * marked read to now, and a deleted message is forgotten and kept out of
+     * every later backlog seed, so the count cannot come back from the server.
+     */
+    fun silence(silence: ChatSilence) = Unit
+
     /** Remembers locally how far a thread has been read, for the badges. */
     fun markThreadRead(peerId: String, uptoMillis: Long)
 
     /** Cached non-mine messages newer than each thread's read mark. */
-    fun unreadCounts(): Map<String, Int>
+    /**
+     * @param floor per conversation, the newest message the server's backlog
+     *   already knows about. The cache only adds what arrived after that —
+     *   its whole purpose — so a thread read on the phone long ago, whose
+     *   read mark here never moved, cannot outvote the server's zero.
+     * @param defaultFloor the floor for a conversation the backlog has no row for
+     *   at all — the window's start: anything older is history the server no
+     *   longer reports and the phones would never resurrect.
+     */
+    fun unreadCounts(floor: Map<String, Long> = emptyMap(), defaultFloor: Long = 0L): Map<String, Int>
 
     /** Each cached thread's newest activity, for recency ordering. */
     fun newestActivity(): Map<String, Long>
@@ -209,7 +240,12 @@ data class MessageHit(
  * The app's one chat socket is the notification socket — both live on the
  * chat host, exactly as Android runs one `ChatSocketHelper` connection.
  */
-@Suppress("TooManyFunctions") // One function per wire operation; see the interface.
+@Suppress(
+    "TooManyFunctions", // One function per wire operation; see the interface.
+    // One parameter per collaborator the wire needs — client, config, socket,
+    // identity, cipher, cache, surface, production. A bag would only rename them.
+    "LongParameterList",
+)
 class ChatRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
@@ -221,19 +257,44 @@ class ChatRepositoryImpl(
     /** The at-rest copy; null in tests. Bodies stay cipher-hex inside it. */
     private val disk: ChatCache? = null,
     /**
+     * The notification ledger's chat rows, when the host keeps one — the
+     * same wire rows the backlog call answers, but with this device's reads
+     * and prunes applied and no window that slides past an old unread. Null
+     * asks the server, as before.
+     */
+    private val ledgerBacklog: (suspend () -> JsonElement?)? = null,
+    /** When the ledger's rows moved — see [ChatRepository.backlogChanges]. */
+    private val ledgerChanges: Flow<Unit>? = null,
+    /**
      * Which surface this repository speaks for. The default is C&C, so every
      * existing caller behaves exactly as before; the budget tools pass their
      * own tool and department.
      */
     private val scope: com.zillit.desktop.feature.chat.domain.ChatScope =
         com.zillit.desktop.feature.chat.domain.ChatScope(),
+    /**
+     * Which production every call is about, when that is not the one the app
+     * is open on — the Chat widget showing another production.
+     *
+     * The read cache keys on the same override, so a widget on one production
+     * and the rail on another do not answer each other's questions from cache.
+     */
+    private val callOptions: () -> CallOptions = { CallOptions() },
 ) : ChatRepository, ReplyAwareChatRepository {
+
+    /** [base] with this repository's production and identity stamped on it. */
+    private fun scoped(base: CallOptions = CallOptions()): CallOptions {
+        val to = callOptions()
+        return base.copy(projectId = to.projectId, userId = to.userId)
+    }
 
     // Every event this repository speaks, under its own surface's names.
     private val privateChat = scoped(PRIVATE_CHAT)
     private val groupChat = scoped(GROUP_CHAT)
     private val readUntill = scoped(READ_UNTILL)
     private val groupReadUntill = scoped(GROUP_READ_UNTILL)
+    private val silentEvent = com.zillit.desktop.core.socket.ZillitSocketEvents.Badges.Silent
+    private val silencedIds = mutableSetOf<String>()
     private val updateReaction = scoped(UPDATE_REACTION)
     private val typingEvent = scoped(TYPING)
     private val privateEdit = scoped(PRIVATE_CHAT_EDIT)
@@ -269,15 +330,15 @@ class ChatRepositoryImpl(
     override val incoming: Flow<ChatMessage> =
         kotlinx.coroutines.flow.merge(
             acked,
-            bus.on(privateChat).mapNotNull { message ->
+            bus.on(privateChat).hereOnly().mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt) }
             },
-            bus.on(groupChat).mapNotNull { message ->
+            bus.on(groupChat).hereOnly().mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt, isGroup = true) }
             },
             // A reaction event IS the updated message; riding the same flow
             // means the thread upserts it with no second merge path to drift.
-            bus.on(updateReaction).mapNotNull { message ->
+            bus.on(updateReaction).hereOnly().mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt) }
             },
         ).mapNotNull { message ->
@@ -289,17 +350,17 @@ class ChatRepositoryImpl(
         }
 
     override val typing: Flow<Pair<String, Boolean>> =
-        bus.on(typingEvent).mapNotNull { it.payload?.let(::typingFrom) }
+        bus.on(typingEvent).hereOnly().mapNotNull { it.payload?.let(::typingFrom) }
 
     override val receipts: Flow<ReadReceipt> =
-        bus.on(readUntill).mapNotNull { message ->
+        bus.on(readUntill).hereOnly().mapNotNull { message ->
             message.payload?.let { readReceiptFrom(it, myUserId()) }
         }
 
     override val deletions: Flow<List<String>> =
         kotlinx.coroutines.flow.merge(
-            bus.on(privateDelete),
-            bus.on(groupDelete),
+            bus.on(privateDelete).hereOnly(),
+            bus.on(groupDelete).hereOnly(),
         ).mapNotNull { message ->
             message.payload?.let(::deletedIdsFrom)
                 ?.takeIf { it.isNotEmpty() }
@@ -310,17 +371,32 @@ class ChatRepositoryImpl(
         }
 
     override val selfReads: Flow<String> =
-        kotlinx.coroutines.flow.merge(bus.on(readUntill), bus.on(groupReadUntill))
+        kotlinx.coroutines.flow.merge(bus.on(readUntill).hereOnly(), bus.on(groupReadUntill).hereOnly())
             .mapNotNull { message ->
                 message.payload?.let { selfReadFrom(it, myUserId()) }
             }
 
+    override val silenced: Flow<ChatSilence> =
+        bus.on(silentEvent).hereOnly().mapNotNull { message -> chatSilenceFrom(message.payload) }
+
+    override val backlogChanges: Flow<Unit> = ledgerChanges ?: kotlinx.coroutines.flow.emptyFlow()
+
+    override fun silence(silence: ChatSilence) {
+        val project = projectId() ?: return
+        val now = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        silence.rooms.forEach { room -> disk?.markReadUntil(project, room, now) }
+        if (silence.deletedMessageIds.isNotEmpty()) {
+            silencedIds += silence.deletedMessageIds
+            forget(silence.deletedMessageIds.toList())
+        }
+    }
+
     override val edits: Flow<ChatMessage> =
         kotlinx.coroutines.flow.merge(
-            bus.on(privateEdit).mapNotNull { message ->
+            bus.on(privateEdit).hereOnly().mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt) }
             },
-            bus.on(groupEdit).mapNotNull { message ->
+            bus.on(groupEdit).hereOnly().mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt, isGroup = true) }
             },
         )
@@ -417,6 +493,21 @@ class ChatRepositoryImpl(
         }
     }
 
+    /**
+     * Only frames for the open production — or frames that name none.
+     *
+     * Applied before any reader, because `remember` and `forget` key their
+     * caches on the *open* project: a message for production A arriving while
+     * B is open was written into B's thread and counted as B's unread, which
+     * is the "another project's badge went up on this one" report. Android
+     * gates the same way on `detail.project_id`.
+     */
+    private fun Flow<SocketMessage>.hereOnly(): Flow<SocketMessage> =
+        filter { message ->
+            val named = message.payload?.let(::frameProjectId)
+            named == null || named == projectId()
+        }
+
     /** Drops [messageIds] from the session map and the at-rest cache. */
     private fun forget(messageIds: List<String>) {
         val gone = messageIds.toSet()
@@ -432,14 +523,14 @@ class ChatRepositoryImpl(
         projectId()?.let { disk?.markReadUntil(it, peerId, uptoMillis) }
     }
 
-    override fun unreadCounts(): Map<String, Int> {
+    override fun unreadCounts(floor: Map<String, Long>, defaultFloor: Long): Map<String, Int> {
         val project = projectId() ?: return emptyMap()
         val store = disk ?: return emptyMap()
         val marks = store.readMarks(project)
         return store.lastPerPeer(project).associate { newest ->
-            val readUntil = marks[newest.peerId] ?: 0L
+            val since = maxOf(marks[newest.peerId] ?: 0L, floor[newest.peerId] ?: defaultFloor)
             newest.peerId to store.thread(project, newest.peerId)
-                .count { !it.isMine && it.createdAt > readUntil }
+                .count { !it.isMine && it.createdAt > since }
         }.filterValues { it > 0 }
     }
 
@@ -498,17 +589,25 @@ class ChatRepositoryImpl(
      * `NotificationDataModel.kt:34`) — the newest per conversation is the
      * server's activity stamp for the listing's order.
      */
-    override suspend fun conversationBacklog(): ZillitResult<ConversationBacklog> =
-        apiClient.request(
+    override suspend fun conversationBacklog(): ZillitResult<ConversationBacklog> {
+        val marks = projectId()?.let { disk?.readMarks(it) }.orEmpty()
+        val ledger = ledgerBacklog?.invoke()
+        if (ledger != null) {
+            return ZillitResult.Success(conversationBacklogFrom(ledger, readMarks = marks, silencedIds = silencedIds))
+        }
+        return apiClient.request(
             verb = HttpVerb.Get,
             url = "${config.apiV2(ZillitService.Notification)}project/all/notifications/" +
                 "${kotlin.time.Clock.System.now().toEpochMilliseconds()}/previous",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
-            options = CallOptions(
-                cacheAs = "${config.apiV2(ZillitService.Notification)}project/all/notifications/newest",
+            options = scoped(
+                CallOptions(
+                    cacheAs = "${config.apiV2(ZillitService.Notification)}project/all/notifications/newest",
+                ),
             ),
-        ).map(::conversationBacklogFrom)
+        ).map { payload -> conversationBacklogFrom(payload, readMarks = marks, silencedIds = silencedIds) }
+    }
 
     override suspend fun recentPeers(): ZillitResult<List<String>> {
         val me = myUserId() ?: return ZillitResult.Success(emptyList())
@@ -533,6 +632,7 @@ class ChatRepositoryImpl(
             url = "${config.apiV2(ZillitService.Chat)}chat-room",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
+            options = scoped(),
             // C&C sends `cnc_section` with an empty department; the budget
             // tools name their tool, department and document. The web's
             // `getChatList` omits the document (`budgetApi/api.js:82-88`) —
@@ -555,6 +655,7 @@ class ChatRepositoryImpl(
             verb = HttpVerb.Delete,
             url = "${config.apiV2(ZillitService.Chat)}chat-room/$roomId",
             module = RequestModule.ProjectUser,
+            options = scoped(),
         ).refuseStatusZero().map { }
 
     override suspend fun createRoom(
@@ -569,6 +670,7 @@ class ChatRepositoryImpl(
             url = "${config.apiV2(ZillitService.Chat)}chat-room",
             module = RequestModule.ProjectUser,
             body = createRoomBody(name, me, memberIds, scope),
+            options = scoped(),
         ).refuseStatusZero().flatMap { envelope ->
             createdRoomFrom(envelope.data)
                 ?.let { ZillitResult.Success(it) }
@@ -606,10 +708,12 @@ class ChatRepositoryImpl(
             // Always the newest window, from "now": one name per thread so
             // the read cache answers it offline (the disk cache does too;
             // this keeps the fetch itself from failing).
-            options = CallOptions(
-                cacheAs = "${config.apiV2(ZillitService.Chat)}" +
-                    (if (isGroup) "group-chat" else "private-chat") +
-                    "/messages/$otherUserId/newest/${scope.cacheKey()}",
+            options = scoped(
+                CallOptions(
+                    cacheAs = "${config.apiV2(ZillitService.Chat)}" +
+                        (if (isGroup) "group-chat" else "private-chat") +
+                        "/messages/$otherUserId/newest/${scope.cacheKey()}",
+                ),
             ),
         ).map { body ->
             chatRows(body)

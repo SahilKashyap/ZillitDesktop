@@ -123,7 +123,7 @@ fun TransportScreen(state: TransportUiState, onEvent: (TransportEvent) -> Unit) 
 private fun RequestsSection(state: TransportUiState, onEvent: (TransportEvent) -> Unit) {
     ZillitPageHeader(
         title = "Pickup requests",
-        description = if (state.viewer.isCoordinator) "Every request on the production." else "Requests you raised.",
+        description = if (state.viewer.isCoordinator) "Every request on the project." else "Requests you raised.",
         actions = {
             ZillitButton(text = "Refresh", onClick = { onEvent(TransportEvent.Refresh) },
                 variant = ButtonVariant.Tertiary, loading = state.loading)
@@ -215,7 +215,7 @@ private fun VehiclesSection(state: TransportUiState, onEvent: (TransportEvent) -
     val colors = ZillitTheme.colors
     ZillitPageHeader(
         title = "Vehicles",
-        description = "The production's fleet — who drives what, and what is free.",
+        description = "The project's fleet — who drives what, and what is free.",
         actions = {
             ZillitButton(text = "Refresh", onClick = { onEvent(TransportEvent.Refresh) },
                 variant = ButtonVariant.Tertiary, loading = state.loading)
@@ -444,7 +444,7 @@ private fun DriversSection(state: TransportUiState, onEvent: (TransportEvent) ->
     val colors = ZillitTheme.colors
     ZillitPageHeader(
         title = "Drivers",
-        description = "Everyone the production can put behind a wheel — by designation, or made a temporary driver.",
+        description = "Everyone the project can put behind a wheel — by designation, or made a temporary driver.",
         actions = {
             ZillitButton(text = "Refresh", onClick = { onEvent(TransportEvent.Refresh) },
                 variant = ButtonVariant.Tertiary, loading = state.loading)

@@ -30,6 +30,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -118,6 +119,8 @@ class EsignRepositoryImpl(
         document: StoredFile,
         recipients: List<EnvelopeRecipient>,
         fields: List<NewField>,
+        initialsOnAllPages: Boolean,
+        reminderCadenceDays: Int?,
     ): ZillitResult<Envelope> = apiClient.request(
         verb = HttpVerb.Post,
         url = "$base/envelopes",
@@ -127,6 +130,9 @@ class EsignRepositoryImpl(
             put("title", title)
             put("description", description)
             put("attachment", document.toWire(includePageCount = true))
+            // The phones' newer envelope options (Android `CreateDocuSignEnvelopeRequest`).
+            put("initials_on_all_pages", initialsOnAllPages)
+            reminderCadenceDays?.let { put("reminder_cadence_days", it) }
             put(
                 "recipients",
                 buildJsonArray {

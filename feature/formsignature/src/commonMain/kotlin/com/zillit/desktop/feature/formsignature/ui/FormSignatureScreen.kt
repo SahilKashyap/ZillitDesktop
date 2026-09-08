@@ -51,7 +51,7 @@ fun FormSignatureScreen(state: FormSignatureUiState, onEvent: (FormSignatureEven
                 ZillitPageHeader(eyebrow = "Film Tools", title = "Documents & Signature")
                 ZillitNotice(
                     text = "You don’t have access to Documents & Signature on this " +
-                        "production. Access is granted per tool, by the production’s admin.",
+                        "project. Access is granted per tool, by the project’s admin.",
                     tone = StatusTone.Pending,
                     icon = ZillitIcons.Info,
                 )
@@ -85,7 +85,7 @@ private fun HubPage(onEvent: (FormSignatureEvent) -> Unit) {
     ) {
         HubTile(
             title = FormSignatureArea.StandardForms.label,
-            text = "The production’s shared library — download, keep your own list, sign.",
+            text = "The project’s shared library — download, keep your own list, sign.",
             onOpen = { onEvent(FormSignatureEvent.SwitchArea(FormSignatureArea.StandardForms)) },
         )
         HubTile(

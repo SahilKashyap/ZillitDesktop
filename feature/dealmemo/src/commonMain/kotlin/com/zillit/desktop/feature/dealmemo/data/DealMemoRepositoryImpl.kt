@@ -143,6 +143,12 @@ class DealMemoRepositoryImpl(
         body = buildJsonObject { },
     ).map { }
 
+    override suspend fun chase(id: String): ZillitResult<Unit> = apiClient.envelope(
+        verb = HttpVerb.Post,
+        url = "$base/deals/$id/chase",
+        module = RequestModule.ProjectUser,
+    ).map { }
+
     override suspend fun unions(): ZillitResult<List<Union>> = apiClient.request(
         verb = HttpVerb.Get,
         url = "$base/unions",
@@ -285,7 +291,7 @@ internal data class DealDto(
             // `data/utils.js:88`).
             designation = firstFilled(
                 cd?.customDesignation,
-                humanisedIdentifier(cd?.designationIdentifier, "designation_"),
+                humanisedIdentifier(cd?.designationIdentifier, "designation_", cd?.departmentIdentifier),
                 cd?.designationId,
                 designation,
             ),

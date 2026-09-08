@@ -26,6 +26,7 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.settings.admin.domain.Department
 import com.zillit.desktop.feature.settings.admin.domain.ProductionTool
 import com.zillit.desktop.feature.settings.admin.domain.ToolGroup
+import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
 import com.zillit.desktop.feature.settings.admin.ui.AdminConfirmation
 import com.zillit.desktop.feature.settings.admin.ui.AdminEvent
 import com.zillit.desktop.feature.settings.admin.ui.AdminUiState
@@ -49,7 +50,7 @@ import com.zillit.desktop.feature.settings.admin.ui.NameKind
 @Composable
 fun DepartmentsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "Departments",
+        title = AdminDestination.Departments.title,
         description = "Crew choose one of these when they join.",
         state = state,
         onEvent = onEvent,
@@ -70,7 +71,7 @@ fun DepartmentsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: 
                     EmptyRow("No department matches “${state.query}”.")
 
                 rows.isEmpty() && state.hasLoaded ->
-                    EmptyRow("This production has no departments yet.")
+                    EmptyRow("This project has no departments yet.")
 
                 else -> rows.forEachIndexed { index, department ->
                     if (index > 0) RowRule()
@@ -134,7 +135,7 @@ fun JobTitlesPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: ()
     val department = state.selectedDepartment
 
     AdminPage(
-        title = "Job titles",
+        title = AdminDestination.JobTitles.title,
         description = "The roles crew can hold inside a department.",
         state = state,
         onEvent = onEvent,
@@ -248,7 +249,10 @@ fun CrewOrderPage(
     val listName = if (isOtherType) "staff list" else "crew list"
 
     AdminPage(
-        title = if (isOtherType) "Staff list order" else "Crew list order",
+        // The only page whose name depends on the production: Android swaps
+        // the same two words (`set_department_priority_staff_list`).
+        title = "Change Department Listing Order for " +
+            if (isOtherType) "Staff List" else "Crew List",
         description = "The order departments appear in when the $listName is generated.",
         state = state,
         onEvent = onEvent,
@@ -282,7 +286,7 @@ fun CrewOrderPage(
 
         RowCard {
             if (order.isEmpty() && state.hasLoaded) {
-                EmptyRow("This production has no departments to order.")
+                EmptyRow("This project has no departments to order.")
             }
             order.forEachIndexed { index, department ->
                 if (index > 0) RowRule()
@@ -338,7 +342,7 @@ fun CrewOrderPage(
 @Composable
 fun ToolAvailabilityPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "Tools on this production",
+        title = AdminDestination.ToolAvailability.title,
         description = "Switching one off hides it, and everything in it, for everyone.",
         state = state,
         onEvent = onEvent,
@@ -406,7 +410,7 @@ private fun ToolRow(tool: ProductionTool, onEvent: (AdminEvent) -> Unit) {
 @Composable
 fun ToolGroupsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "Tool groups",
+        title = AdminDestination.ToolGroups.title,
         description = "The headings tools sit under on the Film Tools grid.",
         state = state,
         onEvent = onEvent,
@@ -422,7 +426,7 @@ fun ToolGroupsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: (
         ZillitSectionLabel("Groups")
         RowCard {
             if (state.toolGroups.isEmpty() && state.hasLoaded) {
-                EmptyRow("No groups on this production.")
+                EmptyRow("No groups on this project.")
             }
             state.toolGroups.forEachIndexed { index, group ->
                 if (index > 0) RowRule()

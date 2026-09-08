@@ -6,13 +6,20 @@ import com.zillit.desktop.core.datastore.ZillitPreferences
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.flatMap
 import com.zillit.desktop.core.common.map
+import com.zillit.desktop.feature.email.domain.AttachmentUploader
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 import com.zillit.desktop.feature.email.data.FilePicker
 import com.zillit.desktop.feature.email.domain.StorageKind
 import com.zillit.desktop.feature.email.domain.storageKindOf
 import com.zillit.desktop.feature.home.data.ClipAudioPlayer
 import com.zillit.desktop.feature.home.data.JvmAudioRecorder
-import com.zillit.desktop.feature.home.data.identifierToWireTool
+import com.zillit.desktop.core.badges.LedgerRead
+import com.zillit.desktop.core.badges.badgeSilenceFrom
+import com.zillit.desktop.core.badges.identifierToWireTool
+import com.zillit.desktop.core.badges.ledgerArrivalsFrom
+import com.zillit.desktop.core.badges.wireRecords
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import com.zillit.desktop.feature.home.data.pdfThumbnailJpeg
 import com.zillit.desktop.feature.home.data.videoThumbnailJpeg
 import com.zillit.desktop.core.common.ZillitLog
@@ -122,30 +129,42 @@ internal suspend fun fetchStaticMapBytes(ready: AppGraph.Ready, lat: Double, lng
 private const val STATIC_MAP_NAME = "location-map.png"
 private const val STATIC_MAP_TYPE = "image/png"
 
-/** What the composer can capture: picker, uploader, microphone, poster frames. */
-internal fun homeMediaCapture(ready: AppGraph.Ready) = MediaCapture(
+/**
+ * What the composer can capture: picker, uploader, microphone, poster frames.
+ *
+ * [uploader] and [storageType] default to the open production's. A widget
+ * posting into another production passes that production's pair instead —
+ * which storage a file belongs in is a fact about the production receiving
+ * it, not about the window doing the sending.
+ */
+internal fun homeMediaCapture(
+    ready: AppGraph.Ready,
+    uploader: AttachmentUploader = ready.attachmentUploader,
+    storageType: () -> String? = { ready.projectContext?.context?.value?.project?.storageType },
+) = MediaCapture(
     // The same OS dialog mail attachments use. Several files become several
     // posts — the wire takes one attachment per message, as the phones send.
     pick = { FilePicker().pick().map { it.toNoticeMedia() } },
+    // The attach sheet's kind filters the same dialog — Photo, Video,
+    // Document, Audio — and is checked again after the choice.
+    pickOf = { kind -> attachmentPicker.pick(kind).map { it.toNoticeMedia() } },
     // The same routed uploader (S3 or Box by production) mail uses. A video's
     // poster frame travels first as its own object; a poster that fails to
     // upload costs the poster, never the video.
     upload = { picked, onProgress ->
         // The poster read path signs S3 GETs; a poster keyed into Box could
         // never be fetched. The web skips it there for the same reason.
-        val storageIsAws = storageKindOf(
-            ready.projectContext?.context?.value?.project?.storageType,
-        ) == StorageKind.Aws
+        val storageIsAws = storageKindOf(storageType()) == StorageKind.Aws
         val thumbnailKey = picked.thumbnailBytes
             ?.takeIf { storageIsAws }
             ?.let { poster ->
-                ready.attachmentUploader
+                uploader
                     .upload(picked.name + "_thumb.jpg", "image/jpeg", poster)
                     .getOrNull()?.media
             }
         // Only the main file reports progress: the poster above is a few
         // kilobytes, and a bar that restarts for it would read as a glitch.
-        ready.attachmentUploader
+        uploader
             .upload(picked.name, picked.contentType, picked.bytes, onProgress)
             .map { stored ->
                 UploadedNoticeMedia(
@@ -194,6 +213,13 @@ internal fun homeMediaCapture(ready: AppGraph.Ready) = MediaCapture(
 internal fun com.zillit.desktop.feature.email.domain.PickedFile.toNoticeMedia() =
     PickedMedia(name = name, contentType = contentType, bytes = bytes)
 
+internal fun com.zillit.desktop.core.media.PickedFile.toNoticeMedia() =
+    PickedMedia(name = name, contentType = contentType, bytes = bytes)
+
+/** One picker for every attach sheet in the app; the kind is the only thing that varies. */
+internal val attachmentPicker: com.zillit.desktop.core.media.AttachmentPicker =
+    com.zillit.desktop.core.media.AwtAttachmentPicker()
+
 /**
  * Fetches an attachment, saves it to Downloads, and hands it to the OS.
  *
@@ -237,6 +263,7 @@ internal fun buildHomeFeed(
     newLocalId = { UUID.randomUUID().toString() },
     // Admins post to any unit; the unit list does not pre-apply it.
     isAdmin = { ready.projectContext?.context?.value?.isAdmin == true },
+    rights = ready.rightsRequests,
     // Who may edit or delete their own replies.
     currentUserId = { ready.projectContext?.context?.value?.profile?.userId },
     media = homeMediaCapture(ready),
@@ -300,13 +327,12 @@ internal suspend fun emitBoardRead(ready: AppGraph.Ready, unitId: String) =
     emitSegmentRead(ready, segment = unitId, module = "home_label")
 
 /**
- * Tells the server one segment is read, then refetches the counts.
+ * Tells the server one segment is read, and the ledger the same.
  *
  * One helper for every surface that marks itself seen — boards, chat
- * threads, and whatever comes next — because the server does not echo a
- * badge event back to the reader for their own read (verified live: an
- * opened board's count stood for good). The beat gives the server time to
- * apply the read before being asked.
+ * threads, and whatever comes next. The ledger is the badge: the rows it
+ * flips stay flipped, whatever the server later says about them (the phones'
+ * rule; the server does not even echo a badge event back for one's own read).
  */
 internal suspend fun emitSegmentRead(
     ready: AppGraph.Ready,
@@ -315,6 +341,7 @@ internal suspend fun emitSegmentRead(
     referenceId: String? = null,
 ) {
     val projectId = ready.projectContext?.context?.value?.project?.projectId ?: return
+    ready.badgeStore.markRead(ledgerReadFor(segment, referenceId))
     ready.socketEvents.emit(
         ZillitSocketEvents.Badges.NotificationRead,
         NotificationReadDto(
@@ -326,8 +353,6 @@ internal suspend fun emitSegmentRead(
         ),
         NotificationReadDto.serializer(),
     )
-    kotlinx.coroutines.delay(READ_SETTLE_MILLIS)
-    ready.badgeStore.refresh()
 }
 
 /**
@@ -354,13 +379,9 @@ internal suspend fun emitToolRead(ready: AppGraph.Ready, toolIdentifier: String)
         ),
         NotificationReadDto.serializer(),
     )
-    kotlinx.coroutines.delay(READ_SETTLE_MILLIS)
-    ready.badgeStore.refresh()
+    // Android `Info`/`Production`/`BoxSchedule`…: every row of the tool.
+    ready.badgeStore.markRead(LedgerRead.Tool(identifierToWireTool(toolIdentifier)))
 }
-
-
-/** How long the server gets to apply a read before we ask for counts. */
-private const val READ_SETTLE_MILLIS = 1_500L
 
 
 /**
@@ -368,9 +389,12 @@ private const val READ_SETTLE_MILLIS = 1_500L
  * ending in a [ChatAttachment] ready to ride a message envelope. One capture
  * pipeline for every place the crew speaks.
  */
-internal fun chatVoice(ready: AppGraph.Ready): com.zillit.desktop.feature.chat.domain.ChatVoice =
+internal fun chatVoice(
+    ready: AppGraph.Ready,
+    capture: MediaCapture = homeMediaCapture(ready),
+): com.zillit.desktop.feature.chat.domain.ChatVoice =
     object : com.zillit.desktop.feature.chat.domain.ChatVoice {
-        private val capture = homeMediaCapture(ready)
+        private val capture = capture
 
         override suspend fun start() =
             capture.recorder?.start() ?: com.zillit.desktop.core.common.ZillitResult.Failure(
@@ -571,6 +595,7 @@ private fun AppGraph.Ready.boardFeed(
         nowMillis = System::currentTimeMillis,
         newLocalId = { UUID.randomUUID().toString() },
         isAdmin = { projectContext?.context?.value?.isAdmin == true },
+        rights = rightsRequests,
         currentUserId = { projectContext?.context?.value?.profile?.userId },
         media = homeMediaCapture(this),
         // The board's read receipt names its own module label — the web
@@ -583,4 +608,48 @@ private fun AppGraph.Ready.boardFeed(
             preferences.set(ZillitPreferences.RecentMentions, names.joinToString("\n"))
         },
     )
+}
+
+/**
+ * The socket's word on the ledger, applied as the phones apply it.
+ *
+ * `notification:save` files its records; `notification:silent` drops what
+ * another device or the server already dropped — reads elsewhere, deleted
+ * messages and comments, rooms lost, tools and units this person may no
+ * longer see (each lost tool is also re-sent as a read, as iOS's
+ * `emitForBadgeDelete` does, so the server's ledger forgets too); the two
+ * `badges:cleared:*` frames empty a production or the device. No refetch
+ * follows any of them: the rows are the badges.
+ */
+internal suspend fun badgeSocketEffects(ready: AppGraph.Ready) = kotlinx.coroutines.coroutineScope {
+    val open = { ready.projectContext?.context?.value?.project?.projectId }
+    launch {
+        ready.socketEvents.on(ZillitSocketEvents.Badges.Save).collect { message ->
+            ready.badgeStore.arrived(ledgerArrivalsFrom(message.payload, fallbackProjectId = open()))
+        }
+    }
+    launch {
+        ready.socketEvents.on(ZillitSocketEvents.Badges.Silent).collect { message ->
+            val silence = badgeSilenceFrom(message.payload) ?: return@collect
+            ready.badgeStore.silence(silence)
+            val projectId = open() ?: return@collect
+            silence.lostTools.forEach { label ->
+                ready.socketEvents.emit(
+                    ZillitSocketEvents.Badges.NotificationRead,
+                    NotificationReadDto(projectId = projectId, segment = label, timestamp = System.currentTimeMillis()),
+                    NotificationReadDto.serializer(),
+                )
+            }
+        }
+    }
+    launch {
+        ready.socketEvents.on(ZillitSocketEvents.Badges.ClearedUser).collect { message ->
+            val named = message.payload.wireRecords().firstOrNull()
+                ?.let { (it["project_id"] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank) }
+            (named ?: open())?.let { ready.badgeStore.clearProject(it) }
+        }
+    }
+    launch {
+        ready.socketEvents.on(ZillitSocketEvents.Badges.ClearedDevice).collect { ready.badgeStore.clearEverything() }
+    }
 }

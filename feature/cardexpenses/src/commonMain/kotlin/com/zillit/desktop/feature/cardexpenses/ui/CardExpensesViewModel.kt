@@ -839,7 +839,7 @@ class CardExpensesViewModel(
             else -> true
         }
         if (!allowed) {
-            sendEffect(CardEffect.Failed("You do not have the rights to do that on this production."))
+            sendEffect(CardEffect.Failed("You do not have the rights to do that on this project."))
             return
         }
         when (prompt.action) {

@@ -120,7 +120,9 @@ enum class DayType(val wire: String?, val label: String) {
     Worked("SWD", "Worked"),
     Travel("Travel", "Travel"),
     Holiday("Holiday", "Holiday"),
-    Rest("REST", "Rest day"),
+    // Both phones renamed the display string; the wire code is untouched
+    // (web `data/dayTypes.js:43`, Android timecard).
+    Rest("REST", "Day Off"),
     Sick("Sick", "Sick"),
     /** The timecard-only `IDLE_DAY` code (`dayTypeWire.js:18`). */
     Idle("IDLE_DAY", "Idle"),

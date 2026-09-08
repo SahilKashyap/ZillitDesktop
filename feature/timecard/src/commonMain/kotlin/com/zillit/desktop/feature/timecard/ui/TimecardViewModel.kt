@@ -565,7 +565,7 @@ class TimecardViewModel(
         )
         if (enqueued == null) {
             setState { copy(busy = false) }
-            sendEffect(TimecardEffect.Failed("Open a production before saving a timecard."))
+            sendEffect(TimecardEffect.Failed("Open a project before saving a timecard."))
             return
         }
         forgetDraft(draft.weekStarting)
@@ -595,7 +595,7 @@ class TimecardViewModel(
             ),
         )
         if (enqueued == null) {
-            sendEffect(TimecardEffect.Failed("Open a production before submitting a timecard."))
+            sendEffect(TimecardEffect.Failed("Open a project before submitting a timecard."))
             return
         }
         setState { copy(notice = QUEUED_SUBMIT_NOTICE) }

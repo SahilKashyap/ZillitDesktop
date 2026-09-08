@@ -45,11 +45,11 @@ internal fun JoinProductionDialog(
     modifier: Modifier = Modifier,
 ) {
     ZillitDialogShell(
-        title = "Join a production",
+        title = "Join a project",
         visible = visible,
         subtitle = when (state.step) {
-            JoinStep.Code -> "Step 1 of 2 — the production code"
-            JoinStep.Details -> "Step 2 of 2 — who you are on this production"
+            JoinStep.Code -> "Step 1 of 2 — the project code"
+            JoinStep.Details -> "Step 2 of 2 — who you are on this project"
             JoinStep.Submitted -> "Request sent"
         },
         icon = ZillitIcons.User,
@@ -113,7 +113,7 @@ private fun StepBar(step: JoinStep) {
 @Composable
 private fun CodeStep(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
     ZillitText(
-        text = "Enter the code the production gave you.",
+        text = "Enter the code the project gave you.",
         style = ZillitTheme.typography.bodySmall,
         color = ZillitTheme.colors.textMuted,
     )
@@ -121,12 +121,12 @@ private fun CodeStep(state: JoinFlowState, onEvent: (JoinEvent) -> Unit) {
     ZillitTextField(
         value = state.codeText,
         onValueChange = { onEvent(JoinEvent.CodeChanged(it)) },
-        placeholder = "Production code",
+        placeholder = "Project code",
         modifier = Modifier.fillMaxWidth(),
     )
 
     DialogActions(
-        confirmText = "Find production",
+        confirmText = "Find project",
         confirmEnabled = state.canFindProject,
         isBusy = state.isBusy,
         onConfirm = { onEvent(JoinEvent.FindProject) },

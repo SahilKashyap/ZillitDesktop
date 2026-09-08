@@ -106,7 +106,7 @@ class PurchaseOrderSyncTest {
         )
         assertEquals("p1", envelope.projectId)
         assertTrue(envelope.inProject("p1"))
-        assertFalse(envelope.inProject("p2"), "another production's frame must drop")
+        assertFalse(envelope.inProject("p2"), "another project's frame must drop")
         assertTrue(envelope.inProject(null), "an unnamed local project cannot gate")
         assertTrue(PoSyncEnvelope().inProject("p1"), "a frame with no project id passes — the classic family")
     }

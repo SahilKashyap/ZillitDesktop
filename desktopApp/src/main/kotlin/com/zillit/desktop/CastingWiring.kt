@@ -35,6 +35,7 @@ internal fun AppGraph.Ready.buildCastBoard(
     nowMillis = System::currentTimeMillis,
     board = board,
     permissions = permissions,
+    rights = rightsRequests,
 )
 
 internal fun AppGraph.Ready.castBoardProvider(viewModel: CastingViewModel, path: String) = CastingToolProvider(

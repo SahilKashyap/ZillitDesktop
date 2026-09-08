@@ -143,6 +143,8 @@ private fun ComposerHost(
                 ComposeEffect.Sent, ComposeEffect.Discarded -> onClose(composer.id)
                 ComposeEffect.ChooseFiles ->
                     deps.chooseFiles().forEach { viewModel.onEvent(ComposeEvent.AttachFile(it)) }
+                is ComposeEffect.ChooseFilesOf ->
+                    deps.chooseFilesOf(effect.kind).forEach { viewModel.onEvent(ComposeEvent.AttachFile(it)) }
                 ComposeEffect.OpenSignatures -> onOpenSignatures()
             }
         }

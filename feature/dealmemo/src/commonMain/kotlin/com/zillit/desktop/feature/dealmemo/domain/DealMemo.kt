@@ -281,6 +281,16 @@ interface DealMemoRepository {
     /** The crew member confirming the terms as they stand. */
     suspend fun acknowledge(id: String): ZillitResult<Unit>
 
+    /**
+     * Nudge the crew member about a deal already issued to them.
+     *
+     * Both phones send this and nothing else to re-notify: it carries no body,
+     * so it cannot overwrite what the crew member has since filled in. The
+     * server refuses it on any other status (`deal_chase_invalid_status`) and
+     * when the deal has nobody to chase (`deal_no_chase_recipient`).
+     */
+    suspend fun chase(id: String): ZillitResult<Unit>
+
     suspend fun unions(): ZillitResult<List<Union>>
 
     suspend fun agreements(unionId: String?): ZillitResult<List<Agreement>>

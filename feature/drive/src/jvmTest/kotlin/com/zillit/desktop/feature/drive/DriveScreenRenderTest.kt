@@ -52,7 +52,7 @@ class DriveScreenRenderTest {
      * breadcrumb's root button, and a matcher that hits two nodes fails on the
      * ambiguity rather than on anything being wrong.
      */
-    private val header = "The production's shared files — upload, organise, share and " +
+    private val header = "The project's shared files — upload, organise, share and " +
         "version them."
 
     private val admin = DriveViewer(
@@ -382,6 +382,29 @@ class DriveScreenRenderTest {
             // What stops "we're out of space" becoming a support ticket rather
             // than an Empty Trash click.
             onNodeWithText("Still counts towards usage").assertIsDisplayed()
+        }
+    }
+
+
+    /**
+     * The flip: Request files stays on a folder for a read-only viewer.
+     *
+     * `DriveViewModel.openFileRequests` answers the press by offering to ask
+     * an admin for the drive's posting right.
+     */
+    @Test
+    fun `a read-only viewer still sees Request files on a folder`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    DriveScreen(
+                        state = state(DriveDestination.Browse, readOnly)
+                            .copy(details = DetailsState(item = folder)),
+                        onEvent = {},
+                    )
+                }
+            }
+            onNodeWithText("Request files").assertExists()
         }
     }
 }

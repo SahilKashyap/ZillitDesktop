@@ -63,6 +63,30 @@ class ThreadPaneRenderTest {
     )
 
     @Test
+    fun `the paperclip opens the phones' attach sheet`() = runComposeUiTest {
+        // Android's PickerDialog and iOS's action sheet both put Photo /
+        // Video / Document / Audio between the button and the OS dialog.
+        var fired: ChatEvent? = null
+        setContent {
+            ZillitTheme {
+                ThreadPane(
+                    state = ChatUiState(peer = aisha, messages = listOf(theirs())),
+                    onEvent = { fired = it },
+                )
+            }
+        }
+
+        onNodeWithContentDescription("Attach a file").performClick()
+        waitForIdle()
+        listOf("Photo", "Video", "Document", "Audio").forEach { onNodeWithText(it).assertExists() }
+
+        onNodeWithText("Document").performClick()
+        waitForIdle()
+        assertTrue(fired is ChatEvent.AttachKind, "$fired")
+        assertTrue((fired as ChatEvent.AttachKind).kind == com.zillit.desktop.core.media.PreviewKind.Document)
+    }
+
+    @Test
     fun `the menu opens on a received bubble`() = runComposeUiTest {
         setContent {
             ZillitTheme {

@@ -7,9 +7,8 @@ import kotlin.test.assertTrue
 /**
  * The lookups every badge surface leans on.
  *
- * The folding of wire rows into these maps lives with the source (see
- * `tallyRows` in `feature:home`); what belongs here is the contract the rail,
- * tabs, tiles and dock read against.
+ * The folding of ledger rows into these maps is `tallyBadges`; what belongs
+ * here is the contract the rail, tabs, tiles and dock read against.
  */
 class BadgeAggregationTest {
 
@@ -44,6 +43,8 @@ class BadgeAggregationTest {
         )
 
         assertEquals(6, counts.total)
+        // The rail's C&C number stands in for the ledger's, so the dock agrees with the rail.
+        assertEquals(8, counts.totalWith("cnc_label", 3))
     }
 
     @Test
@@ -60,4 +61,17 @@ class BadgeAggregationTest {
 
         assertTrue(!counts.toString().contains("confidential_info_tool"))
     }
+
+    /** The store is a StateFlow; only value equality lets it skip a no-op emission. */
+    @Test
+    fun `counts are equal by value`() {
+        val a = BadgeCounts(bySection = mapOf("cnc_label" to 1), byTool = mapOf("email_tool" to 1))
+        val b = BadgeCounts(bySection = mapOf("cnc_label" to 1), byTool = mapOf("email_tool" to 1))
+        val c = BadgeCounts(bySection = mapOf("cnc_label" to 2), byTool = mapOf("email_tool" to 1))
+
+        assertEquals(a, b)
+        assertEquals(a.hashCode(), b.hashCode())
+        assertTrue(a != c)
+    }
+
 }

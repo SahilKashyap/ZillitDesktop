@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.drive.ui
 
+import com.zillit.desktop.core.media.PreviewKind
+
 import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
 import com.zillit.desktop.feature.drive.domain.DriveGrouping
 import com.zillit.desktop.feature.drive.domain.DriveFileRequest
@@ -86,6 +88,9 @@ sealed interface DriveEvent {
 
     /** Asks the host to show a file picker; the chosen files come back as [Upload]. */
     data object PickFiles : DriveEvent
+
+    /** The attach sheet's answer — the picker filtered to one kind. */
+    data class PickFilesOf(val kind: PreviewKind) : DriveEvent
     data class Upload(val files: List<PickedFile>) : DriveEvent
     data class CancelUpload(val uploadId: String) : DriveEvent
     data object ClearFinishedUploads : DriveEvent
@@ -127,4 +132,7 @@ sealed interface DriveEffect {
 
     /** Ask the host to show a file picker. */
     data object PickFiles : DriveEffect
+
+    /** As [PickFiles], filtered to one kind from the attach sheet. */
+    data class PickFilesOf(val kind: PreviewKind) : DriveEffect
 }

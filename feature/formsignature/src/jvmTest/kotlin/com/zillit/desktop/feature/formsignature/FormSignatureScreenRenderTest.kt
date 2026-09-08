@@ -123,9 +123,45 @@ class FormSignatureScreenRenderTest {
                 }
             }
             onNodeWithText(
-                "You don’t have access to Documents & Signature on this production. " +
-                    "Access is granted per tool, by the production’s admin.",
+                "You don’t have access to Documents & Signature on this project. " +
+                    "Access is granted per tool, by the project’s admin.",
             ).assertExists()
+        }
+    }
+
+
+    /**
+     * The flip, on both of this tool's uploads.
+     *
+     * `FormSignatureViewModel.refusesPost` answers either press by offering to
+     * ask an admin; a hidden button offered nothing.
+     */
+    @Test
+    fun `a reader without posting rights still sees both uploads`() {
+        val reader = FormSignatureViewer(canView = true, canPost = false, ready = true)
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    FormSignatureScreen(
+                        state = state(FormSignatureArea.StandardForms).copy(viewer = reader),
+                        onEvent = {},
+                    )
+                }
+            }
+            onNodeWithText("Upload document").assertExists()
+        }
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    FormSignatureScreen(
+                        state = state(FormSignatureArea.Documents).copy(viewer = reader),
+                        onEvent = {},
+                    )
+                }
+            }
+            onNodeWithText("Upload & send").assertExists()
         }
     }
 }

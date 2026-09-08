@@ -57,6 +57,8 @@ class EsignSyncTest {
             document: StoredFile,
             recipients: List<EnvelopeRecipient>,
             fields: List<NewField>,
+            initialsOnAllPages: Boolean,
+            reminderCadenceDays: Int?,
         ) = ZillitResult.Success(Envelope("e1"))
         override suspend fun send(envelopeId: String) = ZillitResult.Success(Unit)
         override suspend fun deleteDraft(envelopeId: String) = ZillitResult.Success(Unit)

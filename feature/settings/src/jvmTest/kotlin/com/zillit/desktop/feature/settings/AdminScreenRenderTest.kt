@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.settings
 
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithText
@@ -247,7 +249,7 @@ class AdminScreenRenderTest {
         render(AdminDestination.Crew) {
             onNodeWithText("Ada Lovelace").assertExists()
             onNodeWithText("Admin").assertExists()
-            onNodeWithText("Off the production").assertExists()
+            onNodeWithText("Off the project").assertExists()
         }
     }
 
@@ -294,7 +296,7 @@ class AdminScreenRenderTest {
         val none = state(AdminDestination.Sos).copy(sos = emptyList())
         render(AdminDestination.Sos, state = none) {
             onNodeWithText(
-                "Nobody is alerted on this production. An SOS raised here would reach no one.",
+                "Nobody is alerted on this project. An SOS raised here would reach no one.",
             ).assertExists()
         }
     }
@@ -305,7 +307,7 @@ class AdminScreenRenderTest {
             .copy(deletion = DeletionSchedule(isScheduled = true, hours = 24))
 
         render(AdminDestination.DeleteProduction, state = scheduled) {
-            onNodeWithText("This production is scheduled for deletion in 24 hours.").assertExists()
+            onNodeWithText("This project is scheduled for deletion in 24 hours.").assertExists()
             onNodeWithText("Call it off").assertExists()
         }
     }
@@ -333,7 +335,9 @@ class AdminScreenRenderTest {
             state = state(AdminDestination.ShootingUnits),
             production = ProductionFacts(name = "Conference", isOtherType = true),
         ) {
-            onNodeWithText("Shooting units is not part of this production").assertExists()
+            onNodeWithText(
+                "Create Additional Shooting Unit is not part of this project",
+            ).assertExists()
         }
     }
 
@@ -350,7 +354,7 @@ class AdminScreenRenderTest {
             state = state(AdminDestination.HomeUnits),
             production = ProductionFacts(name = "Conference", isOtherType = true),
         ) {
-            onNodeWithText("Home units").assertExists()
+            onNodeWithText("Create/Update Home Units").assertExists()
         }
     }
 
@@ -458,7 +462,7 @@ class AdminScreenRenderTest {
             AdminDestination.DeleteProduction,
             state = state(AdminDestination.DeleteProduction, confirming = confirming),
         ) {
-            onNodeWithText("Delete this production in 48 hours?").assertExists()
+            onNodeWithText("Delete this project in 48 hours?").assertExists()
             onNodeWithText(confirming.message).assertExists()
         }
     }
@@ -477,4 +481,30 @@ class AdminScreenRenderTest {
             onNodeWithText("That department is in use.").assertExists()
         }
     }
+
+    /**
+     * A page's header says the same thing as the tab that opened it.
+     *
+     * Caught live: the tab read "User Management" while the page under it still
+     * said "Crew and admins", because the two were separate hardcoded strings.
+     * Every page now reads [AdminDestination.title], and this walks the whole
+     * enum so the next one added cannot quietly reintroduce the split.
+     */
+    @Test
+    fun `every admin page is headed by the name on its tab`() {
+        val production = ProductionFacts(name = "SG Document Distribution")
+        val skipped = setOf(
+            // Named for the production it belongs to, not for the enum entry.
+            AdminDestination.CrewOrder,
+        )
+
+        AdminDestination.entries
+            .filter { it.availableTo(production) && it !in skipped }
+            .forEach { page ->
+                render(page, state = state(page), production = production) {
+                    onAllNodesWithText(page.title).onFirst().assertExists()
+                }
+            }
+    }
+
 }

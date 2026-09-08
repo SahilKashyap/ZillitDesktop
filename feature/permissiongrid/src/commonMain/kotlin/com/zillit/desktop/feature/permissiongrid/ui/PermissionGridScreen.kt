@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -70,7 +71,7 @@ fun PermissionGridScreen(
     ) {
         ZillitPageHeader(
             title = "Viewing & Posting Rights Grid",
-            description = "Who may see, post to and download from each tool on this production.",
+            description = "Who may see, post to and download from each tool on this project.",
         )
 
         Controls(state, onEvent)
@@ -91,6 +92,14 @@ fun PermissionGridScreen(
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Info,
                 modifier = Modifier.padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
+                action = {
+                    ZillitButton(
+                        text = "Ask an admin",
+                        onClick = { onEvent(PermissionGridEvent.RequestPostingRights) },
+                        variant = ButtonVariant.Tertiary,
+                        size = ButtonSize.Small,
+                    )
+                },
             )
         }
 
@@ -121,7 +130,7 @@ private fun Body(state: PermissionGridUiState, onEvent: (PermissionGridEvent) ->
 
         state.grid.rows.isEmpty() -> ZillitEmptyState(
             title = "Nothing to show",
-            message = "This production has no ${state.axis.label.lowercase()} to grant rights to.",
+            message = "This project has no ${state.axis.label.lowercase()} to grant rights to.",
         )
 
         state.rows.isEmpty() -> Centred("No one matches \"${state.query.trim()}\".")

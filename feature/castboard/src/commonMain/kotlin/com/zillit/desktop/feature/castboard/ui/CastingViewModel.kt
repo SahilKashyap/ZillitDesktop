@@ -3,6 +3,8 @@ package com.zillit.desktop.feature.castboard.ui
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.feature.castboard.domain.BoardTool
 import com.zillit.desktop.feature.castboard.domain.CastingEntry
@@ -25,6 +27,8 @@ class CastingViewModel(
     /** Which board this is — casting or wardrobe. */
     val board: BoardTool = BoardTool.Casting,
     private val permissions: () -> ProjectPermissions = { ProjectPermissions(emptyList()) },
+    /** Carries a refused press to the app frame, which offers to ask an admin. */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<CastingUiState, CastingEvent, Nothing>(CastingUiState()) {
 
     override fun onEvent(event: CastingEvent) {
@@ -66,9 +70,31 @@ class CastingViewModel(
      * does not belong here — removing it locally rather than re-reading keeps
      * the board still under the reader's hand, and the next refresh confirms.
      */
+
+    /**
+     * Refuses, and offers the one thing that changes the answer.
+     *
+     * The control that got here is on screen for everyone now — hiding it is
+     * what sent people to support instead of to an admin. Null when the host
+     * wired no bus (tests, previews), and then this is just the refusal.
+     */
+    private fun askForRights(kind: RightsKind) {
+        setState {
+            copy(
+                error = "You do not have ${kind.verb} rights on $MODULE_LABEL" +
+                    if (rights == null) "." else " — asking an administrator.",
+            )
+        }
+        rights?.ask(MODULE_LABEL, kind)
+    }
+
     private fun move(entryId: String, status: CastingStatus) {
         val unit = currentState.unit ?: return
-        if (!unit.canPost || status == currentState.status) return
+        if (status == currentState.status) return
+        if (!unit.canPost) {
+            askForRights(RightsKind.Post)
+            return
+        }
         setState { copy(busy = true, error = null) }
         launch {
             when (val answer = repository.moveTo(unit.unitId, entryId, status)) {
@@ -146,3 +172,5 @@ class CastingViewModel(
         val STATUSES: List<CastingStatus> = CastingStatus.entries
     }
 }
+
+private const val MODULE_LABEL = "Casting"

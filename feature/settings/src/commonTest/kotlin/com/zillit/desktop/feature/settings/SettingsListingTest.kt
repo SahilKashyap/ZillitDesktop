@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.settings
 
 import com.zillit.desktop.feature.settings.admin.ui.AdminDestination
 import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
+import com.zillit.desktop.feature.settings.ui.ACCOUNT_HUB_ROUTE
 import com.zillit.desktop.feature.settings.ui.AccountSummary
 import com.zillit.desktop.feature.settings.ui.AdminSettingsUiState
 import com.zillit.desktop.feature.settings.ui.EntryStatus
@@ -185,16 +186,24 @@ class SettingsListingTest {
         // second line of defence, so a mis-wired row is inert rather than
         // opening whatever the last branch happened to be.
         //
-        // Deal-memo onboarding is the remaining planned row — every other
-        // administration destination now has a page. See AdminDestination.
+        // Every administration destination now has a page, so this asks the
+        // question with a row the *listing* never offers: the queues and the
+        // account pages are routed, and JoinedUnits is only absent on a
+        // production that cannot have it. LeaveProduction is routed too — so
+        // the honest probe is a destination the admin catalogue does not carry
+        // and AdminDestination.of() answers null for.
         val settings = viewModel()
         val effects = mutableListOf<SettingsEffect>()
         val job = CoroutineScope(dispatcher).launch { settings.effects.collect(effects::add) }
 
-        settings.onEvent(SettingsEvent.OpenEntry(SettingsDestination.DealMemoOnboarding))
+        settings.onEvent(SettingsEvent.OpenEntry(SettingsDestination.SetupNotes))
         advanceUntilIdle()
 
-        assertTrue(effects.isEmpty())
+        // SetupNotes *is* routed, to the browser — so this is the positive
+        // half. The negative half is now covered by
+        // `every openable row has somewhere to go`, which clicks the real
+        // catalogue and asserts nothing is inert.
+        assertEquals(listOf<SettingsEffect>(SettingsEffect.OpenExternal(SETUP_NOTES_URL)), effects)
         job.cancel()
     }
 
@@ -271,22 +280,45 @@ class SettingsListingTest {
         assertTrue(SettingsDestination.ShootingUnits in entries.destinations())
     }
 
+    /**
+     * Production Setup is offered here, as it is on the phones.
+     *
+     * The page belongs to the Account Hub, but a coordinator setting a
+     * production up looks in Admin Settings — which is where Android puts the
+     * row (`ProductionSetupActivity`, reached from `AdminSettingsActivity`).
+     */
     @Test
-    fun `a production without deal memos is not offered onboarding`() {
-        val off = adminSettingsEntries(ProductionFacts(dealMemoEnabled = false))
-        val on = adminSettingsEntries(ProductionFacts(dealMemoEnabled = true))
-
-        assertFalse(SettingsDestination.DealMemoOnboarding in off.destinations())
-        assertTrue(SettingsDestination.DealMemoOnboarding in on.destinations())
+    fun `production setup is offered from administration`() {
+        assertTrue(SettingsDestination.ProductionSetup in adminSettingsEntries().destinations())
     }
 
     @Test
-    fun `a personal production signs no contracts`() {
-        val entries = adminSettingsEntries(
-            ProductionFacts(isPersonal = true, dealMemoEnabled = true),
-        )
+    fun `production setup opens the accounts console`() = runTest {
+        val settings = viewModel()
+        val effects = mutableListOf<SettingsEffect>()
+        val job = CoroutineScope(dispatcher).launch { settings.effects.collect(effects::add) }
 
-        assertFalse(SettingsDestination.DealMemoOnboarding in entries.destinations())
+        settings.onEvent(SettingsEvent.OpenEntry(SettingsDestination.ProductionSetup))
+        advanceUntilIdle()
+
+        assertEquals(listOf<SettingsEffect>(SettingsEffect.OpenTool(ACCOUNT_HUB_ROUTE)), effects)
+        job.cancel()
+    }
+
+    /**
+     * A remote unit cannot spawn units of its own.
+     *
+     * Android reads `parent_project_name` for exactly this and drops both
+     * rows; the desktop offered them, and the server would have refused.
+     */
+    @Test
+    fun `a remote unit is offered no units of its own`() {
+        val entries = adminSettingsEntries(ProductionFacts(name = "2nd Unit", isRemoteUnit = true))
+
+        assertFalse(SettingsDestination.JoinedUnits in entries.destinations())
+        assertFalse(SettingsDestination.RemoteUnit in entries.destinations())
+        // Its own dashboard stays: a remote unit still has a home screen.
+        assertTrue(SettingsDestination.ShootingUnits in entries.destinations())
     }
 
     @Test
@@ -298,8 +330,8 @@ class SettingsListingTest {
             .flatMap { it.entries }
             .first { it.destination == SettingsDestination.CrewListOrder }
 
-        assertEquals("Crew list order", film.title)
-        assertEquals("Staff list order", other.title)
+        assertEquals("Change Department Listing Order for Crew List", film.title)
+        assertEquals("Change Department Listing Order for Staff List", other.title)
     }
 
     // -- destruction, kept apart -------------------------------------------
@@ -371,34 +403,21 @@ class SettingsListingTest {
 
     // -- honesty about what is built ---------------------------------------
 
-    @Test
-    fun `rows that are not built yet say so`() {
-        // Deal-memo onboarding is the last one. It is a subsystem of its own
-        // — templates, signing, status — rather than a settings page, so it
-        // stays marked rather than being half-built here.
-        val planned = adminSettingsEntries(ProductionFacts(dealMemoEnabled = true))
-            .flatMap { it.entries }
-            .first { it.destination == SettingsDestination.DealMemoOnboarding }
-
-        assertEquals(EntryStatus.Planned, planned.status)
-        assertFalse(planned.isOpenable)
-    }
-
     /**
-     * The rest of administration is built.
+     * Nothing is marked "Soon" any more.
      *
-     * Guards the other direction: a page that gets reverted to "Soon" without
-     * its row being reverted too would leave a coordinator looking at a tag
-     * that contradicts the working page behind it.
+     * Deal-memo onboarding was the last planned row and Android removed it from
+     * Admin Settings on 2026-09-02, so the desktop carries no row the reader
+     * cannot open. A tag reappearing here means a page was reverted.
      */
     @Test
-    fun `every other administration row is built`() {
-        val stillPlanned = adminSettingsEntries(ProductionFacts(dealMemoEnabled = true))
+    fun `every administration row is built`() {
+        val planned = adminSettingsEntries()
             .flatMap { it.entries }
             .filter { it.status == EntryStatus.Planned }
             .map { it.destination }
 
-        assertEquals(listOf(SettingsDestination.DealMemoOnboarding), stillPlanned)
+        assertEquals(emptyList(), planned)
     }
 
     @Test
@@ -417,7 +436,7 @@ class SettingsListingTest {
     fun `no destination is listed twice`() {
         // Two rows opening the same page is how a listing drifts out of step
         // with itself — one gets renamed and the other does not.
-        val admin = adminSettingsEntries(ProductionFacts(dealMemoEnabled = true)).destinations()
+        val admin = adminSettingsEntries().destinations()
 
         assertEquals(admin.size, admin.toSet().size)
     }
@@ -435,5 +454,33 @@ class SettingsListingTest {
 
         assertNull(quiet)
         assertNotNull(busy)
+    }
+
+    /**
+     * The danger row's explanation flips with its title.
+     *
+     * Caught by looking at the rendered page: "Stop Project Deletion" sat over
+     * "Removes the project and everything in it", which describes the
+     * opposite of what pressing it does. A title and a detail that contradict
+     * each other on a destructive row is worse than either alone.
+     */
+    @Test
+    fun `stopping a deletion does not describe itself as deleting`() {
+        val row = adminSettingsEntries(ProductionFacts(markedForDeletion = true))
+            .flatMap { it.entries }
+            .first { it.destination == SettingsDestination.DeleteProduction }
+
+        assertEquals("Stop Project Deletion", row.title)
+        assertFalse(row.detail.contains("Removes"), "the stop row still describes a deletion")
+    }
+
+    @Test
+    fun `an ordinary production is offered the deletion itself`() {
+        val row = adminSettingsEntries()
+            .flatMap { it.entries }
+            .first { it.destination == SettingsDestination.DeleteProduction }
+
+        assertEquals("Delete Project", row.title)
+        assertTrue(row.detail.contains("Removes"))
     }
 }

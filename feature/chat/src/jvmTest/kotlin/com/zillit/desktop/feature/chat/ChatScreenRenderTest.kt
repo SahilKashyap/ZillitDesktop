@@ -98,6 +98,27 @@ class ChatScreenRenderTest {
     }
 
     /**
+     * Someone who left or was removed is not a contact any more: Android's
+     * Contacts tab drops `left` and `removed` (`MembersVM.kt:473`). The
+     * desktop listed them there as if nothing had happened.
+     */
+    @Test
+    fun `a departed crew member is not offered as a contact`() = runComposeUiTest {
+        val departed = CrewContact(userId = "u3", fullName = "Rohan Left", hasLeft = true)
+        setContent {
+            ZillitTheme {
+                ChatScreen(crew = crew + departed, loadAvatar = { null })
+            }
+        }
+
+        onNodeWithText("Contacts").performClick()
+        waitForIdle()
+        onNodeWithText("Aisha Khan").assertExists()
+        onNodeWithText("Rohan Left").assertDoesNotExist()
+        onAllNodesWithText("Disconnected").assertCountEquals(0)
+    }
+
+    /**
      * Android's pager order and landing page (`ChatAndCall.kt:81-140`): Chat,
      * Call, Contacts, opening on Chat. QA found the desktop opening on the
      * directory with Calls last.
@@ -117,7 +138,7 @@ class ChatScreenRenderTest {
 
         // Landed on Chats: its (view-model-less) message shows, and no crew
         // row does — the directory is one tab away.
-        onNodeWithText("Chats need a signed-in production.").assertExists()
+        onNodeWithText("Chats need a signed-in project.").assertExists()
         onNodeWithText("Aisha Khan").assertDoesNotExist()
     }
 
@@ -354,6 +375,31 @@ class ChatsTabSearchAndGroupsTest {
         onNodeWithText("Vivek Mishra").assertDoesNotExist()
     }
 
+    /**
+     * The thread with someone who left stays in the Chats list — the history
+     * is still the user's to read — but Android's listing row captions it
+     * "Disconnected" in red (`disconnedtedTxtView`); the desktop only said so
+     * inside the open thread, so the list gave no hint which rows were history.
+     */
+    @Test
+    fun `a thread with someone who left is captioned Disconnected in the Chats list`() = runComposeUiTest {
+        val departed = CrewContact(userId = "u3", fullName = "Rohan Left", hasLeft = true)
+        val repository = StubChatRepository().apply { recentsAnswer = listOf("u1", "u3") }
+        val model = viewModel(repository)
+
+        setContent {
+            ZillitTheme {
+                ChatScreen(crew = crew + departed, loadAvatar = { null }, viewModel = model)
+            }
+        }
+
+        onNodeWithText("Chats").performClick()
+        waitForIdle()
+        onNodeWithText("Rohan Left").assertExists()
+        onNodeWithText("Aisha Khan").assertExists()
+        onAllNodesWithText("Disconnected").assertCountEquals(1)
+    }
+
     /** QA#3: a room nobody has spoken in still lists under the Groups chip. */
     @Test
     fun `a silent room shows under the Groups chip`() = runComposeUiTest {
@@ -483,7 +529,7 @@ private class StubChatRepository : ChatRepository {
     override fun lastMessageOf(otherUserId: String): ChatMessage? = null
     override suspend fun markRead(peerId: String, messageId: String, isGroup: Boolean) = Unit
     override fun markThreadRead(peerId: String, uptoMillis: Long) = Unit
-    override fun unreadCounts(): Map<String, Int> = emptyMap()
+    override fun unreadCounts(floor: Map<String, Long>, defaultFloor: Long): Map<String, Int> = emptyMap()
     override fun newestActivity(): Map<String, Long> = emptyMap()
     override suspend fun sendTyping(receiverId: String, started: Boolean) = Unit
 

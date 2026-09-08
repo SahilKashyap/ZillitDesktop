@@ -244,14 +244,14 @@ private fun alertColumns(
 fun CardSettingsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val draft = state.settingsDraft ?: state.settings
     if (draft == null) {
-        ScrollingPage { ZillitNotice(text = "Loading the production's card settings…") }
+        ScrollingPage { ZillitNotice(text = "Loading the project's card settings…") }
         return
     }
     val dirty = draft != state.settings
 
     ScrollingPage {
         ZillitNotice(
-            text = "These settings apply to every card on this production.",
+            text = "These settings apply to every card on this project.",
             tone = StatusTone.Progress,
             icon = ZillitIcons.Info,
         )
@@ -309,7 +309,7 @@ fun CardSettingsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             Toggle(
                 checked = draft.personalSpendDetection,
                 label = "Flag possible personal spend",
-                detail = "Raises a Smart Alert on merchants that rarely appear on production spend.",
+                detail = "Raises a Smart Alert on merchants that rarely appear on project spend.",
                 onChange = { onEvent(CardEvent.EditSettings(draft.copy(personalSpendDetection = it))) },
             )
         }

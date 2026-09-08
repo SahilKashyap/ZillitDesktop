@@ -64,7 +64,14 @@ class SettingsViewModel(
         launch { notifications.mail.collect { on -> setState { copy(notifyMail = on) } } }
         launch { notifications.updates.collect { on -> setState { copy(notifyUpdates = on) } } }
         launch { notifications.calls.collect { on -> setState { copy(notifyCalls = on) } } }
+        launch { notifications.ringtone.collect { on -> setState { copy(ringOnIncomingCall = on) } } }
         launch { notifications.activity.collect { on -> setState { copy(notifyActivity = on) } } }
+        launch { notifications.callWidget.collect { on -> setState { copy(callWidget = on) } } }
+        launch { notifications.messageWidget.collect { on -> setState { copy(messageWidget = on) } } }
+        launch { notifications.closeToTray.collect { on -> setState { copy(closeToTray = on) } } }
+        launch { notifications.startAtLogin.collect { on -> setState { copy(startAtLogin = on) } } }
+        launch { notifications.widgets.collect { list -> setState { copy(widgets = list) } } }
+        setState { copy(startAtLoginAvailable = notifications.startAtLoginAvailable) }
         launch { unitContext.collect(::onUnitContext) }
         // Only once there is something to show. The profile loads after the
         // window does, and an empty summary arriving first would blank a card
@@ -129,15 +136,14 @@ class SettingsViewModel(
                 setState { copy(notifyUpdates = event.on) }
                 notifications.setUpdates(event.on)
             }
-            is SettingsEvent.NotifyCallsChanged -> {
-                setState { copy(notifyCalls = event.on) }
-                notifications.setCalls(event.on)
-            }
+            is SettingsEvent.NotifyCallsChanged -> onCallSwitch(banner = event.on)
+            is SettingsEvent.RingtoneChanged -> onCallSwitch(ring = event.on)
             is SettingsEvent.NotifyActivityChanged -> {
                 setState { copy(notifyActivity = event.on) }
                 notifications.setActivity(event.on)
             }
 
+            is SettingsEvent.DesktopSwitch -> onDesktopSwitch(event)
             is SettingsEvent.UnitChanged -> changeUnit(event.unitId)
 
 
@@ -170,6 +176,45 @@ class SettingsViewModel(
         }
     }
 
+    /** The two call switches: the banner and the ring are separate decisions, saved separately. */
+    private fun onCallSwitch(banner: Boolean? = null, ring: Boolean? = null) {
+        banner?.let { on ->
+            setState { copy(notifyCalls = on) }
+            notifications.setCalls(on)
+        }
+        ring?.let { on ->
+            setState { copy(ringOnIncomingCall = on) }
+            notifications.setRingtone(on)
+        }
+    }
+
+    private fun onDesktopSwitch(event: SettingsEvent.DesktopSwitch) {
+        when (event) {
+            is SettingsEvent.CallWidgetChanged -> {
+                setState { copy(callWidget = event.on) }
+                notifications.setCallWidget(event.on)
+            }
+            is SettingsEvent.MessageWidgetChanged -> {
+                setState { copy(messageWidget = event.on) }
+                notifications.setMessageWidget(event.on)
+            }
+            is SettingsEvent.CloseToTrayChanged -> {
+                setState { copy(closeToTray = event.on) }
+                notifications.setCloseToTray(event.on)
+            }
+            is SettingsEvent.StartAtLoginChanged -> {
+                setState { copy(startAtLogin = event.on) }
+                notifications.setStartAtLogin(event.on)
+            }
+            is SettingsEvent.WidgetChanged -> {
+                setState {
+                    copy(widgets = widgets.map { if (it.id == event.id) it.copy(on = event.on) else it })
+                }
+                notifications.setWidget(event.id, event.on)
+            }
+        }
+    }
+
     /**
      * Follows a listing row.
      *
@@ -187,6 +232,10 @@ class SettingsViewModel(
             // the mail to support, which a browser tab cannot offer.
             SettingsDestination.Help -> sendEffect(SettingsEffect.OpenHelp)
             SettingsDestination.SetupNotes -> sendEffect(SettingsEffect.OpenExternal(SETUP_NOTES_URL))
+
+            // The page belongs to the Account Hub, which opens on it.
+            SettingsDestination.ProductionSetup ->
+                sendEffect(SettingsEffect.OpenTool(ACCOUNT_HUB_ROUTE))
 
             SettingsDestination.ApproveNewCrew ->
                 sendEffect(SettingsEffect.OpenApprovals(ApprovalQueue.NewCrew))

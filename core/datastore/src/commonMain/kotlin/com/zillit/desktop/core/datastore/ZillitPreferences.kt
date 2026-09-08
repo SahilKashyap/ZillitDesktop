@@ -45,6 +45,18 @@ object ZillitPreferences {
     val WindowY = PreferenceKey.IntKey("window.y", UNSET_POSITION, PreferenceScope.Device)
     val WindowMaximized = PreferenceKey.BooleanKey("window.maximized", false, PreferenceScope.Device)
 
+    /** The floating call card with Accept and Decline, shown while Zillit's window is not in front. */
+    val CallWidget = PreferenceKey.BooleanKey("widget.calls", true, PreferenceScope.Device)
+
+    /** The floating message card, shown while Zillit's window is not in front. */
+    val MessageWidget = PreferenceKey.BooleanKey("widget.messages", true, PreferenceScope.Device)
+
+    /** Closing the window hides it; Zillit keeps running in the tray until Quit. */
+    val CloseToTray = PreferenceKey.BooleanKey("app.close_to_tray", true, PreferenceScope.Device)
+
+    /** Start Zillit hidden when the user signs in to this computer. Mirrors the OS login item. */
+    val StartAtLogin = PreferenceKey.BooleanKey("app.start_at_login", false, PreferenceScope.Device)
+
     /** `Tabs` | `Cascade` — the workspace layout mode (plan §3). */
     val WorkspaceLayoutMode = PreferenceKey.StringKey("workspace.layout", "Tabs", PreferenceScope.Device)
 
@@ -62,6 +74,31 @@ object ZillitPreferences {
     val DriveWidgetProject = PreferenceKey.StringKey("drive.widget.project", "", PreferenceScope.User)
     /** `Floating` (on top) or `Desktop` (on the desktop layer, like an OS widget). */
     val DriveWidgetMode = PreferenceKey.StringKey("drive.widget.mode", "Floating", PreferenceScope.Device)
+
+    /** The Drive widget's window, as one group — see [WidgetKeys]. */
+    val DriveWidget = WidgetKeys(
+        open = DriveWidgetOpen,
+        width = DriveWidgetWidth,
+        height = DriveWidgetHeight,
+        x = DriveWidgetX,
+        y = DriveWidgetY,
+        mode = DriveWidgetMode,
+    )
+
+    // -- the Chat & Calls and Crew List widgets ---------------------------
+
+    /**
+     * Chat opens narrower than the others: its compact layout shows one pane
+     * at a time, so the width only has to fit a conversation, not a
+     * conversation beside its directory.
+     */
+    val ChatWidget = WidgetKeys.named("chat.widget", width = DEFAULT_CHAT_WIDGET_WIDTH)
+
+    val CrewWidget = WidgetKeys.named("crew.widget")
+
+    /** The production each tool widget last showed; falls back to the open one. */
+    val ChatWidgetProject = PreferenceKey.StringKey("chat.widget.project", "", PreferenceScope.User)
+    val CrewWidgetProject = PreferenceKey.StringKey("crew.widget.project", "", PreferenceScope.User)
 
     // -- security (device-scoped) ------------------------------------------
 
@@ -101,6 +138,20 @@ object ZillitPreferences {
      * everything this morning.
      */
     val NotifyCalls = PreferenceKey.BooleanKey("notify.calls", true, PreferenceScope.User)
+
+    /**
+     * The ringtone itself — the sound that plays while a call rings this
+     * device, on every line. Separate from [NotifyCalls], which is the banner:
+     * a desk that wants the card but not the noise is a real desk.
+     */
+    val RingOnIncomingCall = PreferenceKey.BooleanKey("notify.ringtone", true, PreferenceScope.User)
+
+    /**
+     * The last `token_auth_enabled` the configuration answered, so a cold
+     * start knows which credential to send before the first configuration
+     * call has answered. Device-scoped: it describes the backend, not a user.
+     */
+    val TokenAuthMode = PreferenceKey.BooleanKey("net.session_mode", false, PreferenceScope.Device)
 
     /**
      * Everything else the production did — the phones' bell list, as banners:
@@ -195,13 +246,15 @@ object ZillitPreferences {
         WorkspaceLayoutMode, RestoreWorkspaceOnLaunch,
         AppLockEnabled, IdleLockMinutes,
         MuteNotifications, NotificationSound, IgnoreUpdateBanner, CalendarRemindersFired, UpdateInstanceId,
-        NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity,
+        NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity, RingOnIncomingCall, TokenAuthMode,
         WeatherPlace,
         CallMicrophoneId, CallSpeakerId,
         LastProjectId, LastUnitId,
         BoxScheduleView, BoxScheduleCalendarMode, BoxScheduleListMode,
         EmailTrailingEnabled, ToolGroupOrder, RecentMentions, ChatFavourites,
-    )
+        CallWidget, MessageWidget, CloseToTray, StartAtLogin,
+        DriveWidgetProject, ChatWidgetProject, CrewWidgetProject,
+    ) + DriveWidget.all + ChatWidget.all + CrewWidget.all
 
     const val UNSET_POSITION = -1
     private const val DEFAULT_UI_SCALE = 100
@@ -209,5 +262,46 @@ object ZillitPreferences {
     private const val DEFAULT_WINDOW_HEIGHT = 900
     const val DEFAULT_WIDGET_WIDTH = 520
     const val DEFAULT_WIDGET_HEIGHT = 680
+    private const val DEFAULT_CHAT_WIDGET_WIDTH = 420
     private const val DEFAULT_IDLE_MINUTES = 15
+}
+
+/**
+ * One widget window's remembered state: whether it was open when the app last
+ * quit, where it sat, how big it was, and whether it floats on top or lies on
+ * the desktop layer.
+ *
+ * Grouped rather than loose because every widget needs exactly these six and
+ * the shell that draws them is written once — passing the group is what lets
+ * `WidgetShell` serve Drive, Chat and the Crew List without knowing which it
+ * is drawing.
+ */
+class WidgetKeys(
+    val open: PreferenceKey.BooleanKey,
+    val width: PreferenceKey.IntKey,
+    val height: PreferenceKey.IntKey,
+    val x: PreferenceKey.IntKey,
+    val y: PreferenceKey.IntKey,
+    val mode: PreferenceKey.StringKey,
+) {
+
+    /** Every key in the group, for the collision check in [ZillitPreferences.all]. */
+    val all: List<PreferenceKey<*>> = listOf(open, width, height, x, y, mode)
+
+    companion object {
+
+        /** The six keys under one dotted [prefix] — `chat.widget` gives `chat.widget.open` and the rest. */
+        fun named(
+            prefix: String,
+            width: Int = ZillitPreferences.DEFAULT_WIDGET_WIDTH,
+            height: Int = ZillitPreferences.DEFAULT_WIDGET_HEIGHT,
+        ): WidgetKeys = WidgetKeys(
+            open = PreferenceKey.BooleanKey("$prefix.open", false, PreferenceScope.Device),
+            width = PreferenceKey.IntKey("$prefix.width", width, PreferenceScope.Device),
+            height = PreferenceKey.IntKey("$prefix.height", height, PreferenceScope.Device),
+            x = PreferenceKey.IntKey("$prefix.x", ZillitPreferences.UNSET_POSITION, PreferenceScope.Device),
+            y = PreferenceKey.IntKey("$prefix.y", ZillitPreferences.UNSET_POSITION, PreferenceScope.Device),
+            mode = PreferenceKey.StringKey("$prefix.mode", "Floating", PreferenceScope.Device),
+        )
+    }
 }

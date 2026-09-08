@@ -104,7 +104,7 @@ private fun SosHeader(state: SosUiState, onEvent: (SosEvent) -> Unit) {
 @Composable
 private fun SendNotice() {
     ZillitNotice(
-        text = "Sending an SOS shares your location with every receiver on this production. " +
+        text = "Sending an SOS shares your location with every receiver on this project. " +
             "Use it only if you are in real danger.",
         tone = StatusTone.Escalated,
         icon = ZillitIcons.Siren,
@@ -142,7 +142,7 @@ private fun AlertsCard(state: SosUiState, mayCall: Boolean, onEvent: (SosEvent) 
 
             state.loaded && state.alerts.isEmpty() -> ZillitEmptyState(
                 title = "No SOS alerts",
-                message = "Nobody on this production has raised the alarm.",
+                message = "Nobody on this project has raised the alarm.",
                 icon = ZillitIcons.Siren,
             )
 
@@ -562,7 +562,7 @@ private fun ContactRowMeta(row: SosContact, showsDesignation: Boolean) {
 private fun ConfirmDialog(confirm: SosConfirm, onEvent: (SosEvent) -> Unit) {
     val message = when (confirm) {
         SosConfirm.SendAlert ->
-            "Send an SOS to every receiver on this production, with your location? " +
+            "Send an SOS to every receiver on this project, with your location? " +
                 "Do this only if you are in real danger."
         is SosConfirm.DeleteAlert -> "Are you sure you want to delete this record?"
         SosConfirm.DeleteAllAlerts -> "Are you sure you want to clear all SOS alerts?"

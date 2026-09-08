@@ -101,13 +101,13 @@ private fun Unavailable(
     modifier: Modifier,
 ) {
     val reason = when {
-        production.isPersonal -> "A personal production has no crew, so there is nothing here to set."
-        else -> "This production runs no second or splinter units."
+        production.isPersonal -> "A personal project has no crew, so there is nothing here to set."
+        else -> "This project runs no second or splinter units."
     }
 
     Box(modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         com.zillit.desktop.core.designsystem.component.ZillitEmptyState(
-            title = "${destination.title} is not part of this production",
+            title = "${destination.title} is not part of this project",
             message = reason,
             icon = com.zillit.desktop.core.designsystem.icon.ZillitIcons.Info,
             action = {

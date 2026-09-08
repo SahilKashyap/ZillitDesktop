@@ -114,7 +114,7 @@ data class AuthUiState(
 
     /** Search + category + ordering, all in [filterProjects] so it is testable. */
     val visibleProjects: List<Project>
-        get() = projects.filterProjects(projectFilter, projectCategory)
+        get() = projects.filterProjects(projectFilter, projectCategory) { projectUnread[it.id] ?: 0 }
 
     companion object {
         const val MIN_OTP_LENGTH = 4
@@ -132,7 +132,7 @@ sealed interface AuthEvent {
     data class ProjectCategoryChanged(val value: ProjectFilter) : AuthEvent
     data class ToggleFavourite(val project: Project) : AuthEvent
 
-    /** The "Start a production" button. */
+    /** The "Start a project" button. */
     data object StartNewProject : AuthEvent
     data object DismissCreateProduction : AuthEvent
 
@@ -388,6 +388,11 @@ class AuthViewModel(
                 launch {
                     val counts = projectUnread()
                     setState { copy(projectUnread = counts) }
+                    // Names beside the numbers, for a comparison with a phone.
+                    ZillitLog.d(TAG) {
+                        "picker badges: " + currentState.projects
+                            .mapNotNull { p -> counts[p.id]?.takeIf { it > 0 }?.let { "${p.name}(${p.id})=$it" } }
+                    }
                 }
                 // A device attached to exactly one production has nothing to
                 // choose; making the user pick from a list of one is friction.
@@ -440,7 +445,7 @@ class AuthViewModel(
 
         // If none of the downstream calls appear in the log, this line is what
         // tells you whether the click ever arrived.
-        ZillitLog.i(TAG) { "opening production ${project.id}" }
+        ZillitLog.i(TAG) { "opening project ${project.id}" }
         setState { copy(isBusy = true, error = null) }
 
         launchResult(
@@ -673,7 +678,7 @@ class AuthViewModel(
         const val SESSION_EXPIRED_MESSAGE = "Your session has ended. Scan the code to sign in again."
         const val NO_OFFLINE_DATA = "No offline data available for this project. Connect to the internet to open it."
         const val PENDING_APPROVAL =
-            "This production is still awaiting approval. You can open it once a coordinator accepts your request."
+            "This project is still awaiting approval. You can open it once a coordinator accepts your request."
     }
 }
 

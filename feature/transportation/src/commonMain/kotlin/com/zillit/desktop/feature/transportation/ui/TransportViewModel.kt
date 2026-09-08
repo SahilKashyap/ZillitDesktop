@@ -137,7 +137,7 @@ class TransportViewModel(
             TransportEvent.CancelPermanent -> setState { copy(permanentEditor = null) }
             is TransportEvent.UnassignPermanent -> run("Allocation ended") { repository.unassignPermanent(event.trip) }
             is TransportEvent.DeletePermanent -> run("Draft deleted") { repository.deletePermanent(event.trip.id) }
-            is TransportEvent.SelfManage -> run(if (event.on) "Self-managed" else "Managed by production") {
+            is TransportEvent.SelfManage -> run(if (event.on) "Self-managed" else "Managed by project") {
                 repository.setSelfManage(event.trip.id, event.on)
             }
             is TransportEvent.ToggleTempDriver -> run(if (event

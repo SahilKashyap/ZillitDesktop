@@ -55,7 +55,7 @@ fun WeatherScreen(
         when {
             state.hasNoAccess -> ZillitEmptyState(
                 title = "No weather access",
-                message = "This tool is not shared with you on this production.",
+                message = "This tool is not shared with you on this project.",
                 icon = ZillitIcons.Shield,
                 modifier = Modifier.align(Alignment.Center),
             )

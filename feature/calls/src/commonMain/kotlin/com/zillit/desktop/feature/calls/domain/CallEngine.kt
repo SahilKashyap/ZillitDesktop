@@ -177,6 +177,14 @@ data class CallJoin(
     val sfuToken: String = "",
     /** What other peers see against this tile. */
     val displayName: String = "",
+
+    // ── Line 3 (LiveKit) ────────────────────────────────────────────────
+    /** The room URL, already swapped for a public one where the ring named the node's internal address. */
+    val livekitUrl: String = "",
+    /** This participant's token for that room. */
+    val livekitToken: String = "",
+    /** This participant's identity in the room — the user's id on the call's production. */
+    val identity: String = "",
 )
 
 /*

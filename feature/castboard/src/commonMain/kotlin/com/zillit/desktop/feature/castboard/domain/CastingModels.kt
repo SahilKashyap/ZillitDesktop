@@ -21,7 +21,7 @@ data class CastingUnit(
      * headed "Wardrobe" would be naming something they have never seen.
      *
      * Null where the server sent no name, which is why it is kept apart from
-     * [label]: "the production calls it nothing" and "the production calls it
+     * [label]: "the project calls it nothing" and "the production calls it
      * what we do" want different answers when titling the page.
      */
     val serverLabel: String? = null,

@@ -12,6 +12,8 @@ import com.zillit.desktop.feature.dealmemo.domain.DealRates
 import com.zillit.desktop.feature.dealmemo.domain.DealStatus
 import com.zillit.desktop.feature.dealmemo.domain.NewDeal
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -97,7 +99,7 @@ class DealWireShapeTest {
               "crew_details": {
                 "crew_name": "Ada Lovelace",
                 "full_legal_name": null, "preferred_name": null,
-                "screen_credit_designation": null, "passport_attachment": null,
+                "screen_credit_designation": null, "passport_attachment": [],
                 "department_id": null, "designation_id": null,
                 "department_identifier": "department_camera",
                 "designation_identifier": "designation_gaffer_lighting_electrical",
@@ -269,6 +271,35 @@ class DealWireShapeTest {
             """{"_id": "68a1b2c3d4e5f60718293a4b", "crew_details": {"crew_name": "Ada", "custom_designation": "Chief Rigger", "designation_identifier": "designation_gaffer"}}""",
         )
         assertEquals("Chief Rigger", dto.toDomain()!!.designation)
+    }
+
+    @Test
+    fun `a designation drops the department it repeats`() {
+        // ZL-21094 — `designation_action_prop_buyer_art_department` sits inside
+        // `department_art_department`, and the tail is the department again.
+        val dto = json.decodeFromString(
+            DealDto.serializer(),
+            """{"_id": "68a1b2c3d4e5f60718293a4b", "crew_details": {"crew_name": "Ada", "designation_identifier": "designation_action_prop_buyer_art_department", "department_identifier": "department_art_department"}}""",
+        )
+        assertEquals("Action Prop Buyer", dto.toDomain()!!.designation)
+    }
+
+    @Test
+    fun `a designation ending in a word its department does not own is left whole`() {
+        val dto = json.decodeFromString(
+            DealDto.serializer(),
+            """{"_id": "68a1b2c3d4e5f60718293a4b", "crew_details": {"crew_name": "Ada", "designation_identifier": "designation_art_director", "department_identifier": "department_camera"}}""",
+        )
+        assertEquals("Art Director", dto.toDomain()!!.designation)
+    }
+
+    @Test
+    fun `the passport key is a list, not the object it used to be`() {
+        // ZL-20959 — the backend widened the same key; the old single object is
+        // dropped on arrival. `[]` is also a clear, which is why nothing
+        // re-sends this body to re-notify a crew member (see `chase`).
+        val crew = deal.updateBody()["crew_details"]!!.jsonObject
+        assertEquals(JsonArray(emptyList()), crew["passport_attachment"])
     }
 
     @Test

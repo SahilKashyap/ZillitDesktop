@@ -4,12 +4,14 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.sync.NewOperation
 import com.zillit.desktop.core.sync.OfflineSupport
 import com.zillit.desktop.core.sync.SyncState
 import com.zillit.desktop.core.locationpicker.PickedLocation
 import com.zillit.desktop.core.locationpicker.oneLine
+import com.zillit.desktop.feature.chat.data.ChatSilence
 import com.zillit.desktop.feature.chat.data.CHAT_SEND_KIND
 import com.zillit.desktop.feature.chat.data.LOCATION_KIND
 import com.zillit.desktop.feature.chat.data.PresenceSource
@@ -137,6 +139,13 @@ sealed interface ChatEvent {
     data object AttachFile : ChatEvent
 
     /**
+     * The attach sheet's answer — Photo, Video, Document or Audio — as the
+     * phones' `PickerDialog` items and iOS's action sheet offer them. The
+     * kind filters the OS dialog and is checked again after the choice.
+     */
+    data class AttachKind(val kind: PreviewKind) : ChatEvent
+
+    /**
      * The composer's pin, after the shared map picker answered: send this
      * place as a `message_type: "location"` message.
      *
@@ -203,6 +212,11 @@ class ChatViewModel(
     private val newUniqueId: () -> String,
     /** Opens the OS picker; the upload itself runs after the preview's Send. */
     private val pickAttachment: suspend () -> ChatPick = { ChatPick.Cancelled },
+    /**
+     * The same, filtered to one kind from the attach sheet. Defaults to the
+     * untyped picker so a host (or test) that wires only that one still works.
+     */
+    private val pickAttachmentOf: suspend (PreviewKind) -> ChatPick = { pickAttachment() },
     /**
      * The host's routed uploader for bytes that never saw the picker — a
      * pasted image. The picker's own files carry their uploader inside
@@ -316,6 +330,21 @@ class ChatViewModel(
                 refreshSectionBadges()
             }
         }
+        // `notification:silent`'s chat half — a room lost, messages deleted —
+        // applied here as the phones apply it to their ledgers, then the seed
+        // re-read so the server's copy of those rows cannot put them back.
+        launch {
+            repository.silenced.collect { silence ->
+                repository.silence(silence)
+                silence.rooms.forEach(serverUnread::remove)
+                setState { copy(unread = unread - silence.rooms) }
+                reloadBacklog()
+                refreshSectionBadges()
+            }
+        }
+        // The host's ledger seeded or moved under the listing: fold its rows
+        // again, or a badge that landed after the listing loaded never shows.
+        launch { repository.backlogChanges.collect { reloadBacklog() } }
         launch {
             repository.typing.collect { (peer, started) ->
                 onEvent(ChatEvent.PeerTyping(peer, started))
@@ -363,6 +392,7 @@ class ChatViewModel(
                 }
             }
             ChatEvent.AttachFile -> launch { pickForPreview() }
+            is ChatEvent.AttachKind -> launch { pickForPreview(event.kind) }
             is ChatEvent.ShareLocation -> shareLocation(event.place)
             is ChatEvent.ImagePasted -> imagePasted(event)
             is ChatEvent.PreviewSend -> sendMedia(event.result, event.caption)
@@ -396,25 +426,7 @@ class ChatViewModel(
                 // The per-conversation counts and stamps, from the server's
                 // backlog. A failed fetch keeps whatever the cache can say —
                 // no toast.
-                launchResult(
-                    block = { repository.conversationBacklog() },
-                    onSuccess = { backlog ->
-                        serverUnread.clear()
-                        // A thread open right now was just read; its rows in
-                        // the backlog predate that.
-                        val counts = backlog.unread
-                        serverUnread.putAll(currentState.peer?.userId?.let { counts - it } ?: counts)
-                        setState { copy(ledgerRooms = backlog.rooms) }
-                        learnActivity(backlog.activity)
-                        // The order follows the stamps as much as the counts:
-                        // a row that just grew a badge from this answer moves
-                        // to where its message puts it, not where the cache
-                        // last saw it.
-                        showRecents(currentState.recents)
-                        launch { rememberRecents() }
-                    },
-                    onError = { },
-                )
+                reloadBacklog()
                 launchResult(
                     block = { repository.recentPeers() },
                     onSuccess = { ids ->
@@ -442,7 +454,7 @@ class ChatViewModel(
             copy(
                 recents = ordered,
                 previews = previewsFor(ordered),
-                unread = combinedUnread(repository.unreadCounts()),
+                unread = combinedUnread(repository.unreadCounts(serverActivity, backlogWindowStart)),
                 activity = activity,
             )
         }
@@ -538,7 +550,7 @@ class ChatViewModel(
             return
         }
         val projectId = presenceProjectId() ?: run {
-            ZillitLog.d(PRESENCE_TAG) { "no production resolved yet; opening again will retry" }
+            ZillitLog.d(PRESENCE_TAG) { "no project resolved yet; opening again will retry" }
             return
         }
 
@@ -591,12 +603,19 @@ class ChatViewModel(
                             local.isMine && local.sendState != ChatSendState.Sent &&
                                 rows.none { it.uniqueId == local.uniqueId }
                         }
-                        // A full window means the server likely holds more
-                        // before it — the "Show older" pager's cue (QA #7/#8).
+                        // The "Show older" pager's cue (QA #7/#8). This used
+                        // to be "a full page of 50", which is an assumption
+                        // about the server's window size that nothing on the
+                        // wire confirms — and when the window is smaller, the
+                        // pager never appears and everything older than the
+                        // first page is unreachable. The web assumes nothing:
+                        // it offers older until a page comes back empty. Same
+                        // here — anything past a lone row may have history,
+                        // and the older-page fetch retires the button itself.
                         copy(
                             isLoading = false,
                             messages = rows + inFlight,
-                            hasOlder = rows.size >= CHAT_PAGE,
+                            hasOlder = rows.size > 1,
                         )
                     } else {
                         this
@@ -681,7 +700,7 @@ class ChatViewModel(
         // a keyboard shortcut or a stale event must not message someone who
         // is no longer on the production (Android's userActive gate).
         if (!currentState.peerIsGroup && peer.hasLeft) {
-            setState { copy(error = "This person is no longer on the production.") }
+            setState { copy(error = "This person is no longer on the project.") }
             return
         }
         val typed = currentState.draft.trim()
@@ -900,9 +919,9 @@ class ChatViewModel(
     )
 
     /** The paperclip: the pick goes to the preview, not straight to the wire. */
-    private suspend fun pickForPreview() {
+    private suspend fun pickForPreview(kind: PreviewKind? = null) {
         if (currentState.peer == null) return
-        val pending = when (val pick = pickAttachment()) {
+        val pending = when (val pick = if (kind == null) pickAttachment() else pickAttachmentOf(kind)) {
             is ChatPick.Cancelled -> return
             // The picker weighed the file without reading it, as the web
             // weighs a File before uploading; its reason is the user's.
@@ -1071,12 +1090,19 @@ class ChatViewModel(
                     if (this.peer?.userId != peer.userId) {
                         copy(loadingOlder = false)
                     } else {
+                        val merged = (page + messages)
+                            .distinctBy { it.uniqueId }
+                            .sortedBy { it.timestampMillis }
                         copy(
-                            messages = (page + messages)
-                                .distinctBy { it.uniqueId }
-                                .sortedBy { it.timestampMillis },
+                            messages = merged,
                             loadingOlder = false,
-                            hasOlder = page.size >= CHAT_PAGE,
+                            // More behind it while a page still brings rows
+                            // this thread had not seen. The server's window
+                            // includes the boundary row, so the last page
+                            // comes back holding only what was already here
+                            // — that is the stop, not a page shorter than
+                            // some assumed size. See the first-page note.
+                            hasOlder = merged.size > messages.size,
                         )
                     }
                 }
@@ -1105,6 +1131,48 @@ class ChatViewModel(
      * arrivals as they land. See [knownActivity].
      */
     private val serverActivity = mutableMapOf<String, Long>()
+
+    /** Where the last backlog's window began; the cache counts nothing older. */
+    private var backlogWindowStart: Long = 0L
+
+    /**
+     * Seeds the server's word on unread per conversation, and the listing's
+     * order, from the notification backlog. Runs on every listing refresh and
+     * after a silence, whose prunes the repository applies to the seed.
+     */
+    private fun reloadBacklog() {
+        launchResult(
+            block = { repository.conversationBacklog() },
+            onSuccess = { backlog ->
+                serverUnread.clear()
+                // A thread open right now was just read; its rows in
+                // the backlog predate that.
+                val counts = backlog.unread
+                serverUnread.putAll(currentState.peer?.userId?.let { counts - it } ?: counts)
+                setState { copy(ledgerRooms = backlog.rooms) }
+                backlog.windowStart?.let { backlogWindowStart = maxOf(backlogWindowStart, it) }
+                // The one line that says where a badge came from: read it before
+                // believing a count. Ids, not names, on purpose.
+                ZillitLog.d(TAG) {
+                    "backlog unread=${counts.entries.joinToString { "${it.key}:${it.value}" }} " +
+                        "rooms=${backlog.rooms.size} " +
+                        "local=${localSummary()}"
+                }
+                learnActivity(backlog.activity)
+                // The order follows the stamps as much as the counts:
+                // a row that just grew a badge from this answer moves
+                // to where its message puts it, not where the cache
+                // last saw it.
+                showRecents(currentState.recents)
+                launch { rememberRecents() }
+            },
+            onError = { },
+        )
+    }
+
+    /** The cache's unread per conversation, as the seed line prints it. */
+    private fun localSummary(): String =
+        repository.unreadCounts(serverActivity, backlogWindowStart).entries.joinToString { "${it.key}:${it.value}" }
 
     /** What the rows show: the larger of the server's word and the cache's. */
     private fun combinedUnread(local: Map<String, Int>): Map<String, Int> =
@@ -1362,7 +1430,7 @@ class ChatViewModel(
         if (!isOpen && !message.isMine && other.isNotBlank()) {
             serverUnread[other] = (serverUnread[other] ?: 0) + 1
         }
-        val unread = combinedUnread(repository.unreadCounts())
+        val unread = combinedUnread(repository.unreadCounts(serverActivity, backlogWindowStart))
         setState {
             copy(
                 recents = sortedRecents(withPeer(recents, other), activity),
@@ -1442,12 +1510,6 @@ private const val SECTION_BADGE_SETTLE_MILLIS = 1_800L
 
 /** The file is being prepared (posters, PDF pages) — no bytes moving yet. */
 private const val PREPARING = -1
-
-/**
- * The history window's size — `/messages/{peer}/{ts}/previous` answers ~50
- * rows per page, so a full page means the server likely holds older ones.
- */
-private const val CHAT_PAGE = 50
 
 /** The states this device assigns itself; the server's own words never yield to the outbox. */
 private fun ChatSendState.isOurs(): Boolean =

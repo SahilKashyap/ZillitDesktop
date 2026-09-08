@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.home
 
+import kotlin.test.assertTrue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
@@ -23,6 +24,7 @@ import com.zillit.desktop.feature.home.ui.HomeFeedEvent
 import com.zillit.desktop.feature.home.ui.HomeFeedScreen
 import com.zillit.desktop.feature.home.ui.HomeFeedUiState
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 /**
  * Composes the real board — the card menu on a long-press, the call sheet's
@@ -70,6 +72,45 @@ class HomeBoardRenderTest {
         currentUserId = "me",
         nowMillis = now,
     )
+
+    @Test
+    fun `a notice board's paperclip opens the phones' attach sheet`() = runComposeUiTest {
+        var fired: HomeFeedEvent? = null
+        setContent {
+            ZillitTheme { HomeFeedScreen(state = board(notices), onEvent = { fired = it }) }
+        }
+
+        onNodeWithContentDescription("Attach a file").performClick()
+        waitForIdle()
+        listOf("Photo", "Video", "Document", "Audio").forEach { onNodeWithText(it).assertExists() }
+
+        onNodeWithText("Photo").performClick()
+        waitForIdle()
+        assertEquals(
+            HomeFeedEvent.AttachKind(com.zillit.desktop.core.media.PreviewKind.Image),
+            fired,
+        )
+    }
+
+    @Test
+    fun `the call sheet takes documents only, with no sheet to open`() = runComposeUiTest {
+        // Both phones hide everything but the document picker there
+        // (Android Home.kt:908-911, iOS ProductionVC.swift:1149); a sheet of
+        // one collapses to a plain button.
+        var fired: HomeFeedEvent? = null
+        setContent {
+            ZillitTheme { HomeFeedScreen(state = board(callSheet), onEvent = { fired = it }) }
+        }
+
+        onNodeWithContentDescription("Attach a document").performClick()
+        waitForIdle()
+
+        assertEquals(
+            HomeFeedEvent.AttachKind(com.zillit.desktop.core.media.PreviewKind.Document),
+            fired,
+        )
+        onNodeWithText("Photo").assertDoesNotExist()
+    }
 
     @Test
     fun `a long-press opens the phones' menu, Edit and Delete stay past the window`() = runComposeUiTest {
@@ -244,5 +285,30 @@ class HomeBoardRenderTest {
 
     private companion object {
         const val FORTY_MINUTES = 40 * 60 * 1000L
+    }
+
+
+    /**
+     * The flip, on the board: the sentence under the feed now carries a button.
+     *
+     * It used to end at "ask a project admin", which named no admin and
+     * offered no way to reach one. `HomeFeedEvent.RequestPostingRights` picks
+     * the admin and writes the message — see `RightsRequestSurface`.
+     */
+    @Test
+    fun `a board with no posting rights offers to ask an admin`() = runComposeUiTest {
+        val raised = mutableListOf<HomeFeedEvent>()
+        val viewer = notices.copy(canPost = false)
+        setContent {
+            ZillitTheme { HomeFeedScreen(state = board(viewer, theirPhoto), onEvent = { raised += it }) }
+        }
+
+        onNodeWithText("You do not have posting rights for ${viewer.label}.").assertExists()
+        onNodeWithText("Ask an admin").performClick()
+
+        assertTrue(
+            raised.contains(HomeFeedEvent.RequestPostingRights),
+            "the button raised $raised instead of a rights request",
+        )
     }
 }

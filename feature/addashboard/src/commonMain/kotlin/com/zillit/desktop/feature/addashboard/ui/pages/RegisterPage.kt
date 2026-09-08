@@ -66,7 +66,7 @@ internal fun ColumnScope.RegisterPage(state: AdUiState, onEvent: (AdEvent) -> Un
             ZillitEmptyState(
                 title = if (state.artistes.isEmpty()) "No artistes yet" else "Nobody matches",
                 message = if (state.artistes.isEmpty()) {
-                    "Artistes appear here once they have been added to the production."
+                    "Artistes appear here once they have been added to the project."
                 } else {
                     "Try a different search or filter."
                 },
@@ -76,7 +76,7 @@ internal fun ColumnScope.RegisterPage(state: AdUiState, onEvent: (AdEvent) -> Un
         return
     }
 
-    state.register.forEach { artiste -> ArtisteRow(artiste, state.viewer.canPost, onEvent) }
+    state.register.forEach { artiste -> ArtisteRow(artiste, onEvent) }
 }
 
 @Composable
@@ -90,7 +90,7 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ArtisteRow(artiste: Artiste, canPost: Boolean, onEvent: (AdEvent) -> Unit) {
+private fun ArtisteRow(artiste: Artiste, onEvent: (AdEvent) -> Unit) {
     ZillitSectionCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -116,7 +116,8 @@ private fun ArtisteRow(artiste: Artiste, canPost: Boolean, onEvent: (AdEvent) ->
             }
             ZillitStatusPill(label = artiste.status.label, tone = artiste.status.tone())
 
-            if (!canPost) return@Row
+            // Every one of these lands in AdViewModel, which answers a press
+            // without posting rights by offering to ask an administrator.
             when (artiste.status) {
                 ArtisteStatus.Blocked -> ZillitButton(
                     text = "Unblock",

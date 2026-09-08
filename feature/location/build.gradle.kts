@@ -11,6 +11,7 @@ kotlin {
             implementation(project(":core:socket"))
             implementation(project(":core:common"))
             implementation(project(":core:designsystem"))
+            implementation(project(":core:media"))
             // The record editor's Address field is a map picker.
             implementation(project(":core:locationpicker"))
             implementation(project(":core:mvvm"))

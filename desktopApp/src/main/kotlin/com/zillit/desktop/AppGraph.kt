@@ -14,6 +14,7 @@ import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.datastore.PreferenceStoreFactory
 import com.zillit.desktop.core.datastore.PreferenceScope
 import com.zillit.desktop.core.datastore.ZillitPreferences
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.OkHttpEngineProvider
@@ -22,6 +23,7 @@ import com.zillit.desktop.core.network.ReadScope
 import com.zillit.desktop.core.network.S3Presigner
 import com.zillit.desktop.core.network.HeaderCrypto
 import com.zillit.desktop.core.badges.BadgeStore
+import com.zillit.desktop.core.database.ProjectSnapshot
 import com.zillit.desktop.core.database.LabelCache
 import com.zillit.desktop.core.database.ProjectCache
 import com.zillit.desktop.core.database.ProjectListCache
@@ -95,7 +97,11 @@ import com.zillit.desktop.feature.calls.data.NoopCallStatusPlane
 import com.zillit.desktop.feature.calls.domain.NoopCallEngine
 import com.zillit.desktop.core.socket.SocketIoClient
 import com.zillit.desktop.core.socket.ZillitSocketEvents
-import com.zillit.desktop.feature.home.data.BadgeSourceImpl
+import com.zillit.desktop.feature.home.data.NotificationLedgerSeeder
+import com.zillit.desktop.core.badges.BadgeDrilldown
+import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.InMemoryNotificationLedgerStore
+import com.zillit.desktop.core.badges.SqlNotificationLedgerStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -170,6 +176,15 @@ import com.zillit.desktop.feature.home.domain.HomeFeedRepository
 import com.zillit.desktop.feature.home.domain.ToolsRepository
 import com.zillit.desktop.feature.auth.domain.ProjectRepository
 import com.zillit.desktop.core.appupdate.AppUpdateChecker
+import com.zillit.desktop.feature.calls.data.livekit.OkHttpLiveKitSocket
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitLine
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitIdentity
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitApi
+import com.zillit.desktop.core.config.ZillitRealtimeEndpoint
+import com.zillit.desktop.core.appupdate.FirebaseRemoteFlags
+import com.zillit.desktop.core.network.tokenauth.KtorSessionApi
+import com.zillit.desktop.core.network.tokenauth.TokenSessionManager
+import kotlinx.coroutines.flow.distinctUntilChanged
 import com.zillit.desktop.core.remoteconfig.RemoteConfigRepository
 import com.zillit.desktop.core.remoteconfig.RemoteConfigRepositoryImpl
 import com.zillit.desktop.feature.auth.domain.QrLoginRepository
@@ -348,9 +363,11 @@ private suspend fun onProjectOpened(
     activeProject: MutableStateFlow<com.zillit.desktop.feature.auth.domain.Project?>,
     remoteConfig: com.zillit.desktop.core.remoteconfig.RemoteConfigRepository,
     badges: BadgeStore,
+    seeder: NotificationLedgerSeeder,
     socket: SocketIoClient,
     socketUrl: String,
-    headerProvider: ZillitHeaderProvider,
+    socketAuth: suspend () -> Map<String, String>,
+    onSocketAuthRejected: (detail: String) -> Unit,
     projectContext: ProjectContextLoader?,
     scope: CoroutineScope,
 ) {
@@ -390,16 +407,14 @@ private suspend fun onProjectOpened(
         }
     }
 
-    socket.connect(
-        SocketConfig(
-            url = socketUrl,
-            authHeaders = {
-                headerProvider.headersFor(RequestModule.SocketHandshake, bodyJson = null, projectId = null)
-            },
-        ),
-    )
-    // Counts never gate the open; the rail draws them when they land.
-    scope.launch { badges.refresh() }
+    socket.connect(SocketConfig(url = socketUrl, authHeaders = socketAuth, onAuthRejected = onSocketAuthRejected))
+    // Counts never gate the open; the rail draws them when they land. The
+    // ledger's own rows come first (last session's badges, instantly), then
+    // the page of what the server has since.
+    scope.launch {
+        badges.open(project.id)
+        seeder.seed(project.id)
+    }
 }
 
 /**
@@ -459,6 +474,8 @@ sealed interface AppGraph {
          * socket, the cipher and the disk cache with C&C.
          */
         val chatRepositoryFor: (com.zillit.desktop.feature.chat.domain.ChatScope) -> ChatRepository,
+        /** Conversations on another production entirely — `(projectId, myUserIdThere)`. */
+        val chatRepositoryForProject: (String, String) -> ChatRepository,
         /** The chat header's green-dot feed; null without Firebase configuration. */
         val chatPresence: com.zillit.desktop.feature.chat.data.DevicePresenceSource?,
         /** Whether a newer desktop build exists. Never throws; never nags on doubt. */
@@ -474,6 +491,8 @@ sealed interface AppGraph {
         val signatureRepository: SignatureRepository,
         val folderRepository: FolderRepository,
         val attachmentUploader: AttachmentUploader,
+        /** An uploader that puts files in ANOTHER production's storage. */
+        val uploaderForProject: (ProjectSnapshot, CallOptions) -> AttachmentUploader,
         val projectContext: ProjectContextLoader?,
         val projectCache: ProjectCache?,
         /** The picker's last list, so productions show without a network. */
@@ -488,6 +507,14 @@ sealed interface AppGraph {
         val adminRepository: AdminRepository,
         /** The reader's own profile, recovery address, devices and membership. */
         val accountRepository: AccountRepository,
+        /**
+         * Where a module raises "I cannot post here, ask an admin for me".
+         *
+         * Held on the graph rather than made per screen so every tool's
+         * request reaches the one dialog the frame hosts — see
+         * `RightsRequestSurface`.
+         */
+        val rightsRequests: com.zillit.desktop.core.permissions.RightsRequestBus,
         /** Petty cash and out-of-pocket: floats, receipt batches, reconciliation. */
         val cashRepository: CashRepository,
         /** Production expense cards: cards, statements, receipts, approvals. */
@@ -513,6 +540,10 @@ sealed interface AppGraph {
         /** The production's storage region/bucket, cached after first ask. */
         val storageTarget: StorageTargetSource,
         val badgeStore: BadgeStore,
+        /** Asks the notification service for the ledger rows it has not seen. */
+        val badgeSeeder: NotificationLedgerSeeder,
+        /** This device's server id, once registered; null before. */
+        val deviceId: () -> String?,
         /** The signed REST client — for host-level fetches with no feature home. */
         val apiClient: com.zillit.desktop.core.network.ApiClient,
         /**
@@ -532,6 +563,8 @@ sealed interface AppGraph {
         val callApi: CallApi,
         /** The media stack behind it — the host embeds its video surface. */
         val callEngine: com.zillit.desktop.feature.calls.domain.CallEngine,
+        /** Whether Line 3 is offered on a production — remote config's roll-out list. See LineThreeGate. */
+        val lineThreeEnabled: (projectId: String?) -> Boolean,
         /**
          * The Maps tool's canvas — embedded Chromium drawing Google's map.
          * Idle until the tool first opens; its surface is embedded by
@@ -675,6 +708,20 @@ sealed interface AppGraph {
                 probe = { storageClient.reaches(config.baseUrl(ZillitService.Core)) },
             ).also { it.start() }
 
+            // The token session: `moduledata` → Bearer, switched by the
+            // configuration's `token_auth_enabled`. Built before the REST
+            // client because every call asks it for a credential first. Its
+            // own calls ride the lean storage client — no body logging, no
+            // validator — because their answers carry live tokens, and their
+            // 401s are the session's to act on, not the app's to sign out on.
+            val tokenSession = TokenSessionManager(
+                api = KtorSessionApi(storageClient, headerProvider, config.apiV2()),
+                store = KeychainTokenAuthStore(secureStore, preferences),
+                scope = appScope,
+                activeProjectId = { headerContext.value.projectId },
+                nowMillis = System::currentTimeMillis,
+            )
+
             val apiClient = ApiClient(
                 httpClient = HttpClientFactory.create(
                     engineFactory = OkHttpEngineProvider(),
@@ -697,6 +744,7 @@ sealed interface AppGraph {
                     ReadScope(userId = context.userId.orEmpty(), projectId = context.projectId.orEmpty())
                 },
                 nowMillis = System::currentTimeMillis,
+                authenticator = tokenSession,
             )
 
             // Before the repositories that reference it in their callbacks.
@@ -707,6 +755,41 @@ sealed interface AppGraph {
             )
 
             val socketEvents = SocketEventBus(socketClient)
+
+            // The configuration says which credential to send; the session
+            // follows it, and warms the open production's token on every
+            // switch so the landing burst never pays a mint.
+            appScope.launch {
+                remoteConfigRepository.credentials.collect { loaded ->
+                    loaded?.let { tokenSession.onConfigFetched(it.tokenAuthEnabled) }
+                }
+            }
+            appScope.launch {
+                headerContext.map { it.projectId.orEmpty() }.distinctUntilChanged().collect { projectId ->
+                    if (projectId.isNotBlank()) tokenSession.onActiveProjectChanged(projectId)
+                }
+            }
+
+            // The socket handshake: the device token when token mode has one
+            // (`auth.token`, dual-accepted server-side), else `moduledata` as
+            // before. Rebuilt per attempt, so a token the server refused is
+            // not shown again while a fresh one is fetched.
+            var lastSocketToken: String? = null
+            val socketHandshake: suspend () -> Map<String, String> = {
+                val token = tokenSession.deviceTokenForSocket()
+                lastSocketToken = token
+                if (token != null) {
+                    mapOf("token" to token)
+                } else {
+                    headerProvider.headersFor(RequestModule.SocketHandshake, bodyJson = null, projectId = null)
+                }
+            }
+            val socketTokenRejected: (String) -> Unit = { detail ->
+                lastSocketToken?.let(tokenSession::socketTokenRejected)
+                ZillitLog.w("Socket") {
+                    "handshake refused the device token ($detail); the next attempt sends moduledata"
+                }
+            }
 
             // Document Distribution reaches its files by presigned URL: its
             // own byte proxy answers only to the app's encrypted headers, and
@@ -719,8 +802,19 @@ sealed interface AppGraph {
 
             val unitRepository = UnitRepositoryImpl(apiClient, config)
 
-            val badgeStore = BadgeStore(BadgeSourceImpl(apiClient, config))
-            val badgeDrilldown = com.zillit.desktop.feature.home.data.BadgeDrilldownImpl(apiClient, config)
+            // The badge ledger — rows on disk, counts derived; the phones'
+            // model. Without a database (a launch whose keychain failed) the
+            // rows live for the session only, which is still a working rail.
+            val badgeStore = BadgeStore(
+                database?.let(::SqlNotificationLedgerStore) ?: InMemoryNotificationLedgerStore(),
+            )
+            val badgeDrilldown = BadgeDrilldown { query -> ZillitResult.Success(badgeStore.split(query)) }
+            val badgeSeeder = NotificationLedgerSeeder(
+                apiClient = apiClient,
+                config = config,
+                store = badgeStore,
+                myUserId = { headerContext.value.userId },
+            )
 
             // The finance repositories, built here because the offline
             // handlers below send through them.
@@ -832,6 +926,11 @@ sealed interface AppGraph {
             val projectContext =
                 ProjectContextLoader(apiClient = apiClient, config = config, cache = projectCache)
 
+            // Line 3's pieces are built after the coordinator's; the lambdas
+            // below run later than either, so they read these at call time.
+            var liveKitLine: LiveKitLine? = null
+            var lineThreeGate: LineThreeGate? = null
+            var primaryDeviceForHandshake: String? = null
             val authRepository = AuthRepositoryImpl(
                 apiClient = apiClient,
                 secureStore = secureStore,
@@ -845,8 +944,13 @@ sealed interface AppGraph {
                     headerContext.value = HeaderContext(deviceId = "")
                     keyProvider.invalidate()
                     remoteConfigRepository.clear()
+                    tokenSession.clearSession()
                     badgeStore.clear()
                     projectListCache?.clear()
+                    // The presence socket is this device's standing as reachable; signed out, it is not.
+                    liveKitLine?.disconnect("signed out")
+                    lineThreeGate?.clear()
+                    primaryDeviceForHandshake = null
                     // …and every cached row of theirs — boards, threads, mail,
                     // the read cache, the outbox — so the next person to sign
                     // in here starts clean (Android wipes Realm on logout).
@@ -854,7 +958,17 @@ sealed interface AppGraph {
                     socketClient.disconnect()
                 },
                 onDeviceIdentified = { identity ->
+                    val changed = headerContext.value.deviceId != identity.deviceId
                     headerContext.update { it.copy(deviceId = identity.deviceId) }
+                    // The presence socket registered whatever device id it was
+                    // opened with. A re-link (seen 2026-09-07: a prod-registered
+                    // desktop scanning into develop) gives this machine a new one,
+                    // and rings for it would go to a socket nobody holds — so the
+                    // line redials, and its handshake reads the new id.
+                    if (changed) {
+                        primaryDeviceForHandshake = null
+                        liveKitLine?.disconnect("device re-identified")
+                    }
                 },
             )
 
@@ -904,12 +1018,20 @@ sealed interface AppGraph {
                         activeProject = activeProject,
                         remoteConfig = remoteConfigRepository,
                         badges = badgeStore,
+                        seeder = badgeSeeder,
                         socket = socketClient,
                         socketUrl = config.baseUrl(ZillitService.Chat),
-                        headerProvider = headerProvider,
+                        socketAuth = socketHandshake,
+                        onSocketAuthRejected = socketTokenRejected,
                         projectContext = projectContext,
                         scope = appScope,
                     )
+                    // Line 3, per production: which productions offer it, and
+                    // the region warm the phones fire on every switch.
+                    appScope.launch {
+                        lineThreeGate?.refresh()
+                        liveKitLine?.warmRegion()
+                    }
                 },
             )
 
@@ -967,6 +1089,11 @@ sealed interface AppGraph {
                 encrypt = { plain -> (cryptoEngine.encryptToHex(plain) as? ZillitResult.Success)?.data },
                 decrypt = { cipher -> (cryptoEngine.decryptFromHex(cipher) as? ZillitResult.Success)?.data },
                 disk = chatCache,
+                // The listing's per-conversation counts come from the ledger's
+                // chat rows — this device's reads and prunes applied — not from
+                // a fresh backlog page that forgets an old unread.
+                ledgerBacklog = { badgeStore.wireRows(BadgeSections.CNC) },
+                ledgerChanges = badgeStore.changes,
             )
             // Messages written offline leave through the same send as live ones.
             syncHandlers.register(ChatSendHandler(chatRepository))
@@ -992,6 +1119,36 @@ sealed interface AppGraph {
                 }
             }
 
+            /*
+             * The same conversations, for a production the app is NOT open on
+             * — the Chat widget's picker.
+             *
+             * Built here because the cipher and the at-rest cache live here.
+             * Remembered per production so switching back and forth keeps one
+             * repository, and so one thread cache, rather than growing a new
+             * one each time the picker moves.
+             *
+             * `myUserId` is the user's id ON that production, not the profile's
+             * here: the same person carries a different id on each, and a
+             * message attributed to the wrong one is not our own line.
+             */
+            val projectChats = mutableMapOf<String, ChatRepository>()
+            val chatRepositoryForProject: (String, String) -> ChatRepository = { otherProject, meThere ->
+                projectChats.getOrPut(otherProject) {
+                    ChatRepositoryImpl(
+                        apiClient = apiClient,
+                        config = config,
+                        bus = socketEvents,
+                        myUserId = { meThere },
+                        projectId = { otherProject },
+                        encrypt = { plain -> (cryptoEngine.encryptToHex(plain) as? ZillitResult.Success)?.data },
+                        decrypt = { cipher -> (cryptoEngine.decryptFromHex(cipher) as? ZillitResult.Success)?.data },
+                        disk = chatCache,
+                        callOptions = { CallOptions(projectId = otherProject, userId = meThere) },
+                    )
+                }
+            }
+
             // The notification list — the phones' bell page. Same cipher as
             // the boards: a row's body arrives encrypted like a notice's.
             val notificationsRepository = NotificationsRepositoryImpl(
@@ -1000,7 +1157,7 @@ sealed interface AppGraph {
                 decoder = NotificationDecoder(
                     decrypt = { cipher -> (cryptoEngine.decryptFromHex(cipher) as? ZillitResult.Success)?.data },
                 ),
-            )
+            ).readingLedger(badgeStore)
 
             // The Maps tool's canvas. Constructing it costs nothing — Chromium
             // work begins on the tool's first open, and the runtime is shared
@@ -1023,8 +1180,26 @@ sealed interface AppGraph {
             // every other attachment uses.
             val attachmentUploader =
                 uploader(storageClient, apiClient, config, remoteConfigRepository, projectContext)
+            /*
+             * The same routing, for a production the app is NOT open on — a
+             * widget posting into another production.
+             *
+             * Which storage a file belongs in is a fact about the production
+             * receiving it, so the snapshot comes from that production
+             * (`projectOf`) rather than the open one. The S3 target itself is
+             * device-scoped (`suitable-region` is a RequestModule.Device
+             * call), so only the Box half needs the production named.
+             */
+            val uploaderForProject: (ProjectSnapshot, CallOptions) -> AttachmentUploader = { snapshot, options ->
+                projectUploader(storageClient, apiClient, config, remoteConfigRepository, snapshot, options)
+            }
             // One instance, shared: the coordinator and the call-log list are
             // the same surface talking to the same production.
+            val accountRepository = AccountRepositoryImpl(
+                apiClient = apiClient,
+                config = config,
+                thisDeviceId = { headerContext.value.deviceId.takeIf { it.isNotBlank() } },
+            )
             val callApi = CallApi(apiClient, config)
             // Built after the API because Line 1 needs it: the SFU transports
             // want relay credentials, and they must be in hand before a
@@ -1040,8 +1215,68 @@ sealed interface AppGraph {
                     userId = projectContext?.context?.value?.profile?.userId,
                 )
             }
+            /*
+             * Line 3 — the LiveKit calling backend. Both halves must be
+             * configured (`CALL_API_URL`, `RTC_WS_URL`) or the line is absent
+             * and the call menu never offers it.
+             *
+             * The presence handshake is the phones' `{primary_device_id,
+             * device_id}` under the header key: the PRIMARY device is the
+             * phone this desktop was linked from — the one dev-calls rings —
+             * read once per sign-in from the account's device list, and this
+             * device's own id when no other is marked primary (the web's
+             * fallback too).
+             */
+            val callSocketUrl = config.realtime[ZillitRealtimeEndpoint.CallSocket]?.takeIf { it.isNotBlank() }
+            val callApiBase = config.services[ZillitService.CallApi]?.trimEnd('/')?.takeIf { it.isNotBlank() }
+            lineThreeGate = LineThreeGate(
+                flags = FirebaseRemoteFlags(storageClient, config.firebase, { updateInstanceId(preferences) }),
+                configured = callSocketUrl != null && callApiBase != null,
+            )
+            liveKitLine = if (callSocketUrl != null && callApiBase != null) {
+                LiveKitLine(
+                    scope = appScope,
+                    api = LiveKitApi(LiveKitHttp(storageClient, headerProvider), callApiBase),
+                    sockets = OkHttpLiveKitSocket(),
+                    socketUrl = { callSocketUrl },
+                    handshake = {
+                        val deviceId = headerContext.value.deviceId.takeIf { it.isNotBlank() }
+                        if (deviceId == null) {
+                            null
+                        } else {
+                            val primary = primaryDeviceForHandshake
+                                ?: (accountRepository.linkedDevices() as? ZillitResult.Success)?.data
+                                    ?.firstOrNull { it.isPrimary && !it.isThisDevice }?.id
+                                    ?.also { primaryDeviceForHandshake = it }
+                                ?: deviceId
+                            val payload = """{"primary_device_id":"$primary","device_id":"$deviceId"}"""
+                            (cryptoEngine.encryptToHex(payload) as? ZillitResult.Success)?.data
+                        }
+                    },
+                    identity = {
+                        val project = activeProject.value
+                        val me = projectContext?.context?.value?.profile
+                        if (project == null || me == null) {
+                            null
+                        } else {
+                            LiveKitIdentity(
+                                userId = project.userId?.takeIf { it.isNotBlank() } ?: me.userId.orEmpty(),
+                                displayName = me.fullName,
+                                projectId = project.id,
+                                projectName = project.name,
+                            )
+                        }
+                    },
+                    roomUrlOverride = { config.realtime[ZillitRealtimeEndpoint.LiveKit] },
+                    nowMillis = System::currentTimeMillis,
+                )
+            } else {
+                ZillitLog.i("Startup") { "Line 3 off: CALL_API_URL / RTC_WS_URL not configured" }
+                null
+            }
             val callCoordinator = buildCallCoordinator(
                 callEngine, callApi, config, socketEvents, appScope,
+                line3 = liveKitLine,
                 // Firestore rides the plain client: it is not the Zillit API,
                 // so the moduledata/bodyhash headers must never ride along.
                 planeClient = storageClient,
@@ -1054,7 +1289,11 @@ sealed interface AppGraph {
                 share = callRecordingShare(attachmentUploader, chatRepository),
             )
 
-            com.zillit.desktop.feature.calls.data.CallRinger(callCoordinator, appScope)
+            com.zillit.desktop.feature.calls.data.CallRinger(
+                coordinator = callCoordinator,
+                scope = appScope,
+                ringEnabled = { preferences.get(ZillitPreferences.RingOnIncomingCall) },
+            )
 
             // Home's socket traffic, decoded into events the board understands.
             val homeRealtime = HomeRealtimeSource(
@@ -1129,6 +1368,7 @@ sealed interface AppGraph {
                 noticeDecryptor = noticeDecryptor,
                 chatRepository = chatRepository,
                 chatRepositoryFor = chatRepositoryFor,
+                chatRepositoryForProject = chatRepositoryForProject,
                 chatPresence = chatPresence,
                 appUpdateChecker = appUpdateChecker,
                 homeRealtime = homeRealtime,
@@ -1140,6 +1380,7 @@ sealed interface AppGraph {
                 signatureRepository = SignatureRepositoryImpl(apiClient, config),
                 folderRepository = FolderRepositoryImpl(apiClient, config),
                 attachmentUploader = attachmentUploader,
+                uploaderForProject = uploaderForProject,
                 noticeMedia = S3NoticeMediaSource(
                     httpClient = storageClient,
                     credentials = { awsKeyPair(remoteConfigRepository) },
@@ -1158,11 +1399,8 @@ sealed interface AppGraph {
                 adminRepository = adminRepository,
                 // Marks its own row in the linked-devices list, so nobody signs
                 // themselves out looking for a phone they lost.
-                accountRepository = AccountRepositoryImpl(
-                    apiClient = apiClient,
-                    config = config,
-                    thisDeviceId = { headerContext.value.deviceId.takeIf { it.isNotBlank() } },
-                ),
+                rightsRequests = com.zillit.desktop.core.permissions.RightsRequestBus(),
+                accountRepository = accountRepository,
                 // Each on its own service host, both reached through the same
                 // signed client — see ZillitService.
                 cashRepository = CashRepositoryImpl(apiClient, config),
@@ -1218,6 +1456,8 @@ sealed interface AppGraph {
                 ),
                 httpClient = storageClient,
                 badgeStore = badgeStore,
+                badgeSeeder = badgeSeeder,
+                deviceId = { headerContext.value.deviceId.takeIf { it.isNotBlank() } },
                 badgeDrilldown = badgeDrilldown,
                 apiClient = apiClient,
                 headerProvider = headerProvider,
@@ -1225,6 +1465,7 @@ sealed interface AppGraph {
                 callCoordinator = callCoordinator,
                 callApi = callApi,
                 callEngine = callEngine,
+                lineThreeEnabled = { id -> lineThreeGate?.isEnabledFor(id) == true },
                 mapCanvas = mapCanvas,
                 locationPicker = locationPicker,
                 remoteConfigRepository = remoteConfigRepository,
@@ -1339,6 +1580,45 @@ private fun uploader(
 }
 
 /**
+ * [uploader], for a named production instead of the open one.
+ *
+ * Same two backends and the same routing rule; the difference is only where
+ * the storage facts come from — a snapshot fetched for that production — and
+ * that the Box token call names it, since that one is project-scoped.
+ */
+private fun projectUploader(
+    storageClient: io.ktor.client.HttpClient,
+    apiClient: ApiClient,
+    config: AppConfig,
+    remoteConfig: RemoteConfigRepository,
+    project: ProjectSnapshot,
+    options: CallOptions,
+): AttachmentUploader = RoutingAttachmentUploader(
+    kind = { storageKindOf(project.storageType) },
+    aws = S3AttachmentUploader(
+        httpClient = storageClient,
+        credentials = {
+            awsKeyPair(remoteConfig)?.let { (access, secret) -> AwsCredentials(access, secret) }
+        },
+        // Device-scoped on the wire, so it answers for this machine whichever
+        // production the file is going to.
+        storage = SuitableRegionSource(apiClient, config),
+    ),
+    box = BoxAttachmentUploader(
+        httpClient = storageClient,
+        settings = {
+            project.enterpriseClientId?.let { enterprise ->
+                BoxSettings(
+                    enterpriseClientId = enterprise,
+                    folderId = project.storageFolders[EMAIL_BOX_FOLDER] ?: BOX_ROOT_FOLDER,
+                )
+            }
+        },
+        tokens = BoxAuthSource(apiClient, config, callOptions = { options }),
+    ),
+)
+
+/**
  * Which of the production's Box folders attachments go in.
  *
  * `chat`, because it is the closest thing the server's folder list has to
@@ -1366,7 +1646,9 @@ private fun buildCallCoordinator(
     selfName: () -> String?,
     preferences: PreferenceStore,
     share: com.zillit.desktop.feature.calls.domain.CallRecordingShare,
+    line3: LiveKitLine?,
 ): CallCoordinator = CallCoordinator(
+    line3 = line3,
     api = callApi,
     bus = socketEvents,
     engine = engine,
@@ -1445,7 +1727,7 @@ private fun buildStatusPlane(
  */
 internal suspend fun AppGraph.Ready.crewPresets(): ZillitResult<CrewPresets> {
     val projectId = projectContext?.context?.value?.project?.projectId
-        ?: return ZillitResult.Failure(ZillitError.Validation("No production is open."))
+        ?: return ZillitResult.Failure(ZillitError.Validation("No project is open."))
 
     val departments = projectRepository.departments(projectId)
     val units = unitRepository.joinUnits(projectId)

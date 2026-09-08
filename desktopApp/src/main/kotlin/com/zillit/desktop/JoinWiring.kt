@@ -1,19 +1,12 @@
 package com.zillit.desktop
 
-import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.auth.domain.ChosenPhoto
 import com.zillit.desktop.feature.auth.domain.JoinPhoto
 import com.zillit.desktop.feature.auth.domain.JoinPhotoStore
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
-import java.awt.FileDialog
-import java.awt.Frame
-import java.io.File
-import java.net.URLConnection
 import java.util.UUID
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 /**
  * The join form's profile picture: somewhere to put it, and a way to choose it.
@@ -60,60 +53,19 @@ internal fun AppGraph.Ready.joinPhotoStore(): JoinPhotoStore {
 }
 
 /**
- * Picks one image from disk.
- *
- * AWT's `FileDialog` for the same reason the mail composer uses it: it is the
- * real macOS panel, where `JFileChooser` draws its own and looks a decade out
- * of date. Null when the user cancels, when the file cannot be read, or when
- * it is not an image — a PDF named `.jpg` would upload happily and then show
- * as a broken avatar on every crew list.
+ * Picks one image from disk — the app's shared attach dialog, filtered to
+ * photos. Null when the user cancels, or when what they chose is not an
+ * image: a PDF named `.jpg` would upload happily and then show as a broken
+ * avatar on every crew list, and the picker checks the type after reading.
  */
-internal suspend fun chooseJoinPhoto(): ChosenPhoto? = withContext(Dispatchers.IO) {
-    val dialog = FileDialog(null as Frame?, "Choose a photo", FileDialog.LOAD)
-    dialog.isMultipleMode = false
-    // Advisory on macOS, enforced by the type check below on every platform.
-    dialog.setFilenameFilter { _, name -> name.hasImageExtension() }
-    dialog.isVisible = true
-
-    dialog.files.orEmpty().firstOrNull()?.let(::readPhoto)
-}
-
-private fun readPhoto(file: File): ChosenPhoto? = try {
-    val contentType = URLConnection.guessContentTypeFromName(file.name).orEmpty()
-    when {
-        !file.isFile -> null
-
-        // Refused before reading: pulling a huge file into memory to then
-        // reject it would hang the window first.
-        file.length() > MAX_PHOTO_BYTES -> {
-            ZillitLog.w(TAG) { "photo refused: ${file.length()} bytes" }
-            null
-        }
-
-        !contentType.startsWith("image/") && !file.name.hasImageExtension() -> {
-            ZillitLog.w(TAG) { "photo refused: not an image" }
-            null
-        }
-
-        else -> ChosenPhoto(
-            name = file.name,
-            contentType = contentType.ifBlank { "image/jpeg" },
-            bytes = file.readBytes(),
-        )
-    }
-} catch (error: java.io.IOException) {
-    ZillitLog.w(TAG) { "could not read the chosen photo: ${error.message}" }
-    null
-}
-
-private fun String.hasImageExtension(): Boolean =
-    IMAGE_EXTENSIONS.any { endsWith(it, ignoreCase = true) }
-
-private val IMAGE_EXTENSIONS = listOf(".jpg", ".jpeg", ".png", ".heic", ".webp", ".gif", ".bmp")
+internal suspend fun chooseJoinPhoto(): ChosenPhoto? =
+    attachmentPicker
+        .pick(com.zillit.desktop.core.media.PreviewKind.Image, multiple = false, maxBytes = MAX_PHOTO_BYTES)
+        .firstOrNull()
+        ?.let { ChosenPhoto(name = it.name, contentType = it.contentType, bytes = it.bytes) }
 
 private val UNSAFE = Regex("[^A-Za-z0-9._-]")
 
 /** Generous for a portrait, small enough that a mis-picked raw file is refused. */
 private const val MAX_PHOTO_BYTES = 15L * 1024 * 1024
 
-private const val TAG = "Join"

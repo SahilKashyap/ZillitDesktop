@@ -43,7 +43,7 @@ fun SaPortalScreen(state: SaUiState, onEvent: (SaEvent) -> Unit) {
     if (state.viewer.isBlocked) {
         ZillitEmptyState(
             title = "No access",
-            message = "This production has not given you the artiste portal.",
+            message = "This project has not given you the artiste portal.",
             icon = ZillitIcons.Shield,
         )
         return
@@ -71,7 +71,7 @@ fun SaPortalScreen(state: SaUiState, onEvent: (SaEvent) -> Unit) {
             ZillitEmptyState(
                 title = "You are not booked as an artiste here",
                 message = "This portal is for supporting artistes. If you think that is wrong, " +
-                    "ask the AD department to add you to the production's artiste list.",
+                    "ask the AD department to add you to the project's artiste list.",
                 icon = ZillitIcons.Users,
             )
             return@Column

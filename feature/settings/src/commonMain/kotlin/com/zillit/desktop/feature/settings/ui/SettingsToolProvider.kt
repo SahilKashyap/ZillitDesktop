@@ -103,6 +103,7 @@ class SettingsToolProvider(
                     // they arrive here too — and are not ours to act on.
                     is SettingsEffect.OpenApprovals,
                     is SettingsEffect.OpenAdminPage,
+                    is SettingsEffect.OpenTool,
                     -> Unit
                 }
             }

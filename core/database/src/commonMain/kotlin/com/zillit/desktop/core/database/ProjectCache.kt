@@ -41,6 +41,13 @@ data class ProfileSnapshot(
     val designationName: String? = null,
     /** Producers and main cast may withhold their name from the crew list. */
     val keepNamePrivate: Boolean = false,
+    /**
+     * Consent to show the Zillit mailbox address on the crew list
+     * (`zillit_email_enable`); null = the server's default, ON.
+     */
+    val showMailboxInCrewList: Boolean? = null,
+    /** The Zillit mailbox this user was given, when one exists (`mail_box_detail.email_address`). */
+    val mailboxAddress: String? = null,
     val email: String?,
     val phone: String?,
     val avatarUrl: String?,
@@ -74,6 +81,21 @@ data class ProjectSnapshot(
     val enterpriseClientId: String? = null,
     /** Box folder ids by name — `chat`, `profile_pictures` and so on. */
     val storageFolders: Map<String, String> = emptyMap(),
+    /**
+     * The production this one is a remote unit of, when it is one.
+     *
+     * Null on an ordinary production. A remote unit may not spawn further
+     * units, which is the one thing Admin Settings reads this for — the same
+     * `parent_project_name` check Android makes.
+     */
+    val parentName: String? = null,
+    /**
+     * `mark_deleted`: a deletion has been scheduled and is counting down.
+     *
+     * Not gone yet, and stoppable — the admin row says which of the two things
+     * pressing it will do.
+     */
+    val markedForDeletion: Boolean = false,
 )
 
 data class UserSnapshot(
@@ -206,6 +228,8 @@ class ProjectCache(database: ZillitDatabase, private val nowMillis: () -> Long) 
             // ids are numeric and names come from a fixed server list.
             storageFolders = project.storageFolders.entries
                 .joinToString(";") { (name, id) -> "$name=$id" },
+            parentName = project.parentName,
+            markedForDeletion = if (project.markedForDeletion) 1L else 0L,
             cachedAt = nowMillis(),
         )
     }
@@ -225,6 +249,8 @@ class ProjectCache(database: ZillitDatabase, private val nowMillis: () -> Long) 
                     .split(';')
                     .filter { entry -> entry.contains('=') }
                     .associate { entry -> entry.substringBefore('=') to entry.substringAfter('=') },
+                parentName = it.parentName,
+                markedForDeletion = it.markedForDeletion != 0L,
             )
         }
 

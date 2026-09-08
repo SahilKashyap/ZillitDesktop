@@ -8,6 +8,8 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":core:designsystem"))
+            // Coroutines for the picker's off-thread dialog, and the log.
+            implementation(project(":core:common"))
         }
         jvmTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)

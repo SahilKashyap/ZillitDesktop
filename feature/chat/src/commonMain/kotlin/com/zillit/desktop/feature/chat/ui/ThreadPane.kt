@@ -52,6 +52,9 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.StatusTone
@@ -99,8 +102,10 @@ internal fun ThreadPane(
     loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap? = { null },
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) ->
     androidx.compose.ui.graphics.ImageBitmap? = { null },
-    /** Rings the open thread. Null hides the call buttons entirely. */
-    onCall: ((video: Boolean, mediasoup: Boolean) -> Unit)? = null,
+    /** Rings the open thread on the chosen line. Null hides the call buttons entirely. */
+    onCall: ((video: Boolean, line: CallLine) -> Unit)? = null,
+    /** Which lines this production offers — Line 3 only where remote config lists it. */
+    lines: List<CallLine> = CallLine.DEFAULT,
     /** The one shared speaker; null renders voice notes as plain chips. */
     player: com.zillit.desktop.core.designsystem.component.AudioPlayer? = null,
     /** Fetches a voice note's bytes for decoding. Null disables playback. */
@@ -122,7 +127,7 @@ internal fun ThreadPane(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            ThreadHeader(state, peer, loadAvatar, onCall, onEvent)
+            ThreadHeader(state, peer, loadAvatar, onCall, lines, onEvent)
             Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
 
             val media = BubbleMedia(
@@ -145,7 +150,7 @@ internal fun ThreadPane(
             }
 
             if (refused) {
-                DownloadRefusedNotice(onDismiss = { refused = false })
+                DownloadRefusedNotice(seams.requestDownloadRights) { refused = false }
             }
 
             state.replyTo?.let { parent ->
@@ -204,7 +209,7 @@ private fun ChatPreviewHost(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
 
 /** Android's refusal (`msg_download_right`), dismissed with its X. */
 @Composable
-private fun DownloadRefusedNotice(onDismiss: () -> Unit) {
+private fun DownloadRefusedNotice(onAsk: (() -> Unit)?, onDismiss: () -> Unit) {
     ZillitNotice(
         text = DOWNLOAD_REFUSED,
         tone = StatusTone.Rejected,
@@ -213,6 +218,18 @@ private fun DownloadRefusedNotice(onDismiss: () -> Unit) {
             vertical = ZillitTheme.spacing.xxs,
         ),
         action = {
+            // The sentence names an admin without offering one. This does.
+            if (onAsk != null) {
+                ZillitButton(
+                    text = "Ask an admin",
+                    onClick = {
+                        onAsk()
+                        onDismiss()
+                    },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                )
+            }
             ZillitIconButton(
                 icon = ZillitIcons.Close,
                 contentDescription = "Dismiss",
@@ -365,7 +382,8 @@ private fun ThreadHeader(
     state: ChatUiState,
     peer: com.zillit.desktop.feature.chat.domain.CrewContact,
     loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap?,
-    onCall: ((video: Boolean, mediasoup: Boolean) -> Unit)?,
+    onCall: ((video: Boolean, line: CallLine) -> Unit)?,
+    lines: List<CallLine>,
     onEvent: (ChatEvent) -> Unit,
 ) {
     val face = androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(
@@ -385,19 +403,25 @@ private fun ThreadHeader(
         ThreadIdentity(state = state, peer = peer, modifier = Modifier.weight(1f))
         // Callable when the peer has a device to ring (groups always do —
         // the room is the address). No device, no buttons: a call button
-        // that fails on press is worse than none.
-        if (onCall != null && (state.peerIsGroup || peer.deviceId != null)) {
+        // that fails on press is worse than none. Someone who has left the
+        // production keeps their device id on the crew row — the phone is
+        // still registered — but the call would be refused at the other end,
+        // so they get the thread and not the buttons.
+        val callable = state.peerIsGroup || (peer.deviceId != null && !peer.hasLeft)
+        if (onCall != null && callable) {
             CallLineButton(
                 icon = ZillitIcons.Phone,
                 label = "Start call",
                 tint = ZillitTheme.colors.success,
-                onPick = { mediasoup -> onCall(false, mediasoup) },
+                lines = lines,
+                onPick = { line -> onCall(false, line) },
             )
             CallLineButton(
                 icon = ZillitIcons.Camera,
                 label = "Start video call",
                 tint = ZillitTheme.colors.accentText,
-                onPick = { mediasoup -> onCall(true, mediasoup) },
+                lines = lines,
+                onPick = { line -> onCall(true, line) },
             )
         }
         ZillitIconButton(
@@ -425,7 +449,8 @@ private fun CallLineButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     tint: androidx.compose.ui.graphics.Color,
-    onPick: (mediasoup: Boolean) -> Unit,
+    lines: List<CallLine>,
+    onPick: (line: CallLine) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
@@ -443,8 +468,9 @@ private fun CallLineButton(
                 RoundedCornerShape(LINE_MENU_RADIUS),
             ),
         ) {
-            CallLineRow("Line 2") { open = false; onPick(false) }
-            CallLineRow("Line 1") { open = false; onPick(true) }
+            lines.forEach { line ->
+                CallLineRow(line.label) { open = false; onPick(line) }
+            }
         }
     }
 }
@@ -1476,10 +1502,12 @@ private fun ComposerActions(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
     var emojiOpen by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(false)
     }
-    ZillitIconButton(
-        icon = ZillitIcons.Add,
+    // The phones' attach sheet, not a bare file dialog: Photo, Video,
+    // Document, Audio — the microphone and the pin stay their own buttons.
+    com.zillit.desktop.core.media.AttachMenu(
+        kinds = com.zillit.desktop.core.media.ALL_ATTACHMENT_KINDS,
         contentDescription = "Attach a file",
-        onClick = { onEvent(ChatEvent.AttachFile) },
+        onPick = { kind -> onEvent(ChatEvent.AttachKind(kind)) },
     )
     ZillitIconButton(
         icon = ZillitIcons.Mic,

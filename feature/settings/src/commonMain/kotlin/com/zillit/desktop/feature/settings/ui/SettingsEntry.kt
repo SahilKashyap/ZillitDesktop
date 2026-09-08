@@ -48,10 +48,10 @@ enum class SettingsDestination {
 
     // -- admin: the production itself --------------------------------------
     ProductionName,
+    ProductionSetup,
     Watermark,
     CompanyDetails,
     SosRecipients,
-    DealMemoOnboarding,
     SetupNotes,
     DeleteProduction,
 }
@@ -187,7 +187,7 @@ private fun accountGroup(): SettingsGroup =
             SettingsEntry(
                 destination = SettingsDestination.InviteCrew,
                 title = "Invite crew",
-                detail = "Share this production's code so someone can ask to join it.",
+                detail = "Share this project's code so someone can ask to join it.",
                 icon = ZillitToolIcons.IcInviteUser,
             ),
         ),
@@ -195,7 +195,7 @@ private fun accountGroup(): SettingsGroup =
 
 private fun productionGroup(): SettingsGroup =
     SettingsGroup(
-        title = "This production",
+        title = "This project",
         icon = ZillitIcons.Home,
         entries = listOf(
             SettingsEntry(
@@ -206,7 +206,7 @@ private fun productionGroup(): SettingsGroup =
             ),
             SettingsEntry(
                 destination = SettingsDestination.LeaveProduction,
-                title = "Leave this production",
+                title = "Leave this project",
                 detail = "Takes you off the crew. An admin has to approve you again to come back.",
                 icon = ZillitIcons.Detach,
                 tone = EntryTone.Danger,
@@ -229,13 +229,19 @@ data class ProductionFacts(
     /** A personal production has no crew, so almost none of this page applies. */
     val isPersonal: Boolean = false,
     /**
-     * Whether this production onboards crew with a deal memo or NDA.
+     * Whether this production is itself a remote unit of another.
      *
-     * Remote-config on the phones (`getDealMemoEnableValue`), and off until the
-     * desktop reads the same flag — a contracts page offered on a production
-     * that does not use them is an invitation to send crew a form nobody reads.
+     * A remote unit cannot spawn further units, so the two "create a unit"
+     * rows go — Android reads the same `parent_project_name` for this.
      */
-    val dealMemoEnabled: Boolean = false,
+    val isRemoteUnit: Boolean = false,
+    /**
+     * A deletion already scheduled and counting down.
+     *
+     * Changes what the danger row does rather than whether it appears: on a
+     * production in this state the only thing to offer is stopping it.
+     */
+    val markedForDeletion: Boolean = false,
 )
 
 /**
@@ -246,13 +252,18 @@ data class ProductionFacts(
  * listing, and the comparison is loose because the value arrives inconsistently
  * cased.
  *
- * Deal memos stay off until the desktop reads the same remote-config flag the
- * phones do — see [ProductionFacts.dealMemoEnabled].
  */
-fun productionFacts(name: String?, type: String?): ProductionFacts = ProductionFacts(
+fun productionFacts(
+    name: String?,
+    type: String?,
+    parentName: String? = null,
+    markedForDeletion: Boolean = false,
+): ProductionFacts = ProductionFacts(
     name = name.orEmpty(),
     isOtherType = type.equals(OTHER_PRODUCTION, ignoreCase = true),
     isPersonal = type.equals(PERSONAL_PRODUCTION, ignoreCase = true),
+    isRemoteUnit = !parentName.isNullOrBlank(),
+    markedForDeletion = markedForDeletion,
 )
 
 private const val OTHER_PRODUCTION = "other"
@@ -279,22 +290,22 @@ fun adminSettingsEntries(
         entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.ApproveNewCrew,
-                title = "Approve new crew",
-                detail = "People who used this production's code and are waiting to be let in.",
+                title = "Approve New User Requests",
+                detail = "People who used this project's code and are waiting to be let in.",
                 icon = ZillitToolIcons.IcInviteUser,
                 badge = pendingNewCrew,
             ),
             SettingsEntry(
                 destination = SettingsDestination.ApproveProfileChanges,
-                title = "Approve profile changes",
+                title = "Approve User Profile",
                 detail = "Crew who changed their name, department or contact details since joining.",
                 icon = ZillitIcons.User,
                 badge = pendingProfileChanges,
             ),
             SettingsEntry(
                 destination = SettingsDestination.PreApprovedCrew,
-                title = "Pre-approved crew",
-                detail = "People let straight in when they use the production code, without waiting here.",
+                title = "Pre-Approved Users",
+                detail = "People let straight in when they use the project code, without waiting here.",
                 icon = ZillitIcons.Check,
             ),
         ),
@@ -305,25 +316,25 @@ fun adminSettingsEntries(
         entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.CrewAndAdmins,
-                title = "Crew and admins",
-                detail = "Who is on this production, who else may administer it, and who can be removed.",
+                title = "User Management",
+                detail = "Who is on this project, who else may administer it, and who can be removed.",
                 icon = ZillitToolIcons.CrewList,
             ),
             SettingsEntry(
                 destination = SettingsDestination.PermissionGrid,
-                title = "Permission grid",
+                title = "User Viewing & Posting Rights Grid",
                 detail = "Per tool, per person: what they may see, post and download.",
                 icon = ZillitToolIcons.PostingRights,
             ),
             SettingsEntry(
                 destination = SettingsDestination.Departments,
-                title = "Departments",
-                detail = "The departments this production runs. Crew choose one when they join.",
+                title = "Create New Department",
+                detail = "The departments this project runs. Crew choose one when they join.",
                 icon = ZillitIcons.LayoutCascade,
             ),
             SettingsEntry(
                 destination = SettingsDestination.JobTitles,
-                title = "Job titles",
+                title = "Create New Designation",
                 detail = "The roles crew can hold inside a department.",
                 icon = ZillitToolIcons.Casting,
             ),
@@ -332,7 +343,11 @@ fun adminSettingsEntries(
                 // "Crew list" is a film production's word for it; corporate and
                 // event productions call the same page a staff list, and both
                 // phone clients switch the label rather than the page.
-                title = if (production.isOtherType) "Staff list order" else "Crew list order",
+                title = if (production.isOtherType) {
+                    "Change Department Listing Order for Staff List"
+                } else {
+                    "Change Department Listing Order for Crew List"
+                },
                 detail = "The order departments appear in when the list is generated.",
                 icon = ZillitToolIcons.AdDash,
             ),
@@ -344,19 +359,19 @@ fun adminSettingsEntries(
         entries = listOf(
                 SettingsEntry(
                     destination = SettingsDestination.ShootingUnits,
-                    title = "Home units",
-                    detail = "The sections of this production's dashboard — bulletin, calendar, call sheet.",
+                    title = "Create/Update Home Units",
+                    detail = "The sections of this project's dashboard — bulletin, calendar, call sheet.",
                     icon = ZillitToolIcons.IcContinuity,
                 ),
                 SettingsEntry(
                     destination = SettingsDestination.RemoteUnit,
-                    title = "Remote unit",
-                    detail = "A unit shooting away from the main production, with its own board and call sheets.",
+                    title = "Create Remote Shooting Units",
+                    detail = "A unit shooting away from the main project, with its own board and call sheets.",
                     icon = ZillitToolIcons.Location,
                 ),
                 SettingsEntry(
                     destination = SettingsDestination.JoinedUnits,
-                    title = "Shooting units",
+                    title = "Create Additional Shooting Unit",
                     detail = "Main, second and splinter units. Crew attach themselves to one when they join.",
                     icon = ZillitToolIcons.PreProduction,
                 ),
@@ -368,57 +383,59 @@ fun adminSettingsEntries(
         entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.ToolAvailability,
-                title = "Tools on this production",
-                detail = "Which tools this production runs. Switching one off hides it for everyone.",
+                title = "Customization of tools",
+                detail = "Which tools this project runs. Switching one off hides it for everyone.",
                 icon = ZillitIcons.Tools,
             ),
             SettingsEntry(
                 destination = SettingsDestination.ToolGroups,
-                title = "Tool groups",
+                title = "Manage Tool Groups",
                 detail = "Which group each tool sits under on the Film Tools grid.",
                 icon = ZillitIcons.LayoutTabs,
             ),
         ),
     ),
     SettingsGroup(
-        title = "The production",
+        title = "The project",
         icon = ZillitIcons.File,
         entries = listOfNotNull(
             SettingsEntry(
                 destination = SettingsDestination.ProductionName,
-                title = "Production name",
-                detail = "What this production is called everywhere in Zillit.",
+                title = "Edit Project Name",
+                detail = "What this project is called everywhere in Zillit.",
                 icon = ZillitToolIcons.Script,
             ),
             SettingsEntry(
+                destination = SettingsDestination.ProductionSetup,
+                title = "Production Setup",
+                detail = "The companies behind this project, and the bank accounts they own.",
+                // Not ZillitToolIcons.Account — Company Details, the row below
+                // it, already wears that one, and two near-identical building
+                // marks on adjacent rows read as a duplicate.
+                icon = ZillitIcons.Bank,
+            ),
+            SettingsEntry(
                 destination = SettingsDestination.CompanyDetails,
-                title = "Company details",
+                title = "Company Details",
                 detail = "The name, address and contact details printed at the head of the crew list.",
                 icon = ZillitToolIcons.Account,
             ),
             SettingsEntry(
                 destination = SettingsDestination.Watermark,
-                title = "Watermark",
-                detail = "The logo stamped across documents this production sends out.",
+                title = "Watermark Logo of Company",
+                detail = "The logo stamped across documents this project sends out.",
                 icon = ZillitToolIcons.IcSignedDocument,
             ),
             SettingsEntry(
                 destination = SettingsDestination.SosRecipients,
-                title = "SOS recipients",
-                detail = "Who is alerted when someone on this production raises an SOS.",
+                title = "Set/View SOS Receivers",
+                detail = "Who is alerted when someone on this project raises an SOS.",
                 icon = ZillitIcons.Phone,
             ),
             SettingsEntry(
-                destination = SettingsDestination.DealMemoOnboarding,
-                title = "Deal memo and NDA onboarding",
-                detail = "Contracts new crew sign before they are let onto the production.",
-                icon = ZillitToolIcons.DealMemo,
-                status = EntryStatus.Planned,
-            ).takeIf { production.dealMemoEnabled && !production.isOtherType && !production.isPersonal },
-            SettingsEntry(
                 destination = SettingsDestination.SetupNotes,
-                title = "Setup notes",
-                detail = "Zillit's own guide to setting a production up, opened in your browser.",
+                title = "Project Set up Notes",
+                detail = "Zillit's own guide to setting a project up, opened in your browser.",
                 icon = ZillitIcons.Info,
             ),
         ),
@@ -429,8 +446,16 @@ fun adminSettingsEntries(
         entries = listOf(
             SettingsEntry(
                 destination = SettingsDestination.DeleteProduction,
-                title = "Delete this production",
-                detail = "Removes the production and everything in it, for everyone. Scheduled, not immediate.",
+                // Two things behind one row, as on the phones: a production
+                // already counting down is stopped here, not deleted twice.
+                // The explanation flips with the title — describing a deletion
+                // under a button that cancels one is worse than no explanation.
+                title = if (production.markedForDeletion) "Stop Project Deletion" else "Delete Project",
+                detail = if (production.markedForDeletion) {
+                    "This project is counting down to deletion. Calls it off; nothing is lost."
+                } else {
+                    "Removes the project and everything in it, for everyone. Scheduled, not immediate."
+                },
                 icon = ZillitIcons.Close,
                 tone = EntryTone.Danger,
             ),
@@ -461,3 +486,12 @@ private fun List<SettingsGroup>.availableOn(production: ProductionFacts): List<S
 
 /** The admin walkthrough iOS links from its own "project setup notes" row. */
 const val SETUP_NOTES_URL = "https://documentation.zillit.com/#project-setup-notes"
+
+/**
+ * The Account Hub's route, which Production Setup is a page of.
+ *
+ * Repeated rather than depended on: this module knows no other feature, and a
+ * dependency on the accounts console to read one string would be the wrong way
+ * round. `AdminSettingsRoutingTest` pins the two together.
+ */
+const val ACCOUNT_HUB_ROUTE = "/film-tools/account-hub"

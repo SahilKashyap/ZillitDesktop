@@ -231,7 +231,7 @@ class JoinProductionTest {
 
         assertEquals(JoinStep.Submitted, model.state.value.step)
         assertEquals(JoinStatus.Approved, model.state.value.outcome)
-        assertNull(model.state.value.project, "there is no form to name a production on")
+        assertNull(model.state.value.project, "there is no form to name a project on")
         assertEquals(false, model.state.value.isBusy)
     }
 
@@ -381,7 +381,7 @@ class JoinProductionTest {
 
         override suspend fun findByCode(code: String): ZillitResult<CodeLookup> = when {
             findFails ->
-                ZillitResult.Failure(ZillitError.Validation("No production found for that code."))
+                ZillitResult.Failure(ZillitError.Validation("No project found for that code."))
 
             preApproved ->
                 ZillitResult.Success(CodeLookup.AlreadyOn(projectId = "p1", userId = "u1"))

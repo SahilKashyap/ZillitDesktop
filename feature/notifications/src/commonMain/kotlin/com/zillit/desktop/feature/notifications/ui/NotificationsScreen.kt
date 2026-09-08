@@ -61,7 +61,7 @@ fun NotificationsScreen(state: NotificationsUiState, onEvent: (NotificationsEven
                     Box(Modifier.fillMaxWidth(), Alignment.Center) { ZillitSpinner() }
                 state.loaded && state.rows.isEmpty() -> ZillitEmptyState(
                     title = "No notifications",
-                    message = "Nothing has been posted to this production's notification list.",
+                    message = "Nothing has been posted to this project's notification list.",
                     icon = ZillitIcons.Bell,
                 )
                 else -> NotificationList(state, onEvent)
@@ -75,7 +75,7 @@ fun NotificationsScreen(state: NotificationsUiState, onEvent: (NotificationsEven
 private fun Header(state: NotificationsUiState, onEvent: (NotificationsEvent) -> Unit) {
     ZillitPageHeader(
         title = "Notifications",
-        description = "Everything the production has sent you, newest first.",
+        description = "Everything the project has sent you, newest first.",
         actions = {
             ZillitIconButton(
                 icon = ZillitIcons.Reload,

@@ -27,7 +27,8 @@ import java.util.concurrent.atomic.AtomicReference
 internal fun AppGraph.Ready.invoiceFiles(): InvoiceFiles = object : InvoiceFiles {
 
     override suspend fun pick(): List<PickedInvoiceFile> =
-        FilePicker().pick().map { PickedInvoiceFile(it.name, it.contentType, it.bytes) }
+        attachmentPicker.pick(com.zillit.desktop.core.media.PreviewKind.Document)
+            .map { PickedInvoiceFile(it.name, it.contentType, it.bytes) }
 
     override suspend fun upload(file: PickedInvoiceFile): ZillitResult<InvoiceAttachment> {
         val projectId = projectContext?.context?.value?.project?.projectId.orEmpty()

@@ -88,14 +88,12 @@ private fun DocumentsHeader(state: FormSignatureUiState, onEvent: (FormSignature
         description = "Send a document to be signed, sign what reaches you, and " +
             "collect the finished copies.",
         actions = {
-            if (state.viewer.canPost) {
-                ZillitButton(
-                    text = "Upload & send",
-                    onClick = { onEvent(FormSignatureEvent.StartSend) },
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Upload,
-                )
-            }
+            ZillitButton(
+                text = "Upload & send",
+                onClick = { onEvent(FormSignatureEvent.StartSend) },
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Upload,
+            )
             ZillitButton(
                 text = "Refresh",
                 onClick = { onEvent(FormSignatureEvent.Refresh) },
@@ -143,7 +141,8 @@ private fun RowActions(
     onEvent: (FormSignatureEvent) -> Unit,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        if (state.documents.tab == SignDocumentTab.Uploaded && state.viewer.canPost) {
+        // Only what this person sent has signers of theirs to change.
+        if (state.documents.tab == SignDocumentTab.Uploaded) {
             // Adding a name to a document already out for signature — the one
             // thing a sender routinely needs and had to leave the app for.
             if (!document.finalized) {

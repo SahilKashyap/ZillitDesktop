@@ -97,7 +97,7 @@ internal fun CompanyDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) 
         ZillitSectionLabel("Bank accounts")
         if (state.setup.banks.isEmpty()) {
             ZillitText(
-                text = "No bank accounts on this production yet. Add one from the Bank " +
+                text = "No bank accounts on this project yet. Add one from the Bank " +
                     "Accounts section, then link it here.",
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
@@ -190,6 +190,9 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
                     onEvent(AccountHubEvent.UpdateBankDraft(draft.copy(accountNumber = it)))
                 },
                 label = "Account number",
+                // The server's validator caps it here. Not a UK 8-digit rule:
+                // truncating to 8 was tried and reverted (ZL-20361).
+                maxLength = ACCOUNT_NUMBER_MAX,
                 modifier = Modifier.weight(1f),
             )
             ZillitTextField(
@@ -248,5 +251,6 @@ internal fun BankAccountDialog(state: AccountHubUiState, onEvent: (AccountHubEve
 }
 
 private const val WEIGHT_WIDE = 2f
+private const val ACCOUNT_NUMBER_MAX = 50
 private const val COUNTRY_CODE_LENGTH = 2
 private const val SORT_CODE_DIGITS = 6

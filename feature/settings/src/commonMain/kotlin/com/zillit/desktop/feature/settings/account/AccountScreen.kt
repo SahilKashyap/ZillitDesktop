@@ -113,7 +113,7 @@ private val AccountPage.blurb: String
             "Computers and phones signed in to Zillit as you."
 
         AccountPage.InviteCrew ->
-            "Share this production's code so someone can ask to join it."
+            "Share this project's code so someone can ask to join it."
     }
 
 private val CONTENT_MAX_WIDTH = 680.dp

@@ -55,6 +55,8 @@ PROD_BUDGET_BUILDER_BASE_URL=
 PROD_BUDGET_BUILDER_WEB_URL=
 PROD_CALENDAR_BASE_URL=
 PROD_CALLING_BASE_URL=
+# Line 3 (LiveKit) call API — the phones' CALL_API_URL. Not CALLING_BASE_URL, which is Lines 1 and 2.
+PROD_CALL_API_URL=https://calls.zillit.com/api
 PROD_CALLSHEET_BASE_URL=
 PROD_CARD_EXPENSES_BASE_URL=
 PROD_CASH_EXPENSES_BASE_URL=
@@ -100,6 +102,8 @@ PROD_WARDROBE_BASE_URL=
 # -- realtime --
 PROD_URL=
 PROD_LIVEKIT_URL=wss://calls.zillit.com/livekit
+# Line 3's presence socket — the phones' RTC_WS_URL.
+PROD_RTC_WS_URL=wss://calls.zillit.com/ws
 PROD_CALL_URL=
 
 # ---------------------------------------------------------------------------

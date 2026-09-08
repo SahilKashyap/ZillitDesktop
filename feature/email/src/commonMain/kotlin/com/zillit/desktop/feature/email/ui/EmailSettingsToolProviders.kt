@@ -11,6 +11,12 @@ import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.workspace.ToolProvider
+import com.zillit.desktop.feature.email.rules.EmailRulesViewModel
+import com.zillit.desktop.feature.email.rules.EmailRulesRepositoryImpl
+import com.zillit.desktop.feature.email.rules.EmailRulesEvent
+import com.zillit.desktop.feature.email.rules.DriveFolderSource
+import com.zillit.desktop.feature.email.domain.EmailFolder
+import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.email.data.BccPresetRepositoryImpl
@@ -55,6 +61,10 @@ class EmailSettingsToolProvider(
     private val isAdmin: () -> Boolean = { true },
     private val onOpenSignatures: () -> Unit = {},
     private val onCopy: (String) -> Unit = {},
+    /** The mailbox's folders, for a rule's Move action. */
+    private val folders: suspend () -> ZillitResult<List<EmailFolder>> = { ZillitResult.Success(emptyList()) },
+    /** The Drive, for a rule's Save-attachments action; null hides the picker. */
+    private val driveFolders: DriveFolderSource? = null,
 ) : ToolProvider {
 
     override val path: String = EMAIL_SETTINGS_PATH
@@ -74,12 +84,14 @@ class EmailSettingsToolProvider(
         val presets = remember { BccPresetsViewModel(BccPresetRepositoryImpl(apiClient, config), crew = crew) }
         val forwarding = remember { EmailForwardingViewModel(EmailForwardingRepositoryImpl(apiClient, config)) }
         val credentials = remember { MailboxCredentialsViewModel(MailboxCredentialsRepositoryImpl(apiClient, config)) }
+        val rules = remember { EmailRulesViewModel(EmailRulesRepositoryImpl(apiClient, config), folders, driveFolders) }
 
         val settingsState by settings.state.collectAsState()
         val groupsState by groups.state.collectAsState()
         val presetsState by presets.state.collectAsState()
         val forwardingState by forwarding.state.collectAsState()
         val credentialsState by credentials.state.collectAsState()
+        val rulesState by rules.state.collectAsState()
 
         // Each section loads when the window opens rather than when its card
         // is opened: the cards say what is configured, and a card that reads
@@ -90,6 +102,7 @@ class EmailSettingsToolProvider(
             presets.onEvent(BccPresetsEvent.Load)
             forwarding.onEvent(EmailForwardingEvent.Load)
             credentials.onEvent(MailboxCredentialsEvent.Load)
+            rules.onEvent(EmailRulesEvent.Load)
         }
 
         EmailSettingsScreen(
@@ -99,6 +112,7 @@ class EmailSettingsToolProvider(
             bccPresets = SectionBinding(presetsState, presets::onEvent),
             forwarding = SectionBinding(forwardingState, forwarding::onEvent),
             credentials = SectionBinding(credentialsState, credentials::onEvent),
+            rules = SectionBinding(rulesState, rules::onEvent),
             onOpenSignatures = onOpenSignatures,
             onCopy = onCopy,
         )

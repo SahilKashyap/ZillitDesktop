@@ -39,8 +39,8 @@ import com.zillit.desktop.feature.settings.admin.ui.NameKind
 @Composable
 fun ProductionNamePage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "Production name",
-        description = "What this production is called everywhere in Zillit.",
+        title = AdminDestination.ProductionName.title,
+        description = "What this project is called everywhere in Zillit.",
         state = state,
         onEvent = onEvent,
         onBack = onBack,
@@ -51,8 +51,8 @@ fun ProductionNamePage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBac
                 style = ZillitTheme.typography.titleMedium,
             )
             ZillitText(
-                text = "Everyone on the production sees this, and it heads every document " +
-                    "the production sends out.",
+                text = "Everyone on the project sees this, and it heads every document " +
+                    "the project sends out.",
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
@@ -79,8 +79,8 @@ fun CompanyDetailsPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBac
     val company = state.company
 
     AdminPage(
-        title = "Company details",
-        description = "Printed at the head of the crew list and the documents this production sends.",
+        title = AdminDestination.CompanyDetails.title,
+        description = "Printed at the head of the crew list and the documents this project sends.",
         state = state,
         onEvent = onEvent,
         onBack = onBack,
@@ -161,8 +161,8 @@ private fun HeaderLine(label: String, value: String) {
 @Composable
 fun WatermarkPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "Watermark",
-        description = "Stamped across documents this production sends out.",
+        title = AdminDestination.Watermark.title,
+        description = "Stamped across documents this project sends out.",
         state = state,
         onEvent = onEvent,
         onBack = onBack,
@@ -176,7 +176,7 @@ fun WatermarkPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: ()
                 )
             } else {
                 ZillitText(
-                    text = "A watermark is set and stamped on every document this production sends.",
+                    text = "A watermark is set and stamped on every document this project sends.",
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )
@@ -219,9 +219,9 @@ fun UnitsPage(
             // calendar, call sheet — and calling them units is the server's
             // word, not the reader's.
             UnitKind.Home ->
-                "The sections of this production's dashboard, and who can see each one."
+                "The sections of this project's dashboard, and who can see each one."
             UnitKind.Remote ->
-                "A unit shooting away from the main production, with its own board and call sheets."
+                "A unit shooting away from the main project, with its own board and call sheets."
             UnitKind.Shooting ->
                 "Main, second and splinter units. Crew attach themselves to one when they join."
         },
@@ -244,7 +244,7 @@ fun UnitsPage(
                     EmptyRow("No unit matches “${state.query}”.")
 
                 rows.isEmpty() && state.hasLoaded ->
-                    EmptyRow("This production has no ${destination.title.lowercase()} yet.")
+                    EmptyRow("This project has no ${destination.title.lowercase()} yet.")
 
                 else -> rows.forEachIndexed { index, unit ->
                     if (index > 0) RowRule()
@@ -330,8 +330,8 @@ private fun UnitRow(unit: AdminUnit, onEvent: (AdminEvent) -> Unit) {
 @Composable
 fun DeleteProductionPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Unit) {
     AdminPage(
-        title = "Delete this production",
-        description = "Removes the production and everything in it, for everyone on it.",
+        title = AdminDestination.DeleteProduction.title,
+        description = "Removes the project and everything in it, for everyone on it.",
         state = state,
         onEvent = onEvent,
         onBack = onBack,
@@ -339,8 +339,8 @@ fun DeleteProductionPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onB
         if (state.deletion.isScheduled) {
             ZillitNotice(
                 text = state.deletion.hours
-                    ?.let { "This production is scheduled for deletion in $it hours." }
-                    ?: "This production is scheduled for deletion.",
+                    ?.let { "This project is scheduled for deletion in $it hours." }
+                    ?: "This project is scheduled for deletion.",
                 tone = StatusTone.Rejected,
                 icon = ZillitIcons.Warning,
                 action = {
@@ -381,7 +381,7 @@ fun DeleteProductionPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onB
                                 AdminEvent.Ask(
                                     AdminConfirmation.DeleteProduction(
                                         hours = hours,
-                                        name = state.productionName.ifBlank { "this production" },
+                                        name = state.productionName.ifBlank { "this project" },
                                     ),
                                 ),
                             )

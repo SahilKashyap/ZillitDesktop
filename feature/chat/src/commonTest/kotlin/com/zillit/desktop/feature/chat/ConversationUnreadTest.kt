@@ -71,4 +71,28 @@ class ConversationUnreadTest {
         )
         assertEquals(mapOf("u1" to 1), conversationUnreadFrom(payload))
     }
+
+    /** The server keeps rows the phones marked read long ago; the local read mark is the device's memory of that. */
+    @Test
+    fun `rows no newer than the local read mark do not count, and a silenced message never does`() {
+        val payload = Json.parseToJsonElement(
+            """
+            [
+              {"section":"cnc_label","tool":"chat_label","unit":"chat_member_label","sender":"u1","created":100,
+               "reference_data":{"sender_id":"u1","chat_id":"m1"},"message_read":false},
+              {"section":"cnc_label","tool":"chat_label","unit":"chat_member_label","sender":"u1","created":300,
+               "reference_data":{"sender_id":"u1","chat_id":"m2"},"message_read":false},
+              {"section":"cnc_label","tool":"chat_label","unit":"chat_group_label","sender":"u3","created":500,
+               "reference_data":{"sender_id":"u3","chat_room_id":"room9","chat_id":"m3"},"message_read":false},
+              {"section":"cnc_label","tool":"chat_label","unit":"chat_group_label","sender":"u3","created":600,
+               "reference_data":{"sender_id":"u3","chat_room_id":"room9","chat_id":"m4"},"message_read":false}
+            ]
+            """.trimIndent(),
+        )
+        val backlog = conversationBacklogFrom(payload, readMarks = mapOf("u1" to 200L), silencedIds = setOf("m4"))
+        assertEquals(mapOf("u1" to 1, "room9" to 1), backlog.unread, "m1 is older than the mark, m4 was silenced")
+        assertEquals(mapOf("m2" to "u1", "m3" to "room9"), backlog.messageKeys)
+        assertEquals(600L, backlog.activity["room9"], "activity still follows every row, read or not")
+        assertEquals(100L, backlog.windowStart, "the window starts at the oldest row")
+    }
 }

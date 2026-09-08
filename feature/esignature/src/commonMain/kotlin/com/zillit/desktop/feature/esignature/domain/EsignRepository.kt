@@ -49,6 +49,10 @@ interface EsignRepository {
         document: StoredFile,
         recipients: List<EnvelopeRecipient>,
         fields: List<NewField>,
+        /** Every page gets an initials mark for every signer. */
+        initialsOnAllPages: Boolean = false,
+        /** Days between reminder emails; null leaves the server's default. */
+        reminderCadenceDays: Int? = null,
     ): ZillitResult<Envelope>
 
     suspend fun send(envelopeId: String): ZillitResult<Unit>
@@ -90,6 +94,8 @@ data class NewField(
     val y: Double,
     val width: Double = FieldType.DEFAULT_WIDTH,
     val height: Double = FieldType.DEFAULT_HEIGHT,
+    val style: FieldStyle = FieldStyle(),
+    val options: List<String> = emptyList(),
 )
 
 /**

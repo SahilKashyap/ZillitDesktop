@@ -74,8 +74,8 @@ class BudgetBuilderScreenRenderTest {
             }
             onNodeWithText("Open Budget Builder").assertDoesNotExist()
             onNodeWithText(
-                "You don’t have access to Budget Builder on this production. " +
-                    "Access is granted per tool, by the production’s admin.",
+                "You don’t have access to Budget Builder on this project. " +
+                    "Access is granted per tool, by the project’s admin.",
             ).assertExists()
         }
     }

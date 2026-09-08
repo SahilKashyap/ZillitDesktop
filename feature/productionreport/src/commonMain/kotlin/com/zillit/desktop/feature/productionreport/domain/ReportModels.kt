@@ -73,6 +73,8 @@ data class ApprovalRequest(
     val stage: String,
     val status: String,
     val reason: String,
+    /** Which send this request belongs to; a re-send starts a new round and the old one no longer counts. */
+    val round: Int = 1,
 ) {
     val isPending: Boolean get() = status.equals("PENDING", ignoreCase = true)
     val isFinalStage: Boolean get() = !stage.equals("INTERNAL", ignoreCase = true)
@@ -109,3 +111,31 @@ data class CompanySeed(
     val companyName: String = "",
     val companyAddress: String = "",
 )
+
+/**
+ * The requests of the newest round for a stage — a re-send supersedes the
+ * previous round's approvers, so an approver dropped by the re-send is no
+ * longer one (web `latestRoundRequests`, Android `countApprovalAssignments`).
+ * A payload with no round is a single round 1. Stages are independent.
+ */
+fun List<ApprovalRequest>.latestRound(stage: String = "FINAL"): List<ApprovalRequest> {
+    val ofStage = filter { it.stage.equals(stage, ignoreCase = true) }
+    val latest = ofStage.maxOfOrNull { it.round } ?: return emptyList()
+    return ofStage.filter { it.round == latest }
+}
+
+/** Whether [userId] is named by the newest round of either stage — the web's `isCurrentApprover`. */
+fun List<ApprovalRequest>.namesInCurrentRound(userId: String?): Boolean {
+    val me = userId?.trim().orEmpty()
+    if (me.isEmpty()) return false
+    return listOf("FINAL", "INTERNAL").any { stage -> latestRound(stage).any { it.assigneeId.trim() == me } }
+}
+
+/** The request waiting on [userId] in the newest round, if any — what Approve/Reject act on. */
+fun List<ApprovalRequest>.pendingFor(userId: String?): ApprovalRequest? {
+    val me = userId?.trim().orEmpty()
+    if (me.isEmpty()) return null
+    return listOf("FINAL", "INTERNAL").firstNotNullOfOrNull { stage ->
+        latestRound(stage).firstOrNull { it.isPending && it.assigneeId.trim() == me }
+    }
+}

@@ -36,6 +36,12 @@ data class ProfileSeed(
     val designationId: String? = null,
     val designationName: String? = null,
     val keepNamePrivate: Boolean = false,
+    /** Consent to show the Zillit mailbox address on the crew list; the server's default is ON. */
+    val showMailboxInCrewList: Boolean = true,
+    /** The Zillit mailbox, when one exists — the consent row is offered only then. */
+    val mailboxAddress: String? = null,
+    /** A personal production has no crew list to consent to. */
+    val isPersonal: Boolean = false,
     val isAdmin: Boolean = false,
     /** Shown on the invite page, and the only thing that page needs. */
     val productionName: String = "",
@@ -49,6 +55,9 @@ data class ProfileFormState(
     val departmentId: String? = null,
     val designationId: String? = null,
     val keepNamePrivate: Boolean = false,
+    val showMailboxInCrewList: Boolean = true,
+    val mailboxAddress: String? = null,
+    val isPersonal: Boolean = false,
     val departments: List<CrewDepartment> = emptyList(),
     val isLoadingDepartments: Boolean = false,
     val isSaving: Boolean = false,
@@ -155,6 +164,8 @@ sealed interface AccountEvent {
     data class DepartmentChosen(val id: String) : AccountEvent
     data class RoleChosen(val id: String) : AccountEvent
     data class PrivateNameChanged(val on: Boolean) : AccountEvent
+    /** "Show my Zillit mailbox address in the crew list" (ZL-21078). */
+    data class MailboxConsentChanged(val on: Boolean) : AccountEvent
     data object SaveProfile : AccountEvent
     /** Puts the form back to what the session says, discarding edits. */
     data object ResetProfile : AccountEvent
@@ -284,6 +295,8 @@ class AccountViewModel(
 
             is AccountEvent.PrivateNameChanged ->
                 editProfile { copy(keepNamePrivate = event.on, outcome = null) }
+            is AccountEvent.MailboxConsentChanged ->
+                editProfile { copy(showMailboxInCrewList = event.on, outcome = null) }
 
             AccountEvent.SaveProfile -> saveProfile()
             AccountEvent.ResetProfile -> setState { copy(profile = profile.seeded(seed)) }
@@ -489,7 +502,7 @@ class AccountViewModel(
                     copy(
                         leave = leave.copy(
                             isLeaving = false,
-                            error = "Could not leave this production. ${left.error.localised()}",
+                            error = "Could not leave this project. ${left.error.localised()}",
                         ),
                     )
                 }
@@ -509,7 +522,7 @@ private val ProfileSaveOutcome.announcement: String
     get() = when (this) {
         ProfileSaveOutcome.Saved -> "Profile saved."
         ProfileSaveOutcome.SentForApproval ->
-            "Sent to the production's admins. Your profile changes once one approves them."
+            "Sent to the project's admins. Your profile changes once one approves them."
     }
 
 /** The form as the session says it should be — the state a fresh open shows. */
@@ -519,6 +532,9 @@ private fun ProfileFormState.seeded(seed: ProfileSeed): ProfileFormState = copy(
     departmentId = seed.departmentId,
     designationId = seed.designationId,
     keepNamePrivate = seed.keepNamePrivate,
+    showMailboxInCrewList = seed.showMailboxInCrewList,
+    mailboxAddress = seed.mailboxAddress,
+    isPersonal = seed.isPersonal,
     error = null,
     outcome = null,
 )

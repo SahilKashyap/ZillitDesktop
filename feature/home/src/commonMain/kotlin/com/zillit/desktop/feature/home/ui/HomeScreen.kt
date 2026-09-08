@@ -136,7 +136,7 @@ fun HomeScreen(
             state.error != null -> ErrorState(state.error, onEvent)
 
             state.gridTools.isEmpty() -> Centred(
-                "No tools are switched on for you in this production yet. " +
+                "No tools are switched on for you in this project yet. " +
                     "A coordinator can grant access.",
             )
 
@@ -409,7 +409,7 @@ private fun GridHeader(
             ZillitText(text = "Film Tools", style = ZillitTheme.typography.displayLarge)
             ZillitText(
                 text = when (toolCount) {
-                    0 -> "The production's departments, in one grid."
+                    0 -> "The project's departments, in one grid."
                     1 -> "1 tool switched on for you."
                     else -> "$toolCount tools switched on for you."
                 },

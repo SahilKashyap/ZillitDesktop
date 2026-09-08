@@ -80,14 +80,14 @@ class TrayNotifier(private val trayState: TrayState) : Notifier {
             false
         }
 
-    private companion object {
-        const val TAG = "TrayNotifier"
+    internal companion object {
+        private const val TAG = "TrayNotifier"
 
         /**
          * Read once. `SystemTray.isSupported` touches AWT, and asking it per
          * notification would drag the toolkit in on whatever thread is posting.
          */
-        val isTrayAvailable: Boolean = runCatching { SystemTray.isSupported() }.getOrDefault(false)
+        private val isTrayAvailable: Boolean = runCatching { SystemTray.isSupported() }.getOrDefault(false)
 
         /**
          * The bundled `zillit-notify`, or null when this is not a packaged
@@ -121,7 +121,7 @@ class TrayNotifier(private val trayState: TrayState) : Notifier {
                 .firstOrNull { it.canExecute() }
         }.getOrNull()
 
-        val NotificationKind.composeType: Notification.Type
+        private val NotificationKind.composeType: Notification.Type
             get() = when (this) {
                 NotificationKind.Info -> Notification.Type.Info
                 NotificationKind.Warning -> Notification.Type.Warning

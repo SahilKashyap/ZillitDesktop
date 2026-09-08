@@ -1,11 +1,18 @@
 package com.zillit.desktop.feature.calls.data
 
 import com.zillit.desktop.core.common.ZillitLog
+import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.onFailure
 import com.zillit.desktop.core.common.onSuccess
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.ZillitSocketEvents
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitActiveCall
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitDial
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitDismissal
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitLine
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitLineListener
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitRingWatch
 import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.data.protoo.mediasoupUidOf
 import com.zillit.desktop.feature.calls.data.protoo.toJoin
@@ -125,6 +132,12 @@ class CallCoordinator(
         { _, _ -> },
     /** Wall clock, stamped onto reactions and lines. Injected so tests can hold it still. */
     private val now: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    /**
+     * Line 3, when the install has it. The machine here stays the one machine
+     * for all three lines; this only carries a LiveKit call's ring, accept and
+     * hang-up on their own wire and reports back in the statuses above.
+     */
+    private val line3: LiveKitLine? = null,
 ) {
 
     private val _phase = MutableStateFlow(CallPhase.Idle)
@@ -220,6 +233,9 @@ class CallCoordinator(
     /** The pending "is anyone still here?" re-check, if one is armed. */
     private var emptyRoomCheck: Job? = null
 
+    /** Server truth for a Line 3 ring this device is showing — see [LiveKitRingWatch]. */
+    private val line3Ring = LiveKitRingWatch()
+
     /** Runs only while the media link is down; cancelled the moment it returns. */
     /** Ends a call the media stack never brought back. */
     private val reconnect = ReconnectWatchdog(
@@ -238,6 +254,8 @@ class CallCoordinator(
     private var joining = false
 
     fun start() {
+        line3?.attach(Line3Listener())
+        line3?.start()
         scope.launch { listenIncoming() }
         scope.launch { listenStatusChanges() }
         scope.launch { listenEnded() }
@@ -290,8 +308,22 @@ class CallCoordinator(
          * recorded.
          */
         is247Call: Boolean = false,
+        /**
+         * The production the call belongs to, when it is not the open one —
+         * a call placed from a widget showing another production.
+         *
+         * Carried on the session from the first moment, because every write
+         * that follows (end, miss, status) reads it back off the session.
+         */
+        projectId: String? = null,
+        /** The caller's id ON [projectId]; project-scoped, so not the ambient one. */
+        callerUserId: String = "",
     ) {
         if (_phase.value != CallPhase.Idle) return
+        if (provider == CallProvider.LiveKit) {
+            placeLine3(chatRoomId, receiverUserId, mode, type, displayName, projectId, callerUserId)
+            return
+        }
         _phase.value = CallPhase.Outgoing
         // A provisional session so the outgoing card and its Cancel exist for
         // the whole create-call round trip. Every overlay branch is gated on a
@@ -301,6 +333,7 @@ class CallCoordinator(
         _session.value = provisionalSession(
             chatRoomId, receiverDeviceId, receiverUserId,
             mode, type, displayName, provider, isCalendarCall, is247Call,
+            projectId.orEmpty(),
         )
         _cameraOn.value = type == CallType.Video
         scope.launch {
@@ -314,6 +347,8 @@ class CallCoordinator(
                     type = type,
                     selfUserId = selfUserId().orEmpty(),
                     selfDeviceId = selfDeviceId().orEmpty(),
+                    projectId = projectId,
+                    callerUserId = callerUserId,
                 ),
             ).onSuccess { session ->
                 if (session == null) {
@@ -341,6 +376,9 @@ class CallCoordinator(
                         // the caller just said about what kind of call this is.
                         isCalendarCall = isCalendarCall,
                         is247Call = is247Call,
+                        // The create response names no production, and every
+                        // later write reads it off the session.
+                        projectId = projectId?.takeIf(String::isNotBlank) ?: session.projectId,
                     )
                     _cameraOn.value = session.hasVideo
                     // A calendar room rings nobody — the caller walks into it —
@@ -370,6 +408,9 @@ class CallCoordinator(
                 selfUserId().orEmpty(),
                 selfDeviceId().orEmpty(),
             ) ?: return@collect
+            // A Line 3 ring arrives on the presence socket; the chat socket's
+            // copy, where it sends one, is not a second ring.
+            if (invite.provider == CallProvider.LiveKit && line3 != null) return@collect
             onInvite(invite)
         }
     }
@@ -390,6 +431,10 @@ class CallCoordinator(
             // response is inert there. Sequencing them would put the write
             // that matters on Agora behind a request that does nothing for it.
             // Both are scoped to the RINGING call's ids, never the live one's.
+            if (invite.provider == CallProvider.LiveKit) {
+                scope.launch { line3?.decline(invite) }
+                return
+            }
             scope.launch {
                 api.sendCallResponse(
                     roomId = invite.roomId.ifBlank { invite.callUuid },
@@ -405,16 +450,20 @@ class CallCoordinator(
         ZillitLog.i(TAG) { "incoming call ${invite.callUuid} mode=${invite.mode}" }
         _session.value = invite
         _phase.value = CallPhase.Incoming
-        scope.launch {
-            api.sendCallResponse(
-                roomId = invite.roomId.ifBlank { invite.callUuid },
-                status = CallStatus.Ringing,
-                fromUserId = invite.selfUserId,
-                projectId = invite.projectId.takeIf(String::isNotBlank),
-            )
+        // Line 3 acknowledged the ring on its own socket; the v2 response and
+        // the Firestore mirror are Lines 1 and 2's.
+        if (invite.provider != CallProvider.LiveKit) {
+            scope.launch {
+                api.sendCallResponse(
+                    roomId = invite.roomId.ifBlank { invite.callUuid },
+                    status = CallStatus.Ringing,
+                    fromUserId = invite.selfUserId,
+                    projectId = invite.projectId.takeIf(String::isNotBlank),
+                )
+            }
+            scope.launch { plane.announceSelf(invite, CallStatus.Ringing) }
+            watchPlane(invite)
         }
-        scope.launch { plane.announceSelf(invite, CallStatus.Ringing) }
-        watchPlane(invite)
         startRingTimeout(CallTimeouts.INCOMING_MS) { incomingRangOut() }
     }
 
@@ -434,6 +483,10 @@ class CallCoordinator(
         // The server decided this at create time, and the engine joins with
         // it; a false here would show a camera-off button over a live camera.
         _cameraOn.value = current.hasVideo
+        if (current.provider == CallProvider.LiveKit) {
+            acceptLine3(current)
+            return
+        }
         // Status and join in parallel: the status is advisory, and joining
         // behind it would make the user's media wait on an HTTP round trip.
         scope.launch {
@@ -477,6 +530,11 @@ class CallCoordinator(
         // rides a 60 s client timeout, and a black-holed Firestore holding the
         // decline behind it outlasts the caller's own 60 s ring — they would
         // see "No answer" and log a missed call for a call that was declined.
+        if (current.provider == CallProvider.LiveKit) {
+            scope.launch { line3?.decline(current) }
+            finish(current, CallEndReason.Declined)
+            return
+        }
         scope.launch { plane.announceSelf(current, CallStatus.Declined) }
         scope.launch { sendFinalStatus(current, CallStatus.Declined) }
         finish(current, CallEndReason.Declined)
@@ -507,6 +565,13 @@ class CallCoordinator(
             ),
         )
         scope.launch {
+            if (current.provider == CallProvider.LiveKit) {
+                // Line 3 invites over its own socket; the roster row above is the seed.
+                if (line3?.addToCall(current.callUuid, userId) != true) {
+                    ZillitLog.w(TAG) { "add-user over Line 3 failed" }
+                }
+                return@launch
+            }
             // Seeded before the invite goes out, the way the phones do it: on
             // Line 1 the backend writes no roster row for an added person (the
             // Agora side seeds one itself), so until their device rings and
@@ -605,6 +670,7 @@ class CallCoordinator(
         provider: CallProvider,
         isCalendarCall: Boolean,
         is247Call: Boolean,
+        projectId: String,
     ) = CallSession(
         // Blank until the server names it. Every id-scoped write already
         // guards on blank — the doc's "must have a valid ObjectId" rule — so
@@ -628,6 +694,7 @@ class CallCoordinator(
         // second the request is in flight.
         isCalendarCall = isCalendarCall,
         is247Call = is247Call,
+        projectId = projectId,
     )
 
     /** Starts or stops recording the call's audio on this machine. */
@@ -666,6 +733,19 @@ class CallCoordinator(
         if (_phase.value == CallPhase.Idle || _phase.value == CallPhase.Ending) return
         val wasInCall = _phase.value == CallPhase.InCall
         _phase.value = CallPhase.Ending
+        if (current.provider == CallProvider.LiveKit) {
+            scope.launch {
+                engine.leave()
+                // Unanswered and ours: a cancel, so the far side stops ringing.
+                if (current.direction == CallDirection.Outgoing && !wasInCall) {
+                    line3?.cancel(current.callUuid, current.projectId.takeIf(String::isNotBlank), current.selfUserId)
+                } else {
+                    line3?.leave(current)
+                }
+                finish(current, CallEndReason.Hungup)
+            }
+            return
+        }
         // Android's rule: the last one out ends the call for everyone; anyone
         // else merely leaves. Ending a room three people are talking in
         // because one hung up is the bug this avoids.
@@ -1092,6 +1172,10 @@ class CallCoordinator(
         }
         // Hydrate the roster from the server's snapshot: everything that
         // happened before we subscribed is invisible on the socket.
+        if (current.provider == CallProvider.LiveKit) {
+            line3?.refreshRoster(current.callUuid, current.callerUserId)
+            return
+        }
         scope.launch {
             api.callDump(
                 roomId = current.roomId.ifBlank { current.callUuid },
@@ -1237,6 +1321,14 @@ class CallCoordinator(
         // re-check the teardown completes over a live call and reports "No
         // answer" for it.
         if (_phase.value != CallPhase.Outgoing) return
+        if (current.provider == CallProvider.LiveKit) {
+            scope.launch {
+                engine.leave()
+                line3?.cancel(current.callUuid, current.projectId.takeIf(String::isNotBlank), current.selfUserId)
+                finish(current, CallEndReason.Timeout)
+            }
+            return
+        }
         scope.launch {
             engine.leave()
             val projectId = current.projectId.takeIf(String::isNotBlank)
@@ -1278,6 +1370,11 @@ class CallCoordinator(
         // Answered a moment before the timeout fired: accept() has already
         // moved the phase, and reporting "not answered" now would retract it.
         if (_phase.value != CallPhase.Incoming) return
+        if (current.provider == CallProvider.LiveKit) {
+            // The server logs the miss itself; nothing to send on this side.
+            finish(current, CallEndReason.Timeout)
+            return
+        }
         scope.launch {
             sendFinalStatus(current, CallStatus.NotAnswered)
             // Declined and Left already mirror beside their REST call; this
@@ -1295,6 +1392,7 @@ class CallCoordinator(
      */
     private suspend fun sendFinalStatus(session: CallSession, status: CallStatus) =
         withContext(NonCancellable) {
+            if (session.provider == CallProvider.LiveKit) return@withContext
             api.sendCallResponse(
                 roomId = session.roomId.ifBlank { session.callUuid },
                 status = status,
@@ -1314,9 +1412,11 @@ class CallCoordinator(
         // publishing — the microphone indicator stays lit until the next call —
         // and a peer never told we are gone counts this device as an active
         // participant forever, with their own ring timeout already cancelled.
-        val announce = _phase.value != CallPhase.Idle && current.callUuid.isNotBlank()
+        val announce = _phase.value != CallPhase.Idle && current.callUuid.isNotBlank() &&
+            current.provider != CallProvider.LiveKit
         scope.launch {
             engine.leave()
+            if (current.provider == CallProvider.LiveKit && current.callUuid.isNotBlank()) line3?.leave(current)
             if (announce) {
                 plane.announceSelf(current, CallStatus.Left)
                 sendFinalStatus(current, CallStatus.Left)
@@ -1331,6 +1431,7 @@ class CallCoordinator(
         // about stops a stale timeout from resetting its successor.
         val live = _session.value
         if (live != null && live.callUuid.isNotBlank() && live.callUuid != session.callUuid) return
+        ZillitLog.i(TAG) { "call ${session.callUuid} ended: $reason (${session.provider.wire}, was ${_phase.value})" }
         cancelRingTimeout()
         _ended.tryEmit(CallEndEvent(session, reason))
         reset()
@@ -1346,6 +1447,7 @@ class CallCoordinator(
         emptyRoomCheck?.cancel()
         emptyRoomCheck = null
         everConnected.clear()
+        line3Ring.reset()
         // A hand does not carry into the next call; neither does a recording.
         _handRaised.value = false
         recorder.reset()
@@ -1365,7 +1467,11 @@ class CallCoordinator(
      * reason given.
      */
     private fun CallSession.canInvite(userId: String, deviceId: String): Boolean =
-        if (provider == CallProvider.Mediasoup) userId.isNotBlank() else deviceId.isNotBlank()
+        if (provider == CallProvider.Mediasoup || provider == CallProvider.LiveKit) {
+            userId.isNotBlank()
+        } else {
+            deviceId.isNotBlank()
+        }
 
     /**
      * Something did not work; the call still does.
@@ -1399,6 +1505,178 @@ class CallCoordinator(
 
     private fun String.matches(session: CallSession): Boolean =
         isNotBlank() && (this == session.roomId || this == session.callUuid)
+
+    // ── Line 3 ──────────────────────────────────────────────────────────────
+
+    /**
+     * Places a Line 3 call: a provisional session the outgoing card can show,
+     * then the line's own create-and-ring, and the media join once the room is
+     * known. The ring timeout and every status that follows ride the same
+     * machinery as the other lines; only the wire differs.
+     */
+    @Suppress("LongParameterList") // The call's whole description, as placeCall passes it.
+    private fun placeLine3(
+        chatRoomId: String,
+        receiverUserId: String,
+        mode: CallMode,
+        type: CallType,
+        displayName: String,
+        projectId: String?,
+        callerUserId: String,
+    ) {
+        val line = line3 ?: run {
+            fail("Line 3 is not configured on this install")
+            return
+        }
+        val me = callerUserId.ifBlank { selfUserId().orEmpty() }
+        _phase.value = CallPhase.Outgoing
+        _session.value = provisionalSession(
+            chatRoomId, "", receiverUserId,
+            mode, type, displayName, CallProvider.LiveKit, isCalendarCall = false, is247Call = false,
+            projectId.orEmpty(),
+        ).copy(
+            selfUserId = me,
+            participants = listOfNotNull(
+                receiverUserId.takeIf { it.isNotBlank() }?.let {
+                    CallParticipant(userId = it, name = displayName, status = CallStatus.Ringing)
+                },
+            ),
+        )
+        _cameraOn.value = type == CallType.Video
+        scope.launch {
+            val placed = line.place(
+                LiveKitDial(
+                    calleeUserIds = listOfNotNull(receiverUserId.takeIf { it.isNotBlank() }),
+                    chatRoomId = chatRoomId.takeIf { it.isNotBlank() },
+                    mode = mode,
+                    type = type,
+                    callerUserId = me,
+                    callerName = selfName().orEmpty(),
+                    projectId = projectId,
+                    projectName = line.identityNow()?.projectName,
+                ),
+            )
+            when (placed) {
+                is ZillitResult.Failure -> fail(placed.error.userMessage)
+                is ZillitResult.Success -> {
+                    val current = _session.value ?: return@launch
+                    if (_phase.value != CallPhase.Outgoing) {
+                        // Cancelled while the create was in flight: the call exists on the server, end it.
+                        line.cancel(placed.data.callId, projectId, me)
+                        return@launch
+                    }
+                    val session = current.copy(
+                        callUuid = placed.data.callId,
+                        roomId = placed.data.callId,
+                        livekitUrl = placed.data.url,
+                        livekitToken = placed.data.token,
+                    )
+                    _session.value = session
+                    startRingTimeout(CallTimeouts.OUTGOING_MS) { outgoingRangOut() }
+                    joinMedia(session)
+                }
+            }
+        }
+    }
+
+    /** Answers a Line 3 ring: the accept on the line's wire, then the room it hands back. */
+    private fun acceptLine3(current: CallSession) {
+        val line = line3 ?: run {
+            fail("Line 3 is not configured on this install")
+            return
+        }
+        scope.launch {
+            when (val accepted = line.accept(current, selfName().orEmpty())) {
+                is ZillitResult.Failure -> fail(accepted.error.userMessage)
+                is ZillitResult.Success -> {
+                    val live = _session.value ?: return@launch
+                    if (live.callUuid != current.callUuid) return@launch
+                    val session = live.copy(livekitUrl = accepted.data.url, livekitToken = accepted.data.token)
+                    _session.value = session
+                    joinMedia(session)
+                }
+            }
+        }
+    }
+
+    /** What Line 3 reports, in the statuses the machine already speaks. */
+    private inner class Line3Listener : LiveKitLineListener {
+        override fun onInvite(session: CallSession) {
+            line3Ring.reset()
+            onInvite(session.copy(selfDeviceId = selfDeviceId().orEmpty()))
+        }
+
+        override fun onRingState(
+            callId: String,
+            userId: String,
+            displayName: String,
+            status: CallStatus,
+            busy: Boolean,
+        ) {
+            val current = _session.value ?: return
+            if (!callId.matches(current)) return
+            // A name the ring did not carry; a row the roster did not have yet.
+            if (userId.isNotBlank() && current.participants.none { it.userId == userId }) {
+                _session.value = current.copy(
+                    participants = current.participants +
+                        CallParticipant(userId = userId, name = displayName, status = status),
+                )
+            } else if (displayName.isNotBlank()) {
+                _session.value = current.copy(
+                    participants = current.participants.healedFromPlane("", userId, displayName, 0),
+                )
+            }
+            applyStatusChange(CallStatusChange(roomId = callId, userId = userId, status = status))
+        }
+
+        override fun onDismissed(callId: String, why: LiveKitDismissal) {
+            val current = _session.value ?: return
+            if (!callId.matches(current)) return
+            val reason = when (why) {
+                LiveKitDismissal.HandledElsewhere -> CallEndReason.PickedElsewhere
+                LiveKitDismissal.Cancelled, LiveKitDismissal.Removed -> CallEndReason.RemoteEnded
+            }
+            scope.launch { engine.leave() }
+            finish(current, reason)
+        }
+
+        override fun onEnded(reason: String) {
+            val current = _session.value ?: return
+            if (current.provider != CallProvider.LiveKit) return
+            ZillitLog.i(TAG) { "line 3 call ended: $reason" }
+            scope.launch { engine.leave() }
+            finish(current, CallEndReason.RemoteEnded)
+        }
+
+        override fun onRoster(callId: String, participants: List<CallParticipant>) {
+            val current = _session.value ?: return
+            if (!callId.matches(current) || participants.isEmpty()) return
+            val merged = mergeRoster(current.participants, participants)
+            _session.value = current.copy(participants = merged)
+            participants.forEach { rememberIfConnected(it.userId, status = it.status) }
+            if (merged.any { it.isSomeoneElseLive(current) }) onSomeoneAnswered()
+            checkRoomStillOccupied()
+        }
+
+        /**
+         * A ring this device is showing, judged against the server's list:
+         * gone from it, or answered on another of this user's devices, and it
+         * stops — the one signal that reaches a device whose socket missed the
+         * `callCancelled` or `callHandledElsewhere` that should have.
+         */
+        override fun onActiveCalls(calls: List<LiveKitActiveCall>) {
+            val current = _session.value ?: return
+            if (current.provider != CallProvider.LiveKit || _phase.value != CallPhase.Incoming) return
+            val verdict = line3Ring.judge(current.callUuid, current.selfUserId, calls) ?: return
+            val reason = when (verdict) {
+                LiveKitRingWatch.Verdict.AnsweredElsewhere -> CallEndReason.PickedElsewhere
+                LiveKitRingWatch.Verdict.Stale -> CallEndReason.RemoteEnded
+            }
+            ZillitLog.i(TAG) { "ring ${current.callUuid} is $verdict by the server's active list; stopping" }
+            scope.launch { engine.leave() }
+            finish(current, reason)
+        }
+    }
 
     private companion object {
         const val TAG = "CallCoordinator"

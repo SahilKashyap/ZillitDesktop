@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.drive.ui
 
+import com.zillit.desktop.core.media.PreviewKind
+
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -40,6 +42,13 @@ class DriveToolProvider(
      * the same path a future drag-and-drop would use.
      */
     private val onPickFiles: ((List<PickedFile>) -> Unit) -> Unit = {},
+    /**
+     * The same picker, filtered to one kind from the attach sheet. Defaults
+     * to the untyped one so a host wiring only that still works.
+     */
+    private val onPickFilesOf: (PreviewKind, (List<PickedFile>) -> Unit) -> Unit = { _, report ->
+        onPickFiles(report)
+    },
     /** Puts a share link on the system clipboard. */
     private val onCopy: (String) -> Unit = {},
     /**
@@ -94,6 +103,8 @@ class DriveToolProvider(
 
                     DriveEffect.PickFiles ->
                         onPickFiles { files -> viewModel.onEvent(DriveEvent.Upload(files)) }
+                    is DriveEffect.PickFilesOf ->
+                        onPickFilesOf(effect.kind) { files -> viewModel.onEvent(DriveEvent.Upload(files)) }
                 }
             }
         }

@@ -112,7 +112,7 @@ class ReadCacheTest {
             HttpVerb.Get, "$URL/2000/previous", String.serializer(), RequestModule.ProjectUser,
             options = CallOptions(cacheAs = "$URL/newest"),
         )
-        assertIs<ZillitResult.Failure>(other, "still scoped to the production")
+        assertIs<ZillitResult.Failure>(other, "still scoped to the project")
     }
 
     @Test

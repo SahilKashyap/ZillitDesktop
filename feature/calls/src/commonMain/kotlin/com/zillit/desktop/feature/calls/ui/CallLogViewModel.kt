@@ -69,6 +69,13 @@ class CallLogViewModel(
     private val nowMillis: () -> Long,
     /** Rings a row again. The host owns what "ring" means. */
     private val onRedial: (CallLogEntry) -> Unit,
+    /**
+     * Whose history this is, when it is not the open production's — a widget
+     * showing another production. Null is the ambient pair.
+     */
+    private val projectId: String? = null,
+    /** The reader's id ON [projectId]; project-scoped, so not the ambient one. */
+    private val callerUserId: String = "",
 ) : ZillitViewModel<CallLogUiState, CallLogEvent, Nothing>(CallLogUiState()) {
 
     init {
@@ -125,6 +132,8 @@ class CallLogViewModel(
             selfUserId = selfUserId().orEmpty(),
             missedOnly = current.missedOnly,
             newestPage = reset,
+            projectId = projectId,
+            callerUserId = callerUserId,
         ).onSuccess { page ->
             setState {
                 val merged = if (reset) page else (entries + page).distinctBy(CallLogEntry::callUuid)
@@ -155,8 +164,8 @@ class CallLogViewModel(
         val missedOnly = currentState.missedOnly
         setState { copy(confirmingDelete = false, isDeleting = true, error = null) }
         val outcomes = buildList {
-            add(api.deleteMissedCallLogs())
-            if (!missedOnly) add(api.deleteRecentCallLogs())
+            add(api.deleteMissedCallLogs(projectId, callerUserId))
+            if (!missedOnly) add(api.deleteRecentCallLogs(projectId, callerUserId))
         }
         val failure = outcomes.firstNotNullOfOrNull { it.errorOrNull() }
         if (failure == null) {

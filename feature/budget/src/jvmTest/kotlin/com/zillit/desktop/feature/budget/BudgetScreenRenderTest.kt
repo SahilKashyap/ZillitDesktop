@@ -170,4 +170,26 @@ class BudgetScreenRenderTest {
         viewCount = 12,
         downloadCount = 3,
     )
+
+
+    /**
+     * The flip: Upload budget stays for a reader who cannot post to this tab.
+     *
+     * `BudgetViewModel.refusesPost` answers the press by offering to ask an
+     * admin, and names the tab that refused — posting rights here are granted
+     * per tab, main and department separately.
+     */
+    @Test
+    fun `a reader without posting rights still sees Upload budget`() {
+        val reader = viewer().copy(canPostMain = false, canPostDepartment = false)
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    BudgetScreen(state = loaded().copy(viewer = reader), onEvent = {})
+                }
+            }
+            onNodeWithText("Upload budget").assertExists()
+        }
+    }
 }

@@ -81,7 +81,7 @@ class ExternalUsersScreenRenderTest {
     }
 
     @Test
-    fun `a view-only viewer sees the roster without edit affordances`() = runComposeUiTest {
+    fun `a view-only viewer keeps Add User but not another person's row controls`() = runComposeUiTest {
         setContent {
             ZillitTheme {
                 ExternalUsersScreen(
@@ -94,7 +94,11 @@ class ExternalUsersScreenRenderTest {
         }
 
         onNodeWithText("Grip Hire Ltd").assertExists()
-        onNodeWithText("Add User").assertDoesNotExist()
+        // Kept: a missing posting right is something an admin can grant, and
+        // ExternalUsersViewModel.guardPost answers the press by asking for it.
+        onNodeWithText("Add User").assertExists()
+        // Not kept: this contact belongs to somebody else, which no rights
+        // grant changes — only its author or an admin may touch the row.
         onNodeWithContentDescription("Edit Grip Hire Ltd").assertDoesNotExist()
         onNodeWithContentDescription("Delete Grip Hire Ltd").assertDoesNotExist()
     }
@@ -113,4 +117,6 @@ class ExternalUsersScreenRenderTest {
         }
         onNodeWithText("You don't have access to External Users.").assertExists()
     }
+
+
 }

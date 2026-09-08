@@ -45,7 +45,7 @@ object MapCanvasWire {
             // referrer-restricted key rejecting the file:// origin lands
             // here). Without this the canvas is silently a grey slab.
             "auth-failed" -> MapCanvasEvent.Failed(
-                "Google rejected this production's Maps key, so the map cannot load.",
+                "Google rejected this project's Maps key, so the map cannot load.",
             )
             "error" -> MapCanvasEvent.Failed(body.str("message") ?: "map page error")
             else -> null

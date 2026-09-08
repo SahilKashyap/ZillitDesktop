@@ -37,6 +37,8 @@ data class ProfileEdit(
     val departmentId: String?,
     val designationId: String?,
     val keepNamePrivate: Boolean,
+    /** `zillit_email_enable`; null leaves it untouched. */
+    val showMailboxInCrewList: Boolean? = null,
 )
 
 /**

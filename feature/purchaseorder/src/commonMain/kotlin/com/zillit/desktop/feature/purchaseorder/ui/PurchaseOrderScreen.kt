@@ -289,7 +289,7 @@ private fun OrdersPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                     emptyMessage = when (state.destination) {
                         PoDestination.ApprovalQueue -> "Orders routed to you for a decision appear here."
                         PoDestination.MyOrders -> "Orders you raise appear here with their progress."
-                        else -> "Purchase orders on this production appear here."
+                        else -> "Purchase orders on this project appear here."
                     },
                 )
             }

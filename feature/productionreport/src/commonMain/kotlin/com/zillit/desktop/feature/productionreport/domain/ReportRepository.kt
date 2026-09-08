@@ -16,6 +16,9 @@ data class InternalApprover(
  * — no `/api` segment, same exception as the call-sheet service.
  */
 interface ReportRepository {
+    /** The user ids holding posting rights on [toolIdentifier] — the only people who may be picked as approvers. */
+    suspend fun postingRightsUserIds(toolIdentifier: String): ZillitResult<Set<String>>
+
 
     /**
      * A pulse per report workflow event from another client — the web's

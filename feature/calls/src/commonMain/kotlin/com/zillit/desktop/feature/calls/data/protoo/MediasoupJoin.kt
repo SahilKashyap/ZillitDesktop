@@ -233,4 +233,7 @@ fun CallSession.toJoin(selfDeviceId: String, displayName: String): CallJoin = Ca
     peerId = mediasoupPeerId(selfUserId, selfDeviceId),
     sfuToken = sfuToken,
     displayName = displayName,
+    livekitUrl = livekitUrl,
+    livekitToken = livekitToken,
+    identity = selfUserId,
 )

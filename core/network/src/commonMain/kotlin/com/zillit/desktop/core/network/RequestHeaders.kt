@@ -52,6 +52,14 @@ enum class RequestModule {
      * that sends an extra key is a handshake the server may reject.
      */
     SocketHandshake,
+
+    /**
+     * `POST api/v2/session/device` — the one call of the token migration
+     * that still authenticates with `moduledata` (the phones'
+     * `SESSION_BOOTSTRAP`): device id and timestamp, over an empty body.
+     * Never rides a token itself, or it would recurse.
+     */
+    SessionBootstrap,
     ;
 
     /** Calls that must not carry session headers (pre-auth endpoints). */
@@ -89,6 +97,14 @@ fun interface RequestHeaderProvider {
          */
         userId: String?,
     ): Map<String, String>
+
+    /**
+     * The headers that are not a credential — what a call still carries when
+     * a Bearer token stands in for `moduledata`. The server reads one or the
+     * other, never both, so a token-mode call must not carry the encrypted
+     * header or its `bodyhash`.
+     */
+    suspend fun plainHeaders(): Map<String, String> = emptyMap()
 }
 
 /** The common case: the open production, its own user. */

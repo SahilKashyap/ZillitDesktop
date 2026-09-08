@@ -298,7 +298,7 @@ class KcefLocationPickerHost(
             val key = runCatching { googleMapsKey() }.getOrNull()
             if (key.isNullOrBlank()) {
                 ZillitLog.w(TAG) { "no Google Maps key in remote config; picker stays blank" }
-                _failure.value = "This production has no Google Maps key, so the map cannot load."
+                _failure.value = "This project has no Google Maps key, so the map cannot load."
                 return@launch
             }
             run(target, LocationPickerWire.bootScript(key, LocationPickerWire.themeJson(theme)))

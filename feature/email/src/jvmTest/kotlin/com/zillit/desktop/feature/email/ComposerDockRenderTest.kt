@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.email.domain.ComposeMode
@@ -147,5 +148,31 @@ class ComposerDockRenderTest {
                 onNodeWithText("New message").assertIsDisplayed()
             }
         }
+    }
+
+    @Test
+    fun `the paperclip opens the phones' attach sheet`() = runComposeUiTest {
+        // Android's ComposeActivity offers gallery, video, document and audio
+        // behind its attach button; the desktop paperclip offers the same.
+        val composers = listOf(composer())
+        setContent {
+            ZillitTheme {
+                Box(Modifier.fillMaxSize()) {
+                    ComposerDock(
+                composers = composers,
+                deps = deps,
+                messageById = { null },
+                draftById = { null },
+                onWindow = { _, _ -> },
+                onClose = {},
+                onOpenSignatures = {},
+            )
+                }
+            }
+        }
+
+        onNodeWithContentDescription("Attach a file").performClick()
+        waitForIdle()
+        listOf("Photo", "Video", "Document", "Audio").forEach { onNodeWithText(it).assertExists() }
     }
 }

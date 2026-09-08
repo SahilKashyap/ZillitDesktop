@@ -1,8 +1,12 @@
 package com.zillit.desktop.feature.home.ui
 
+import com.zillit.desktop.core.permissions.RightsArea
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -34,6 +38,7 @@ import com.zillit.desktop.feature.home.domain.ReadBy
 import com.zillit.desktop.feature.home.domain.UploadedNoticeMedia
 import com.zillit.desktop.feature.home.domain.NoticeSendState
 import com.zillit.desktop.feature.home.domain.Notice
+import com.zillit.desktop.feature.home.domain.replaceTargets
 import com.zillit.desktop.feature.home.domain.visibleTabs
 
 data class HomeFeedUiState(
@@ -221,6 +226,11 @@ class MediaCapture(
     /** The OS file dialog; an empty result means the user cancelled. */
     val pick: suspend () -> List<PickedMedia> = { emptyList() },
     /**
+     * The same dialog, filtered to one kind from the attach sheet. Defaults
+     * to the untyped picker so a host (or test) wiring only that still works.
+     */
+    val pickOf: suspend (PreviewKind) -> List<PickedMedia> = { pick() },
+    /**
      * Puts a picked file into the production's storage (S3 or Box — the app
      * module routes, as mail attachments do). Null disables attaching. The
      * callback reports 0..100 as bytes move, from the uploading coroutine.
@@ -285,6 +295,12 @@ data class ReadByView(val noticeId: String, val lists: ReadBy? = null, val comme
 data class CallSheetPrompt(
     val confirmingReplace: Boolean = false,
     val dropped: List<PickedMedia> = emptyList(),
+    /** Which kind was chosen on the sheet, so the answer opens the right dialog. */
+    val kind: PreviewKind? = null,
+    /** The "Replace one document" picker is showing. */
+    val picking: Boolean = false,
+    /** What that picker offers — see [replaceTargets]. */
+    val targets: List<Notice> = emptyList(),
 )
 
 /**
@@ -304,6 +320,8 @@ data class PendingPreview(
     /** Everything picked or dropped — the wire takes one per post, so N files become N posts. */
     val files: List<PickedMedia>,
     val replace: Boolean? = null,
+    /** "Replace one document": the live message the upload retires. */
+    val replaceChatId: String? = null,
 )
 
 data class PendingOpen(val attachment: NoticeAttachment, val nonce: Long)
@@ -312,6 +330,14 @@ data class PendingOpen(val attachment: NoticeAttachment, val nonce: Long)
 data class JumpTarget(val noticeId: String, val nonce: Long)
 
 sealed interface HomeFeedEvent {
+    /**
+     * "Ask for posting rights" under a board this person can only read.
+     *
+     * The board is the unit, so the request names the unit rather than the
+     * module: an admin granting "Home" wholesale is not what was asked for.
+     */
+    data object RequestPostingRights : HomeFeedEvent
+
     data object Load : HomeFeedEvent
 
     /**
@@ -327,6 +353,13 @@ sealed interface HomeFeedEvent {
 
     /** The paperclip: open the OS picker and attach what comes back. */
     data object Attach : HomeFeedEvent
+
+    /**
+     * The attach sheet's answer — Photo, Video, Document or Audio — as both
+     * phones offer them before the OS dialog opens. The kind filters that
+     * dialog and is checked again after the choice.
+     */
+    data class AttachKind(val kind: PreviewKind) : HomeFeedEvent
 
     /** A file dragged in from the OS; [extra] counts the ones beyond the first. */
     data class AttachDropped(val files: List<PickedMedia>) : HomeFeedEvent
@@ -407,6 +440,9 @@ sealed interface HomeFeedEvent {
      * the second question; Dismiss drops the whole thing.
      */
     data object CallSheetContinuation : HomeFeedEvent
+    /** "Replace one document": show the live documents to pick from. */
+    data object CallSheetPickReplacement : HomeFeedEvent
+    data class CallSheetReplaceOne(val noticeId: String) : HomeFeedEvent
     data object CallSheetNew : HomeFeedEvent
     data object CallSheetReplaceConfirmed : HomeFeedEvent
     data object CallSheetDismiss : HomeFeedEvent
@@ -489,6 +525,14 @@ class HomeFeedViewModel(
     private val defaultUnitId: () -> String? = { null },
     /** The library hand-off; null hides the menu item. See [DistributionHook]. */
     private val distribution: DistributionHook? = null,
+    /**
+     * Carries a refused press to the app frame, which offers to ask an admin.
+     *
+     * Boards are granted under Home in the rights grid rather than under
+     * Tools, which is why the request names [RightsArea.Home] — an admin sent
+     * to the wrong half of the grid finds nothing to switch on.
+     */
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<HomeFeedUiState, HomeFeedEvent, Nothing>(HomeFeedUiState()) {
 
     /**
@@ -515,6 +559,7 @@ class HomeFeedViewModel(
      * would land as a "Continuation" on the second try.
      */
     private val replaceByLocalId = mutableMapOf<String, Boolean>()
+    private val replaceTargetByLocalId = mutableMapOf<String, String>()
 
     /** Test seam: the pre-fix state where a failed upload's file is gone. */
     internal fun forgetPickedFor(localId: String) {
@@ -532,6 +577,7 @@ class HomeFeedViewModel(
             HomeFeedEvent.Load -> loadUnits()
             HomeFeedEvent.ProjectChanged -> forgetProject()
             HomeFeedEvent.Refresh -> currentState.selectedUnit?.let { loadNotices(it) }
+            HomeFeedEvent.RequestPostingRights -> askForPostingRights()
             is HomeFeedEvent.DraftChanged -> setState {
                 // `copy`, not a fresh draft: rebuilding it dropped whatever
                 // was attached beside the media — a shared place lost its
@@ -601,6 +647,7 @@ class HomeFeedViewModel(
     private fun onFileEvent(event: HomeFeedEvent) {
         when (event) {
             HomeFeedEvent.Attach -> attach()
+            is HomeFeedEvent.AttachKind -> attach(kind = event.kind)
             is HomeFeedEvent.AttachDropped -> attach(dropped = event.files)
             HomeFeedEvent.StartRecording -> record()
             HomeFeedEvent.StopRecording -> record(discard = false)
@@ -614,6 +661,10 @@ class HomeFeedViewModel(
             HomeFeedEvent.OpenHandled -> setState { copy(pendingOpen = null) }
             is HomeFeedEvent.JumpToPost -> setState { copy(jumpTo = JumpTarget(event.noticeId, ++openCounter)) }
             HomeFeedEvent.CallSheetContinuation -> answerCallSheet(replace = false)
+            HomeFeedEvent.CallSheetPickReplacement -> setState {
+                copy(callSheetPrompt = callSheetPrompt?.copy(picking = true))
+            }
+            is HomeFeedEvent.CallSheetReplaceOne -> answerCallSheet(replace = false, replaceChatId = event.noticeId)
             HomeFeedEvent.CallSheetNew -> setState {
                 copy(callSheetPrompt = callSheetPrompt?.copy(confirmingReplace = true))
             }
@@ -773,6 +824,10 @@ class HomeFeedViewModel(
         dropped: List<PickedMedia> = emptyList(),
         /** The call sheet's answer; null when the question has not been put. */
         replace: Boolean? = null,
+        /** The attach sheet's kind; null opens the untyped dialog. */
+        kind: PreviewKind? = null,
+        /** "Replace one document": the live message the upload retires. */
+        replaceChatId: String? = null,
     ) {
         if (!requirePostingRights()) return
         if (media.upload == null || currentState.replyTo != null) return
@@ -783,12 +838,15 @@ class HomeFeedViewModel(
         // put the question before the picker opens; dropped files wait in
         // the prompt so the answer can attach them.
         if (replace == null && callSheetAsksFirst(unit)) {
-            setState { copy(callSheetPrompt = CallSheetPrompt(dropped = dropped)) }
+            setState {
+                val prompt = CallSheetPrompt(dropped = dropped, kind = kind, targets = replaceTargets(notices))
+                copy(callSheetPrompt = prompt)
+            }
             return
         }
 
         launch {
-            val files = dropped.ifEmpty { media.pick() }
+            val files = dropped.ifEmpty { if (kind == null) media.pick() else media.pickOf(kind) }
                 .filterNot { refusedByCallSheet(unit, it) }
             if (files.isEmpty()) return@launch
 
@@ -797,7 +855,12 @@ class HomeFeedViewModel(
             // picture only reaches the board once it has been looked at (and
             // possibly drawn on). The replace answer rides with it — the
             // posts are built when Send is pressed, one per file.
-            setState { copy(pendingPreview = PendingPreview(files, replace), error = null) }
+            setState {
+                copy(
+                    pendingPreview = PendingPreview(files, replace, replaceChatId),
+                    error = null,
+                )
+            }
         }
     }
 
@@ -964,7 +1027,7 @@ class HomeFeedViewModel(
             )
         }
 
-        deliver(unit.id, optimistic, draft.media, draft.location, draft.replacePrevious)
+        deliver(unit.id, optimistic, draft.media, draft.location, draft.replacePrevious, draft.replaceChatId)
     }
 
     /**
@@ -984,10 +1047,10 @@ class HomeFeedViewModel(
      * ahead with the flag — from the picker, or with the file that was
      * dropped and has been waiting in the prompt.
      */
-    private fun answerCallSheet(replace: Boolean) {
+    private fun answerCallSheet(replace: Boolean, replaceChatId: String? = null) {
         val prompt = currentState.callSheetPrompt ?: return
         setState { copy(callSheetPrompt = null) }
-        attach(dropped = prompt.dropped, replace = replace)
+        attach(dropped = prompt.dropped, replace = replace, kind = prompt.kind, replaceChatId = replaceChatId)
     }
 
     /**
@@ -1352,6 +1415,26 @@ class HomeFeedViewModel(
      * must grant posting (`posting_access`, admin excepted), and a call sheet
      * takes only text and documents — the same filter its own composer applies.
      */
+    /**
+     * Asks an admin for the right to post to the board being read.
+     *
+     * Named for the unit rather than for Home: the rights grid grants boards
+     * one at a time, and "give me Home" is not a row anyone can switch on.
+     */
+    private fun askForPostingRights() {
+        val unit = currentState.selectedUnit ?: return
+        rights?.ask(unit.label, RightsKind.Post, RightsArea.Home)
+        setState {
+            copy(
+                error = if (rights == null) {
+                    noPostingRights(unit)
+                } else {
+                    "Asking an administrator for posting rights on ${unit.label}."
+                },
+            )
+        }
+    }
+
     private fun forwardTo(unitId: String) {
         val notice = currentState.forwarding ?: return
         val target = currentState.units.firstOrNull { it.id == unitId } ?: return
@@ -1395,6 +1478,7 @@ class HomeFeedViewModel(
             picked = pickedByLocalId[localId],
             location = failed.location,
             replacePrevious = replaceByLocalId[localId],
+            replaceChatId = replaceTargetByLocalId[localId],
         )
     }
 
@@ -1432,10 +1516,12 @@ class HomeFeedViewModel(
         picked: PickedMedia?,
         location: GeoPoint? = null,
         replacePrevious: Boolean? = null,
+        replaceChatId: String? = null,
     ) {
         val localId = optimistic.localId ?: return
         picked?.let { pickedByLocalId[localId] = it }
         replacePrevious?.let { replaceByLocalId[localId] = it }
+        replaceChatId?.let { replaceTargetByLocalId[localId] = it }
 
         launchResult(
             block = {
@@ -1469,7 +1555,9 @@ class HomeFeedViewModel(
                         copy(uploadProgress = uploadProgress + (localId to UPLOAD_DONE))
                     }
                 }
-                repository.postNotice(unitId, optimistic.body, localId, uploaded, location, replacePrevious)
+                repository.postNotice(
+                    unitId, optimistic.body, localId, uploaded, location, replacePrevious, replaceChatId,
+                )
             },
             onSuccess = { saved ->
                 // Replace rather than append: the optimistic card and the
@@ -1478,6 +1566,11 @@ class HomeFeedViewModel(
                 uploadedByLocalId.remove(localId)
                 pickedByLocalId.remove(localId)
                 replaceByLocalId.remove(localId)
+                replaceTargetByLocalId.remove(localId)
+                // "Replace one document": the retired message leaves the board
+                // the moment the server names it, as the web's
+                // `removeMessagesFromList` on `replaced_chat_id`.
+                saved.replacedNoticeId?.let { gone -> setState { copy(notices = notices.filterNot { it.id == gone }) } }
                 setState {
                     copy(
                         notices = notices.replacing(localId, saved),
@@ -1704,7 +1797,7 @@ private fun HomeFeedUiState.withHistory(history: Boolean): HomeFeedUiState = cop
 /** iOS's PostingPermissionPopUp, as a composer error rather than a modal. */
 private fun noPostingRights(unit: HomeUnit): String =
     "You do not have posting rights for " + unit.label +
-        ". Ask a production admin to grant them."
+        ". Ask a project admin to grant them."
 
 /** The card shown before the server answers — the send's own local echo. */
 private fun optimisticNotice(localId: String, draft: NoticeDraft, now: Long): Notice = Notice(
