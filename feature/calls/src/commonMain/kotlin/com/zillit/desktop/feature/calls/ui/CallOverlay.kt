@@ -136,6 +136,11 @@ internal fun mountsVideo(ownsCall: Boolean, pipOpen: Boolean): Boolean =
 private fun CallVideoLayer(slot: Rect, videoSurface: @Composable () -> Unit) {
     if (slot.width <= 0f || slot.height <= 0f) return
     val density = LocalDensity.current
+    androidx.compose.runtime.LaunchedEffect(slot.width.roundToInt(), slot.height.roundToInt()) {
+        com.zillit.desktop.core.common.ZillitLog.i("Calls") {
+            "video slot ${slot.width.roundToInt()}x${slot.height.roundToInt()} at ${slot.left.roundToInt()},${slot.top.roundToInt()}"
+        }
+    }
     Box(
         modifier = Modifier
             .offset { IntOffset(slot.left.roundToInt(), slot.top.roundToInt()) }

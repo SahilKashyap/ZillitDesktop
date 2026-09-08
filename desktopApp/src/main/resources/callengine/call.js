@@ -111,6 +111,7 @@
      * so a re-layout does not blink every stream on the stage.
      */
     function render() {
+        renders++;
         const root = document.getElementById('stage');
         if (!root) { return; }
         root.innerHTML = '';
@@ -651,13 +652,39 @@
         const video = document.createElement('video');
         video.autoplay = true;
         video.playsInline = true;
+        video.setAttribute('playsinline', '');
         video.muted = true;          // the audio arrives on its own consumer
         video.style.width = '100%';
         video.style.height = '100%';
         video.style.objectFit = 'cover';
         video.srcObject = stream;
+        // Asked explicitly, not left to `autoplay`: an element that stays
+        // paused is a black tile with a live track behind it, and the
+        // refusal's name is the only clue to why.
+        const started = video.play();
+        if (started && started.catch) {
+            started.catch(function (e) {
+                send({ type: 'warning', where: 'call:play', message: (e && e.name) + ': ' + (e && e.message) });
+            });
+        }
         return video;
     }
+
+    /** A few readings of every mounted video after a mount, so a paused or 0x0 element is seen in the log. */
+    let mountReports = 0;
+    function scheduleMountReports() {
+        mountReports = 4;
+        const tick = function () {
+            if (mountReports-- <= 0) { return; }
+            const lines = [];
+            line1Media.forEach((entry) => { if (entry.element) { lines.push(videoState(entry.peerId, entry.element)); } });
+            if (line1Local && line1Local.element) { lines.push(videoState('self', line1Local.element)); }
+            if (lines.length) { send({ type: 'warning', where: 'call:video', message: 'renders=' + renders + ' ' + lines.join('; ') }); }
+            setTimeout(tick, 3000);
+        };
+        setTimeout(tick, 1500);
+    }
+    let renders = 0;
 
     /** Puts every Line 1 video into its (possibly rebuilt) cell. */
     function line1Mount() {
@@ -689,6 +716,7 @@
         // one that is not playing is this file's.
         if (report.length) {
             send({ type: 'warning', where: 'call:mount', message: 'cells=' + cells.size + ' ' + report.join('; ') });
+            scheduleMountReports();
         }
     }
 
