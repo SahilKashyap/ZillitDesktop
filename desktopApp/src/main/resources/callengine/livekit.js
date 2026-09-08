@@ -100,6 +100,28 @@
         }
     }
 
+    /**
+     * What the camera track actually is, for the log: the page raises no
+     * error when capture silently yields nothing (a camera macOS refused
+     * without a prompt looks exactly like one that is on), so the state is
+     * said out loud — dimensions, readyState and the device — on every change.
+     */
+    function traceCamera(where) {
+        if (!room) { return; }
+        var cam = room.localParticipant.getTrackPublication(LK.Track.Source.Camera);
+        var t = cam && cam.track ? cam.track.mediaStreamTrack : null;
+        var settings = t && t.getSettings ? t.getSettings() : {};
+        send({
+            type: 'warning',
+            where: 'livekit:camera-state',
+            message: where + ': published=' + !!cam + ' muted=' + (cam ? cam.isMuted : '-') +
+                ' track=' + (t ? t.readyState + '/' + (t.muted ? 'muted' : 'live') : 'none') +
+                ' ' + (settings.width || 0) + 'x' + (settings.height || 0) +
+                ' device=' + (settings.deviceId ? String(settings.deviceId).slice(0, 8) : '-') +
+                ' label=' + (t && t.label ? t.label : '-'),
+        });
+    }
+
     function showLocalPreview() {
         if (!room || !window.zillitCall) { return; }
         var cam = room.localParticipant.getTrackPublication(LK.Track.Source.Camera);
@@ -134,7 +156,15 @@
             p.trackPublications.forEach(function (pub) { detachRemote(p, pub); });
             send({ type: 'peer-left', uid: uidOf(userIdOf(p.identity)) });
         });
-        r.on(E.TrackSubscribed, function (track, pub, p) { attachRemote(p, pub); reportMuted(p); });
+        r.on(E.TrackSubscribed, function (track, pub, p) {
+            send({
+                type: 'warning',
+                where: 'livekit:trace',
+                message: 'subscribed ' + pub.source + '/' + (track ? track.kind : '?') + ' from ' + userIdOf(p.identity),
+            });
+            attachRemote(p, pub);
+            reportMuted(p);
+        });
         r.on(E.TrackUnsubscribed, function (track, pub, p) { detachRemote(p, pub); reportMuted(p); });
         r.on(E.TrackMuted, function (pub, p) { if (p !== r.localParticipant) { reportMuted(p); } });
         r.on(E.TrackUnmuted, function (pub, p) { if (p !== r.localParticipant) { reportMuted(p); } });
@@ -174,7 +204,10 @@
                 deleted: msg.t === 'del',
             });
         });
-        r.on(E.LocalTrackPublished, function () { showLocalPreview(); });
+        r.on(E.LocalTrackPublished, function (pub) {
+            send({ type: 'warning', where: 'livekit:trace', message: 'published ' + (pub ? pub.source : '?') });
+            showLocalPreview();
+        });
         r.on(E.LocalTrackUnpublished, function () { showLocalPreview(); });
         r.on(E.MediaDevicesChanged, function () {
             if (window.zillitCall && window.zillitCall.listDevices) { window.zillitCall.listDevices(); }
@@ -210,6 +243,7 @@
                 } catch (e) { warn('microphone', e); }
                 if (desiredCam) {
                     try { await r.localParticipant.setCameraEnabled(true); } catch (e) { warn('camera', e); }
+                    traceCamera('join');
                 }
                 showLocalPreview();
                 if (window.zillitCall && window.zillitCall.listDevices) { window.zillitCall.listDevices(); }
@@ -254,6 +288,7 @@
                 await room.localParticipant.setCameraEnabled(!!enabled);
             } catch (e) { warn('setCam', e); }
             showLocalPreview();
+            traceCamera('setCam(' + !!enabled + ')');
         },
 
         async setMicrophoneDevice(deviceId) {
