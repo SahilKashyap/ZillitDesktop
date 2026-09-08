@@ -12,11 +12,16 @@ CallRinger loops each clip whole (`Clip.LOOP_CONTINUOUSLY`), so each file must
 hold EXACTLY ONE period of the cadence, trailing silence included. That is why
 the durations below are the loop periods and not the length of the audible part.
 
-LEVEL: web's raw gains (0.12 / 0.08) are about 8 dB below what this app has
-always rung at, and a ringtone nobody hears is a missed call. Both tones are
-scaled by one common factor, so web's relative balance between the ringtone and
-the quieter ringback is preserved exactly while the absolute loudness stays
-where desktop users already have it.
+LEVEL: web's raw gains (0.12 / 0.08) are far below what this app rings at, and
+a ringtone nobody hears is a missed call. Both tones are scaled by ONE common
+factor, so web's balance between the ring and the quieter ringback survives
+exactly while the absolute loudness is ours to choose.
+
+The factor is set so the ring peaks where the branch's own ringtone commit put
+it (0.793 full scale) — that commit raised the old tones ~2.6x deliberately, and
+a merge that took web's cadence while quietly undoing that would be handing back
+a complaint somebody already fixed. The balance agrees to within 2%: web's
+ring:ringback is 1.5, that commit's was 1.47.
 
     python3 scripts/make-call-sounds.py
 """
@@ -26,7 +31,7 @@ import wave
 from pathlib import Path
 
 RATE = 22050          # matches the files this replaces
-LEVEL = 0.299 / 0.12  # web's gain -> this app's established ringtone loudness
+LEVEL = 0.793 / 0.12  # web's gain -> this branch's chosen ringtone loudness
 
 OUT = Path(__file__).resolve().parent.parent / "feature/calls/src/jvmMain/resources/callsounds"
 
