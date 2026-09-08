@@ -138,7 +138,8 @@ private fun CallVideoLayer(slot: Rect, videoSurface: @Composable () -> Unit) {
     val density = LocalDensity.current
     androidx.compose.runtime.LaunchedEffect(slot.width.roundToInt(), slot.height.roundToInt()) {
         com.zillit.desktop.core.common.ZillitLog.i("Calls") {
-            "video slot ${slot.width.roundToInt()}x${slot.height.roundToInt()} at ${slot.left.roundToInt()},${slot.top.roundToInt()}"
+            val size = "${slot.width.roundToInt()}x${slot.height.roundToInt()}"
+            "video slot $size at ${slot.left.roundToInt()},${slot.top.roundToInt()}"
         }
     }
     Box(
