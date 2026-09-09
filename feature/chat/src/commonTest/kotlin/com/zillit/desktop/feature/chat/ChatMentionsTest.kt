@@ -52,4 +52,54 @@ class ChatMentionsTest {
         )
         assertEquals(listOf(MentionSpan.Words("no tags here")), mentionSpans("no tags here", ::nameOf))
     }
+
+    @Test
+    fun `a web address becomes a link, without the full stop that ends the sentence`() {
+        val spans = mentionSpans("call sheet at https://zillit.com/sheets/12. Read it", ::nameOf)
+
+        assertEquals(
+            listOf(
+                MentionSpan.Words("call sheet at "),
+                MentionSpan.Link("https://zillit.com/sheets/12", "https://zillit.com/sheets/12"),
+                MentionSpan.Words(". Read it"),
+            ),
+            spans,
+        )
+    }
+
+    @Test
+    fun `a bare www address opens over https and an email address opens as mailto`() {
+        val spans = mentionSpans("see www.zillit.com or mail ops@zillit.com", ::nameOf)
+
+        assertEquals(
+            listOf(
+                MentionSpan.Words("see "),
+                MentionSpan.Link("https://www.zillit.com", "www.zillit.com"),
+                MentionSpan.Words(" or mail "),
+                MentionSpan.Link("mailto:ops@zillit.com", "ops@zillit.com"),
+            ),
+            spans,
+        )
+    }
+
+    @Test
+    fun `links and tags share a body, and the flattened body keeps the address as typed`() {
+        val body = "@{{abc123}} https://a.b/c?x=1&y=2"
+        val spans = mentionSpans(body, ::nameOf)
+
+        assertEquals(
+            listOf(
+                MentionSpan.Mention("abc123", "Ravi"),
+                MentionSpan.Words(" "),
+                MentionSpan.Link("https://a.b/c?x=1&y=2", "https://a.b/c?x=1&y=2"),
+            ),
+            spans,
+        )
+        assertEquals("@Ravi https://a.b/c?x=1&y=2", flattenMentions(body, ::nameOf))
+    }
+
+    @Test
+    fun `a stray at sign is not an address`() {
+        assertEquals(listOf(MentionSpan.Words("meet @ 9")), mentionSpans("meet @ 9", ::nameOf))
+    }
 }

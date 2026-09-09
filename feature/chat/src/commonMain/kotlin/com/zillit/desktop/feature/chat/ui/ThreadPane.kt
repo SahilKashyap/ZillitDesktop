@@ -77,8 +77,10 @@ import com.zillit.desktop.feature.chat.domain.ChatSendState
 import com.zillit.desktop.feature.chat.domain.chatDayLabel
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import com.zillit.desktop.feature.chat.domain.MentionSpan
@@ -912,9 +914,10 @@ internal data class MentionHooks(
 )
 
 /**
- * The body with its tags lit: `@{{id}}` renders as an accent-coloured
- * `@Full Name` that opens the person, the reference clients' treatment. A
- * body with no tags is one plain text node.
+ * The body with its tags and links lit: `@{{id}}` renders as an accent-coloured
+ * `@Full Name` that opens the person, and a web or email address as an
+ * underlined accent link the OS opens — the phones' `autoLink` treatment. A
+ * body with neither is one plain text node.
  */
 @Composable
 private fun MentionedBody(body: String, mentions: MentionHooks) {
@@ -930,6 +933,10 @@ private fun MentionedBody(body: String, mentions: MentionHooks) {
     }
 
     val accent = ZillitTheme.colors.accentText
+    val linkStyles = TextLinkStyles(
+        style = SpanStyle(color = accent, textDecoration = TextDecoration.Underline),
+        hoveredStyle = SpanStyle(color = ZillitTheme.colors.accentHover, textDecoration = TextDecoration.Underline),
+    )
     val annotated = buildAnnotatedString {
         spans.forEach { span ->
             when (span) {
@@ -944,6 +951,10 @@ private fun MentionedBody(body: String, mentions: MentionHooks) {
                             append("@${span.name}")
                         }
                     }
+                // A Url annotation opens through LocalUriHandler on its own —
+                // the desktop's hands the address to the default browser or
+                // mail client.
+                is MentionSpan.Link -> withLink(LinkAnnotation.Url(span.url, linkStyles)) { append(span.text) }
             }
         }
     }
