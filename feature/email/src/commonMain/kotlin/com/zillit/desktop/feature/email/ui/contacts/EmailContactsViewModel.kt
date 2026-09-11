@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.email.ui.contacts
 
+import com.zillit.desktop.feature.email.data.EMAIL_CONTACTS_SYNC_EVENTS
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.email.domain.AddressBookRepository
@@ -68,7 +70,18 @@ sealed interface EmailContactsEffect {
  */
 class EmailContactsViewModel(
     private val repository: AddressBookRepository,
+    /**
+     * The socket, so an address saved on another device appears here. Null in
+     * tests and on a build with no socket.
+     */
+    private val events: SocketEventBus? = null,
 ) : ZillitViewModel<EmailContactsUiState, EmailContactsEvent, EmailContactsEffect>(EmailContactsUiState()) {
+
+    init {
+        // Reload rather than patch: the list is searched, and a saved contact
+        // can rename an existing row as easily as add one.
+        events?.let { bus -> launch { bus.onAny(EMAIL_CONTACTS_SYNC_EVENTS).collect { load() } } }
+    }
 
     override fun onEvent(event: EmailContactsEvent) {
         when (event) {

@@ -531,7 +531,7 @@ private class StubChatRepository : ChatRepository {
     override fun markThreadRead(peerId: String, uptoMillis: Long) = Unit
     override fun unreadCounts(floor: Map<String, Long>, defaultFloor: Long): Map<String, Int> = emptyMap()
     override fun newestActivity(): Map<String, Long> = emptyMap()
-    override suspend fun sendTyping(receiverId: String, started: Boolean) = Unit
+    override suspend fun sendTyping(receiverId: String, started: Boolean, isGroup: Boolean) = Unit
 
     override suspend fun deleteMessages(
         messageIds: List<String>,

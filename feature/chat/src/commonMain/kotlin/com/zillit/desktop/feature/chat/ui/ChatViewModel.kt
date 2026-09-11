@@ -351,6 +351,10 @@ class ChatViewModel(
             }
         }
         launch { repository.deletions.collect { onEvent(ChatEvent.Deleted(it)) } }
+        // A group made, renamed or left somewhere else. The listing is the
+        // whole of what changes here, so it is simply re-read — the same
+        // fetch a reconnect does.
+        launch { repository.roomChanges.collect { onEvent(ChatEvent.RefreshRecents) } }
         launch {
             repository.receipts.collect { receipt ->
                 onEvent(ChatEvent.Receipt(receipt.peerId, receipt.state))
@@ -380,7 +384,8 @@ class ChatViewModel(
                 setState { copy(draft = event.text) }
                 val peer = currentState.peer
                 if (peer != null && was != now) {
-                    launch { repository.sendTyping(peer.userId, started = now) }
+                    val group = currentState.peerIsGroup
+                    launch { repository.sendTyping(peer.userId, started = now, isGroup = group) }
                 }
             }
             ChatEvent.Send -> send()

@@ -24,8 +24,21 @@ import kotlinx.coroutines.flow.mapNotNull
  *  - `template:*` → the email templates (`EmailTemplateManager.jsx:156-158`).
  *
  * `document_distribution:publication:added/deleted` are on the wire
- * (`listenerSocket.js:2684-2685`) but no web page listens to them, so they
- * are deliberately not here.
+ * (`listenerSocket.js:2684-2685`) and stay out — checked again 2026-09-09
+ * against all three clients rather than the web alone, because that is how
+ * four other exclusions in this codebase turned out to be wrong:
+ *
+ *  - no web page listens;
+ *  - iOS declares a `publicationEvents` subject and nothing subscribes to it
+ *    (`DDHistoryView.swift:1111`);
+ *  - Android emits `DocDistSocketEvent.PublicationAdded` onto its bus and
+ *    nothing collects it.
+ *
+ * The desktop's own reason is the stronger one: publications are not a
+ * standing list here. `alreadyPublished` is read when the publish dialog
+ * picks a target and lives only as long as that dialog, so there is nothing
+ * on screen to go stale — and refetching under somebody mid-publish would be
+ * a change for the worse.
  */
 internal val DOC_DIST_REFRESH_BY_EVENT: Map<SocketEventName, DocDistRefresh> = buildMap {
     listOf(

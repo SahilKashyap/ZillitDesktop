@@ -59,35 +59,7 @@ import com.zillit.desktop.feature.esignature.ui.tone
 internal fun EnvelopeDetailPage(detail: EnvelopeDetailState, onEvent: (EsignEvent) -> Unit) {
     val envelope = detail.envelope
 
-    ZillitPageHeader(
-        eyebrow = "E-Signature",
-        title = envelope.title.ifBlank { envelope.document?.name ?: "Envelope" },
-        actions = {
-            ZillitButton(
-                text = "Back",
-                onClick = { onEvent(EsignEvent.CloseDetail) },
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.ArrowLeft,
-            )
-            if (detail.myFields.isNotEmpty() && detail.consented) {
-                ZillitButton(
-                    text = "Decline",
-                    onClick = { onEvent(EsignEvent.StartDecline) },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                )
-                ZillitButton(
-                    text = "Sign envelope",
-                    onClick = { onEvent(EsignEvent.SignEnvelope) },
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Edit,
-                    enabled = detail.canSignNow,
-                    loading = detail.signing,
-                )
-            }
-        },
-    )
+    DetailHeader(detail, onEvent)
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -117,6 +89,97 @@ internal fun EnvelopeDetailPage(detail: EnvelopeDetailState, onEvent: (EsignEven
     }
 
     DeclineDialog(detail, onEvent)
+    VoidDialog(detail, onEvent)
+}
+
+/**
+ * Cancelling an envelope that has already gone out.
+ *
+ * Not a delete — the envelope and its trail stay, marked void with the reason
+ * the recipients are given. Deleting stays where it belongs, on a draft nobody
+ * has seen.
+ */
+@Composable
+private fun VoidDialog(detail: EnvelopeDetailState, onEvent: (EsignEvent) -> Unit) {
+    ZillitDialogShell(
+        title = "Cancel this envelope?",
+        subtitle = detail.envelope.title.takeIf { it.isNotBlank() },
+        icon = ZillitIcons.Warning,
+        visible = detail.voiding,
+        onDismiss = { onEvent(EsignEvent.CancelVoid) },
+        actions = {
+            ZillitButton(
+                text = "Keep it",
+                onClick = { onEvent(EsignEvent.CancelVoid) },
+                variant = ButtonVariant.Tertiary,
+            )
+            ZillitButton(
+                text = "Cancel envelope",
+                onClick = { onEvent(EsignEvent.ConfirmVoid) },
+                variant = ButtonVariant.Danger,
+                enabled = detail.voidReason.isNotBlank(),
+            )
+        },
+    ) {
+        ZillitText(
+            text = "Everybody it was sent to is told, and nobody can sign it afterwards. " +
+                "The envelope and its audit trail stay.",
+            style = ZillitTheme.typography.bodyMedium,
+        )
+        ZillitTextField(
+            value = detail.voidReason,
+            onValueChange = { onEvent(EsignEvent.EditVoidReason(it)) },
+            label = "Reason",
+            helperText = "The recipients are given this, and the trail keeps it.",
+            singleLine = false,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/** The envelope's name, and every action open to this viewer on it. */
+@Composable
+private fun DetailHeader(detail: EnvelopeDetailState, onEvent: (EsignEvent) -> Unit) {
+    val envelope = detail.envelope
+ZillitPageHeader(
+    eyebrow = "E-Signature",
+    title = envelope.title.ifBlank { envelope.document?.name ?: "Envelope" },
+    actions = {
+        ZillitButton(
+            text = "Back",
+            onClick = { onEvent(EsignEvent.CloseDetail) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.ArrowLeft,
+        )
+        // Cancelling belongs to whoever sent it, and only while it is
+        // still live. A draft is deleted from the list instead.
+        if (detail.canVoid) {
+            ZillitButton(
+                text = "Cancel envelope",
+                onClick = { onEvent(EsignEvent.StartVoid) },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+            )
+        }
+        if (detail.myFields.isNotEmpty() && detail.consented) {
+            ZillitButton(
+                text = "Decline",
+                onClick = { onEvent(EsignEvent.StartDecline) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
+            ZillitButton(
+                text = "Sign envelope",
+                onClick = { onEvent(EsignEvent.SignEnvelope) },
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Edit,
+                enabled = detail.canSignNow,
+                loading = detail.signing,
+            )
+        }
+    },
+)
 }
 
 @Composable
@@ -132,6 +195,11 @@ private fun ConsentGate(detail: EnvelopeDetailState, onEvent: (EsignEvent) -> Un
                 text = "Yes, I accept",
                 onClick = { onEvent(EsignEvent.Consent) },
                 size = ButtonSize.Small,
+                // The gate stays up until the server has the acceptance. An
+                // electronic signature rests on the signer having consented,
+                // and signing against a consent nothing recorded leaves the
+                // audit trail unable to answer the only question asked of it.
+                loading = detail.consenting,
             )
         },
     )

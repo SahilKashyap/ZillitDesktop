@@ -95,7 +95,14 @@ class EsignViewModel(
             }
             is EsignEvent.OpenEnvelope -> openEnvelope(event.envelope)
             EsignEvent.CloseDetail -> setState { copy(detail = null) }
-            EsignEvent.Consent -> setState { copy(detail = detail?.copy(consented = true)) }
+            EsignEvent.Consent -> consent()
+            EsignEvent.StartVoid -> if (!refusesPost()) {
+                setState { copy(detail = detail?.copy(voiding = true, voidReason = "")) }
+            }
+            is EsignEvent.EditVoidReason ->
+                setState { copy(detail = detail?.copy(voidReason = event.reason)) }
+            EsignEvent.CancelVoid -> setState { copy(detail = detail?.copy(voiding = false)) }
+            EsignEvent.ConfirmVoid -> confirmVoid()
             is EsignEvent.Answer -> setState {
                 copy(
                     detail = detail?.copy(
@@ -234,9 +241,18 @@ class EsignViewModel(
                     } else {
                         emptyList()
                     }
+                    // Who sent it decides whether cancelling is offered. The
+                    // list's own bucket is not enough: a self-sent envelope is
+                    // read from the detail, never from the received list.
+                    val sentByMe = envelope.createdBy.isNotBlank() &&
+                        envelope.createdBy == currentState.currentUserId
                     setState {
                         copy(
-                            detail = detail?.copy(envelope = envelope, myFields = mine),
+                            detail = detail?.copy(
+                                envelope = envelope,
+                                myFields = mine,
+                                sentByMe = sentByMe,
+                            ),
                         )
                     }
                     if (mine.isNotEmpty()) {
@@ -389,6 +405,58 @@ class EsignViewModel(
         rights?.ask(MODULE_LABEL, RightsKind.Post)
         sendEffect(EsignEffect.Failed(rightsRefusalMessage(MODULE_LABEL, RightsKind.Post, rights != null)))
         return true
+    }
+
+    /**
+     * Records the signer's agreement to sign electronically.
+     *
+     * The one step that must not be silently skipped: an electronic signature
+     * rests on the signer having consented, and an audit trail that cannot
+     * show it is an audit trail that does not answer the only question anybody
+     * asks of it. So the gate stays up when the call fails, and says why —
+     * rather than letting somebody sign against a consent nothing recorded.
+     */
+    private fun consent() {
+        val envelopeId = currentState.detail?.envelope?.id ?: return
+        setState { copy(detail = detail?.copy(consenting = true)) }
+        launchResult(
+            block = { repository.acceptTerms(envelopeId) },
+            onSuccess = { setState { copy(detail = detail?.copy(consented = true, consenting = false)) } },
+            onError = {
+                setState { copy(detail = detail?.copy(consenting = false)) }
+                sendEffect(
+                    EsignEffect.Failed("Your acceptance was not recorded — please try again."),
+                )
+            },
+        )
+    }
+
+    /**
+     * Cancels an envelope that has already gone out.
+     *
+     * Not a delete: the envelope and its trail stay, marked void with the
+     * reason. The reason is required because it is what the recipients are
+     * told and what the trail keeps.
+     */
+    private fun confirmVoid() {
+        val detail = currentState.detail ?: return
+        val reason = detail.voidReason.trim()
+        if (reason.isBlank()) {
+            sendEffect(EsignEffect.Failed("Say why this envelope is being cancelled."))
+            return
+        }
+        launchResult(
+            block = { repository.voidEnvelope(detail.envelope.id, reason) },
+            onSuccess = {
+                setState { copy(detail = null) }
+                sendEffect(EsignEffect.Notice("Envelope cancelled."))
+                loadManage()
+            },
+            onError = {
+                setState { copy(detail = detail.copy(voiding = false)) }
+                sendEffect(EsignEffect.Failed(it.userMessage))
+            },
+        )
     }
 
     private fun deleteDraft(envelopeId: String) {

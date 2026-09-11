@@ -207,6 +207,17 @@ class EsignRepositoryImpl(
     override suspend fun markViewed(envelopeId: String): ZillitResult<Unit> =
         post("$base/envelopes/$envelopeId/mark-viewed", body = null)
 
+    // No body on either: the recipient is read from the session server-side,
+    // the same way mark-viewed resolves one.
+    override suspend fun acceptTerms(envelopeId: String): ZillitResult<Unit> =
+        post("$base/envelopes/$envelopeId/accept-terms", body = null)
+
+    override suspend fun voidEnvelope(envelopeId: String, reason: String): ZillitResult<Unit> =
+        post(
+            "$base/envelopes/$envelopeId/void",
+            buildJsonObject { put("reason", reason) },
+        )
+
     override suspend fun sign(
         envelopeId: String,
         answers: List<SignedField>,

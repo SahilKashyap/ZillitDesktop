@@ -59,6 +59,15 @@ enum class EnvelopeStatus(val wire: String, val label: String) {
     Unknown("", ""),
     ;
 
+    /**
+     * Whether the envelope has gone out and nothing has finished it.
+     *
+     * Only these can be cancelled. A draft is deleted instead, and one that is
+     * completed, declined, already void or expired has an outcome that
+     * cancelling would not change.
+     */
+    val isCancellable: Boolean get() = this == Sent || this == Delivered || this == Signed
+
     companion object {
         fun fromWire(raw: String?): EnvelopeStatus =
             entries.firstOrNull { it.wire == raw } ?: Unknown

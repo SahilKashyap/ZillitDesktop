@@ -61,10 +61,10 @@ class MapRepositoryImpl(
      * See [MapRepository.refreshes]. Another production's frame is dropped
      * when both sides can name a project, as every web handler does.
      */
-    override val refreshes: Flow<Unit> =
+    override val refreshes: Flow<MapRefresh> =
         bus?.onAny(MAP_SYNC_EVENTS)
             ?.filter { message -> message.payload.matchesProject(currentProjectId()) }
-            ?.map { }
+            ?.map { message -> if (message.event in MAP_CITY_EVENTS) MapRefresh.Cities else MapRefresh.Pins }
             ?: emptyFlow()
 
     override suspend fun cities(): ZillitResult<List<MapCity>> =

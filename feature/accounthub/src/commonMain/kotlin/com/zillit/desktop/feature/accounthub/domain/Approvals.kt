@@ -1,11 +1,26 @@
 package com.zillit.desktop.feature.accounthub.domain
 
-/** Which module's approval chain is being configured. */
-enum class ApprovalModule(val wire: String, val label: String) {
-    PurchaseOrders("purchase_orders", "Purchase Orders"),
-    Invoices("invoices", "Invoices"),
-    CardExpenses("card_expenses", "Card Expenses"),
-    CashExpenses("cash_expenses", "Petty Cash"),
+/**
+ * Which module's approval chain is being configured.
+ *
+ * Six, not four. Timecard and Deal Memo do not appear in the hub's sidebar —
+ * both became their own tools — but they still have approval chains, and the
+ * web adds them here for exactly that reason
+ * (`ApproversModule.EXTRA_MODULES_BY_SECTION`: "Modules that DON'T appear in
+ * the AH sidebar but DO need approver config"). Leaving them out made two
+ * tools' chains unreachable from the desktop (found 2026-09-09).
+ *
+ * [tool] is the identifier whose view access decides who may be picked as an
+ * approver. Invoices has no tool of its own — it lives inside the Purchase
+ * Orders module — so it borrows PO's, which is what the web does.
+ */
+enum class ApprovalModule(val wire: String, val label: String, val tool: String) {
+    PurchaseOrders("purchase_orders", "Purchase Orders", "purchase_order_tool"),
+    Invoices("invoices", "Invoices", "purchase_order_tool"),
+    CardExpenses("card_expenses", "Card Expenses", "card_expenses_tool"),
+    CashExpenses("cash_expenses", "Petty Cash", "cash_expenses_tool"),
+    Timecard("timecard", "Time Card", "timecard_tool"),
+    DealMemo("deal_memo", "Deal Memo", "deal_memo_tool"),
     ;
 
     companion object {

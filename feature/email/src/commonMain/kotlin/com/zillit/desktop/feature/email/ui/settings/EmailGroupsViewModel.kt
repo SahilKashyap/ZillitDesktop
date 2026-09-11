@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.email.ui.settings
 
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.email.data.EMAIL_GROUPS_SYNC_EVENTS
 import com.zillit.desktop.feature.email.domain.EmailContact
 import com.zillit.desktop.feature.email.domain.EmailGroup
 import com.zillit.desktop.feature.email.domain.EmailGroupRepository
@@ -78,7 +80,16 @@ class EmailGroupsViewModel(
     private val repository: EmailGroupRepository,
     /** Crew on this production, for the member picker. */
     private val crew: () -> List<EmailContact> = { emptyList() },
+    /** Live group changes. Null keeps the page load-once, as it was. */
+    private val events: SocketEventBus? = null,
 ) : ZillitViewModel<EmailGroupsUiState, EmailGroupsEvent, Nothing>(EmailGroupsUiState()) {
+
+    init {
+        // A group saved or deleted on a phone. The editor is deliberately not
+        // touched: re-reading under somebody typing would discard their work,
+        // and the save that follows is the server's own last-write-wins.
+        events?.let { bus -> launch { bus.onAny(EMAIL_GROUPS_SYNC_EVENTS).collect { load() } } }
+    }
 
     override fun onEvent(event: EmailGroupsEvent) {
         when (event) {

@@ -4,6 +4,8 @@ import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.externalusers.data.EXTERNAL_USERS_SYNC_EVENTS
 import com.zillit.desktop.feature.externalusers.domain.CREW_TYPE
 import com.zillit.desktop.feature.externalusers.domain.ExternalUser
 import com.zillit.desktop.feature.externalusers.domain.ExternalUserBucket
@@ -108,6 +110,11 @@ class ExternalUsersViewModel(
     private val loadDepartments: suspend () -> List<DepartmentOption>,
     private val nowMillis: () -> Long,
     /**
+     * The socket, so a guest added or removed by another coordinator lands
+     * without a refresh. Null in tests and on a build with no socket.
+     */
+    private val events: SocketEventBus? = null,
+    /**
      * The open production, sampled on [start]. Defaults to unknown, which is
      * treated as "assume it changed" — safe without wiring, precise with it.
      */
@@ -135,7 +142,26 @@ private val rights: RightsRequestBus? = null,
      * under it wipes them first: another production's contacts must never
      * render here, not even for the beat the refetch takes.
      */
+    /** Set up once: [start] runs on every visit to the page. */
+    private var listening = false
+
+    /**
+     * Somebody else changed the directory.
+     *
+     * Reloads rather than patching: the list is searched and filtered, and a
+     * removal that left a row behind would still offer access to someone who
+     * no longer has it.
+     */
+    private fun listenForChanges() {
+        val bus = events ?: return
+        if (listening) return
+        listening = true
+
+        launch { bus.onAny(EXTERNAL_USERS_SYNC_EVENTS).collect { refresh() } }
+    }
+
     fun start() {
+        listenForChanges()
         val project = projectId()
         if (project == null || project != loadedProjectId) forgetRoster()
         loadedProjectId = project

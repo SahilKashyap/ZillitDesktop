@@ -1,5 +1,26 @@
 package com.zillit.desktop.feature.accounthub.ui
 
+import com.zillit.desktop.feature.accounthub.domain.ParsedBudget
+import com.zillit.desktop.feature.accounthub.domain.CoaImportMode
+import com.zillit.desktop.feature.accounthub.domain.BudgetUpload
+import com.zillit.desktop.feature.accounthub.domain.BudgetImportMeta
+import com.zillit.desktop.feature.accounthub.domain.BibleReport
+import com.zillit.desktop.feature.accounthub.domain.BibleQuery
+import com.zillit.desktop.feature.accounthub.domain.PeriodLock
+import com.zillit.desktop.feature.accounthub.domain.TrialBalanceQuery
+import com.zillit.desktop.feature.accounthub.domain.TrialBalance
+import com.zillit.desktop.feature.accounthub.domain.asRows
+import com.zillit.desktop.feature.accounthub.domain.BudgetVersion
+import com.zillit.desktop.feature.accounthub.domain.BudgetStatus
+import com.zillit.desktop.feature.accounthub.domain.BudgetRow
+import com.zillit.desktop.feature.accounthub.domain.BudgetLine
+import com.zillit.desktop.feature.accounthub.domain.NonUnionPay
+import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
+import com.zillit.desktop.feature.accounthub.domain.PurchaseOrderSetup
+import com.zillit.desktop.feature.accounthub.domain.PayrollSettings
+import com.zillit.desktop.feature.accounthub.domain.PickedAgreementFile
+import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
+import com.zillit.desktop.feature.accounthub.domain.AllowancesRentals
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
@@ -13,6 +34,13 @@ import com.zillit.desktop.feature.accounthub.domain.Company
 import com.zillit.desktop.feature.accounthub.domain.CountryTaxes
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.feature.accounthub.domain.CurrencySettings
+import com.zillit.desktop.feature.accounthub.domain.DayType
+import com.zillit.desktop.feature.accounthub.domain.DayTypes
+import com.zillit.desktop.core.forms.FormField
+import com.zillit.desktop.core.forms.FormFieldType
+import com.zillit.desktop.core.forms.FormModule
+import com.zillit.desktop.core.forms.FormSection
+import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.feature.accounthub.domain.IsoDate
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubSection
@@ -170,6 +198,41 @@ data class SetupState(
     val payrollDefaults: SectionEdit<PayrollDefaults> = SectionEdit(PayrollDefaults()),
     val dealConditions: SectionEdit<List<DealCondition>> = SectionEdit(emptyList()),
     val payrollBureaus: SectionEdit<List<PayrollBureau>> = SectionEdit(emptyList()),
+    val allowances: SectionEdit<AllowancesRentals> = SectionEdit(AllowancesRentals()),
+    val payrollSettings: SectionEdit<PayrollSettings> = SectionEdit(PayrollSettings()),
+    val poSetup: SectionEdit<PurchaseOrderSetup> = SectionEdit(PurchaseOrderSetup()),
+    val invoicesSetup: SectionEdit<InvoicesSetup> = SectionEdit(InvoicesSetup()),
+    val nonUnionPay: SectionEdit<NonUnionPay> = SectionEdit(NonUnionPay()),
+    /**
+     * The project's day-type catalogue.
+     *
+     * Its own slice beside the pay breakdown it is rendered inside, because it
+     * has its own endpoint: editing a day type must not re-save the overtime,
+     * premium and penalty rules next to it.
+     */
+    val dayTypes: SectionEdit<List<DayType>> = SectionEdit(DayTypes.defaults),
+    /**
+     * Department id to name, for the pay breakdown's scope picker.
+     *
+     * The hub's own service does not list departments, so the host supplies
+     * them. Empty is a working state, not a broken one: the picker then shows
+     * the ids it already holds rather than dropping a scope it cannot name.
+     */
+    val departments: Map<String, String> = emptyMap(),
+    /**
+     * Agreement documents are not a [SectionEdit] either.
+     *
+     * There is no combined save: uploading appends and the bin removes, each
+     * on its own route, so there is nothing to be dirty against — the same
+     * reason banks sit outside the section machinery.
+     */
+    val agreements: List<AgreementDocument> = emptyList(),
+    val agreementsLoading: Boolean = false,
+    /** Picked, described, not yet uploaded. The section's only pending state. */
+    val agreementQueue: List<QueuedAgreementFile> = emptyList(),
+    val agreementsUploading: Boolean = false,
+    /** The one terms document, mid-upload. */
+    val poTermsUploading: Boolean = false,
     /**
      * Banks are not a [SectionEdit].
      *
@@ -191,9 +254,16 @@ data class SetupState(
             if (currencies.dirty) add("Project Currencies")
             if (taxTypes.dirty) add("Tax Types")
             if (assetTags.dirty) add("Asset Tags")
-            if (budget.dirty) add("Project Budget")
             if (schedule.dirty) add("Production Schedule")
             if (payrollDefaults.dirty) add("Payroll Defaults")
+            if (dealConditions.dirty) add("Standard Deal Conditions")
+            if (payrollBureaus.dirty) add("Payroll Bureau")
+            if (allowances.dirty) add("Allowances & Rentals")
+            if (payrollSettings.dirty) add("Payroll Settings")
+            if (poSetup.dirty) add("Purchase Order Setup")
+            if (invoicesSetup.dirty) add("Invoices Setup")
+            if (nonUnionPay.dirty) add("Non-Union Pay Breakdown")
+            if (dayTypes.dirty) add("Day Types")
         }
 }
 
@@ -297,10 +367,25 @@ data class AccountForm(
 }
 
 /** The vendor register. */
+/**
+ * Which vendors the register shows.
+ *
+ * The web's three top-level tabs (`VendorsModule.TABS`), applied over the
+ * fetched rows rather than re-asked of the server — verification is a boolean
+ * on a row already in hand, and a round trip to hide half a list would make
+ * the tab feel slower than the search does.
+ */
+enum class VendorFilter(val slug: String, val label: String) {
+    All("all", "All Vendors"),
+    Verified("verified", "Verified"),
+    Unverified("unverified", "Non-Verified"),
+}
+
 data class VendorsState(
     val loading: Boolean = false,
     val rows: List<Vendor> = emptyList(),
     val search: String = "",
+    val filter: VendorFilter = VendorFilter.All,
     val selectedId: String? = null,
     val history: List<VendorChange> = emptyList(),
     val historyLoading: Boolean = false,
@@ -309,7 +394,35 @@ data class VendorsState(
     val selected: Vendor? get() = rows.firstOrNull { it.id == selectedId }
 
     val verifiedCount: Int get() = rows.count { it.verified }
+
+    /** The rows the open tab shows. */
+    val visibleRows: List<Vendor>
+        get() = when (filter) {
+            VendorFilter.All -> rows
+            VendorFilter.Verified -> rows.filter { it.verified }
+            VendorFilter.Unverified -> rows.filterNot { it.verified }
+        }
+
+    /** How many rows each tab would show, for the count chips. */
+    fun countFor(tab: VendorFilter): Int = when (tab) {
+        VendorFilter.All -> rows.size
+        VendorFilter.Verified -> verifiedCount
+        VendorFilter.Unverified -> rows.size - verifiedCount
+    }
 }
+
+/**
+ * One file waiting to be uploaded.
+ *
+ * Title and description are editable before the upload, not after: the append
+ * route is the only write, so a description typed later would have nowhere to
+ * go — the web sets both on the pending row for the same reason.
+ */
+data class QueuedAgreementFile(
+    val file: PickedAgreementFile,
+    val title: String = file.name.substringBeforeLast('.'),
+    val description: String = "",
+)
 
 data class VendorForm(
     val editingId: String? = null,
@@ -319,9 +432,124 @@ data class VendorForm(
     val title: String get() = if (editingId == null) "New vendor" else "Edit vendor"
 }
 
+/** Which step of the import the accountant is on. */
+enum class ImportStep { Upload, Preview, Done }
+
+/**
+ * Importing a budget file.
+ *
+ * Three steps, and the middle one is the point: the parse is a guess at
+ * somebody else's spreadsheet, and committing it writes codes into the chart
+ * every other tool codes against. Nothing is written until [ImportStep.Preview]
+ * is confirmed.
+ */
+data class BudgetImportState(
+    val open: Boolean = false,
+    val step: ImportStep = ImportStep.Upload,
+    val uploading: Boolean = false,
+    val committing: Boolean = false,
+    val parsed: ParsedBudget? = null,
+    val upload: BudgetUpload? = null,
+    val meta: BudgetImportMeta = BudgetImportMeta(),
+    val mode: CoaImportMode = CoaImportMode.Default,
+    /** The version the commit created, for the last step to name. */
+    val created: BudgetVersion? = null,
+) {
+    /**
+     * Whether the import can be written.
+     *
+     * A version and a name, and something to save — a file that parsed to no
+     * codes at all is a parse that failed quietly, and committing it would add
+     * an empty version to the production's history.
+     */
+    val canCommit: Boolean
+        get() = parsed?.isEmpty == false && meta.isComplete && !committing
+}
+
+/**
+ * The versioned project budget.
+ *
+ * Read-only: a version is created by importing a budget file, and Live and
+ * Archived ones cannot be edited at all.
+ */
+data class BudgetState(
+    val loading: Boolean = false,
+    val versions: List<BudgetVersion> = emptyList(),
+    val selectedId: String? = null,
+    val lines: List<BudgetLine> = emptyList(),
+    val linesLoading: Boolean = false,
+    val import: BudgetImportState = BudgetImportState(),
+) {
+    val selected: BudgetVersion? get() = versions.firstOrNull { it.id == selectedId }
+
+    val rows: List<BudgetRow> get() = lines.asRows()
+
+    /** The Live version, of which there is at most one. */
+    val live: BudgetVersion? get() = versions.firstOrNull { it.status == BudgetStatus.Live }
+}
+
+/**
+ * The trial balance, and the period it is asked for.
+ *
+ * [applied] is what the rows on screen came from; [draft] is what the filters
+ * say now. They differ while the user is choosing, and the report is only
+ * re-asked for on an explicit refresh — a report that re-ran on every keystroke
+ * would spend the server's time on periods nobody meant.
+ */
+data class TrialBalanceState(
+    val loading: Boolean = false,
+    val report: TrialBalance = TrialBalance(),
+    val draft: TrialBalanceQuery = TrialBalanceQuery(0, 0),
+    val applied: TrialBalanceQuery? = null,
+) {
+    val isDirty: Boolean get() = applied != null && applied != draft
+}
+
+/**
+ * The closeout bible.
+ *
+ * Same shape as the trial balance beside it: filters are a draft until the
+ * report is explicitly re-run, because this is the heaviest read on the
+ * service and a period nobody meant is not worth asking for.
+ */
+data class BibleReportState(
+    val loading: Boolean = false,
+    val report: BibleReport = BibleReport(),
+    val draft: BibleQuery = BibleQuery(0, 0),
+    val applied: BibleQuery? = null,
+    /** Accounts the reader has folded away, by code. */
+    val collapsed: Set<String> = emptySet(),
+) {
+    val isDirty: Boolean get() = applied != null && applied != draft
+}
+
+/**
+ * Closing a period.
+ *
+ * [pending] is a date the accountant has chosen but not confirmed. Closing is
+ * irreversible across every source module, so it is always a two-step act —
+ * there is no unlock endpoint to undo a slip.
+ */
+data class PeriodCloseState(
+    val loading: Boolean = false,
+    val lock: PeriodLock = PeriodLock(),
+    val closing: Boolean = false,
+    val pendingCloseMillis: Long? = null,
+)
+
 /** The approval chains. */
 data class ApprovalsState(
     val module: ApprovalModule = ApprovalModule.PurchaseOrders,
+    /**
+     * Which modules have a chain, for the tab strip.
+     *
+     * Absent means unknown, not unconfigured: the summary endpoint does not
+     * answer for every module, and seeding the missing ones as false would pin
+     * Time Card to "Not set" forever — the mistake the web documents in
+     * `mergeModuleConfigSummary`. A module the user has actually opened is
+     * answered from its own configs, which is fresher, so those entries win.
+     */
+    val configured: Map<ApprovalModule, Boolean> = emptyMap(),
     val loading: Boolean = false,
     val configs: List<ApprovalConfig> = emptyList(),
     val editing: ApprovalConfig? = null,
@@ -333,6 +561,68 @@ data class ApprovalsState(
 
     val departmentConfigs: List<ApprovalConfig>
         get() = configs.filter { it.scope == ApprovalScope.Department }
+}
+
+/** A field being added or inspected, addressed by section and key. */
+data class FieldFocus(val sectionKey: String, val fieldId: String? = null) {
+    val isNew: Boolean get() = fieldId == null
+}
+
+/** What the add-a-field panel is holding before it is added. */
+data class NewFieldDraft(
+    val name: String = "",
+    val type: String = FormFieldType.Text.wire,
+    val required: Boolean = false,
+    val selectionType: String? = null,
+) {
+    val isReady: Boolean get() = name.isNotBlank()
+}
+
+/**
+ * The per-module form editor.
+ *
+ * [saved] is what the server last answered with, kept beside [template] so
+ * the page can say whether anything is unsaved. A form template is a document
+ * that other people's screens read from, so leaving without saving is a real
+ * thing to be told about.
+ */
+data class FormConfigState(
+    val module: FormModule = FormModule.PurchaseOrders,
+    val template: FormTemplate = FormTemplate(),
+    val saved: FormTemplate = FormTemplate(),
+    val loading: Boolean = false,
+    val saving: Boolean = false,
+    /** Edit mode, as against the read-only preview the page opens on. */
+    val editing: Boolean = false,
+    val collapsed: Set<String> = emptySet(),
+    val focus: FieldFocus? = null,
+    val draft: NewFieldDraft = NewFieldDraft(),
+    /** A section being added: the key to insert after, or null for the top. */
+    val addingSectionAfter: String? = null,
+    val addingSectionName: String = "",
+    val renamingSection: String? = null,
+    val renamingSectionName: String = "",
+    val removingSection: FormSection? = null,
+    val confirmingReset: Boolean = false,
+) {
+    val dirty: Boolean get() = template != saved
+
+    val sectionCount: Int get() = template.configurable.size
+
+    val fieldCount: Int get() = template.fieldCount
+
+    val customCount: Int get() = template.customFieldCount
+
+    fun isCollapsed(key: String): Boolean = key in collapsed
+
+    /** The field the inspector is showing, or null when it is adding one. */
+    val focusedField: FormField?
+        get() = focus?.fieldId?.let { id ->
+            template.section(focus.sectionKey)?.fields?.firstOrNull { it.id == id }
+        }
+
+    val focusedSection: FormSection?
+        get() = focus?.let { template.section(it.sectionKey) }
 }
 
 /** Everything the console renders. */
@@ -349,7 +639,12 @@ data class AccountHubUiState(
     val setup: SetupState = SetupState(),
     val chart: ChartState = ChartState(),
     val vendors: VendorsState = VendorsState(),
+    val budget: BudgetState = BudgetState(),
+    val trialBalance: TrialBalanceState = TrialBalanceState(),
+    val periodClose: PeriodCloseState = PeriodCloseState(),
+    val bible: BibleReportState = BibleReportState(),
     val approvals: ApprovalsState = ApprovalsState(),
+    val formConfig: FormConfigState = FormConfigState(),
     val notice: String? = null,
 ) {
     val loading: Boolean

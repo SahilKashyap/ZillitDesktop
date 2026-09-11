@@ -64,6 +64,23 @@ interface EsignRepository {
 
     suspend fun markViewed(envelopeId: String): ZillitResult<Unit>
 
+    /**
+     * Records that this signer agreed to sign electronically.
+     *
+     * The whole basis of the consent gate: without it the envelope's audit
+     * trail cannot show the signer ever agreed, and `accepted_terms_on` stays
+     * unset. The recipient is resolved from the session, so there is no body.
+     */
+    suspend fun acceptTerms(envelopeId: String): ZillitResult<Unit>
+
+    /**
+     * Cancels an envelope that has already gone out.
+     *
+     * Not a delete: the envelope and its trail stay, marked void with the
+     * reason. Deleting is only ever available on a draft nobody has seen.
+     */
+    suspend fun voidEnvelope(envelopeId: String, reason: String): ZillitResult<Unit>
+
     suspend fun sign(
         envelopeId: String,
         answers: List<SignedField>,

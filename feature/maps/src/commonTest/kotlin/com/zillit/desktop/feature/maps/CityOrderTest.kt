@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.maps
 
+import com.zillit.desktop.feature.maps.data.MapRefresh
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.maps.domain.LocationDraft
 import com.zillit.desktop.feature.maps.domain.ZoneDraft
@@ -99,7 +100,7 @@ class CityOrderTest {
     }
 
     private class FakeRepo(
-        override val refreshes: Flow<Unit> = MutableSharedFlow(),
+        override val refreshes: Flow<MapRefresh> = MutableSharedFlow(),
     ) : MapRepository {
 
         var ordered: List<String>? = null

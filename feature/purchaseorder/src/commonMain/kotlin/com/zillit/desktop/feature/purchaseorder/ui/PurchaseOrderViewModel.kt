@@ -10,7 +10,11 @@ import com.zillit.desktop.feature.purchaseorder.data.LOCAL_ID_PREFIX
 import com.zillit.desktop.feature.purchaseorder.data.PO_CREATE_KIND
 import com.zillit.desktop.feature.purchaseorder.data.QueuedPurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.data.toLocalOrder
+import com.zillit.desktop.core.forms.FormLayout
+import com.zillit.desktop.core.forms.FormTemplate
+import com.zillit.desktop.core.forms.customValues
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
+import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
 import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
 import com.zillit.desktop.feature.purchaseorder.domain.PoHistoryEntry
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
@@ -72,6 +76,13 @@ data class PoUiState(
     val selectedId: String? = null,
     val selection: Set<String> = emptySet(),
     val draft: PoDraft = PoDraft(),
+    /**
+     * What the accountant configured this form to be.
+     *
+     * Empty until it is read, and an unread template shows every field — a
+     * form must not blank its own controls because a fetch failed.
+     */
+    val formTemplate: FormTemplate = FormTemplate(),
     val prompt: PoPrompt? = null,
     /** True while the API cannot be reached; writes queue instead of failing. */
     val offline: Boolean = false,
@@ -79,6 +90,9 @@ data class PoUiState(
     val staleSince: Long? = null,
 ) {
     val selected: PurchaseOrder? get() = (localOrders + orders).firstOrNull { it.id == selectedId }
+
+    /** The form's own rules — which fields show, and which must be filled in. */
+    val form: FormLayout get() = FormLayout(formTemplate)
 
     val visibleDestinations: List<PoDestination>
         get() = PoDestination.entries.filter { it.visibleTo(viewer) }
@@ -111,13 +125,15 @@ data class PoDraft(
     val notes: String = "",
     val currency: String? = null,
     val lines: List<PoLine> = listOf(PoLine(null, "", 1.0, 0.0, null, null)),
+    /** The extra fields this production added, by their form key. */
+    val customFields: Map<String, String> = emptyMap(),
 ) {
     val total: Double get() = lines.sumOf { it.total }
 
     val isBlank: Boolean get() = this == PoDraft()
 
     /** [status] is the server's creation status — see [NewPurchaseOrder.status]. */
-    fun toRequest(status: String? = null) = NewPurchaseOrder(
+    fun toRequest(status: String? = null, layout: FormLayout = FormLayout(FormTemplate())) = NewPurchaseOrder(
         vendorId = vendorId,
         vendorName = vendorName.trim(),
         description = description.trim(),
@@ -130,6 +146,7 @@ data class PoDraft(
         effectiveDate = null,
         lines = lines.filter { it.description.isNotBlank() },
         status = status,
+        customFields = listOfNotNull(layout.customValues(PoFormFields.DETAILS, customFields)),
     )
 }
 
@@ -213,6 +230,16 @@ class PurchaseOrderViewModel(
     private val viewer: () -> PoViewer,
     private val offline: OfflineSupport? = null,
     private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    /**
+     * The form the accountant configured for purchase orders.
+     *
+     * A seam rather than a repository call because the template belongs to the
+     * account hub's service, not this one, and the default — an empty template
+     * — is what "show every field" means.
+     */
+    private val formTemplate: suspend () -> ZillitResult<FormTemplate> = {
+        ZillitResult.Success(FormTemplate())
+    },
 ) : ZillitViewModel<PoUiState, PoEvent, PoEffect>(PoUiState(viewer = viewer())) {
 
     private var loadJob: Job? = null
@@ -225,6 +252,7 @@ class PurchaseOrderViewModel(
     fun start() {
         if (started) return
         started = true
+        loadFormTemplate()
         val identity = viewer()
         setState {
             copy(
@@ -265,6 +293,8 @@ class PurchaseOrderViewModel(
                     when (kind) {
                         PoRefresh.Orders -> load(currentState.destination)
                         PoRefresh.Vendors -> loadVendors()
+                        // The accountant changed which fields this form has.
+                        PoRefresh.FormTemplate -> loadFormTemplate()
                     }
                 }
             }
@@ -513,12 +543,57 @@ class PurchaseOrderViewModel(
         support.drafts.delete(draftId(scope.userId, scope.projectId))
     }
 
+    /**
+     * What the production's own form rules refuse, or null.
+     *
+     * Only fields this screen renders. A template can mark one required that
+     * this form does not offer — the web's version of it is larger — and
+     * refusing the raise over a control that is not on screen would leave the
+     * person with nothing to put right. Those are the server's to judge.
+     */
+    private fun templateProblem(layout: FormLayout): String? {
+        if (!layout.isLoaded) return null
+        val draft = currentState.draft
+        val required = { label: String -> layout.isRequired(PoFormFields.DETAILS, label) }
+        return when {
+            required(PoFormFields.VENDOR) && draft.vendorId.isNullOrBlank() ->
+                "This production requires a vendor on every order."
+
+            required(PoFormFields.ACCOUNT_CODE) && draft.nominalCode.isBlank() ->
+                "This production requires a nominal code on every order."
+
+            required(PoFormFields.DESCRIPTION) && draft.description.isBlank() ->
+                "This production requires a description on every order."
+
+            required(PoFormFields.NOTES) && draft.notes.isBlank() ->
+                "This production requires a note on every order."
+
+            else -> layout.missingCustom(PoFormFields.DETAILS, draft.customFields)
+                .firstOrNull()
+                ?.let { "${it.name} is required on this production's orders." }
+        }
+    }
+
+    /**
+     * Reads the form's configuration.
+     *
+     * Failures are swallowed: the empty template shows every field, which is
+     * this form as it was before templates, and an error over a working form
+     * would be noise about something the person raising an order cannot fix.
+     */
+    private fun loadFormTemplate() {
+        launchResult(formTemplate, { template ->
+            setState { copy(formTemplate = template) }
+        }, { })
+    }
+
     private fun submitDraft() {
         // Accounts raise straight into the ledger's queue; everyone else into
         // the approval chain — the same two statuses the phones send.
         val status = if (currentState.viewer.isAccountant) STATUS_ACCOUNTS_ENTERED else STATUS_PENDING
-        val request = currentState.draft.toRequest(status)
-        val invalid = request.validationError()
+        val layout = currentState.form
+        val request = currentState.draft.toRequest(status, layout)
+        val invalid = request.validationError() ?: templateProblem(layout)
         if (invalid != null) {
             sendEffect(PoEffect.Failed(invalid))
             return

@@ -4,6 +4,8 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.saportal.data.saRefreshes
 import com.zillit.desktop.feature.saportal.domain.SaPortalRepository
 import com.zillit.desktop.feature.saportal.domain.SaViewer
 import com.zillit.desktop.feature.saportal.domain.Voucher
@@ -18,10 +20,19 @@ import com.zillit.desktop.feature.saportal.domain.Voucher
  */
 class SaPortalViewModel(
     private val repository: SaPortalRepository,
+    /**
+     * Live changes from the AD side; null keeps the portal load-once.
+     *
+     * Ahead of [viewer] deliberately: `viewer` is the trailing lambda at every
+     * call site, and a parameter added after it would silently capture that
+     * lambda instead.
+     */
+    private val events: SocketEventBus? = null,
     private val viewer: () -> SaViewer,
 ) : ZillitViewModel<SaUiState, SaEvent, SaEffect>(SaUiState(viewer = viewer())) {
 
     private var started = false
+    private var listening = false
 
     fun start() {
         if (started) return
@@ -29,6 +40,21 @@ class SaPortalViewModel(
         val identity = viewer()
         setState { copy(viewer = identity) }
         if (!identity.isBlocked) refresh()
+
+        // A reply, a settled day, a change to this artiste's record. Only the
+        // page on screen reloads; every page reloads on open anyway, and the
+        // overview is rebuilt from the vouchers a voucher frame reloads.
+        // `listening` outlives `started`, which onProjectChanged resets — so a
+        // production switch does not stack a second collector.
+        val bus = events
+        if (bus != null && !listening) {
+            listening = true
+            launch {
+                saRefreshes(bus).collect { kind ->
+                    if (currentState.destination.refresh == kind) load(currentState.destination)
+                }
+            }
+        }
     }
 
     /** Re-reads rights and data when the open production changes. */

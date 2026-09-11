@@ -55,14 +55,29 @@ data class EnvelopeDetailState(
     val myFields: List<EnvelopeField> = emptyList(),
     /** The signer's consent step — fields hide until they accept. */
     val consented: Boolean = false,
+    /** True while the acceptance is being recorded; the gate stays up. */
+    val consenting: Boolean = false,
+    /** Set when the sender is cancelling this envelope, before they confirm. */
+    val voiding: Boolean = false,
+    val voidReason: String = "",
     /** Answers by field id; unanswered marks fall back to the saved signature. */
     val answers: Map<String, FieldAnswer> = emptyMap(),
     val signing: Boolean = false,
     val declining: Boolean = false,
     val declineReason: String = "",
     val notPdf: Boolean = false,
+    /** Whether the viewer is the one who sent it. */
+    val sentByMe: Boolean = false,
 ) {
     val canSignNow: Boolean get() = myFields.isNotEmpty() && consented && !signing
+
+    /**
+     * Whether this viewer may cancel the envelope.
+     *
+     * The sender's act, on an envelope that is out and unfinished. A recipient
+     * declines instead — that is their side of the same decision.
+     */
+    val canVoid: Boolean get() = sentByMe && envelope.status.isCancellable
 }
 
 /** The compose flow: envelope details, then coordinate placement. */
@@ -159,6 +174,12 @@ sealed interface EsignEvent {
     data class OpenEnvelope(val envelope: Envelope) : EsignEvent
     data object CloseDetail : EsignEvent
     data object Consent : EsignEvent
+
+    /** Cancelling an envelope that has already gone out. */
+    data object StartVoid : EsignEvent
+    data class EditVoidReason(val reason: String) : EsignEvent
+    data object CancelVoid : EsignEvent
+    data object ConfirmVoid : EsignEvent
     data class Answer(val fieldId: String, val answer: FieldAnswer) : EsignEvent
     data object SignEnvelope : EsignEvent
     data class EditDeclineReason(val reason: String) : EsignEvent

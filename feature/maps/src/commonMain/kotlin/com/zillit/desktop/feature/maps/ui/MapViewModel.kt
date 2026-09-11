@@ -5,6 +5,7 @@ package com.zillit.desktop.feature.maps.ui
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.feature.maps.data.MapRefresh
 import com.zillit.desktop.feature.maps.domain.Geo
 import com.zillit.desktop.feature.maps.domain.LocationDraft
 import com.zillit.desktop.feature.maps.domain.MapCanvasEvent
@@ -46,7 +47,11 @@ class MapViewModel(
         if (listening) return
         listening = true
         launch {
-            repository.refreshes.conflate().collect { loadPins() }
+            repository.refreshes.conflate().collect { kind ->
+                // A city event moves the strip the pins are filtered by, so
+                // that one re-reads everything; a pin event re-lists pins.
+                if (kind == MapRefresh.Cities) refresh() else loadPins()
+            }
         }
     }
 

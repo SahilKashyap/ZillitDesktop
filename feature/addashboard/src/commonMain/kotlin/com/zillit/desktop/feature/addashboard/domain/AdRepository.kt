@@ -68,3 +68,15 @@ object AdDates {
     /** [millis] flattened to the UTC midnight that contains it. */
     fun utcMidnight(millis: Long): Long = millis - Math.floorMod(millis, MILLIS_PER_DAY)
 }
+
+/** Which of the dashboard's three pages a socket frame reloads. */
+enum class AdRefresh {
+    /** The open shoot day: its header and the artiste rows on it. */
+    Today,
+
+    /** The artiste register. */
+    Register,
+
+    /** The list of shoot days. */
+    Days,
+}

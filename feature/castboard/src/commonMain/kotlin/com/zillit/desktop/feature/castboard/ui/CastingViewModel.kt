@@ -6,6 +6,9 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.castboard.data.castingDiscussionEvents
+import com.zillit.desktop.feature.castboard.data.castingSyncEvents
 import com.zillit.desktop.feature.castboard.domain.BoardTool
 import com.zillit.desktop.feature.castboard.domain.CastingEntry
 import com.zillit.desktop.feature.castboard.domain.CastingRepository
@@ -29,7 +32,31 @@ class CastingViewModel(
     private val permissions: () -> ProjectPermissions = { ProjectPermissions(emptyList()) },
     /** Carries a refused press to the app frame, which offers to ask an admin. */
     private val rights: RightsRequestBus? = null,
+    /**
+     * The socket, so a record added by another department appears without a
+     * reopen. Null in tests and on a build with no socket.
+     */
+    private val events: SocketEventBus? = null,
 ) : ZillitViewModel<CastingUiState, CastingEvent, Nothing>(CastingUiState()) {
+
+    init {
+        val bus = events
+        if (bus != null) {
+            launch {
+                // Reload rather than patch: the board is filtered by unit and
+                // status, and the payload carries one record.
+                bus.onAny(castingSyncEvents(board)).collect {
+                    if (currentState.unit != null) fetch()
+                }
+            }
+            launch {
+                // A line added to the thread on screen. Refreshed quietly —
+                // `openDiscussion` blanks the list and raises a spinner, which
+                // is right when opening and wrong for every message after.
+                bus.onAny(castingDiscussionEvents(board)).collect { refreshDiscussion() }
+            }
+        }
+    }
 
     override fun onEvent(event: CastingEvent) {
         when (event) {
@@ -130,6 +157,24 @@ class CastingViewModel(
                     discussionLoading = false,
                     discussion = (rows as? ZillitResult.Success)?.data?.reversed().orEmpty(),
                 )
+            }
+        }
+    }
+
+    /**
+     * Re-reads the open thread without disturbing it.
+     *
+     * No spinner and no blanking: the thread stays on screen and the rows are
+     * replaced when they arrive. A failure leaves what is there — a dropped
+     * refresh must not empty a discussion somebody is reading.
+     */
+    private fun refreshDiscussion() {
+        val entry = currentState.openEntry ?: return
+        launch {
+            val rows = repository.messages(entry.id, nowMillis())
+            if (currentState.openEntry?.id != entry.id) return@launch
+            (rows as? ZillitResult.Success)?.data?.let { loaded ->
+                setState { copy(discussion = loaded.reversed()) }
             }
         }
     }

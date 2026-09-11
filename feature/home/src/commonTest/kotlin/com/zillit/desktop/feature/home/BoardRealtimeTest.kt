@@ -56,6 +56,7 @@ class BoardRealtimeTest {
                 "info:message:deleted:multiple", "info:message:comment:added",
                 "info:message:comment:edited", "info:message:comment:deleted",
                 "info:posting-rights:update", "info:chat:archived",
+                "info:message:readby:update",
             ),
             names("info"),
         )
@@ -70,18 +71,20 @@ class BoardRealtimeTest {
                 "confidential_info:message:comment:added", "confidential_info:message:comment:edited",
                 "confidential_info:message:comment:deleted",
                 "confidential_info:posting-rights:update", "confidential_info:chat:archived",
+                "confidential_info:message:readby:update",
             ),
             names("confidentialinfo"),
         )
     }
 
     @Test
-    fun `script notes and reports carry no unit or rights events`() {
+    fun `script notes carries its rights event and reports carries none`() {
         assertEquals(
             setOf(
                 "script_notes:message:added", "script_notes:message:edited",
                 "script_notes:message:deleted:multiple", "script_notes:message:comment:added",
                 "script_notes:message:comment:edited", "script_notes:message:comment:deleted",
+                "script_notes:message:readby:update", "script_notes:posting-rights:update",
             ),
             names("script-notes"),
         )
@@ -90,6 +93,7 @@ class BoardRealtimeTest {
                 "reports:message:added", "reports:message:edited",
                 "reports:message:deleted:multiple", "reports:message:comment:added",
                 "reports:message:comment:edited", "reports:message:comment:deleted",
+                "reports:message:readby:update",
             ),
             names("reports"),
         )
@@ -103,7 +107,7 @@ class BoardRealtimeTest {
                 "catering:message:deleted:multiple", "catering:message:comment:added",
                 "catering:message:comment:edited", "catering:message:comment:deleted",
                 "catering:unit:created", "catering:unit:updated", "catering:unit:deleted",
-                "catering:chat:archived",
+                "catering:chat:archived", "catering:message:readby:update",
             ),
             names("catering"),
         )
@@ -118,7 +122,7 @@ class BoardRealtimeTest {
                 "account:message:comment:edited", "account:message:comment:deleted",
                 "account:unit:created", "account:unit:updated", "account:unit:deleted",
                 "account:viewing-rights:update", "account:posting-rights:update",
-                "account:chat:archived",
+                "account:chat:archived", "account:message:readby:update",
             ),
             names("account"),
         )

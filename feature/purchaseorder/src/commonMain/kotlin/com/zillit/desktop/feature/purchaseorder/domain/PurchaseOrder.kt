@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.purchaseorder.domain
 
+import com.zillit.desktop.core.forms.CustomFieldGroup
+
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import kotlinx.coroutines.flow.Flow
@@ -229,6 +231,14 @@ data class NewPurchaseOrder(
      * hold it). Null on an update, which leaves the status alone.
      */
     val status: String? = null,
+    /**
+     * The extra fields this production added to the form.
+     *
+     * Grouped by section, as the service stores them. Empty when the form
+     * template has none, which is every production that has not configured
+     * one.
+     */
+    val customFields: List<CustomFieldGroup> = emptyList(),
 ) {
     val total: Double get() = lines.sumOf { it.total }
 
@@ -267,7 +277,7 @@ data class PoHistoryEntry(
  * vendor events stale the picker. Nothing is patched in place — the wire says
  * *that* something changed, the reload learns *what*.
  */
-enum class PoRefresh { Orders, Vendors }
+enum class PoRefresh { Orders, Vendors, FormTemplate }
 
 /** Everything the purchase order tool asks the server for. */
 @Suppress("TooManyFunctions") // One suspend fun per server operation; see detekt.yml.

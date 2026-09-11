@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.formsignature
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.socket.SocketEventName
+import com.zillit.desktop.feature.formsignature.data.FORM_SIGN_SYNC_EVENTS
 import com.zillit.desktop.feature.formsignature.data.refreshKindsFor
 import com.zillit.desktop.feature.formsignature.domain.DocumentSigner
 import com.zillit.desktop.feature.formsignature.domain.FormSignRefresh
@@ -37,6 +38,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * A `document:*` pulse refetches the list it names, only while that list
@@ -74,6 +76,30 @@ class FormSignatureSyncTest {
             refreshKindsFor(SocketEventName("document:message:added")),
             "the chat family has no desktop surface",
         )
+    }
+
+    /**
+     * A form assigned to this user, or added to the library, lands live.
+     *
+     * These four were excluded as "V1-only" on the web's authority; iOS's
+     * Form & Signature 2.0 refreshes the standard-forms list from all of them
+     * (`StandardFormsView.swift:40-51`), and the desktop is that tool.
+     */
+    @Test
+    fun `an assigned or library form refetches the forms list`() {
+        listOf(
+            "document:added:user:form",
+            "document:added:user:contract",
+            "document:added:saved:form",
+            "document:added:saved:contract",
+        ).forEach { name ->
+            assertEquals(
+                listOf(FormSignRefresh.Forms),
+                refreshKindsFor(SocketEventName(name)),
+                "$name must refresh the standard forms",
+            )
+            assertTrue(SocketEventName(name) in FORM_SIGN_SYNC_EVENTS, "$name must be subscribed")
+        }
     }
 
     // -- the view model ----------------------------------------------------

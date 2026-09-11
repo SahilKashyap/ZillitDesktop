@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.accounthub.ui
 
+import com.zillit.desktop.feature.accounthub.domain.DayType
+import com.zillit.desktop.feature.accounthub.domain.DayTypes
 import com.zillit.desktop.feature.accounthub.domain.DealCondition
 
 /**
@@ -108,13 +110,86 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                 },
                 notice = "Payroll bureaus saved.",
             )
+            SetupSection.Allowances -> vm.commitSection(
+                marking = { copy(setup = this.setup.copy(allowances = this.setup.allowances.copy(saving = true))) },
+                call = { vm.repo.saveAllowancesRentals(setup.allowances.edited) },
+                done = { value -> copy(setup = this.setup.copy(allowances = this.setup.allowances.committed(value))) },
+                failed = { copy(setup = this.setup.copy(allowances = this.setup.allowances.copy(saving = false))) },
+                notice = "Allowances and rentals saved.",
+            )
+            SetupSection.PayrollSettings -> vm.commitSection(
+                marking = {
+                    copy(setup = this.setup.copy(payrollSettings = this.setup.payrollSettings.copy(saving = true)))
+                },
+                call = { vm.repo.savePayrollSettings(setup.payrollSettings.edited) },
+                done = { value ->
+                    copy(setup = this.setup.copy(payrollSettings = this.setup.payrollSettings.committed(value)))
+                },
+                failed = {
+                    copy(setup = this.setup.copy(payrollSettings = this.setup.payrollSettings.copy(saving = false)))
+                },
+                notice = "Payroll settings saved.",
+            )
+            SetupSection.PoSetup -> vm.commitSection(
+                marking = { copy(setup = this.setup.copy(poSetup = this.setup.poSetup.copy(saving = true))) },
+                call = { vm.repo.savePurchaseOrderSetup(setup.poSetup.edited) },
+                done = { value -> copy(setup = this.setup.copy(poSetup = this.setup.poSetup.committed(value))) },
+                failed = { copy(setup = this.setup.copy(poSetup = this.setup.poSetup.copy(saving = false))) },
+                notice = "Purchase order settings saved.",
+            )
+            SetupSection.InvoicesSetup -> vm.commitSection(
+                marking = {
+                    copy(setup = this.setup.copy(invoicesSetup = this.setup.invoicesSetup.copy(saving = true)))
+                },
+                call = { vm.repo.saveInvoicesSetup(setup.invoicesSetup.edited) },
+                done = { value ->
+                    copy(setup = this.setup.copy(invoicesSetup = this.setup.invoicesSetup.committed(value)))
+                },
+                failed = {
+                    copy(setup = this.setup.copy(invoicesSetup = this.setup.invoicesSetup.copy(saving = false)))
+                },
+                notice = "Invoice settings saved.",
+            )
+            SetupSection.NonUnionPay -> vm.commitSection(
+                marking = { copy(setup = this.setup.copy(nonUnionPay = this.setup.nonUnionPay.copy(saving = true))) },
+                call = { vm.repo.saveNonUnionPay(setup.nonUnionPay.edited) },
+                done = { value ->
+                    copy(setup = this.setup.copy(nonUnionPay = this.setup.nonUnionPay.committed(value)))
+                },
+                failed = { copy(setup = this.setup.copy(nonUnionPay = this.setup.nonUnionPay.copy(saving = false))) },
+                notice = "Pay rules saved.",
+            )
+            // Its own endpoint, and its own save: editing a day type must not
+            // re-save the pay rules it is rendered inside.
+            SetupSection.DayTypes -> saveDayTypes(setup.dayTypes.edited)
         }
+    }
+
+    /**
+     * The day-type catalogue, refused rather than sent when it cannot work.
+     *
+     * A duplicate code is the one that matters: the pay engine looks a day
+     * type up by code, so a repeat means one of them is never found — and
+     * nothing on the screen would say which.
+     */
+    private fun saveDayTypes(rows: List<DayType>) {
+        DayTypes.problem(rows)?.let { return vm.sendSideEffect(AccountHubEffect.Failed(it)) }
+        vm.commitSection(
+            marking = { copy(setup = this.setup.copy(dayTypes = this.setup.dayTypes.copy(saving = true))) },
+            call = { vm.repo.saveDayTypes(rows) },
+            done = { saved ->
+                copy(setup = this.setup.copy(dayTypes = this.setup.dayTypes.committed(DayTypes.seeded(saved))))
+            },
+            failed = { copy(setup = this.setup.copy(dayTypes = this.setup.dayTypes.copy(saving = false))) },
+            notice = "Day types saved.",
+        )
     }
 
     /** Clause order is positional, so it is rewritten from the list itself. */
     private fun List<DealCondition>.renumbered(): List<DealCondition> =
         mapIndexed { index, condition -> condition.copy(order = index + 1) }
 
+    @Suppress("CyclomaticComplexMethod") // One line per section; a map would hide which.
     fun revert(section: SetupSection) = vm.update {
         val next = when (section) {
             SetupSection.Companies -> setup.copy(companies = setup.companies.reverted())
@@ -126,6 +201,12 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
             SetupSection.PayrollDefaults -> setup.copy(payrollDefaults = setup.payrollDefaults.reverted())
             SetupSection.DealConditions -> setup.copy(dealConditions = setup.dealConditions.reverted())
             SetupSection.PayrollBureaus -> setup.copy(payrollBureaus = setup.payrollBureaus.reverted())
+            SetupSection.Allowances -> setup.copy(allowances = setup.allowances.reverted())
+            SetupSection.PayrollSettings -> setup.copy(payrollSettings = setup.payrollSettings.reverted())
+            SetupSection.PoSetup -> setup.copy(poSetup = setup.poSetup.reverted())
+            SetupSection.InvoicesSetup -> setup.copy(invoicesSetup = setup.invoicesSetup.reverted())
+            SetupSection.NonUnionPay -> setup.copy(nonUnionPay = setup.nonUnionPay.reverted())
+            SetupSection.DayTypes -> setup.copy(dayTypes = setup.dayTypes.reverted())
         }
         copy(setup = next)
     }

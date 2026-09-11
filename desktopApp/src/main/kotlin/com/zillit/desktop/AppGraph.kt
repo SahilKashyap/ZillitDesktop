@@ -123,6 +123,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import com.zillit.desktop.core.security.SecureStore
+import com.zillit.desktop.feature.auth.data.ProjectLifecycle
+import com.zillit.desktop.feature.auth.data.projectLifecycle
 import com.zillit.desktop.feature.auth.data.AuthRepositoryImpl
 import com.zillit.desktop.feature.auth.data.ProjectRepositoryImpl
 import com.zillit.desktop.feature.auth.domain.AuthRepository
@@ -344,6 +346,62 @@ private fun CoroutineScope.reportSocketRejections(
     socketClient.connectionState.collect { state ->
         val rejected = (state as? SocketConnectionState.Failed)?.error
         if (rejected is ZillitError.Unauthorized) sessionExpired.tryEmit(Unit)
+    }
+}
+
+/**
+ * An administrator unlinked this device.
+ *
+ * Until now the desktop learned this only from the next request's 401, so a
+ * device that had just been revoked kept working — reading, and posting —
+ * until something happened to ask the server a question. Both phones sign out
+ * on the socket event instead (Android `_deviceUnlinked`, iOS
+ * `.updateDeviceLinked`), and this is the same path the 401 takes, so the
+ * behaviour after it is already written and tested.
+ *
+ * Found 2026-09-09: `device:unlinked` was declared in `ZillitSocketEvents` and
+ * subscribed by nobody — a class of gap the realtime audit could not see,
+ * because a declaration reads as coverage.
+ */
+private fun CoroutineScope.signOutWhenDeviceUnlinked(
+    events: SocketEventBus,
+    sessionExpired: MutableSharedFlow<Unit>,
+) = launch {
+    events.on(ZillitSocketEvents.Session.UnlinkedDevice).collect {
+        ZillitLog.w("Socket") { "this device was unlinked; returning to sign-in" }
+        sessionExpired.tryEmit(Unit)
+    }
+}
+
+/**
+ * The open production, removed or changed under the user.
+ *
+ * Deletion is the one that cannot be ignored: the production is gone, so the
+ * shell goes back to the picker rather than letting the next save fail. A
+ * rename or a deletion mark only re-reads the context, which is where the
+ * name in the shell and the rights on it both come from.
+ *
+ * Both phones carry these four; the desktop carried none of them.
+ */
+private fun CoroutineScope.followOpenProject(
+    events: SocketEventBus,
+    activeProject: MutableStateFlow<com.zillit.desktop.feature.auth.domain.Project?>,
+    projectContext: ProjectContextLoader?,
+    onProjectDeleted: suspend () -> Unit,
+) = launch {
+    projectLifecycle(events) { activeProject.value?.id }.collect { change ->
+        val projectId = activeProject.value?.id ?: return@collect
+        when (change) {
+            ProjectLifecycle.Deleted -> {
+                ZillitLog.w("Socket") { "the open production was deleted; returning to the picker" }
+                onProjectDeleted()
+            }
+
+            ProjectLifecycle.Changed -> {
+                ZillitLog.i("Socket") { "the open production changed; re-reading its context" }
+                projectContext?.load(projectId)
+            }
+        }
     }
 }
 
@@ -799,6 +857,7 @@ sealed interface AppGraph {
             )
 
             appScope.reportSocketRejections(socketClient, sessionExpired)
+            appScope.signOutWhenDeviceUnlinked(socketEvents, sessionExpired)
 
             val unitRepository = UnitRepositoryImpl(apiClient, config)
 
@@ -1040,6 +1099,16 @@ sealed interface AppGraph {
                         liveKitLine?.warmRegion()
                     }
                 },
+            )
+
+            // A production deleted or renamed under the user. The deselect is
+            // the repository's own local one — the server has already removed
+            // the production, so asking it again would only fail.
+            appScope.followOpenProject(
+                events = socketEvents,
+                activeProject = activeProject,
+                projectContext = projectContext,
+                onProjectDeleted = { projectRepository.leaveProject() },
             )
 
             // Notice bodies are AES-encrypted with the header key, in both

@@ -18,6 +18,8 @@ internal fun AppGraph.Ready.buildExternalUsers(
 ): ExternalUsersViewModel = ExternalUsersViewModel(
     repository = ExternalUsersRepositoryImpl(apiClient, config),
     rights = rightsRequests,
+    // A guest added or removed by another coordinator lands live.
+    events = socketEvents,
     // Which production the rows belong to — sampled per open, so a roster
     // fetched under one production is wiped before another's window shows.
     projectId = { projectContext?.context?.value?.project?.projectId },

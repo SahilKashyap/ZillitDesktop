@@ -9,6 +9,7 @@ import com.zillit.desktop.core.common.toEpochMillisOrNull
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
+import com.zillit.desktop.core.forms.CustomFieldGroup
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
@@ -72,7 +73,8 @@ class PurchaseOrderRepositoryImpl(
     override val refreshes: Flow<PoRefresh> =
         bus?.onAny(PO_SYNC_EVENTS, PoSyncEnvelope.serializer())
             ?.mapNotNull { (event, envelope) ->
-                poRefreshFor(event).takeIf { envelope.inProject(currentProjectId()) }
+                poRefreshFor(event, envelope.formModule)
+                    ?.takeIf { envelope.inProject(currentProjectId()) }
             }
             ?: emptyFlow()
 
@@ -251,6 +253,9 @@ internal fun NewPurchaseOrder.body(): JsonObject = buildJsonObject {
     effectiveDate?.let { put("effective_date", JsonPrimitive(it)) }
     put("net_amount", JsonPrimitive(total))
     putIfPresent("status", status)
+    // Only when the production has configured some: an empty array on every
+    // order would be a column of nothing on the printed form.
+    if (customFields.isNotEmpty()) put("custom_fields", customFields.toJson())
     put(
         "line_items",
         buildJsonArray {
@@ -271,6 +276,30 @@ internal fun NewPurchaseOrder.body(): JsonObject = buildJsonObject {
             }
         },
     )
+}
+
+/** The extra fields, grouped by the section a reader sees them under. */
+private fun List<CustomFieldGroup>.toJson(): JsonArray = buildJsonArray {
+    forEach { group ->
+        add(
+            buildJsonObject {
+                put("section", JsonPrimitive(group.section))
+                put(
+                    "fields",
+                    buildJsonArray {
+                        group.fields.forEach { field ->
+                            add(
+                                buildJsonObject {
+                                    put("name", JsonPrimitive(field.name))
+                                    put("value", JsonPrimitive(field.value))
+                                },
+                            )
+                        }
+                    },
+                )
+            },
+        )
+    }
 }
 
 private const val DEFAULT_PO_CURRENCY = "GBP"

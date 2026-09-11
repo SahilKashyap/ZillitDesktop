@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -52,6 +53,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.domain.LocalCopy
@@ -575,67 +577,18 @@ private fun OrderActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEve
 @Composable
 private fun RaisePage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val draft = state.draft
+    // What this production configured the form to be. An unread template shows
+    // every field, which is this form as it was before templates existed.
+    val form = state.form
+    val shows = { label: String -> form.shows(PoFormFields.DETAILS, label) }
+    val required = { label: String -> form.isRequired(PoFormFields.DETAILS, label) }
 
     ZillitScrollColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(ZillitTheme.spacing.xl),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
     ) {
-        ZillitSectionCard(title = "Who and what", icon = ZillitIcons.File) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    ZillitText(
-                        text = "Vendor",
-                        style = ZillitTheme.typography.label,
-                        color = ZillitTheme.colors.textSecondary,
-                    )
-                    ZillitSelect(
-                        value = state.vendors.firstOrNull { it.id == draft.vendorId },
-                        options = state.vendors,
-                        onSelect = { vendor ->
-                            onEvent(
-                                PoEvent.EditDraft(
-                                    draft.copy(
-                                        vendorId = vendor?.id,
-                                        vendorName = vendor?.name.orEmpty(),
-                                        // The vendor's own currency and default
-                                        // code, so the common case needs no
-                                        // further typing.
-                                        currency = vendor?.currency ?: draft.currency,
-                                        nominalCode = vendor?.defaultNominalCode ?: draft.nominalCode,
-                                    ),
-                                ),
-                            )
-                        },
-                        label = { it?.name ?: "Choose a vendor" },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                ZillitTextField(
-                    value = draft.nominalCode,
-                    onValueChange = { onEvent(PoEvent.EditDraft(draft.copy(nominalCode = it))) },
-                    label = "Nominal code",
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitTextField(
-                    value = draft.episode,
-                    onValueChange = { onEvent(PoEvent.EditDraft(draft.copy(episode = it))) },
-                    label = "Episode",
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            ZillitTextField(
-                value = draft.description,
-                onValueChange = { onEvent(PoEvent.EditDraft(draft.copy(description = it))) },
-                label = "What is being ordered",
-                singleLine = false,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
+        WhoAndWhat(state, onEvent)
 
         ZillitSectionCard(
             title = "Lines",
@@ -673,13 +626,20 @@ private fun RaisePage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
         }
 
         ZillitSectionCard(title = "Anything else", icon = ZillitIcons.Info) {
-            ZillitTextField(
-                value = draft.notes,
-                onValueChange = { onEvent(PoEvent.EditDraft(draft.copy(notes = it))) },
-                label = "Note for the approver (optional)",
-                singleLine = false,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (shows(PoFormFields.NOTES)) {
+                ZillitTextField(
+                    value = draft.notes,
+                    onValueChange = { onEvent(PoEvent.EditDraft(draft.copy(notes = it))) },
+                    label = if (required(PoFormFields.NOTES)) {
+                        "Note for the approver (required)"
+                    } else {
+                        "Note for the approver (optional)"
+                    },
+                    singleLine = false,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            UnansweredFieldsNotice(state)
             Spacer(Modifier.padding(ZillitTheme.spacing.xs))
             if (state.offline) {
                 ZillitNotice(
@@ -697,6 +657,153 @@ private fun RaisePage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             )
         }
     }
+}
+
+/** Who the order is with, and what it is for. */
+@Composable
+private fun ColumnScope.WhoAndWhat(state: PoUiState, onEvent: (PoEvent) -> Unit) {
+    val draft = state.draft
+    val form = state.form
+    val shows = { label: String -> form.shows(PoFormFields.DETAILS, label) }
+    val required = { label: String -> form.isRequired(PoFormFields.DETAILS, label) }
+
+    ZillitSectionCard(title = "Who and what", icon = ZillitIcons.File) {
+        VendorRow(state, onEvent)
+        if (shows(PoFormFields.DESCRIPTION)) {
+            ZillitTextField(
+                value = draft.description,
+                onValueChange = { onEvent(PoEvent.EditDraft(draft.copy(description = it))) },
+                label = if (required(PoFormFields.DESCRIPTION)) {
+                    "What is being ordered (required)"
+                } else {
+                    "What is being ordered"
+                },
+                singleLine = false,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        CustomFields(state, onEvent)
+    }
+}
+
+/** The vendor, the code the order posts to, and the episode. */
+@Composable
+private fun VendorRow(state: PoUiState, onEvent: (PoEvent) -> Unit) {
+    val draft = state.draft
+    val form = state.form
+    val shows = { label: String -> form.shows(PoFormFields.DETAILS, label) }
+    val required = { label: String -> form.isRequired(PoFormFields.DETAILS, label) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+
+        if (shows(PoFormFields.VENDOR)) {
+            Column(modifier = Modifier.weight(1f)) {
+                ZillitText(
+                    text = if (required(PoFormFields.VENDOR)) "Vendor (required)" else "Vendor",
+                    style = ZillitTheme.typography.label,
+                    color = ZillitTheme.colors.textSecondary,
+                )
+                ZillitSelect(
+                value = state.vendors.firstOrNull { it.id == draft.vendorId },
+                options = state.vendors,
+                onSelect = { vendor ->
+                    onEvent(
+                        PoEvent.EditDraft(
+                            draft.copy(
+                                vendorId = vendor?.id,
+                                vendorName = vendor?.name.orEmpty(),
+                                // The vendor's own currency and default
+                                // code, so the common case needs no
+                                // further typing.
+                                currency = vendor?.currency ?: draft.currency,
+                                nominalCode = vendor?.defaultNominalCode ?: draft.nominalCode,
+                            ),
+                        ),
+                    )
+                },
+                    label = { it?.name ?: "Choose a vendor" },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        if (shows(PoFormFields.ACCOUNT_CODE)) {
+            ZillitTextField(
+                value = draft.nominalCode,
+                onValueChange = { onEvent(PoEvent.EditDraft(draft.copy(nominalCode = it))) },
+                label = if (required(PoFormFields.ACCOUNT_CODE)) {
+                    "Nominal code (required)"
+                } else {
+                    "Nominal code"
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        // Episode is not one of the template's system fields on either
+        // client, so it is always offered.
+        ZillitTextField(
+            value = draft.episode,
+            onValueChange = { onEvent(PoEvent.EditDraft(draft.copy(episode = it))) },
+            label = "Episode",
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/**
+ * The extra fields this production added to a purchase order.
+ *
+ * Rendered as plain text boxes whatever the field says its type is. The
+ * template offers seven types and a source for a select, and honouring those
+ * properly means the pickers this form does not have; typing a date into a
+ * text box is worse than an unconfigured field but better than a control that
+ * silently sends the wrong shape.
+ */
+@Composable
+private fun ColumnScope.CustomFields(state: PoUiState, onEvent: (PoEvent) -> Unit) {
+    val fields = state.form.custom(PoFormFields.DETAILS)
+    if (fields.isEmpty()) return
+    val draft = state.draft
+
+    fields.forEach { field ->
+        ZillitTextField(
+            value = draft.customFields[field.label].orEmpty(),
+            onValueChange = { text ->
+                onEvent(
+                    PoEvent.EditDraft(
+                        draft.copy(customFields = draft.customFields + (field.label to text)),
+                    ),
+                )
+            },
+            label = if (field.required) "${field.name} (required)" else field.name,
+            helperText = field.typeLabel.takeIf { field.knownType == null },
+            singleLine = false,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/**
+ * The required fields this form cannot offer.
+ *
+ * A template can mark one required that only the web's larger form renders —
+ * a company, a department, a delivery address. Saying so is the honest
+ * treatment: the raise is not blocked here, because there would be nothing on
+ * screen to put right, and the server decides.
+ */
+@Composable
+private fun ColumnScope.UnansweredFieldsNotice(state: PoUiState) {
+    val missing = state.form.requiredMissing(PoFormFields.DETAILS, PoFormFields.RENDERED)
+    if (missing.isEmpty()) return
+    ZillitNotice(
+        text = "This production also requires ${missing.joinToString(", ") { it.name }} on an " +
+            "order. Those are filled in on the web, not here, so this order may come back.",
+        tone = StatusTone.Pending,
+        icon = ZillitIcons.Info,
+    )
 }
 
 @Composable

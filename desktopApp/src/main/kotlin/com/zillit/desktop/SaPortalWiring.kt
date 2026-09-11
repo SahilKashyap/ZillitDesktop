@@ -18,6 +18,7 @@ import com.zillit.desktop.feature.saportal.ui.SaPortalViewModel
 internal fun AppGraph.Ready.buildSaPortal(permissions: () -> ProjectPermissions) = SaPortalViewModel(
     repository = SaPortalRepositoryImpl(apiClient, config),
     viewer = { saViewer(permissions()) },
+    events = socketEvents,
 )
 
 private fun AppGraph.Ready.saViewer(permissions: ProjectPermissions): SaViewer {

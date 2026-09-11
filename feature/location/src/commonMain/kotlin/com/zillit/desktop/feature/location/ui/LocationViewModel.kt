@@ -50,6 +50,30 @@ class LocationViewModel(
         launch {
             repository.refreshes.conflate().collect { refresh() }
         }
+        launch {
+            // The open thread only. Refreshed quietly — `loadDiscussion`
+            // raises a spinner, which is right when opening a record and
+            // wrong for every line that arrives after.
+            repository.discussionRefreshes.conflate().collect { refreshDiscussion() }
+        }
+    }
+
+    /**
+     * Re-reads the open thread without disturbing it.
+     *
+     * No spinner: the lines stay on screen and are replaced when the new ones
+     * arrive. A failure leaves what is there — a dropped refresh must not
+     * empty a discussion somebody is reading.
+     */
+    private fun refreshDiscussion() {
+        val recordId = currentState.viewing?.id ?: return
+        launch {
+            val rows = repository.messages(recordId, nowMillis())
+            if (currentState.viewing?.id != recordId) return@launch
+            (rows as? ZillitResult.Success)?.data?.let { loaded ->
+                setState { copy(discussion = loaded.reversed()) }
+            }
+        }
     }
 
     private var listening = false

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.cashexpenses.ui
 
+import com.zillit.desktop.core.forms.FormLayout
+import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashSettings
@@ -65,11 +67,21 @@ data class CashUiState(
     val search: String = "",
     val draft: SubmitDraft = SubmitDraft(),
     val floatDraft: FloatRequestDraft = FloatRequestDraft(),
+    /**
+     * What the accountant configured the float request form to be.
+     *
+     * Empty until it is read, and an unread template shows every field — a
+     * form must not blank its own controls because a fetch failed.
+     */
+    val formTemplate: FormTemplate = FormTemplate(),
     val settingsDraft: CashSettings? = null,
     val prompt: CashPrompt? = null,
     /** The receipt whose coding is open, if any. */
     val coding: CodingDraft? = null,
 ) {
+    /** The float request form's own rules — which fields show, which are required. */
+    val floatForm: FormLayout get() = FormLayout(formTemplate)
+
     /** The pages offered in the sub-navigation, for the current pipeline. */
     val sectionDestinations: List<CashDestination>
         get() = CashDestination.entries.filter {
@@ -150,6 +162,8 @@ data class FloatRequestDraft(
     val duration: String = "",
     val durationType: String = "days",
     val departmentId: String = "",
+    /** The extra fields this production added, by their form key. */
+    val customFields: Map<String, String> = emptyMap(),
 )
 
 /**

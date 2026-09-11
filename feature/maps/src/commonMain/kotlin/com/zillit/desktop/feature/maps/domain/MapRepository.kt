@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.maps.domain
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.maps.data.MapRefresh
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
@@ -14,7 +15,7 @@ interface MapRepository {
      * (`MapPage.jsx:73,100,126`). The ViewModel answers with a re-list.
      * Empty by default: tests, and hosts without a socket.
      */
-    val refreshes: Flow<Unit> get() = emptyFlow()
+    val refreshes: Flow<MapRefresh> get() = emptyFlow()
 
     suspend fun cities(): ZillitResult<List<MapCity>>
     suspend fun createCity(

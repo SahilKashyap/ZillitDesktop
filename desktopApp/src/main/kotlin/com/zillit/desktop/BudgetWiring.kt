@@ -72,6 +72,8 @@ private fun AppGraph.Ready.budgetViewModel(
     pickFile = { pickBudgetFile(this) },
     departmentName = { id -> departmentNames()[id] },
     rights = rightsRequests,
+    // A budget uploaded by a head of department appears without a reload.
+    events = socketEvents,
 )
 
 internal fun AppGraph.Ready.budgetProvider(

@@ -1,9 +1,16 @@
 package com.zillit.desktop.feature.cashexpenses.ui
 
+import com.zillit.desktop.feature.cashexpenses.domain.CashFormFields
+import com.zillit.desktop.core.forms.customValues
+import com.zillit.desktop.core.forms.FormTemplate
+import com.zillit.desktop.core.forms.FormLayout
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.cashexpenses.data.cashFormRefreshes
+import com.zillit.desktop.feature.cashexpenses.data.cashRefreshes
 import com.zillit.desktop.feature.cashexpenses.domain.AssigneeOption
 import com.zillit.desktop.feature.cashexpenses.domain.BatchAssignment
 import com.zillit.desktop.feature.cashexpenses.domain.CashQueue
@@ -61,6 +68,18 @@ class CashExpensesViewModel(
      * a person reads it the same way.
      */
     private val assignees: () -> List<AssigneeOption> = { emptyList() },
+    /** Live changes from other clients; null keeps the tool load-once. */
+    private val events: SocketEventBus? = null,
+    /**
+     * The form the accountant configured for petty cash.
+     *
+     * A seam rather than a repository call because the template belongs to the
+     * account hub's service, not this one, and the default — an empty template
+     * — is what "show every field" means.
+     */
+    private val formTemplate: suspend () -> ZillitResult<FormTemplate> = {
+        ZillitResult.Success(FormTemplate())
+    },
 ) : ZillitViewModel<CashUiState, CashEvent, CashEffect>(
     CashUiState(
         viewer = viewer(),
@@ -70,6 +89,7 @@ class CashExpensesViewModel(
 
     private var loadJob: Job? = null
     private var started = false
+    private var listening = false
 
     /**
      * Resolves who this is, then opens their landing page.
@@ -86,6 +106,7 @@ class CashExpensesViewModel(
     fun start() {
         if (started) return
         started = true
+        loadFormTemplate()
         launch {
             val identity = viewer()
             when (val metadata = repository.metadata()) {
@@ -105,6 +126,21 @@ class CashExpensesViewModel(
             // open production, which does not exist when this is built.
             setState { copy(assignees = assignees()) }
             load(currentState.destination)
+        }
+
+        // A float issued, a batch escalated, a claim verified elsewhere. Only
+        // the page on screen reloads. `listening` outlives `started`, which
+        // onProjectChanged resets, so a switch does not stack a collector.
+        val bus = events
+        if (bus != null && !listening) {
+            listening = true
+            launch {
+                cashRefreshes(bus).collect { load(currentState.destination) }
+            }
+            launch {
+                // The accountant changed which fields the float request has.
+                cashFormRefreshes(bus).collect { loadFormTemplate() }
+            }
         }
     }
 
@@ -438,8 +474,22 @@ class CashExpensesViewModel(
         }
     }
 
+    /**
+     * Reads the float request form's configuration.
+     *
+     * Failures are swallowed: the empty template shows every field, which is
+     * this form as it was before templates, and an error over a working form
+     * would be noise about something the person asking for cash cannot fix.
+     */
+    private fun loadFormTemplate() {
+        launchResult(formTemplate, { template ->
+            setState { copy(formTemplate = template) }
+        }, { })
+    }
+
     private fun submitFloatRequest() {
         val draft = currentState.floatDraft
+        val layout = currentState.floatForm
         val amount = draft.amount.trim().toDoubleOrNull()
         if (amount == null || amount <= 0) {
             sendEffect(CashEffect.Failed("Enter the amount of cash you need."))
@@ -447,6 +497,10 @@ class CashExpensesViewModel(
         }
         if (draft.purpose.isBlank()) {
             sendEffect(CashEffect.Failed("Say what the float is for."))
+            return
+        }
+        templateProblem(layout)?.let {
+            sendEffect(CashEffect.Failed(it))
             return
         }
 
@@ -457,12 +511,40 @@ class CashExpensesViewModel(
             departmentId = draft.departmentId.takeIf { it.isNotBlank() },
             duration = draft.duration.takeIf { it.isNotBlank() },
             durationType = draft.durationType,
+            customFields = listOfNotNull(
+                layout.customValues(CashFormFields.FLOAT_REQUEST, draft.customFields),
+            ),
         )
         // The form is cleared only when the request lands: clearing it here,
         // before the answer, threw the amount and purpose away on every
         // failed save.
         act("Float requested", onSuccess = { copy(floatDraft = FloatRequestDraft()) }) {
             repository.requestFloat(request)
+        }
+    }
+
+    /**
+     * What the production's own form rules refuse, or null.
+     *
+     * Only fields this screen renders. A template can mark one required that
+     * this form does not offer — a collection date, an episode — and refusing
+     * the request over a control that is not on screen would leave the person
+     * with nothing to put right. Those are the server's to judge.
+     */
+    private fun templateProblem(layout: FormLayout): String? {
+        if (!layout.isLoaded) return null
+        val draft = currentState.floatDraft
+        val required = { label: String -> layout.isRequired(CashFormFields.FLOAT_REQUEST, label) }
+        return when {
+            required(CashFormFields.DEPARTMENT) && draft.departmentId.isBlank() ->
+                "This production requires a department on every float request."
+
+            required(CashFormFields.DURATION) && draft.duration.isBlank() ->
+                "This production requires how long the float is needed for."
+
+            else -> layout.missingCustom(CashFormFields.FLOAT_REQUEST, draft.customFields)
+                .firstOrNull()
+                ?.let { "${it.name} is required on this production's float requests." }
         }
     }
 

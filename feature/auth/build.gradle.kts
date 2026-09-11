@@ -16,6 +16,7 @@ kotlin {
             implementation(project(":core:network"))
             implementation(project(":core:units"))
             implementation(project(":core:security"))
+            implementation(project(":core:socket"))
             api(project(":core:workspace"))
         }
         commonTest.dependencies {

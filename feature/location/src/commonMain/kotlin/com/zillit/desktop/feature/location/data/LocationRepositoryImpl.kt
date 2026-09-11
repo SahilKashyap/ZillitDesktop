@@ -70,6 +70,13 @@ class LocationRepositoryImpl(
             ?.map { }
             ?: emptyFlow()
 
+    /** See [LocationRepository.discussionRefreshes]. Same project guard. */
+    override val discussionRefreshes: Flow<Unit> =
+        bus?.onAny(LOCATION_DISCUSSION_EVENTS)
+            ?.filter { message -> message.payload.matchesProject(currentProjectId()) }
+            ?.map { }
+            ?: emptyFlow()
+
     override suspend fun info(status: LocationStatus): ZillitResult<List<LocationInfo>> =
         get("$base/location-info", mapOf("status" to status.wire)).mapData { data ->
             (data as? JsonArray).items().mapNotNull { parseInfo(it as? JsonObject) }.filter { !it.deleted }

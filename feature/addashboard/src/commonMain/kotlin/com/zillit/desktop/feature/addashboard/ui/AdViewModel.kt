@@ -6,6 +6,8 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.addashboard.data.adRefreshes
 import com.zillit.desktop.feature.addashboard.domain.AdDates
 import com.zillit.desktop.feature.addashboard.domain.AdRepository
 import com.zillit.desktop.feature.addashboard.domain.AdViewer
@@ -30,9 +32,12 @@ class AdViewModel(
      * chat message — the phones' flow, hosted once. See `RightsRequestSurface`.
      */
     private val rights: RightsRequestBus? = null,
+    /** Live changes from other clients; null keeps the tool load-once. */
+    private val events: SocketEventBus? = null,
 ) : ZillitViewModel<AdUiState, AdEvent, AdEffect>(AdUiState(viewer = viewer())) {
 
     private var started = false
+    private var listening = false
 
     /** Refuses, and offers the way forward the phones offer on every refusal. */
     private fun askForPostingRights() {
@@ -56,6 +61,27 @@ class AdViewModel(
         // day against the wrong date for a unit shooting in another zone.
         setState { copy(viewer = identity, shootDate = AdDates.utcMidnight(now())) }
         if (!identity.isBlocked) refresh()
+        listenOnce()
+    }
+
+    /**
+     * Somebody else's change to the day, the register or the schedule.
+     *
+     * Only the page on screen is reloaded, as Document Distribution does with
+     * the same shape: reloading a page nobody is looking at spends a request
+     * to change nothing, and the page reloads on open anyway.
+     *
+     * Guarded so reopening the window does not stack collectors.
+     */
+    private fun listenOnce() {
+        val bus = events ?: return
+        if (listening) return
+        listening = true
+        launch {
+            adRefreshes(bus).collect { kinds ->
+                if (currentState.destination.refresh in kinds) load(currentState.destination)
+            }
+        }
     }
 
     fun onProjectChanged() {

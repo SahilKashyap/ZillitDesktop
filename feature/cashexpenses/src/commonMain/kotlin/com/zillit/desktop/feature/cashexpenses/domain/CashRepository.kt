@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.cashexpenses.domain
 
+import com.zillit.desktop.core.forms.CustomFieldGroup
 import com.zillit.desktop.core.common.ZillitResult
 
 /**
@@ -192,6 +193,8 @@ data class NewFloatRequest(
     val durationType: String?,
     val bsCode: String? = null,
     val companyId: String? = null,
+    /** The extra fields this production added to the float request form. */
+    val customFields: List<CustomFieldGroup> = emptyList(),
 )
 
 /** A batch of receipts as submitted, before the server assigns it a reference. */

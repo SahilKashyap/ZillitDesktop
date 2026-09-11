@@ -78,6 +78,20 @@ class DocDistSyncTest {
         )
     }
 
+    /**
+     * Publications are a dialog, not a page.
+     *
+     * `alreadyPublished` is read when the publish dialog picks a target and
+     * dies with the dialog, so nothing standing goes stale. Neither phone
+     * acts on these either — iOS's subject has no subscriber, Android's bus
+     * event no collector — so all three clients agree.
+     */
+    @Test
+    fun `publication events stay unsubscribed`() {
+        assertEquals(null, DOC_DIST_REFRESH_BY_EVENT[SocketEventName("document_distribution:publication:added")])
+        assertEquals(null, DOC_DIST_REFRESH_BY_EVENT[SocketEventName("document_distribution:publication:deleted")])
+    }
+
     // -- the view model ----------------------------------------------------
 
     @Suppress("TooManyFunctions") // One override per repository operation.

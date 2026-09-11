@@ -23,6 +23,7 @@ internal fun AppGraph.Ready.buildAdDashboard(permissions: () -> ProjectPermissio
     viewer = { adViewer(permissions()) },
     now = { System.currentTimeMillis() },
     rights = rightsRequests,
+    events = socketEvents,
 )
 
 private fun AppGraph.Ready.crewName(userId: String): String? =

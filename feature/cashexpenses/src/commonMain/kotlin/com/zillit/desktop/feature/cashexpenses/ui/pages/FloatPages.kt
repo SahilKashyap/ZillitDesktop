@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.cashexpenses.ui.pages
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -32,6 +33,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashTopUp
 import com.zillit.desktop.feature.cashexpenses.domain.FloatStatus
 import com.zillit.desktop.feature.cashexpenses.ui.AmountAction
+import com.zillit.desktop.feature.cashexpenses.domain.CashFormFields
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
 import com.zillit.desktop.feature.cashexpenses.ui.CashPrompt
 import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
@@ -184,6 +186,11 @@ private fun CashFloat.nextAction(): FloatAction? = when (status) {
 fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     val draft = state.floatDraft
     val existing = state.myFloats.filter { it.status.isOutstanding }
+    // What this production configured the form to be. An unread template shows
+    // every field, which is this form as it was before templates existed.
+    val form = state.floatForm
+    val shows = { label: String -> form.shows(CashFormFields.FLOAT_REQUEST, label) }
+    val required = { label: String -> form.isRequired(CashFormFields.FLOAT_REQUEST, label) }
 
     ScrollingPage {
         if (existing.isNotEmpty()) {
@@ -196,6 +203,9 @@ fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         }
 
         ZillitSectionCard(title = "Request a float", icon = ZillitIcons.Wallet) {
+            // The amount and the purpose are what a float *is*; the form
+            // template can require them but never take them away, because a
+            // request without either is not a request.
             ZillitTextField(
                 value = draft.amount,
                 onValueChange = { onEvent(CashEvent.EditFloatRequest(draft.copy(amount = it))) },
@@ -212,33 +222,49 @@ fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 singleLine = false,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                ZillitTextField(
-                    value = draft.duration,
-                    onValueChange = { onEvent(CashEvent.EditFloatRequest(draft.copy(duration = it))) },
-                    label = "How long for",
-                    placeholder = "2",
-                    keyboardType = KeyboardType.Number,
-                    modifier = Modifier.weight(1f),
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    ZillitText(
-                        text = "Unit",
-                        style = ZillitTheme.typography.label,
-                        color = ZillitTheme.colors.textSecondary,
-                    )
-                    ZillitSelect(
-                        value = draft.durationType,
-                        options = DURATION_TYPES,
-                        onSelect = { onEvent(CashEvent.EditFloatRequest(draft.copy(durationType = it))) },
-                        label = { it.replaceFirstChar { char -> char.uppercase() } },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+            if (shows(CashFormFields.DURATION) || shows(CashFormFields.DURATION_TYPE)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                ) {
+                    if (shows(CashFormFields.DURATION)) {
+                        ZillitTextField(
+                            value = draft.duration,
+                            onValueChange = {
+                                onEvent(CashEvent.EditFloatRequest(draft.copy(duration = it)))
+                            },
+                            label = if (required(CashFormFields.DURATION)) {
+                                "How long for (required)"
+                            } else {
+                                "How long for"
+                            },
+                            placeholder = "2",
+                            keyboardType = KeyboardType.Number,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    if (shows(CashFormFields.DURATION_TYPE)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            ZillitText(
+                                text = "Unit",
+                                style = ZillitTheme.typography.label,
+                                color = ZillitTheme.colors.textSecondary,
+                            )
+                            ZillitSelect(
+                                value = draft.durationType,
+                                options = DURATION_TYPES,
+                                onSelect = {
+                                    onEvent(CashEvent.EditFloatRequest(draft.copy(durationType = it)))
+                                },
+                                label = { it.replaceFirstChar { char -> char.uppercase() } },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
                 }
             }
+            FloatCustomFields(state, onEvent)
+            FloatUnansweredNotice(state)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.sm),
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -503,3 +529,58 @@ private val ACTION_COLUMN = 150.dp
 private val TOPUP_ACTION_COLUMN = 190.dp
 private val TOPUP_STATUS_COLUMN = 120.dp
 private val FLOAT_STATUS_COLUMN = 150.dp
+
+
+/**
+ * The extra fields this production added to a float request.
+ *
+ * Plain text boxes whatever the field says its type is. The template offers
+ * seven types and a source for a select, and honouring those properly means
+ * pickers this form does not have; typing a date into a text box is worse than
+ * an unconfigured field but better than a control that sends the wrong shape.
+ */
+@Composable
+private fun ColumnScope.FloatCustomFields(state: CashUiState, onEvent: (CashEvent) -> Unit) {
+    val fields = state.floatForm.custom(CashFormFields.FLOAT_REQUEST)
+    if (fields.isEmpty()) return
+    val draft = state.floatDraft
+
+    fields.forEach { field ->
+        ZillitTextField(
+            value = draft.customFields[field.label].orEmpty(),
+            onValueChange = { text ->
+                onEvent(
+                    CashEvent.EditFloatRequest(
+                        draft.copy(customFields = draft.customFields + (field.label to text)),
+                    ),
+                )
+            },
+            label = if (field.required) "${field.name} (required)" else field.name,
+            helperText = field.typeLabel.takeIf { field.knownType == null },
+            singleLine = false,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/**
+ * The required fields this form cannot offer.
+ *
+ * A template can mark one required that only the web's larger form renders — a
+ * collection date, an episode, a request on somebody else's behalf. Saying so
+ * is the honest treatment: the request is not blocked here, because there
+ * would be nothing on screen to put right, and the server decides.
+ */
+@Composable
+private fun ColumnScope.FloatUnansweredNotice(state: CashUiState) {
+    val missing = state.floatForm
+        .requiredMissing(CashFormFields.FLOAT_REQUEST, CashFormFields.RENDERED)
+    if (missing.isEmpty()) return
+    ZillitNotice(
+        text = "This production also requires ${missing.joinToString(", ") { it.name }} on a " +
+            "float request. Those are filled in on the web, not here, so this request may " +
+            "come back.",
+        tone = StatusTone.Pending,
+        icon = ZillitIcons.Info,
+    )
+}

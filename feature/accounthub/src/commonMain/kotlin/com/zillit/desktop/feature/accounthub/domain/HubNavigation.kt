@@ -29,6 +29,11 @@ enum class HubArea(val slug: String, val label: String) {
     ChartOfAccounts("chart-of-accounts", "Chart of Accounts"),
     Vendors("vendors", "Vendors"),
     Approvers("approvers", "Approvers"),
+    Budget("budget", "Budget"),
+    TrialBalance("trial-balance", "Trial Balance"),
+    PeriodClose("period-close", "Period Close"),
+    BibleReport("bible-report", "Bible Report"),
+    FormConfig("form-config", "Forms Configuration"),
     ;
 
     companion object {
@@ -124,29 +129,28 @@ object HubNavigation {
                     target = HubTarget.Tool("/film-tools/payroll", "payroll_tool"),
                     gate = "payroll_tool",
                 ),
-                HubItem(
-                    id = "timecard",
-                    label = "Timecard",
-                    target = HubTarget.Tool("/film-tools/timecard", "timecard_tool"),
-                    gate = "timecard_tool",
-                ),
-                HubItem(
-                    id = "deal-memo",
-                    label = "Deal Memo",
-                    target = HubTarget.Tool("/film-tools/deal-memo", "deal_memo_tool"),
-                    gate = "deal_memo_tool",
-                ),
+                // Timecard and Deal Memo are NOT here. Both were removed from
+                // the web's sidebar when they became their own zillit tools
+                // (`AccountHubSidebar.jsx`, dated 2026-05-21 and 2026-05-18),
+                // and this file said so in its own header while listing them
+                // anyway — found 2026-09-09 reviewing against the web. They
+                // reach their tools from the Film Tools grid, as there.
             ),
         ),
         HubSection(
             title = "Reports",
             items = listOf(
-                // The web's REPORTS group; Period Close, Trial Balance and Bible
-                // Report stay out until their modules exist.
+                // Cost Report first, then Period Close, which is the web's
+                // own order in this group.
                 HubItem(
                     id = "cost-report",
                     label = "Cost Report",
                     target = HubTarget.Tool("/film-tools/cost-report", "cost_report_tool"),
+                ),
+                HubItem(
+                    id = "period-close",
+                    label = "Period Close",
+                    target = HubTarget.Page(HubArea.PeriodClose),
                 ),
             ),
         ),
@@ -158,6 +162,47 @@ object HubNavigation {
                     label = "Vendors",
                     target = HubTarget.Page(HubArea.Vendors),
                 ),
+                // The web files this under Management too, between Vendors and
+                // the reports it has and this port does not.
+                HubItem(
+                    id = "trial-balance",
+                    label = "Trial Balance",
+                    target = HubTarget.Page(HubArea.TrialBalance),
+                ),
+                HubItem(
+                    id = "bible-report",
+                    label = "Bible Report",
+                    target = HubTarget.Page(HubArea.BibleReport),
+                ),
+                // Also a hand-off. Eight tabs with a two-panel reconciliation
+                // among them: the console's sidebar beside it would leave the
+                // workspace half a screen wide.
+                HubItem(
+                    id = "bank-reconciliation",
+                    label = "Bank Reconciliation",
+                    target = HubTarget.Tool(
+                        "/film-tools/account-hub/bank-reconciliation",
+                        AccountHubViewer.TOOL_IDENTIFIER,
+                    ),
+                ),
+                // A hand-off rather than a page, unlike the web, where it
+                // renders inside the hub shell. It reaches HMRC and files a
+                // legal return, so it gets a window of its own here — the same
+                // shape as every other hand-off in this sidebar, and the same
+                // reason the console does not land people in Purchase Orders.
+                //
+                // No `gate`: the web gates it on being an accountant and on no
+                // tool right at all (`protectedRoute.jsx`), which the role
+                // filter above already does. Bank Reconciliation sits above it
+                // on the web too.
+                HubItem(
+                    id = "tax-filing",
+                    label = "Tax Filing",
+                    target = HubTarget.Tool(
+                        "/film-tools/account-hub/tax-filing",
+                        AccountHubViewer.TOOL_IDENTIFIER,
+                    ),
+                ),
             ),
         ),
         HubSection(
@@ -168,10 +213,28 @@ object HubNavigation {
                     label = "Approvers",
                     target = HubTarget.Page(HubArea.Approvers),
                 ),
+                // Above Chart of Accounts as on the web, and a page of this
+                // console's own — the hub's Budget is the versioned project
+                // budget that hangs off the chart and drives Cost Report, not
+                // the Main and Department Budget film tools, which are a
+                // different thing entirely.
+                HubItem(
+                    id = "budget",
+                    label = "Budget",
+                    target = HubTarget.Page(HubArea.Budget),
+                ),
                 HubItem(
                     id = "chart-of-accounts",
                     label = "Chart of Accounts",
                     target = HubTarget.Page(HubArea.ChartOfAccounts),
+                ),
+                // Last under Configuration, as on the web. A page of the
+                // console's own: it edits the hub's own documents and reaches
+                // nothing outside it.
+                HubItem(
+                    id = "form-config",
+                    label = "Forms Configuration",
+                    target = HubTarget.Page(HubArea.FormConfig),
                 ),
             ),
         ),
@@ -209,11 +272,38 @@ object HubNavigation {
      *
      * Production Setup when it is reachable, because that is the configuration
      * everything else in the hub reads from; otherwise the first area that is.
-     * Null means this person has no hub screens at all — a department user who
-     * reached the console — and the shell says so rather than rendering blank.
+     * Null means this person has no hub screens at all — see [landingTool].
+     *
+     * The web lands *everyone* on Purchase Orders
+     * (`poEntryPath.js`: "the Account Hub's default landing is the Purchase
+     * Orders module"). That is not copied for someone who has console screens,
+     * and the reason is the ports' different shapes: on the web PO renders
+     * inside the hub shell with the sidebar still showing, so landing there
+     * costs nothing. Here PO is a separate tool window, so doing the same
+     * would close the console the user just opened. An accountant reaches PO
+     * in one click instead.
      */
     fun landing(viewer: AccountHubViewer): HubArea? {
         val areas = areasFor(viewer)
         return areas.firstOrNull { it == HubArea.ProductionSetup } ?: areas.firstOrNull()
+    }
+
+    /**
+     * The tool to open for somebody the console has no screen for.
+     *
+     * A department user has the three spend rows and nothing the hub renders,
+     * and used to arrive at "Nothing here for you yet" — a dead end in front
+     * of a sidebar full of working rows. The web puts exactly this person in
+     * Purchase Orders, so this does too, falling back to whichever spend tool
+     * they do hold if PO is not one of them.
+     *
+     * Null only when they have no rows at all, which is the one case the empty
+     * state is honest about.
+     */
+    fun landingTool(viewer: AccountHubViewer): HubItem? {
+        if (landing(viewer) != null) return null
+        val rows = visibleTo(viewer).flatMap { it.items }
+            .filter { it.target is HubTarget.Tool }
+        return rows.firstOrNull { it.id == "purchase-orders" } ?: rows.firstOrNull()
     }
 }

@@ -130,15 +130,25 @@ class DriveSyncTest {
     }
 
     /**
-     * Sharing updates a badge on the web rather than reloading, and comments
-     * belong to the open details panel — reloading the whole list for either
-     * would throw a reader back to the top of the folder.
+     * A file shared with this user belongs in "Shared with me" straight away.
+     *
+     * The web only badges these, which is why they were left out — but the
+     * web has no shared listing to be wrong about. iOS reloads on them like
+     * any other structural change (`HomeViewModel.swift:2018`).
      */
     @Test
-    fun `sharing and comments do not reload the list`() {
+    fun `sharing reloads the list`() {
         val names = DRIVE_SYNC_EVENTS.map { it.value }
 
-        assertTrue(names.none { it.endsWith(":shared") })
+        assertTrue("drive:file:shared" in names)
+        assertTrue("drive:folder:shared" in names)
+    }
+
+    /** Comments belong to the open details panel, not to the listing. */
+    @Test
+    fun `comments do not reload the list`() {
+        val names = DRIVE_SYNC_EVENTS.map { it.value }
+
         assertTrue(names.none { it.startsWith("drive:comment") })
     }
 

@@ -16,6 +16,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlin.test.AfterTest
@@ -90,12 +94,54 @@ class NotificationsViewModelTest {
 
     private var listReads = 0
 
-    private fun viewModel(repository: FakeRepository, now: Long = 1_000L) = NotificationsViewModel(
+    private fun viewModel(
+        repository: FakeRepository,
+        now: Long = 1_000L,
+        arrivals: Flow<Unit> = emptyFlow(),
+    ) = NotificationsViewModel(
         repository = repository,
         nowMillis = { now },
         onListRead = { listReads++ },
         pageLimit = repository.pageSize,
+        arrivals = arrivals,
     )
+
+    /**
+     * A notification arriving while the bell page is open.
+     *
+     * The badge store folded these into the count all along; the list under
+     * it did not move, which is the one moment a notification list is being
+     * watched.
+     */
+    @Test
+    fun `an arriving notification re-reads the open list`() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { rows += row("first", 100) }
+        val arrivals = MutableSharedFlow<Unit>()
+        val model = viewModel(repository, arrivals = arrivals).also { it.start() }
+        runCurrent()
+        val afterOpen = repository.pageCursors.size
+
+        repository.rows += row("second", 200)
+        arrivals.emit(Unit)
+        runCurrent()
+
+        assertEquals(afterOpen + 1, repository.pageCursors.size, "the arrival re-reads the newest page")
+        assertTrue(model.state.value.rows.any { it.id == "second" }, "the new row is shown")
+    }
+
+    /** A page nobody has opened is not fetched by an arrival. */
+    @Test
+    fun `an arrival before the list is opened fetches nothing`() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { rows += row("first", 100) }
+        val arrivals = MutableSharedFlow<Unit>()
+        viewModel(repository, arrivals = arrivals)
+        runCurrent()
+
+        arrivals.emit(Unit)
+        runCurrent()
+
+        assertTrue(repository.pageCursors.isEmpty(), "nothing was asked for")
+    }
 
     @Test
     fun `the first page is asked from now, shown newest first without non-global rows, then the segment is read`() =

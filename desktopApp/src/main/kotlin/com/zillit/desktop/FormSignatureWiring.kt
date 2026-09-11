@@ -107,7 +107,8 @@ internal suspend fun pickPdf(): Pair<String, ByteArray>? = withContext(Dispatche
     runCatching { file.name to file.readBytes() }.getOrNull()
 }
 
-private fun String.safeKeyPart(): String =
+/** Shared with [agreementFiles], which writes keys the same way. */
+internal fun String.safeKeyPart(): String =
     replace(Regex("[^A-Za-z0-9._-]"), "_").take(MAX_KEY_NAME)
 
 private const val MAX_KEY_NAME = 120

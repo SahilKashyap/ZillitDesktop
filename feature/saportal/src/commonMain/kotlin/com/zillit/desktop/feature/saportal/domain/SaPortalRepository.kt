@@ -46,3 +46,18 @@ interface SaPortalRepository {
 
     suspend fun resolveQuery(id: String): ZillitResult<Unit>
 }
+
+/** Which page of the portal a socket frame reloads. */
+enum class SaRefresh {
+    /** The artiste's days, and the overview built from them. */
+    Vouchers,
+
+    /** The pay summary, which is derived from settled vouchers. */
+    Pay,
+
+    /** The query threads, from either end. */
+    Queries,
+
+    /** The artiste's own record. */
+    Profile,
+}

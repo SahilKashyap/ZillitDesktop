@@ -127,9 +127,72 @@ class AccountHubAccessTest {
             items.map { it.id },
         )
         assertTrue(items.all { it.target is HubTarget.Tool })
-        // Null, not a loading state: there is genuinely nothing here for them
-        // to open, and the console says so rather than rendering blank.
+        // Null, not a loading state: the hub renders no screen for them.
         assertNull(HubNavigation.landing(viewer))
+        // But they are not left staring at it — the web puts exactly this
+        // person in Purchase Orders, and so does the console.
+        assertEquals("purchase-orders", HubNavigation.landingTool(viewer)?.id)
+    }
+
+    /**
+     * Without Purchase Orders, they land on whichever spend tool they hold.
+     *
+     * The web's rule is "the default landing is the Purchase Orders module";
+     * a user who cannot open PO still has work here, and a dead end would be a
+     * worse answer than their next-best tool.
+     */
+    @Test
+    fun `a department user without POs lands on the tool they do have`() {
+        val viewer = AccountHubViewer.from(
+            permissions(others = listOf(ToolAccess("cash_expenses_tool", enabled = true, canView = true))),
+            userId = "u1",
+            isAccountant = false,
+        )
+
+        assertEquals("cash-expenses", HubNavigation.landingTool(viewer)?.id)
+    }
+
+    /** Nothing at all is the one case the empty state is honest about. */
+    @Test
+    fun `a viewer with no rows at all lands nowhere`() {
+        val viewer = AccountHubViewer.from(permissions(), userId = "u1", isAccountant = false)
+
+        assertNull(HubNavigation.landing(viewer))
+        assertNull(HubNavigation.landingTool(viewer))
+    }
+
+    /** An accountant has console screens, so nothing is opened for them. */
+    @Test
+    fun `an accountant is not sent to a tool`() {
+        val viewer = AccountHubViewer.from(permissions(), "u1", isAccountant = true)
+
+        assertNull(HubNavigation.landingTool(viewer))
+    }
+
+    /**
+     * Timecard and Deal Memo are not sidebar rows.
+     *
+     * Both were removed from the web's sidebar when they became their own
+     * tools, and this file's own header said so while listing them anyway.
+     * They keep their approval chains — see `ApprovalModule`.
+     */
+    @Test
+    fun `the payroll group lists payroll alone`() {
+        val viewer = AccountHubViewer.from(
+            permissions(
+                others = listOf(
+                    ToolAccess("payroll_tool", enabled = true, canView = true),
+                    ToolAccess("timecard_tool", enabled = true, canView = true),
+                    ToolAccess("deal_memo_tool", enabled = true, canView = true),
+                ),
+            ),
+            userId = "u1",
+            isAccountant = true,
+        )
+
+        val payroll = HubNavigation.visibleTo(viewer).first { it.title == "Payroll Management" }
+
+        assertEquals(listOf("payroll"), payroll.items.map { it.id })
     }
 
     @Test
@@ -173,12 +236,67 @@ class AccountHubAccessTest {
         assertEquals(
             listOf(
                 HubArea.ProductionSetup,
+                // Reports comes before Management in the sidebar.
+                HubArea.PeriodClose,
                 HubArea.Vendors,
+                // Under Management with Vendors, as the web files it.
+                HubArea.TrialBalance,
+                HubArea.BibleReport,
                 HubArea.Approvers,
+                // Budget sits above the chart it hangs off, as on the web.
+                HubArea.Budget,
                 HubArea.ChartOfAccounts,
+                // Last under Configuration, as on the web.
+                HubArea.FormConfig,
             ),
             HubNavigation.areasFor(viewer),
         )
+    }
+
+    /**
+     * Tax Filing is a hand-off, not a hub page.
+     *
+     * It reaches HMRC and files a legal return, so it gets a window of its own
+     * here — unlike the web, where it renders inside the console's shell. The
+     * row sits under Management as it does there, and it is the accountant's:
+     * a department user has no business filing a company's VAT.
+     */
+    @Test
+    fun `tax filing is offered to accountants as its own tool`() {
+        val management = HubNavigation
+            .visibleTo(AccountHubViewer.from(permissions(), "u1", isAccountant = true))
+            .first { it.title == "Management" }
+
+        val row = management.items.first { it.id == "tax-filing" }
+        assertEquals("Tax Filing", row.label)
+        assertEquals(
+            "/film-tools/account-hub/tax-filing",
+            (row.target as HubTarget.Tool).toolPath,
+        )
+        // After Bible Report and after Bank Reconciliation, as the web files it.
+        assertTrue(
+            management.items.indexOfFirst { it.id == "bible-report" } <
+                management.items.indexOfFirst { it.id == "bank-reconciliation" },
+        )
+        assertTrue(
+            management.items.indexOfFirst { it.id == "bank-reconciliation" } <
+                management.items.indexOfFirst { it.id == "tax-filing" },
+        )
+
+        val department = HubNavigation
+            .visibleTo(AccountHubViewer.from(permissions(), "u2", isAccountant = false))
+            .flatMap { it.items }
+        assertFalse(department.any { it.id == "tax-filing" })
+    }
+
+    /** Cost Report sits above Period Close under Reports, as on the web. */
+    @Test
+    fun `the reports group is in the web's order`() {
+        val reports = HubNavigation
+            .visibleTo(AccountHubViewer.from(permissions(), "u1", isAccountant = true))
+            .first { it.title == "Reports" }
+
+        assertEquals(listOf("cost-report", "period-close"), reports.items.map { it.id })
     }
 
     /** An empty section is dropped rather than rendered as a heading with nothing under it. */

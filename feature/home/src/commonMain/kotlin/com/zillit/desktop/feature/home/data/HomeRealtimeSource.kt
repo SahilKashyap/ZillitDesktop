@@ -33,6 +33,11 @@ class HomeRealtimeSource(
     private fun toEvent(message: SocketMessage): HomeRealtimeEvent? = when {
         message.event in ZillitSocketEvents.Home.Units -> HomeRealtimeEvent.UnitsChanged
 
+        // A receipt, not a post: the board shows nothing for it, and only an
+        // open read-by panel is listening.
+        message.event == ZillitSocketEvents.Home.MessageReadBy ->
+            message.payload?.readByMessageId()?.let(HomeRealtimeEvent::ReadByChanged)
+
         // A comment's payload is the comment, not the notice it belongs to,
         // so there is nothing to patch in place — the board is re-read, which
         // is what every other board does with the same events.

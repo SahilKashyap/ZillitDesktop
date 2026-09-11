@@ -74,8 +74,23 @@ fun ApproversPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) 
             },
         )
 
+        // Each tab says whether that module has a chain, from one summary call
+        // — the web's "Configured / Not started" pill. A module the summary
+        // does not answer for carries no suffix at all: unknown is not the
+        // same as unconfigured, and claiming otherwise is how Time Card read
+        // "Not started" forever on the web.
         ZillitTabStrip(
-            tabs = ApprovalModule.entries.map { ZillitTab(it.wire, it.label) },
+            tabs = ApprovalModule.entries.map { module ->
+                val known = approvals.configured[module]
+                ZillitTab(
+                    module.wire,
+                    when (known) {
+                        true -> "${module.label} · Set"
+                        false -> "${module.label} · Not set"
+                        null -> module.label
+                    },
+                )
+            },
             activeId = approvals.module.wire,
             onSelect = { wire ->
                 ApprovalModule.entries.firstOrNull { it.wire == wire }

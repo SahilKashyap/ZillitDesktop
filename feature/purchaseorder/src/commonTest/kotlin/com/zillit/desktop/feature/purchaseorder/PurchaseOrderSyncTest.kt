@@ -53,11 +53,14 @@ class PurchaseOrderSyncTest {
 
     @Test
     fun `order events reload the lists, vendor events reload the picker`() {
-        assertEquals(PoRefresh.Orders, poRefreshFor(SocketEventName("po:created")))
-        assertEquals(PoRefresh.Orders, poRefreshFor(SocketEventName("purchase-order:accept")))
-        assertEquals(PoRefresh.Orders, poRefreshFor(SocketEventName("purchase-order:approval-level:delete")))
-        assertEquals(PoRefresh.Vendors, poRefreshFor(SocketEventName("vendor:updated")))
-        assertEquals(PoRefresh.Vendors, poRefreshFor(SocketEventName("purchase-order:supplier:update")))
+        assertEquals(PoRefresh.Orders, poRefreshFor(SocketEventName("po:created"), module = null))
+        assertEquals(PoRefresh.Orders, poRefreshFor(SocketEventName("purchase-order:accept"), module = null))
+        assertEquals(
+            PoRefresh.Orders,
+            poRefreshFor(SocketEventName("purchase-order:approval-level:delete"), module = null),
+        )
+        assertEquals(PoRefresh.Vendors, poRefreshFor(SocketEventName("vendor:updated"), module = null))
+        assertEquals(PoRefresh.Vendors, poRefreshFor(SocketEventName("purchase-order:supplier:update"), module = null))
     }
 
     /**
@@ -83,7 +86,7 @@ class PurchaseOrderSyncTest {
     fun `sending an order to its supplier reloads the orders`() {
         assertEquals(
             PoRefresh.Orders,
-            poRefreshFor(SocketEventName("purchase-order:supplier:sent")),
+            poRefreshFor(SocketEventName("purchase-order:supplier:sent"), module = null),
         )
     }
 

@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -173,7 +174,11 @@ class EmailToolProvider(
  * of the two to be abandoned. Opened from the mailbox sidebar and from the
  * composer's signature menu.
  */
-class SignatureToolProvider(private val repository: SignatureRepository) : ToolProvider {
+class SignatureToolProvider(
+    private val repository: SignatureRepository,
+    /** The socket, so a sign-off written elsewhere lands on this page. */
+    private val events: SocketEventBus? = null,
+) : ToolProvider {
 
     override val path: String = SIGNATURES_PATH
     override val title: String = "Signatures"
@@ -183,7 +188,7 @@ class SignatureToolProvider(private val repository: SignatureRepository) : ToolP
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
-        val viewModel = remember { SignatureManagerViewModel(repository) }
+        val viewModel = remember { SignatureManagerViewModel(repository, events = events) }
         val state by viewModel.state.collectAsState()
 
         LaunchedEffect(viewModel) { viewModel.onEvent(SignatureEvent.Load) }

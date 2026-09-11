@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.network.ApiClient
@@ -65,6 +66,8 @@ class EmailSettingsToolProvider(
     private val folders: suspend () -> ZillitResult<List<EmailFolder>> = { ZillitResult.Success(emptyList()) },
     /** The Drive, for a rule's Save-attachments action; null hides the picker. */
     private val driveFolders: DriveFolderSource? = null,
+    /** The socket, so a distribution group saved elsewhere lands on this page. */
+    private val events: SocketEventBus? = null,
 ) : ToolProvider {
 
     override val path: String = EMAIL_SETTINGS_PATH
@@ -80,7 +83,9 @@ class EmailSettingsToolProvider(
                 isAdmin = isAdmin,
             )
         }
-        val groups = remember { EmailGroupsViewModel(EmailGroupRepositoryImpl(apiClient, config), crew = crew) }
+        val groups = remember {
+            EmailGroupsViewModel(EmailGroupRepositoryImpl(apiClient, config), crew = crew, events = events)
+        }
         val presets = remember { BccPresetsViewModel(BccPresetRepositoryImpl(apiClient, config), crew = crew) }
         val forwarding = remember { EmailForwardingViewModel(EmailForwardingRepositoryImpl(apiClient, config)) }
         val credentials = remember { MailboxCredentialsViewModel(MailboxCredentialsRepositoryImpl(apiClient, config)) }
@@ -125,6 +130,8 @@ class EmailContactsToolProvider(
     private val config: AppConfig,
     /** Opens the composer addressed to someone. */
     private val onWriteTo: (String) -> Unit = {},
+    /** The socket, so an address saved elsewhere lands on this page. */
+    private val events: SocketEventBus? = null,
 ) : ToolProvider {
 
     override val path: String = EMAIL_CONTACTS_PATH
@@ -134,7 +141,9 @@ class EmailContactsToolProvider(
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
-        val viewModel = remember { EmailContactsViewModel(ContactRepositoryImpl(apiClient, config)) }
+        val viewModel = remember {
+            EmailContactsViewModel(ContactRepositoryImpl(apiClient, config), events = events)
+        }
         val state by viewModel.state.collectAsState()
 
         LaunchedEffect(viewModel) {

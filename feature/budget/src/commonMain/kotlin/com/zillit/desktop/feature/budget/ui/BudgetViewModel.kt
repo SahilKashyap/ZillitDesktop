@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.budget.ui
 
+import com.zillit.desktop.feature.budget.data.BUDGET_SYNC_EVENTS
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.common.ZillitResult
@@ -34,6 +36,11 @@ class BudgetViewModel(
      * department budget with nothing to call itself.
      */
     private val departmentName: (String) -> String? = { null },
+    /**
+     * The socket, so a budget uploaded by a head of department appears for the
+     * accountant watching the list. Null in tests and on a build with no socket.
+     */
+    private val events: SocketEventBus? = null,
     /**
      * Where "ask an admin for this right" goes; null leaves the plain refusal.
      *
@@ -73,6 +80,12 @@ class BudgetViewModel(
      * starts on Main and falls back to the department when the main budget is
      * not theirs (`BudgetPrimaryComponent.jsx:130-141`).
      */
+    init {
+        // Reload rather than patch: a save can replace the main budget or add
+        // a department one, and the list is split by that type.
+        events?.let { bus -> launch { bus.onAny(BUDGET_SYNC_EVENTS).collect { load() } } }
+    }
+
     private fun load() {
         val rights = viewer()
         val opening = if (rights.departmentOnly) BudgetTab.Department else BudgetTab.Main

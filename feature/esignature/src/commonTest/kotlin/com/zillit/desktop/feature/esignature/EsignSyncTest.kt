@@ -64,6 +64,9 @@ class EsignSyncTest {
         override suspend fun deleteDraft(envelopeId: String) = ZillitResult.Success(Unit)
         override suspend fun remind(envelopeId: String, recipientId: String?) = ZillitResult.Success(Unit)
         override suspend fun markViewed(envelopeId: String) = ZillitResult.Success(Unit)
+        override suspend fun acceptTerms(envelopeId: String) = ZillitResult.Success(Unit)
+        override suspend fun voidEnvelope(envelopeId: String, reason: String) =
+            ZillitResult.Success(Unit)
         override suspend fun sign(envelopeId: String, answers: List<SignedField>) = ZillitResult.Success(Unit)
         override suspend fun decline(envelopeId: String, reason: String) = ZillitResult.Success(Unit)
         override suspend fun auditTrail(envelopeId: String) = ZillitResult.Success(emptyList<AuditEntry>())

@@ -210,6 +210,9 @@ import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistToolProvider
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.ui.AccountHubToolProvider
+import com.zillit.desktop.core.forms.FormModule
+import com.zillit.desktop.feature.bankrec.ui.BankRecViewModel
+import com.zillit.desktop.feature.taxfiling.ui.TaxFilingViewModel
 import com.zillit.desktop.feature.accounthub.ui.AccountHubViewModel
 import com.zillit.desktop.feature.budget.ui.BudgetViewModel
 import com.zillit.desktop.feature.weather.ui.WeatherViewModel
@@ -1184,12 +1187,20 @@ private const val BADGE_POLL_MILLIS = 60_000L
  * or renamed, this user's rights on a tool changed. The grid's permissions
  * gate every feature, so this listens app-wide rather than only while the
  * Tools tab is open; Android does the same from its base socket listener.
+ *
+ * Both spellings of a rights change are here. The grid's own
+ * `access-grid:*-rights:update` was all this watched until 2026-09-09, so a
+ * right moved through a tool's page — which the server announces as
+ * `continuity:posting-rights:update` and friends — left the stale gate on
+ * screen ([ZillitSocketEvents.ToolRights]).
  */
 @Composable
 private fun ToolsRefresh(ready: AppGraph.Ready, home: HomeViewModel?) {
     if (home == null) return
     LaunchedEffect(ready, home) {
-        val moved = ZillitSocketEvents.ToolsGrid.All + ZillitSocketEvents.AccessGrid.All
+        val moved = ZillitSocketEvents.ToolsGrid.All +
+            ZillitSocketEvents.AccessGrid.All +
+            ZillitSocketEvents.ToolRights.All
         ready.socketEvents.onAny(moved).collect {
             home.onEvent(HomeEvent.Reload)
         }
@@ -1258,6 +1269,9 @@ private fun ProjectScopedLoads(
         viewModels.permissionGrid?.onProjectChanged()
         // The outside-contact directory is the previous production's until it reloads.
         viewModels.externalUsers?.onProjectChanged()
+        // A reconciliation belongs to one production's bank accounts; carrying
+        // the previous one's periods would show another shoot's statement.
+        viewModels.bankRec?.onProjectChanged()
     }
 
     // The calls above run while the tool grid is still out — `projectId` flips
@@ -2386,6 +2400,10 @@ internal class AppViewModels(
     val dealMemos: DealMemoViewModel?,
     /** The finance console that hosts the rest of the accounting tools. */
     val accountHub: AccountHubViewModel?,
+    /** HMRC Making Tax Digital — reached from the console's own sidebar. */
+    val taxFiling: TaxFilingViewModel?,
+    /** Bank Reconciliation — also reached from the console's sidebar. */
+    val bankRec: BankRecViewModel?,
     /** The embedded budget application's launch page. */
     val budgetBuilder: BudgetBuilderViewModel?,
     /** Standard forms, documents for signature, and the signature block. */
@@ -2614,6 +2632,9 @@ private fun rememberAppViewModels(
                     },
                     // The grid rereads at once; its own socket echo may not come.
                     onToolsChanged = { home?.onEvent(HomeEvent.Reload) },
+                    // Crew, departments and the join queues move under a second
+                    // coordinator; the page being looked at should say so.
+                    events = graph.socketEvents,
                 )
             },
             account = ready?.let(::buildAccount),
@@ -2632,16 +2653,24 @@ private fun rememberAppViewModels(
                     repository = graph.cashRepository,
                     viewer = { graph.cashViewer() },
                     assignees = { graph.cashAssignees() },
+                    events = graph.socketEvents,
+                    // As with purchase orders: the float request form's
+                    // configuration is the account hub's document.
+                    formTemplate = graph.formTemplateFor(FormModule.CashExpenses),
                 )
             },
             cardExpenses = ready?.let { graph ->
-                CardExpensesViewModel(graph.cardRepository) { graph.cardViewer() }
+                CardExpensesViewModel(graph.cardRepository, graph.socketEvents) { graph.cardViewer() }
             },
             purchaseOrders = ready?.let { graph ->
                 PurchaseOrderViewModel(
                     repository = graph.purchaseOrderRepository,
                     viewer = { graph.poViewer() },
                     offline = graph.offlineSupport,
+                    // The form's configuration belongs to the account hub's
+                    // service, not the purchase-order one, so it is handed in
+                    // rather than fetched by the module's own repository.
+                    formTemplate = graph.formTemplateFor(FormModule.PurchaseOrders),
                 )
             },
             timecards = ready?.let { graph ->
@@ -2665,9 +2694,18 @@ private fun rememberAppViewModels(
             accountHub = ready?.let { graph ->
                 AccountHubViewModel(
                     repository = graph.accountHubRepository,
+                    events = graph.socketEvents,
                     viewer = { graph.accountHubViewer(permissions()) },
+                    agreementFiles = graph.agreementFiles(),
+                    defaultReportPeriod = ::defaultReportPeriod,
+                    clock = System::currentTimeMillis,
+                    // The pay breakdown's scope names departments; the hub's
+                    // own service does not list them, so the host does.
+                    departments = { graph.departmentNames() },
                 )
             },
+            taxFiling = ready?.buildTaxFiling(),
+            bankRec = ready?.buildBankRec(),
             budgetBuilder = ready?.let { graph ->
                 BudgetBuilderViewModel(
                     resolveViewer = { BudgetBuilderViewer.from(permissions()) },
@@ -3153,7 +3191,7 @@ private fun buildRegistry(
         )
     }
     val signatures = (graph as? AppGraph.Ready)?.let {
-        SignatureToolProvider(it.signatureRepository)
+        SignatureToolProvider(it.signatureRepository, events = it.socketEvents)
     }
     // openInBrowser is the guarded launcher — https only, as the auth links use.
     val settings = SettingsToolProvider(
@@ -3177,10 +3215,15 @@ private fun buildRegistry(
             // action browses the Drive one folder level at a time.
             folders = { ready.emailRepository.folders() },
             driveFolders = DriveFolderSource { parent -> ready.driveFolderOptions(parent) },
+            events = ready.socketEvents,
         )
     }
     val mailContacts = (graph as? AppGraph.Ready)?.let { ready ->
-        EmailContactsToolProvider(apiClient = ready.apiClient, config = ready.config)
+        EmailContactsToolProvider(
+            apiClient = ready.apiClient,
+            config = ready.config,
+            events = ready.socketEvents,
+        )
     }
     // The rail's foot: SOS, and the two app pages beside it.
     val sos = (graph as? AppGraph.Ready)?.let { ready ->
@@ -3223,6 +3266,9 @@ private fun buildRegistry(
                 // the phones; the repository's read already flips the ledger
                 // (see `readingLedger`), so nothing more is owed here.
                 onListRead = {},
+                // The same frame the badge store folds into the bell's count.
+                // Without this the count went up and the open list did not.
+                arrivals = ready.socketEvents.on(ZillitSocketEvents.Badges.Save).map { },
             ),
         )
     }
@@ -3306,6 +3352,10 @@ private fun buildRegistry(
     // The console hands off to the finance tools above via its own window
     // navigator, so it needs nothing from here beyond its view model.
     val accountHub = viewModels.accountHub?.let { AccountHubToolProvider(it) }
+    // Registered under the console's own path, which is the only place it is
+    // reached from — see TaxFilingToolProvider.
+    val taxFiling = viewModels.taxFiling?.let { taxFilingProvider(it) }
+    val bankRec = viewModels.bankRec?.let { bankRecProvider(it) }
     // The launch is the host's act — a loopback gateway plus a Chromium
     // window — so the provider is handed a launcher, not a repository.
     val budgetBuilder = viewModels.budgetBuilder?.let { viewModel ->
@@ -3354,7 +3404,7 @@ private fun buildRegistry(
         home, chat, email, signatures, mailSettings, mailContacts, settings, admin, notifications,
         sos, help,
         cash, cards, orders, timecards, payroll, deals, distribution, drive,
-        accountHub, budgetBuilder, formSignature, esignature,
+        accountHub, taxFiling, bankRec, budgetBuilder, formSignature, esignature,
         callSheet, productionReport, adReport, wrapReport, sides, permissionGrid,
         info, confidentialInfo, reports, scriptNotes,
         catering, accounts,

@@ -14,6 +14,16 @@ sealed interface HomeRealtimeEvent {
 
     /** Units or rights changed; the tab strip has to be refetched. */
     data object UnitsChanged : HomeRealtimeEvent
+
+    /**
+     * Somebody read [messageId], so its read-by list has grown.
+     *
+     * Only the open read-by panel cares. The board itself shows no receipt,
+     * which is why this is not a notice change — both phones react the same
+     * way, refreshing the page only when it is showing that message
+     * (`ReadByUserPage.kt:452`, iOS `ProjectObserver.swift:5335`).
+     */
+    data class ReadByChanged(val messageId: String) : HomeRealtimeEvent
 }
 
 /**
@@ -66,6 +76,9 @@ fun List<Notice>.applyRealtime(
         if (!event.matchesUnit(selectedUnitId)) this else filterNot { it.id == event.noticeId }
 
     HomeRealtimeEvent.UnitsChanged -> this
+
+    // A receipt is not a post. The panel reads it; the board does not.
+    is HomeRealtimeEvent.ReadByChanged -> this
 }
 
 /** Null unit id means "not scoped" — the server omits it on some events. */
@@ -74,6 +87,7 @@ private fun HomeRealtimeEvent.matchesUnit(selectedUnitId: String?): Boolean = wh
     is HomeRealtimeEvent.NoticeEdited -> unitId == null || unitId == selectedUnitId
     is HomeRealtimeEvent.NoticeDeleted -> unitId == null || unitId == selectedUnitId
     HomeRealtimeEvent.UnitsChanged -> true
+    is HomeRealtimeEvent.ReadByChanged -> true
 }
 
 /** Same post, whether it is known by server id or by the id we generated. */

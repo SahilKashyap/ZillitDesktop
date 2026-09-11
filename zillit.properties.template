@@ -65,6 +65,13 @@ PROD_CHAT_BASE_URL=
 PROD_CONTINUITY_BASE_URL=
 PROD_AD_DASHBOARD_BASE_URL=
 PROD_COST_REPORT_BASE_URL=
+# Tax filing (HMRC Making Tax Digital). Only `taxfilingapi-dev` answers today;
+# QA and production resolve but return 503, so the service is not deployed
+# there yet. Set it anyway — an absent key throws on first use, where a host
+# that is not there reports a readable failure.
+PROD_TAX_FILING_BASE_URL=
+# Bank Reconciliation. Its own host; answers in all three environments.
+PROD_BANK_RECONCILIATION_BASE_URL=
 
 # -- Consolidated services. Thirteen per-module backends were merged into four
 # -- hosts; the per-module keys above are kept so a rollback is a config edit.

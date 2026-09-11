@@ -28,6 +28,16 @@ val GROUP_READ_UNTILL = SocketEventName("group-chat:read-untill")
 val UPDATE_REACTION = SocketEventName("update_reaction")
 val TYPING = SocketEventName("private-chat:typing")
 
+/**
+ * A group's typing, which is a different name from a DM's.
+ *
+ * Android picks the event by the conversation on both halves —
+ * `ChatSocketHelper.emitFotChatTyping` chooses the name from `isGroupChat`,
+ * and it listens on both. The desktop used the private name for everything,
+ * so a group's composer neither told anybody nor heard anyone.
+ */
+val GROUP_TYPING = SocketEventName("group-chat:typing")
+
 /** An already-delivered message whose text changed. Same row shape as a send. */
 val PRIVATE_CHAT_EDIT = SocketEventName("private-chat:edit")
 val GROUP_CHAT_EDIT = SocketEventName("group-chat:edit")
@@ -153,12 +163,21 @@ fun ackComplaint(ack: JsonElement): String? {
 /** Everything sent to [peerId] has reached [state]. */
 data class ReadReceipt(val peerId: String, val state: ChatSendState)
 
-/** A typing event's sender and whether they started — `{detail:{…}}` or flat. */
-fun typingFrom(payload: JsonElement): Pair<String, Boolean>? {
-    val obj = payload as? JsonObject ?: return null
-    val detail = (obj["detail"] as? JsonObject) ?: obj
-    val sender = detail.str("sender") ?: return null
-    return sender to (detail.str("status") == "start")
+/**
+ * A typing event's conversation and whether it started.
+ *
+ * The conversation is what the screen matches on, and the two flavours name
+ * it in different fields: a DM's is the person who typed, a group's is the
+ * room they typed into. A group also broadcasts back to its own author, so
+ * our own keystrokes are dropped here rather than shown as somebody else's.
+ */
+fun typingFrom(payload: JsonElement, isGroup: Boolean = false, myUserId: String? = null): Pair<String, Boolean>? {
+    val detail = ((payload as? JsonObject)?.get("detail") as? JsonObject) ?: payload as? JsonObject
+    val sender = detail?.str("sender")
+    // Our own keystrokes come back from the room we sent them to.
+    if (sender == null || (isGroup && sender == myUserId)) return null
+    val conversation = if (isGroup) detail.str("receiver") else sender
+    return conversation?.let { it to (detail.str("status") == "start") }
 }
 
 /**

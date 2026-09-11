@@ -439,11 +439,13 @@ class AccountHubScreenRenderTest {
     /**
      * A department user reaching the console has no hub screens at all.
      *
-     * Null area is a real state, not a loading one, and the console says so
-     * rather than rendering a blank frame that looks broken.
+     * Null area is a real state, not a loading one. Their first tool has
+     * already been opened in its own window by then
+     * (`HubNavigation.landingTool`), so the body says where it went — the web
+     * puts the same person straight into Purchase Orders.
      */
     @Test
-    fun `a viewer with no hub screens is told so`() {
+    fun `a viewer with no hub screens is pointed at their tools`() {
         val departmentUser = AccountHubViewer(
             userId = "u2",
             isAccountant = false,
@@ -464,7 +466,7 @@ class AccountHubScreenRenderTest {
                     )
                 }
             }
-            onNodeWithText("Nothing here for you yet").assertIsDisplayed()
+            onNodeWithText("Your tools are open").assertIsDisplayed()
             onNodeWithText("Purchase Orders").assertIsDisplayed()
         }
     }

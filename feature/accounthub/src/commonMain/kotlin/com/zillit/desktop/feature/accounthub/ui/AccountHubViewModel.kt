@@ -4,6 +4,12 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.accounthub.data.hubRefreshes
+import com.zillit.desktop.feature.accounthub.domain.ReportPeriod
+import com.zillit.desktop.feature.accounthub.domain.TrialBalanceQuery
+import com.zillit.desktop.feature.accounthub.domain.BudgetStatus
+import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
 import com.zillit.desktop.feature.accounthub.domain.AccountHubRepository
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
@@ -13,6 +19,7 @@ import com.zillit.desktop.feature.accounthub.domain.ApprovalSequence
 import com.zillit.desktop.feature.accounthub.domain.ApprovalTier
 import com.zillit.desktop.feature.accounthub.domain.BankAccount
 import com.zillit.desktop.feature.accounthub.domain.CoaLineType
+import com.zillit.desktop.feature.accounthub.domain.DayTypes
 import com.zillit.desktop.feature.accounthub.domain.Companies
 import com.zillit.desktop.feature.accounthub.domain.Company
 import com.zillit.desktop.feature.accounthub.domain.HubArea
@@ -53,11 +60,41 @@ import kotlinx.coroutines.delay
 @Suppress("TooManyFunctions") // One handler per user action; see detekt.yml.
 class AccountHubViewModel(
     private val repository: AccountHubRepository,
+    /**
+     * Live changes from other clients; null keeps the hub load-once.
+     *
+     * Ahead of [viewer] deliberately: `viewer` is the trailing lambda at call
+     * sites, and a parameter added after it would capture that lambda instead.
+     */
+    private val events: SocketEventBus? = null,
     /** Who is looking, read at start rather than at construction. See the class doc. */
     private val viewer: () -> AccountHubViewer,
+    /**
+     * Choosing and storing agreement documents; null leaves that section
+     * read-only. The picker and the upload are the host's, not this service's.
+     */
+    private val agreementFiles: AgreementFiles? = null,
+    /**
+     * The period a report opens on — the calendar year so far, from the host.
+     *
+     * A seam because a year boundary needs a calendar and a zone, and this
+     * module has neither. The default is a zero window, which the report reads
+     * as "nothing asked for yet".
+     */
+    private val defaultReportPeriod: () -> ReportPeriod = { ReportPeriod(0, 0) },
+    /** Now, for the period close's "this week". Injected so it is testable. */
+    private val clock: () -> Long = { 0 },
+    /**
+     * Department id to name.
+     *
+     * The host's, because the hub's own service does not list them and the
+     * pay breakdown's scope names departments rather than numbering them.
+     */
+    private val departments: suspend () -> Map<String, String> = { emptyMap() },
 ) : ZillitViewModel<AccountHubUiState, AccountHubEvent, AccountHubEffect>(AccountHubUiState()) {
 
     private var started = false
+    private var listening = false
     private var searchJob: Job? = null
     private val setupSections = SetupSections(this)
 
@@ -80,7 +117,32 @@ class AccountHubViewModel(
             )
         }
         if (!identity.isBlocked) {
-            currentState.area?.let(::load)
+            val area = currentState.area
+            if (area != null) {
+                load(area)
+            } else {
+                // No console screen for this person: open their work instead
+                // of a dead end. The web puts the same user in Purchase
+                // Orders (`HubNavigation.landingTool`).
+                HubNavigation.landingTool(identity)?.let { row ->
+                    onEvent(AccountHubEvent.OpenTool(row))
+                }
+            }
+        }
+
+        // A vendor verified, an account code changed. Only the area on screen
+        // reloads; every area reloads on open anyway. `listening` outlives
+        // `started`, which onProjectChanged resets, so a production switch
+        // does not stack a second collector.
+        val bus = events
+        if (bus != null && !listening) {
+            listening = true
+            launch {
+                hubRefreshes(bus).collect { area ->
+                    if (currentState.area == area) load(area)
+                }
+            }
+            formConfigActions.listen(bus)
         }
     }
 
@@ -113,6 +175,15 @@ class AccountHubViewModel(
         when (event) {
             is AccountHubEvent.Open -> open(event.area)
             is AccountHubEvent.OpenTool -> handOff(event)
+            AccountHubEvent.PickAgreementFiles,
+            is AccountHubEvent.EditAgreementQueue,
+            AccountHubEvent.UploadAgreementFiles,
+            is AccountHubEvent.DeleteAgreementDocument,
+            -> agreementActions.onEvent(event)
+            AccountHubEvent.OpenTimecardSetup ->
+                sendEffect(AccountHubEffect.OpenTool(TIMECARD_TOOL_PATH, "Time Card"))
+            is AccountHubEvent.OpenSpendSetup ->
+                sendEffect(AccountHubEffect.OpenTool(event.which.route, event.which.title))
             AccountHubEvent.Refresh -> currentState.area?.let(::load)
             AccountHubEvent.ClearNotice -> setState { copy(notice = null) }
             else -> onScreenEvent(event)
@@ -122,9 +193,10 @@ class AccountHubViewModel(
     private fun onScreenEvent(event: AccountHubEvent) {
         when (event) {
             is AccountHubEvent.SwitchSetupTab -> setState { copy(setup = setup.copy(tab = event.tab)) }
-            else -> onSetupEvent(event)
+            else -> if (!formConfigActions.onEvent(event)) onSetupEvent(event)
         }
     }
+
 
     // -- shell --------------------------------------------------------------
 
@@ -151,7 +223,12 @@ class AccountHubViewModel(
             HubArea.ProductionSetup -> loadSetup()
             HubArea.ChartOfAccounts -> loadChart()
             HubArea.Vendors -> loadVendors()
-            HubArea.Approvers -> loadApprovals()
+            HubArea.Approvers -> approvalActions.load()
+            HubArea.Budget -> reportActions.loadBudget()
+            HubArea.TrialBalance -> reportActions.openTrialBalance()
+            HubArea.PeriodClose -> reportActions.loadPeriodLock()
+            HubArea.BibleReport -> reportActions.openBibleReport()
+            HubArea.FormConfig -> formConfigActions.open()
         }
     }
 
@@ -179,9 +256,6 @@ class AccountHubViewModel(
         launchResult(repository::assetTags, { tags ->
             setState { copy(setup = setup.copy(assetTags = setup.assetTags.loaded(tags))) }
         }, ::report)
-        launchResult(repository::projectBudget, { budget ->
-            setState { copy(setup = setup.copy(budget = setup.budget.loaded(BudgetForm.from(budget)))) }
-        }, ::report)
         launchResult(repository::productionSchedule, { schedule ->
             setState {
                 copy(setup = setup.copy(schedule = setup.schedule.loaded(ScheduleForm.from(schedule))))
@@ -198,6 +272,33 @@ class AccountHubViewModel(
         launchResult(repository::payrollBureaus, { rows ->
             setState { copy(setup = setup.copy(payrollBureaus = setup.payrollBureaus.loaded(rows))) }
         }, ::report)
+        launchResult(repository::allowancesRentals, { value ->
+            setState { copy(setup = setup.copy(allowances = setup.allowances.loaded(value))) }
+        }, ::report)
+        launchResult(repository::payrollSettings, { value ->
+            setState { copy(setup = setup.copy(payrollSettings = setup.payrollSettings.loaded(value))) }
+        }, ::report)
+        launchResult(repository::purchaseOrderSetup, { value ->
+            setState { copy(setup = setup.copy(poSetup = setup.poSetup.loaded(value))) }
+        }, ::report)
+        launchResult(repository::invoicesSetup, { value ->
+            setState { copy(setup = setup.copy(invoicesSetup = setup.invoicesSetup.loaded(value))) }
+        }, ::report)
+        launchResult(repository::nonUnionPay, { value ->
+            setState { copy(setup = setup.copy(nonUnionPay = setup.nonUnionPay.loaded(value))) }
+        }, ::report)
+        // Swallowed: without names the picker shows ids, which is worse to
+        // read but never loses a scope the production configured.
+        launchResult({ ZillitResult.Success(departments()) }, { rows ->
+            setState { copy(setup = setup.copy(departments = rows)) }
+        }, { })
+        launchResult(repository::dayTypes, { rows ->
+            // Seeded on read as well as on save, so a fresh project shows the
+            // three defaults rather than an empty catalogue — and so the
+            // section does not read as unsaved the moment it loads.
+            setState { copy(setup = setup.copy(dayTypes = setup.dayTypes.loaded(DayTypes.seeded(rows)))) }
+        }, ::report)
+        agreementActions.load()
         loadBanks()
         loadCatalogues()
         launch {
@@ -238,7 +339,9 @@ class AccountHubViewModel(
         }
     }
 
-    @Suppress("CyclomaticComplexMethod") // One branch per action.
+    // One line per setup event; a map keyed by event type would hide which
+    // section each one belongs to, which is the only thing worth reading here.
+    @Suppress("CyclomaticComplexMethod", "LongMethod")
     private fun onSetupEvent(event: AccountHubEvent) {
         when (event) {
             is AccountHubEvent.EditCompanies ->
@@ -258,6 +361,83 @@ class AccountHubViewModel(
             }
             is AccountHubEvent.EditDealConditions -> setState {
                 copy(setup = setup.copy(dealConditions = setup.dealConditions.edit(event.conditions)))
+            }
+            is AccountHubEvent.EditTrialBalanceQuery -> setState {
+                copy(trialBalance = trialBalance.copy(draft = event.query))
+            }
+            AccountHubEvent.RefreshTrialBalance -> reportActions.runTrialBalance()
+            is AccountHubEvent.ProposePeriodClose -> setState {
+                copy(periodClose = periodClose.copy(pendingCloseMillis = event.asOfMillis))
+            }
+            AccountHubEvent.ConfirmPeriodClose -> reportActions.confirmPeriodClose()
+            is AccountHubEvent.EditBibleQuery -> setState { copy(bible = bible.copy(draft = event.query)) }
+            AccountHubEvent.RefreshBibleReport -> reportActions.runBibleReport()
+            is AccountHubEvent.ToggleBibleAccount -> setState {
+                val next = if (event.code in bible.collapsed) {
+                    bible.collapsed - event.code
+                } else {
+                    bible.collapsed + event.code
+                }
+                copy(bible = bible.copy(collapsed = next))
+            }
+            AccountHubEvent.CancelPeriodClose -> setState {
+                copy(periodClose = periodClose.copy(pendingCloseMillis = null))
+            }
+            AccountHubEvent.OpenBudgetImport,
+            AccountHubEvent.CloseBudgetImport,
+            AccountHubEvent.PickBudgetFile,
+            is AccountHubEvent.EditBudgetImportMeta,
+            is AccountHubEvent.SetCoaImportMode,
+            AccountHubEvent.CommitBudgetImport,
+            -> budgetImportActions.onEvent(event)
+            is AccountHubEvent.SelectBudgetVersion -> {
+                setState { copy(budget = budget.copy(selectedId = event.id, lines = emptyList())) }
+                event.id?.let(reportActions::loadBudgetLines)
+            }
+            is AccountHubEvent.EditNonUnionPay -> setState {
+                copy(setup = setup.copy(nonUnionPay = setup.nonUnionPay.edit(event.value)))
+            }
+            is AccountHubEvent.ApplyPayToEveryone -> setState {
+                val pay = setup.nonUnionPay
+                copy(
+                    setup = setup.copy(
+                        nonUnionPay = pay.edit(
+                            if (event.everyone) {
+                                pay.edited.appliedToEveryone()
+                            } else {
+                                pay.edited.appliedTo(pay.edited.departmentIds)
+                            },
+                        ),
+                    ),
+                )
+            }
+            is AccountHubEvent.TogglePayDepartment -> setState {
+                val pay = setup.nonUnionPay
+                val next = if (event.on) {
+                    pay.edited.departmentIds + event.departmentId
+                } else {
+                    pay.edited.departmentIds - event.departmentId
+                }
+                copy(setup = setup.copy(nonUnionPay = pay.edit(pay.edited.appliedTo(next))))
+            }
+            is AccountHubEvent.EditDayTypes -> setState {
+                copy(setup = setup.copy(dayTypes = setup.dayTypes.edit(event.rows)))
+            }
+            is AccountHubEvent.EditInvoicesSetup -> setState {
+                copy(setup = setup.copy(invoicesSetup = setup.invoicesSetup.edit(event.value)))
+            }
+            is AccountHubEvent.EditPoSetup -> setState {
+                copy(setup = setup.copy(poSetup = setup.poSetup.edit(event.value)))
+            }
+            AccountHubEvent.PickPoTerms -> agreementActions.pickPoTerms()
+            AccountHubEvent.ClearPoTerms -> setState {
+                copy(setup = setup.copy(poSetup = setup.poSetup.edit(setup.poSetup.edited.copy(termsDocument = null))))
+            }
+            is AccountHubEvent.EditPayrollSettings -> setState {
+                copy(setup = setup.copy(payrollSettings = setup.payrollSettings.edit(event.value)))
+            }
+            is AccountHubEvent.EditAllowances -> setState {
+                copy(setup = setup.copy(allowances = setup.allowances.edit(event.value)))
             }
             is AccountHubEvent.EditPayrollBureaus -> setState {
                 copy(setup = setup.copy(payrollBureaus = setup.payrollBureaus.edit(event.bureaus)))
@@ -482,190 +662,43 @@ class AccountHubViewModel(
 
     // -- vendors ------------------------------------------------------------
 
-    private fun loadVendors() {
-        setState { copy(vendors = vendors.copy(loading = true)) }
-        launchResult({ repository.vendors(currentState.vendors.search) }, { rows ->
-            setState { copy(vendors = vendors.copy(rows = rows, loading = false)) }
-        }, { error ->
-            setState { copy(vendors = vendors.copy(loading = false)) }
-            report(error)
-        })
-    }
+    private val vendorActions = VendorActions(this)
 
-    @Suppress("CyclomaticComplexMethod") // One branch per action.
-    private fun onVendorEvent(event: AccountHubEvent) {
-        when (event) {
-            is AccountHubEvent.SearchVendors -> {
-                setState { copy(vendors = vendors.copy(search = event.term)) }
-                debounced(::loadVendors)
-            }
-            is AccountHubEvent.SelectVendor -> selectVendor(event.id)
-            is AccountHubEvent.ComposeVendor -> composeVendor(event)
-            is AccountHubEvent.UpdateVendorDraft -> setState {
-                copy(vendors = vendors.copy(form = vendors.form?.copy(draft = event.draft)))
-            }
-            AccountHubEvent.DismissVendorForm -> setState { copy(vendors = vendors.copy(form = null)) }
-            AccountHubEvent.SaveVendor -> saveVendor()
-            is AccountHubEvent.VerifyVendor -> verifyVendor(event.id)
-            is AccountHubEvent.DeleteVendor -> deleteVendor(event.id)
-            else -> onApprovalEvent(event)
+    private val agreementActions = AgreementActions(this, agreementFiles)
+
+    private val reportActions = ReportActions(this, defaultReportPeriod)
+
+    private val formConfigActions = FormConfigActions(this)
+
+    private val approvalActions = ApprovalActions(this)
+
+    /** The chain of screen dispatchers ends here — see [VendorActions]. */
+    internal fun onApprovalEvent(event: AccountHubEvent) = approvalActions.onEvent(event)
+
+    private val budgetImportActions = BudgetImportActions(this, agreementFiles)
+
+    /** Whether a budget file can be imported at all — the host wired storage. */
+    internal val canImportBudget: Boolean get() = budgetImportActions.isAvailable
+
+    /**
+     * Re-reads the versions after an import created one, and shows it.
+     *
+     * The list otherwise keeps whatever was selected, which after an import is
+     * the version the accountant was looking at *before* they made a new one.
+     */
+    internal fun reloadBudget(selecting: String?) {
+        if (selecting != null) {
+            setState { copy(budget = budget.copy(selectedId = selecting, lines = emptyList())) }
         }
+        reportActions.loadBudget()
     }
 
-    private fun selectVendor(id: String?) {
-        setState { copy(vendors = vendors.copy(selectedId = id, history = emptyList())) }
-        val vendorId = id ?: return
-        setState { copy(vendors = vendors.copy(historyLoading = true)) }
-        launchResult({ repository.vendorHistory(vendorId) }, { rows ->
-            setState { copy(vendors = vendors.copy(history = rows, historyLoading = false)) }
-        }, { error ->
-            setState { copy(vendors = vendors.copy(historyLoading = false)) }
-            report(error)
-        })
-    }
+    /** Whether the agreements section can accept a file at all. */
+    internal val canAttachAgreements: Boolean get() = agreementFiles != null
 
-    private fun composeVendor(event: AccountHubEvent.ComposeVendor) {
-        if (!requireEdit()) return
-        val editing = event.editing
-        setState {
-            copy(
-                vendors = vendors.copy(
-                    form = VendorForm(
-                        editingId = editing?.id,
-                        draft = editing?.let(NewVendor::from) ?: NewVendor(),
-                    ),
-                ),
-            )
-        }
-    }
+    private fun loadVendors() = vendorActions.load()
 
-    private fun saveVendor() {
-        val form = currentState.vendors.form ?: return
-        val problem = form.draft.validationError()
-        if (problem != null) {
-            sendEffect(AccountHubEffect.Failed(problem))
-            return
-        }
-        setState { copy(vendors = vendors.copy(form = form.copy(saving = true))) }
-        launchResult(
-            { form.editingId?.let { repository.updateVendor(it, form.draft) } ?: repository.createVendor(form.draft) },
-            {
-                setState { copy(vendors = vendors.copy(form = null), notice = "Vendor saved.") }
-                loadVendors()
-            },
-            { error ->
-                setState { copy(vendors = vendors.copy(form = form.copy(saving = false))) }
-                report(error)
-            },
-        )
-    }
-
-    private fun verifyVendor(id: String) {
-        // Not `requireEdit`: verification is one of the two operations the
-        // service reserves for the accounts department.
-        if (!requireAccountant()) return
-        launchResult({ repository.verifyVendor(id) }, {
-            setState { copy(notice = "Vendor verified.") }
-            loadVendors()
-        }, ::report)
-    }
-
-    private fun deleteVendor(id: String) {
-        if (!requireEdit()) return
-        launchResult({ repository.deleteVendor(id) }, {
-            setState { copy(vendors = vendors.copy(selectedId = null), notice = "Vendor removed.") }
-            loadVendors()
-        }, ::report)
-    }
-
-    // -- approvals ----------------------------------------------------------
-
-    private fun loadApprovals() {
-        setState { copy(approvals = approvals.copy(loading = true)) }
-        launchResult({ repository.approvalConfigs(currentState.approvals.module) }, { rows ->
-            setState { copy(approvals = approvals.copy(configs = rows, loading = false)) }
-        }, { error ->
-            setState { copy(approvals = approvals.copy(loading = false)) }
-            report(error)
-        })
-    }
-
-    private fun onApprovalEvent(event: AccountHubEvent) {
-        when (event) {
-            is AccountHubEvent.SwitchApprovalModule -> {
-                setState { copy(approvals = approvals.copy(module = event.module, configs = emptyList())) }
-                loadApprovals()
-            }
-            is AccountHubEvent.EditApprovalConfig -> editApprovalConfig(event.config)
-            is AccountHubEvent.UpdateApprovalConfig ->
-                setState { copy(approvals = approvals.copy(editing = event.config)) }
-            AccountHubEvent.AddApprovalLevel -> addApprovalLevel()
-            is AccountHubEvent.RemoveApprovalLevel -> removeApprovalLevel(event.order)
-            AccountHubEvent.SaveApprovalConfig -> saveApprovalConfig()
-            AccountHubEvent.DismissApprovalConfig -> setState { copy(approvals = approvals.copy(editing = null)) }
-            else -> Unit
-        }
-    }
-
-    private fun editApprovalConfig(config: ApprovalConfig?) {
-        if (!requireAccountant()) return
-        val target = config ?: ApprovalConfig(
-            module = currentState.approvals.module,
-            scope = ApprovalScope.All,
-            tiers = listOf(ApprovalTier(order = 1)),
-        )
-        setState {
-            // A chain with no levels gets one, so the editor opens on something
-            // to fill in rather than on an empty panel with an Add button.
-            val seeded = if (target.tiers.isEmpty()) target.copy(tiers = listOf(ApprovalTier(1))) else target
-            copy(approvals = approvals.copy(editing = seeded))
-        }
-    }
-
-    private fun addApprovalLevel() = setState {
-        val editing = approvals.editing ?: return@setState this
-        val next = editing.tiers + ApprovalTier(order = editing.tiers.size + 1)
-        copy(approvals = approvals.copy(editing = editing.copy(tiers = next)))
-    }
-
-    private fun removeApprovalLevel(order: Int) = setState {
-        val editing = approvals.editing ?: return@setState this
-        // Renumbered on removal so the levels stay 1..N — a gap in `order` is
-        // what the sequence rule reads as an unfilled level.
-        val next = editing.tiers.filterNot { it.order == order }
-            .mapIndexed { index, tier -> tier.copy(order = index + 1) }
-        copy(approvals = approvals.copy(editing = editing.copy(tiers = next)))
-    }
-
-    private fun saveApprovalConfig() {
-        val editing = currentState.approvals.editing ?: return
-        if (!requireAccountant()) return
-        val problem = ApprovalSequence.validationError(editing.tiers)
-        if (problem != null) {
-            sendEffect(AccountHubEffect.Failed(problem))
-            return
-        }
-        setState { copy(approvals = approvals.copy(saving = true)) }
-        launchResult(
-            // Compacted on the way out: trailing blanks the user left behind
-            // are dropped rather than persisted as empty levels that stall a
-            // document forever.
-            { repository.saveApprovalConfig(editing.copy(tiers = ApprovalSequence.compacted(editing.tiers))) },
-            {
-                setState {
-                    copy(
-                        approvals = approvals.copy(editing = null, saving = false),
-                        notice = "Approvers saved.",
-                    )
-                }
-                loadApprovals()
-            },
-            { error ->
-                setState { copy(approvals = approvals.copy(saving = false)) }
-                report(error)
-            },
-        )
-    }
+    private fun onVendorEvent(event: AccountHubEvent) = vendorActions.onEvent(event)
 
     // -- shared -------------------------------------------------------------
 
@@ -716,7 +749,7 @@ class AccountHubViewModel(
      * single search term, measured on Document Distribution before the same
      * fix went in there.
      */
-    private fun debounced(block: () -> Unit) {
+    internal fun debounced(block: () -> Unit) {
         searchJob?.cancel()
         searchJob = launch {
             delay(SEARCH_DEBOUNCE_MS)
@@ -724,7 +757,7 @@ class AccountHubViewModel(
         }
     }
 
-    private fun report(error: ZillitError) {
+    internal fun report(error: ZillitError) {
         sendEffect(AccountHubEffect.Failed(error.localised()))
     }
 
@@ -738,6 +771,25 @@ class AccountHubViewModel(
 
     internal fun mayEdit(): Boolean = requireEdit()
 
+    internal fun mayActAsAccountant(): Boolean = requireAccountant()
+
+    /** The host's clock, for the one screen that needs "now" on screen. */
+    internal fun nowMillis(): Long = clock()
+
+    internal fun sendSideEffect(effect: AccountHubEffect) = sendEffect(effect)
+
+    /** [launch] is protected on the base class; collaborators need it too. */
+    internal fun launchWork(block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) = launch(block)
+
+    /** [launchResult] is protected on the base class; collaborators need it too. */
+    internal fun <T> runResult(
+        block: suspend () -> ZillitResult<T>,
+        onSuccess: (T) -> Unit,
+        onError: (ZillitError) -> Unit = {},
+    ) = launchResult(block, onSuccess, onError)
+
+    internal fun newLocalId(prefix: String): String = "$prefix-${localIdCounter++}"
+
     internal fun <T> commitSection(
         marking: AccountHubUiState.() -> AccountHubUiState,
         call: suspend () -> ZillitResult<T>,
@@ -746,11 +798,18 @@ class AccountHubViewModel(
         notice: String,
     ) = commit(marking, call, done, failed, notice)
 
-    private fun newLocalId(prefix: String): String = "$prefix-${localIdCounter++}"
-
     private var localIdCounter = 1
 
     private companion object {
+        /**
+         * Where the Time Card tile hands off to.
+         *
+         * The literal rather than `TIMECARD_PATH`: this module does not depend
+         * on `feature:timecard`, and the sidebar's own tool rows name their
+         * routes the same way.
+         */
+        const val TIMECARD_TOOL_PATH = "/film-tools/timecard"
+
         const val SEARCH_DEBOUNCE_MS = 300L
 
         /**

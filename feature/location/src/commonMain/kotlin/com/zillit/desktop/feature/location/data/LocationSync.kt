@@ -15,9 +15,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * shortlist — an event for another shortlist is picked up when that tab
  * loads.
  *
- * The message families (`location_message_*`, `locationUnit_message_*`,
- * LocationPage.jsx:2198-2260) are NOT here: their handlers only refetch
- * unread badges for the page's chat rail, which this module does not carry.
+ * The message family is not here either — it has its own list below, because
+ * it reloads a different thing.
  */
 val LOCATION_SYNC_EVENTS: List<SocketEventName> = listOf(
     SocketEventName("location:created"),
@@ -40,3 +39,26 @@ internal fun JsonElement?.matchesProject(here: String?): Boolean {
         ?: return true
     return incoming == here
 }
+
+/**
+ * The record discussion's wire names.
+ *
+ * The web ignores these (`LocationPage.jsx:2198-2260` only refetches unread
+ * badges for a chat rail this module does not carry), but **both phones drive
+ * the thread from them** — iOS `location:message:added` →
+ * `.updateMessageViaSocket` → refetch, Android `_isMessageAdded`. The desktop
+ * has the thread the web lacks, so the phones are the right reference and this
+ * was a real gap (audited 2026-09-07, wired 2026-09-09).
+ *
+ * `:message:deleted:multiple` and no singular: on this board the wire only
+ * ever sends the plural.
+ */
+val LOCATION_DISCUSSION_EVENTS: List<SocketEventName> = listOf(
+    "location:message:added",
+    "location:message:edited",
+    "location:message:deleted:multiple",
+    "location:message:comment:added",
+    "location:message:comment:edited",
+    "location:message:comment:deleted",
+    "location:message:readby:update",
+).map(::SocketEventName)

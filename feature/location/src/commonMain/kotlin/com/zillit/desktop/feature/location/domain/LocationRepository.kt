@@ -17,6 +17,14 @@ interface LocationRepository {
      */
     val refreshes: Flow<Unit> get() = emptyFlow()
 
+    /**
+     * A line added to the open record's thread by somebody else.
+     *
+     * Separate from [refreshes] because it reloads a different thing: the
+     * shortlist does not move when a note is left on one record.
+     */
+    val discussionRefreshes: Flow<Unit> get() = emptyFlow()
+
     /** The folder source for one shortlist — flat, grouped client-side. */
     suspend fun info(status: LocationStatus): ZillitResult<List<LocationInfo>>
 

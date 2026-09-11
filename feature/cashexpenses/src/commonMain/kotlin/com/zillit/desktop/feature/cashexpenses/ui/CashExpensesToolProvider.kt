@@ -53,6 +53,14 @@ class CashExpensesToolProvider(
         // here rather than in its constructor.
         LaunchedEffect(viewModel) { viewModel.start() }
 
+        // A deep link lands on the page it names — the workspace resolves this
+        // provider by longest prefix, so the tail arrives intact. Production
+        // Setup's Petty Cash tile uses it to open the settings that live here.
+        LaunchedEffect(route.path) {
+            CashDestination.fromSlug(route.path.removePrefix(CASH_EXPENSES_PATH).trim('/'))
+                ?.let { viewModel.onEvent(CashEvent.Open(it)) }
+        }
+
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {

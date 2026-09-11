@@ -45,6 +45,16 @@ class CardExpensesToolProvider(
         // here rather than in its constructor.
         LaunchedEffect(viewModel) { viewModel.start() }
 
+        // A deep link lands on the page it names. The workspace resolves this
+        // provider by longest prefix, so `/film-tools/card-expenses/settings`
+        // arrives here with its tail intact — which is how Production Setup's
+        // Card tile opens the settings that live in this tool rather than
+        // duplicating them in the hub.
+        LaunchedEffect(route.path) {
+            CardDestination.fromSlug(route.path.removePrefix(CARD_EXPENSES_PATH).trim('/'))
+                ?.let { viewModel.onEvent(CardEvent.Open(it)) }
+        }
+
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {

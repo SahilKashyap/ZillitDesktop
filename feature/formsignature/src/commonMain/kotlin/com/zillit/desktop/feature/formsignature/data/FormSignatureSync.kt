@@ -21,10 +21,16 @@ import com.zillit.desktop.feature.formsignature.domain.FormSignRefresh
  *  - `signed`/`counter:signed` refetch both lists (`FormPage.jsx:506/523`
  *    beside the StandardFormsV2 pair above), so they map to both kinds.
  *
- * Deliberately absent: the chat family (`document:message:*`) — the
- * desktop tool has no discussion surface — and the V1-only per-user add
- * variants (`document:added:user:*`, `document:added:saved:*`), which the
- * V2 reference pages never listen to.
+ * The four per-user and library add variants (`document:added:user:form`,
+ * `:contract`, `document:added:saved:form`, `:contract`) are here too. They
+ * were excluded as "V1-only" because the web's V2 pages ignore them — but
+ * iOS's Form & Signature **2.0**, the same tool this ports, refreshes the
+ * standard-forms list from all four (`StandardFormsView.swift:40-51`), and a
+ * form assigned to this user is exactly what a signing surface must show
+ * without being reopened. Corrected 2026-09-09.
+ *
+ * Deliberately absent: the chat family (`document:message:*`) — the desktop
+ * tool has no discussion surface.
  */
 internal val FORM_SIGN_SYNC_EVENTS: List<SocketEventName> = listOf(
     SocketEventName("document:added:general"),
@@ -39,6 +45,10 @@ internal val FORM_SIGN_SYNC_EVENTS: List<SocketEventName> = listOf(
     SocketEventName("document:revised"),
     SocketEventName("document:participant:added"),
     SocketEventName("document:participant:removed"),
+    SocketEventName("document:added:user:form"),
+    SocketEventName("document:added:user:contract"),
+    SocketEventName("document:added:saved:form"),
+    SocketEventName("document:added:saved:contract"),
 )
 
 private val FORMS_EVENTS = setOf(
@@ -46,6 +56,12 @@ private val FORMS_EVENTS = setOf(
     "document:deleted",
     "document:signed",
     "document:counter:signed",
+    // Assigned to this user, or added to the library. iOS refreshes the same
+    // standard-forms list for all four.
+    "document:added:user:form",
+    "document:added:user:contract",
+    "document:added:saved:form",
+    "document:added:saved:contract",
 )
 
 private val DOCUMENT_EVENTS = setOf(

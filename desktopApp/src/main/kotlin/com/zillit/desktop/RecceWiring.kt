@@ -67,4 +67,6 @@ internal fun AppGraph.Ready.buildRecce(permissions: () -> ProjectPermissions) = 
     // The IANA zone the server's PDF prints wall-clocks in — the web sends
     // `Intl.DateTimeFormat().resolvedOptions().timeZone`.
     timezone = { TimeZone.getDefault().id },
+    // A scout day added by somebody else should not wait for a reopen.
+    events = socketEvents,
 )

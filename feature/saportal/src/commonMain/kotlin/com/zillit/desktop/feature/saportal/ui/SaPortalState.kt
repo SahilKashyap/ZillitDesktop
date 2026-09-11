@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.saportal.ui
 
+import com.zillit.desktop.feature.saportal.domain.SaRefresh
 import com.zillit.desktop.feature.saportal.domain.ArtisteQuery
 import com.zillit.desktop.feature.saportal.domain.PayStatement
 import com.zillit.desktop.feature.saportal.domain.SaProfile
@@ -16,6 +17,20 @@ enum class SaDestination(val slug: String, val label: String) {
     Pay("pay", "Pay"),
     Queries("queries", "Queries"),
     Profile("profile", "My details"),
+    ;
+
+    /**
+     * Which socket refresh kind this page answers to.
+     *
+     * The overview is built from the vouchers, so it moves with them.
+     */
+    val refresh: SaRefresh
+        get() = when (this) {
+            Dashboard, Vouchers -> SaRefresh.Vouchers
+            Pay -> SaRefresh.Pay
+            Queries -> SaRefresh.Queries
+            Profile -> SaRefresh.Profile
+        }
 }
 
 /**

@@ -36,6 +36,8 @@ internal fun AppGraph.Ready.buildCastBoard(
     board = board,
     permissions = permissions,
     rights = rightsRequests,
+    // A record added by another department should not wait for a reopen.
+    events = socketEvents,
 )
 
 internal fun AppGraph.Ready.castBoardProvider(viewModel: CastingViewModel, path: String) = CastingToolProvider(

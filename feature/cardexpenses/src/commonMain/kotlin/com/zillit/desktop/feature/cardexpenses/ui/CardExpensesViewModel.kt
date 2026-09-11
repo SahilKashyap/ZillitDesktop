@@ -4,6 +4,8 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.cardexpenses.data.cardRefreshes
 import com.zillit.desktop.feature.cardexpenses.domain.BulkAction
 import com.zillit.desktop.feature.cardexpenses.domain.BulkCoding
 import com.zillit.desktop.feature.cardexpenses.domain.BulkItem
@@ -246,6 +248,13 @@ sealed interface CardEffect {
 @Suppress("TooManyFunctions") // One handler per user action; the alternative is a 300-line when.
 class CardExpensesViewModel(
     private val repository: CardRepository,
+    /**
+     * Live changes from other clients; null keeps the tool load-once.
+     *
+     * Ahead of [viewer] deliberately: `viewer` is the trailing lambda at call
+     * sites, and a parameter added after it would capture that lambda instead.
+     */
+    private val events: SocketEventBus? = null,
     /** Read at start, not at construction — see the cash module's equivalent. */
     private val viewer: () -> CardViewer,
 ) : ZillitViewModel<CardUiState, CardEvent, CardEffect>(
@@ -254,12 +263,24 @@ class CardExpensesViewModel(
 
     private var loadJob: Job? = null
     private var started = false
+    private var listening = false
 
     /** Resolves who this is, then opens their landing page. Idempotent. */
     fun start() {
         if (started) return
         started = true
         startInternal()
+
+        // Somebody else's approval, coding or import. Only the page on screen
+        // reloads. `listening` outlives `started`, which onProjectChanged
+        // resets, so a production switch does not stack a second collector.
+        val bus = events
+        if (bus != null && !listening) {
+            listening = true
+            launch {
+                cardRefreshes(bus).collect { currentState.destination.let(::load) }
+            }
+        }
     }
 
     /** Re-reads the viewer when the open production changes. */

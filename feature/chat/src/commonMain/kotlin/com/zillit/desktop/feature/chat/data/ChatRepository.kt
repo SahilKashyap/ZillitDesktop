@@ -17,6 +17,7 @@ import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.SocketMessage
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.ChatSendState
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -69,7 +70,12 @@ interface ChatRepository {
     suspend fun conversationBacklog(): ZillitResult<ConversationBacklog> =
         ZillitResult.Success(ConversationBacklog())
 
-    /** Peers currently typing to us: peer id to started/stopped. */
+    /**
+     * Conversations somebody is typing into: conversation id to started/stopped.
+     *
+     * A DM's conversation is the person, a group's is the room — the same id
+     * the open thread is keyed by either way.
+     */
     val typing: Flow<Pair<String, Boolean>>
 
     /** How far our own messages have got, as the other end reports it. */
@@ -134,6 +140,18 @@ interface ChatRepository {
     val silenced: Flow<ChatSilence> get() = kotlinx.coroutines.flow.emptyFlow()
 
     /**
+     * A room was created, renamed or removed by somebody else.
+     *
+     * Carries nothing: the listing is a single cheap GET, and the payloads
+     * describe one room while the list is ordered and badged as a whole.
+     *
+     * These three were declared in `ZillitSocketEvents` and subscribed by
+     * nobody (found 2026-09-09), so a group made or left on a phone did not
+     * appear or disappear here until something else refreshed the listing.
+     */
+    val roomChanges: Flow<Unit> get() = kotlinx.coroutines.flow.emptyFlow()
+
+    /**
      * Fires when the rows behind [conversationBacklog] moved without this
      * repository's knowledge — the host's ledger seeded, or a frame it
      * applied. Empty when the backlog is the server's own page.
@@ -166,7 +184,7 @@ interface ChatRepository {
     fun newestActivity(): Map<String, Long>
 
     /** Tells [receiverId] we started or stopped writing. */
-    suspend fun sendTyping(receiverId: String, started: Boolean)
+    suspend fun sendTyping(receiverId: String, started: Boolean, isGroup: Boolean = false)
 
     suspend fun history(
         otherUserId: String,
@@ -297,10 +315,15 @@ class ChatRepositoryImpl(
     private val silencedIds = mutableSetOf<String>()
     private val updateReaction = scoped(UPDATE_REACTION)
     private val typingEvent = scoped(TYPING)
+    private val groupTypingEvent = scoped(GROUP_TYPING)
     private val privateEdit = scoped(PRIVATE_CHAT_EDIT)
     private val groupEdit = scoped(GROUP_CHAT_EDIT)
     private val privateDelete = scoped(PRIVATE_CHAT_DELETE)
     private val groupDelete = scoped(GROUP_CHAT_DELETE)
+
+    // Scoped like every other name here, so a budget conversation's rooms
+    // arrive as `budget:chat-room:*` and C&C's as the bare spelling.
+    private val roomEvents = CHAT_ROOM_SYNC_EVENTS.map(::scoped)
 
     private fun scoped(event: com.zillit.desktop.core.socket.SocketEventName) =
         com.zillit.desktop.core.socket.SocketEventName(scope.event(event.value))
@@ -349,8 +372,15 @@ class ChatRepositoryImpl(
             message.also(::remember)
         }
 
-    override val typing: Flow<Pair<String, Boolean>> =
-        bus.on(typingEvent).hereOnly().mapNotNull { it.payload?.let(::typingFrom) }
+    override val roomChanges: Flow<Unit> =
+        bus.onAny(roomEvents).hereOnly().map { }
+
+    override val typing: Flow<Pair<String, Boolean>> = merge(
+        bus.on(typingEvent).hereOnly().mapNotNull { it.payload?.let { p -> typingFrom(p) } },
+        bus.on(groupTypingEvent).hereOnly().mapNotNull {
+            it.payload?.let { p -> typingFrom(p, isGroup = true, myUserId = myUserId()) }
+        },
+    )
 
     override val receipts: Flow<ReadReceipt> =
         bus.on(readUntill).hereOnly().mapNotNull { message ->
@@ -437,9 +467,10 @@ class ChatRepositoryImpl(
         }
     }
 
-    override suspend fun sendTyping(receiverId: String, started: Boolean) {
+    override suspend fun sendTyping(receiverId: String, started: Boolean, isGroup: Boolean) {
         val me = myUserId() ?: return
-        bus.emit(typingEvent, typingEnvelope(me, receiverId, started, scope.messageTool), JsonElement.serializer())
+        val event = if (isGroup) groupTypingEvent else typingEvent
+        bus.emit(event, typingEnvelope(me, receiverId, started, scope.messageTool), JsonElement.serializer())
     }
 
     /** The session cache, emptied whenever the open production changes. */

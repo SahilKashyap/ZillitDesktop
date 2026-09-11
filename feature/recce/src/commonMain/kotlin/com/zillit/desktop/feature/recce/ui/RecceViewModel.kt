@@ -6,6 +6,8 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.units.ProductionUnit
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.recce.data.RECCE_SYNC_EVENTS
 import com.zillit.desktop.feature.recce.domain.RecceRepository
 import com.zillit.desktop.feature.recce.domain.RecceStatus
 import com.zillit.desktop.feature.recce.domain.RecceTransfer
@@ -23,11 +25,35 @@ class RecceViewModel(
     private val resolveViewer: () -> RecceViewer,
     private val newUniqueId: () -> String,
     private val timezone: () -> String,
+    /**
+     * The socket, so a scout day added by somebody else appears without a
+     * reopen. Null in tests and on a build with no socket.
+     */
+    private val events: SocketEventBus? = null,
 ) : ZillitViewModel<RecceUiState, RecceEvent, RecceEffect>(RecceUiState()) {
 
     fun start() {
         setState { copy(viewer = resolveViewer()) }
         refresh()
+        listenForChanges()
+    }
+
+    /** Set up once: [start] runs on every visit to the window. */
+    private var listening = false
+
+    /**
+     * Somebody else added, changed or removed a recce.
+     *
+     * Reloads rather than patching: the list is filtered by unit and status
+     * and the payload carries one row (or, for a delete, only ids), so the
+     * fetch that already merges correctly is the honest answer.
+     */
+    private fun listenForChanges() {
+        val bus = events ?: return
+        if (listening) return
+        listening = true
+
+        launch { bus.onAny(RECCE_SYNC_EVENTS).collect { refresh() } }
     }
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.

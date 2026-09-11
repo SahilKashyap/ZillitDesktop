@@ -52,6 +52,18 @@ val PO_ORDER_SYNC_EVENTS: List<SocketEventName> = listOf(
     // choice is not settled, so subscribe to the pair.
     SocketEventName("purchase-order:approval-level:delete"),
     SocketEventName("purchase-order:approval-level:removed"),
+    // The create/update twins, added 2026-09-09: subscribing to a level's
+    // removal but not its creation left a queue that shrank live and grew
+    // only on reload. Android answers `create` with `_poApprovalLevel` and
+    // logs `update`; iOS answers all three with `.updatePoLevelsNotification`.
+    SocketEventName("purchase-order:approval-level:create"),
+    SocketEventName("purchase-order:approval-level:update"),
+    // The address an order is delivered to prints on its header, so a change
+    // to one dates every order on screen — the same reason `posetting:update`
+    // is here. Android `_poDeliveryAddress`, iOS `.updatePoAddressNotification`.
+    SocketEventName("purchase-order:delivery-address:create"),
+    SocketEventName("purchase-order:delivery-address:update"),
+    SocketEventName("purchase-order:delivery-address:delete"),
     // Named for the supplier but it is the *order* that changed: sending one
     // moves it out of the draft list (`listofAccountandemail.jsx:60`).
     SocketEventName("purchase-order:supplier:sent"),
@@ -68,8 +80,11 @@ val PO_ORDER_SYNC_EVENTS: List<SocketEventName> = listOf(
  * `PurchaseOrdersModule.jsx:1959` with `fetchVendors`); the classic tool's
  * `purchase-order:supplier:update` → `supplier_updated`
  * (`listenerSocket.js:1399-1401`, `Suppliers.jsx:51`,
- * `CreatePurchaseOrder.jsx:381`). `supplier_created` is bridged on the web but
- * no page listens to it, so it is not subscribed here either.
+ * `CreatePurchaseOrder.jsx:381`). `purchase-order:supplier:added`
+ * (`supplier_created`) is bridged on the web but no page listens to it, and
+ * iOS registers it as an explicit no-op — so it stays unsubscribed here, and
+ * the 2026-09-07 realtime audit's flagging of it is answered rather than
+ * followed.
  */
 val PO_VENDOR_SYNC_EVENTS: List<SocketEventName> = listOf(
     SocketEventName("vendor:created"),
@@ -80,11 +95,38 @@ val PO_VENDOR_SYNC_EVENTS: List<SocketEventName> = listOf(
     SocketEventName("purchase-order:supplier:update"),
 )
 
-val PO_SYNC_EVENTS: List<SocketEventName> = PO_ORDER_SYNC_EVENTS + PO_VENDOR_SYNC_EVENTS
+/**
+ * The accountant changed what this form is.
+ *
+ * The frame names a module, so it is filtered on that: a change to the petty
+ * cash form must not reload the purchase order one. The web namespaces the
+ * same two into `ah:form_template:<module>`.
+ */
+val PO_FORM_SYNC_EVENTS: List<SocketEventName> = listOf(
+    SocketEventName("form_template:changed"),
+    SocketEventName("form_template:reset"),
+)
 
-/** Which of the tool's reads [event] invalidates. */
-internal fun poRefreshFor(event: SocketEventName): PoRefresh =
-    if (event in PO_VENDOR_SYNC_EVENTS) PoRefresh.Vendors else PoRefresh.Orders
+val PO_SYNC_EVENTS: List<SocketEventName> =
+    PO_ORDER_SYNC_EVENTS + PO_VENDOR_SYNC_EVENTS + PO_FORM_SYNC_EVENTS
+
+/**
+ * Which of the tool's reads [event] invalidates, or null when the frame is not
+ * about this form.
+ *
+ * A form-template frame names a module, and a change to Petty Cash's form must
+ * not reload this one's.
+ */
+internal fun poRefreshFor(event: SocketEventName, module: String?): PoRefresh? = when {
+    event in PO_VENDOR_SYNC_EVENTS -> PoRefresh.Vendors
+    event in PO_FORM_SYNC_EVENTS ->
+        PoRefresh.FormTemplate.takeIf { module == null || module == PO_FORM_MODULE }
+
+    else -> PoRefresh.Orders
+}
+
+/** This form's module id, as the template service names it. */
+const val PO_FORM_MODULE = "purchase_orders"
 
 /**
  * The slice of the payload every family carries: which production it is about.
@@ -99,8 +141,18 @@ internal fun poRefreshFor(event: SocketEventName): PoRefresh =
 @Serializable
 internal data class PoSyncEnvelope(
     @SerialName("project_id") val projectId: String? = null,
+    /** Only a form-template frame carries one. */
+    @SerialName("module") val module: String? = null,
+    @SerialName("data") val data: PoSyncData? = null,
 ) {
+    /** The module named, wherever the frame puts it. */
+    val formModule: String? get() = module ?: data?.module
+
     /** A frame that names another production is not ours; unnamed ones pass. */
     fun inProject(here: String?): Boolean =
         projectId == null || here == null || projectId == here
 }
+
+/** The account-hub envelope nests the entity's own fields under `data`. */
+@Serializable
+internal data class PoSyncData(@SerialName("module") val module: String? = null)

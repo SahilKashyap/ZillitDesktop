@@ -4,6 +4,9 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.settings.admin.data.ADMIN_SYNC_EVENTS
+import com.zillit.desktop.feature.settings.admin.data.ADMIN_SYNC_PAGES
 import com.zillit.desktop.feature.settings.admin.domain.AdminRepository
 import com.zillit.desktop.feature.settings.admin.domain.CrewStatus
 import com.zillit.desktop.feature.settings.admin.domain.DeletionSchedule
@@ -53,6 +56,11 @@ class AdminViewModel(
      */
     private val onToolsChanged: () -> Unit = {},
     /**
+     * The socket, so a second coordinator's changes land on the page being
+     * looked at. Null in tests and on a build with no socket.
+     */
+    private val events: SocketEventBus? = null,
+    /**
      * Whether the person at the keyboard administers this production.
      *
      * The screen already refuses everyone else — it renders `NotAnAdmin()`
@@ -67,6 +75,31 @@ class AdminViewModel(
 
     /** Destinations already read, so returning to one is not a refetch. */
     private val loaded = mutableSetOf<AdminDestination>()
+
+    init {
+        listenForChanges()
+    }
+
+    /**
+     * Somebody else changed the crew, the departments or the queues.
+     *
+     * Two things happen, and both matter. The page on screen reloads, so the
+     * admin sees it. And every *other* affected page is dropped from [loaded],
+     * so opening it next reads afresh rather than showing the copy held from
+     * before the change — the cache is what would otherwise make this look
+     * fixed while still being wrong.
+     */
+    private fun listenForChanges() {
+        val bus = events ?: return
+
+        launch {
+            bus.onAny(ADMIN_SYNC_EVENTS).collect { message ->
+                val touched = ADMIN_SYNC_PAGES[message.event].orEmpty()
+                loaded -= touched
+                if (currentState.destination in touched) load(currentState.destination)
+            }
+        }
+    }
 
     // Exhaustive dispatch over the sealed event set. The branch count is the
     // page count, not complexity — splitting it hides the vocabulary.

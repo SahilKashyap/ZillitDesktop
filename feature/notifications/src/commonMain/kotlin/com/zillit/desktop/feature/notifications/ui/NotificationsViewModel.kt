@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.notifications.ui
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -29,7 +31,25 @@ class NotificationsViewModel(
     private val onListRead: suspend () -> Unit = {},
     /** The page size the backend answers; a shorter page is the last one. */
     private val pageLimit: Int = PAGE_LIMIT,
+    /**
+     * A pulse per notification the socket delivers.
+     *
+     * This module deliberately owns no socket — the host reaches the wire, as
+     * [onListRead] says. But the bell's count moved on `notification:save`
+     * while the list under it did not, so an open bell page went stale the
+     * moment it mattered most (found 2026-09-09). The host hands the same
+     * badge stream it already collects.
+     */
+    private val arrivals: Flow<Unit> = emptyFlow(),
 ) : ZillitViewModel<NotificationsUiState, NotificationsEvent, NotificationsEffect>(NotificationsUiState()) {
+
+    init {
+        // Only once the list has been looked at: refetching a page nobody has
+        // opened spends a request to fill state the first `start()` replaces.
+        launch {
+            arrivals.collect { if (currentState.loaded) refresh() }
+        }
+    }
 
     fun start() {
         if (!currentState.loaded && !currentState.loading) refresh()

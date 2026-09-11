@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.maps
 
+import com.zillit.desktop.feature.maps.data.MapRefresh
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.maps.data.MapCanvasWire
 import com.zillit.desktop.feature.maps.domain.LocationDraft
@@ -66,7 +67,7 @@ class MapCanvasTest {
 
     private class FakeRepository(
         private val pins: List<MapLocation>,
-        override val refreshes: Flow<Unit> = MutableSharedFlow(),
+        override val refreshes: Flow<MapRefresh> = MutableSharedFlow(),
     ) : MapRepository {
         override suspend fun cities() = ZillitResult.Success(
             listOf(MapCity("c1", "Goa", "", CITY_LAT, CITY_LNG, 0.0, pins.size)),
@@ -100,7 +101,7 @@ class MapCanvasTest {
     private fun model(
         canvas: FakeCanvas,
         pins: List<MapLocation>,
-        refreshes: Flow<Unit> = MutableSharedFlow(),
+        refreshes: Flow<MapRefresh> = MutableSharedFlow(),
         viewer: MapViewer = MapViewer(canPost = true, ready = true),
     ) = MapViewModel(FakeRepository(pins, refreshes), resolveViewer = { viewer }, canvas = canvas)
 
@@ -108,7 +109,7 @@ class MapCanvasTest {
     fun `pins are pushed to the canvas on load and on refresh, coordinate-less ones dropped`() =
         runTest(dispatcher) {
             val canvas = FakeCanvas()
-            val refreshes = MutableSharedFlow<Unit>()
+            val refreshes = MutableSharedFlow<MapRefresh>()
             val model = model(canvas, listOf(pin("p1"), pin("p2", lat = null), pin("z1", zone = true)), refreshes)
 
             model.start()
@@ -121,7 +122,7 @@ class MapCanvasTest {
             assertEquals(30.0, drawn.first { it.id == "z1" }.radiusMiles)
 
             val before = canvas.pinPushes.size
-            refreshes.emit(Unit)
+            refreshes.emit(MapRefresh.Pins)
             runCurrent()
             assertTrue(canvas.pinPushes.size > before, "a socket refresh re-pushes the pins")
         }

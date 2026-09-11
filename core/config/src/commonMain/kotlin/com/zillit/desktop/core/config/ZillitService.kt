@@ -118,6 +118,26 @@ enum class ZillitService(val configKey: String) {
      * would refuse every good answer.
      */
     SupportingArtists("SUPPORTING_ARTISTS_BASE_URL"),
+
+    /**
+     * HMRC Making Tax Digital, and whatever country adapters follow.
+     *
+     * `taxfilingapi-dev` answers today; QA and production resolve but return
+     * 503, so the service is not deployed there yet (probed 2026-09-10). The
+     * keys are configured all the same — a host that is not there reports a
+     * readable failure, where an absent key throws on first use.
+     */
+    TaxFiling("TAX_FILING_BASE_URL"),
+
+    /**
+     * Bank Reconciliation — statements, matching, exceptions, fraud and FX.
+     *
+     * Its own host, `bankreconciliationapi`, which answers in all three
+     * environments (probed 2026-09-10). Note that the 406 endpoint probe is
+     * useless against it: its moduledata guard runs before routing, so an
+     * invented path answers 406 exactly as a real one does.
+     */
+    BankReconciliation("BANK_RECONCILIATION_BASE_URL"),
     Transportation("TRANSPORTATION_BASE_URL"),
     Units("UNITS_BASE_URL"),
     Wardrobe("WARDROBE_BASE_URL"),

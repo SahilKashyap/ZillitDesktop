@@ -97,10 +97,19 @@ object ZillitSocketEvents {
         val CommentEdited = SocketEventName("home:message:comment:edited")
         val CommentDeleted = SocketEventName("home:message:comment:deleted")
 
+        /**
+         * Somebody read a notice, so its read-by list has grown.
+         *
+         * Only the read-by panel moves. Both phones refresh that page from
+         * this name and the desktop listened for it nowhere, so a panel left
+         * open never gained a reader.
+         */
+        val MessageReadBy = SocketEventName("home:message:readby:update")
+
         val Messages = listOf(MessageAdded, MessageEdited, MessageDeleted, MessagesDeleted)
         val Comments = listOf(CommentAdded, CommentEdited, CommentDeleted)
         val Units = listOf(UnitCreated, UnitUpdated, UnitDeleted)
-        val All = Messages + Comments + Units
+        val All = Messages + Comments + Units + listOf(MessageReadBy)
     }
 
     object Session {
@@ -256,6 +265,41 @@ object ZillitSocketEvents {
     }
 
     /**
+     * The same rights change, announced under the tool it belongs to.
+     *
+     * The grid spells a rights move `access-grid:*-rights:update`; several
+     * tools also announce their own, and the server sends whichever the
+     * change was made through. Both phones subscribe to both families — iOS
+     * answers each with a toast plus a re-read of that tool's rights
+     * (`ProjectObserver.swift:1398`), Android from its base listener.
+     *
+     * The desktop subscribed only to the grid family, so a posting right
+     * granted or revoked on one of these tools left the old gate in place
+     * until something else reloaded the tool grid (found 2026-09-09). Every
+     * tool reads its rights from that grid, so reloading it is the whole fix.
+     *
+     * `pre_production:posting-rights:update` and
+     * `production:posting-rights:update` are the two the phones carry that
+     * are NOT here: their Pre & Production schedule tool is not ported, so
+     * there is no gate to move.
+     */
+    object ToolRights {
+        val All = listOf(
+            "home:posting-rights:update",
+            "home:viewing-rights:update",
+            "info:posting-rights:update",
+            "confidential_info:posting-rights:update",
+            "account:posting-rights:update",
+            "account:viewing-rights:update",
+            "script_notes:posting-rights:update",
+            "continuity:posting-rights:update",
+            "form_signature:posting-rights:update",
+            "form_signature:viewing-rights:update",
+            "box-schedule:posting-rights:update",
+        ).map(::SocketEventName)
+    }
+
+    /**
      * The mailbox.
      *
      * Transcribed from `BaseSocketListener.emailObservers()`. Note these are
@@ -317,6 +361,7 @@ object ZillitSocketEvents {
         Badges.ReadSync, Badges.DeleteSync, Badges.DeleteGlobalSync,
         Badges.NotificationRead, Badges.NotificationLevelRead,
         Home.MessageAdded, Home.MessageEdited, Home.MessageDeleted, Home.MessagesDeleted,
+        Home.MessageReadBy,
         Home.UnitCreated, Home.UnitUpdated, Home.UnitDeleted,
         Session.JoinUser, Session.UserList, Session.MarkOnline, Session.MarkOffline, Session.UnlinkedDevice,
         PrivateChat.Message, PrivateChat.Delete, PrivateChat.ReadUntil,

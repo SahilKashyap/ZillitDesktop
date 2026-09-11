@@ -37,6 +37,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.designsystem.component.ZillitTab
+import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
+import com.zillit.desktop.feature.accounthub.ui.VendorFilter
 import com.zillit.desktop.feature.accounthub.domain.NewVendor
 import com.zillit.desktop.feature.accounthub.domain.Vendor
 import com.zillit.desktop.feature.accounthub.domain.VendorAddress
@@ -120,6 +123,20 @@ fun VendorsPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
             )
         }
 
+        // The web's three tabs, with the same labels and the same counts
+        // (`VendorsModule.TABS` / `tabCounts`).
+        ZillitTabStrip(
+            tabs = VendorFilter.entries.map {
+                ZillitTab(it.slug, "${it.label} (${vendors.countFor(it)})")
+            },
+            activeId = vendors.filter.slug,
+            onSelect = { slug ->
+                VendorFilter.entries.firstOrNull { it.slug == slug }
+                    ?.let { onEvent(AccountHubEvent.FilterVendors(it)) }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+
         Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
             ZillitSectionCard(
                 title = "Register",
@@ -128,7 +145,7 @@ fun VendorsPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
                 modifier = Modifier.weight(1f).fillMaxHeight(),
             ) {
                 ZillitDataTable(
-                    rows = vendors.rows,
+                    rows = vendors.visibleRows,
                     key = { it.id },
                     loading = vendors.loading,
                     columns = vendorColumns(state, onEvent),
@@ -140,10 +157,10 @@ fun VendorsPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
                         onEvent(AccountHubEvent.SelectVendor(next))
                     },
                     isSelected = { it.id == vendors.selectedId },
-                    emptyTitle = if (vendors.search.isBlank()) {
-                        "No vendors yet"
-                    } else {
-                        "Nothing matched"
+                    emptyTitle = when {
+                        vendors.search.isNotBlank() -> "Nothing matched"
+                        vendors.filter != VendorFilter.All -> "No ${vendors.filter.label.lowercase()}"
+                        else -> "No vendors yet"
                     },
                     emptyMessage = "Vendors added here appear in every purchase order and " +
                         "invoice picker.",
@@ -325,6 +342,11 @@ private fun DetailLine(label: String, value: String) {
 private fun VendorFormDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val form = state.vendors.form
     val problem = form?.draft?.validationError()
+    // Save & Verify is offered on an existing, not-yet-verified vendor, to the
+    // people who may verify — the web's own condition
+    // (`VendorsModule`: `onSaveAndVerify` is passed only for an edit).
+    val editing = form?.editingId?.let { id -> state.vendors.rows.firstOrNull { it.id == id } }
+    val offerVerify = editing != null && !editing.verified && state.viewer.canActAsAccountant
 
     ZillitDialogShell(
         title = form?.title.orEmpty(),
@@ -345,7 +367,16 @@ private fun VendorFormDialog(state: AccountHubUiState, onEvent: (AccountHubEvent
                 // cannot drift apart.
                 enabled = problem == null && form?.saving != true,
                 loading = form?.saving == true,
+                variant = if (offerVerify) ButtonVariant.Secondary else ButtonVariant.Primary,
             )
+            if (offerVerify) {
+                ZillitButton(
+                    text = "Save & Verify",
+                    onClick = { onEvent(AccountHubEvent.SaveAndVerifyVendor) },
+                    enabled = problem == null && form?.saving != true,
+                    loading = form?.saving == true,
+                )
+            }
         },
     ) {
         if (form == null) return@ZillitDialogShell
@@ -442,10 +473,9 @@ private fun VendorFormDialog(state: AccountHubUiState, onEvent: (AccountHubEvent
         problem?.let {
             ZillitNotice(text = it, tone = StatusTone.Pending, icon = ZillitIcons.Info)
         }
-        if (form.editingId != null) {
+        if (editing?.verified == true) {
             ZillitNotice(
-                text = "Verification is a separate action — editing a verified vendor does " +
-                    "not re-open it.",
+                text = "This vendor is verified — editing it does not re-open verification.",
                 tone = StatusTone.Neutral,
                 icon = ZillitIcons.Info,
             )

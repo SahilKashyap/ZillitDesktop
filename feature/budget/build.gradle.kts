@@ -10,6 +10,7 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":core:common"))
             implementation(project(":core:designsystem"))
+            implementation(project(":core:socket"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:config"))
             implementation(project(":core:network"))

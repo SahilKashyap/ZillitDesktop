@@ -7,6 +7,9 @@ import com.zillit.desktop.feature.home.domain.HomeRealtimeEvent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Live updates for the board tools that reuse Home's feed engine — Info,
@@ -44,8 +47,10 @@ internal class BoardRealtimeEvents(
     val edited: List<SocketEventName> = emptyList(),
     val deleted: List<SocketEventName> = emptyList(),
     val reload: List<SocketEventName> = emptyList(),
+    /** `<prefix>:message:readby:update` — a receipt, not a change to the post. */
+    val readBy: List<SocketEventName> = emptyList(),
 ) {
-    val all: List<SocketEventName> get() = added + edited + deleted + reload
+    val all: List<SocketEventName> get() = added + edited + deleted + reload + readBy
 }
 
 /**
@@ -70,6 +75,7 @@ private fun chatBoard(
         "$prefix:message:comment:edited",
         "$prefix:message:comment:deleted",
     ).plus(reloadExtras).map(::SocketEventName),
+    readBy = listOf(SocketEventName("$prefix:message:readby:update")),
 )
 
 /**
@@ -84,6 +90,7 @@ private fun wardrobeBoard(): BoardRealtimeEvents {
     return BoardRealtimeEvents(
         added = chats.flatMap { it.added },
         edited = chats.flatMap { it.edited },
+        readBy = chats.flatMap { it.readBy },
         reload = chats.flatMap { it.reload } +
             listOf("wardrobe:created", "wardrobe:move", "wardrobe:updated", "wardrobe:deleted")
                 .map(::SocketEventName),
@@ -99,8 +106,14 @@ private fun wardrobeBoard(): BoardRealtimeEvents {
  * Camera & Sound Report `:298-331`; Script Notes `:203-296`; Catering
  * `:549-626` plus units (`:794-802`) and archived (`:1287`); Accounts
  * `:629-706` plus units (`:785-793`), rights (`:82,:85`) and archived
- * (`:1283`). Read-by events (`:1625-1646`) are ignored, as Home ignores
- * its own.
+ * (`:1283`).
+ *
+ * Read-by events (`:1625-1646`) ride each prefix as
+ * `<prefix>:message:readby:update`. The web ignores them and so did this
+ * module, on the web's authority — but the desktop has the read-by panel the
+ * web does not, and both phones refresh exactly that panel from these names
+ * (`BaseSocketListener.listenReadByObserver`, iOS `ProjectObserver.swift`).
+ * The exclusion was right about the web and wrong here (found 2026-09-09).
  */
 internal val BOARD_REALTIME_EVENTS: Map<String, BoardRealtimeEvents> = mapOf(
     "info" to chatBoard(
@@ -113,7 +126,10 @@ internal val BOARD_REALTIME_EVENTS: Map<String, BoardRealtimeEvents> = mapOf(
         reloadExtras = listOf("confidential_info:posting-rights:update", "confidential_info:chat:archived"),
     ),
     "reports" to chatBoard(prefix = "reports"),
-    "script-notes" to chatBoard(prefix = "script_notes"),
+    "script-notes" to chatBoard(
+        prefix = "script_notes",
+        reloadExtras = listOf("script_notes:posting-rights:update"),
+    ),
     "catering" to chatBoard(
         prefix = "catering",
         singleDelete = true,
@@ -169,6 +185,9 @@ internal fun BoardRealtimeEvents.toRealtimeEvent(
     // Reload events first: their payloads carry no post, and asking
     // unwrapData for one would drop them.
     if (message.event in reload) return HomeRealtimeEvent.UnitsChanged
+    if (message.event in readBy) {
+        return message.payload?.readByMessageId()?.let(HomeRealtimeEvent::ReadByChanged)
+    }
 
     val body = message.payload?.unwrapData() ?: return null
     val unitId = body.stringField("unit_id")
@@ -179,4 +198,21 @@ internal fun BoardRealtimeEvents.toRealtimeEvent(
         in deleted -> body.stringField("_id")?.let { HomeRealtimeEvent.NoticeDeleted(unitId, it) }
         else -> null
     }
+}
+
+/**
+ * The message a read-by frame is about.
+ *
+ * `message_id` sits at the top of the row, beside `project_id` — not inside
+ * `data`, which is why [unwrapData] is not used here: that helper insists on
+ * an `_id` key and would drop these. Android reads the same field off the
+ * first element of the frame array (`BaseSocketModelChecker.message_id`).
+ */
+internal fun JsonElement.readByMessageId(): String? {
+    val row = when (this) {
+        is JsonArray -> firstOrNull() as? JsonObject
+        is JsonObject -> (this["detail"] as? JsonObject) ?: this
+        else -> null
+    } ?: return null
+    return row.stringField("message_id")
 }

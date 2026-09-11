@@ -35,11 +35,15 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
+import com.zillit.desktop.feature.accounthub.domain.PayrollSettings as DomainPayrollSettings
+import com.zillit.desktop.feature.accounthub.domain.PayrollSettings.Companion as DomainPayroll
 import com.zillit.desktop.feature.accounthub.domain.Companies
 import com.zillit.desktop.feature.accounthub.domain.IsoDate
 import com.zillit.desktop.feature.accounthub.domain.ProjectCurrency
 import com.zillit.desktop.feature.accounthub.domain.SortCode
 import com.zillit.desktop.feature.accounthub.domain.TaxType
+import com.zillit.desktop.feature.accounthub.ui.SpendSetup
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.HubPage
@@ -60,7 +64,12 @@ import com.zillit.desktop.feature.accounthub.ui.SetupTab
  * Compose refuses outright, so every list here is composed in full.
  */
 @Composable
-fun ProductionSetupPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+fun ProductionSetupPage(
+    state: AccountHubUiState,
+    onEvent: (AccountHubEvent) -> Unit,
+    /** Whether the host wired file storage; false leaves Agreements read-only. */
+    canAttachAgreements: Boolean = false,
+) {
     val setup = state.setup
 
     HubPage {
@@ -114,8 +123,8 @@ fun ProductionSetupPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> 
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
             when (setup.tab) {
-                SetupTab.Accounting -> AccountingSections(state, onEvent)
-                SetupTab.DealMemo -> DealMemoSections(state, onEvent)
+                SetupTab.Accounting -> AccountingSections(state, onEvent, canAttachAgreements)
+                SetupTab.DealMemo -> DealMemoSections(state, onEvent, canAttachAgreements)
             }
         }
     }
@@ -128,22 +137,40 @@ fun ProductionSetupPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> 
 private fun ColumnScope.AccountingSections(
     state: AccountHubUiState,
     onEvent: (AccountHubEvent) -> Unit,
+    canAttachAgreements: Boolean,
 ) {
     CompaniesSection(state, onEvent)
     BankAccountsSection(state, onEvent)
+    // The web's order within this tab: currencies, tags, then taxes.
     CurrenciesSection(state, onEvent)
-    TaxTypesSection(state, onEvent)
     AssetTagsSection(state, onEvent)
-    BudgetSection(state, onEvent)
+    TaxTypesSection(state, onEvent)
+    PoSetupSection(state, onEvent, canAttach = canAttachAgreements)
+    InvoicesSetupSection(state, onEvent)
+    PayrollSettingsSection(state, onEvent)
+    TimecardSetupTile(onEvent)
+    SpendSetupTiles(onEvent)
+    // Project Budget is deliberately absent. The web still has the component
+    // (`sections/ProjectBudgetSection.jsx`) but imports it nowhere, so the
+    // section no longer renders there — the project's budget lives in the
+    // hub's own Budget module now. Found 2026-09-09 reviewing against the web.
 }
 
 @Composable
 private fun ColumnScope.DealMemoSections(
     state: AccountHubUiState,
     onEvent: (AccountHubEvent) -> Unit,
+    canAttachAgreements: Boolean,
 ) {
     ScheduleSection(state, onEvent)
-    // The web's order: the pay/clause cluster sits under the schedule.
+    // The web's order: rate cards first, allowances next, then the document /
+    // clause / bureau cluster.
+    NonUnionPaySection(state, onEvent)
+    // Beside the pay breakdown, as on the web, and saved separately — see
+    // DayTypesSection.
+    DayTypesSection(state, onEvent)
+    AllowancesSection(state, onEvent)
+    AgreementsSection(state, onEvent, canAttach = canAttachAgreements)
     DealConditionsSection(state, onEvent)
     PayrollBureausSection(state, onEvent)
     PayrollDefaultsSection(state, onEvent)
@@ -553,51 +580,166 @@ private fun TagEntry(onAdd: (String) -> Unit) {
     )
 }
 
-// -- budget -----------------------------------------------------------------
-
+/**
+ * Payroll approvers, and the week a pay period runs over.
+ *
+ * A section rather than the web's drill-down modal: this page already renders
+ * everything the hub itself owns as a card, and the two settings here are one
+ * list and one pair of days. The tile-and-modal shape the web uses is reserved
+ * for settings that belong to *another* tool — the Card, Petty Cash and Time
+ * Card tiles below.
+ *
+ * The row reaches further than this screen: payroll-server reads it directly,
+ * so an approver added here is an approver on a payroll run.
+ */
 @Composable
-private fun BudgetSection(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
-    val setup = state.setup
-    val budget = setup.budget.edited
+private fun PayrollSettingsSection(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+    val section = state.setup.payrollSettings
+    val value = section.edited
+    val editable = state.viewer.canEdit
 
     SetupSectionCard(
-        title = "Project Budget",
-        description = "The project's overall figure, against which the cost report runs.",
-        dirty = setup.budget.dirty,
-        saving = setup.budget.saving,
-        onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Budget)) },
-        onRevert = { onEvent(AccountHubEvent.RevertSection(SetupSection.Budget)) },
-        editable = state.viewer.canEdit,
+        title = "Payroll Settings",
+        description = "Who may sign off a payroll run, and the seven days a pay period covers.",
+        dirty = section.dirty,
+        saving = section.saving,
+        onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.PayrollSettings)) },
+        onRevert = { onEvent(AccountHubEvent.RevertSection(SetupSection.PayrollSettings)) },
+        editable = editable,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            ZillitTextField(
-                // The typed text, not a re-rendered parse of it. Bound to the
-                // Double this turned `2500000` into `25.0` — every keystroke
-                // reformatted the field under the caret.
-                value = budget.amountText,
-                onValueChange = { text ->
-                    onEvent(AccountHubEvent.EditBudget(budget.copy(amountText = text)))
-                },
-                label = "Amount",
-                enabled = state.viewer.canEdit,
-                keyboardType = KeyboardType.Decimal,
-                helperText = budget.amountText
-                    .takeIf { it.isNotBlank() && it.trim().toDoubleOrNull() == null }
-                    ?.let { "Not a number — this will save as no amount." },
-                modifier = Modifier.weight(WEIGHT_WIDE),
-            )
-            ZillitTextField(
-                value = budget.currency,
-                onValueChange = { onEvent(AccountHubEvent.EditBudget(budget.copy(currency = it))) },
-                label = "Currency",
-                enabled = state.viewer.canEdit,
-                modifier = Modifier.weight(1f),
-            )
-        }
+        ZillitTextField(
+            value = value.approverIds.joinToString(", "),
+            onValueChange = { text ->
+                val ids = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                onEvent(AccountHubEvent.EditPayrollSettings(value.copy(approverIds = ids)))
+            },
+            label = "Approver user ids",
+            placeholder = "Comma-separated",
+            enabled = editable,
+        )
+
+        ZillitSectionLabel("Pay period")
+        PayPeriodPicker(value, editable, onEvent)
     }
+}
+
+/**
+ * The seven-day window, either end of which moves the other.
+ *
+ * A pay period can never be four days or nine — payroll downstream assumes a
+ * week, and the web enforces the same invariant by pairing the two selects.
+ */
+@Composable
+private fun PayPeriodPicker(
+    value: DomainPayrollSettings,
+    editable: Boolean,
+    onEvent: (AccountHubEvent) -> Unit,
+) {
+    val days = (DomainPayroll.MONDAY..DomainPayroll.SUNDAY).toList()
+    val enabled = editable && !value.payPeriodLocked
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitSelect(
+            value = value.payPeriodStartDay,
+            options = days,
+            onSelect = { day ->
+                onEvent(
+                    AccountHubEvent.EditPayrollSettings(
+                        value.copy(payPeriodStartDay = day, payPeriodEndDay = DomainPayroll.endFor(day)),
+                    ),
+                )
+            },
+            label = { DomainPayroll.dayName(it) },
+            enabled = enabled,
+            modifier = Modifier.weight(1f),
+        )
+        ZillitText(text = "to", style = ZillitTheme.typography.bodySmall)
+        ZillitSelect(
+            value = value.payPeriodEndDay,
+            options = days,
+            onSelect = { day ->
+                onEvent(
+                    AccountHubEvent.EditPayrollSettings(
+                        value.copy(payPeriodEndDay = day, payPeriodStartDay = DomainPayroll.startFor(day)),
+                    ),
+                )
+            },
+            label = { DomainPayroll.dayName(it) },
+            enabled = enabled,
+            modifier = Modifier.weight(1f),
+        )
+    }
+    if (value.payPeriodLocked) {
+        ZillitNotice(
+            text = "The pay period is fixed — this production already has timecards against " +
+                "it, and the service refuses a change once that is true.",
+            tone = StatusTone.Neutral,
+            icon = ZillitIcons.Info,
+        )
+    }
+}
+
+/**
+ * Card and Petty Cash setup, which live in those tools.
+ *
+ * The web opens a modal here that edits each module's own `/settings`
+ * document. The desktop already renders that document — both tools have a
+ * Settings page of their own — so a modal over it would be a second editor for
+ * one record, and the two would disagree the first time either changed. These
+ * tiles hand off instead, deep-linking to the page that owns the setting, the
+ * way the Time Card tile above does.
+ *
+ * Purchase Orders and Invoices have no tile: neither tool has a settings
+ * surface on this client yet, so a Configure button would open onto nothing.
+ * Their web details are the remaining Production Setup work.
+ */
+@Composable
+private fun SpendSetupTiles(onEvent: (AccountHubEvent) -> Unit) {
+    SetupModuleTile(
+        title = "Production Expense Cards Setup",
+        description = "Coding requirements, senior sign-off and statement matching for every " +
+            "card on this production.",
+        icon = ZillitIcons.CreditCard,
+        actionText = "Open card settings",
+        onConfigure = { onEvent(AccountHubEvent.OpenSpendSetup(SpendSetup.Cards)) },
+    )
+    SetupModuleTile(
+        title = "Petty Cash Entry Setup",
+        description = "Float custodian, coordinator coding and the sign-off a batch passes " +
+            "through before it posts.",
+        icon = ZillitIcons.Wallet,
+        actionText = "Open petty cash settings",
+        onConfigure = { onEvent(AccountHubEvent.OpenSpendSetup(SpendSetup.PettyCash)) },
+    )
+}
+
+/**
+ * Time Card Configuration, which is not configured here.
+ *
+ * The web renders this as a tile among the setup sections and clicking it
+ * *navigates* to the Timecard tool rather than opening a modal, because in
+ * zillit the configuration belongs to that tool
+ * (`TimecardSetupSection.jsx`). The desktop does the same: the tile is a
+ * signpost, and the hand-off is the hub's existing one.
+ *
+ * No configured pill: nothing on this wire says whether it is set up. The web
+ * hardcodes "Setup required" here, which is a claim it cannot support — an
+ * absent pill is the honest version of the same tile.
+ */
+@Composable
+private fun TimecardSetupTile(onEvent: (AccountHubEvent) -> Unit) {
+    SetupModuleTile(
+        title = "Time Card Entry Setup",
+        description = "Control model, department setup, approval chain, cadence, allowance " +
+            "rules and data-source priority for crew time cards.",
+        icon = ZillitIcons.Clock,
+        actionText = "Open Time Card",
+        onConfigure = { onEvent(AccountHubEvent.OpenTimecardSetup) },
+    )
 }
 
 // -- schedule ---------------------------------------------------------------

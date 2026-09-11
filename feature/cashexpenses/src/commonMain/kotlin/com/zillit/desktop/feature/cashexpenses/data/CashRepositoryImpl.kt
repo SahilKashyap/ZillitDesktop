@@ -7,6 +7,7 @@ import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.common.toAmount
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
+import com.zillit.desktop.core.forms.CustomFieldGroup
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
@@ -29,6 +30,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.PaymentRouting
 import com.zillit.desktop.feature.cashexpenses.domain.PettyCashOverview
 import com.zillit.desktop.feature.cashexpenses.domain.Reconciliation
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -83,6 +85,13 @@ class CashRepositoryImpl(
                 putIfPresent("duration_type", request.durationType)
                 putIfPresent("bs_code", request.bsCode)
                 putIfPresent("company_id", request.companyId)
+                // Only when the production configured some. This service keeps
+                // more of each field than purchase orders do — the key, the
+                // type and a select's source — so a saved answer can be shown
+                // again without re-reading the template.
+                if (request.customFields.isNotEmpty()) {
+                    put("custom_fields", request.customFields.toFloatJson())
+                }
             },
         )
 
@@ -476,3 +485,32 @@ internal fun kotlinx.serialization.json.JsonObjectBuilder.putIfPresent(key: Stri
     if (!trimmed.isNullOrEmpty()) put(key, JsonPrimitive(trimmed))
 }
 
+
+/** The float request's custom answers, in the shape this service stores. */
+private fun List<CustomFieldGroup>.toFloatJson(): JsonArray = buildJsonArray {
+    forEach { group ->
+        add(
+            buildJsonObject {
+                put("section", JsonPrimitive(group.section))
+                put(
+                    "fields",
+                    buildJsonArray {
+                        group.fields.forEach { field ->
+                            add(
+                                buildJsonObject {
+                                    put("name", JsonPrimitive(field.name))
+                                    put("label", JsonPrimitive(field.label))
+                                    put("type", JsonPrimitive(field.type))
+                                    field.selectionType?.let {
+                                        put("selection_type", JsonPrimitive(it))
+                                    }
+                                    put("value", JsonPrimitive(field.value))
+                                },
+                            )
+                        }
+                    },
+                )
+            },
+        )
+    }
+}

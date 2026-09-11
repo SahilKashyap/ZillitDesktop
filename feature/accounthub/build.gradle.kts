@@ -9,12 +9,14 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":core:common"))
+            implementation(project(":core:socket"))
             implementation(project(":core:designsystem"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:config"))
             implementation(project(":core:network"))
             implementation(project(":core:localization"))
             implementation(project(":core:permissions"))
+            implementation(project(":core:forms"))
             implementation(project(":core:workspace"))
             implementation(libs.kotlinx.serialization.json)
         }

@@ -70,7 +70,16 @@ class AccountHubToolProvider(
             navigator.setTitle(state.area?.let { "Account Hub · ${it.label}" } ?: "Account Hub")
         }
 
-        AccountHubScreen(state = state, onEvent = viewModel::onEvent)
+        AccountHubScreen(
+            state = state,
+            onEvent = viewModel::onEvent,
+            canAttachAgreements = viewModel.canAttachAgreements,
+            // Read once when the console is composed. A clock that ticked
+            // under the period-close dialog would change which week the
+            // confirmation was for.
+            nowMillis = remember { viewModel.nowMillis() },
+            canImportBudget = viewModel.canImportBudget,
+        )
 
         ZillitErrorToast(message = failure, onDismiss = { failure = null })
     }

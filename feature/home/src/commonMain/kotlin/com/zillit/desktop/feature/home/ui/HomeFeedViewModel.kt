@@ -623,6 +623,8 @@ class HomeFeedViewModel(
             is HomeFeedEvent.Realtime ->
                 if (event.event == HomeRealtimeEvent.UnitsChanged) {
                     loadUnits()
+                } else if (event.event is HomeRealtimeEvent.ReadByChanged) {
+                    refreshReadBy(event.event.messageId)
                 } else {
                     setState { copy(notices = notices.applyRealtime(event.event, selectedUnitId)) }
                     // A post landing on the open board is read as it lands —
@@ -1385,6 +1387,24 @@ class HomeFeedViewModel(
                 }
             },
         )
+    }
+
+    /**
+     * Somebody else read a post while its read-by panel is open.
+     *
+     * Only the panel on screen is refetched, and only when the receipt names
+     * the post it is showing — the same gate both phones apply
+     * (`ReadByUserPage.kt:455`). A receipt for anything else is a message the
+     * user is not looking at.
+     *
+     * The reply case reads the same way: a panel opened on a comment names
+     * that comment, and the server sends the receipt under the post's id, so
+     * matching on the post is what refreshes either view of it.
+     */
+    private fun refreshReadBy(messageId: String) {
+        val open = currentState.readBy ?: return
+        if (open.noticeId != messageId) return
+        showReadBy(open.noticeId, open.commentId)
     }
 
     private fun showReadBy(noticeId: String, commentId: String? = null) {

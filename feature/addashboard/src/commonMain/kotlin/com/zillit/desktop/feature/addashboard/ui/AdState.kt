@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.addashboard.ui
 
+import com.zillit.desktop.feature.addashboard.domain.AdRefresh
 import com.zillit.desktop.feature.addashboard.domain.AdShootDay
 import com.zillit.desktop.feature.addashboard.domain.AdViewer
 import com.zillit.desktop.feature.addashboard.domain.Artiste
@@ -13,6 +14,15 @@ enum class AdDestination(val slug: String, val label: String) {
     Today("today", "Today"),
     Register("register", "Artiste register"),
     Days("days", "Shoot days"),
+    ;
+
+    /** Which socket refresh kind this page answers to. */
+    val refresh: AdRefresh
+        get() = when (this) {
+            Today -> AdRefresh.Today
+            Register -> AdRefresh.Register
+            Days -> AdRefresh.Days
+        }
 }
 
 /** Adding artistes from the register to the day. */

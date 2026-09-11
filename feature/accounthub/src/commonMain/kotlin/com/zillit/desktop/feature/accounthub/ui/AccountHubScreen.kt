@@ -25,6 +25,11 @@ import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubItem
 import com.zillit.desktop.feature.accounthub.domain.HubSection
 import com.zillit.desktop.feature.accounthub.domain.HubTarget
+import com.zillit.desktop.feature.accounthub.ui.pages.BibleReportPage
+import com.zillit.desktop.feature.accounthub.ui.pages.FormConfigPage
+import com.zillit.desktop.feature.accounthub.ui.pages.PeriodClosePage
+import com.zillit.desktop.feature.accounthub.ui.pages.TrialBalancePage
+import com.zillit.desktop.feature.accounthub.ui.pages.BudgetPage
 import com.zillit.desktop.feature.accounthub.ui.pages.ApproversPage
 import com.zillit.desktop.feature.accounthub.ui.pages.ChartOfAccountsPage
 import com.zillit.desktop.feature.accounthub.ui.pages.ProductionSetupPage
@@ -52,6 +57,12 @@ fun AccountHubScreen(
     state: AccountHubUiState,
     onEvent: (AccountHubEvent) -> Unit,
     modifier: Modifier = Modifier,
+    /** Whether the host wired file storage; false leaves Agreements read-only. */
+    canAttachAgreements: Boolean = false,
+    /** Now, for the period close's "this week". */
+    nowMillis: Long = 0,
+    /** Whether the host wired storage; false hides the budget import. */
+    canImportBudget: Boolean = false,
 ) {
     Box(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         if (state.viewer.isBlocked) {
@@ -76,7 +87,10 @@ fun AccountHubScreen(
             ZillitVerticalDivider()
 
             Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                AccountHubBody(state, onEvent)
+                // Read once per composition: the close proposes "this week",
+                // and a clock that ticked under the dialog would change which
+                // week the confirmation meant.
+                AccountHubBody(state, onEvent, canAttachAgreements, nowMillis, canImportBudget)
             }
         }
 
@@ -89,19 +103,31 @@ fun AccountHubScreen(
 }
 
 @Composable
-private fun AccountHubBody(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+private fun AccountHubBody(
+    state: AccountHubUiState,
+    onEvent: (AccountHubEvent) -> Unit,
+    canAttachAgreements: Boolean,
+    nowMillis: Long,
+    canImportBudget: Boolean,
+) {
     when (state.area) {
-        HubArea.ProductionSetup -> ProductionSetupPage(state, onEvent)
+        HubArea.ProductionSetup -> ProductionSetupPage(state, onEvent, canAttachAgreements)
         HubArea.ChartOfAccounts -> ChartOfAccountsPage(state, onEvent)
         HubArea.Vendors -> VendorsPage(state, onEvent)
         HubArea.Approvers -> ApproversPage(state, onEvent)
+        HubArea.Budget -> BudgetPage(state, onEvent, canImport = canImportBudget)
+        HubArea.TrialBalance -> TrialBalancePage(state, onEvent)
+        HubArea.PeriodClose -> PeriodClosePage(state, onEvent, nowMillis)
+        HubArea.BibleReport -> BibleReportPage(state, onEvent)
+        HubArea.FormConfig -> FormConfigPage(state, onEvent)
         // Not a loading state — a department user reaching the console has the
-        // three spend tools and nothing the hub itself renders. Saying so beats
-        // an empty frame that looks broken.
+        // spend tools and nothing the hub itself renders. Their first one has
+        // already been opened in its own window (`HubNavigation.landingTool`),
+        // so this says where that went rather than reading as a dead end.
         null -> ZillitEmptyState(
-            title = "Nothing here for you yet",
+            title = "Your tools are open",
             message = "The Account Hub's own screens are the accounts department's. " +
-                "The tools you can use are listed on the left.",
+                "Yours open in their own windows — pick one on the left to bring it back.",
             icon = ZillitIcons.Ledger,
         )
     }

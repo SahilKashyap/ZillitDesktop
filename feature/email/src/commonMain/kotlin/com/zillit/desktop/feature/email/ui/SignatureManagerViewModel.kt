@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.email.ui
 
+import com.zillit.desktop.feature.email.data.EMAIL_SIGNATURE_SYNC_EVENTS
+import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -71,7 +73,18 @@ sealed interface SignatureEvent {
  */
 class SignatureManagerViewModel(
     private val repository: SignatureRepository,
+    /**
+     * The socket, so a sign-off written on another device appears here. Null
+     * in tests and on a build with no socket.
+     */
+    private val events: SocketEventBus? = null,
 ) : ZillitViewModel<SignatureManagerUiState, SignatureEvent, Nothing>(SignatureManagerUiState()) {
+
+    init {
+        // The default flag moves between rows, so one signature changing can
+        // change two — a reload is the only reading that stays consistent.
+        events?.let { bus -> launch { bus.onAny(EMAIL_SIGNATURE_SYNC_EVENTS).collect { load() } } }
+    }
 
     override fun onEvent(event: SignatureEvent) {
         when (event) {
