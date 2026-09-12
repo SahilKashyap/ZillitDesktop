@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -168,6 +170,7 @@ fun VendorsPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
 }
 
 @Suppress("LongMethod") // A table of columns; splitting it separates each from its width.
+@OptIn(ExperimentalLayoutApi::class)
 private fun vendorColumns(
     state: AccountHubUiState,
     onEvent: (AccountHubEvent) -> Unit,
@@ -182,17 +185,18 @@ private fun vendorColumns(
             ) {
                 ZillitAvatar(name = row.display)
                 Column {
-                    Row(
+                    // The web's `flex-wrap`: when the column is narrow — the history
+                    // panel open, a small window — the badge drops under the name
+                    // instead of the name collapsing to "Ba…" beside it.
+                    FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+                        itemVerticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // The name gives way, not the badge: a long name used to push
-                        // "Verified" out of the cell entirely.
                         ZillitText(
                             text = row.display,
-                            maxLines = 1,
+                            maxLines = 2,
                             style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                            modifier = Modifier.weight(1f, fill = false),
                         )
                         VerificationPill(row.verified)
                     }
