@@ -23,7 +23,24 @@ data class Company(
      */
     val bankIds: List<String> = emptyList(),
     val taxCredits: List<String> = emptyList(),
-)
+    /** The registered name, when it differs from the trading one. */
+    val legalName: String = "",
+    /**
+     * The UK payroll references — PAYE and Accounts Office.
+     *
+     * Sent as one `uk` block on every save, blanks included: the web writes
+     * the whole list back, and a company whose block was left out of the body
+     * had both references silently cleared (`makeCompanyDraft`).
+     */
+    val ukPayeRef: String = "",
+    val ukAccountsOfficeRef: String = "",
+) {
+    /** The first letters of up to two words — the card's monogram. */
+    val monogram: String
+        get() = name.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+            .take(2).joinToString("") { it.first().uppercaseChar().toString() }
+            .ifBlank { "?" }
+}
 
 /** Operations over the whole company list, where the invariant lives. */
 object Companies {
@@ -86,7 +103,20 @@ data class BankAccount(
     val wireNumber: String = "",
     val currencyCode: String = "",
     val currencySymbol: String = "",
+    val currencyName: String = "",
+    /** The clearing code accounts payable posts through. Accountants must set one. */
+    val apClearanceNominalCode: String = "",
+    /**
+     * Free-form typed rows — a routing number, a branch reference.
+     *
+     * Stored serialised on the row; see [BankDetail]. Untitled rows are dropped
+     * on save rather than persisted as blanks.
+     */
+    val additionalDetails: List<BankDetail> = emptyList(),
 ) {
+    /** The last four digits, for the masked card. */
+    val accountLast4: String get() = accountNumber.takeLast(MASK_TAIL)
+
     /**
      * Who the account is actually held by, given the live companies.
      *
@@ -107,7 +137,129 @@ data class BankAccount(
 
     companion object {
         const val PRODUCTION = "production"
+        private const val MASK_TAIL = 4
     }
+}
+
+/**
+ * The type a typed extra detail is checked against.
+ *
+ * Soft on the web — a red border, never a block — until save, when the first
+ * malformed titled row refuses the save (`firstInvalidDetail`). Text and phone
+ * always pass; an empty value always passes.
+ */
+enum class BankDetailType(val wire: String, val label: String) {
+    Text("text", "Text"),
+    Number("number", "Number"),
+    Phone("phone", "Phone"),
+    Email("email", "Email"),
+    Url("url", "URL"),
+    ;
+
+    /** Whether [value] is well-formed for this type. Blank always is. */
+    fun accepts(value: String): Boolean {
+        val trimmed = value.trim()
+        if (trimmed.isEmpty()) return true
+        return when (this) {
+            Text, Phone -> true
+            Number -> trimmed.replace(",", "").toDoubleOrNull() != null
+            Email -> EMAIL.matches(trimmed)
+            Url -> URL.matches(trimmed)
+        }
+    }
+
+    companion object {
+        val Default = Text
+        private val EMAIL = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
+        private val URL = Regex("^(https?://)?[\\w.-]+\\.[a-zA-Z]{2,}(/.*)?$")
+
+        fun from(wire: String?): BankDetailType = entries.firstOrNull { it.wire == wire } ?: Default
+    }
+}
+
+/**
+ * One typed extra field on a bank record — `{ field, value, field_type }`.
+ *
+ * The web's two-phase editor: a row is *defined* (given a title and a type)
+ * and then *filled*. Only titled rows persist, so a row that was started and
+ * abandoned cannot block a save.
+ */
+data class BankDetail(
+    /** The row's title — `field` on a bank's wire, `label` on a vendor's. */
+    val title: String = "",
+    val value: String = "",
+    val fieldType: BankDetailType = BankDetailType.Default,
+) {
+    val isTitled: Boolean get() = title.isNotBlank()
+
+    val isValid: Boolean get() = fieldType.accepts(value)
+}
+
+/** The rules the bank editor applies before a row goes to the server. */
+object BankAccounts {
+
+    /** The titled rows, typed — what is persisted. */
+    fun persistable(details: List<BankDetail>): List<BankDetail> = details.filter { it.isTitled }
+
+    /** The first titled row whose value is malformed for its type, or null. */
+    fun firstInvalidDetail(details: List<BankDetail>): BankDetail? =
+        persistable(details).firstOrNull { !it.isValid }
+
+    /** Whether another row already carries this account number. */
+    fun duplicateNumber(draft: BankAccount, banks: List<BankAccount>): Boolean {
+        val number = draft.accountNumber.trim()
+        if (number.isEmpty()) return false
+        return banks.any { it.id != draft.id && it.accountNumber.trim() == number }
+    }
+
+    /**
+     * A nominal code the chart does not know, wrapped as `[[code]]`.
+     *
+     * The web's `wrapNominal`: a code typed free-hand rather than picked from
+     * the chart is marked so the ledger can tell a resolved code from a
+     * placeholder. Case-blind, because the chart's own lookup is.
+     */
+    fun wrapNominal(code: String, knownCodes: Collection<String>): String {
+        val trimmed = code.trim()
+        if (trimmed.isEmpty()) return trimmed
+        if (trimmed.startsWith("[[") && trimmed.endsWith("]]")) return trimmed
+        return if (knownCodes.any { it.equals(trimmed, ignoreCase = true) }) trimmed else "[[$trimmed]]"
+    }
+
+    /**
+     * Why the editor refuses to save, or null when it may — the web's own
+     * order and wording (`BankAccountFormModal`).
+     */
+    @Suppress("CyclomaticComplexMethod") // A screen, read top to bottom; the order is the reading order.
+    fun validationError(
+        draft: BankAccount,
+        banks: List<BankAccount>,
+        companies: List<Company>,
+        accountant: Boolean,
+    ): String? = when {
+        draft.name.isBlank() -> "Bank name is required."
+        draft.entityId.isNullOrBlank() && draft.accountHolderName.isBlank() ->
+            "Account holder company is required."
+        !draft.entityId.isNullOrBlank() && companies.none { it.id == draft.entityId } ->
+            "Account holder company is required."
+        draft.accountNumber.isBlank() -> "Account number is required."
+        duplicateNumber(draft, banks) -> "An account with this number already exists."
+        accountant && draft.nominalCode.isBlank() -> "Bank account nominal code is required."
+        accountant && draft.apClearanceNominalCode.isBlank() -> "AP clearance nominal code is required."
+        draft.currencyCode.isBlank() -> "Currency is required."
+        firstInvalidDetail(draft.additionalDetails) != null ->
+            "\"${firstInvalidDetail(draft.additionalDetails)?.title}\" is not a valid " +
+                "${firstInvalidDetail(draft.additionalDetails)?.fieldType?.label?.lowercase()}."
+        else -> null
+    }
+
+    /** `•••• 1234` for anything longer than four characters; short values show whole. */
+    fun masked(value: String): String {
+        val trimmed = value.trim()
+        return if (trimmed.length > MASK_TAIL) "•••• ${trimmed.takeLast(MASK_TAIL)}" else trimmed
+    }
+
+    private const val MASK_TAIL = 4
 }
 
 /**
@@ -163,6 +315,22 @@ data class CurrencySettings(
 ) {
     val default: ProjectCurrency? get() = currencies.firstOrNull { it.code == defaultCode }
 
+    /**
+     * Non-default currencies with no positive rate.
+     *
+     * The web refuses the save while any remain — "Add an exchange rate for
+     * X, Y before saving." — because a rate of 1 on a currency that is not the
+     * base is a conversion that quietly reports the wrong figure.
+     */
+    val missingRates: List<String>
+        get() = currencies.filter { it.code != defaultCode && (it.rate == null || it.rate <= 0.0) }
+            .map { it.code }
+
+    /** Why the section cannot be saved, or null when it can. */
+    fun validationError(): String? =
+        missingRates.takeIf { it.isNotEmpty() }
+            ?.let { "Add an exchange rate for ${it.joinToString(", ")} before saving." }
+
     /** Drops a currency, clearing the default when that is what was dropped. */
     fun without(code: String): CurrencySettings = CurrencySettings(
         currencies = currencies.filterNot { it.code == code },
@@ -202,6 +370,9 @@ data class CurrencySettings(
     companion object {
         /** The base every other rate is quoted against. */
         const val BASE_RATE = 1.0
+
+        /** The reserve currencies behind the picker's "Major" filter chip. */
+        val MAJOR_CODES: Set<String> = setOf("USD", "EUR", "GBP", "JPY", "CHF", "CAD", "AUD", "CNY")
     }
 }
 
@@ -224,14 +395,45 @@ data class TaxType(
     val isRecoverable: Boolean = false,
     /** The chart-of-accounts code this posts to, when one is set. */
     val nominal: String = "",
+    /** The country's name, for a catalogue rate; blank for a custom one. */
+    val country: String = "",
+    /** The stored `country_code`, when the row carries one. Null on custom rows. */
+    val storedCountryCode: String? = null,
 ) {
-    /** The originating country, for a rate imported from a catalogue. */
-    val countryCode: String? get() = COUNTRY_KEY.matchEntire(identifier)?.groupValues?.get(1)
+    /**
+     * The originating country, for a rate imported from a catalogue.
+     *
+     * The stored code where the row has one; otherwise parsed out of the
+     * identifier, which is how rows saved before the column existed are read.
+     */
+    val countryCode: String?
+        get() = storedCountryCode?.takeIf { it.isNotBlank() }
+            ?: COUNTRY_KEY.matchEntire(identifier)?.groupValues?.get(1)
 
     val isCustom: Boolean get() = countryCode == null
 
+    /** The rate as a number, or null while the field is blank or half-typed. */
+    val rate: Double? get() = value.trim().removeSuffix("%").toDoubleOrNull()
+
     companion object {
         private val COUNTRY_KEY = Regex("^([A-Z]{2})_(.+)$")
+
+        const val RATE_MIN = 0.0
+        const val RATE_MAX = 100.0
+
+        /** Whether a typed rate sits outside 0–100. Blank is not out of range. */
+        fun isRateOutOfRange(value: String): Boolean {
+            val rate = value.trim().removeSuffix("%").toDoubleOrNull() ?: return value.isNotBlank()
+            return rate < RATE_MIN || rate > RATE_MAX
+        }
+
+        /** The web's refusal, or null when every rate is in range. */
+        fun problem(rows: List<TaxType>): String? =
+            if (rows.any { isRateOutOfRange(it.value) }) {
+                "Tax rate must be between ${RATE_MIN.toInt()}% and ${RATE_MAX.toInt()}%."
+            } else {
+                null
+            }
 
         fun keyFor(countryCode: String, sourceId: String): String = "${countryCode}_$sourceId"
 
@@ -286,7 +488,81 @@ data class ProductionSchedule(
     val prep: SchedulePhase = SchedulePhase(),
     val shoot: SchedulePhase = SchedulePhase(),
     val wrap: SchedulePhase = SchedulePhase(),
+    /**
+     * Named overlays on the schedule — Night Shoot, Second Unit.
+     *
+     * Deliberately no overlap rule between them: an overlay runs inside the
+     * shoot by design. Saved as the full list every time (`custom_days`).
+     */
+    val customDays: List<CustomDay> = emptyList(),
+) {
+    val isSet: Boolean get() = startDate != null || endDate != null
+}
+
+/** One named overlay on the schedule. [id] is local — the wire carries none. */
+data class CustomDay(
+    val id: String = "",
+    val name: String = "",
+    val startDate: Long? = null,
+    val endDate: Long? = null,
 )
+
+/**
+ * The schedule's rules, in the web's words (`ProductionScheduleSection.computeErrors`).
+ *
+ * Keyed by the phase they belong to so each row can show its own; the custom
+ * rows are keyed by their local id.
+ */
+object ScheduleRules {
+    const val OVERALL = "overall"
+    const val PREP = "prep"
+    const val SHOOT = "shoot"
+    const val WRAP = "wrap"
+
+    @Suppress("CyclomaticComplexMethod", "LongMethod") // One line per rule; the list IS the contract.
+    fun errors(schedule: ProductionSchedule): Map<String, List<String>> {
+        val out = mutableMapOf<String, MutableList<String>>()
+        fun add(key: String, message: String) = out.getOrPut(key) { mutableListOf() }.add(message)
+        val ds = schedule.startDate
+        val de = schedule.endDate
+        val (ps, pe) = schedule.prep.startDate to schedule.prep.endDate
+        val (ss, se) = schedule.shoot.startDate to schedule.shoot.endDate
+        val (ws, we) = schedule.wrap.startDate to schedule.wrap.endDate
+
+        if (ds != null && de != null && de < ds) add(OVERALL, END_BEFORE_START)
+        if (ps != null && pe != null && pe < ps) add(PREP, END_BEFORE_START)
+        if (ss != null && se != null && se < ss) add(SHOOT, END_BEFORE_START)
+        if (ws != null && we != null && we < ws) add(WRAP, END_BEFORE_START)
+
+        if (pe != null && ss != null && ss <= pe) add(SHOOT, "Overlaps with Prep — must start after prep ends")
+        if (se != null && ws != null && ws <= se) add(WRAP, "Overlaps with Shoot — must start after shoot ends")
+
+        if (ds != null) {
+            if (ps != null && ps < ds) add(PREP, STARTS_BEFORE)
+            if (ps == null && ss != null && ss < ds) add(SHOOT, STARTS_BEFORE)
+        }
+        if (de != null) {
+            if (we != null && we > de) add(WRAP, ENDS_AFTER)
+            if (we == null && se != null && se > de) add(SHOOT, ENDS_AFTER)
+            val laterPhasesUnset = we == null && se == null
+            if (laterPhasesUnset && pe != null && pe > de) add(PREP, ENDS_AFTER)
+        }
+        schedule.customDays.forEach { day ->
+            val (cs, ce) = day.startDate to day.endDate
+            if (day.name.isBlank()) add(day.id, "Name is required")
+            if (cs != null && ce != null && ce < cs) add(day.id, END_BEFORE_START)
+            if (ds != null && cs != null && cs < ds) add(day.id, STARTS_BEFORE)
+            if (de != null && ce != null && ce > de) add(day.id, ENDS_AFTER)
+        }
+        return out
+    }
+
+    fun hasErrors(schedule: ProductionSchedule): Boolean = errors(schedule).isNotEmpty()
+
+    private const val END_BEFORE_START = "End date is before start date"
+    private const val STARTS_BEFORE = "Starts before production start date"
+    private const val ENDS_AFTER = "Ends after production end date"
+}
 
 /**
  * What happens to a deal once it is signed.
@@ -433,7 +709,10 @@ data class AgreementDocument(
     /** `pdf`, `docx`, `png` — what the file-type badge reads. */
     val contentSubtype: String = "",
     val fileSize: Long = 0,
-)
+) {
+    /** Whether the store can be asked for it — the web refuses to open one missing any of the three. */
+    val openable: Boolean get() = media.isNotBlank() && bucket.isNotBlank() && region.isNotBlank()
+}
 
 /**
  * What the agreements surface accepts.
@@ -470,6 +749,17 @@ data class PayrollSettings(
     val payPeriodStartDay: Int = MONDAY,
     val payPeriodEndDay: Int = SUNDAY,
     val payPeriodLockedAt: Long? = null,
+    /** How a payroll journal line's description is cased. */
+    val journalDescriptionFormat: JournalDescriptionFormat = JournalDescriptionFormat.Default,
+    /** Group journal rows into OTs, penalties, premiums and turnarounds under each company. */
+    val journalGroupByCategory: Boolean = false,
+    /**
+     * The balance-sheet codes payroll posts through, as chart codes.
+     *
+     * Read-only on this document: the plain PATCH ignores it, and the codes
+     * are written through `/custom-accounts`, which keeps the chart in step.
+     */
+    val payrollAccounts: List<String> = emptyList(),
 ) {
     val payPeriodLocked: Boolean get() = payPeriodLockedAt != null
 
@@ -485,7 +775,12 @@ data class PayrollSettings(
             payPeriodStartDay != MONDAY ||
             payPeriodEndDay != SUNDAY
 
+    /** The window as the tile prints it — "Mon → Sun". */
+    val payPeriodLabel: String
+        get() = "${dayName(payPeriodStartDay).take(SHORT_DAY)} → ${dayName(payPeriodEndDay).take(SHORT_DAY)}"
+
     companion object {
+        private const val SHORT_DAY = 3
         const val MONDAY = 1
         const val SUNDAY = 7
         private const val WEEK = 7
@@ -519,18 +814,68 @@ data class PayrollSettings(
     }
 }
 
+/** How a payroll journal description reads — the web's two radio cards. */
+enum class JournalDescriptionFormat(val wire: String, val label: String, val sample: String) {
+    Uppercase("uppercase", "WEEK DD-DD MON YYYY CREW NAME PAY", "WEEK 22-28 JUN 2026 JANE SMITH OT 1.5X"),
+    Title("title", "Week Dd-Dd Mon Yyyy Crew Name Pay", "Week 22-28 Jun 2026 Jane Smith OT 1.5x"),
+    ;
+
+    companion object {
+        val Default = Uppercase
+
+        fun from(wire: String?): JournalDescriptionFormat = entries.firstOrNull { it.wire == wire } ?: Default
+    }
+}
+
+/**
+ * Crew routed to one accountant for payroll — by department, by role or by name.
+ *
+ * `/api/v2/payroll/payroll-groups`. The management layer only: the scoping
+ * itself is a backend follow-up, and the web says so on its own card.
+ */
+data class PayrollGroup(
+    val id: String = "",
+    val assigneeId: String = "",
+    val userIds: List<String> = emptyList(),
+    val departmentIds: List<String> = emptyList(),
+    val designationIds: List<String> = emptyList(),
+) {
+    /** An accountant and at least one thing to route — the web's `canSave`. */
+    val canSave: Boolean
+        get() = assigneeId.isNotBlank() &&
+            (userIds.isNotEmpty() || departmentIds.isNotEmpty() || designationIds.isNotEmpty())
+}
+
+/**
+ * One row of the payroll-accounts batch — `PATCH /payroll-settings/custom-accounts`.
+ *
+ * No [id] creates the code in the chart; an id updates it; an id with
+ * [delete] deactivates it and drops it from the list.
+ */
+data class PayrollAccountRow(
+    val id: String? = null,
+    val code: String = "",
+    val name: String = "",
+    val lineType: CoaLineType = CoaLineType.Category,
+    val delete: Boolean = false,
+)
+
 // -- purchase order setup ----------------------------------------------------
 
 /** How a purchase order line's description is assembled. */
 enum class PoDescriptionFormat(val wire: String, val label: String, val sample: String) {
-    DayMonthItem("DDMON_ITEM", "Date then item", "03MAR ALEXA MINI LF HIRE"),
-    DayMonthNumericItem("DDMM_ITEM", "Numeric date then item", "03/03 ALEXA MINI LF HIRE"),
-    ItemDayMonth("ITEM_DDMON", "Item then date", "ALEXA MINI LF HIRE 03MAR"),
+    DayMonthItem("DDMON_ITEM", "DDMON → ITEM", "03MAR ALEXA MINI LF HIRE"),
+    DayMonthNumericItem("DDMM_ITEM", "DDMM → ITEM", "03/03 ALEXA MINI LF HIRE"),
+    ItemDayMonth("ITEM_DDMON", "ITEM → DDMON", "ALEXA MINI LF HIRE 03MAR"),
+    /** Decoded when stored, never offered — the web's setup modal lists the three above only. */
     Custom("CUSTOM", "Custom", "Define your own pattern"),
     ;
 
     companion object {
         val Default = DayMonthItem
+
+        /** The formats the setup modal offers, in the web's order. */
+        val offered: List<PoDescriptionFormat> get() = entries.filter { it != Custom }
 
         fun from(wire: String?): PoDescriptionFormat =
             entries.firstOrNull { it.wire == wire } ?: Default
@@ -576,9 +921,34 @@ data class PurchaseOrderSetup(
     val numberPrefix: String = "",
     /** The terms issued with every order, or null when none is set. */
     val termsDocument: AgreementDocument? = null,
+    /**
+     * Whether the raiser may edit an approved order.
+     *
+     * Round-tripped, never shown: amendments are paused behind the web's own
+     * `AMENDMENTS_ENABLED = false`, and a save that dropped the key would
+     * reset a production's stored choice.
+     */
+    val allowAmendAfterApproval: Boolean = false,
 ) {
+    /**
+     * The Rental & Split section's chip: auto-split when on, plus the two
+     * always-on rules — what the web's `count` adds up.
+     */
+    val rentalCount: Int get() = ALWAYS_ON_RULES + if (autoSplitRentals) 1 else 0
+
+    /** The Issuance section's chip: a prefix and a terms document, each counted once. */
+    val issuanceCount: Int
+        get() = (if (numberPrefix.isNotBlank()) 1 else 0) + (if (termsDocument != null) 1 else 0)
+
     companion object {
         const val PREFIX_MAX = 8
+
+        /** Under the prefix field — the web's `PO_PREFIX_HINT`, shared by both of its settings screens. */
+        const val PREFIX_HINT =
+            "Goes at the start of every new PO number. POs you've already created keep their existing numbers."
+
+        /** Require effective date and enforce period close, forced on by the service. */
+        private const val ALWAYS_ON_RULES = 2
 
         /**
          * Upper case, letters and digits only, at most eight.
@@ -598,33 +968,33 @@ data class PurchaseOrderSetup(
 enum class InvoiceAlert(val wire: String, val label: String, val hint: String) {
     Overdue(
         "invoice_overdue",
-        "Invoice overdue",
-        "When an invoice passes its due date without being paid.",
+        "Invoice overdue notifications",
+        "Get notified when an invoice passes its due date without being paid.",
     ),
     SlaBreach(
         "approval_sla_breach",
-        "Approval SLA breached",
-        "When an invoice sits in the approval queue beyond the SLA window.",
+        "Approval SLA breach warnings",
+        "Alert when an invoice sits in the approval queue beyond the SLA window.",
     ),
     Duplicate(
         "duplicate_detection",
-        "Possible duplicate",
-        "When an invoice looks like one already entered, by vendor and amount.",
+        "Duplicate invoice detection",
+        "Flag invoices that appear to be duplicates based on vendor and amount.",
     ),
     OverPo(
         "over_po_flagging",
-        "Over the purchase order",
-        "When an invoice is worth more than the order it is linked to.",
+        "Over-PO flagging alerts",
+        "Warn when an invoice amount exceeds the linked purchase order value.",
     ),
     NoPoOverride(
         "no_po_override",
-        "Approved with no order",
-        "When an invoice is approved without a purchase order behind it.",
+        "No-PO override notifications",
+        "Notify when an invoice is approved without a linked purchase order.",
     ),
     DailySummary(
         "daily_ap_summary",
-        "Daily summary",
-        "A morning digest of pending invoices and the payment run's state.",
+        "Daily AP summary email",
+        "Receive a morning summary of pending invoices and payment run status.",
     ),
     ;
 

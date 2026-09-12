@@ -17,7 +17,9 @@ import com.zillit.desktop.feature.costreport.domain.LiveReport
 import com.zillit.desktop.feature.costreport.domain.PostedFilter
 import com.zillit.desktop.feature.costreport.domain.SnapshotDetail
 import com.zillit.desktop.feature.costreport.domain.SnapshotHeader
+import com.zillit.desktop.feature.costreport.domain.SnapshotToggles
 import com.zillit.desktop.feature.costreport.domain.TreeToggles
+import com.zillit.desktop.feature.costreport.domain.VtpBaseline
 import com.zillit.desktop.feature.costreport.domain.WeekWindow
 
 /** The Current CR tab: filters, the live tree, and what is open. */
@@ -37,9 +39,10 @@ data class CurrentCr(
     val currencyCode: String? = null,
     val report: LiveReport? = null,
     val sections: List<CrSection> = emptyList(),
-    /** The prior weekly snapshot's variance by row identity — the VTP baseline. */
-    val priorVariance: Map<String, Double> = emptyMap(),
-    val hasPrior: Boolean = false,
+    /** The prior weekly snapshot's variance — what Variance This Period moves against. */
+    val baseline: VtpBaseline = VtpBaseline.NONE,
+    /** Set when this week was read from its posted snapshot rather than computed live. */
+    val fromSnapshot: SnapshotHeader? = null,
     val week: WeekWindow? = null,
     /** When the live report was asked for — the "today" in the subtitle. */
     val todayMs: Long? = null,
@@ -88,7 +91,7 @@ data class SnapshotView(
     val error: String? = null,
     val sections: List<CrSection> = emptyList(),
     val query: String = "",
-    val toggles: TreeToggles = TreeToggles(),
+    val toggles: SnapshotToggles = SnapshotToggles(),
     val exporting: ExportFormat? = null,
     val symbol: String = "",
 ) {
@@ -106,11 +109,19 @@ data class LedgerView(
     val error: String? = null,
     val result: LedgerResult? = null,
 ) {
+    /** "Line items", "Actuals", or "Commits · Card" — what the drill was opened on. */
     val subtitle: String
         get() = when (type) {
             null -> "Line items"
             LedgerType.Actuals -> "Actuals"
-            LedgerType.Commits -> "Commits · PO/Card/Cash/Payroll"
+            LedgerType.Commits -> when (source) {
+                "po" -> "Commits · PO"
+                "card" -> "Commits · Card"
+                "cash" -> "Commits · Cash"
+                "payroll" -> "Commits · Payroll"
+                null -> "Commits"
+                else -> "Commits · $source"
+            }
         }
 }
 
@@ -161,8 +172,8 @@ sealed interface CostReportEvent {
     data class SelectCurrency(val code: String?) : CostReportEvent
     data class SearchCurrent(val query: String) : CostReportEvent
     data class ToggleSection(val sectionId: String) : CostReportEvent
-    data class ToggleHeader(val key: String) : CostReportEvent
-    data class ToggleNominal(val key: String) : CostReportEvent
+    data class ToggleHeader(val code: String) : CostReportEvent
+    data class ToggleNominal(val identity: String) : CostReportEvent
 
     /** The code cell (`column == null`) or an actuals/commits cell. */
     data class OpenLedger(val nominal: CrNominal, val column: CrColumn?) : CostReportEvent
@@ -174,11 +185,12 @@ sealed interface CostReportEvent {
     data object CloseSnapshot : CostReportEvent
     data class SearchSnapshot(val query: String) : CostReportEvent
     data class ToggleSnapshotSection(val sectionId: String) : CostReportEvent
-    data class ToggleSnapshotHeader(val key: String) : CostReportEvent
-    data class ToggleSnapshotNominal(val key: String) : CostReportEvent
+    data class ToggleSnapshotHeader(val code: String) : CostReportEvent
     data class Export(val format: ExportFormat) : CostReportEvent
+    data object OpenAnalytics : CostReportEvent
 }
 
 sealed interface CostReportEffect {
     data class Notice(val text: String) : CostReportEffect
+    data object OpenAnalytics : CostReportEffect
 }

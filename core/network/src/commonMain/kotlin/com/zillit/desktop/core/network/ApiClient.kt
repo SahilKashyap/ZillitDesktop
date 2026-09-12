@@ -347,7 +347,13 @@ class ApiClient(
         }
 
         return try {
-            ZillitResult.Success(body<ApiEnvelope>())
+            val envelope = body<ApiEnvelope>()
+            // Some routes answer 200 with `{data: …}` and no `status` at all —
+            // the invoices analytics pair among them. Every caller reads
+            // `status == 1`, so an absent status read as a refusal: the screen
+            // showed "Something went wrong (200)" over a perfectly good body.
+            // The web tolerates the same shape (`json.data || json`).
+            ZillitResult.Success(if (envelope.status == null) envelope.copy(status = STATUS_OK) else envelope)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
@@ -386,6 +392,8 @@ class ApiClient(
 
     private companion object {
         const val TAG = "ApiClient"
+        /** What this backend calls success in the envelope. */
+        const val STATUS_OK = 1
         const val STATUS_UNAUTHORIZED = 401
         const val STATUS_FORBIDDEN = 403
 

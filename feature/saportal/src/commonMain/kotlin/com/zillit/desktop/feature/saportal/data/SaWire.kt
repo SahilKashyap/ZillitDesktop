@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.saportal.data
 
+import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.feature.saportal.domain.AccountCheck
 import com.zillit.desktop.feature.saportal.domain.ArtisteBank
 import com.zillit.desktop.feature.saportal.domain.ArtisteQuery
@@ -44,6 +45,7 @@ internal data class VoucherDto(
     @SerialName("minutes_worked") val minutesWorked: Double? = null,
     @SerialName("gross") val gross: Double? = null,
     @SerialName("holiday") val holiday: Double? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("status") val status: String? = null,
     @SerialName("day_status") val dayStatus: String? = null,
@@ -135,6 +137,7 @@ internal data class VoucherDetailDto(
     @SerialName("minutes_worked") val minutesWorked: Double? = null,
     @SerialName("gross") val gross: Double? = null,
     @SerialName("holiday") val holiday: Double? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("status") val status: String? = null,
     @SerialName("day_status") val dayStatus: String? = null,
@@ -329,6 +332,7 @@ internal data class ProfileDto(
     @SerialName("category") val category: String? = null,
     @SerialName("engagement_type") val engagementType: String? = null,
     @SerialName("agency_name") val agencyName: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("bank") val bank: BankDto? = null,
     @SerialName("account_status") val accountStatus: List<AccountCheckDto>? = null,

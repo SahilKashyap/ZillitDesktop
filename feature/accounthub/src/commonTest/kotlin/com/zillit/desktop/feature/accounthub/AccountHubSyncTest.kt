@@ -5,7 +5,6 @@ import com.zillit.desktop.feature.accounthub.data.HUB_REFRESH_BY_EVENT
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 
 /**
  * The console had no realtime at all.
@@ -36,18 +35,31 @@ class AccountHubSyncTest {
         ).forEach { assertEquals(HubArea.Vendors, area(it), it) }
     }
 
-    /** No tracking-codes page here, so there is nothing to reload. */
+    /** The Layers tab lists tracking codes now, so their two verbs reload the chart. */
     @Test
-    fun `tracking codes stay unsubscribed`() {
-        assertNull(area("trackingcodes:updated"))
-        assertNull(area("trackingcodes:deleted"))
+    fun `tracking codes reload the chart's layers tab`() {
+        assertEquals(HubArea.ChartOfAccounts, area("trackingcodes:updated"))
+        assertEquals(HubArea.ChartOfAccounts, area("trackingcodes:deleted"))
     }
 
-    /** Setup and Approvers have no event of their own on this wire. */
+    /**
+     * Another accountant's chain edit reloads the Approvers page — the web's
+     * `approval_tier:*` handlers, which all refetch the open module.
+     */
     @Test
-    fun `only the two areas the wire announces are followed`() {
+    fun `every approval tier verb reloads the approvers page`() {
+        listOf(
+            "approval_tier:configured",
+            "approval_tier:updated",
+            "approval_tier:deleted",
+        ).forEach { assertEquals(HubArea.Approvers, area(it), it) }
+    }
+
+    /** Setup has no event of its own on this wire. */
+    @Test
+    fun `only the three areas the wire announces are followed`() {
         assertEquals(
-            setOf(HubArea.ChartOfAccounts, HubArea.Vendors),
+            setOf(HubArea.ChartOfAccounts, HubArea.Vendors, HubArea.Approvers),
             HUB_REFRESH_BY_EVENT.values.toSet(),
         )
     }

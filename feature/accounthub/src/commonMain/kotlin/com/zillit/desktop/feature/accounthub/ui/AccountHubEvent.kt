@@ -1,39 +1,54 @@
 package com.zillit.desktop.feature.accounthub.ui
 
-import com.zillit.desktop.feature.accounthub.domain.CoaImportMode
-import com.zillit.desktop.feature.accounthub.domain.BudgetImportMeta
-import com.zillit.desktop.feature.accounthub.domain.BibleQuery
-import com.zillit.desktop.feature.accounthub.domain.TrialBalanceQuery
-import com.zillit.desktop.feature.accounthub.domain.NonUnionPay as DomainNonUnionPay
-import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup as DomainInvoicesSetup
-import com.zillit.desktop.feature.accounthub.domain.PurchaseOrderSetup
-import com.zillit.desktop.feature.accounthub.domain.PayrollSettings as DomainPayrollSettings
-import com.zillit.desktop.feature.accounthub.domain.AllowancesRentals
-import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
-import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
-import com.zillit.desktop.feature.accounthub.domain.BankAccount
-import com.zillit.desktop.feature.accounthub.domain.CoaAccount
-import com.zillit.desktop.feature.accounthub.domain.DayType as DomainDayType
 import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.core.forms.FormSection
+import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
+import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
+import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
+import com.zillit.desktop.feature.accounthub.domain.AssignmentRule
+import com.zillit.desktop.feature.accounthub.domain.BankAccount
+import com.zillit.desktop.feature.accounthub.domain.BibleFilters
+import com.zillit.desktop.feature.accounthub.domain.BudgetImportMeta
+import com.zillit.desktop.feature.accounthub.domain.ChartMode
+import com.zillit.desktop.feature.accounthub.domain.ChartSortKey
+import com.zillit.desktop.feature.accounthub.domain.ClosingPackage
+import com.zillit.desktop.feature.accounthub.domain.ClosingReport
+import com.zillit.desktop.feature.accounthub.domain.CoaAccount
+import com.zillit.desktop.feature.accounthub.domain.CoaBulkRow
 import com.zillit.desktop.feature.accounthub.domain.CoaCostType
+import com.zillit.desktop.feature.accounthub.domain.CoaImportMode
 import com.zillit.desktop.feature.accounthub.domain.CoaLineType
 import com.zillit.desktop.feature.accounthub.domain.Company
 import com.zillit.desktop.feature.accounthub.domain.CurrencySettings
+import com.zillit.desktop.feature.accounthub.domain.DayType as DomainDayType
+import com.zillit.desktop.feature.accounthub.domain.DealCondition
+import com.zillit.desktop.feature.accounthub.domain.ExportFormat
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubItem
+import com.zillit.desktop.feature.accounthub.domain.InvoiceTeamMember
+import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup as DomainInvoicesSetup
 import com.zillit.desktop.feature.accounthub.domain.NewVendor
-import com.zillit.desktop.feature.accounthub.domain.DealCondition
+import com.zillit.desktop.feature.accounthub.domain.NonUnionPay as DomainNonUnionPay
+import com.zillit.desktop.feature.accounthub.domain.PayRule
+import com.zillit.desktop.feature.accounthub.domain.PayRuleKind
+import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
 import com.zillit.desktop.feature.accounthub.domain.PayrollBureau
 import com.zillit.desktop.feature.accounthub.domain.PayrollDefaults
+import com.zillit.desktop.feature.accounthub.domain.PayrollGroup
+import com.zillit.desktop.feature.accounthub.domain.PayrollSettings as DomainPayrollSettings
+import com.zillit.desktop.feature.accounthub.domain.PeriodMode
+import com.zillit.desktop.feature.accounthub.domain.PurchaseOrderSetup
 import com.zillit.desktop.feature.accounthub.domain.TaxType
+import com.zillit.desktop.feature.accounthub.domain.TrackingNode
+import com.zillit.desktop.feature.accounthub.domain.TrackingSet
 import com.zillit.desktop.feature.accounthub.domain.Vendor
+import com.zillit.desktop.feature.accounthub.domain.AllowancesRentals
 
 /**
  * Everything the console can be asked to do.
  *
- * Grouped by screen rather than flattened, because the hub is four screens
- * sharing a frame and a single flat list of forty cases stops reading as
+ * Grouped by screen rather than flattened, because the hub is nine screens
+ * sharing a frame and a single flat list of two hundred cases stops reading as
  * anything.
  */
 sealed interface AccountHubEvent {
@@ -52,9 +67,30 @@ sealed interface AccountHubEvent {
      */
     data class OpenTool(val item: HubItem) : AccountHubEvent
 
+    /** The header card's back arrow — the web's `/film-tools`. */
+    data object Back : AccountHubEvent
+
+    /**
+     * A report page's back arrow and its "Reports" crumb — the web's
+     * `/film-tools/account-hub`, which is the console's own landing, not the
+     * tools grid [Back] leaves for.
+     */
+    data object BackToHub : AccountHubEvent
+
+    /** An embedded tool moved within itself; the shell follows so the sidebar and title agree. */
+    data class EmbedRoute(val path: String) : AccountHubEvent
+
+    /** An embedded tool asked to close; the console shows its own area again. */
+    data object CloseEmbedded : AccountHubEvent
+
     data object Refresh : AccountHubEvent
 
     data object ClearNotice : AccountHubEvent
+
+    /** The setup tour: the intro's "Next →", a step's Next/Back, and any exit. */
+    data object TourNext : AccountHubEvent
+    data object TourBack : AccountHubEvent
+    data object TourClose : AccountHubEvent
 
     // -- production setup ---------------------------------------------------
 
@@ -64,9 +100,21 @@ sealed interface AccountHubEvent {
 
     data class EditCurrencies(val settings: CurrencySettings) : AccountHubEvent
 
+    data class SetCurrencyFilter(val filter: CurrencyFilter) : AccountHubEvent
+    data class SearchCurrencies(val term: String) : AccountHubEvent
+    data class ToggleCurrencyPicker(val open: Boolean) : AccountHubEvent
+
     data class EditTaxTypes(val taxTypes: List<TaxType>) : AccountHubEvent
 
+    /** Which country's catalogue the tax section shows. */
+    data class PickTaxCountry(val countryCode: String?) : AccountHubEvent
+
     data class EditAssetTags(val tags: List<String>) : AccountHubEvent
+
+    data class EditTagDraft(val text: String) : AccountHubEvent
+
+    /** Commits the tag draft — split on commas, upper-cased, deduplicated. */
+    data object CommitTagDraft : AccountHubEvent
 
     data class EditBudget(val budget: BudgetForm) : AccountHubEvent
 
@@ -92,6 +140,9 @@ sealed interface AccountHubEvent {
     /** Opens a budget version's lines. Null clears the selection. */
     data class SelectBudgetVersion(val id: String?) : AccountHubEvent
 
+    /** Opens the version's source file in the OS. */
+    data object OpenBudgetFile : AccountHubEvent
+
     // -- importing a budget --------------------------------------------------
 
     data object OpenBudgetImport : AccountHubEvent
@@ -108,30 +159,93 @@ sealed interface AccountHubEvent {
     /** Writes the reviewed parse: chart codes, the version, and its lines. */
     data object CommitBudgetImport : AccountHubEvent
 
-    /** Changes the trial balance's filters without re-running it. */
-    data class EditTrialBalanceQuery(val query: TrialBalanceQuery) : AccountHubEvent
+    // -- reports --------------------------------------------------------------
+
+    // The trial balance's filters change the bar, never the rows: nothing
+    // runs until [RefreshTrialBalance].
+
+    data class SetTrialBalancePeriodMode(val mode: PeriodMode) : AccountHubEvent
+
+    /** The Date Range pickers, as typed. */
+    data class EditTrialBalanceDates(val from: String, val to: String) : AccountHubEvent
+
+    /** The account range's two codes, as typed. */
+    data class EditTrialBalanceAccounts(val from: String, val to: String) : AccountHubEvent
+
+    /** One legal entity, or blank for every company. */
+    data class PickTrialBalanceCompany(val companyId: String) : AccountHubEvent
+
+    data class PickTrialBalanceCurrency(val code: String) : AccountHubEvent
+
+    data class SetTrialBalanceZeroAccounts(val include: Boolean) : AccountHubEvent
 
     /** Runs the trial balance for whatever the filters now say. */
     data object RefreshTrialBalance : AccountHubEvent
 
-    /** Proposes closing the period covering this instant. Asks before acting. */
+    data class ToggleTrialBalanceExport(val open: Boolean) : AccountHubEvent
+
+    data class ExportTrialBalance(val format: ExportFormat) : AccountHubEvent
+
+    /** Any change to the bible's filter bar, as typed. Nothing runs until [RunBibleReport]. */
+    data class EditBibleFilters(val filters: BibleFilters) : AccountHubEvent
+
+    /** Runs the bible for whatever the filter bar now says, with "today" read at the press. */
+    data object RunBibleReport : AccountHubEvent
+
+    /** Folds one account's transactions away, or back. */
+    data class ToggleBibleAccount(val code: String) : AccountHubEvent
+
+    /** Folds every account away, or opens them all. */
+    data class SetAllBibleAccounts(val collapsed: Boolean) : AccountHubEvent
+
+    data class ToggleBibleExport(val open: Boolean) : AccountHubEvent
+
+    data class ExportBible(val format: ExportFormat) : AccountHubEvent
+
+    // -- period close ---------------------------------------------------------
+
+    data class SwitchPeriodCloseTab(val tab: PeriodCloseTab) : AccountHubEvent
+
+    data class EditCloseDate(val text: String) : AccountHubEvent
+
+    /** Proposes closing the period through the picked date. Asks before acting. */
     data class ProposePeriodClose(val asOfMillis: Long) : AccountHubEvent
 
     data object ConfirmPeriodClose : AccountHubEvent
 
     data object CancelPeriodClose : AccountHubEvent
 
-    data class EditBibleQuery(val query: BibleQuery) : AccountHubEvent
+    data class ToggleChecklistItem(val label: String) : AccountHubEvent
 
-    data object RefreshBibleReport : AccountHubEvent
+    data object ResetChecklist : AccountHubEvent
 
-    /** Folds one account's transactions away, or back. */
-    data class ToggleBibleAccount(val code: String) : AccountHubEvent
+    data class EditPackages(val packages: List<ClosingPackage>) : AccountHubEvent
+
+    data object AddPackage : AccountHubEvent
+
+    data class RemovePackage(val id: Int) : AccountHubEvent
+
+    data class TogglePackageRecipient(val packageId: Int, val userId: String) : AccountHubEvent
+
+    data class AddPackageEmail(val packageId: Int) : AccountHubEvent
+
+    data class TogglePackageReport(val packageId: Int, val report: ClosingReport) : AccountHubEvent
+
+    data class TogglePackageAllReports(val packageId: Int) : AccountHubEvent
+
+    data class OpenPackageMenu(val packageId: Int?) : AccountHubEvent
+
+    data class SearchPackageMenu(val term: String) : AccountHubEvent
+
+    data object PublishPackages : AccountHubEvent
+
+    // -- purchase order terms, tiles and modals --------------------------------
 
     /** Picks and uploads the terms document issued with every order. */
     data object PickPoTerms : AccountHubEvent
 
-    data object ClearPoTerms : AccountHubEvent
+    /** Opens the terms document in the OS — the web's View. There is no remove; a document is only replaced. */
+    data object OpenPoTerms : AccountHubEvent
 
     /**
      * Opens the Timecard tool from its Production Setup tile.
@@ -144,6 +258,52 @@ sealed interface AccountHubEvent {
     /** Opens a spend tool on its own settings page. */
     data class OpenSpendSetup(val which: SpendSetup) : AccountHubEvent
 
+    /** Opens one of the three drill-down modals, on its first section. */
+    data class OpenSetupModal(val modal: SetupModal) : AccountHubEvent
+
+    data object CloseSetupModal : AccountHubEvent
+
+    data class SwitchModalSection(val section: String) : AccountHubEvent
+
+    /** Saves whatever the open modal holds — settings and rules together. */
+    data object SaveSetupModal : AccountHubEvent
+
+    data class EditPoRules(val rules: List<AssignmentRule>) : AccountHubEvent
+
+    data class EditInvoiceRules(val rules: List<AssignmentRule>) : AccountHubEvent
+
+    /** The invoices team-member dialog: open on a row (null adds), edit, commit, dismiss. */
+    data class ComposeInvoiceMember(val index: Int?) : AccountHubEvent
+    data class EditInvoiceMember(val member: InvoiceTeamMember) : AccountHubEvent
+    data object CommitInvoiceMember : AccountHubEvent
+    data object DismissInvoiceMember : AccountHubEvent
+
+    /** The shared user picker. */
+    data class OpenUserPicker(val purpose: UserPickerPurpose, val index: Int = -1) : AccountHubEvent
+    data class SearchUserPicker(val term: String) : AccountHubEvent
+    data class ToggleUserPick(val userId: String) : AccountHubEvent
+    data object ApplyUserPicker : AccountHubEvent
+    data object DismissUserPicker : AccountHubEvent
+
+    // -- payroll groups and accounts ---------------------------------------------
+
+    data class ComposePayrollGroup(val group: PayrollGroup?) : AccountHubEvent
+    data class EditPayrollGroup(val group: PayrollGroup) : AccountHubEvent
+    data object SavePayrollGroup : AccountHubEvent
+    data object DismissPayrollGroup : AccountHubEvent
+
+    /** Opens the payroll-accounts grid seeded from the saved codes. */
+    data object OpenPayrollAccounts : AccountHubEvent
+    data class EditPayrollAccounts(val rows: List<PayrollAccountRow>) : AccountHubEvent
+    data object SavePayrollAccounts : AccountHubEvent
+    data object DismissPayrollAccounts : AccountHubEvent
+
+    // -- removals, confirmed -------------------------------------------------------
+
+    data class AskRemove(val removal: SetupRemoval) : AccountHubEvent
+    data object DismissRemove : AccountHubEvent
+    data object ConfirmRemove : AccountHubEvent
+
     // -- agreements and documents -------------------------------------------
 
     /** Opens the file dialog and queues whatever is chosen. */
@@ -155,6 +315,9 @@ sealed interface AccountHubEvent {
     data object UploadAgreementFiles : AccountHubEvent
 
     data class DeleteAgreementDocument(val id: String) : AccountHubEvent
+
+    /** Opens a stored document in the OS, by presigned URL. */
+    data class OpenAgreementDocument(val id: String) : AccountHubEvent
 
     /** Commit one section. Sections save independently — see [SectionEdit]. */
     data class SaveSection(val section: SetupSection) : AccountHubEvent
@@ -183,6 +346,30 @@ sealed interface AccountHubEvent {
 
     data class DeleteBank(val id: String) : AccountHubEvent
 
+    /** Unmasks one bank card's numbers; the card re-masks itself after five seconds. */
+    data class RevealBank(val id: String?) : AccountHubEvent
+
+    // -- non-union pay --------------------------------------------------------------
+
+    /** Applies the pay breakdown to everybody, or to named departments. */
+    data class ApplyPayToEveryone(val everyone: Boolean) : AccountHubEvent
+
+    data class TogglePayDepartment(val departmentId: String, val on: Boolean) : AccountHubEvent
+
+    data class ToggleDepartmentPicker(val open: Boolean) : AccountHubEvent
+
+    data class SearchDepartmentPicker(val term: String) : AccountHubEvent
+
+    /** Opens the rule editor on a rule (null adds one of [kind]). */
+    data class ComposePayRule(val kind: PayRuleKind, val index: Int?) : AccountHubEvent
+    data class EditPayRule(val rule: PayRule) : AccountHubEvent
+    data object CommitPayRule : AccountHubEvent
+    data object DismissPayRule : AccountHubEvent
+    data class RemovePayRule(val kind: PayRuleKind, val index: Int) : AccountHubEvent
+
+    /** The project's day-type catalogue, edited inside the pay breakdown. */
+    data class EditDayTypes(val rows: List<DomainDayType>) : AccountHubEvent
+
     // -- chart of accounts --------------------------------------------------
 
     data class SwitchChartView(val view: ChartView) : AccountHubEvent
@@ -191,7 +378,14 @@ sealed interface AccountHubEvent {
 
     data object ToggleInactiveAccounts : AccountHubEvent
 
+    data class SetChartMode(val mode: ChartMode) : AccountHubEvent
+
+    data class SortChart(val key: ChartSortKey) : AccountHubEvent
+
     data class ToggleAccountExpanded(val id: String) : AccountHubEvent
+
+    /** Expand all when collapsed, collapse all when expanded. */
+    data object ToggleExpandAll : AccountHubEvent
 
     /** Open the account form. [parent] pre-selects; [editing] switches to edit. */
     data class ComposeAccount(
@@ -217,20 +411,72 @@ sealed interface AccountHubEvent {
 
     data object DismissAccountForm : AccountHubEvent
 
+    /** Asks before deactivating — "Deactivate code" — then does it on confirm. */
+    data class AskDeactivateAccount(val account: CoaAccount) : AccountHubEvent
+    data object DismissDeactivateAccount : AccountHubEvent
+    data object ConfirmDeactivateAccount : AccountHubEvent
+
     data class DeactivateAccount(val id: String) : AccountHubEvent
+
+    /** The table's inline cost-type select. */
+    data class SetAccountCostTypeInline(val id: String, val costType: CoaCostType) : AccountHubEvent
+
+    /** Creates a category code from a typeahead — the accountant's quick create. */
+    data class QuickCreateCode(val code: String, val name: String, val costType: CoaCostType) : AccountHubEvent
+
+    // -- bulk add ("New COA Entry") ---------------------------------------------
+
+    data class OpenBulkAdd(val parent: CoaAccount? = null) : AccountHubEvent
+    data class EditBulkRow(val row: CoaBulkRow) : AccountHubEvent
+    data class AddBulkRows(val count: Int) : AccountHubEvent
+    data class RemoveBulkRow(val localId: String) : AccountHubEvent
+    /** Done: flushes anything still mid-debounce, then closes and reloads. */
+    data object FinishBulkAdd : AccountHubEvent
+
+    // -- layers ---------------------------------------------------------------------
+
+    data class ToggleLayerOpen(val setId: String) : AccountHubEvent
+    data class ComposeLayerSet(val set: TrackingSet?) : AccountHubEvent
+    data class EditLayerSet(val set: TrackingSet) : AccountHubEvent
+    data object SaveLayerSet : AccountHubEvent
+    data object DismissLayerSet : AccountHubEvent
+    data class ComposeLayerNode(val setId: String, val node: TrackingNode?) : AccountHubEvent
+    data class EditLayerNode(val node: TrackingNode) : AccountHubEvent
+    data object SaveLayerNode : AccountHubEvent
+    data object DismissLayerNode : AccountHubEvent
+    data class AskDeleteLayer(val delete: LayerDelete) : AccountHubEvent
+    data object DismissDeleteLayer : AccountHubEvent
+    data object ConfirmDeleteLayer : AccountHubEvent
+    data object DismissLayerInUse : AccountHubEvent
 
     // -- vendors ------------------------------------------------------------
 
     data class SearchVendors(val term: String) : AccountHubEvent
 
-    /** Switches the register's tab: all, verified or not verified. */
+    /** Switches the register's tab: all, verified, not verified, or mine. */
     data class FilterVendors(val filter: VendorFilter) : AccountHubEvent
 
     data class SelectVendor(val id: String?) : AccountHubEvent
 
+    /** Opens the vendor detail modal; null closes it. */
+    data class OpenVendorDetail(val id: String?) : AccountHubEvent
+
+    data class RevealVendorBank(val revealed: Boolean) : AccountHubEvent
+
+    /** Opens the full-page form. A null [editing] adds. */
     data class ComposeVendor(val editing: Vendor? = null) : AccountHubEvent
 
+    /**
+     * Opens the vendor form from a route — the web's `?action=add` and
+     * `?action=edit&id=`. Takes an id rather than a row, because the route
+     * arrives before the register has loaded; the edit waits for it.
+     */
+    data class OpenVendorForm(val editId: String? = null) : AccountHubEvent
+
     data class UpdateVendorDraft(val draft: NewVendor) : AccountHubEvent
+
+    /** A field the person has left, so its error may show. */
+    data class TouchVendorField(val field: String) : AccountHubEvent
 
     data object SaveVendor : AccountHubEvent
 
@@ -247,38 +493,85 @@ sealed interface AccountHubEvent {
 
     data object DismissVendorForm : AccountHubEvent
 
+    data class AskDeleteVendorBank(val open: Boolean) : AccountHubEvent
+    data object ConfirmDeleteVendorBank : AccountHubEvent
+
     data class VerifyVendor(val id: String) : AccountHubEvent
 
+    data class AskDeleteVendor(val vendor: Vendor?) : AccountHubEvent
+
     data class DeleteVendor(val id: String) : AccountHubEvent
+
+    /** The history side panel; null closes it. */
+    data class OpenVendorHistory(val id: String?) : AccountHubEvent
+
+    /** A department user's "Create PO" for this vendor — a hand-off. */
+    data class CreatePurchaseOrder(val vendorId: String) : AccountHubEvent
 
     // -- approvals ----------------------------------------------------------
 
     data class SwitchApprovalModule(val module: ApprovalModule) : AccountHubEvent
 
-    /** Open a chain for editing. A null [config] starts the production-wide one. */
-    data class EditApprovalConfig(val config: ApprovalConfig?) : AccountHubEvent
+    data class SearchApprovalModules(val term: String) : AccountHubEvent
 
-    data class UpdateApprovalConfig(val config: ApprovalConfig) : AccountHubEvent
+    data class SearchDepartments(val term: String) : AccountHubEvent
 
-    data object AddApprovalLevel : AccountHubEvent
+    data class FilterDepartments(val filter: DepartmentFilter) : AccountHubEvent
+
+    data class ToggleDepartmentExpanded(val departmentId: String) : AccountHubEvent
+
+    /** Reads the open module's chains again — the Retry under a failed load. */
+    data object ReloadApprovalConfigs : AccountHubEvent
+
+    /** Opens the builder on the production-wide chain — the default card's Configure / Edit. */
+    data object EditDefaultApprovals : AccountHubEvent
+
+    /** Opens the builder on a department, seeding from its own chain or, failing that, the default's. */
+    data class EditDepartmentConfig(val departmentId: String) : AccountHubEvent
+
+    /** Inserts an empty level at [position] (0-based) — the rail between cards. */
+    data class InsertApprovalLevel(val position: Int) : AccountHubEvent
 
     data class RemoveApprovalLevel(val order: Int) : AccountHubEvent
 
+    /** "Add more": an amount rule on a level that has a Default, an untyped one otherwise. */
+    data class AddApprovalRule(val tier: Int) : AccountHubEvent
+
+    /** Removes the [rule]th rule (0-based) of level [tier]; a level keeps at least one. */
+    data class RemoveApprovalRule(val tier: Int, val rule: Int) : AccountHubEvent
+
+    data class SetApprovalRuleType(val tier: Int, val rule: Int, val type: String) : AccountHubEvent
+
+    data class SetApprovalRuleAmount(val tier: Int, val rule: Int, val amount: Double?) : AccountHubEvent
+
+    /** An approver chip's remove. */
+    data class RemoveApprover(val tier: Int, val rule: Int, val userId: String) : AccountHubEvent
+
+    /** Opens the user picker for one rule of one level. */
+    data class OpenApproverPicker(val tier: Int, val rule: Int) : AccountHubEvent
+
+    data object CloseApproverPicker : AccountHubEvent
+
+    data class SearchApproverPicker(val term: String) : AccountHubEvent
+
+    /** Ticks a person in the open picker; nobody joins the rule until [AddPickedApprovers]. */
+    data class ToggleApproverPick(val userId: String) : AccountHubEvent
+
+    data object AddPickedApprovers : AccountHubEvent
+
     data object SaveApprovalConfig : AccountHubEvent
+
+    data object ConfirmApprovalSave : AccountHubEvent
+
+    data object DismissApprovalConfirm : AccountHubEvent
 
     data object DismissApprovalConfig : AccountHubEvent
 
     // -- forms configuration -------------------------------------------------
 
-    /** Applies the pay breakdown to everybody, or to named departments. */
-    data class ApplyPayToEveryone(val everyone: Boolean) : AccountHubEvent
-
-    data class TogglePayDepartment(val departmentId: String, val on: Boolean) : AccountHubEvent
-
-    /** The project's day-type catalogue, edited inside the pay breakdown. */
-    data class EditDayTypes(val rows: List<DomainDayType>) : AccountHubEvent
-
     data class OpenFormModule(val module: FormModule) : AccountHubEvent
+
+    data class SearchFormModules(val term: String) : AccountHubEvent
 
     /**
      * Opens Forms Configuration on one module, from another screen.
@@ -294,6 +587,11 @@ sealed interface AccountHubEvent {
     data class ToggleFormSection(val key: String) : AccountHubEvent
 
     data class NudgeFormSection(val key: String, val delta: Int) : AccountHubEvent
+
+    /** Rearrange mode, and which section's fields its panel lists. */
+    data class ToggleRearrange(val on: Boolean) : AccountHubEvent
+    data class PickRearrangeSection(val key: String?) : AccountHubEvent
+    data class MoveFormSection(val fromKey: String, val toKey: String) : AccountHubEvent
 
     data class ComposeFormSection(val afterKey: String?) : AccountHubEvent
     data class EditFormSectionName(val name: String) : AccountHubEvent
@@ -357,11 +655,25 @@ sealed interface AccountHubEvent {
         val selectionType: String?,
     ) : AccountHubEvent
 
+    /** The terms-of-engagement clauses, edited in the side panel. */
+    data class ToggleTermsEditor(val open: Boolean) : AccountHubEvent
+    data class SetTerm(val index: Int, val text: String) : AccountHubEvent
+    data object AddTerm : AccountHubEvent
+    data class RemoveTerm(val index: Int) : AccountHubEvent
+
     data object SaveFormTemplate : AccountHubEvent
 
     data object AskResetFormTemplate : AccountHubEvent
     data object DismissResetFormTemplate : AccountHubEvent
     data object ConfirmResetFormTemplate : AccountHubEvent
+
+    /** "Set Approver Level": the scope modal, then a builder saved through the approvals API. */
+    data class OpenApproverScope(val open: Boolean) : AccountHubEvent
+    data class PickApproverScope(val scope: ApprovalScope?, val departmentId: String? = null) : AccountHubEvent
+    data object ContinueApproverScope : AccountHubEvent
+    data class UpdateFormApprovers(val config: ApprovalConfig) : AccountHubEvent
+    data object SaveFormApprovers : AccountHubEvent
+    data object DismissFormApprovers : AccountHubEvent
 }
 
 /** Which Production Setup section a save or revert applies to. */
@@ -369,7 +681,7 @@ enum class SetupSection(val label: String) {
     Companies("Companies"),
     Currencies("Project Currencies"),
     TaxTypes("Tax Types"),
-    AssetTags("Asset Tags"),
+    AssetTags("Account Tags"),
     Budget("Project Budget"),
     Schedule("Production Schedule"),
     PayrollDefaults("Payroll Defaults"),
@@ -390,6 +702,9 @@ sealed interface AccountHubEffect {
 
     /** Hand off to another film tool, by its workspace path. */
     data class OpenTool(val path: String, val title: String) : AccountHubEffect
+
+    /** The header card's back arrow: leave the console for the tools grid. */
+    data object Back : AccountHubEffect
 }
 
 /**

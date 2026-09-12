@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.addashboard.data
 
+import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.feature.addashboard.domain.AdDayStatus
 import com.zillit.desktop.feature.addashboard.domain.AdShootDay
 import com.zillit.desktop.feature.addashboard.domain.Artiste
@@ -106,6 +107,7 @@ internal data class SaDayDto(
     @SerialName("attendance_status") val attendance: String? = null,
     @SerialName("status") val status: String? = null,
     @SerialName("gross") val gross: Double? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("sign_status") val signStatus: String? = null,
 ) {

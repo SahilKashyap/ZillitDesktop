@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
+import com.zillit.desktop.feature.cardexpenses.ui.CardConfirmAction
+import com.zillit.desktop.feature.cardexpenses.ui.CardPrompt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +68,7 @@ fun StatementReviewPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val orphans = rows.count { it.holderId.isNullOrBlank() }
 
     FixedPage {
+        StatementUploadPanel(state, onEvent)
         ImportPicker(state, onEvent)
 
         if (orphans > 0) {
@@ -133,6 +136,56 @@ fun StatementReviewPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     }
 }
 
+/**
+ * Choosing the statement file, and saying what it is denominated in.
+ *
+ * The service ingests from storage rather than from a multipart upload, so the
+ * two steps are this application's: put the file where the server can read it,
+ * then hand over the pointer. Before this the only way to reach that route was
+ * a text box asking for a storage key, which nobody outside the accounts
+ * server could have supplied — so a statement could be reviewed here but never
+ * imported here.
+ */
+@Composable
+private fun StatementUploadPanel(state: CardUiState, onEvent: (CardEvent) -> Unit) {
+    ZillitSectionCard(title = "Import a statement", icon = ZillitIcons.Upload) {
+        ZillitText(
+            text = "Choose the file the bank sent. Its rows are read and matched against the receipts " +
+                "already uploaded, then reviewed here before anything reaches the ledger.",
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textSecondary,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            ZillitTextField(
+                value = state.statementCurrency,
+                onValueChange = { onEvent(CardEvent.EditStatementCurrency(it.uppercase())) },
+                label = "Statement currency",
+                placeholder = "Leave blank for the project default",
+                helperText = "What the statement is denominated in, if it is not the project's own.",
+                modifier = Modifier.width(CURRENCY_WIDTH),
+            )
+            ZillitButton(
+                text = "Choose a statement file",
+                onClick = { onEvent(CardEvent.ImportStatement) },
+                leadingIcon = ZillitIcons.Upload,
+                enabled = state.canAttachFiles && !state.busy,
+                loading = state.uploading || state.busy,
+            )
+            if (!state.canAttachFiles) {
+                ZillitText(
+                    text = "No file picker is available in this build.",
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textMuted,
+                )
+            }
+        }
+    }
+}
+
 /** The statements on file, newest first, with the open one marked. */
 @Composable
 private fun ImportPicker(state: CardUiState, onEvent: (CardEvent) -> Unit) {
@@ -144,7 +197,7 @@ private fun ImportPicker(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     ) {
         ZillitDataTable(
             rows = state.imports.take(RECENT_IMPORTS),
-            columns = importColumns(state),
+            columns = importColumns(state, onEvent),
             key = { it.id },
             onRowClick = { onEvent(CardEvent.OpenImport(it.id)) },
             isSelected = { it.id == state.openImportId },
@@ -156,7 +209,10 @@ private fun ImportPicker(state: CardUiState, onEvent: (CardEvent) -> Unit) {
 }
 
 @Suppress("MagicNumber") // Column proportions.
-private fun importColumns(state: CardUiState): List<TableColumn<StatementImport>> = listOf(
+private fun importColumns(
+    state: CardUiState,
+    onEvent: (CardEvent) -> Unit,
+): List<TableColumn<StatementImport>> = listOf(
     textColumn("File", ColumnWidth.Weight(2f)) { it.filename ?: it.id },
     textColumn("Rows", ColumnWidth.Weight(0.6f), numeric = true) { it.rowCount.toString() },
     textColumn("Matched", ColumnWidth.Weight(0.7f), numeric = true) { it.matchedCount.toString() },
@@ -168,6 +224,34 @@ private fun importColumns(state: CardUiState): List<TableColumn<StatementImport>
             ZillitStatusPill(
                 label = if (row.id == state.openImportId) "Reviewing" else "Open",
                 tone = if (row.id == state.openImportId) StatusTone.Progress else StatusTone.Neutral,
+            )
+        },
+    ),
+    TableColumn(
+        header = "",
+        width = ColumnWidth.Fixed(REMATCH_COLUMN),
+        cell = { row ->
+            // Per statement rather than global, because that is what the
+            // server takes — and because re-matching a year of imports is not
+            // something anybody should reach by accident.
+            ZillitButton(
+                text = "Re-match",
+                onClick = {
+                    onEvent(
+                        CardEvent.Ask(
+                            CardPrompt.Confirm(
+                                CardConfirmAction.RerunMatching,
+                                row.id,
+                                "Re-run matching",
+                                "Every unmatched receipt is compared against this statement again. " +
+                                    "Matches already confirmed are left alone.",
+                            ),
+                        ),
+                    )
+                },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+                enabled = !state.busy,
             )
         },
     ),
@@ -210,7 +294,8 @@ private fun rowColumns(
                 ZillitStatusPill(label = "Unmatched", tone = StatusTone.Pending)
             } else {
                 ZillitText(
-                    text = row.holderName ?: row.holderId,
+                    // Never the raw id: an ObjectId on screen looks like corruption.
+                    text = state.personName(row.holderId, row.holderName.orEmpty()),
                     style = ZillitTheme.typography.bodyMedium,
                     maxLines = 1,
                 )
@@ -385,5 +470,7 @@ private fun SplitRow(
 private const val RECENT_IMPORTS = 5
 private val CHECK_COLUMN = 40.dp
 private val STATUS_COLUMN = 130.dp
+private val CURRENCY_WIDTH = 280.dp
+private val REMATCH_COLUMN = 110.dp
 private val OPEN_COLUMN = 110.dp
 private val EDITOR_WIDTH = 860.dp

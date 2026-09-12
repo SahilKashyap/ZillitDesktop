@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.timecard.data
 
+import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.flatMap
@@ -311,6 +312,7 @@ internal data class TimecardDto(
     @SerialName("week_starting") val weekStarting: String? = null,
     @SerialName("week_number") val weekNumber: Int? = null,
     @SerialName("status") val status: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("days") val days: List<DayDto>? = null,
     @SerialName("basic_pay") val basicPay: String? = null,

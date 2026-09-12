@@ -409,6 +409,16 @@ class CashRepositoryImpl(
                         put("require_senior_sign_off", JsonPrimitive(settings.requireSeniorSignOff))
                     },
                 )
+                // A boolean on the wire — the validator turns down a string.
+                put("reimburse_to_payroll", JsonPrimitive(settings.reimburseToPayroll))
+                put(
+                    "deduction_rules",
+                    buildJsonArray { settings.deductionRules.forEach { add(DeductionRuleDto.of(it)) } },
+                )
+                put(
+                    "quick_codes",
+                    buildJsonArray { settings.quickCodes.forEach { add(QuickCodeDto.of(it)) } },
+                )
             },
         ).map { it.toDomain() }
 

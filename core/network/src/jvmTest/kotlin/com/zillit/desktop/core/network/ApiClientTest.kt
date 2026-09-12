@@ -49,6 +49,26 @@ class ApiClientTest {
     }
 
     @Test
+    fun `a 200 with no status field is a success, not a refusal`() = runTest {
+        // The invoices analytics pair answers `{data: …}` with no `status`.
+        // Callers read `status == 1`, so the screen showed
+        // "Something went wrong (200)" over a body full of real figures.
+        val client = clientReturning("""{"data":{"id":"p1","name":"Feature Film"}}""")
+
+        val result = client.envelope(HttpVerb.Get, URL)
+
+        assertEquals(1, result.getOrNull()?.status)
+        assertEquals(Project("p1", "Feature Film"), client.request(HttpVerb.Get, URL, Project.serializer()).getOrNull())
+    }
+
+    @Test
+    fun `a stated refusal is still a refusal`() = runTest {
+        val client = clientReturning("""{"status":0,"message":"no currencies configured","data":{}}""")
+
+        assertEquals(0, client.envelope(HttpVerb.Get, URL).getOrNull()?.status)
+    }
+
+    @Test
     fun `401 maps to Unauthorized`() = runTest {
         val client = clientWith(MockEngine { respondError(HttpStatusCode.Unauthorized) })
 

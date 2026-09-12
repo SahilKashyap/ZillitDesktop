@@ -12,7 +12,9 @@ import com.zillit.desktop.feature.purchaseorder.data.poRefreshFor
 import com.zillit.desktop.feature.purchaseorder.domain.PoRefresh
 import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
-import com.zillit.desktop.feature.purchaseorder.ui.PoDraft
+import com.zillit.desktop.feature.purchaseorder.ui.PoFormMode
+import com.zillit.desktop.feature.purchaseorder.ui.PoFormState
+import com.zillit.desktop.feature.purchaseorder.ui.toRequest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -40,21 +42,40 @@ class PoFormTemplateTest {
         ),
     )
 
-    private val draft = PoDraft(
+    private val draft = PoFormState(
+        mode = PoFormMode.NewOrder,
         vendorId = "v1",
         vendorName = "Panavision",
         description = "Camera package",
         lines = listOf(PoLine(null, "Body", 1.0, 100.0, null, null)),
     )
 
-    /** The four this form renders, named as the service names them. */
+    /**
+     * What this form renders, named as the service names them.
+     *
+     * Ten of them since the full web port: the desktop form now offers every
+     * control the web's does, so a template requiring any of these can be
+     * satisfied here.
+     */
     @Test
     fun `the rendered fields are the ones this form has a control for`() {
         assertEquals(
-            setOf("vendor", "account_code", "description", "notes"),
+            setOf(
+                "vendor",
+                "account_code",
+                "description",
+                "department",
+                "company",
+                "currency",
+                "episode",
+                "effective_date",
+                "delivery_date",
+                "notes",
+            ),
             PoFormFields.RENDERED,
         )
         assertEquals("po_details", PoFormFields.DETAILS)
+        assertEquals("delivery_address", PoFormFields.DELIVERY)
     }
 
     /** A hidden system field is off this form too. */
@@ -88,7 +109,7 @@ class PoFormTemplateTest {
 
         val request = draft
             .copy(customFields = mapOf("budget_code" to "4100", "cost_centre" to ""))
-            .toRequest(layout = layout)
+            .toRequest(status = null, layout = layout)
 
         assertEquals(1, request.customFields.size)
         assertEquals("Order details", request.customFields.first().section)
@@ -99,7 +120,7 @@ class PoFormTemplateTest {
     /** A production with no custom fields sends none, not an empty group. */
     @Test
     fun `an order with nothing custom carries nothing custom`() {
-        val request = draft.toRequest(layout = FormLayout(FormTemplate()))
+        val request = draft.toRequest(status = null, layout = FormLayout(FormTemplate()))
 
         assertTrue(request.customFields.isEmpty())
     }

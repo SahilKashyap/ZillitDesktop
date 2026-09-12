@@ -31,6 +31,13 @@ expect fun ZillitScrollRail(state: LazyListState, modifier: Modifier = Modifier,
 @Composable
 expect fun ZillitScrollRail(state: ScrollState, modifier: Modifier = Modifier)
 
+/**
+ * [ZillitScrollRail] laid on its side, for a pane that scrolls across —
+ * a table too wide for its column. Place it along the bottom edge.
+ */
+@Composable
+expect fun ZillitHorizontalScrollRail(state: ScrollState, modifier: Modifier = Modifier)
+
 /** [ZillitScrollRail] for a lazy grid. */
 @Composable
 expect fun ZillitScrollRail(state: LazyGridState, modifier: Modifier = Modifier)

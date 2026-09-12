@@ -5,6 +5,15 @@ import com.zillit.desktop.feature.accounthub.data.formTemplateRefreshes
 import com.zillit.desktop.core.forms.FormField
 import com.zillit.desktop.core.forms.FormFieldType
 import com.zillit.desktop.core.forms.FormModule
+import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
+import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
+import com.zillit.desktop.feature.accounthub.domain.ApprovalRule
+import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
+import com.zillit.desktop.feature.accounthub.domain.ApprovalSequence
+import com.zillit.desktop.feature.accounthub.domain.ApprovalTier
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import com.zillit.desktop.core.forms.FormSection
 import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.feature.accounthub.domain.HubArea
@@ -21,6 +30,11 @@ import com.zillit.desktop.feature.accounthub.domain.HubNavigation
  */
 @Suppress("TooManyFunctions") // One handler per user action, as on the view model itself.
 internal class FormConfigActions(private val vm: AccountHubViewModel) {
+
+    private companion object {
+        /** The terms section's clause list, kept in its extras. */
+        const val TERMS_VALUES = "values"
+    }
 
     /**
      * Forms Configuration, or false when the event is not one of its own.
@@ -72,9 +86,131 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
             AccountHubEvent.AskResetFormTemplate -> askReset()
             AccountHubEvent.DismissResetFormTemplate -> dismissReset()
             AccountHubEvent.ConfirmResetFormTemplate -> confirmReset()
+            is AccountHubEvent.SearchFormModules -> edit { copy(moduleSearch = event.term) }
+            is AccountHubEvent.ToggleRearrange -> edit { copy(rearrange = event.on, rearrangeSection = null) }
+            is AccountHubEvent.PickRearrangeSection -> edit { copy(rearrangeSection = event.key) }
+            is AccountHubEvent.MoveFormSection -> moveSection(event.fromKey, event.toKey)
+            is AccountHubEvent.ToggleTermsEditor -> edit { copy(termsEditing = event.open) }
+            is AccountHubEvent.SetTerm -> editTerms {
+                terms -> terms.mapIndexed { i, t -> if (i == event.index) event.text else t }
+            }
+            AccountHubEvent.AddTerm -> editTerms { it + "" }
+            is AccountHubEvent.RemoveTerm -> editTerms { it.filterIndexed { i, _ -> i != event.index } }
+            is AccountHubEvent.OpenApproverScope ->
+                edit { copy(scopeModal = if (event.open) ScopeModalState() else null) }
+            is AccountHubEvent.PickApproverScope ->
+                edit { copy(scopeModal = ScopeModalState(mode = event.scope, departmentId = event.departmentId)) }
+            AccountHubEvent.ContinueApproverScope -> continueScope()
+            is AccountHubEvent.UpdateFormApprovers ->
+                edit { copy(approverBuilder = approverBuilder?.copy(config = event.config)) }
+            AccountHubEvent.SaveFormApprovers -> saveApprovers()
+            AccountHubEvent.DismissFormApprovers -> edit { copy(approverBuilder = null) }
             else -> return false
         }
         return true
+    }
+
+    // -- rearranging -----------------------------------------------------------
+
+    private fun moveSection(fromKey: String, toKey: String) {
+        if (!vm.mayEdit()) return
+        template { moveSection(fromKey, toKey) }
+    }
+
+    // -- terms of engagement ---------------------------------------------------
+
+    /**
+     * The terms section's clauses live in its `values` array — a key this
+     * client does not model on [FormSection], so it is edited through the
+     * extras that round-trip every save.
+     */
+    private fun editTerms(change: (List<String>) -> List<String>) {
+        if (!vm.mayEdit()) return
+        val section = state.termsSection ?: return
+        val current = (section.extras[TERMS_VALUES] as? JsonArray).orEmpty()
+            .mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+        val next = change(current)
+        val updated = section.copy(
+            extras = section.extras + (TERMS_VALUES to JsonArray(next.map { JsonPrimitive(it) })),
+        )
+        template { copy(sections = sections.map { if (it.key == section.key) updated else it }) }
+    }
+
+    // -- set approver level ----------------------------------------------------
+
+    /**
+     * "Set Approver Level": the scope chosen, load the module's chain for it
+     * and open the builder — the same tier builder the Approvers page uses,
+     * saved through the same route. A department without its own chain
+     * starts on one empty level, as there.
+     */
+    private fun continueScope() {
+        val scope = state.scopeModal ?: return
+        if (!scope.canContinue || !vm.mayActAsAccountant()) return
+        val module = approvalModule(state.module)
+        val approvalScope = scope.mode ?: return
+        edit { copy(scopeModal = null, approverSaving = true) }
+        vm.runResult({ vm.repo.approvalConfigs(module) }, { rows ->
+            val existing = rows.firstOrNull {
+                it.scope == approvalScope &&
+                    (approvalScope == ApprovalScope.All || it.departmentId == scope.departmentId)
+            }
+            val target = existing ?: ApprovalConfig(
+                module = module,
+                scope = approvalScope,
+                departmentId = scope.departmentId,
+                departmentName = vm.setupState.departmentName(scope.departmentId),
+                tiers = listOf(ApprovalTier(order = 1, rules = listOf(ApprovalRule(type = "default")))),
+            )
+            val seeded = target.copy(
+                tiers = target.tiers.ifEmpty { listOf(ApprovalTier(1)) }.map { tier ->
+                    if (tier.rules.isEmpty()) tier.copy(rules = listOf(ApprovalRule(type = "default"))) else tier
+                },
+            )
+            edit { copy(approverBuilder = ApprovalBuilder(seeded, seeded), approverSaving = false) }
+        }, { error ->
+            edit { copy(approverSaving = false) }
+            vm.report(error)
+        })
+    }
+
+    @Suppress("ReturnCount") // One guard per rule; merging them loses which failed.
+
+    private fun saveApprovers() {
+        val builder = state.approverBuilder ?: return
+        if (!vm.mayActAsAccountant()) return
+        val config = builder.config
+        if (config.tiers.isEmpty()) return vm.sendSideEffect(AccountHubEffect.Failed("Please add at least one level."))
+        val badAmount = config.tiers.flatMap { it.rules }.any {
+            it.type == "amount" && (it.amountThreshold ?: 0.0) <= 0.0
+        }
+        if (badAmount) {
+            return vm.sendSideEffect(
+                AccountHubEffect.Failed("Enter an amount greater than 0 for each \"Amount greater than\" rule."),
+            )
+        }
+        val compacted = ApprovalSequence.compacted(config.tiers)
+        if (compacted.isEmpty()) return vm.sendSideEffect(AccountHubEffect.Failed("Add at least one approver."))
+        edit { copy(approverSaving = true) }
+        vm.runResult({ vm.repo.saveApprovalConfig(config.copy(tiers = compacted)) }, {
+            edit {
+                copy(
+                    approverBuilder = null,
+                    approverSaving = false,
+                    message = CloseResult(true, "Approval levels saved successfully."),
+                )
+            }
+            vm.update { copy(notice = "Approval levels saved successfully.") }
+        }, { error ->
+            edit { copy(approverSaving = false) }
+            vm.report(error)
+        })
+    }
+
+    /** The approval module a form module's approvers are saved under. */
+    private fun approvalModule(module: FormModule): ApprovalModule = when (module) {
+        FormModule.PurchaseOrders -> ApprovalModule.PurchaseOrders
+        FormModule.CashExpenses -> ApprovalModule.CashExpenses
     }
 
     private val state: FormConfigState get() = vm.setupState.formConfig
@@ -157,7 +293,14 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
         if (editing) {
             copy(editing = true)
         } else {
-            copy(editing = false, template = saved, focus = null, draft = NewFieldDraft())
+            copy(
+                editing = false,
+                template = saved,
+                focus = null,
+                draft = NewFieldDraft(),
+                rearrange = false,
+                termsEditing = false,
+            )
         }
     }
 
@@ -352,8 +495,18 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
         val template = state.template
         edit { copy(saving = true) }
         vm.runResult({ vm.repo.saveFormTemplate(module, template) }, {
-            edit { copy(saved = template, saving = false, editing = false, focus = null) }
-            vm.update { copy(notice = "Form template saved.") }
+            edit {
+                copy(
+                    saved = template,
+                    saving = false,
+                    editing = false,
+                    focus = null,
+                    rearrange = false,
+                    termsEditing = false,
+                    message = CloseResult(true, "Form template saved successfully."),
+                )
+            }
+            vm.update { copy(notice = "Form template saved successfully.") }
         }, { error ->
             edit { copy(saving = false) }
             vm.report(error)
@@ -376,9 +529,15 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
         edit { copy(saving = true, confirmingReset = false) }
         vm.runResult({ vm.repo.resetFormTemplate(module) }, { defaults ->
             edit {
-                copy(template = defaults, saved = defaults, saving = false, focus = null)
+                copy(
+                    template = defaults,
+                    saved = defaults,
+                    saving = false,
+                    focus = null,
+                    message = CloseResult(true, "Template reset to defaults."),
+                )
             }
-            vm.update { copy(notice = "Form template reset to the defaults.") }
+            vm.update { copy(notice = "Template reset to defaults.") }
         }, { error ->
             edit { copy(saving = false) }
             vm.report(error)

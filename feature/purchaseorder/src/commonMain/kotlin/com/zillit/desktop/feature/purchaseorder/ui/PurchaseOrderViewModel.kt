@@ -10,203 +10,23 @@ import com.zillit.desktop.feature.purchaseorder.data.LOCAL_ID_PREFIX
 import com.zillit.desktop.feature.purchaseorder.data.PO_CREATE_KIND
 import com.zillit.desktop.feature.purchaseorder.data.QueuedPurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.data.toLocalOrder
-import com.zillit.desktop.core.forms.FormLayout
 import com.zillit.desktop.core.forms.FormTemplate
-import com.zillit.desktop.core.forms.customValues
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
-import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
-import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
-import com.zillit.desktop.feature.purchaseorder.domain.PoHistoryEntry
-import com.zillit.desktop.feature.purchaseorder.domain.PoLine
+import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
+import com.zillit.desktop.feature.purchaseorder.domain.PoProjectSettings
 import com.zillit.desktop.feature.purchaseorder.domain.PoRefresh
+import com.zillit.desktop.feature.purchaseorder.domain.PoSettingsPeople
+import com.zillit.desktop.feature.purchaseorder.domain.PoSortDirection
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
+import com.zillit.desktop.feature.purchaseorder.domain.PoTermsFiles
 import com.zillit.desktop.feature.purchaseorder.domain.PoViewer
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrderRepository
 import com.zillit.desktop.feature.purchaseorder.domain.Vendor
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-
-/** The pages the purchase order tool offers. */
-enum class PoDestination(val slug: String, val label: String) {
-    Overview("overview", "Overview"),
-    AllOrders("all", "All Orders"),
-    MyOrders("my", "My Orders"),
-    ApprovalQueue("approval", "Approval Queue"),
-    Raise("raise", "Raise an Order"),
-    ;
-
-    /**
-     * Whether [viewer] may open this page.
-     *
-     * Only two are gated: the production-wide list, which is an accountant's
-     * or a senior's view of everyone's commitments, and the approval queue,
-     * which is empty for anyone with nothing routed to them. Everything else is
-     * offered to whoever opens the tool.
-     */
-    fun visibleTo(viewer: PoViewer): Boolean = when (this) {
-        AllOrders -> viewer.isAccountant || viewer.hasFullAccess
-        else -> true
-    }
-
-    /** Whether orders raised offline, not yet on the server, belong on this page. */
-    val showsLocalOrders: Boolean get() = this == MyOrders || this == AllOrders
-}
-
-/** Everything the purchase order tool is showing. */
-data class PoUiState(
-    val viewer: PoViewer,
-    val destination: PoDestination = PoDestination.MyOrders,
-    val loading: Boolean = false,
-    val busy: Boolean = false,
-    val error: ZillitError? = null,
-    val notice: String? = null,
-    val orders: List<PurchaseOrder> = emptyList(),
-    /** Orders raised on this computer that the server has not seen yet. */
-    val localOrders: List<PurchaseOrder> = emptyList(),
-    val vendors: List<Vendor> = emptyList(),
-    val history: List<PoHistoryEntry> = emptyList(),
-    /** The selected order's files. The list has always shown their count. */
-    val attachments: List<PoAttachment> = emptyList(),
-    val search: String = "",
-    val statusFilter: PoStatus? = null,
-    val selectedId: String? = null,
-    val selection: Set<String> = emptySet(),
-    val draft: PoDraft = PoDraft(),
-    /**
-     * What the accountant configured this form to be.
-     *
-     * Empty until it is read, and an unread template shows every field — a
-     * form must not blank its own controls because a fetch failed.
-     */
-    val formTemplate: FormTemplate = FormTemplate(),
-    val prompt: PoPrompt? = null,
-    /** True while the API cannot be reached; writes queue instead of failing. */
-    val offline: Boolean = false,
-    /** When [orders] was fetched, if it is a saved copy shown because the network is gone. */
-    val staleSince: Long? = null,
-) {
-    val selected: PurchaseOrder? get() = (localOrders + orders).firstOrNull { it.id == selectedId }
-
-    /** The form's own rules — which fields show, and which must be filled in. */
-    val form: FormLayout get() = FormLayout(formTemplate)
-
-    val visibleDestinations: List<PoDestination>
-        get() = PoDestination.entries.filter { it.visibleTo(viewer) }
-
-    /** Rows after the search box and the status filter — local ones first, they are newest. */
-    val rows: List<PurchaseOrder>
-        get() {
-            val local = if (destination.showsLocalOrders) localOrders else emptyList()
-            return (local + orders).filter { order ->
-                (statusFilter == null || order.status == statusFilter) && order.matches(search)
-            }
-        }
-
-    /** Committed spend, per currency — mixing currencies would be a lie. */
-    val committedByCurrency: Map<String, Double>
-        get() = orders
-            .filter { it.status.isCommitted }
-            .groupBy { it.currency.orEmpty() }
-            .mapValues { (_, group) -> group.sumOf { it.total } }
-}
-
-/** The Raise an Order form. Serialisable so it survives a restart. */
-@Serializable
-data class PoDraft(
-    val vendorId: String? = null,
-    val vendorName: String = "",
-    val description: String = "",
-    val nominalCode: String = "",
-    val episode: String = "",
-    val notes: String = "",
-    val currency: String? = null,
-    val lines: List<PoLine> = listOf(PoLine(null, "", 1.0, 0.0, null, null)),
-    /** The extra fields this production added, by their form key. */
-    val customFields: Map<String, String> = emptyMap(),
-) {
-    val total: Double get() = lines.sumOf { it.total }
-
-    val isBlank: Boolean get() = this == PoDraft()
-
-    /** [status] is the server's creation status — see [NewPurchaseOrder.status]. */
-    fun toRequest(status: String? = null, layout: FormLayout = FormLayout(FormTemplate())) = NewPurchaseOrder(
-        vendorId = vendorId,
-        vendorName = vendorName.trim(),
-        description = description.trim(),
-        departmentId = null,
-        companyId = null,
-        currency = currency,
-        nominalCode = nominalCode.takeIf { it.isNotBlank() },
-        episode = episode.takeIf { it.isNotBlank() },
-        notes = notes.takeIf { it.isNotBlank() },
-        effectiveDate = null,
-        lines = lines.filter { it.description.isNotBlank() },
-        status = status,
-        customFields = listOfNotNull(layout.customValues(PoFormFields.DETAILS, customFields)),
-    )
-}
-
-sealed interface PoPrompt {
-    data class Confirm(
-        val action: PoConfirmAction,
-        val targetId: String,
-        val title: String,
-        val message: String,
-    ) : PoPrompt
-
-    data class WithReason(
-        val action: PoReasonAction,
-        val targetId: String,
-        val title: String,
-        val label: String,
-        val reason: String = "",
-    ) : PoPrompt
-}
-
-enum class PoConfirmAction { Approve, Post, Close, CloseSelected, Delete }
-
-enum class PoReasonAction { Reject }
-
-sealed interface PoEvent {
-    data object Refresh : PoEvent
-    data class Open(val destination: PoDestination) : PoEvent
-    data class Search(val query: String) : PoEvent
-    data class Filter(val status: PoStatus?) : PoEvent
-    data class Select(val id: String?) : PoEvent
-    data class ToggleSelection(val id: String) : PoEvent
-    data object ClearSelection : PoEvent
-    data object ClearNotice : PoEvent
-
-    /** Opens one of the selected order's files. */
-    data class OpenAttachment(val attachment: PoAttachment) : PoEvent
-
-    /** Removes one from the selected order. */
-    data class DeleteAttachment(val attachment: PoAttachment) : PoEvent
-
-    /** Emails the selected order to its supplier. */
-    data class EmailSupplier(val id: String) : PoEvent
-
-    data class Ask(val prompt: PoPrompt) : PoEvent
-    data class UpdatePrompt(val prompt: PoPrompt) : PoEvent
-    data object DismissPrompt : PoEvent
-    data object ConfirmPrompt : PoEvent
-
-    data class EditDraft(val draft: PoDraft) : PoEvent
-    data object AddLine : PoEvent
-    data class RemoveLine(val index: Int) : PoEvent
-    data object SubmitDraft : PoEvent
-}
-
-sealed interface PoEffect {
-    data class Failed(val message: String) : PoEffect
-
-    /** The host fetches the file from storage and hands it to the OS. */
-    data class OpenAttachment(val attachment: PoAttachment) : PoEffect
-}
 
 /**
  * The purchase order tool's view model.
@@ -214,6 +34,16 @@ sealed interface PoEffect {
  * Same shape as the two expense tools — per-destination loading, reload after
  * every mutation — so the three read alike. See `CashExpensesViewModel` for the
  * reasoning behind that arrangement.
+ *
+ * ## How the work is split
+ *
+ * The tool has four surfaces that each carry their own state machine: the
+ * order lists, the create/edit form, the accountant's processing page, and the
+ * two registers (templates and delivery addresses). They are separate
+ * collaborators — [PoFormActions], [PoEntryActions], [PoRegisterActions] —
+ * because one class holding all four had already passed detekt's LargeClass
+ * line twice, and because the reload rules differ: a template save must not
+ * refetch an order list, and posting to the ledger must.
  *
  * ## Offline
  *
@@ -226,10 +56,10 @@ sealed interface PoEffect {
  */
 @Suppress("TooManyFunctions") // One handler per user action, plus the offline seams.
 class PurchaseOrderViewModel(
-    private val repository: PurchaseOrderRepository,
+    internal val repository: PurchaseOrderRepository,
     private val viewer: () -> PoViewer,
-    private val offline: OfflineSupport? = null,
-    private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    internal val offline: OfflineSupport? = null,
+    internal val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
     /**
      * The form the accountant configured for purchase orders.
      *
@@ -240,13 +70,42 @@ class PurchaseOrderViewModel(
     private val formTemplate: suspend () -> ZillitResult<FormTemplate> = {
         ZillitResult.Success(FormTemplate())
     },
+    /** The accounts team and the departments the rule pickers and Reassign offer; null offers none. */
+    private val people: PoSettingsPeople? = null,
+    /** Picking and storing the terms document; null leaves that block read-only. */
+    termsFiles: PoTermsFiles? = null,
+    /**
+     * Companies, tax types, departments and currencies — the account hub's
+     * project settings, which the form's selectors read.
+     *
+     * A seam for the same reason the form template is one: they belong to the
+     * hub's service. The web fetches them once on entry
+     * (`ProjectSettingsProvider`) and shares them between both role views.
+     */
+    private val projectSettings: PoProjectSettings? = null,
+    /** Picking and uploading an order's paperwork; null leaves the attach button off. */
+    internal val attachmentFiles: PoTermsFiles? = null,
 ) : ZillitViewModel<PoUiState, PoEvent, PoEffect>(PoUiState(viewer = viewer())) {
 
+    // The base class keeps its reducers protected; the collaborators work
+    // through these.
+    internal fun update(reducer: PoUiState.() -> PoUiState) = setState(reducer)
+    internal fun launchWork(block: suspend () -> Unit): Job = launch { block() }
+    internal fun emit(effect: PoEffect) = sendEffect(effect)
+    internal fun fail(message: String) = sendEffect(PoEffect.Failed(message))
+    internal fun ask(prompt: PoPrompt) = setState { copy(prompt = prompt) }
+    /** The current state, for the collaborators. Named `ui` because `state` is the base class's flow. */
+    internal val ui: PoUiState get() = currentState
+
+    private val settingsActions = PoSettingsActions(this, repository, people, termsFiles)
+    internal val formActions = PoFormActions(this, repository)
+    internal val entryActions = PoEntryActions(this, repository)
+    internal val registerActions = PoRegisterActions(this, repository)
+
     private var loadJob: Job? = null
-    private var draftSaveJob: Job? = null
     private var syncWatch: Job? = null
     private var started = false
-    private val json = Json { ignoreUnknownKeys = true }
+    internal val json = Json { ignoreUnknownKeys = true }
 
     /** Resolves the viewer and opens their landing page. Idempotent. */
     fun start() {
@@ -254,20 +113,12 @@ class PurchaseOrderViewModel(
         started = true
         loadFormTemplate()
         val identity = viewer()
-        setState {
-            copy(
-                viewer = identity,
-                // An accountant opens on the production's commitments; everyone
-                // else on their own orders.
-                destination = if (identity.isAccountant || identity.hasFullAccess) {
-                    PoDestination.Overview
-                } else {
-                    PoDestination.MyOrders
-                },
-            )
-        }
+        setState { copy(viewer = identity, destination = PoDestination.landingFor(identity)) }
         launch { loadVendors() }
-        launch { restoreDraft() }
+        launch { loadTeam() }
+        launch { loadProjectSettings() }
+        launch { loadPoSettings() }
+        launch { formActions.restoreDraft() }
         watchSync()
         listenOnce()
         load(currentState.destination)
@@ -295,6 +146,21 @@ class PurchaseOrderViewModel(
                         PoRefresh.Vendors -> loadVendors()
                         // The accountant changed which fields this form has.
                         PoRefresh.FormTemplate -> loadFormTemplate()
+                        // Another accountant saved the settings or a rule; the
+                        // open tab re-reads quietly, as the web's does.
+                        PoRefresh.Settings -> {
+                            loadPoSettings()
+                            if (currentState.destination == PoDestination.Settings) settingsActions.load(silent = true)
+                        }
+
+                        // A template or a saved address changed. The orders
+                        // reload with them: an order's header prints its
+                        // delivery address, so an edited address dates every
+                        // row on screen.
+                        PoRefresh.Register -> {
+                            registerActions.reload()
+                            load(currentState.destination)
+                        }
                     }
                 }
             }
@@ -306,7 +172,16 @@ class PurchaseOrderViewModel(
 
     fun onProjectChanged() {
         started = false
-        setState { copy(draft = PoDraft(), localOrders = emptyList(), staleSince = null) }
+        setState {
+            copy(
+                form = null,
+                entry = null,
+                localOrders = emptyList(),
+                staleSince = null,
+                templates = emptyList(),
+                addresses = emptyList(),
+            )
+        }
         start()
     }
 
@@ -317,106 +192,217 @@ class PurchaseOrderViewModel(
      * gate this screen arrive with the Home load a beat later — so the viewer
      * resolved at open is the "not yet known" one, and nothing used to replace
      * it. Seen live 2026-08-27: Document Distribution offered no publish
-     * destination at all on a production with 42 tools switched on. Only the
-     * viewer changes here; the open page and its data are already right.
+     * destination at all on a production with 42 tools switched on.
+     *
+     * One extra care here: the department view's All POs tab is gated on a
+     * right that arrives with this call, so a viewer sitting on a tab that has
+     * just become invisible is moved to their landing page rather than left
+     * looking at rows they may no longer see.
      */
     fun onRightsChanged() {
         // Read outside the state lambda: inside it, `viewer` is the
         // state's own viewer property rather than the supplier.
         val resolved = viewer()
-        setState { copy(viewer = resolved) }
+        val moved = !currentState.destination.visibleTo(resolved)
+        setState {
+            copy(
+                viewer = resolved,
+                destination = if (moved) PoDestination.landingFor(resolved) else destination,
+            )
+        }
+        if (moved) load(currentState.destination)
     }
 
-    @Suppress("CyclomaticComplexMethod") // One branch per user action.
+    @Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per user action.
     override fun onEvent(event: PoEvent) {
         when (event) {
             PoEvent.Refresh -> load(currentState.destination)
-            is PoEvent.Open -> {
-                setState {
-                    copy(
-                        destination = event.destination,
-                        search = "",
-                        selectedId = null,
-                        error = null,
-                        staleSince = null,
-                    )
-                }
-                load(event.destination)
+            is PoEvent.Open -> open(event.destination)
+            is PoEvent.OpenQueue -> {
+                setState { copy(queueScope = event.scope) }
             }
 
             is PoEvent.Search -> setState { copy(search = event.query) }
-            is PoEvent.Filter -> setState { copy(statusFilter = event.status) }
-            is PoEvent.Select -> selectOrder(event.id)
+            is PoEvent.Filter -> setState { copy(quickFilter = event.filter) }
+            is PoEvent.FilterDepartment -> setState { copy(departmentFilter = event.departmentId) }
+            is PoEvent.Sort -> setState { copy(sortKey = event.key, sortColumn = null) }
+            is PoEvent.SortColumn -> setState {
+                // The same column again flips the direction; a different one
+                // starts ascending, which is what a first click means.
+                if (sortColumn == event.column) {
+                    copy(
+                        sortDirection = if (sortDirection == PoSortDirection.Ascending) {
+                            PoSortDirection.Descending
+                        } else {
+                            PoSortDirection.Ascending
+                        },
+                    )
+                } else {
+                    copy(sortColumn = event.column, sortDirection = PoSortDirection.Ascending)
+                }
+            }
+
             is PoEvent.ToggleSelection -> setState {
                 copy(selection = if (event.id in selection) selection - event.id else selection + event.id)
             }
 
+            is PoEvent.SelectAll -> setState {
+                // All on, or all off: a header checkbox that only ever adds is
+                // a control with no way back.
+                copy(selection = if (selection.containsAll(event.ids)) emptySet() else event.ids.toSet())
+            }
+
             PoEvent.ClearSelection -> setState { copy(selection = emptySet()) }
             PoEvent.ClearNotice -> setState { copy(notice = null) }
-            is PoEvent.OpenAttachment -> sendEffect(PoEffect.OpenAttachment(event.attachment))
-            is PoEvent.DeleteAttachment -> removeAttachment(event.attachment)
-            is PoEvent.EmailSupplier -> emailSupplier(event.id)
 
             is PoEvent.Ask -> setState { copy(prompt = event.prompt) }
             is PoEvent.UpdatePrompt -> setState { copy(prompt = event.prompt) }
             PoEvent.DismissPrompt -> setState { copy(prompt = null) }
             PoEvent.ConfirmPrompt -> resolvePrompt()
 
-            is PoEvent.EditDraft -> editDraft(event.draft)
-            PoEvent.AddLine -> editDraft(
-                currentState.draft.let { it.copy(lines = it.lines + PoLine(null, "", 1.0, 0.0, null, null)) },
-            )
+            PoEvent.OpenVendors -> sendEffect(PoEffect.OpenVendors)
+            PoEvent.OpenInvoices -> sendEffect(PoEffect.OpenInvoices)
+            PoEvent.OpenFormConfiguration -> sendEffect(PoEffect.OpenFormConfig)
 
-            is PoEvent.RemoveLine -> editDraft(
-                currentState.draft.let { draft ->
-                    val remaining = draft.lines.filterIndexed { index, _ -> index != event.index }
-                    draft.copy(lines = remaining.ifEmpty { listOf(PoLine(null, "", 1.0, 0.0, null, null)) })
-                },
-            )
+            is PoEvent.EditSettings, is PoEvent.SaveSettings, PoEvent.PickTermsDocument,
+            PoEvent.OpenTermsDocument, PoEvent.AddRule, is PoEvent.EditRule, is PoEvent.RemoveRule,
+            -> settingsActions.onEvent(event)
 
-            PoEvent.SubmitDraft -> submitDraft()
+            is PoEvent.OpenOrder, PoEvent.CloseOrder, is PoEvent.OpenAttachment, is PoEvent.ViewPdf,
+            is PoEvent.SendVendorEmail, is PoEvent.ProcessOrder, is PoEvent.EditEntry,
+            PoEvent.AddEntryLine, is PoEvent.RemoveEntryLine, PoEvent.SaveEntry, PoEvent.PostEntry,
+            PoEvent.CloseEntry, is PoEvent.AskReassign, is PoEvent.AskBulkReassign,
+            is PoEvent.EditReassign, PoEvent.ConfirmReassign, PoEvent.DismissReassign,
+            is PoEvent.AskClose, is PoEvent.EditClose, PoEvent.ConfirmClose, PoEvent.DismissClose,
+            is PoEvent.AskCloseOff, is PoEvent.EditCloseOff, PoEvent.ConfirmCloseOff,
+            PoEvent.DismissCloseOff, is PoEvent.AskBulkDate, is PoEvent.EditBulkDate,
+            PoEvent.ConfirmBulkDate, PoEvent.DismissBulkDate,
+            -> entryActions.onEvent(event)
+
+            PoEvent.CreateOrder, is PoEvent.EditOrder, is PoEvent.ResumeDraft, is PoEvent.UseTemplate,
+            is PoEvent.EditTemplate, PoEvent.CreateTemplate, is PoEvent.EditForm, PoEvent.AddLine,
+            is PoEvent.RemoveLine, is PoEvent.SplitLine, is PoEvent.SplitLineByPeriod,
+            PoEvent.AttachFile, is PoEvent.RemoveAttachment, PoEvent.CloseForm, PoEvent.SubmitForm,
+            PoEvent.SaveDraft, is PoEvent.SaveAsTemplate, PoEvent.NameTemplate,
+            is PoEvent.PickSavedAddress,
+            -> formActions.onEvent(event)
+
+            PoEvent.AddAddress, is PoEvent.EditAddressRow, is PoEvent.EditAddress, PoEvent.SaveAddress,
+            PoEvent.DismissAddress, is PoEvent.DeleteTemplate,
+            -> registerActions.onEvent(event)
         }
+    }
+
+    /** Opens a tab, clearing the filters with it — the web resets to "All" on every switch. */
+    private fun open(destination: PoDestination) {
+        if (destination == PoDestination.Vendors) {
+            sendEffect(PoEffect.OpenVendors)
+            return
+        }
+        if (destination == PoDestination.Invoices) {
+            sendEffect(PoEffect.OpenInvoices)
+            return
+        }
+        setState {
+            copy(
+                destination = destination,
+                search = "",
+                quickFilter = com.zillit.desktop.feature.purchaseorder.domain.PoQuickFilter.All,
+                departmentFilter = null,
+                sortColumn = null,
+                selection = emptySet(),
+                error = null,
+                staleSince = null,
+                // A tab switch leaves the form and the processing page: both
+                // take over the page, so staying open would hide the tab the
+                // person just chose.
+                form = null,
+                entry = null,
+            )
+        }
+        load(destination)
     }
 
     // -- reads ---------------------------------------------------------------
 
-    private fun load(destination: PoDestination) {
+    internal fun load(destination: PoDestination) {
         loadJob?.cancel()
+        when (destination) {
+            PoDestination.Settings -> {
+                // Its own reads — the document, the rules and the pickers' lists.
+                setState { copy(loading = false, error = null) }
+                settingsActions.load()
+                return
+            }
+
+            PoDestination.Templates -> {
+                setState { copy(loading = false, error = null) }
+                registerActions.loadTemplates()
+                return
+            }
+
+            PoDestination.DeliveryAddresses -> {
+                setState { copy(loading = false, error = null) }
+                registerActions.loadAddresses()
+                return
+            }
+
+            // Not a list: the web shows a placeholder here and so does this.
+            PoDestination.Reports, PoDestination.Vendors, PoDestination.Invoices -> {
+                setState { copy(loading = false, error = null) }
+                return
+            }
+
+            else -> Unit
+        }
         setState { copy(loading = true, error = null) }
         loadJob = launch {
-            val result = when (destination) {
-                PoDestination.ApprovalQueue -> repository.approvalQueue()
-                PoDestination.MyOrders, PoDestination.Raise -> repository.myOrders()
-                else -> repository.orders(null)
-            }
-            when (result) {
+            when (val result = fetch(destination)) {
                 is ZillitResult.Success -> {
-                    setState { copy(loading = false, orders = result.data.named(vendors), staleSince = null) }
-                    remember(destination.cacheName, ListSerializer(PurchaseOrder.serializer()), result.data)
+                    val rows = result.data.forPage(destination)
+                    setState { copy(loading = false, orders = rows.named(vendors), staleSince = null) }
+                    remember(destination.cacheName, ListSerializer(PurchaseOrder.serializer()), rows)
                 }
 
-                is ZillitResult.Failure -> {
-                    val saved = recallIfUnreachable(
-                        result.error,
-                        destination.cacheName,
-                        ListSerializer(PurchaseOrder.serializer()),
-                    )
-                    when {
-                        saved != null -> setState {
-                            copy(loading = false, orders = saved.first.named(vendors), staleSince = saved.second)
-                        }
-
-                        // No copy to show, but the person's own unsent orders
-                        // are still theirs to see: an empty list under them
-                        // beats an error page that hides them.
-                        result.error.isUnreachable() && destination.showsLocalOrders &&
-                            currentState.localOrders.isNotEmpty() ->
-                            setState { copy(loading = false, orders = emptyList(), staleSince = null) }
-
-                        else -> setState { copy(loading = false, error = result.error, staleSince = null) }
-                    }
-                }
+                is ZillitResult.Failure -> recover(destination, result.error)
             }
+        }
+    }
+
+    private suspend fun fetch(destination: PoDestination) = when (destination) {
+        PoDestination.ApprovalQueue -> repository.approvalQueue()
+        PoDestination.MyPos -> repository.myOrders()
+        PoDestination.Drafts -> repository.orders(PoStatus.Draft)
+        // The server scopes this one; see the repository.
+        PoDestination.DepartmentPos -> repository.orders(null, currentState.viewer.departmentId)
+        else -> repository.orders(null)
+    }
+
+    /**
+     * The rows a page keeps from its endpoint's answer.
+     *
+     * Only one page trims: All POs drops drafts, which are private to whoever
+     * wrote them and have their own tab. The web does the same and says why.
+     */
+    private fun List<PurchaseOrder>.forPage(destination: PoDestination) = when (destination) {
+        PoDestination.AllPos, PoDestination.DepartmentAllPos -> filterNot { it.status == PoStatus.Draft }
+        else -> this
+    }
+
+    private suspend fun recover(destination: PoDestination, error: ZillitError) {
+        val saved = recallIfUnreachable(destination.cacheName, error, ListSerializer(PurchaseOrder.serializer()))
+        when {
+            saved != null -> setState {
+                copy(loading = false, orders = saved.first.named(vendors), staleSince = saved.second)
+            }
+
+            // No copy to show, but the person's own unsent orders are still
+            // theirs to see: an empty list under them beats an error page that
+            // hides them.
+            error.isUnreachable() && destination.showsLocalOrders && currentState.localOrders.isNotEmpty() ->
+                setState { copy(loading = false, orders = emptyList(), staleSince = null) }
+
+            else -> setState { copy(loading = false, error = error, staleSince = null) }
         }
     }
 
@@ -428,8 +414,49 @@ class PurchaseOrderViewModel(
             }
 
             is ZillitResult.Failure ->
-                recallIfUnreachable(fetched.error, VENDORS_CACHE, ListSerializer(Vendor.serializer()))
+                recallIfUnreachable(VENDORS_CACHE, fetched.error, ListSerializer(Vendor.serializer()))
                     ?.let { (saved, _) -> setState { copy(vendors = saved, orders = orders.named(saved)) } }
+        }
+    }
+
+    /**
+     * The accounts team, for the assignee column and the Reassign picker.
+     *
+     * Swallowed on failure: a name that cannot be resolved shows as "Assigned",
+     * which is still true, and an error over it would be noise about something
+     * nobody reading an order list can fix.
+     */
+    private suspend fun loadTeam() {
+        val roster = people ?: return
+        runCatching { roster.team() }.getOrNull()?.let { members -> setState { copy(team = members) } }
+        runCatching { roster.everyone() }.getOrNull()?.let { members -> setState { copy(people = members) } }
+        runCatching { roster.departments() }.getOrNull()?.let { rows -> setState { copy(departments = rows) } }
+    }
+
+    /** Companies, tax types and currencies — the form's selectors. Swallowed for the same reason. */
+    private suspend fun loadProjectSettings() {
+        val settings = projectSettings ?: return
+        runCatching { settings.companies() }.getOrNull()?.let { rows -> setState { copy(companies = rows) } }
+        runCatching { settings.taxTypes() }.getOrNull()?.let { rows -> setState { copy(taxTypes = rows) } }
+        runCatching { settings.currencies() }.getOrNull()?.let { rows -> setState { copy(currencies = rows) } }
+        // The hub's departments where the roster gave none — the form needs a
+        // picker whether or not this viewer is on the accounts team.
+        if (currentState.departments.isEmpty()) {
+            runCatching { settings.departments() }.getOrNull()?.let { rows -> setState { copy(departments = rows) } }
+        }
+    }
+
+    /**
+     * The project's purchase-order settings.
+     *
+     * Read on every viewer, not just the ones who may edit them: the amend gate
+     * and the rental split cadence are project-level and the form obeys both.
+     * A failure leaves the defaults, which is what the web's `usePoSettings`
+     * null means.
+     */
+    private suspend fun loadPoSettings() {
+        repository.settings().getOrNull()?.let { bundle ->
+            setState { copy(projectSettings = bundle.settings) }
         }
     }
 
@@ -444,207 +471,6 @@ class PurchaseOrderViewModel(
         return map { order ->
             if (order.vendorName.isNotBlank()) order else order.copy(vendorName = names[order.vendorId].orEmpty())
         }
-    }
-
-    /** Selecting an order also fetches its audit trail and its files. */
-    private fun selectOrder(id: String?) {
-        setState { copy(selectedId = id, history = emptyList(), attachments = emptyList()) }
-        // A row that exists only here has neither to fetch.
-        if (id == null || id.startsWith(LOCAL_ID_PREFIX)) return
-        launch {
-            repository.history(id).getOrNull()?.let { entries ->
-                if (currentState.selectedId == id) setState { copy(history = entries) }
-            }
-        }
-        launch {
-            // The count on the row has always come from the order itself; the
-            // files behind it were never fetched until now.
-            repository.attachments(id).getOrNull()?.let { files ->
-                if (currentState.selectedId == id) setState { copy(attachments = files) }
-            }
-        }
-    }
-
-    /** Removes a file, then re-reads so the count and the list agree. */
-    private fun removeAttachment(attachment: PoAttachment) {
-        val orderId = currentState.selectedId ?: return
-        setState { copy(busy = true) }
-        launch {
-            when (val answer = repository.deleteAttachment(attachment.id, orderId)) {
-                is ZillitResult.Success -> {
-                    setState {
-                        copy(
-                            busy = false,
-                            notice = "Attachment removed",
-                            attachments = attachments.filterNot { it.id == attachment.id },
-                        )
-                    }
-                    load(currentState.destination)
-                }
-
-                is ZillitResult.Failure -> setState { copy(busy = false, error = answer.error) }
-            }
-        }
-    }
-
-    /** Sends the order to its supplier — what makes an approved order real to them. */
-    private fun emailSupplier(id: String) {
-        setState { copy(busy = true) }
-        launch {
-            when (val answer = repository.emailToSupplier(id)) {
-                is ZillitResult.Success ->
-                    setState { copy(busy = false, notice = "Sent to the supplier") }
-
-                is ZillitResult.Failure -> setState { copy(busy = false, error = answer.error) }
-            }
-        }
-    }
-
-    // -- the form --------------------------------------------------------------
-
-    private fun editDraft(draft: PoDraft) {
-        setState { copy(draft = draft) }
-        val support = offline ?: return
-        // Debounced: every keystroke changes the draft, and the disk does not
-        // need to hear each one. Short enough that a crash loses a phrase.
-        draftSaveJob?.cancel()
-        draftSaveJob = launch {
-            delay(DRAFT_SAVE_DEBOUNCE_MILLIS)
-            val scope = support.currentScope() ?: return@launch
-            if (draft.isBlank) {
-                support.drafts.delete(draftId(scope.userId, scope.projectId))
-            } else {
-                support.drafts.save(
-                    com.zillit.desktop.core.sync.LocalDraft(
-                        id = draftId(scope.userId, scope.projectId),
-                        scope = scope,
-                        kind = DRAFT_KIND,
-                        payload = json.encodeToString(PoDraft.serializer(), draft),
-                        updatedAt = nowMillis(),
-                    ),
-                )
-            }
-        }
-    }
-
-    private suspend fun restoreDraft() {
-        val support = offline ?: return
-        val scope = support.currentScope() ?: return
-        val saved = support.drafts.get(draftId(scope.userId, scope.projectId)) ?: return
-        val draft = runCatching { json.decodeFromString(PoDraft.serializer(), saved.payload) }.getOrNull() ?: return
-        // Only if nothing has been typed since — a restore must never overwrite.
-        if (currentState.draft.isBlank) setState { copy(draft = draft) }
-    }
-
-    private suspend fun forgetDraft() {
-        val support = offline ?: return
-        val scope = support.currentScope() ?: return
-        draftSaveJob?.cancel()
-        support.drafts.delete(draftId(scope.userId, scope.projectId))
-    }
-
-    /**
-     * What the production's own form rules refuse, or null.
-     *
-     * Only fields this screen renders. A template can mark one required that
-     * this form does not offer — the web's version of it is larger — and
-     * refusing the raise over a control that is not on screen would leave the
-     * person with nothing to put right. Those are the server's to judge.
-     */
-    private fun templateProblem(layout: FormLayout): String? {
-        if (!layout.isLoaded) return null
-        val draft = currentState.draft
-        val required = { label: String -> layout.isRequired(PoFormFields.DETAILS, label) }
-        return when {
-            required(PoFormFields.VENDOR) && draft.vendorId.isNullOrBlank() ->
-                "This production requires a vendor on every order."
-
-            required(PoFormFields.ACCOUNT_CODE) && draft.nominalCode.isBlank() ->
-                "This production requires a nominal code on every order."
-
-            required(PoFormFields.DESCRIPTION) && draft.description.isBlank() ->
-                "This production requires a description on every order."
-
-            required(PoFormFields.NOTES) && draft.notes.isBlank() ->
-                "This production requires a note on every order."
-
-            else -> layout.missingCustom(PoFormFields.DETAILS, draft.customFields)
-                .firstOrNull()
-                ?.let { "${it.name} is required on this production's orders." }
-        }
-    }
-
-    /**
-     * Reads the form's configuration.
-     *
-     * Failures are swallowed: the empty template shows every field, which is
-     * this form as it was before templates, and an error over a working form
-     * would be noise about something the person raising an order cannot fix.
-     */
-    private fun loadFormTemplate() {
-        launchResult(formTemplate, { template ->
-            setState { copy(formTemplate = template) }
-        }, { })
-    }
-
-    private fun submitDraft() {
-        // Accounts raise straight into the ledger's queue; everyone else into
-        // the approval chain — the same two statuses the phones send.
-        val status = if (currentState.viewer.isAccountant) STATUS_ACCOUNTS_ENTERED else STATUS_PENDING
-        val layout = currentState.form
-        val request = currentState.draft.toRequest(status, layout)
-        val invalid = request.validationError() ?: templateProblem(layout)
-        if (invalid != null) {
-            sendEffect(PoEffect.Failed(invalid))
-            return
-        }
-        val support = offline
-        if (support != null && support.isOffline) {
-            launch { queueOrder(support, request) }
-            return
-        }
-        launch {
-            setState { copy(busy = true) }
-            when (val result = repository.create(request)) {
-                is ZillitResult.Success -> {
-                    forgetDraft()
-                    setState { copy(busy = false, notice = "Order raised", draft = PoDraft()) }
-                    load(currentState.destination)
-                }
-
-                is ZillitResult.Failure -> {
-                    // The request never left this machine: queue it rather than
-                    // make the user retype it later. Anything else — a timeout,
-                    // a refusal — is reported, and the form keeps their words.
-                    if (support != null && result.error is ZillitError.NoConnection) {
-                        queueOrder(support, request)
-                    } else {
-                        setState { copy(busy = false) }
-                        sendEffect(PoEffect.Failed(result.error.localised()))
-                    }
-                }
-            }
-        }
-    }
-
-    private suspend fun queueOrder(support: OfflineSupport, request: NewPurchaseOrder) {
-        val queued = QueuedPurchaseOrder(order = request, raisedBy = currentState.viewer.userId, queuedAt = nowMillis())
-        val label = "Purchase order: ${request.vendorName} — ${request.description}".take(LABEL_MAX)
-        val enqueued = support.engine.enqueue(
-            NewOperation(
-                kind = PO_CREATE_KIND,
-                label = label,
-                payload = json.encodeToString(QueuedPurchaseOrder.serializer(), queued),
-            ),
-        )
-        if (enqueued == null) {
-            setState { copy(busy = false) }
-            sendEffect(PoEffect.Failed("Open a project before raising an order."))
-            return
-        }
-        forgetDraft()
-        setState { copy(busy = false, draft = PoDraft(), notice = QUEUED_NOTICE) }
-        refreshLocalOrders()
     }
 
     // -- the outbox, as rows -------------------------------------------------
@@ -665,24 +491,45 @@ class PurchaseOrderViewModel(
         }
     }
 
-    private suspend fun refreshLocalOrders() {
+    internal suspend fun refreshLocalOrders() {
         val support = offline ?: return
         val local = support.engine.operations().mapNotNull { it.toLocalOrder(json) }
         setState { copy(localOrders = local) }
     }
 
+    /** Queues an order the network could not carry, so nobody retypes it later. */
+    internal suspend fun queueOrder(support: OfflineSupport, request: NewPurchaseOrder) {
+        val queued = QueuedPurchaseOrder(order = request, raisedBy = currentState.viewer.userId, queuedAt = nowMillis())
+        val label = "Purchase order: ${request.vendorName} — ${request.description}".take(LABEL_MAX)
+        val enqueued = support.engine.enqueue(
+            NewOperation(
+                kind = PO_CREATE_KIND,
+                label = label,
+                payload = json.encodeToString(QueuedPurchaseOrder.serializer(), queued),
+            ),
+        )
+        if (enqueued == null) {
+            setState { copy(busy = false) }
+            sendEffect(PoEffect.Failed("Open a project before raising an order."))
+            return
+        }
+        formActions.forgetDraft()
+        setState { copy(busy = false, form = null, notice = QUEUED_NOTICE) }
+        refreshLocalOrders()
+    }
+
     // -- the read cache ------------------------------------------------------
 
-    private suspend fun <T> remember(name: String, serializer: kotlinx.serialization.KSerializer<T>, value: T) {
+    internal suspend fun <T> remember(name: String, serializer: kotlinx.serialization.KSerializer<T>, value: T) {
         val support = offline ?: return
         val scope = support.currentScope() ?: return
         support.cache.put(scope, name, json.encodeToString(serializer, value), nowMillis())
     }
 
     /** The saved copy, with when it was fetched — only when the failure is the network, not the server. */
-    private suspend fun <T> recallIfUnreachable(
-        error: ZillitError,
+    internal suspend fun <T> recallIfUnreachable(
         name: String,
+        error: ZillitError,
         serializer: kotlinx.serialization.KSerializer<T>,
     ): Pair<T, Long>? {
         val scope = offline?.currentScope()
@@ -692,24 +539,34 @@ class PurchaseOrderViewModel(
             ?.let { it to cached.fetchedAt }
     }
 
+    /**
+     * Reads the form's configuration.
+     *
+     * Failures are swallowed: the empty template shows every field, which is
+     * this form as it was before templates, and an error over a working form
+     * would be noise about something the person raising an order cannot fix.
+     */
+    private fun loadFormTemplate() {
+        launchResult(formTemplate, { template -> setState { copy(formTemplate = template) } }, { })
+    }
+
     // -- actions on existing orders --------------------------------------------
 
     /**
      * Whether this person may not carry out [prompt].
      *
-     * Posting and closing are an accountant's (`PurchaseOrderScreen`), and
-     * deleting is the raiser's own order. Approve and reject are absent on
-     * purpose: the approval queue only ever holds what was routed to this
-     * person, so it is scoped by data rather than by a right.
+     * Posting is an accountant's, deleting follows [PoAccess.canDelete], and a
+     * rule is a senior's. Approve and reject are absent on purpose: the
+     * approval queue only ever holds what was routed to this person, so it is
+     * scoped by data rather than by a right.
      */
     private fun refusesPrompt(prompt: PoPrompt): Boolean {
         val confirm = prompt as? PoPrompt.Confirm ?: return false
         val order = currentState.orders.firstOrNull { it.id == confirm.targetId }
         val allowed = when (confirm.action) {
-            PoConfirmAction.Post, PoConfirmAction.Close,
-            PoConfirmAction.CloseSelected,
-            -> currentState.viewer.isAccountant
-            PoConfirmAction.Delete -> order == null || currentState.viewer.owns(order)
+            PoConfirmAction.Post -> currentState.viewer.isAccountant
+            PoConfirmAction.Delete -> order == null || PoAccess.canDelete(order, currentState.viewer)
+            PoConfirmAction.RemoveRule -> currentState.viewer.isSeniorAccountant
             else -> true
         }
         return !allowed
@@ -726,34 +583,46 @@ class PurchaseOrderViewModel(
             is PoPrompt.Confirm -> when (prompt.action) {
                 PoConfirmAction.Approve -> act("Order approved") { repository.approve(prompt.targetId, null) }
                 PoConfirmAction.Post -> act("Order posted") { repository.post(prompt.targetId, null) }
-                PoConfirmAction.Close -> act("Order closed") { repository.close(prompt.targetId, null) }
-                PoConfirmAction.Delete -> act("Order deleted") { repository.delete(prompt.targetId) }
-                PoConfirmAction.CloseSelected -> closeSelected()
+                PoConfirmAction.Delete -> act("Order deleted") {
+                    repository.delete(prompt.targetId)
+                }.also { setState { copy(detail = null) } }
+
+                PoConfirmAction.DeleteTemplate -> registerActions.deleteTemplate(prompt.targetId)
+                PoConfirmAction.RemoveRule -> settingsActions.deleteRule(prompt.targetId)
+                // Confirmed: the amendment opens the form on the order.
+                PoConfirmAction.AmendOrder -> formActions.openOrder(prompt.targetId, PoFormMode.EditOrder)
             }
 
-            is PoPrompt.WithReason -> {
-                val reason = prompt.reason.trim()
-                if (reason.isEmpty()) {
-                    sendEffect(PoEffect.Failed("A reason is required."))
-                    setState { copy(prompt = prompt) }
-                    return
-                }
-                act("Order rejected") { repository.reject(prompt.targetId, reason) }
-            }
+            is PoPrompt.WithReason -> resolveAnswer(prompt)
         }
     }
 
-    private fun closeSelected() {
-        val ids = currentState.selection.toList()
-        if (ids.isEmpty()) {
-            sendEffect(PoEffect.Failed("Nothing is selected."))
+    /**
+     * A prompt that asked for a sentence: a rejection reason, or a template's
+     * name. Blank is refused in the prompt's own words rather than a generic
+     * one, because the two are asking for very different things.
+     */
+    private fun resolveAnswer(prompt: PoPrompt.WithReason) {
+        val answer = prompt.reason.trim()
+        if (answer.isEmpty()) {
+            sendEffect(
+                PoEffect.Failed(
+                    when (prompt.action) {
+                        PoReasonAction.NameTemplate -> "Template Name is required"
+                        PoReasonAction.Reject -> "A reason is required."
+                    },
+                ),
+            )
+            setState { copy(prompt = prompt) }
             return
         }
-        act("${ids.size} order(s) closed") { repository.closeAll(ids, null) }
-        setState { copy(selection = emptySet()) }
+        when (prompt.action) {
+            PoReasonAction.Reject -> act("Order rejected") { repository.reject(prompt.targetId, answer) }
+            PoReasonAction.NameTemplate -> formActions.saveTemplate(answer)
+        }
     }
 
-    private fun act(success: String, block: suspend () -> ZillitResult<Unit>) = launch {
+    internal fun act(success: String, block: suspend () -> ZillitResult<Unit>) = launch {
         setState { copy(busy = true) }
         when (val result = block()) {
             is ZillitResult.Success -> {
@@ -768,35 +637,57 @@ class PurchaseOrderViewModel(
         }
     }
 
-    /** Keyed by what is fetched, not which tab asked — My Orders and Raise share one list. */
+    /** Keyed by what is fetched, not which tab asked — several tabs share one list. */
     private val PoDestination.cacheName: String
         get() = when (this) {
             PoDestination.ApprovalQueue -> "po.orders.approval"
-            PoDestination.MyOrders, PoDestination.Raise -> "po.orders.my"
+            PoDestination.MyPos -> "po.orders.my"
+            PoDestination.Drafts -> "po.orders.drafts"
+            PoDestination.DepartmentPos -> "po.orders.department"
             else -> "po.orders.all"
         }
 
-    private fun ZillitError.isUnreachable() = this is ZillitError.NoConnection || this is ZillitError.Timeout
-
-    private fun draftId(userId: String, projectId: String) = "po.draft:$userId:$projectId"
+    internal fun ZillitError.isUnreachable() = this is ZillitError.NoConnection || this is ZillitError.Timeout
 
     companion object {
         const val STATUS_PENDING = "PENDING"
         const val STATUS_ACCOUNTS_ENTERED = "ACCT_ENTERED"
+        const val STATUS_DRAFT = "DRAFT"
         const val DRAFT_KIND = "po.draft"
         const val VENDORS_CACHE = "po.vendors"
         const val QUEUED_NOTICE = "Saved on this computer — it will be raised when you're back online."
-        private const val DRAFT_SAVE_DEBOUNCE_MILLIS = 400L
+
         /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
         const val SYNC_DEBOUNCE_MILLIS = 500L
+        internal const val DRAFT_SAVE_DEBOUNCE_MILLIS = 400L
         private const val LABEL_MAX = 80
     }
 }
 
+/**
+ * Whether an order answers a search.
+ *
+ * The same six fields the web searches, and for the same reason it includes the
+ * amount: people look an order up by what it cost as often as by its number.
+ */
 internal fun PurchaseOrder.matches(query: String): Boolean {
     if (query.isBlank()) return true
     val needle = query.trim().lowercase()
     return number.lowercase().contains(needle) ||
         vendorName.lowercase().contains(needle) ||
-        description.lowercase().contains(needle)
+        description.lowercase().contains(needle) ||
+        nominalCode.orEmpty().lowercase().contains(needle) ||
+        episode.orEmpty().lowercase().contains(needle) ||
+        lines.any { it.description.lowercase().contains(needle) } ||
+        formatAmount(gross).contains(needle)
 }
+
+/** Two decimals, as the search box's user typed them. */
+private fun formatAmount(value: Double): String {
+    val pennies = kotlin.math.round(value * PENNIES_PER_UNIT).toLong()
+    return "${pennies / PENNIES_PER_UNIT_INT}." +
+        (pennies % PENNIES_PER_UNIT_INT).toString().padStart(2, '0')
+}
+
+private const val PENNIES_PER_UNIT = 100.0
+private const val PENNIES_PER_UNIT_INT = 100L

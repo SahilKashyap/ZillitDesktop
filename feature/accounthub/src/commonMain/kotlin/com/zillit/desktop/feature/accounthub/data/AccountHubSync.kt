@@ -22,13 +22,16 @@ import kotlinx.serialization.json.JsonPrimitive
  * Invoices and Purchase Orders — the hub's own Vendors page was the one place
  * that did not.
  *
- * `trackingcodes:updated` / `:deleted` are the two the phones carry that are
- * NOT here: this port has no tracking-codes page, so there is nothing to
- * reload.
+ * `trackingcodes:updated` / `:deleted` joined the list when the Layers tab
+ * became editable — the chart page is where they render.
  */
 internal val HUB_REFRESH_BY_EVENT: Map<SocketEventName, HubArea> = buildMap {
     put(SocketEventName("chartofaccounts:updated"), HubArea.ChartOfAccounts)
     put(SocketEventName("chartofaccounts:deleted"), HubArea.ChartOfAccounts)
+    // The Layers tab edits tracking codes now, so the two names the phones
+    // carry for them reload the chart page the tab lives on.
+    put(SocketEventName("trackingcodes:updated"), HubArea.ChartOfAccounts)
+    put(SocketEventName("trackingcodes:deleted"), HubArea.ChartOfAccounts)
     listOf(
         "vendor:created",
         "vendor:updated",
@@ -36,6 +39,14 @@ internal val HUB_REFRESH_BY_EVENT: Map<SocketEventName, HubArea> = buildMap {
         "vendor:verified",
         "vendor:unverified",
     ).forEach { put(SocketEventName(it), HubArea.Vendors) }
+    // Another accountant's chain edit. The web's `accountHubListeners` folds
+    // all three into one `ah:approval_tier:list` refetch of the open module;
+    // the page re-reads silently, and an open builder keeps its own edits.
+    listOf(
+        "approval_tier:configured",
+        "approval_tier:updated",
+        "approval_tier:deleted",
+    ).forEach { put(SocketEventName(it), HubArea.Approvers) }
 }
 
 /**

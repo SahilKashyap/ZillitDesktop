@@ -60,6 +60,20 @@ data class ApprovalRule(
     val amountThreshold: Double? = null,
 ) {
     val isAssigned: Boolean get() = userIds.isNotEmpty()
+
+    /**
+     * Whether a kind has been picked.
+     *
+     * A new rule starts on "Select a rule..." as on the web, and an untyped
+     * rule is an unfinished row: it offers no Add Users and is dropped on save.
+     */
+    val isTyped: Boolean get() = type.isNotBlank()
+
+    companion object {
+        /** The validator's whole vocabulary is these two. */
+        const val DEFAULT = "default"
+        const val AMOUNT = "amount"
+    }
 }
 
 /** One level of the chain. [order] is 1-based, as shown. */
@@ -67,6 +81,24 @@ data class ApprovalTier(val order: Int, val rules: List<ApprovalRule> = emptyLis
     val isAssigned: Boolean get() = rules.any { it.isAssigned }
 
     val approverCount: Int get() = rules.sumOf { it.userIds.size }
+
+    /**
+     * Everyone on the level, across every rule.
+     *
+     * A person sits on a level once: the Default approver cannot also be an
+     * "Amount greater than" approver on the same level — the web's
+     * `collectTierUserIds`, which both its picker and its add step read.
+     */
+    val userIds: List<String> get() = rules.flatMap { it.userIds }
+
+    val hasDefault: Boolean get() = rules.any { it.type == ApprovalRule.DEFAULT }
+
+    /**
+     * Whether [rule]'s kind is fixed: an amount rule on a level that already
+     * has a Default. The web disables that select, so the only way to change
+     * such a level is through its Default rule.
+     */
+    fun locks(rule: ApprovalRule): Boolean = hasDefault && rule.type == ApprovalRule.AMOUNT
 }
 
 /** A saved chain for one module and scope. */
@@ -81,6 +113,27 @@ data class ApprovalConfig(
     val isConfigured: Boolean get() = tiers.any { it.isAssigned }
 
     val levelCount: Int get() = tiers.count { it.isAssigned }
+
+    /** The level numbered [order], if there is one. */
+    fun level(order: Int?): ApprovalTier? = order?.let { wanted -> tiers.firstOrNull { it.order == wanted } }
+}
+
+/**
+ * Who may be picked as an approver on a module — the web's `pickerUsers`.
+ *
+ * Accepted crew holding view access on the module's tool, plus the accounts
+ * team, who may approve anything. Until the rights lookup answers, or when it
+ * fails, that is the accounts team alone: the web fails closed, because
+ * offering the whole roster would let a chain route documents to someone who
+ * cannot open them.
+ */
+object ApprovalCandidates {
+    fun pick(users: List<HubUser>, viewRights: Set<String>?): List<HubUser> {
+        val accountants = HubUsers.accountsTeam(users)
+        if (viewRights == null) return accountants
+        val accountantIds = accountants.map { it.id }.toSet()
+        return HubUsers.accepted(users).filter { it.id in viewRights || it.id in accountantIds }
+    }
 }
 
 /**
@@ -117,6 +170,44 @@ object ApprovalSequence {
     /** 1-based positions of the empty levels, for the confirmation wording. */
     fun emptyLevels(tiers: List<ApprovalTier>): List<Int> =
         tiers.mapIndexedNotNull { index, tier -> (index + 1).takeIf { !tier.isAssigned } }
+
+    /**
+     * The levels as a save sends them, empties still in — the web's `rawTiers`.
+     *
+     * Rules nobody gave a kind are dropped, along with anyone added to them
+     * before the kind was cleared. Levels are numbered by position.
+     */
+    fun forSave(tiers: List<ApprovalTier>): List<ApprovalTier> = tiers.mapIndexed { index, tier ->
+        tier.copy(order = index + 1, rules = tier.rules.filter { it.isTyped })
+    }
+
+    /**
+     * Whether any "Amount greater than" rule lacks a positive threshold.
+     *
+     * Checked on the levels that survive compaction, as the web does, so a
+     * half-filled level about to be dropped cannot block the save.
+     */
+    fun hasInvalidAmount(tiers: List<ApprovalTier>): Boolean = tiers.any { tier ->
+        tier.rules.any { rule -> rule.type == ApprovalRule.AMOUNT && !((rule.amountThreshold ?: 0.0) > 0.0) }
+    }
+
+    /** "Level 2", "Level 2 and Level 4", "Level 1, Level 2 and Level 3" — the web's `fmtLevels`. */
+    fun levelsText(levels: List<Int>): String {
+        val labels = levels.map { "Level $it" }
+        return if (labels.size <= 1) {
+            labels.firstOrNull().orEmpty()
+        } else {
+            labels.dropLast(1).joinToString(", ") + " and " + labels.last()
+        }
+    }
+
+    /** What the save asks before a filled level moves up, word for word the web's. */
+    fun compactionMessage(levels: List<Int>): String {
+        val plural = levels.size > 1
+        return "${levelsText(levels)} ${if (plural) "have" else "has"} no approvers. " +
+            "${if (plural) "They" else "It"} will be removed and the levels below will move up. " +
+            "Save the updated approval levels?"
+    }
 
     /**
      * Why this chain cannot be saved, or null when it can.

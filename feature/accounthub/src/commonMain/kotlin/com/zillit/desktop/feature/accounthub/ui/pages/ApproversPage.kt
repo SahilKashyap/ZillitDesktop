@@ -1,380 +1,861 @@
 package com.zillit.desktop.feature.accounthub.ui.pages
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
-import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
-import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
-import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
-import com.zillit.desktop.core.designsystem.component.ZillitSelect
+import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import com.zillit.desktop.core.designsystem.component.ZillitSegmented
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
-import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTab
-import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.designsystem.component.avatarHue
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.ApprovalRule
-import com.zillit.desktop.feature.accounthub.domain.ApprovalSequence
 import com.zillit.desktop.feature.accounthub.domain.ApprovalTier
+import com.zillit.desktop.feature.accounthub.domain.HubDepartment
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
+import com.zillit.desktop.feature.accounthub.ui.DepartmentFilter
 import com.zillit.desktop.feature.accounthub.ui.HubPage
+import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
+import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
+import com.zillit.desktop.feature.accounthub.ui.components.Pill
+import com.zillit.desktop.feature.accounthub.ui.components.TipBanner
+import com.zillit.desktop.feature.accounthub.ui.components.groupAmount
+import com.zillit.desktop.feature.accounthub.ui.components.levelSummary
+import com.zillit.desktop.feature.accounthub.ui.components.rememberHubFace
 
 /**
- * Approval chains, per module.
+ * Approval chains, per module — the web's `ApproversModule`.
  *
- * ## Levels fill from the bottom up
+ * ## A module rail, a hero, the default chain, then the departments
  *
- * A level may hold approvers only once every level before it does. Without the
- * rule a chain saves with level 1 empty and level 2 filled, and nothing routes
- * — the document waits forever at a level with nobody in it. The editor refuses
- * the save and names the offending level rather than letting the server take it.
+ * Six modules down the left, each saying Configured or Not started. The page
+ * for one shows the production-wide chain first — "Configure Default Levels
+ * first to set a baseline" — and every department beneath, marked Custom,
+ * Default or Not configured, expandable to its levels and the people on them.
  *
- * ## A department with no chain is not a department without approvals
+ * ## The builder replaces the page
  *
- * The server resolves a department's chain first and falls back to the
- * production-wide one, so the absence of a department row means "inherits",
- * which is what this screen says.
+ * Editing opens a full view, rail and all out of the way, as on the web:
+ * level cards holding rules and their approvers, an insert rail between them,
+ * and two confirmations before a save — see [ApprovalBuilderView].
  */
 @Composable
 fun ApproversPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+    val builder = state.approvals.builder
+    if (builder != null) {
+        ApprovalBuilderView(state, builder, onEvent)
+    } else {
+        Row(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
+            ModuleRail(state, onEvent)
+            Box(Modifier.width(1.dp).fillMaxHeight().background(ZillitTheme.colors.border))
+            ModuleView(state, onEvent)
+        }
+    }
+    ApprovalBuilderDialogs(state, onEvent)
+}
+
+/** The module sidebar — a title, search, two sections, Configured / Not started with a dot. */
+@Composable
+private fun ModuleRail(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val approvals = state.approvals
-
-    HubPage {
-        ZillitPageHeader(
-            eyebrow = "Configuration",
-            title = "Approvers",
-            description = "Who signs off, in what order, for each module.",
-            actions = {
-                ZillitButton(
-                    text = "Refresh",
-                    onClick = { onEvent(AccountHubEvent.Refresh) },
-                    variant = ButtonVariant.Tertiary,
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Reload,
-                    loading = approvals.loading,
-                )
-            },
-        )
-
-        // Each tab says whether that module has a chain, from one summary call
-        // — the web's "Configured / Not started" pill. A module the summary
-        // does not answer for carries no suffix at all: unknown is not the
-        // same as unconfigured, and claiming otherwise is how Time Card read
-        // "Not started" forever on the web.
-        ZillitTabStrip(
-            tabs = ApprovalModule.entries.map { module ->
-                val known = approvals.configured[module]
-                ZillitTab(
-                    module.wire,
-                    when (known) {
-                        true -> "${module.label} · Set"
-                        false -> "${module.label} · Not set"
-                        null -> module.label
-                    },
-                )
-            },
-            activeId = approvals.module.wire,
-            onSelect = { wire ->
-                ApprovalModule.entries.firstOrNull { it.wire == wire }
-                    ?.let { onEvent(AccountHubEvent.SwitchApprovalModule(it)) }
-            },
-        )
-
-        if (!state.viewer.canActAsAccountant) {
-            ZillitNotice(
-                text = "Approval chains are read-only for you — the service restricts changes " +
-                    "to the accounts department, and an admin is not exempt.",
-                tone = StatusTone.Neutral,
-                icon = ZillitIcons.Info,
+    val colors = ZillitTheme.colors
+    val needle = approvals.moduleSearch.trim()
+    val groups = MODULE_GROUPS
+        .map { (title, modules) ->
+            title to modules.filter { needle.isEmpty() || it.label.contains(needle, ignoreCase = true) }
+        }
+        .filter { (_, modules) -> modules.isNotEmpty() }
+    ZillitScrollColumn(
+        modifier = Modifier.width(RAIL_WIDTH).fillMaxHeight().background(colors.surfaceSunken),
+        contentPadding = PaddingValues(ZillitTheme.spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+            ZillitText(text = "Modules", style = ZillitTheme.typography.titleMedium)
+            ZillitText(
+                text = "Approver configuration",
+                style = ZillitTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                color = colors.textMuted,
             )
         }
+        ZillitSearchField(
+            value = approvals.moduleSearch,
+            onValueChange = { onEvent(AccountHubEvent.SearchApprovalModules(it)) },
+            placeholder = "Search modules…",
+            modifier = Modifier.fillMaxWidth(),
+        )
+        groups.forEach { (title, modules) ->
+            MonoLabel(
+                title,
+                modifier = Modifier.padding(start = ZillitTheme.spacing.xs, top = ZillitTheme.spacing.sm),
+            )
+            modules.forEach { module ->
+                ModuleCard(
+                    module = module,
+                    active = module == approvals.module,
+                    configured = approvals.configured[module],
+                    onClick = { onEvent(AccountHubEvent.SwitchApprovalModule(module)) },
+                )
+            }
+        }
+        if (groups.isEmpty()) FieldHint("No modules match “$needle”.")
+    }
+}
 
-        if (approvals.loading) ZillitSpinner()
+@Composable
+private fun ModuleCard(module: ApprovalModule, active: Boolean, configured: Boolean?, onClick: () -> Unit) {
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.medium)
+            .background(colors.surface)
+            .border(1.dp, if (active) colors.accent else colors.border, ZillitTheme.shapes.medium)
+            .clickable(onClick = onClick)
+            .padding(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ApprovalIconTile(
+            icon = module.icon,
+            tint = if (active) colors.accent else colors.textMuted,
+            background = if (active) colors.accentSoft else colors.surfaceSunken,
+            ring = if (active) colors.accent.copy(alpha = APPROVAL_RING_ALPHA) else colors.border,
+            size = MODULE_TILE,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            ZillitText(
+                text = module.label,
+                style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = if (active) colors.accentText else colors.textPrimary,
+                maxLines = 1,
+            )
+            // A module the summary does not answer for carries no word at
+            // all: unknown is not "Not started".
+            configured?.let {
+                ZillitText(
+                    text = if (it) "Configured" else "Not started",
+                    style = ZillitTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                )
+            }
+        }
+        if (configured == true) Box(Modifier.size(STATUS_DOT).clip(CircleShape).background(colors.success))
+    }
+}
 
+@Composable
+private fun ModuleView(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+    val approvals = state.approvals
+    HubPage {
         ZillitScrollColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
+            // Clear of the scroll rail, which otherwise sits over the cards' right edge.
+            contentPadding = PaddingValues(end = ZillitTheme.spacing.lg),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
-            DefaultChainCard(state, onEvent)
-            DepartmentChainsCard(state, onEvent)
-        }
-    }
-
-    ApprovalEditorDialog(state, onEvent)
-}
-
-@Composable
-private fun DefaultChainCard(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
-    val config = state.approvals.defaultConfig
-
-    ZillitSectionCard(
-        title = "Production-wide chain",
-        icon = ZillitIcons.Shield,
-        meta = config?.let { "${it.levelCount} level(s)" },
-        action = {
-            if (state.viewer.canActAsAccountant) {
-                ZillitButton(
-                    text = if (config == null) "Set up" else "Edit",
-                    onClick = { onEvent(AccountHubEvent.EditApprovalConfig(config)) },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Edit,
+            ApproversHero(state)
+            TipBanner(
+                "Tip — Configure Default Levels first to set a baseline. Then customise specific departments " +
+                    "as needed.",
+            )
+            if (!state.viewer.canActAsAccountant) {
+                ZillitNotice(
+                    text = "Approval chains are read-only for you — the service restricts changes to the accounts " +
+                        "department, and an admin is not exempt.",
+                    tone = StatusTone.Neutral,
+                    icon = ZillitIcons.Info,
                 )
             }
-        },
-    ) {
-        if (config == null || !config.isConfigured) {
-            ZillitNotice(
-                text = "No chain configured for ${state.approvals.module.label}. Documents " +
-                    "will not route until one is.",
-                tone = StatusTone.Pending,
-                icon = ZillitIcons.Warning,
-            )
-            return@ZillitSectionCard
-        }
-        ChainSummary(config)
-    }
-}
-
-@Composable
-private fun DepartmentChainsCard(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
-    val rows = state.approvals.departmentConfigs
-
-    ZillitSectionCard(
-        title = "Department overrides",
-        icon = ZillitIcons.Users,
-        meta = "${rows.size} configured",
-    ) {
-        ZillitText(
-            // Said plainly, because an empty list here looks like a gap.
-            text = "A department with no override inherits the production-wide chain.",
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textSecondary,
-        )
-        rows.forEach { config ->
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xs),
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    ZillitText(
-                        text = config.departmentName.ifBlank {
-                            config.departmentId ?: "Unnamed department"
-                        },
-                        maxLines = 1,
-                    )
-                    ZillitText(
-                        text = "${config.levelCount} level(s)",
-                        style = ZillitTheme.typography.bodySmall,
-                        color = ZillitTheme.colors.textSecondary,
-                    )
-                }
-                if (state.viewer.canActAsAccountant) {
-                    ZillitButton(
-                        text = "Edit",
-                        onClick = { onEvent(AccountHubEvent.EditApprovalConfig(config)) },
-                        variant = ButtonVariant.Tertiary,
-                        size = ButtonSize.Small,
-                    )
+            val failure = approvals.loadError
+            when {
+                failure != null -> ZillitNotice(
+                    text = failure,
+                    tone = StatusTone.Rejected,
+                    icon = ZillitIcons.Warning,
+                    action = {
+                        ZillitButton(
+                            text = "Retry",
+                            onClick = { onEvent(AccountHubEvent.ReloadApprovalConfigs) },
+                            size = ButtonSize.Small,
+                        )
+                    },
+                )
+                // This module's chains are on their way. Showing the cards now
+                // would say "No default levels set" about a chain not yet read.
+                approvals.loading && approvals.loadedModule != approvals.module ->
+                    LoadingLine("Loading approval configs…")
+                else -> {
+                    DefaultLevelsCard(state, onEvent)
+                    DepartmentsSection(state, onEvent)
                 }
             }
         }
     }
 }
 
+/**
+ * "Management / Approvers" with the module, department and override counts
+ * beside it — or beneath it when the pane is too narrow for both, as the
+ * web's hero wraps.
+ */
 @Composable
-private fun ChainSummary(config: ApprovalConfig) {
-    config.tiers.forEach { tier ->
+private fun ApproversHero(state: AccountHubUiState) {
+    val colors = ZillitTheme.colors
+    val approvals = state.approvals
+    val departments = state.departmentList
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.large)
+            .background(Brush.verticalGradient(listOf(colors.surface, colors.canvas)))
+            .border(1.dp, colors.border, ZillitTheme.shapes.large)
+            .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.lg),
+    ) {
+        val counters = @Composable {
+            HeroCounters(approvals.module, departments.size, approvals.customCount(departments))
+        }
+        if (maxWidth < HERO_SIDE_BY_SIDE) {
+            Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+                HeroTitle(approvals.module)
+                counters()
+            }
+        } else {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
+            ) {
+                HeroTitle(approvals.module, Modifier.weight(1f))
+                counters()
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeroTitle(module: ApprovalModule, modifier: Modifier = Modifier) {
+    val colors = ZillitTheme.colors
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            ZillitStatusPill(
-                label = "Level ${tier.order}",
-                tone = if (tier.isAssigned) StatusTone.Done else StatusTone.Pending,
+            ApprovalIconTile(
+                icon = ZillitIcons.Shield,
+                tint = colors.accent,
+                background = colors.accentSoft,
+                ring = colors.accent.copy(alpha = APPROVAL_RING_ALPHA),
+                size = HERO_TILE,
             )
+            Column {
+                MonoLabel("Management", color = colors.accentText)
+                ZillitText(text = "Approvers", style = ZillitTheme.typography.displayLarge)
+            }
+        }
+        ZillitText(
+            modifier = Modifier.padding(start = HERO_TILE + ZillitTheme.spacing.md),
+            text = buildAnnotatedString {
+                append("Configure approval levels for each department on ")
+                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = colors.textPrimary)) {
+                    append(module.label)
+                }
+                append(". Defaults apply unless a department overrides them.")
+            },
+            style = ZillitTheme.typography.bodyMedium,
+            color = colors.textSecondary,
+        )
+    }
+}
+
+/** Module, Departments and Custom overrides — the hero's right-hand tiles. */
+@Composable
+private fun HeroCounters(module: ApprovalModule, departments: Int, custom: Int) {
+    val colors = ZillitTheme.colors
+    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        ApprovalHeroStat(
+            label = "Module",
+            value = module.label,
+            icon = module.icon,
+            content = colors.accentText,
+            background = colors.accentSoft,
+            ring = colors.accent.copy(alpha = APPROVAL_RING_ALPHA),
+        )
+        ApprovalHeroStat(
+            label = "Departments",
+            value = departments.toString(),
+            content = colors.textPrimary,
+            background = colors.surfaceSunken,
+            ring = colors.border,
+        )
+        ApprovalHeroStat(
+            label = "Custom overrides",
+            value = custom.toString(),
+            content = colors.violet,
+            background = colors.violetSoft,
+            ring = colors.violet.copy(alpha = APPROVAL_RING_ALPHA),
+        )
+    }
+}
+
+/** A rounded square holding one icon — the web's module and card badges. */
+@Composable
+internal fun ApprovalIconTile(icon: ImageVector, tint: Color, background: Color, ring: Color, size: Dp) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(ZillitTheme.shapes.medium)
+            .background(background)
+            .border(1.dp, ring, ZillitTheme.shapes.medium),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitIcon(icon = icon, tint = tint, size = size * ICON_SHARE)
+    }
+}
+
+/** One of the hero's counters — the web's `StatTile`. */
+@Composable
+internal fun ApprovalHeroStat(
+    label: String,
+    value: String,
+    content: Color,
+    background: Color,
+    ring: Color,
+    icon: ImageVector? = null,
+) {
+    Column(
+        modifier = Modifier
+            .widthIn(min = STAT_MIN_WIDTH)
+            .clip(ZillitTheme.shapes.medium)
+            .background(background)
+            .border(1.dp, ring, ZillitTheme.shapes.medium)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+    ) {
+        MonoLabel(label)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            icon?.let { ZillitIcon(icon = it, tint = content, size = STAT_ICON) }
             ZillitText(
-                text = if (tier.isAssigned) {
-                    "${tier.approverCount} approver(s) · " +
-                        tier.rules.filter { it.isAssigned }.joinToString(", ") {
-                            it.type.ifBlank { "named" }
-                        }
-                } else {
-                    "No approvers"
-                },
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.textSecondary,
+                text = value,
+                style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = content,
                 maxLines = 1,
             )
         }
     }
 }
 
-/**
- * The chain editor.
- *
- * Approvers are entered as ids because this module has no crew directory of its
- * own; a picker belongs here once the session's roster is threaded through, and
- * an id field that works beats a picker that does not exist.
- */
 @Composable
-private fun ApprovalEditorDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
-    val config = state.approvals.editing
-    val problem = config?.let { ApprovalSequence.validationError(it.tiers) }
-
-    ZillitDialogShell(
-        title = "Approval chain",
-        subtitle = config?.let { "${it.module.label} · ${it.scope.label}" },
-        visible = config != null,
-        onDismiss = { onEvent(AccountHubEvent.DismissApprovalConfig) },
-        icon = ZillitIcons.Shield,
-        actions = {
-            ZillitButton(
-                text = "Cancel",
-                onClick = { onEvent(AccountHubEvent.DismissApprovalConfig) },
-                variant = ButtonVariant.Tertiary,
-            )
-            ZillitButton(
-                text = "Save chain",
-                onClick = { onEvent(AccountHubEvent.SaveApprovalConfig) },
-                enabled = problem == null && !state.approvals.saving,
-                loading = state.approvals.saving,
-            )
-        },
+private fun LoadingLine(text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxl),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (config == null) return@ZillitDialogShell
+        ZillitSpinner()
+        FieldHint(text)
+    }
+}
 
-        config.tiers.forEach { tier ->
-            LevelEditor(
-                tier = tier,
-                canRemove = config.tiers.size > 1,
-                onChange = { next ->
-                    onEvent(
-                        AccountHubEvent.UpdateApprovalConfig(
-                            config.copy(
-                                tiers = config.tiers.map { if (it.order == tier.order) next else it },
-                            ),
-                        ),
-                    )
-                },
-                onRemove = { onEvent(AccountHubEvent.RemoveApprovalLevel(tier.order)) },
-            )
-        }
-
-        ZillitButton(
-            text = "Add level",
-            onClick = { onEvent(AccountHubEvent.AddApprovalLevel) },
-            variant = ButtonVariant.Secondary,
-            size = ButtonSize.Small,
-            leadingIcon = ZillitIcons.Add,
+/** The green-accented card for the production-wide chain — the web's `DefaultLevelsCard`. */
+@Suppress("LongMethod") // A card, read top to bottom; the order is the reading order.
+@Composable
+private fun DefaultLevelsCard(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+    val colors = ZillitTheme.colors
+    val config = state.approvals.defaultConfig
+    val configured = config?.isConfigured == true
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.large)
+            .background(Brush.verticalGradient(0f to colors.successSoft, GRADIENT_STOP to colors.surface))
+            .border(1.dp, colors.success.copy(alpha = APPROVAL_RING_ALPHA), ZillitTheme.shapes.large)
+            .padding(ZillitTheme.spacing.lg),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        ApprovalIconTile(
+            icon = ZillitIcons.Shield,
+            tint = colors.success,
+            background = colors.successSoft,
+            ring = colors.success.copy(alpha = APPROVAL_RING_ALPHA),
+            size = CARD_TILE,
         )
-
-        problem?.let {
-            ZillitNotice(text = it, tone = StatusTone.Pending, icon = ZillitIcons.Warning)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                ZillitText(text = "Default Approval Levels", style = ZillitTheme.typography.titleSmall)
+                ZillitText(
+                    text = "all ${state.departmentList.size} departments",
+                    style = APPROVAL_MONO,
+                    color = colors.textMuted,
+                )
+                Pill(
+                    if (configured) "Configured" else "Not configured",
+                    tone = if (configured) StatusTone.Done else StatusTone.Neutral,
+                    dot = true,
+                )
+            }
+            FieldHint(
+                if (configured) {
+                    "Baseline used by any department without a custom override below."
+                } else {
+                    "No default levels set. Departments without custom configs will have no approval flow."
+                },
+            )
+            if (config != null && configured) {
+                Column(modifier = Modifier.padding(top = ZillitTheme.spacing.sm)) {
+                    LevelLines(config.tiers, state) { tier ->
+                        val count = tier.approverCount
+                        "· $count approver${if (count == 1) "" else "s"}"
+                    }
+                }
+            }
         }
-        if (problem == null && ApprovalSequence.emptyLevels(config.tiers).isNotEmpty()) {
-            // Trailing blanks are allowed through and dropped on save, so say
-            // that rather than leaving the user to wonder why they vanished.
-            ZillitNotice(
-                text = "Empty levels at the end are dropped when this is saved.",
-                tone = StatusTone.Neutral,
-                icon = ZillitIcons.Info,
+        if (state.viewer.canActAsAccountant) {
+            ZillitButton(
+                text = if (configured) "Edit" else "Configure",
+                onClick = { onEvent(AccountHubEvent.EditDefaultApprovals) },
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Edit,
             )
         }
     }
 }
 
+/**
+ * A chain read-only: "Level 1 · …" over the people on it, levels split by a
+ * dashed rule — the web's tier lines under the default card and inside an
+ * opened department. [meta] is what follows the level's name.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LevelEditor(
-    tier: ApprovalTier,
-    canRemove: Boolean,
-    onChange: (ApprovalTier) -> Unit,
-    onRemove: () -> Unit,
-) {
-    // A fresh rule is born wire-legal: the select SHOWS "Default" for a
-    // blank type, but the state must carry it too — a save with `type: ""`
-    // is refused ("must be one of [default, amount]").
-    val rule = tier.rules.firstOrNull() ?: ApprovalRule(type = "default")
+private fun LevelLines(tiers: List<ApprovalTier>, state: AccountHubUiState, meta: (ApprovalTier) -> String) {
+    val colors = ZillitTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+        tiers.forEachIndexed { index, tier ->
+            if (index > 0) ApprovalDashedRule()
+            Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                ) {
+                    ZillitText(
+                        text = "Level ${tier.order}",
+                        style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.Bold),
+                    )
+                    ZillitText(text = meta(tier), style = APPROVAL_MONO, color = colors.textMuted)
+                }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xl),
+                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                ) {
+                    tier.userIds.forEach { id -> ApproverLine(id, state) }
+                    if (tier.userIds.isEmpty()) {
+                        ZillitText(
+                            text = "No users assigned",
+                            style = ZillitTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
+                            color = colors.textMuted,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+/** A person on a chain: their photo, their name, and what they do — the web's `ApproverLine`. */
+@Composable
+private fun ApproverLine(userId: String, state: AccountHubUiState) {
+    val name = state.userName(userId)
+    val role = state.user(userId)?.roleLabel.orEmpty()
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ZillitSectionLabel("Level ${tier.order}")
-            ZillitStatusPill(
-                label = if (tier.isAssigned) "${tier.approverCount} approver(s)" else "Empty",
-                tone = if (tier.isAssigned) StatusTone.Done else StatusTone.Neutral,
+        ZillitAvatar(name = name, image = rememberHubFace(userId), size = LINE_AVATAR)
+        Column {
+            ZillitText(
+                text = name,
+                style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
             )
-            Column(modifier = Modifier.weight(1f)) {}
-            if (canRemove) {
-                ZillitIconButton(
-                    icon = ZillitIcons.Trash,
-                    contentDescription = "Remove level ${tier.order}",
-                    onClick = onRemove,
+            if (role.isNotBlank()) {
+                ZillitText(
+                    text = role.localised(),
+                    style = ZillitTheme.typography.labelSmall,
+                    color = ZillitTheme.colors.textMuted,
+                    maxLines = 1,
                 )
             }
         }
-        ZillitSelect(
-            value = rule.type.ifBlank { RULE_TYPES.first() },
-            options = RULE_TYPES,
-            onSelect = { type -> onChange(tier.copy(rules = listOf(rule.copy(type = type)))) },
-            // The wire's two words, said the way the web says them
-            // (ApproversModule.jsx:943): Default, or a spend gate.
-            label = { if (it == "amount") "Amount greater than" else "Default" },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        if (rule.type == "amount") {
-            ZillitTextField(
-                value = rule.amountThreshold?.toString().orEmpty(),
-                onValueChange = { text ->
-                    onChange(
-                        tier.copy(rules = listOf(rule.copy(amountThreshold = text.toDoubleOrNull()))),
-                    )
-                },
-                label = "Amount threshold",
-                placeholder = "This level signs off spends above this",
-            )
-        }
-        ZillitTextField(
-            value = rule.userIds.joinToString(", "),
-            onValueChange = { text ->
-                val ids = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-                onChange(tier.copy(rules = listOf(rule.copy(userIds = ids))))
-            },
-            label = "Approver user ids",
-            placeholder = "Comma-separated",
-        )
     }
 }
 
 /**
- * The rule kinds the server accepts on a level — its validator's exact
- * vocabulary, nothing else ("must be one of [default, amount]"). An earlier
- * port invented user/department_head/any_of here, and every save was refused.
+ * Up to three people overlapping, each ringed in the card's colour so the
+ * edges read, then "+N" — the web's `AvatarStack`.
  */
-private val RULE_TYPES = listOf("default", "amount")
+@Composable
+private fun FaceStack(userIds: List<String>, state: AccountHubUiState) {
+    val colors = ZillitTheme.colors
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(-STACK_OVERLAP),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        userIds.take(STACK_MAX).forEach { id ->
+            ApprovalMiniFace(
+                name = state.userName(id),
+                userId = id,
+                size = STACK_FACE,
+                modifier = Modifier.border(STACK_RING, colors.surface, CircleShape),
+            )
+        }
+        if (userIds.size > STACK_MAX) {
+            Box(
+                modifier = Modifier
+                    .size(STACK_FACE)
+                    .clip(CircleShape)
+                    .background(colors.surfaceSunken)
+                    .border(STACK_RING, colors.surface, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                ZillitText(
+                    text = "+${userIds.size - STACK_MAX}",
+                    style = APPROVAL_MONO.copy(fontSize = STACK_COUNT_TEXT, fontWeight = FontWeight.Bold),
+                    color = colors.textMuted,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A small face: the crew photo, or initials sized to the circle.
+ *
+ * Not [ZillitAvatar] below 24dp — its initials are a fixed 13sp, which a
+ * 20dp circle clips to a blank disc.
+ */
+@Composable
+internal fun ApprovalMiniFace(name: String, userId: String?, size: Dp, modifier: Modifier = Modifier) {
+    val image = rememberHubFace(userId)
+    Box(
+        modifier = modifier.size(size).clip(CircleShape).background(avatarHue(name)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (image != null) {
+            Image(
+                bitmap = image,
+                contentDescription = null,
+                modifier = Modifier.size(size),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            val text = (size.value * INITIALS_SHARE).sp
+            ZillitText(
+                text = name.split(' ').filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase() },
+                style = ZillitTheme.typography.labelSmall.copy(
+                    fontSize = text,
+                    lineHeight = text,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                color = Color.White,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** The dashed hairline between levels. */
+@Composable
+internal fun ApprovalDashedRule(modifier: Modifier = Modifier) {
+    val color = ZillitTheme.colors.border
+    Canvas(modifier = modifier.fillMaxWidth().height(1.dp)) {
+        drawLine(
+            color = color,
+            start = Offset(0f, 0f),
+            end = Offset(size.width, 0f),
+            strokeWidth = 1.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(DASH, GAP)),
+        )
+    }
+}
+
+/** "· Default · > 5,000" — a level's rules as the department rows name them. */
+private fun ruleSummary(tier: ApprovalTier): String = tier.rules.joinToString(" ") { rule ->
+    when (rule.type) {
+        ApprovalRule.AMOUNT -> "· > ${groupAmount((rule.amountThreshold ?: 0.0).asPlainAmount())}"
+        else -> "· Default"
+    }
+}
+
+private fun Double.asPlainAmount(): String =
+    if (this == toLong().toDouble()) toLong().toString() else toString()
+
+@Composable
+private fun DepartmentsSection(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+    val approvals = state.approvals
+    val departments = state.departmentList
+    val shown = approvals.visibleDepartments(departments)
+    val custom = approvals.customCount(departments)
+    val colors = ZillitTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            ZillitSearchField(
+                value = approvals.departmentSearch,
+                onValueChange = { onEvent(AccountHubEvent.SearchDepartments(it)) },
+                placeholder = "Search departments…",
+                modifier = Modifier.weight(1f),
+            )
+            ZillitSegmented(
+                options = listOf(
+                    ZillitTab(DepartmentFilter.All.name, "All ${departments.size}"),
+                    ZillitTab(DepartmentFilter.Custom.name, "Custom $custom"),
+                    ZillitTab(DepartmentFilter.Default.name, "Default ${departments.size - custom}"),
+                ),
+                activeId = approvals.departmentFilter.name,
+                onSelect = { name ->
+                    DepartmentFilter.entries.firstOrNull { it.name == name }?.let {
+                        onEvent(AccountHubEvent.FilterDepartments(it))
+                    }
+                },
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MonoLabel("Departments")
+            Box(Modifier.weight(1f).height(1.dp).background(colors.border))
+            ZillitText(
+                text = buildAnnotatedString {
+                    append("showing ")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = colors.textPrimary)) {
+                        append(shown.size.toString())
+                    }
+                    append(" of ${departments.size}")
+                },
+                style = APPROVAL_MONO,
+                color = colors.textMuted,
+            )
+        }
+        when {
+            departments.isEmpty() -> NoDepartmentsLine("No departments on this production.")
+            shown.isEmpty() -> NoDepartmentsLine("No departments match your search")
+            else -> shown.forEach { dept -> DepartmentRow(dept, state, onEvent) }
+        }
+    }
+}
+
+@Composable
+private fun NoDepartmentsLine(text: String) {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xl),
+        contentAlignment = Alignment.Center,
+    ) {
+        FieldHint(text)
+    }
+}
+
+/** A collapsible department — status, level counts and a stack of faces; opened, its levels. */
+@Suppress("LongMethod", "CyclomaticComplexMethod") // A row, read left to right; the order is the reading order.
+@Composable
+private fun DepartmentRow(dept: HubDepartment, state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+    val colors = ZillitTheme.colors
+    val approvals = state.approvals
+    val own = approvals.configFor(dept.id)?.takeIf { it.isConfigured }
+    val inherited = approvals.defaultConfig?.takeIf { it.isConfigured }
+    val effective = own ?: inherited
+    val expanded = dept.id in approvals.expanded
+    val (status, tone) = when {
+        own != null -> "Custom" to StatusTone.Pending
+        inherited != null -> "Default" to StatusTone.Progress
+        else -> "Not configured" to StatusTone.Neutral
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.large)
+            .background(colors.surface)
+            .border(
+                1.dp,
+                if (expanded) colors.accent.copy(alpha = APPROVAL_RING_ALPHA) else colors.border,
+                ZillitTheme.shapes.large,
+            ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onEvent(AccountHubEvent.ToggleDepartmentExpanded(dept.id)) }
+                .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            ZillitIcon(
+                icon = if (expanded) ZillitIcons.ChevronDown else ZillitIcons.ChevronRight,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = if (expanded) colors.accent else colors.textMuted,
+                size = CHEVRON,
+            )
+            ZillitText(
+                text = dept.name.localised(),
+                style = ZillitTheme.typography.titleSmall,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+            Pill(status, tone = tone, dot = own != null)
+            effective?.let { cfg ->
+                ZillitText(
+                    text = levelSummary(cfg.tiers.map { it.order to it.approverCount }),
+                    style = APPROVAL_MONO,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                )
+                // The web's stack: three overlapping faces, then "+N".
+                val people = cfg.tiers.flatMap { it.userIds }.distinct()
+                if (people.isNotEmpty()) FaceStack(people, state)
+            }
+            if (expanded && state.viewer.canActAsAccountant) {
+                ZillitButton(
+                    text = "Edit",
+                    onClick = { onEvent(AccountHubEvent.EditDepartmentConfig(dept.id)) },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Edit,
+                )
+            }
+        }
+        if (expanded) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colors.surfaceSunken.copy(alpha = SUNKEN_ALPHA))
+                    .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            ) {
+                if (effective == null) {
+                    ZillitText(
+                        text = "No approval levels configured for this department.",
+                        style = ZillitTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
+                        color = colors.textMuted,
+                    )
+                } else {
+                    LevelLines(effective.tiers, state, ::ruleSummary)
+                    if (own == null) FieldHint("Inherited from the default levels.")
+                }
+            }
+        }
+    }
+}
+
+/** Each module's icon, matching the hub sidebar's. */
+internal val ApprovalModule.icon: ImageVector
+    get() = when (this) {
+        ApprovalModule.PurchaseOrders -> ZillitIcons.Receipt
+        ApprovalModule.Invoices -> ZillitIcons.File
+        ApprovalModule.CardExpenses -> ZillitIcons.CreditCard
+        ApprovalModule.CashExpenses -> ZillitIcons.Wallet
+        ApprovalModule.Timecard -> ZillitIcons.Clock
+        ApprovalModule.DealMemo -> ZillitIcons.Edit
+    }
+
+/** The rail's sections, in the web's sidebar order. */
+private val MODULE_GROUPS = listOf(
+    "Transactions" to listOf(
+        ApprovalModule.PurchaseOrders,
+        ApprovalModule.Invoices,
+        ApprovalModule.CardExpenses,
+        ApprovalModule.CashExpenses,
+    ),
+    "Payroll Management" to listOf(ApprovalModule.Timecard, ApprovalModule.DealMemo),
+)
+
+/** Monospace counts and asides — "all 12 departments", "L1: 2 · L2: 1". */
+internal val APPROVAL_MONO: TextStyle
+    @Composable get() = ZillitTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace)
+
+internal const val APPROVAL_RING_ALPHA = 0.35f
+private const val ICON_SHARE = 0.46f
+private const val GRADIENT_STOP = 0.6f
+private const val SUNKEN_ALPHA = 0.5f
+private const val DASH = 6f
+private const val GAP = 5f
+private const val STACK_MAX = 3
+private const val INITIALS_SHARE = 0.4f
+private val STACK_FACE = 24.dp
+private val STACK_OVERLAP = 8.dp
+private val STACK_RING = 2.dp
+private val STACK_COUNT_TEXT = 9.sp
+private val RAIL_WIDTH = 248.dp
+private val MODULE_TILE = 32.dp
+private val HERO_TILE = 40.dp
+
+/** Narrower than this and the title and the three counters cannot share a line. */
+private val HERO_SIDE_BY_SIDE = 720.dp
+private val CARD_TILE = 34.dp
+private val STAT_MIN_WIDTH = 96.dp
+private val STAT_ICON = 14.dp
+private val STATUS_DOT = 7.dp
+private val LINE_AVATAR = 26.dp
+private val CHEVRON = 16.dp

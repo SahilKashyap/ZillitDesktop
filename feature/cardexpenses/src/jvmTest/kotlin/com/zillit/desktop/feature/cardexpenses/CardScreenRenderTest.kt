@@ -65,6 +65,8 @@ class CardScreenRenderTest {
         balance = 1_240.0,
         receiptsCommit = 380.0,
         bsControlCode = "1200",
+        proposedLimit = 2_000.0,
+        justification = "Daily unit spend",
         requestedBy = "user-2",
         rejectedBy = null,
         rejectionReason = null,

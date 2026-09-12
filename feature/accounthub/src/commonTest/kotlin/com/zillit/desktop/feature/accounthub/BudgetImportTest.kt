@@ -146,14 +146,18 @@ class BudgetImportTest {
         assertNull(SetupUpload.BudgetImport.refuse("budget.pdf", 1_000))
 
         assertTrue(SetupUpload.Agreement.refuse("budget.xlsx", 1_000)!!.contains("PDF"))
-        assertTrue(SetupUpload.PurchaseOrderTerms.refuse("terms.docx", 1_000)!!.contains("PDF"))
+        assertNull(SetupUpload.PurchaseOrderTerms.refuse("terms.docx", 1_000), "the terms document takes Word files")
+        assertTrue(SetupUpload.PurchaseOrderTerms.refuse("terms.png", 1_000)!!.contains("DOCX"))
     }
 
+    /** Each purpose has its own cap — 20 MB, or the web's 10 MB for the terms document — and says which. */
     @Test
-    fun `the size cap is inclusive and shared`() {
+    fun `the size cap is inclusive and the refusal names it`() {
         SetupUpload.entries.forEach { purpose ->
             assertNull(purpose.refuse("file.pdf", purpose.maxBytes), "${purpose.name} at the cap")
-            assertTrue(purpose.refuse("file.pdf", purpose.maxBytes + 1)!!.contains("20 MB"))
+            assertEquals(purpose.tooLarge, purpose.refuse("file.pdf", purpose.maxBytes + 1))
+            val megabytes = (purpose.maxBytes / (1024 * 1024)).toString()
+            assertTrue(purpose.tooLarge.contains(megabytes), "${purpose.name} names its own limit")
         }
     }
 }

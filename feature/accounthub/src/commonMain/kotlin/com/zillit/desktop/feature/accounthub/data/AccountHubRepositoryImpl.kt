@@ -12,6 +12,16 @@ import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.feature.accounthub.domain.EntitlementRow
 import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
+import com.zillit.desktop.feature.accounthub.domain.AccountPatch
+import com.zillit.desktop.feature.accounthub.domain.AssignmentRule
+import com.zillit.desktop.feature.accounthub.domain.BankAccounts
+import com.zillit.desktop.feature.accounthub.domain.BankDetail
+import com.zillit.desktop.feature.accounthub.domain.CashCloseDashboard
+import com.zillit.desktop.feature.accounthub.domain.ClosingPackage
+import com.zillit.desktop.feature.accounthub.domain.CustomDay
+import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
+import com.zillit.desktop.feature.accounthub.domain.PayrollGroup
+import com.zillit.desktop.feature.accounthub.domain.TrackingNode
 import com.zillit.desktop.feature.accounthub.domain.PurchaseOrderSetup
 import com.zillit.desktop.feature.accounthub.domain.InvoiceTeamMember
 import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
@@ -67,9 +77,12 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 
 /**
  * The Account Hub's REST surface.
@@ -113,17 +126,26 @@ class AccountHubRepositoryImpl(
     /** The per-module form documents — see [FormTemplateSource]. */
     private val formTemplates = FormTemplateSource(apiClient, config)
 
+    /** Payroll groups, auto-assignment rules and the chart's layers — see [HubSetupSource]. */
+    private val setupSource = HubSetupSource(apiClient, config)
+
+    /** The vendor register and the approval chains — see [HubRegisterSource]. */
+    private val register = HubRegisterSource(apiClient, config)
+
+    /** The vendor form's country list and postcode lookup — see [VendorPresetSource]. */
+    private val presets = VendorPresetSource(apiClient, config)
+
     /** The invoices service, whose settings this is the only screen to write. */
     private val invoicesBase = "${config.apiV2(ZillitService.Invoices).trimEnd('/')}/invoices"
 
     /** The purchase-order service, which owns its own settings document. */
     private val poBase = "${config.baseUrl(ZillitService.PurchaseOrder)}/api/v2/purchase-orders"
 
-    /** Not on the purchase-order host, despite every caller being a PO screen. */
-    private val vendorsBase = "${config.baseUrl(ZillitService.AccountHub)}/api/v2/vendors"
 
     /** Shared reference data, on the core service. */
     private val presetBase = "${config.apiV2(ZillitService.Core)}preset"
+
+
 
     // -- production setup ---------------------------------------------------
 
@@ -150,12 +172,38 @@ class AccountHubRepositoryImpl(
     override suspend fun updateBankAccount(account: BankAccount): ZillitResult<BankAccount> =
         writeBank(HttpVerb.Patch, "$hubBase/bank-accounts/${account.id}", account)
 
+    /** One bank record — how a vendor's bank block is read. See `VendorBank`. */
+    override suspend fun bankAccount(id: String): ZillitResult<BankAccount> = apiClient.request(
+        verb = HttpVerb.Get,
+        url = "$hubBase/bank-accounts/$id",
+        serializer = BankAccountDto.serializer(),
+        module = RequestModule.ProjectUser,
+    ).flatMap { dto ->
+        dto.toDomain()?.let { ZillitResult.Success(it) }
+            ?: ZillitResult.Failure(ZillitError.Unknown("That bank record could not be read."))
+    }
+
+    /**
+     * Removes a bank record, refusing where the server does.
+     *
+     * The service refuses a bank still referenced by an invoice, a card, a cash
+     * claim or a timecard — as a 409 with a readable message, and on some
+     * deployments as a 200 carrying `status: 0`. Reading the second as a success
+     * cleared the form's bank block while the record survived, so the next load
+     * brought every detail back with nothing said about why.
+     */
     override suspend fun deleteBankAccount(id: String): ZillitResult<Unit> =
         apiClient.envelope(
             verb = HttpVerb.Delete,
             url = "$hubBase/bank-accounts/$id",
             module = RequestModule.ProjectUser,
-        ).map { }
+        ).flatMap { envelope ->
+            if (envelope.status == 0) {
+                ZillitResult.Failure(ZillitError.Http(status = HTTP_OK, serverMessage = envelope.message))
+            } else {
+                ZillitResult.Success(Unit)
+            }
+        }
 
     override suspend fun currencies(): ZillitResult<CurrencySettings> = apiClient.request(
         verb = HttpVerb.Get,
@@ -358,8 +406,76 @@ class AccountHubRepositoryImpl(
                     },
                 )
             }
+            put("journal_description_format", JsonPrimitive(settings.journalDescriptionFormat.wire))
+            put("journal_group_by_category", JsonPrimitive(settings.journalGroupByCategory))
+            // `payroll_accounts` is deliberately absent: the plain PATCH ignores
+            // it, and the codes go through `/custom-accounts` so they cannot
+            // drift from the chart.
         },
     ).map { it.value?.toDomain() ?: settings }
+
+    override suspend fun updatePayrollAccounts(rows: List<PayrollAccountRow>): ZillitResult<PayrollSettings> =
+        apiClient.request(
+            verb = HttpVerb.Patch,
+            url = "$hubBase/payroll-settings/custom-accounts",
+            serializer = ValueDto.serializer(PayrollSettingsDto.serializer()),
+            module = RequestModule.ProjectUser,
+            body = buildJsonObject {
+                put(
+                    "rows",
+                    buildJsonArray {
+                        rows.forEach { row ->
+                            add(
+                                buildJsonObject {
+                                    row.id?.let { put("id", JsonPrimitive(it)) }
+                                    if (row.delete) {
+                                        put("status", JsonPrimitive("delete"))
+                                    } else {
+                                        put("code", JsonPrimitive(row.code.trim()))
+                                        put("name", JsonPrimitive(row.name.trim()))
+                                        put("line_type", JsonPrimitive(row.lineType.wire))
+                                    }
+                                },
+                            )
+                        }
+                    },
+                )
+            },
+        ).map { it.value?.toDomain() ?: PayrollSettings() }
+
+    // -- payroll groups -----------------------------------------------------
+
+    // -- payroll groups, assignment rules and layers — see [HubSetupSource] --------
+
+    override suspend fun payrollGroups() = setupSource.payrollGroups()
+
+    override suspend fun createPayrollGroup(group: PayrollGroup) = setupSource.createPayrollGroup(group)
+
+    override suspend fun updatePayrollGroup(group: PayrollGroup) = setupSource.updatePayrollGroup(group)
+
+    override suspend fun deletePayrollGroup(id: String) = setupSource.deletePayrollGroup(id)
+
+    override suspend fun assignmentRules(module: String) = setupSource.assignmentRules(module)
+
+    override suspend fun createAssignmentRule(rule: AssignmentRule) = setupSource.createAssignmentRule(rule)
+
+    override suspend fun updateAssignmentRule(rule: AssignmentRule) = setupSource.updateAssignmentRule(rule)
+
+    override suspend fun deleteAssignmentRule(id: String) = setupSource.deleteAssignmentRule(id)
+
+    override suspend fun trackingSets() = setupSource.trackingSets()
+
+    override suspend fun createTrackingSet(set: TrackingSet) = setupSource.createTrackingSet(set)
+
+    override suspend fun updateTrackingSet(set: TrackingSet) = setupSource.updateTrackingSet(set)
+
+    override suspend fun deleteTrackingSet(id: String) = setupSource.deleteTrackingSet(id)
+
+    override suspend fun createTrackingNode(node: TrackingNode) = setupSource.createTrackingNode(node)
+
+    override suspend fun updateTrackingNode(node: TrackingNode) = setupSource.updateTrackingNode(node)
+
+    override suspend fun deleteTrackingNode(setId: String, id: String) = setupSource.deleteTrackingNode(setId, id)
 
     override suspend fun agreementDocuments(): ZillitResult<List<AgreementDocument>> =
         sliceList("$settingsBase/agreements-documents", AgreementDocumentDto.serializer()) { it.toDomain() }
@@ -450,52 +566,68 @@ class AccountHubRepositoryImpl(
             },
         ).map { it.value?.toDomain() ?: budget }
 
-    override suspend fun payrollBureaus(): ZillitResult<List<PayrollBureau>> =
-        sliceList("$settingsBase/payroll-bureau", PayrollBureauDto.serializer()) { it.toDomain() }
+    override suspend fun payrollBureaus(): ZillitResult<List<PayrollBureau>> = apiClient.request(
+        verb = HttpVerb.Get,
+        url = "$settingsBase/payroll-bureau",
+        serializer = ValueDto.serializer(JsonElement.serializer()),
+        module = RequestModule.ProjectUser,
+    ).map { it.value.toPayrollBureaus() }
 
+    /**
+     * Rows with a blank title are dropped and the rest trimmed, as the web's
+     * `denormalize` does — a bureau with no name is a row somebody started
+     * and abandoned, not one to persist.
+     */
     override suspend fun savePayrollBureaus(
         bureaus: List<PayrollBureau>,
-    ): ZillitResult<List<PayrollBureau>> = patchSliceList(
+    ): ZillitResult<List<PayrollBureau>> = apiClient.request(
+        verb = HttpVerb.Patch,
         url = "$settingsBase/payroll-bureau",
+        serializer = ValueDto.serializer(JsonElement.serializer()),
+        module = RequestModule.ProjectUser,
         body = buildJsonArray {
-            bureaus.forEach { bureau ->
+            bureaus.filter { it.title.isNotBlank() }.forEach { bureau ->
                 add(
                     buildJsonObject {
                         put("id", JsonPrimitive(bureau.id))
-                        put("title", JsonPrimitive(bureau.title))
-                        put("description", JsonPrimitive(bureau.description))
+                        put("title", JsonPrimitive(bureau.title.trim()))
+                        put("description", JsonPrimitive(bureau.description.trim()))
                     },
                 )
             }
         },
-        element = PayrollBureauDto.serializer(),
-    ) { it.toDomain() }
+    ).map { it.value.toPayrollBureaus() }
 
-    override suspend fun dealConditions(): ZillitResult<List<DealCondition>> = sliceList(
-        "$settingsBase/standard-deal-conditions",
-        DealConditionDto.serializer(),
-    ) { it.toDomain() }
+    override suspend fun dealConditions(): ZillitResult<List<DealCondition>> = apiClient.request(
+        verb = HttpVerb.Get,
+        url = "$settingsBase/standard-deal-conditions",
+        serializer = ValueDto.serializer(JsonElement.serializer()),
+        module = RequestModule.ProjectUser,
+    ).map { it.value.toDealConditions() }
 
+    /**
+     * `{ order, condition }` per clause, order rebuilt from position and blanks
+     * dropped — the web's `denormalize`. No id goes: the id is local, and the
+     * server stores the list as given.
+     */
     override suspend fun saveDealConditions(
         conditions: List<DealCondition>,
-    ): ZillitResult<List<DealCondition>> = patchSliceList(
+    ): ZillitResult<List<DealCondition>> = apiClient.request(
+        verb = HttpVerb.Patch,
         url = "$settingsBase/standard-deal-conditions",
+        serializer = ValueDto.serializer(JsonElement.serializer()),
+        module = RequestModule.ProjectUser,
         body = buildJsonArray {
-            conditions.forEachIndexed { index, condition ->
+            conditions.filter { it.condition.isNotBlank() }.forEachIndexed { index, condition ->
                 add(
                     buildJsonObject {
-                        put("id", JsonPrimitive(condition.id))
-                        // Renumbered from position: the clause order is what the
-                        // list shows, and a stale `order` field would reorder the
-                        // deal on the next read.
-                        put("order", JsonPrimitive(index + 1))
-                        put("condition", JsonPrimitive(condition.condition))
+                        put("order", JsonPrimitive(index))
+                        put("condition", JsonPrimitive(condition.condition.trim()))
                     },
                 )
             }
         },
-        element = DealConditionDto.serializer(),
-    ) { it.toDomain() }
+    ).map { it.value.toDealConditions() }
 
     override suspend fun productionSchedule(): ZillitResult<ProductionSchedule> =
         apiClient.request(
@@ -520,6 +652,8 @@ class AccountHubRepositoryImpl(
             put("prep", schedule.prep.toJson())
             put("shoot", schedule.shoot.toJson())
             put("wrap", schedule.wrap.toJson())
+            // The full list every time — the server replaces it whole.
+            put("custom_days", buildJsonArray { schedule.customDays.forEach { add(it.toJson()) } })
         },
     ).map { it.value.toProductionSchedule() }
 
@@ -601,23 +735,22 @@ class AccountHubRepositoryImpl(
             },
         )
 
-    override suspend fun updateAccount(
-        id: String,
-        name: String,
-        costType: CoaCostType,
-        isActive: Boolean,
-        isPosting: Boolean,
-    ): ZillitResult<CoaAccount> = writeAccount(
+    override suspend fun updateAccount(id: String, patch: AccountPatch): ZillitResult<CoaAccount> = writeAccount(
         verb = HttpVerb.Patch,
         url = "$hubBase/chart-of-accounts/$id",
-        // Neither the code nor the line type is sent. Both are immutable after
-        // create — changing them would cascade through every descendant's
-        // breadcrumb, which the server does not do in place.
+        // The line type and parent go only when the structure changed: the
+        // server re-walks the breadcrumb then, which is the expensive half of
+        // the write, and the web gates it the same way (`structureChanged`).
         body = buildJsonObject {
-            put("name", JsonPrimitive(name.trim()))
-            put("cost_type", JsonPrimitive(costType.wire))
-            put("is_active", JsonPrimitive(isActive))
-            put("posting_box", JsonPrimitive(isPosting))
+            put("name", JsonPrimitive(patch.name.trim()))
+            put("cost_type", JsonPrimitive(patch.costType.wire))
+            put("is_active", JsonPrimitive(patch.isActive))
+            put("posting_box", JsonPrimitive(patch.isPosting))
+            patch.code?.takeIf { it.isNotBlank() }?.let { put("code", JsonPrimitive(it.trim())) }
+            if (patch.structureChanged) {
+                patch.lineType?.let { put("line_type", JsonPrimitive(it.wire)) }
+                put("parent_id", patch.parentId?.let(::JsonPrimitive) ?: JsonNull)
+            }
         },
     )
 
@@ -627,118 +760,46 @@ class AccountHubRepositoryImpl(
         module = RequestModule.ProjectUser,
     ).map { }
 
-    override suspend fun trackingSets(): ZillitResult<List<TrackingSet>> = apiClient.request(
+    // -- vendors and approvals — see [HubRegisterSource] -------------------------
+
+    override suspend fun vendors(search: String) = register.vendors(search)
+
+    override suspend fun createVendor(vendor: NewVendor) = register.createVendor(vendor)
+
+    override suspend fun updateVendor(id: String, vendor: NewVendor) = register.updateVendor(id, vendor)
+
+    override suspend fun verifyVendor(id: String) = register.verifyVendor(id)
+
+    override suspend fun deleteVendor(id: String) = register.deleteVendor(id)
+
+    override suspend fun vendorHistory(id: String) = register.vendorHistory(id)
+
+    override suspend fun isdCodes() = presets.isdCodes()
+
+    override suspend fun postcodePlace(countryCode: String, postcode: String) =
+        presets.postcodePlace(countryCode, postcode)
+
+    override suspend fun approvalConfigs(module: ApprovalModule) = register.approvalConfigs(module)
+
+    override suspend fun approvalSummary() = register.approvalSummary()
+
+    override suspend fun saveApprovalConfig(config: ApprovalConfig) = register.saveApprovalConfig(config)
+
+    override suspend fun deleteApprovalConfig(id: String) = register.deleteApprovalConfig(id)
+
+    override suspend fun approverCandidateIds(toolIdentifier: String) = register.approverCandidateIds(toolIdentifier)
+
+    // -- period close -------------------------------------------------------
+
+    override suspend fun cashClose(): ZillitResult<CashCloseDashboard> = apiClient.request(
+        // The invoices service's analytics, as the web's Cash & Close tab reads it.
         verb = HttpVerb.Get,
-        url = "$hubBase/tracking-sets",
-        serializer = ListSerializer(TrackingSetDto.serializer()),
+        url = "$invoicesBase/analytics/cash-close",
+        serializer = JsonElement.serializer(),
         module = RequestModule.ProjectUser,
-        // One round trip rather than one per set: the screen always draws the
-        // codes under their set, so fetching sets alone is never enough.
-        queryParameters = mapOf("include_nodes" to "true"),
-    ).map { rows -> rows.mapNotNull { it.toDomain() } }
+    ).map { it.toCashClose() }
 
-    // -- vendors ------------------------------------------------------------
-
-    override suspend fun vendors(search: String): ZillitResult<List<Vendor>> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = vendorsBase,
-        serializer = ListSerializer(VendorDto.serializer()),
-        module = RequestModule.ProjectUser,
-        queryParameters = mapOf("search" to search.trim().takeIf { it.isNotEmpty() }),
-    ).map { rows -> rows.mapNotNull { it.toDomain() } }
-
-    override suspend fun createVendor(vendor: NewVendor): ZillitResult<Vendor> =
-        writeVendor(HttpVerb.Post, vendorsBase, vendor)
-
-    override suspend fun updateVendor(id: String, vendor: NewVendor): ZillitResult<Vendor> =
-        writeVendor(HttpVerb.Patch, "$vendorsBase/$id", vendor)
-
-    override suspend fun verifyVendor(id: String): ZillitResult<Vendor> = apiClient.request(
-        verb = HttpVerb.Post,
-        url = "$vendorsBase/$id/verify",
-        serializer = VendorDto.serializer(),
-        module = RequestModule.ProjectUser,
-    ).map { it.toDomain() ?: Vendor(id = id, verified = true) }
-
-    /**
-     * A refusal here arrives as a 200. The server answers `{status: 0, message:
-     * "vendor_in_use_by_purchase_orders"}` for a vendor a purchase order still
-     * names, and reporting that as a deletion leaves the row on screen with a
-     * success notice against it (ZL-21088; Android `VendorRepository.kt:273`).
-     */
-    override suspend fun deleteVendor(id: String): ZillitResult<Unit> = apiClient.envelope(
-        verb = HttpVerb.Delete,
-        url = "$vendorsBase/$id",
-        module = RequestModule.ProjectUser,
-    ).flatMap { envelope ->
-        if (envelope.status == 0) {
-            ZillitResult.Failure(ZillitError.Http(status = HTTP_OK, serverMessage = envelope.message))
-        } else {
-            ZillitResult.Success(Unit)
-        }
-    }
-
-    override suspend fun vendorHistory(id: String): ZillitResult<List<VendorChange>> =
-        apiClient.request(
-            verb = HttpVerb.Get,
-            url = "$vendorsBase/$id/history",
-            serializer = ListSerializer(VendorChangeDto.serializer()),
-            module = RequestModule.ProjectUser,
-        ).map { rows ->
-            // Newest first regardless of what the server returned. The same
-            // assumption cost Document Distribution a History screen whose top
-            // row was a fortnight old.
-            rows.mapNotNull { it.toDomain() }.sortedByDescending { it.at ?: Long.MIN_VALUE }
-        }
-
-    // -- approvals ----------------------------------------------------------
-
-    override suspend fun approvalConfigs(module: ApprovalModule): ZillitResult<List<ApprovalConfig>> =
-        apiClient.request(
-            verb = HttpVerb.Get,
-            url = "$hubBase/approval-tiers",
-            serializer = ListSerializer(ApprovalConfigDto.serializer()),
-            module = RequestModule.ProjectUser,
-            queryParameters = mapOf("module" to module.wire),
-        ).map { rows -> rows.map { it.toDomain() } }
-
-    override suspend fun approvalSummary(): ZillitResult<Map<ApprovalModule, Boolean>> =
-        apiClient.request(
-            verb = HttpVerb.Get,
-            url = "$hubBase/approval-tiers/summary",
-            serializer = ListSerializer(ApprovalSummaryDto.serializer()),
-            module = RequestModule.ProjectUser,
-        ).map { rows ->
-            // A row naming a module this client does not model is dropped, not
-            // guessed at; `from()` would fold every one of them onto POs.
-            rows.mapNotNull { row ->
-                ApprovalModule.entries.firstOrNull { it.wire == row.module?.lowercase() }
-                    ?.let { it to (row.configured == true) }
-            }.toMap()
-        }
-
-    override suspend fun saveApprovalConfig(config: ApprovalConfig): ZillitResult<ApprovalConfig> =
-        apiClient.request(
-            verb = HttpVerb.Post,
-            url = "$hubBase/approval-tiers",
-            serializer = ApprovalConfigDto.serializer(),
-            module = RequestModule.ProjectUser,
-            queryParameters = mapOf("module" to config.module.wire),
-            body = buildJsonObject {
-                if (config.id.isNotBlank()) put("id", JsonPrimitive(config.id))
-                put("scope", JsonPrimitive(config.scope.wire))
-                if (config.scope == ApprovalScope.Department) {
-                    put("department_id", config.departmentId?.let(::JsonPrimitive) ?: JsonNull)
-                }
-                put("tiers", config.tiers.toJson())
-            },
-        ).map { it.toDomain() }
-
-    override suspend fun deleteApprovalConfig(id: String): ZillitResult<Unit> = apiClient.envelope(
-        verb = HttpVerb.Delete,
-        url = "$hubBase/approval-tiers/$id",
-        module = RequestModule.ProjectUser,
-    ).map { }
+    override suspend fun publishClosingPackage(packages: List<ClosingPackage>) = reports.publishClosingPackage(packages)
 
     // -- form templates -----------------------------------------------------
 
@@ -788,21 +849,43 @@ class AccountHubRepositoryImpl(
         url = url,
         serializer = BankAccountDto.serializer(),
         module = RequestModule.ProjectUser,
+        // The web's `BankAccountFormModal` payload, key for key. Blanks go as
+        // null rather than `""`: this validator types its fields, and an empty
+        // string in a nullable column is a value the reconciliation match then
+        // compares against.
         body = buildJsonObject {
             put("name", JsonPrimitive(account.name.trim()))
             put("account_holder_name", JsonPrimitive(account.accountHolderName.trim()))
             put("entity_id", account.entityId?.let(::JsonPrimitive) ?: JsonNull)
             put("entity_type", JsonPrimitive(account.entityType))
-            put("account_number", JsonPrimitive(account.accountNumber.trim()))
+            put("account_number", account.accountNumber.trim().orNull())
             // Digits only. The stored form is canonical and the hyphens are a
             // display convention; persisting the mask would make two accounts
             // with the same sort code compare unequal.
-            put("sort_code", JsonPrimitive(SortCode.digits(account.sortCode)))
-            put("swift_code", JsonPrimitive(account.swiftCode.trim()))
-            put("iban_number", JsonPrimitive(account.ibanNumber.trim()))
-            put("nominal_code", JsonPrimitive(account.nominalCode.trim()))
-            put("cheque_number", JsonPrimitive(account.chequeNumber.trim()))
-            put("wire_number", JsonPrimitive(account.wireNumber.trim()))
+            put("sort_code", SortCode.digits(account.sortCode).orNull())
+            put("swift_code", account.swiftCode.trim().orNull())
+            put("iban_number", account.ibanNumber.trim().orNull())
+            put("cheque_number", account.chequeNumber.trim().orNull())
+            put("wire_number", account.wireNumber.trim().orNull())
+            put("nominal_code", account.nominalCode.trim().orNull())
+            put("ap_clearance_nominal_code", account.apClearanceNominalCode.trim().orNull())
+            put(
+                "currency",
+                account.currencyCode.trim().takeIf { it.isNotEmpty() }?.let { code ->
+                    buildJsonObject {
+                        put("code", JsonPrimitive(code))
+                        put("name", JsonPrimitive(account.currencyName))
+                        put("symbol", JsonPrimitive(account.currencySymbol))
+                    }
+                } ?: JsonNull,
+            )
+            // Serialised, as the web stores it; untitled rows never persist.
+            put(
+                "additional_details",
+                BankAccounts.persistable(account.additionalDetails).takeIf { it.isNotEmpty() }
+                    ?.let { JsonPrimitive(accountHubJson.encodeToString(JsonElement.serializer(), it.toJson("field"))) }
+                    ?: JsonNull,
+            )
         },
     ).map { it.toDomain() ?: account }
 
@@ -818,43 +901,6 @@ class AccountHubRepositoryImpl(
         body = body,
     ).map { it.toDomain() ?: CoaAccount(id = "") }
 
-    /**
-     * Creates or updates a vendor.
-     *
-     * ## Shapes the service insists on
-     *
-     * Three corrections, each learned from a 400 on dev (2026-08-12):
-     *
-     *  - `address` is an **object**, always — `"address" must be of type
-     *    object`. An empty string is refused even when there is no address.
-     *  - `phone` is `{ country_code, number }` or **null**. An empty pair is
-     *    truthy downstream and renders as a bare dial code.
-     *  - the tax field is **`vat_number`**, not the `tax_number` its label
-     *    suggests.
-     *
-     * Optional text goes as null rather than `""` for the same reason the
-     * address does: this validator types its fields.
-     */
-    private suspend fun writeVendor(
-        verb: HttpVerb,
-        url: String,
-        vendor: NewVendor,
-    ): ZillitResult<Vendor> = apiClient.request(
-        verb = verb,
-        url = url,
-        serializer = VendorDto.serializer(),
-        module = RequestModule.ProjectUser,
-        body = buildJsonObject {
-            put("name", JsonPrimitive(vendor.name.trim()))
-            put("email", vendor.email.trim().orNull())
-            put("contact_person", vendor.contactPerson.trim().orNull())
-            put("phone", vendor.phone()?.toJson() ?: JsonNull)
-            put("address", vendor.address.toJson())
-            put("vat_number", vendor.vatNumber.trim().orNull())
-            put("department_id", vendor.departmentId?.let(::JsonPrimitive) ?: JsonNull)
-            put("currency", vendor.currencyCode.trim().orNull())
-        },
-    ).map { it.toDomain() ?: Vendor(id = "", name = vendor.name) }
 }
 
 // -- outgoing shapes --------------------------------------------------------
@@ -862,12 +908,55 @@ class AccountHubRepositoryImpl(
 private fun Company.toJson(): JsonElement = buildJsonObject {
     put("id", JsonPrimitive(id))
     put("name", JsonPrimitive(name.trim()))
+    put("legal_name", JsonPrimitive(legalName.trim()))
     put("country", JsonPrimitive(country))
     put("country_code", JsonPrimitive(countryCode))
     put("bank_ids", buildJsonArray { bankIds.forEach { add(JsonPrimitive(it)) } })
     put("tax_credits", buildJsonArray { taxCredits.forEach { add(JsonPrimitive(it)) } })
+    // The whole UK block every time, blanks included: the list is written
+    // back whole, and a company whose block was omitted had both references
+    // cleared (the web's `makeCompanyDraft` sends it for the same reason).
+    put(
+        "uk",
+        buildJsonObject {
+            put("paye_ref", JsonPrimitive(ukPayeRef.trim()))
+            put("accounts_office_ref", JsonPrimitive(ukAccountsOfficeRef.trim()))
+        },
+    )
     // No currency: it is derived from the linked banks and the backend owns the
     // canonical value. Sending one from here would invent it.
+}
+
+/** Typed extra rows as the wire stores them; [titleKey] is `field` on a bank and `label` on a vendor. */
+internal fun List<BankDetail>.toJson(titleKey: String): JsonArray = buildJsonArray {
+    forEach { row ->
+        add(
+            buildJsonObject {
+                put(titleKey, JsonPrimitive(row.title.trim()))
+                put("value", JsonPrimitive(row.value))
+                put("field_type", JsonPrimitive(row.fieldType.wire))
+            },
+        )
+    }
+}
+
+internal fun List<String>.toJsonArray(): JsonArray = buildJsonArray { forEach { add(JsonPrimitive(it)) } }
+
+/** The web's `mapRuleToApi`. */
+internal fun AssignmentRule.toJson(): Map<String, JsonElement> = mapOf(
+    "departments" to departments.toJsonArray(),
+    "vendors" to vendors.toJsonArray(),
+    "nominal_codes" to nominalCodes.toJsonArray(),
+    "amount_min" to (amountMinValue?.let(::JsonPrimitive) ?: JsonNull),
+    "target_user_id" to JsonPrimitive(assignTo),
+    "is_active" to JsonPrimitive(isActive),
+    "priority" to JsonPrimitive(priority),
+)
+
+private fun CustomDay.toJson(): JsonElement = buildJsonObject {
+    put("name", JsonPrimitive(name.trim()))
+    put("start_date", startDate.asDate())
+    put("end_date", endDate.asDate())
 }
 
 /**
@@ -954,6 +1043,9 @@ private fun PayRule.toJson(): JsonElement = buildJsonObject {
     put("nominal_code", JsonPrimitive(nominalCode))
     put("note", JsonPrimitive(note))
     put("applies_to", JsonPrimitive(appliesTo))
+    put("cap_type", JsonPrimitive(if (capped) "capped" else "uncapped"))
+    put("cap_amount", if (capped) capAmount.asAmountJson() else JsonNull)
+    put("day_type", dayType.trim().orNull())
 }
 
 /** A key the condition does not use is omitted, not sent as null. */
@@ -977,11 +1069,17 @@ private fun PayTrigger.toJson(): JsonElement = buildJsonObject {
     bdrMax?.let { put("bdr_max", JsonPrimitive(it)) }
 }
 
+/**
+ * A rate row as the web's `TaxTypesSection` saves it: a numeric `value`, the
+ * country name and code for a catalogue rate, and both null on a custom one.
+ */
 private fun TaxType.toJson(): JsonElement = buildJsonObject {
     put("type", JsonPrimitive(type))
     put("identifier", JsonPrimitive(identifier))
     put("label", JsonPrimitive(label))
-    put("value", JsonPrimitive(value))
+    put("value", rate?.let(::JsonPrimitive) ?: JsonPrimitive(value))
+    put("country", if (isCustom) JsonNull else JsonPrimitive(country))
+    put("country_code", if (isCustom) JsonNull else JsonPrimitive(countryCode.orEmpty()))
     put("is_recoverable", JsonPrimitive(isRecoverable))
     put("nominal", JsonPrimitive(nominal))
 }
@@ -1006,7 +1104,7 @@ private fun SchedulePhase.toJson(): JsonElement = buildJsonObject {
  *
  * Always sent — a blank address is `{}`-shaped, not `""`. See [writeVendor].
  */
-private fun VendorAddress.toJson(): JsonElement = buildJsonObject {
+internal fun VendorAddress.toJson(): JsonElement = buildJsonObject {
     put("line1", JsonPrimitive(line1.trim()))
     put("line2", JsonPrimitive(line2.trim()))
     put("city", JsonPrimitive(city.trim()))
@@ -1015,19 +1113,19 @@ private fun VendorAddress.toJson(): JsonElement = buildJsonObject {
     put("country", JsonPrimitive(country.trim()))
 }
 
-private fun VendorPhone.toJson(): JsonElement = buildJsonObject {
+internal fun VendorPhone.toJson(): JsonElement = buildJsonObject {
     put("country_code", JsonPrimitive(countryCode.trim()))
     put("number", JsonPrimitive(number.trim()))
 
 }
 
 /** Blank optional text goes as null: this validator types its fields. */
-private fun String.orNull(): JsonElement = if (isBlank()) JsonNull else JsonPrimitive(this)
+internal fun String.orNull(): JsonElement = if (isBlank()) JsonNull else JsonPrimitive(this)
 
 /** Epoch millis on the way out, always — the calendar form is read-only tolerance. */
-private fun Long?.asDate(): JsonElement = this?.let(::JsonPrimitive) ?: JsonNull
+internal fun Long?.asDate(): JsonElement = this?.let(::JsonPrimitive) ?: JsonNull
 
-private fun List<com.zillit.desktop.feature.accounthub.domain.ApprovalTier>.toJson(): JsonElement =
+internal fun List<com.zillit.desktop.feature.accounthub.domain.ApprovalTier>.toJson(): JsonElement =
     buildJsonArray {
         forEach { tier ->
             add(
@@ -1071,4 +1169,4 @@ private fun List<com.zillit.desktop.feature.accounthub.domain.ApprovalTier>.toJs
     }
 
 /** A refusal that still answers 200 — the envelope, not the transport, says no. */
-private const val HTTP_OK = 200
+internal const val HTTP_OK = 200

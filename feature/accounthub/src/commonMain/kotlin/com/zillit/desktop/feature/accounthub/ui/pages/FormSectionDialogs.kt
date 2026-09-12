@@ -27,7 +27,7 @@ fun FormSectionDialogs(config: FormConfigState, onEvent: (AccountHubEvent) -> Un
 @Composable
 private fun AddSectionDialog(config: FormConfigState, onEvent: (AccountHubEvent) -> Unit) {
     ZillitDialogShell(
-        title = "Add a section",
+        title = "Add Section",
         subtitle = config.addingSectionAfter?.let { key ->
             config.template.section(key)?.label?.let { "After $it" }
         } ?: "At the top of the form",
@@ -51,7 +51,7 @@ private fun AddSectionDialog(config: FormConfigState, onEvent: (AccountHubEvent)
             value = config.addingSectionName,
             onValueChange = { onEvent(AccountHubEvent.EditFormSectionName(it)) },
             label = "Section name",
-            placeholder = "Delivery details",
+            placeholder = "e.g. Additional Info",
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -90,7 +90,7 @@ private fun RenameSectionDialog(config: FormConfigState, onEvent: (AccountHubEve
 private fun RemoveSectionDialog(config: FormConfigState, onEvent: (AccountHubEvent) -> Unit) {
     val section = config.removingSection
     ZillitDialogShell(
-        title = "Remove ${section?.label.orEmpty()}?",
+        title = "Delete Section",
         icon = ZillitIcons.Warning,
         visible = section != null,
         onDismiss = { onEvent(AccountHubEvent.DismissRemoveFormSection) },
@@ -101,15 +101,16 @@ private fun RemoveSectionDialog(config: FormConfigState, onEvent: (AccountHubEve
                 variant = ButtonVariant.Tertiary,
             )
             ZillitButton(
-                text = "Remove",
+                text = "Delete",
                 onClick = { onEvent(AccountHubEvent.ConfirmRemoveFormSection) },
                 variant = ButtonVariant.Danger,
             )
         },
     ) {
         ZillitText(
-            text = "The ${section?.fields?.size ?: 0} field(s) in this section go with it. Move " +
-                "any you want to keep into another section first.",
+            text = "Delete \"${section?.label.orEmpty()}\"? The ${section?.fields?.size ?: 0} field(s) in this " +
+                "section go with it. " +
+                "Move any you want to keep into another section first.",
             style = ZillitTheme.typography.bodyMedium,
         )
         ZillitNotice(

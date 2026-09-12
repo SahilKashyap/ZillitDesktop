@@ -33,6 +33,9 @@ data class ExpenseCard(
      */
     val receiptsCommit: Double?,
     val bsControlCode: String?,
+    /** What was asked for, before an accountant set the authorised [limit]. */
+    val proposedLimit: Double?,
+    val justification: String?,
     val requestedBy: String?,
     val rejectedBy: String?,
     val rejectionReason: String?,
@@ -279,18 +282,85 @@ data class CardMetadata(
 /** A card issuer configured for the production. */
 data class CardProvider(val id: String, val name: String)
 
-/** The production's card configuration. */
+/**
+ * The production's card configuration.
+ *
+ * Five sections of one settings document, and **only** these five. The
+ * desktop's first cut of this screen wrote `auto_match_enabled`,
+ * `auto_match_threshold`, `duplicate_detection`, `personal_spend_detection`
+ * and `default_card_limit` — none of which is a column on the settings row.
+ * The update allowlist drops keys it does not know without complaint, so the
+ * page reported "Settings saved" and changed nothing at all.
+ *
+ * The save is per section rather than whole-document, matching the web: a
+ * PATCH merges, so sending one key leaves the rest alone, and sending the
+ * whole document would let a stale copy of one section overwrite a change
+ * somebody else made to another.
+ */
 data class CardSettings(
-    val codingRequired: Boolean = false,
-    val requireSeniorSignOff: Boolean = false,
-    val autoMatchEnabled: Boolean = true,
-    /** Confidence at or above which the engine matches without asking, 0..100. */
-    val autoMatchThreshold: Int = DEFAULT_MATCH_THRESHOLD,
-    val duplicateDetection: Boolean = true,
-    val personalSpendDetection: Boolean = true,
-    val defaultCardLimit: Double? = null,
+    val teamMembers: List<CardTeamMember> = emptyList(),
+    val coordinators: List<DepartmentCoordinator> = emptyList(),
+    val overrides: ApprovalOverrides = ApprovalOverrides(),
     val providers: List<CardProvider> = emptyList(),
+    /** The most anyone may ask for on a card request. Null means no ceiling. */
+    val requestCap: Double? = null,
 )
+
+/**
+ * One member of the accounts team, and what they may do.
+ *
+ * The posting limit is three-valued and each value means something different:
+ * **null** is unlimited, **zero** is "may post nothing — send it to a senior",
+ * and any other figure is a ceiling. Collapsing null and zero is the bug that
+ * would silently give an unlimited poster no access at all, so the model keeps
+ * them apart and so does every screen that reads it.
+ */
+data class CardTeamMember(
+    val userId: String,
+    val postingLimit: Double? = null,
+    val canOverride: Boolean = false,
+    val isSenior: Boolean = false,
+) {
+    val unlimited: Boolean get() = postingLimit == null
+
+    val blocked: Boolean get() = postingLimit == 0.0
+
+    /**
+     * A senior is unlimited and can override, always.
+     *
+     * Enforced here rather than only in the form, because the two flags are
+     * saved independently and a senior with a ceiling is a contradiction the
+     * server does not resolve.
+     */
+    fun normalised(): CardTeamMember =
+        if (isSenior) copy(postingLimit = null, canOverride = true) else this
+}
+
+/** Who codes for a department, and whether that department has to. */
+data class DepartmentCoordinator(
+    val departmentId: String,
+    val userIds: List<String> = emptyList(),
+    val codingRequired: Boolean = false,
+) {
+    val complete: Boolean get() = departmentId.isNotBlank() && userIds.isNotEmpty()
+}
+
+/** The four switches that let an accountant short-circuit an approval chain. */
+data class ApprovalOverrides(
+    val overrideCardRequests: Boolean = false,
+    val overrideReceipts: Boolean = false,
+    val requireCoordinatorCoding: Boolean = false,
+    val requireSeniorSignOff: Boolean = false,
+)
+
+/** Which part of the settings document a save is touching. */
+enum class SettingsSection(val label: String) {
+    Team("Accounts team"),
+    Coordinators("Department coordinators"),
+    Overrides("Approval rules"),
+    Providers("Card providers"),
+    RequestCap("Request ceiling"),
+}
 
 /** The accountant's dashboard figures. */
 data class CardOverview(
@@ -347,28 +417,119 @@ data class ReceiptLine(
     val gross: Double get() = net + taxAmount
 }
 
-/** A new card request, as the form filled it in. */
+/**
+ * A new card request, as the form filled it in.
+ *
+ * The limit is a **proposal**: a request states what the holder thinks they
+ * need, and an accountant sets the authorised figure when they approve. The
+ * wire keys differ for the same reason — see `CardRepositoryImpl.requestCard`.
+ */
 data class NewCardRequest(
     val holderId: String,
-    val limit: Double,
+    val proposedLimit: Double,
     val currency: String?,
-    val type: CardType,
     val departmentId: String?,
     val companyId: String?,
     val providerId: String?,
+    val issuer: String?,
     val bsControlCode: String?,
-    val reason: String?,
+    val justification: String?,
 )
 
-/** A receipt on its way up, before the server has it. */
+/**
+ * An accountant's edit of a card already on file.
+ *
+ * Separate from [NewCardRequest] because it is a different operation on a
+ * different verb, and because it carries two fields a request cannot: the
+ * authorised [limit] and the [balance] recomputed from the change to it. It
+ * also stamps `status: pending`, which the server reads as a resubmit and
+ * answers by wiping the card's collected approvals — correct for a card still
+ * in its chain, which is the only kind this form opens.
+ */
+data class CardDetailsEdit(
+    val limit: Double,
+    val balance: Double,
+    val currency: String?,
+    val providerId: String?,
+    val issuer: String?,
+    val companyId: String?,
+    val bsControlCode: String,
+    val justification: String,
+)
+
+/**
+ * A receipt on its way up, before the server has it.
+ *
+ * The three coding fields are optional and collapsed behind a disclosure on
+ * the form: crew are asked for what they know — what, when, how much, and the
+ * document — and the budget coding is the accounts team's job unless the
+ * person uploading happens to know it.
+ */
 data class DraftCardReceipt(
     val description: String = "",
-    val merchant: String = "",
     val amount: String = "",
     val date: Long? = null,
-    val nominalCode: String = "",
+    val category: ReceiptCategory = ReceiptCategory.Materials,
+    val urgent: Boolean = false,
+    val requestTopUp: Boolean = false,
+    val costCode: String = "",
+    val episode: String = "",
+    val codedDescription: String = "",
     val attachmentKey: String? = null,
     val attachmentName: String? = null,
+) {
+    val amountValue: Double get() = amount.trim().toDoubleOrNull() ?: 0.0
+}
+
+/** What a receipt was spent on, as the upload form offers it. */
+enum class ReceiptCategory(val wire: String, val label: String) {
+    Materials("materials", "Materials"),
+    Equipment("equipment", "Props / Equipment"),
+    Stationery("stationery", "Consumables / Stationery"),
+    Catering("catering", "Catering"),
+    Fuel("fuel", "Fuel"),
+    Parking("parking", "Parking"),
+    Travel("travel", "Taxi / Travel"),
+    Accommodation("accommodation", "Accommodation"),
+    Other("other", "Other"),
+    ;
+
+    companion object {
+        fun from(wire: String?): ReceiptCategory {
+            val value = wire?.trim()?.lowercase().orEmpty()
+            return entries.firstOrNull { it.wire == value } ?: Materials
+        }
+    }
+}
+
+/**
+ * The coding a receipt carries out of the coding queue.
+ *
+ * Sent whole on all three of that screen's actions — save, submit, and approve
+ * and submit — because the server requires the card context alongside the
+ * codes on any receipt write, and a body missing it is refused.
+ */
+data class ReceiptCoding(
+    val nominalCode: String,
+    val episode: String? = null,
+    val codeDescription: String? = null,
+    val cardId: String? = null,
+    val currency: String? = null,
 )
 
-private const val DEFAULT_MATCH_THRESHOLD = 85
+/** One person the module can name — a holder, an approver, an assignee. */
+data class CardPerson(
+    val id: String,
+    val name: String,
+    val designation: String = "",
+    val department: String = "",
+    val departmentId: String = "",
+) {
+    /** "Name · Role", the way every picker in the hub prints a person. */
+    val pickerLabel: String
+        get() = listOf(name.ifBlank { id }, designation).filter { it.isNotBlank() }.joinToString(" · ")
+}
+
+/** A file chosen on this machine and stored, ready to be pointed at. */
+data class CardAttachment(val key: String, val fileName: String)
+

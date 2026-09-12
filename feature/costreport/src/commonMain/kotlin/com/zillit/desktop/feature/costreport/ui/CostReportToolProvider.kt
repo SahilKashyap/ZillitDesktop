@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.costreport.domain.CostReportTab
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -37,10 +38,19 @@ class CostReportToolProvider(
         var notice by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
+        // `/current` and `/posted` open their tab, as the web's tab URLs do.
+        LaunchedEffect(route.path) {
+            when (route.path.removePrefix(COST_REPORT_PATH).trim('/').substringBefore('/')) {
+                "current", "live" -> viewModel.onEvent(CostReportEvent.SelectTab(CostReportTab.Current))
+                "posted" -> viewModel.onEvent(CostReportEvent.SelectTab(CostReportTab.Posted))
+            }
+        }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {
                     is CostReportEffect.Notice -> notice = effect.text
+                    CostReportEffect.OpenAnalytics ->
+                        navigator.navigate(WorkspaceRoute.Tool("$COST_REPORT_PATH/$ANALYTICS_SEGMENT"))
                 }
             }
         }
@@ -51,5 +61,6 @@ class CostReportToolProvider(
 
     companion object {
         const val COST_REPORT_PATH = "/film-tools/cost-report"
+        const val ANALYTICS_SEGMENT = "analytics"
     }
 }

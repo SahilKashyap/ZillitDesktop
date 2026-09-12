@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.cardexpenses.data
 
+import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.core.common.toAmount
 import com.zillit.desktop.core.common.toAmountOrNull
 import com.zillit.desktop.core.common.toEpochMillisOrNull
@@ -15,7 +16,10 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardMetadata
 import com.zillit.desktop.feature.cardexpenses.domain.CardOverview
 import com.zillit.desktop.feature.cardexpenses.domain.CardProvider
 import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
+import com.zillit.desktop.feature.cardexpenses.domain.ApprovalOverrides
 import com.zillit.desktop.feature.cardexpenses.domain.CardSettings
+import com.zillit.desktop.feature.cardexpenses.domain.CardTeamMember
+import com.zillit.desktop.feature.cardexpenses.domain.DepartmentCoordinator
 import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
 import com.zillit.desktop.feature.cardexpenses.domain.CardTopUp
 import com.zillit.desktop.feature.cardexpenses.domain.CardTransaction
@@ -31,6 +35,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlin.math.roundToInt
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
@@ -52,8 +57,18 @@ internal data class CardDto(
     @SerialName("status") val status: String? = null,
     @SerialName("card_type") val cardType: String? = null,
     @SerialName("last_four") val lastFour: String? = null,
+    /**
+     * `/overview` spells it `last4`; `/cards` spells it `last_four`.
+     *
+     * The overview projects its card rows to a thinner field set with its own
+     * names — the web reads `c.last4` there and `card.last_four` everywhere
+     * else. Reading only one of them printed "Card bb0cb7" (the id) in place
+     * of a card number on the dashboard.
+     */
+    @SerialName("last4") val lastFourShort: String? = null,
     @SerialName("card_issuer") val issuer: String? = null,
     @SerialName("card_provider_id") val providerId: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("card_limit") val cardLimit: String? = null,
     @SerialName("monthly_limit") val monthlyLimit: String? = null,
@@ -61,6 +76,8 @@ internal data class CardDto(
     @SerialName("current_balance") val currentBalance: String? = null,
     @SerialName("receipts_commit") val receiptsCommit: String? = null,
     @SerialName("bs_control_code") val bsControlCode: String? = null,
+    @SerialName("proposed_limit") val proposedLimit: String? = null,
+    @SerialName("justification") val justification: String? = null,
     @SerialName("requested_by") val requestedBy: String? = null,
     @SerialName("rejected_by") val rejectedBy: String? = null,
     @SerialName("rejection_reason") val rejectionReason: String? = null,
@@ -78,7 +95,7 @@ internal data class CardDto(
             companyId = companyId,
             status = CardStatus.from(status),
             type = CardType.from(cardType),
-            lastFour = lastFour,
+            lastFour = lastFour?.takeIf { it.isNotBlank() } ?: lastFourShort,
             issuer = issuer,
             providerId = providerId,
             currency = currency,
@@ -90,6 +107,8 @@ internal data class CardDto(
             balance = balance.toAmountOrNull() ?: currentBalance.toAmountOrNull(),
             receiptsCommit = receiptsCommit.toAmountOrNull(),
             bsControlCode = bsControlCode,
+            proposedLimit = proposedLimit.toAmountOrNull(),
+            justification = justification,
             requestedBy = requestedBy,
             rejectedBy = rejectedBy,
             rejectionReason = rejectionReason,
@@ -108,6 +127,7 @@ internal data class TransactionDto(
     @SerialName("merchant") val merchant: String? = null,
     @SerialName("description") val description: String? = null,
     @SerialName("amount") val amount: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("date") val date: String? = null,
     @SerialName("transaction_date") val transactionDate: String? = null,
@@ -155,12 +175,22 @@ internal data class ReceiptDto(
     @SerialName("description") val description: String? = null,
     @SerialName("merchant") val merchant: String? = null,
     @SerialName("amount") val amount: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("date") val date: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("status") val status: String? = null,
     @SerialName("match_status") val matchStatus: String? = null,
-    @SerialName("match_score") val matchScore: Int? = null,
+    /**
+     * Confidence, as a **fraction** — `0.63`, not `63`.
+     *
+     * Typed `Int?` here once, which threw on the first row carrying a real
+     * score and took the **whole list** down with it: kotlinx stops at the
+     * first bad element, so one receipt blanked the entire Receipt Inbox
+     * behind "The server sent something unexpected". Seen live 2026-09-12.
+     * The web multiplies by 100 at every reading and thresholds at 0.8/0.5.
+     */
+    @SerialName("match_score") val matchScore: String? = null,
     @SerialName("transaction_id") val transactionId: String? = null,
     @SerialName("transaction_merchant") val transactionMerchant: String? = null,
     @SerialName("transaction_amount") val transactionAmount: String? = null,
@@ -172,9 +202,9 @@ internal data class ReceiptDto(
     /** An attachment model, a bare key, or a JSON string holding one. */
     @SerialName("receipt_attachment") val attachment: JsonElement? = null,
     @SerialName("is_urgent") val urgent: Boolean? = null,
-    @SerialName("duplicate_score") val duplicateScore: Int? = null,
+    @SerialName("duplicate_score") val duplicateScore: String? = null,
     @SerialName("duplicate_dismissed") val duplicateDismissed: Boolean? = null,
-    @SerialName("personal_score") val personalScore: Int? = null,
+    @SerialName("personal_score") val personalScore: String? = null,
     @SerialName("personal_dismissed") val personalDismissed: Boolean? = null,
 ) {
     fun toDomain(): CardReceipt? {
@@ -201,10 +231,10 @@ internal data class ReceiptDto(
             episode = episode,
             attachmentKey = attachment.readAttachmentKey(),
             urgent = urgent == true,
-            matchScore = matchScore,
-            duplicateScore = duplicateScore,
+            matchScore = matchScore.asPercent(),
+            duplicateScore = duplicateScore.asPercent(),
             duplicateDismissed = duplicateDismissed == true,
-            personalScore = personalScore,
+            personalScore = personalScore.asPercent(),
             personalDismissed = personalDismissed == true,
             createdAt = createdAt.toEpochMillisOrNull(),
         )
@@ -219,6 +249,7 @@ internal data class CardTopUpDto(
     @SerialName("user_id") val userId: String? = null,
     @SerialName("holder_name") val holderName: String? = null,
     @SerialName("amount") val amount: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("method") val method: String? = null,
     @SerialName("status") val status: String? = null,
@@ -295,6 +326,7 @@ internal data class StatementRowDto(
     @SerialName("merchant") val merchant: String? = null,
     @SerialName("description") val description: String? = null,
     @SerialName("amount") val amount: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("date") val date: String? = null,
     @SerialName("transaction_date") val transactionDate: String? = null,
@@ -331,6 +363,7 @@ internal data class BulkItemDto(
     @SerialName("description") val description: String? = null,
     @SerialName("merchant") val merchant: String? = null,
     @SerialName("amount") val amount: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("date") val date: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
@@ -485,28 +518,69 @@ internal data class CardHistoryDto(
 
 @Serializable
 internal data class CardSettingsDto(
-    @SerialName("coding_required") val codingRequired: Boolean? = null,
-    @SerialName("require_senior_sign_off") val requireSeniorSignOff: Boolean? = null,
-    @SerialName("auto_match_enabled") val autoMatchEnabled: Boolean? = null,
-    @SerialName("auto_match_threshold") val autoMatchThreshold: Int? = null,
-    @SerialName("duplicate_detection") val duplicateDetection: Boolean? = null,
-    @SerialName("personal_spend_detection") val personalSpendDetection: Boolean? = null,
-    @SerialName("default_card_limit") val defaultCardLimit: String? = null,
-    /** A JSON array, or a string holding one. See [readProviders]. */
+    /** Each of these five is a JSON array or object, or a string holding one. */
+    @SerialName("team_members") val teamMembers: JsonElement? = null,
+    @SerialName("department_coordinators") val coordinators: JsonElement? = null,
+    @SerialName("approval_override") val approvalOverride: JsonElement? = null,
     @SerialName("card_providers") val cardProviders: JsonElement? = null,
+    @SerialName("request_cap") val requestCap: String? = null,
 ) {
     fun toDomain() = CardSettings(
-        codingRequired = codingRequired == true,
-        requireSeniorSignOff = requireSeniorSignOff == true,
-        // Auto-matching defaults ON when the server says nothing: it is the
-        // behaviour every production has, and defaulting it off would silently
-        // stop matching on a production whose settings row predates the flag.
-        autoMatchEnabled = autoMatchEnabled != false,
-        autoMatchThreshold = autoMatchThreshold ?: DEFAULT_THRESHOLD,
-        duplicateDetection = duplicateDetection != false,
-        personalSpendDetection = personalSpendDetection != false,
-        defaultCardLimit = defaultCardLimit.toAmountOrNull(),
+        teamMembers = teamMembers.readList(TeamMemberDto.serializer()).map { it.toDomain() },
+        coordinators = coordinators.readList(CoordinatorDto.serializer()).map { it.toDomain() },
+        overrides = approvalOverride.readObject(OverridesDto.serializer())?.toDomain() ?: ApprovalOverrides(),
         providers = cardProviders.readProviders(),
+        requestCap = requestCap.toAmountOrNull(),
+    )
+}
+
+@Serializable
+internal data class TeamMemberDto(
+    @SerialName("user_id") val userId: String? = null,
+    /**
+     * Null and zero are different answers.
+     *
+     * Null is an unlimited poster and zero is one who may post nothing, so
+     * this stays a nullable string all the way to the domain rather than
+     * being defaulted anywhere on the way.
+     */
+    @SerialName("posting_limit") val postingLimit: String? = null,
+    @SerialName("can_override") val canOverride: Boolean? = null,
+    @SerialName("is_senior") val isSenior: Boolean? = null,
+) {
+    fun toDomain() = CardTeamMember(
+        userId = userId.orEmpty(),
+        postingLimit = postingLimit.toAmountOrNull(),
+        canOverride = canOverride == true,
+        isSenior = isSenior == true,
+    )
+}
+
+@Serializable
+internal data class CoordinatorDto(
+    @SerialName("department_id") val departmentId: String? = null,
+    @SerialName("user_ids") val userIds: List<String>? = null,
+    @SerialName("coding_required") val codingRequired: Boolean? = null,
+) {
+    fun toDomain() = DepartmentCoordinator(
+        departmentId = departmentId.orEmpty(),
+        userIds = userIds.orEmpty(),
+        codingRequired = codingRequired == true,
+    )
+}
+
+@Serializable
+internal data class OverridesDto(
+    @SerialName("override_card_req") val overrideCardRequests: Boolean? = null,
+    @SerialName("override_receipt") val overrideReceipts: Boolean? = null,
+    @SerialName("require_coord_code") val requireCoordinatorCoding: Boolean? = null,
+    @SerialName("require_senior_sign_off") val requireSeniorSignOff: Boolean? = null,
+) {
+    fun toDomain() = ApprovalOverrides(
+        overrideCardRequests = overrideCardRequests == true,
+        overrideReceipts = overrideReceipts == true,
+        requireCoordinatorCoding = requireCoordinatorCoding == true,
+        requireSeniorSignOff = requireSeniorSignOff == true,
     )
 }
 
@@ -517,6 +591,8 @@ internal data class ProviderDto(
 )
 
 // -- tolerant JSON reading ---------------------------------------------------
+
+private const val PERCENT = 100.0
 
 private val lenientJson = Json {
     ignoreUnknownKeys = true
@@ -555,7 +631,7 @@ internal fun JsonElement?.readProviders(): List<CardProvider> =
         CardProvider(id = id, name = dto.name?.takeIf { it.isNotBlank() } ?: id)
     }
 
-private fun <T> JsonElement?.readList(serializer: KSerializer<T>): List<T> {
+internal fun <T> JsonElement?.readList(serializer: KSerializer<T>): List<T> {
     val element = when {
         this == null -> return emptyList()
         this is JsonPrimitive && isString ->
@@ -568,4 +644,36 @@ private fun <T> JsonElement?.readList(serializer: KSerializer<T>): List<T> {
     }.getOrElse { emptyList() }
 }
 
-private const val DEFAULT_THRESHOLD = 85
+/**
+ * A confidence score as a whole percentage, from whatever the wire sent.
+ *
+ * The engine reports fractions (`0.63`), and every web reading multiplies by
+ * a hundred. A value above one is taken as already being a percentage rather
+ * than as 6,300% — defensive, because a field this small is not worth a second
+ * outage if a service ever changes its mind. Zero and below read as no score
+ * at all, matching the web's `> 0` guard on all three.
+ */
+internal fun String?.asPercent(): Int? {
+    val value = this?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull() ?: return null
+    if (value <= 0) return null
+    val percent = if (value <= 1.0) value * PERCENT else value
+    return percent.roundToInt().coerceAtMost(PERCENT.toInt())
+}
+
+/**
+ * The object sibling of [readList].
+ *
+ * Same tolerance for the same reason: the settings columns hold a JSON object
+ * on a production saved by the current web build and a JSON *string* of one on
+ * a production saved by an older release.
+ */
+internal fun <T> JsonElement?.readObject(serializer: KSerializer<T>): T? {
+    val element = when {
+        this == null -> return null
+        this is JsonPrimitive && isString ->
+            runCatching { lenientJson.parseToJsonElement(content) }.getOrNull() ?: return null
+
+        else -> this
+    }
+    return runCatching { lenientJson.decodeFromJsonElement(serializer, element) }.getOrNull()
+}

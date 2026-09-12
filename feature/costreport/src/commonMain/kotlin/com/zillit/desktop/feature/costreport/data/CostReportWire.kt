@@ -121,7 +121,7 @@ internal fun parseCompanies(data: JsonElement?): List<CrCompany> {
     val rows = rowsOf((data as? JsonObject)?.get("value") ?: data)
     return rows.mapNotNull { row ->
         val id = row.str("id", "_id") ?: return@mapNotNull null
-        CrCompany(id, row.str("name").orEmpty())
+        CrCompany(id, row.str("name").orEmpty(), row.str("country").orEmpty())
     }
 }
 
@@ -131,7 +131,8 @@ internal fun parseCurrencyOptions(data: JsonElement?): CurrencyOptions {
     return when (value) {
         is JsonArray -> CurrencyOptions(currencies = parseCurrencyList(value))
         is JsonObject -> CurrencyOptions(
-            currencies = parseCurrencyList(value["currencies"]),
+            // `currencies: [{code, name, exr}]`, or the legacy `codes: [...]`.
+            currencies = parseCurrencyList(value["currencies"] ?: value["codes"]),
             defaultCode = value.str("default", "default_currency"),
         )
         else -> CurrencyOptions()
@@ -145,7 +146,12 @@ private fun parseCurrencyList(element: JsonElement?): List<CrCurrency> =
         when (item) {
             is JsonPrimitive -> item.content.trim().takeIf { it.isNotEmpty() }?.let { CrCurrency(code = it) }
             is JsonObject -> item.str("code")?.let {
-                CrCurrency(code = it, name = item.str("name").orEmpty(), symbol = item.str("symbol").orEmpty())
+                CrCurrency(
+                    code = it,
+                    name = item.str("name").orEmpty(),
+                    symbol = item.str("symbol").orEmpty(),
+                    exr = item.num("exr"),
+                )
             }
             else -> null
         }
@@ -168,6 +174,8 @@ internal fun parseCostLine(row: JsonObject): CostLine = CostLine(
     efc = row.num("efc"),
     variance = row.num("variance"),
     level = row.str("level"),
+    id = row.str("id", "_id"),
+    sectionId = row.str("section_id"),
 )
 
 internal fun parseLiveReport(data: JsonElement?): LiveReport {

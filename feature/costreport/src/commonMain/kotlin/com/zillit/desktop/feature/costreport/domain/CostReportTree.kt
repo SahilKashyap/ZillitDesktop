@@ -41,32 +41,65 @@ data class CrNominal(
     val line: CrLine,
     val sets: List<CrSet> = emptyList(),
 ) {
-    /** Row identity everywhere: keys, maps, toggles. */
-    val identity: String get() = account ?: code
+    /**
+     * Row identity everywhere: keys, toggles, overrides, the ledger drill.
+     *
+     * The web's `rowAccountKey` — the code, except on rows that have none.
+     * Every Non-Allocated and Contractual row shows `-` in its code cell, so
+     * those are told apart by their internal bucket key instead; keying them
+     * by the shared `-` opened one drawer (and typed one ETC) for all of them.
+     */
+    val identity: String get() = if (isBucket) account ?: code else code
 
     /** True for a sentinel or null-bucket row, which has no COA code to send anywhere. */
     val isBucket: Boolean get() = code == BUCKET_CODE
 
-    /** What the API is asked about: the real COA code, `.direct` stripped. */
-    val apiCode: String get() = code.removeSuffix(DIRECT_SUFFIX)
+    /**
+     * A Contractual Item: a budget line with no COA code and no ledger
+     * behind it, so nothing on the row drills — unlike a Non-Allocated row,
+     * which is opened precisely to find the transactions to re-code.
+     */
+    val isContractual: Boolean get() = account?.startsWith(CONTRACTUAL_KEY_PREFIX) == true
+
+    /**
+     * What the ledger is asked about: the real COA code with `.direct`
+     * stripped, or a bucket's own key — the server files unallocated lines
+     * under the same sentinel the row was built from.
+     */
+    val apiCode: String get() = if (isBucket) account.orEmpty() else code.removeSuffix(DIRECT_SUFFIX)
 
     val hasSets: Boolean get() = sets.isNotEmpty()
 
     companion object {
         const val BUCKET_CODE = "-"
         const val DIRECT_SUFFIX = ".direct"
+        internal const val CONTRACTUAL_KEY_PREFIX = "__contractual__:"
     }
 }
+
+/**
+ * A key a person should never read — every server sentinel and every bucket
+ * this tree makes starts with `__`, and no COA code does. A mis-coded
+ * downstream account ("art_4110") deliberately does not match: it stays
+ * visible so it can be traced and re-coded at source.
+ */
+fun isInternalAccountKey(account: String?): Boolean = account?.startsWith("__") == true
 
 /** A `section` row: the bold band a group of nominals sits under. */
 data class CrHeader(val code: String, val name: String, val budget: Double, val nominals: List<CrNominal>)
 
-/** A `header` row: ABOVE THE LINE, PRODUCTION, …, and the appended NON-ALLOCATED ITEMS. */
+/**
+ * A `header` row: ABOVE THE LINE, PRODUCTION, …, then the two pseudo-sections
+ * appended after them — CONTRACTUAL ITEMS and NON-ALLOCATED ITEMS.
+ */
 data class CrSection(val id: String, val sec: String, val headers: List<CrHeader>) {
     val isUncoded: Boolean get() = id == UNCODED_SECTION_ID
 
+    val isContractual: Boolean get() = id == CONTRACTUAL_SECTION_ID
+
     companion object {
         const val UNCODED_SECTION_ID = "uncoded"
+        const val CONTRACTUAL_SECTION_ID = "contractual"
     }
 }
 
@@ -75,6 +108,9 @@ internal data class SummedLine(val key: String, val name: String?, val line: CrL
 
 private const val NULL_BUCKET = "__unallocated__"
 private const val SENTINEL_PREFIX = "__"
+
+/** The server's marker on a budget line with no COA code — `line.section_id`. */
+private const val CONTRACTUAL_MARKER = "__contractual__"
 
 private val SECTION_LABELS = mapOf(
     "atl" to "ABOVE THE LINE",
@@ -125,11 +161,18 @@ internal fun sumLines(lines: List<CostLine>): LinkedHashMap<String, SummedLine> 
 
 /**
  * The COA as the four-level cost-report tree, with the wire lines summed
- * onto it (spec §4.1). Anything the chart does not know is appended as the
- * NON-ALLOCATED ITEMS pseudo-section.
+ * onto it (spec §4.1) — the web adapter's `buildSectionsData`.
+ *
+ * Two pseudo-sections follow the chart, in this order: CONTRACTUAL ITEMS, the
+ * budget lines the live aggregator marks `section_id: "__contractual__"`
+ * (fringes, contingency, bond, financing, insurance — expected, never an
+ * error), then NON-ALLOCATED ITEMS for everything the chart does not know. The
+ * split is the point: before the marker those budget lines landed in the red
+ * Non-Allocated band and read as "your budget is mis-coded".
  */
 fun buildSections(coa: List<CoaRow>, lines: List<CostLine>): List<CrSection> {
-    val summed = sumLines(lines)
+    val (contractualLines, coded) = lines.partition { it.sectionId == CONTRACTUAL_MARKER }
+    val summed = sumLines(coded)
     val used = mutableSetOf<String>()
     val childrenOf: Map<String?, List<CoaRow>> = coa.groupBy { it.parentId }
         .mapValues { (_, rows) -> rows.sortedBy { it.code } }
@@ -144,7 +187,34 @@ fun buildSections(coa: List<CoaRow>, lines: List<CostLine>): List<CrSection> {
         )
     }
     val rest = summed.filterKeys { it !in used }
-    return if (rest.isEmpty()) sections else sections + uncodedSection(rest)
+    return sections + listOfNotNull(contractualSection(contractualLines), uncodedSection(rest))
+}
+
+/**
+ * One row per contractual budget line, keyed by the line's own id (its name
+ * when it has none) so two "Fringes — X" rows stay apart.
+ */
+private fun contractualSection(lines: List<CostLine>): CrSection? {
+    if (lines.isEmpty()) return null
+    val byKey = LinkedHashMap<String, SummedLine>()
+    lines.forEach { line ->
+        val key = CrNominal.CONTRACTUAL_KEY_PREFIX + (line.id ?: line.name.orEmpty())
+        val figures = CrLine(line.atp, line.atd, line.po, line.card, line.cash, line.pr, line.budget)
+        val existing = byKey[key]
+        byKey[key] = SummedLine(
+            key = key,
+            name = existing?.name ?: line.name?.trim()?.takeIf { it.isNotEmpty() } ?: "Contractual Item",
+            line = (existing?.line ?: CrLine.ZERO) + figures,
+        )
+    }
+    val nominals = byKey.values.map { CrNominal(CrNominal.BUCKET_CODE, it.name.orEmpty(), it.key, it.line) }
+    val header = CrHeader(
+        code = "CI",
+        name = "Contractual Items",
+        budget = nominals.sumOf { it.line.budget },
+        nominals = nominals,
+    )
+    return CrSection(id = CrSection.CONTRACTUAL_SECTION_ID, sec = "CONTRACTUAL ITEMS", headers = listOf(header))
 }
 
 /** atl, prod, post, other, cont first, in that order; everything else after, by code. */
@@ -159,7 +229,9 @@ private fun buildHeader(
 ): CrHeader {
     val nominals = childrenOf[row.id].orEmpty().filter { it.level == CoaLevel.Nominal }
         .map { buildNominal(it, childrenOf, summed, used) }
-    val direct = summed[row.code]?.takeIf { used.add(row.code) }?.let {
+    // Only when something was actually coded to the header: a zero line there
+    // is the aggregator echoing the chart, not an entry anybody made.
+    val direct = summed[row.code]?.takeIf { it.line != CrLine.ZERO && used.add(row.code) }?.let {
         CrNominal(
             code = row.code + CrNominal.DIRECT_SUFFIX,
             name = "${row.name} — direct entries",
@@ -192,7 +264,8 @@ private fun buildNominal(
     return CrNominal(code = row.code, name = row.name, account = own?.let { row.code }, line = line, sets = sets)
 }
 
-private fun uncodedSection(rest: Map<String, SummedLine>): CrSection {
+private fun uncodedSection(rest: Map<String, SummedLine>): CrSection? {
+    if (rest.isEmpty()) return null
     val nominals = rest.map { (key, data) ->
         val bucket = key.startsWith(SENTINEL_PREFIX)
         CrNominal(
@@ -201,7 +274,7 @@ private fun uncodedSection(rest: Map<String, SummedLine>): CrSection {
             account = key,
             line = data.line,
         )
-    }
+    }.sortedBy { it.code }
     val header = CrHeader(
         code = "NA",
         name = "Non-Allocated Items",

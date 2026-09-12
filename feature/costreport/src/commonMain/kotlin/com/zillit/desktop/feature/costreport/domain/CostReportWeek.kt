@@ -13,7 +13,7 @@ import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
-/** The production week the Current CR runs over: Monday 00:00 → Sunday 23:59:59.999, local. */
+/** A production week: Monday 00:00 → Sunday 23:59:59.999, in the machine's zone like the web. */
 data class WeekWindow(
     val startMs: Long,
     val endMs: Long,
@@ -21,8 +21,29 @@ data class WeekWindow(
     val monday: LocalDate,
     val sunday: LocalDate,
 ) {
-    /** `Wk 21 · w/e 24 May 2026`. */
-    val label: String get() = "Wk $number · w/e ${CrDates.dayMonthYear(sunday)}"
+    /**
+     * `Wk 21 · w/e 23 May 2026`.
+     *
+     * The week *ends* on the Saturday in this label — the web formats
+     * `end − 1 day` — while the window itself runs through Sunday. The two
+     * are kept exactly as the web has them, because the label names locks,
+     * posts and exports that the web wrote first.
+     */
+    val label: String get() = "Wk $number · w/e ${CrDates.dayMonthYear(sunday.minus(1, DateTimeUnit.DAY))}"
+
+    /** `04 May–10 May 2026` — the period stepper, the loader and the lock dialog. */
+    val range: String get() = "${CrDates.dayMonth(monday)}–${CrDates.dayMonth(sunday)} ${sunday.year}"
+
+    /** `2026-05-17`: the Sunday, which is what a weekly ETC version is filed under. */
+    val weekEnding: String get() = sunday.toString()
+
+    fun contains(ms: Long): Boolean = ms in startMs..endMs
+
+    fun previous(zone: TimeZone = TimeZone.currentSystemDefault()): WeekWindow =
+        weekStarting(monday.minus(DAYS_PER_WEEK, DateTimeUnit.DAY), zone)
+
+    fun next(zone: TimeZone = TimeZone.currentSystemDefault()): WeekWindow =
+        weekStarting(monday.plus(DAYS_PER_WEEK, DateTimeUnit.DAY), zone)
 }
 
 /**
@@ -31,14 +52,19 @@ data class WeekWindow(
  */
 fun currentWeek(nowMs: Long, zone: TimeZone = TimeZone.currentSystemDefault()): WeekWindow {
     val today = Instant.fromEpochMilliseconds(nowMs).toLocalDateTime(zone).date
-    val monday = mondayOf(today)
-    val sunday = monday.plus(DAYS_TO_SUNDAY, DateTimeUnit.DAY)
-    val jan1Monday = mondayOf(LocalDate(today.year, 1, 1))
+    return weekStarting(mondayOf(today), zone)
+}
+
+/** The week that starts on [monday] (any date is snapped back to its Monday). */
+fun weekStarting(monday: LocalDate, zone: TimeZone = TimeZone.currentSystemDefault()): WeekWindow {
+    val start = mondayOf(monday)
+    val sunday = start.plus(DAYS_TO_SUNDAY, DateTimeUnit.DAY)
+    val jan1Monday = mondayOf(LocalDate(start.year, 1, 1))
     return WeekWindow(
-        startMs = monday.atStartOfDayIn(zone).toEpochMilliseconds(),
+        startMs = start.atStartOfDayIn(zone).toEpochMilliseconds(),
         endMs = sunday.plus(1, DateTimeUnit.DAY).atStartOfDayIn(zone).toEpochMilliseconds() - 1,
-        number = jan1Monday.daysUntil(monday) / DAYS_PER_WEEK + 1,
-        monday = monday,
+        number = jan1Monday.daysUntil(start) / DAYS_PER_WEEK + 1,
+        monday = start,
         sunday = sunday,
     )
 }
@@ -55,6 +81,9 @@ object CrDates {
 
     /** `24 May 2026`. */
     fun dayMonthYear(date: LocalDate): String = "${date.day} ${MONTHS[date.month.number - 1]} ${date.year}"
+
+    /** `04 May` — two-digit day, as the web's `{ day: "2-digit", month: "short" }`. */
+    fun dayMonth(date: LocalDate): String = "${date.day.pad()} ${MONTHS[date.month.number - 1]}"
 
     /** `Tuesday, 19 May 2026`. */
     fun weekdayDate(ms: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
@@ -74,9 +103,24 @@ object CrDates {
         return "${date(ms, zone)}, ${moment.hour.pad()}:${moment.minute.pad()}"
     }
 
+    /** `05 May, 14:07` — the version picker's saved-at stamp. */
+    fun dayMonthTime(ms: Long?, zone: TimeZone = TimeZone.currentSystemDefault()): String {
+        val moment = ms?.let { local(it, zone) } ?: return ""
+        return "${dayMonth(moment.date)}, ${moment.hour.pad()}:${moment.minute.pad()}"
+    }
+
     /** `05 May 2026 → 11 May 2026`, either side blank when unknown. */
     fun range(startMs: Long?, endMs: Long?, zone: TimeZone = TimeZone.currentSystemDefault()): String =
         "${date(startMs, zone).ifBlank { "—" }} → ${date(endMs, zone).ifBlank { "—" }}"
+
+    /** Local midnight of a date, and the last millisecond of it — a custom post's two bounds. */
+    fun startOfDay(date: LocalDate, zone: TimeZone = TimeZone.currentSystemDefault()): Long =
+        date.atStartOfDayIn(zone).toEpochMilliseconds()
+
+    fun endOfDay(date: LocalDate, zone: TimeZone = TimeZone.currentSystemDefault()): Long =
+        date.plus(1, DateTimeUnit.DAY).atStartOfDayIn(zone).toEpochMilliseconds() - 1
+
+    fun localDate(ms: Long, zone: TimeZone = TimeZone.currentSystemDefault()): LocalDate = local(ms, zone).date
 
     private fun local(ms: Long, zone: TimeZone): LocalDateTime =
         Instant.fromEpochMilliseconds(ms).toLocalDateTime(zone)

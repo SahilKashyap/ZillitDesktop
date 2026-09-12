@@ -84,10 +84,11 @@ class FormConfigRenderTest {
                     }
                 }
                 onNodeWithText("Forms Configuration").assertExists()
-                onNodeWithText("Header").assertExists()
-                onNodeWithText("Line Items").assertExists()
-                // Superseded by the Terms and Conditions document, so never offered.
-                onNodeWithText("Terms of Engagement").assertDoesNotExist()
+                // Section eyebrows are drawn in the web's uppercase mono label.
+                onNodeWithText("HEADER").assertExists()
+                onNodeWithText("LINE ITEMS").assertExists()
+                // An empty terms section is skipped in the preview, as on the web.
+                onNodeWithText("TERMS OF ENGAGEMENT").assertDoesNotExist()
             }
         }
     }
@@ -103,11 +104,11 @@ class FormConfigRenderTest {
                 }
             }
             // One per section, and there are two configurable ones.
-            onAllNodesWithText("Add a field").assertCountEquals(2)
-            onNodeWithText("Add a section at the top").assertExists()
-            // The hidden system field is offered back under its own section.
-            onNodeWithText("Off the form (1)").assertExists()
-            onNodeWithText("Put back").assertExists()
+            onAllNodesWithText("Add Custom Field").assertCountEquals(2)
+            // A rail above the first section and one after each: three.
+            onAllNodesWithText("Insert section here").assertCountEquals(3)
+            // The header shows how much of the section is on the form.
+            onNodeWithText("1/2 visible").assertExists()
         }
     }
 
@@ -144,7 +145,7 @@ class FormConfigRenderTest {
                     ) {}
                 }
             }
-            onNodeWithText("Delete field").assertExists()
+            onNodeWithText("Delete this custom field").assertExists()
             onNodeWithText("Move to another section").assertExists()
             // The picker, not the type pill on the row behind the dialog:
             // both read "Number", and only one of them can be clicked.
@@ -195,7 +196,7 @@ class FormConfigRenderTest {
                 }
             }
             // The dialog's title plus the two section buttons behind it.
-            onAllNodesWithText("Add a field").assertCountEquals(3)
+            onAllNodesWithText("Add Custom Field").assertCountEquals(3)
             onNodeWithText("Stored as budget_code").assertExists()
         }
     }
@@ -219,6 +220,30 @@ class FormConfigRenderTest {
             }
             onNodeWithText("Reset Purchase Orders to the defaults?").assertExists()
             onNodeWithText("applies to everybody", substring = true).assertExists()
+        }
+    }
+
+    /** The hidden system field is offered back from the add-a-field panel, as on the web. */
+    @Test
+    fun `the add-a-field panel restores a system field taken off the form`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme {
+                    FormConfigPage(
+                        state(
+                            FormConfigState(
+                                template = template,
+                                saved = template,
+                                editing = true,
+                                focus = FieldFocus("header", null),
+                            ),
+                        ),
+                    ) {}
+                }
+            }
+            onNodeWithText("System Fields").assertExists()
+            onNodeWithText("Notes").assertExists()
+            onNodeWithText("Restore").assertExists()
         }
     }
 

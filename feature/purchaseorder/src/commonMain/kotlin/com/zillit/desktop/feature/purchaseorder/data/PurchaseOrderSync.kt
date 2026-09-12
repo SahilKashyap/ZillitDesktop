@@ -58,12 +58,6 @@ val PO_ORDER_SYNC_EVENTS: List<SocketEventName> = listOf(
     // logs `update`; iOS answers all three with `.updatePoLevelsNotification`.
     SocketEventName("purchase-order:approval-level:create"),
     SocketEventName("purchase-order:approval-level:update"),
-    // The address an order is delivered to prints on its header, so a change
-    // to one dates every order on screen — the same reason `posetting:update`
-    // is here. Android `_poDeliveryAddress`, iOS `.updatePoAddressNotification`.
-    SocketEventName("purchase-order:delivery-address:create"),
-    SocketEventName("purchase-order:delivery-address:update"),
-    SocketEventName("purchase-order:delivery-address:delete"),
     // Named for the supplier but it is the *order* that changed: sending one
     // moves it out of the draft list (`listofAccountandemail.jsx:60`).
     SocketEventName("purchase-order:supplier:sent"),
@@ -107,8 +101,41 @@ val PO_FORM_SYNC_EVENTS: List<SocketEventName> = listOf(
     SocketEventName("form_template:reset"),
 )
 
+/**
+ * The settings document and the module's rules — `accountHubListeners.js`
+ * `po_settings:updated` and the three `assignment_rule:*` frames, which the
+ * web folds into one silent re-read of the Settings tab.
+ */
+val PO_SETTINGS_SYNC_EVENTS: List<SocketEventName> = listOf(
+    SocketEventName("po_settings:updated"),
+    SocketEventName("assignment_rule:created"),
+    SocketEventName("assignment_rule:updated"),
+    SocketEventName("assignment_rule:deleted"),
+)
+
+/**
+ * The two registers: saved order shapes and the delivery address book.
+ *
+ * The address events used to sit with the order events, on the reasoning that
+ * the delivery address prints on an order's header — true, and the register
+ * reload refetches the orders too for exactly that reason. Filed here because
+ * the Delivery Addresses tab is the surface that *shows* them, and a tab that
+ * does not update while somebody else edits the book is the visible failure.
+ *
+ * Android `_poDeliveryAddress`, iOS `.updatePoAddressNotification`.
+ */
+val PO_REGISTER_SYNC_EVENTS: List<SocketEventName> = listOf(
+    SocketEventName("purchase-order:delivery-address:create"),
+    SocketEventName("purchase-order:delivery-address:update"),
+    SocketEventName("purchase-order:delivery-address:delete"),
+    SocketEventName("purchase-order:template:create"),
+    SocketEventName("purchase-order:template:update"),
+    SocketEventName("purchase-order:template:delete"),
+)
+
 val PO_SYNC_EVENTS: List<SocketEventName> =
-    PO_ORDER_SYNC_EVENTS + PO_VENDOR_SYNC_EVENTS + PO_FORM_SYNC_EVENTS
+    PO_ORDER_SYNC_EVENTS + PO_VENDOR_SYNC_EVENTS + PO_FORM_SYNC_EVENTS +
+        PO_SETTINGS_SYNC_EVENTS + PO_REGISTER_SYNC_EVENTS
 
 /**
  * Which of the tool's reads [event] invalidates, or null when the frame is not
@@ -119,6 +146,9 @@ val PO_SYNC_EVENTS: List<SocketEventName> =
  */
 internal fun poRefreshFor(event: SocketEventName, module: String?): PoRefresh? = when {
     event in PO_VENDOR_SYNC_EVENTS -> PoRefresh.Vendors
+    event in PO_REGISTER_SYNC_EVENTS -> PoRefresh.Register
+    // A rule frame names its module; an invoices rule is not this tool's.
+    event in PO_SETTINGS_SYNC_EVENTS -> PoRefresh.Settings.takeIf { module == null || module == PO_FORM_MODULE }
     event in PO_FORM_SYNC_EVENTS ->
         PoRefresh.FormTemplate.takeIf { module == null || module == PO_FORM_MODULE }
 

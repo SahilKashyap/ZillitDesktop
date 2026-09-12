@@ -74,7 +74,9 @@ fun CodingEditorDialog(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 index = index,
                 line = line,
                 currency = draft.currency,
-                quickCodes = state.settings?.quickCodes.orEmpty().map { it.code },
+                quickCodes = state.settings?.quickCodes.orEmpty()
+                    .map { it.nominalCode.ifBlank { it.name } }
+                    .filter { it.isNotBlank() },
                 removable = draft.lines.size > 1,
                 onChange = { onEvent(CashEvent.EditCodingLine(index, it)) },
                 onRemove = { onEvent(CashEvent.RemoveCodingLine(line.id)) },

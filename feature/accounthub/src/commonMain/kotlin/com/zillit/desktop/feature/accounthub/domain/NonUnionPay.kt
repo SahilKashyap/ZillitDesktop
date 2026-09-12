@@ -128,13 +128,40 @@ data class PayRule(
     val rateAmount: String = "",
     val basis: PayRateBasis = PayRateBasis.Hour,
     val triggers: List<PayTrigger> = emptyList(),
+    /**
+     * "Basic + OT on top": the amount is paid over the base rather than in
+     * place of it. The web starts a new rule at true.
+     */
     val isEnhancement: Boolean = false,
     val nominalCode: String = "",
     val note: String = "",
     val appliesTo: String = "",
+    /**
+     * Clip the computed payout to [capAmount] per matched window.
+     *
+     * `cap_type` is the string `capped`/`uncapped` on the wire, as on a
+     * rental; a rule read without the key is uncapped.
+     */
+    val capped: Boolean = false,
+    val capAmount: String = "",
+    /** The day type this rule reads against, by code; blank means any. */
+    val dayType: String = "",
 ) {
     /** The single entry a template edits, or null for a rule with several. */
     val singleTrigger: PayTrigger? get() = triggers.singleOrNull()
+
+    /** The first trigger's increment, which the grid shows as "OT Increment". */
+    val incrementMinutes: Int? get() = triggers.firstOrNull()?.incrementMinutes
+
+    val bdrMin: Double? get() = triggers.firstOrNull()?.bdrMin
+
+    val bdrMax: Double? get() = triggers.firstOrNull()?.bdrMax
+
+    /** The same rule with one trigger-level gate changed on every entry. */
+    fun withTriggerGates(increment: Int?, bdrMin: Double?, bdrMax: Double?): PayRule = copy(
+        triggers = triggers.ifEmpty { listOf(PayTrigger()) }
+            .map { it.copy(incrementMinutes = increment, bdrMin = bdrMin, bdrMax = bdrMax) },
+    )
 }
 
 /** The production's own overtime, premium and penalty rules. */

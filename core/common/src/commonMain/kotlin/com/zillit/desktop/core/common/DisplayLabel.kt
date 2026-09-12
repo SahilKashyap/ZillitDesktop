@@ -30,3 +30,31 @@ fun String.toDisplayLabel(): String = removeSuffix("_label")
     .split('_', '-')
     .filter { it.isNotBlank() }
     .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
+
+/**
+ * A raw database id, which must never be shown to anyone.
+ *
+ * Mongo ObjectIds (24 hex characters) and UUIDs reach the UI whenever a
+ * lookup misses — a department the directory has not loaded, a user who has
+ * left the production. The web collapses them to an em dash rather than
+ * printing them (`resolveDeptLabel`), because a 24-character hex string in a
+ * table reads as corruption, and a screen full of them reads as a broken tool.
+ */
+fun String.looksLikeRawId(): Boolean {
+    val text = trim()
+    val hex = text.length == OBJECT_ID_LENGTH && text.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+    val uuid = text.length == UUID_LENGTH &&
+        text.count { it == '-' } == UUID_DASHES &&
+        text.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' || it == '-' }
+    return hex || uuid
+}
+
+/** The label, or [fallback] when all that is left is an id nobody can read. */
+fun String?.orDash(fallback: String = "—"): String {
+    val text = this?.trim().orEmpty()
+    return if (text.isEmpty() || text.looksLikeRawId()) fallback else text
+}
+
+private const val OBJECT_ID_LENGTH = 24
+private const val UUID_LENGTH = 36
+private const val UUID_DASHES = 4

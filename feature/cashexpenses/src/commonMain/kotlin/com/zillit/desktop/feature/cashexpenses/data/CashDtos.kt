@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.cashexpenses.data
 
+import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.core.common.toAmount
 import com.zillit.desktop.core.common.toAmountOrNull
 import com.zillit.desktop.core.common.toEpochMillisOrNull
@@ -16,6 +17,9 @@ import com.zillit.desktop.feature.cashexpenses.domain.CategorySpend
 import com.zillit.desktop.feature.cashexpenses.domain.Claim
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimLineItem
+import com.zillit.desktop.feature.cashexpenses.domain.DeductionRule
+import com.zillit.desktop.feature.cashexpenses.domain.RuleProcess
+import com.zillit.desktop.feature.cashexpenses.domain.RuleThreshold
 import com.zillit.desktop.feature.cashexpenses.domain.DepartmentOverview
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 import com.zillit.desktop.feature.cashexpenses.domain.FloatStatus
@@ -25,6 +29,9 @@ import com.zillit.desktop.feature.cashexpenses.domain.PaymentRouting
 import com.zillit.desktop.feature.cashexpenses.domain.PettyCashOverview
 import com.zillit.desktop.feature.cashexpenses.domain.QuickCode
 import com.zillit.desktop.feature.cashexpenses.domain.Reconciliation
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -58,6 +65,7 @@ internal data class FloatDto(
     @SerialName("full_name") val fullName: String? = null,
     @SerialName("department_id") val departmentId: String? = null,
     @SerialName("status") val status: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("req_amount") val reqAmount: String? = null,
     @SerialName("issued_float") val issuedFloat: String? = null,
@@ -114,6 +122,7 @@ internal data class BatchDto(
     @SerialName("claim_count") val claimCount: Int? = null,
     @SerialName("total_gross") val totalGross: String? = null,
     @SerialName("reimbursement_amount") val reimbursementAmount: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("settlement_type") val settlementType: String? = null,
     /** JSON, sometimes as an object and sometimes as a string holding one. */
@@ -280,6 +289,7 @@ internal data class TopUpDto(
     @SerialName("user_id") val userId: String? = null,
     @SerialName("holder_name") val holderName: String? = null,
     @SerialName("amount") val amount: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("status") val status: String? = null,
     @SerialName("note") val note: String? = null,
@@ -476,6 +486,7 @@ internal data class ReconciliationDto(
     @SerialName("period_end") val periodEnd: String? = null,
     @SerialName("book_balance") val bookBalance: String? = null,
     @SerialName("counted_balance") val countedBalance: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("note") val note: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
@@ -512,6 +523,8 @@ internal data class SettingsDto(
     @SerialName("approval_override") val approvalOverride: JsonElement? = null,
     @SerialName("team_members") val teamMembers: JsonElement? = null,
     @SerialName("quick_codes") val quickCodes: JsonElement? = null,
+    @SerialName("reimburse_to_payroll") val reimburseToPayroll: Boolean? = null,
+    @SerialName("deduction_rules") val deductionRules: JsonElement? = null,
 ) {
     fun toDomain(): CashSettings {
         val overrides = approvalOverride.readObject()
@@ -525,6 +538,8 @@ internal data class SettingsDto(
             requireSeniorSignOff = overrides.flag("require_senior_sign_off"),
             teamMembers = teamMembers.readList(TeamMemberDto.serializer()).map { it.toDomain() },
             quickCodes = quickCodes.readList(QuickCodeDto.serializer()).map { it.toDomain() },
+            reimburseToPayroll = reimburseToPayroll == true,
+            deductionRules = deductionRules.readList(DeductionRuleDto.serializer()).map { it.toDomain() },
         )
     }
 }
@@ -547,17 +562,84 @@ internal data class TeamMemberDto(
     )
 }
 
+/**
+ * A quick code as the web writes it.
+ *
+ * `name` and `nominal_code`, not `code`/`label` — those were read here for a
+ * year and never written by anything, so a production configured on the web
+ * arrived with an empty list. The older spellings are still accepted as
+ * fallbacks in case some row somewhere carries them.
+ */
 @Serializable
 internal data class QuickCodeDto(
-    @SerialName("code") val code: String? = null,
-    @SerialName("label") val label: String? = null,
+    @SerialName("name") val name: String? = null,
+    @SerialName("nominal_code") val nominalCode: String? = null,
     @SerialName("keywords") val keywords: List<String>? = null,
+    @SerialName("vat") val vat: JsonPrimitive? = null,
+    @SerialName("code") val legacyCode: String? = null,
+    @SerialName("label") val legacyLabel: String? = null,
 ) {
     fun toDomain() = QuickCode(
-        code = code.orEmpty(),
-        label = label?.takeIf { it.isNotBlank() } ?: code.orEmpty(),
+        name = name?.takeIf { it.isNotBlank() }
+            ?: legacyLabel?.takeIf { it.isNotBlank() }
+            ?: legacyCode.orEmpty(),
+        nominalCode = nominalCode?.takeIf { it.isNotBlank() } ?: legacyCode.orEmpty(),
         keywords = keywords.orEmpty(),
+        vat = vat?.contentOrNull?.toDoubleOrNull(),
     )
+
+    companion object {
+        fun of(code: QuickCode): JsonObject = buildJsonObject {
+            put("name", JsonPrimitive(code.name))
+            put("nominal_code", JsonPrimitive(code.nominalCode))
+            put("keywords", buildJsonArray { code.keywords.forEach { add(JsonPrimitive(it)) } })
+            put("vat", code.vat?.let(::JsonPrimitive) ?: JsonPrimitive(0))
+        }
+    }
+}
+
+/** One deduction rule, in the shape the web stores. */
+@Serializable
+internal data class DeductionRuleDto(
+    @SerialName("id") val id: String? = null,
+    @SerialName("type") val type: String? = null,
+    @SerialName("title") val title: String? = null,
+    @SerialName("description") val description: String? = null,
+    @SerialName("process_type") val processType: String? = null,
+    @SerialName("threshold_type") val thresholdType: String? = null,
+    @SerialName("threshold_value") val thresholdValue: JsonPrimitive? = null,
+    /** The web spells the on/off flag `enable`, not `enabled`. */
+    @SerialName("enable") val enable: Boolean? = null,
+    @SerialName("trigger_codes") val triggerCodes: List<String>? = null,
+    @SerialName("system_default") val systemDefault: Boolean? = null,
+) {
+    fun toDomain() = DeductionRule(
+        id = id.orEmpty().ifBlank { type.orEmpty() },
+        title = title.orEmpty(),
+        description = description.orEmpty(),
+        processType = RuleProcess.from(processType),
+        thresholdType = RuleThreshold.from(thresholdType),
+        thresholdValue = thresholdValue?.contentOrNull?.toDoubleOrNull() ?: 0.0,
+        enabled = enable == true,
+        triggerCodes = triggerCodes.orEmpty(),
+        systemDefault = systemDefault == true,
+        type = type.orEmpty(),
+    )
+
+    companion object {
+        fun of(rule: DeductionRule): JsonObject = buildJsonObject {
+            put("id", JsonPrimitive(rule.id))
+            put("type", JsonPrimitive(rule.type.ifBlank { rule.id }))
+            put("title", JsonPrimitive(rule.title))
+            put("description", JsonPrimitive(rule.description))
+            put("process_type", JsonPrimitive(rule.processType.wire))
+            put("threshold_type", JsonPrimitive(rule.thresholdType.wire))
+            put("threshold_value", JsonPrimitive(rule.thresholdValue))
+            put("enable", JsonPrimitive(rule.enabled))
+            put("trigger_codes", buildJsonArray { rule.triggerCodes.forEach { add(JsonPrimitive(it)) } })
+            put("system_default", JsonPrimitive(rule.systemDefault))
+        }
+    }
 }
 
 // -- tolerant JSON reading ---------------------------------------------------

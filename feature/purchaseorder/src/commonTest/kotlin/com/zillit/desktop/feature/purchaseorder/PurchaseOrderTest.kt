@@ -116,10 +116,10 @@ class PurchaseOrderTest {
         val crew = PoViewer("user-1", "department_camera", null)
         val accountant = PoViewer("user-2", "department_accounts", null)
 
-        assertFalse(PoDestination.AllOrders.visibleTo(crew))
-        assertTrue(PoDestination.AllOrders.visibleTo(accountant))
-        assertTrue(PoDestination.MyOrders.visibleTo(crew))
-        assertTrue(PoDestination.Raise.visibleTo(crew))
+        assertFalse(PoDestination.AllPos.visibleTo(crew))
+        assertTrue(PoDestination.AllPos.visibleTo(accountant))
+        assertTrue(PoDestination.MyPos.visibleTo(crew))
+        assertTrue(PoDestination.Form.visibleTo(crew))
     }
 
     @Test

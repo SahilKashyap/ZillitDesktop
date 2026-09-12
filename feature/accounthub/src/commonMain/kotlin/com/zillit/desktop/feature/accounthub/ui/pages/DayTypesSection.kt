@@ -27,6 +27,8 @@ import com.zillit.desktop.feature.accounthub.domain.DayTypes
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
+import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
+import com.zillit.desktop.feature.accounthub.ui.components.SubCard
 
 private val CODE_WIDTH = 120.dp
 private val MINUTES_WIDTH = 150.dp
@@ -41,7 +43,7 @@ private val MINUTES_WIDTH = 150.dp
  * penalty rules next to it.
  */
 @Composable
-internal fun ColumnScope.DayTypesSection(
+internal fun ColumnScope.DayTypesEditor(
     state: AccountHubUiState,
     onEvent: (AccountHubEvent) -> Unit,
 ) {
@@ -49,16 +51,37 @@ internal fun ColumnScope.DayTypesSection(
     val rows = section.edited
     val editable = state.viewer.canEdit
 
-    SetupSectionCard(
-        title = "Day Types",
-        description = "What a working day is on this production, and the meal break that " +
-            "drives the too-short-break penalty. Non-union deals take their day types from here.",
-        dirty = section.dirty,
-        saving = section.saving,
-        onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.DayTypes)) },
-        onRevert = { onEvent(AccountHubEvent.RevertSection(SetupSection.DayTypes)) },
-        editable = editable,
+    SubCard(
+        title = "Day types",
+        hint = "The defaults are SWD, CWD and SCWD. Add any custom day type and set its minimum working hours and " +
+            "minimum meal break. Saved on its own — editing a day type does not re-save the rules.",
+        action = {
+            if (editable && section.dirty) {
+                ZillitButton(
+                    text = "Cancel",
+                    onClick = { onEvent(AccountHubEvent.RevertSection(SetupSection.DayTypes)) },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                    enabled = !section.saving,
+                )
+                ZillitButton(
+                    text = "Save day types",
+                    onClick = { onEvent(AccountHubEvent.SaveSection(SetupSection.DayTypes)) },
+                    size = ButtonSize.Small,
+                    loading = section.saving,
+                )
+            }
+        },
     ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            HeadCell("Code", Modifier.width(CODE_WIDTH))
+            HeadCell("Label", Modifier.weight(1f))
+            HeadCell("Working min", Modifier.width(MINUTES_WIDTH))
+            HeadCell("Meal break min", Modifier.width(MINUTES_WIDTH))
+        }
         rows.forEachIndexed { index, row ->
             DayTypeRow(row, index, rows, editable, onEvent)
         }
@@ -113,30 +136,28 @@ private fun ColumnScope.DayTypeRow(
         ) {
             ZillitTextField(
                 value = row.dayType,
-                onValueChange = { update(row.copy(dayType = it.trim())) },
-                label = "Code",
+                onValueChange = { update(row.copy(dayType = it.trim().uppercase())) },
+                placeholder = "CWD",
                 enabled = editable && !locked,
                 modifier = Modifier.width(CODE_WIDTH),
             )
             ZillitTextField(
                 value = row.label,
                 onValueChange = { update(row.copy(label = it)) },
-                label = "Name",
+                placeholder = "10-hour day",
                 enabled = editable,
                 modifier = Modifier.weight(1f),
             )
             MinutesField(
                 value = row.workMinutes,
-                label = "Working minutes",
-                helper = null,
+                placeholder = "600",
                 enabled = editable,
             ) { update(row.copy(workMinutes = it)) }
             MinutesField(
                 value = row.mealBreakMinutes,
-                label = "Meal break",
                 // Empty and zero mean different things here, and the engine
-                // reads them differently, so the field says which is which.
-                helper = "Blank means unspecified; 0 means no formal break.",
+                // reads them differently: blank is unspecified, 0 no formal break.
+                placeholder = "—",
                 enabled = editable,
             ) { update(row.copy(mealBreakMinutes = it)) }
 
@@ -161,8 +182,7 @@ private fun ColumnScope.DayTypeRow(
 @Composable
 private fun MinutesField(
     value: Int?,
-    label: String,
-    helper: String?,
+    placeholder: String,
     enabled: Boolean,
     onChange: (Int?) -> Unit,
 ) {
@@ -172,10 +192,14 @@ private fun MinutesField(
             val digits = text.filter { it.isDigit() }
             onChange(digits.takeIf { it.isNotEmpty() }?.toIntOrNull())
         },
-        label = label,
-        helperText = helper,
+        placeholder = placeholder,
         enabled = enabled,
         keyboardType = KeyboardType.Number,
         modifier = Modifier.width(MINUTES_WIDTH),
     )
+}
+
+@Composable
+private fun HeadCell(text: String, modifier: Modifier) {
+    MonoLabel(text, modifier = modifier)
 }

@@ -42,6 +42,42 @@ data class PurchaseOrder(
     val approvals: List<PoApproval> = emptyList(),
     val attachmentCount: Int = 0,
     /**
+     * The server-maintained gross (net + tax) — the figure the coded ledger
+     * must reconcile to, and the one the Posted tab measures relief against.
+     * Zero when the server sent none, which is why [total] stays the figure
+     * every list shows: it falls back through the lines.
+     */
+    val grossAmount: Double = 0.0,
+    /** Running invoiced-against-this-order sum, gross. The Posted tab's "Relieved". */
+    val paidAmount: Double = 0.0,
+    val paidAt: Long? = null,
+    /**
+     * When the order last reached its vendor's inbox, and who sent it.
+     *
+     * Approval does not email anybody, so this is the only record that the
+     * vendor has seen the order at all — and the reason the send action is
+     * one-shot everywhere except the processing page.
+     */
+    val emailAt: Long? = null,
+    val emailBy: String? = null,
+    val vatAmount: Double = 0.0,
+    val deliveryDate: Long? = null,
+    val deliveryAddressId: String? = null,
+    val closureReason: String? = null,
+    val closedBy: String? = null,
+    val closedAt: Long? = null,
+    val rejectedBy: String? = null,
+    val rejectedAt: Long? = null,
+    val rejectionReason: String? = null,
+    val reassignedBy: String? = null,
+    val reassignedAt: Long? = null,
+    val updatedAt: Long? = null,
+    val updatedBy: String? = null,
+    /** The order's paperwork, as it rides the record — not a second call. */
+    val attachments: List<PoAttachment> = emptyList(),
+    /** The extra fields this production added to the form, grouped by section. */
+    val customFields: List<CustomFieldGroup> = emptyList(),
+    /**
      * Set when this order exists only on this computer so far — raised while
      * offline and waiting in the outbox. Such a row has no number and no
      * server id ([id] is the local operation's), and nothing can be done to it
@@ -54,6 +90,46 @@ data class PurchaseOrder(
     /** Sum of the lines, for checking the header total against its detail. */
     val lineTotal: Double get() = lines.sumOf { it.total }
 
+    /** The authoritative gross, server figure first. */
+    val gross: Double get() = if (grossAmount > 0) grossAmount else total
+
+    /** Still to be invoiced against — what the commitment is holding. */
+    val remaining: Double get() = (gross - paidAmount).coerceAtLeast(0.0)
+
+    /**
+     * How much of a posted order has been invoiced against it.
+     *
+     * The web derives this label rather than storing it (`POPosted.enrichPO`),
+     * and the Posted tab's filter chips read it, so it lives on the order.
+     */
+    val relief: PoRelief
+        get() = when {
+            status == PoStatus.Closed -> PoRelief.Closed
+            paidAmount <= 0.0 -> PoRelief.Open
+            paidAmount + PENNY >= gross -> PoRelief.FullyRelieved
+            else -> PoRelief.PartiallyRelieved
+        }
+
+    /** Whether the vendor has been sent this order. */
+    val emailed: Boolean get() = emailAt != null
+
+    /**
+     * The status as a list shows it, with the approval progress on a pending
+     * order — the web's `Pending (1/2)`.
+     *
+     * Counted off the chain the server sent rather than the project's tier
+     * configuration, which is what the web reads: the chain already carries one
+     * entry per tier, decided or not, so the count is available without a
+     * second fetch. An order with no chain reads plain "Pending", exactly as
+     * the web's `totalT > 0` fallback does.
+     */
+    val statusLabel: String
+        get() = if (status == PoStatus.AwaitingApproval && approvals.isNotEmpty()) {
+            "Pending (${approvals.count { it.decided }}/${approvals.size})"
+        } else {
+            status.label
+        }
+
     /**
      * Whether the header total and the lines disagree.
      *
@@ -65,7 +141,7 @@ data class PurchaseOrder(
         get() = lines.isNotEmpty() && kotlin.math.abs(lineTotal - total) > PENNY
 
     companion object {
-        private const val PENNY = 0.005
+        internal const val PENNY = 0.005
     }
 }
 
@@ -78,7 +154,14 @@ data class LocalCopy(
     val error: String? = null,
 )
 
-/** One costed line of a purchase order. */
+/**
+ * One costed line of a purchase order.
+ *
+ * Carries the whole of the web editor's row, not just money: the expenditure
+ * type gates the rental date pickers, the rental window gates the split-by-period
+ * action, and a line with a [splitParentId] is a child that must never be summed
+ * beside its parent.
+ */
 @Serializable
 data class PoLine(
     val id: String?,
@@ -87,8 +170,104 @@ data class PoLine(
     val unitPrice: Double,
     val nominalCode: String?,
     val vatRate: Double?,
+    /** The stored line total where the server gave one — a split child's own figure. */
+    val amount: Double? = null,
+    val expenditureType: String? = null,
+    val taxType: String? = null,
+    val departmentId: String? = null,
+    val rentalStart: String? = null,
+    val rentalEnd: String? = null,
+    val tags: List<String> = emptyList(),
+    /**
+     * Set on a child produced by splitting a line — evenly, or by period.
+     *
+     * Children carry their parent's tax, so summing their rate too would
+     * double-count it: every total on this tool skips them.
+     */
+    val splitParentId: String? = null,
+    /**
+     * The persisted mirror of a typed tax amount.
+     *
+     * Not an expense line: it exists so a tax the accountant typed (on lines
+     * carrying no rate of their own) survives a save. Skipped by the net and
+     * tax sums, counted by the gross — see [PoTotals].
+     */
+    val isTax: Boolean = false,
 ) {
-    val total: Double get() = quantity * unitPrice
+    val total: Double get() = amount ?: (quantity * unitPrice)
+
+    /** A child of a split — never summed beside its parent. */
+    val isSplitChild: Boolean get() = !splitParentId.isNullOrBlank()
+
+    /**
+     * A rental with a window wide enough to divide.
+     *
+     * The web's `isRentalLine`: the exact expenditure type "Rent" plus both
+     * dates, end strictly after start — the same gate the split-by-period
+     * action uses, so the button is never offered on a window it cannot cut.
+     */
+    val isDivisibleRental: Boolean
+        get() = expenditureType == RENTAL_EXPENDITURE_TYPE &&
+            !rentalStart.isNullOrBlank() &&
+            !rentalEnd.isNullOrBlank() &&
+            rentalEnd > rentalStart
+}
+
+/** The expenditure type the rental date pickers and the period split hang off. */
+const val RENTAL_EXPENDITURE_TYPE = "Rent"
+
+/**
+ * Net, tax and gross for a set of lines — one formula, every surface.
+ *
+ * Taxes parent lines only (a child carries its parent's rate) and skips the
+ * persisted tax row, which is the mirror of this very sum. The web reached the
+ * same shape after four hand-rolled reduces disagreed with each other.
+ */
+data class PoTotals(val net: Double, val tax: Double) {
+    val gross: Double get() = net + tax
+
+    /**
+     * The part of [tax] the production can reclaim.
+     *
+     * Read off the tax *type*, not the rate: a line at 20% on a non-recoverable
+     * type is 20% the production pays and never sees again, and treating it as
+     * reclaimable overstates what comes back. A line whose type is not in
+     * [recoverable] counts as not reclaimable, which is the safe direction.
+     */
+    fun reclaimable(lines: List<PoLine>, recoverable: Set<String>): Double = lines
+        .filterNot { it.isSplitChild || it.isTax }
+        .filter { it.taxType != null && it.taxType in recoverable }
+        .sumOf { it.total * (it.vatRate ?: 0.0) / RECLAIM_PERCENT }
+
+    companion object {
+        private const val RECLAIM_PERCENT = 100.0
+
+        fun of(lines: List<PoLine>): PoTotals {
+            var net = 0.0
+            var tax = 0.0
+            lines.forEach { line ->
+                if (line.isSplitChild || line.isTax) return@forEach
+                net += line.total
+                tax += line.total * (line.vatRate ?: 0.0) / PERCENT
+            }
+            return PoTotals(net = net, tax = tax)
+        }
+
+        private const val PERCENT = 100.0
+    }
+}
+
+/**
+ * How much of a posted order has been invoiced against it.
+ *
+ * The web's Posted tab shows these as both a column and its filter chips, and
+ * the wording is theirs.
+ */
+enum class PoRelief(val label: String) {
+    Open("Open"),
+    PartiallyRelieved("Partially Relieved"),
+    FullyRelieved("Fully Relieved"),
+    Closed("Closed"),
 }
 
 /** One step of a PO's approval chain, and whether it has been taken. */
@@ -116,10 +295,20 @@ data class PoApproval(
 @Serializable
 enum class PoStatus(val wire: String, val label: String) {
     Draft("draft", "Draft"),
-    AwaitingApproval("pending", "Awaiting approval"),
-    AccountsEntered("acct_entered", "Entered by accounts"),
+    AwaitingApproval("pending", "Pending"),
+
+    /**
+     * `ACCT_ENTERED` — raised by accounts, with no approval chain.
+     *
+     * Two spellings on the wire and both read "Acct Entered": the web's
+     * `mapApiPO` turns `ACCT_ENTERED` into `queued`, while half a dozen of its
+     * own call sites still check the raw value. Both are modelled, both are
+     * labelled the same, and every predicate here pairs them — because getting
+     * it wrong fails silently on orders already entered in the books.
+     */
+    AccountsEntered("acct_entered", "Acct Entered"),
     Approved("approved", "Approved"),
-    Queued("queued", "Queued for posting"),
+    Queued("queued", "Acct Entered"),
     Rejected("rejected", "Rejected"),
     Posted("posted", "Posted"),
     Closed("closed", "Closed"),
@@ -151,6 +340,27 @@ data class PoViewer(
     val designationIdentifier: String?,
     val isProjectAdmin: Boolean = false,
     val enteredAsTool: Boolean = false,
+    /**
+     * `posting_access` on `purchase_order_tool`, as the project's tool-rights
+     * payload issued it.
+     *
+     * Only one gate reads it — the department view's All POs tab, which shows
+     * every order on the production — and the web's hook fails **closed** while
+     * the payload is in flight for that reason: a brief flicker-in for an
+     * entitled user is cheaper than leaking the production's whole spend for
+     * the length of a fetch. So the default here is false, not true.
+     */
+    val canPostPurchaseOrders: Boolean = false,
+    /**
+     * This person's department **id**, not its identifier.
+     *
+     * Both are needed and they are not interchangeable: the identifier is how
+     * seniority is judged (it carries the word "accounts"), the id is what an
+     * order's `department_id` holds and what the department list is scoped by.
+     * The web keeps the same pair — `department_identifier` on the auth user,
+     * `department_id` for every PO it writes.
+     */
+    val departmentId: String? = null,
 ) {
     /**
      * Whether this person processes other people's orders.
@@ -225,6 +435,13 @@ data class NewPurchaseOrder(
     val notes: String?,
     val effectiveDate: Long?,
     val lines: List<PoLine>,
+    val vatTreatment: String? = null,
+    val deliveryDate: Long? = null,
+    /** The saved address this one came from, so the server can link them. */
+    val deliveryAddressId: String? = null,
+    val deliveryAddress: PoAddress? = null,
+    /** Quotes and paperwork, uploaded before the order is sent. */
+    val attachments: List<PoAttachment> = emptyList(),
     /**
      * The status the order is created in — the server's own vocabulary
      * (`PENDING` for crew, `ACCT_ENTERED` when accounts raise it, `DRAFT` to
@@ -240,7 +457,11 @@ data class NewPurchaseOrder(
      */
     val customFields: List<CustomFieldGroup> = emptyList(),
 ) {
-    val total: Double get() = lines.sumOf { it.total }
+    /** Net of the parent lines — what the server stores as `net_amount`. */
+    val total: Double get() = PoTotals.of(lines).net
+
+    /** Net, tax and gross, for the form's footer. */
+    val totals: PoTotals get() = PoTotals.of(lines)
 
     /** The first reason this order cannot be raised, or null. */
     fun validationError(): String? = when {
@@ -277,15 +498,24 @@ data class PoHistoryEntry(
  * vendor events stale the picker. Nothing is patched in place — the wire says
  * *that* something changed, the reload learns *what*.
  */
-enum class PoRefresh { Orders, Vendors, FormTemplate }
+enum class PoRefresh {
+    Orders,
+    Vendors,
+    FormTemplate,
 
-/** Everything the purchase order tool asks the server for. */
-@Suppress("TooManyFunctions") // One suspend fun per server operation; see detekt.yml.
+    /** A template or a saved delivery address changed — the register tabs re-read. */
+    Register,
+
+    /** The settings document or an assignment rule changed elsewhere — the Settings tab re-reads. */
+    Settings,
+}
+
 /**
  * A file attached to a purchase order — a quote, a signed copy, a delivery
  * note. The wire keeps the storage key under `media` and the display name
  * under `name`, and the two are not the same string.
  */
+@Serializable
 data class PoAttachment(
     val id: String = "",
     val media: String,
@@ -297,6 +527,8 @@ data class PoAttachment(
     val displayName: String get() = name.ifBlank { media.substringAfterLast('/') }
 }
 
+/** Everything the purchase order tool asks the server for. */
+@Suppress("TooManyFunctions") // One suspend fun per server operation; see detekt.yml.
 interface PurchaseOrderRepository {
 
     /**
@@ -308,8 +540,14 @@ interface PurchaseOrderRepository {
      */
     val refreshes: Flow<PoRefresh> get() = emptyFlow()
 
-    /** Every order this viewer may see, newest first. */
-    suspend fun orders(status: PoStatus?): ZillitResult<List<PurchaseOrder>>
+    /**
+     * Every order this viewer may see, newest first.
+     *
+     * [departmentId] is the "My Department POs" tab's whole implementation:
+     * the server scopes the list, rather than the client fetching everything
+     * and hiding rows it was not entitled to.
+     */
+    suspend fun orders(status: PoStatus?, departmentId: String? = null): ZillitResult<List<PurchaseOrder>>
 
     /** Orders routed to this viewer for a decision. */
     suspend fun approvalQueue(): ZillitResult<List<PurchaseOrder>>
@@ -322,28 +560,40 @@ interface PurchaseOrderRepository {
     suspend fun history(id: String): ZillitResult<List<PoHistoryEntry>>
 
     /**
-     * The files on an order (`GET /v2/list/attachments/{id}`).
+     * Replaces the files on an order.
      *
-     * The order list has always carried an attachment *count*, so the app has
-     * been telling people "3 attachments" while offering no way to reach one.
+     * Attachments are a column of the order, not a sub-resource: they arrive
+     * with `GET /{id}` and are written by patching the record. The three
+     * dedicated routes the old web module declared
+     * (`/v2/list|add|delete/attachments/…`) answer 404 on every verb on
+     * develop, verified 2026-09-12 — see the endpoint-existence probe.
      */
-    suspend fun attachments(id: String): ZillitResult<List<PoAttachment>> =
-        ZillitResult.Success(emptyList())
-
-    /** Adds files to an order (`PUT /v2/add/attachments/{id}`). */
-    suspend fun addAttachments(id: String, files: List<PoAttachment>): ZillitResult<Unit> =
-        ZillitResult.Failure(ZillitError.Unknown("purchase-order attachments are not wired"))
-
-    /** Removes one (`DELETE /v2/delete/{attachmentId}/{orderId}`). */
-    suspend fun deleteAttachment(attachmentId: String, orderId: String): ZillitResult<Unit> =
+    suspend fun saveAttachments(id: String, files: List<PoAttachment>): ZillitResult<Unit> =
         ZillitResult.Failure(ZillitError.Unknown("purchase-order attachments are not wired"))
 
     /**
-     * Emails the order to its supplier (`POST /v2/send/{id}`) — the step that
-     * turns an approved order into one the supplier has actually seen.
+     * Emails the order to its vendor (`POST /{id}/send-vendor-email`).
+     *
+     * No body — the server builds the mail itself: the order's PDF plus the
+     * production's terms document, from the production's accounts mailbox,
+     * copying whoever raised it. Approval does **not** auto-send, so this call
+     * is the only thing that puts an order in front of a vendor.
+     *
+     * Answers the send stamp, which the caller folds into the order so the
+     * action can relabel itself without a refetch.
      */
-    suspend fun emailToSupplier(id: String): ZillitResult<Unit> =
-        ZillitResult.Failure(ZillitError.Unknown("sending to a supplier is not wired"))
+    suspend fun sendVendorEmail(id: String): ZillitResult<PoEmailReceipt> =
+        ZillitResult.Failure(ZillitError.Unknown("sending to a vendor is not wired"))
+
+    /**
+     * Renders the order's PDF and answers where it was stored.
+     *
+     * `POST /{id}/pdf` takes the production's display names — the server has no
+     * project-info endpoint, so the client passes what it holds — and answers
+     * an S3 attachment the host presigns like any other document.
+     */
+    suspend fun pdf(id: String, projectName: String, companyName: String): ZillitResult<PoAttachment> =
+        ZillitResult.Failure(ZillitError.Unknown("purchase-order PDFs are not wired"))
 
     suspend fun create(order: NewPurchaseOrder): ZillitResult<Unit>
 
@@ -359,6 +609,17 @@ interface PurchaseOrderRepository {
 
     suspend fun close(id: String, note: String?): ZillitResult<Unit>
 
+    /**
+     * Sets one field across many orders (`PATCH /bulk`).
+     *
+     * The server caps the batch at 100 ids and accepts `CLOSED` as the only
+     * status it will bulk-set, so this is in practice the bulk effective-date
+     * action: the accountant picks a period and stamps a selection with it.
+     * The cap is checked here rather than discovered as a 400.
+     */
+    suspend fun bulkSetEffectiveDate(ids: List<String>, effectiveDate: Long): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("bulk editing is not wired"))
+
     /** Closes several at once — the month-end sweep. */
     /**
      * Closes many orders into one accounting period.
@@ -368,5 +629,77 @@ interface PurchaseOrderRepository {
      */
     suspend fun closeAll(ids: List<String>, effectiveDate: Long?): ZillitResult<Unit>
 
+    /**
+     * Hands the order to another accountant, with the reason on the record.
+     *
+     * A PATCH of two fields rather than its own verb, which is what the web
+     * sends: `assigned_to` plus `reassignment_reason`.
+     */
+    suspend fun reassign(id: String, userId: String, reason: String): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("reassigning an order is not wired"))
+
     suspend fun vendors(): ZillitResult<List<Vendor>>
+
+    // -- the Templates tab -----------------------------------------------------
+
+    suspend fun templates(): ZillitResult<List<PoTemplate>> = ZillitResult.Success(emptyList())
+
+    suspend fun saveTemplate(template: PoTemplate): ZillitResult<PoTemplate> = noRegister()
+
+    suspend fun deleteTemplate(id: String): ZillitResult<Unit> = noRegister()
+
+    // -- the Delivery Addresses tab -------------------------------------------
+
+    suspend fun deliveryAddresses(): ZillitResult<List<PoDeliveryAddress>> = ZillitResult.Success(emptyList())
+
+    suspend fun saveDeliveryAddress(id: String?, address: PoAddress): ZillitResult<PoDeliveryAddress> = noRegister()
+
+    private fun <T> noRegister(): ZillitResult<T> =
+        ZillitResult.Failure(ZillitError.Unknown("This purchase-order register is not available here."))
+
+    // -- the Settings tab: the web's `poSettingsApi` and `assignmentRulesApi` ---
+    // Defaulted to a refusal so a host or a test double without settings still
+    // composes; the real repository answers every one.
+
+    /** The settings document and the module's rules, as one GET answers both. */
+    suspend fun settings(): ZillitResult<PoSettingsBundle> = noSettings()
+
+    suspend fun saveDescriptionFormat(format: PoDescriptionFormat): ZillitResult<PoSettings> = noSettings()
+
+    suspend fun saveRentalSplit(autoSplit: Boolean, splitType: PoSplitType): ZillitResult<PoSettings> = noSettings()
+
+    suspend fun saveNumbering(prefix: String, allowAmendAfterApproval: Boolean): ZillitResult<PoSettings> =
+        noSettings()
+
+    suspend fun saveTermsDocument(document: PoAttachment): ZillitResult<PoSettings> = noSettings()
+
+    suspend fun saveAssetFilters(filters: AssetFilters): ZillitResult<PoSettings> = noSettings()
+
+    suspend fun createRule(rule: PoAssignmentRule): ZillitResult<PoAssignmentRule> = noSettings()
+
+    suspend fun updateRule(rule: PoAssignmentRule): ZillitResult<PoAssignmentRule> = noSettings()
+
+    suspend fun deleteRule(id: String): ZillitResult<Unit> = noSettings()
+
+    /** The chart's postable lines, for a rule's nominal codes. */
+    suspend fun nominalCodes(): ZillitResult<List<PoNominal>> = noSettings()
+
+    /** The production's line-item tags, for the asset register rule. */
+    suspend fun assetTags(): ZillitResult<List<String>> = noSettings()
+
+    private fun <T> noSettings(): ZillitResult<T> =
+        ZillitResult.Failure(ZillitError.Unknown("Purchase order settings are not available here."))
 }
+
+/**
+ * What the server says about a vendor email that went out.
+ *
+ * Folded into the order on return so the action can relabel itself — "Send to
+ * Vendor" becomes "Resend to Vendor" — without a second read of the list.
+ */
+data class PoEmailReceipt(
+    val sent: Boolean,
+    val to: String,
+    val at: Long?,
+    val by: String?,
+)

@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
@@ -30,6 +31,8 @@ class CashExpensesToolProvider(
     private val viewModel: CashExpensesViewModel,
     /** Opens a stored receipt. Injected because this module has no file layer. */
     private val onOpenAttachment: (String) -> Unit = {},
+    /** The crew photo for a user id — shown beside every name in the tool. */
+    private val loadAvatar: suspend (String) -> ImageBitmap? = { null },
 ) : ToolProvider {
 
     override val path: String = CASH_EXPENSES_PATH
@@ -76,7 +79,7 @@ class CashExpensesToolProvider(
             navigator.setTitle("Cash · ${state.destination.label}")
         }
 
-        CashExpensesScreen(state = state, onEvent = viewModel::onEvent)
+        CashExpensesScreen(state = state, onEvent = viewModel::onEvent, loadAvatar = loadAvatar)
 
         ZillitErrorToast(message = failure, onDismiss = { failure = null })
     }

@@ -2,20 +2,24 @@ package com.zillit.desktop.core.designsystem.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -24,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 
 /**
@@ -118,13 +123,86 @@ fun <T> ZillitDataTable(
      * correct and cheap, so this is the fix rather than a workaround.
      */
     virtualised: Boolean = true,
+    /**
+     * How narrow a weighted column may be squeezed before the table scrolls
+     * across instead.
+     *
+     * A table with more columns than its pane is wide used to shrink every
+     * one of them until the text was unreadable. Below this, the columns keep
+     * their width and the whole table — header and rows together — scrolls
+     * sideways under a rail. Set it to zero to go back to squeezing.
+     */
+    minColumnWidth: Dp = MIN_COLUMN_WIDTH,
 ) {
     // A duplicate key would take the whole window down inside a LazyColumn.
     // Ids come from a server, and a server that repeats one is a bug worth a
     // report — but not worth an unusable queue, so the first row wins.
     val visible = if (key == null) rows else rows.distinctBy(key)
+    val across = rememberScrollState()
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        // The content is as wide as the pane, or as wide as the columns need,
+        // whichever is greater. A definite width matters: inside a horizontal
+        // scroll the children are offered infinity, and `fillMaxWidth` there
+        // measures against it.
+        val pane = maxWidth
+        val needed = columns.widthNeeded(minColumnWidth)
+        // Only a table that genuinely overflows scrolls. Pinning the content
+        // to the pane's own width instead rounds Dp back to pixels and can
+        // land a fraction wide, which shows a rail with nothing behind it.
+        val wide = needed > pane
+        Column(Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    // The weight leaves room for the horizontal rail below —
+                    // but only where there is a height to divide. A
+                    // non-virtualised table sits in a page that already
+                    // scrolls, so its parent offers infinity, and a weighted
+                    // child of an infinite column measures to nothing: the
+                    // section drew its heading and then a void. Four modules
+                    // put a short table inside a scrolling page.
+                    .then(if (virtualised) Modifier.weight(1f, fill = false) else Modifier)
+                    .then(if (wide) Modifier.horizontalScroll(across).width(needed) else Modifier.fillMaxWidth()),
+            ) {
+                TableBody(
+                    visible = visible,
+                    columns = columns,
+                    key = key,
+                    onRowClick = onRowClick,
+                    isSelected = isSelected,
+                    emptyTitle = emptyTitle,
+                    emptyMessage = emptyMessage,
+                    loading = loading,
+                    virtualised = virtualised,
+                )
+            }
+            if (wide) ZillitHorizontalScrollRail(across)
+        }
+    }
+}
+
+/** The sum of what every column needs: a fixed column its width, a weighted one its share. */
+private fun <T> List<TableColumn<T>>.widthNeeded(minColumnWidth: Dp): Dp = fold(0.dp) { total, column ->
+    total + when (val width = column.width) {
+        is ColumnWidth.Fixed -> width.width
+        is ColumnWidth.Weight -> minColumnWidth * width.weight
+    }
+}
+
+@Suppress("LongParameterList") // The table's own parameters, passed straight through.
+@Composable
+private fun <T> ColumnScope.TableBody(
+    visible: List<T>,
+    columns: List<TableColumn<T>>,
+    key: ((T) -> Any)?,
+    onRowClick: ((T) -> Unit)?,
+    isSelected: ((T) -> Boolean)?,
+    emptyTitle: String,
+    emptyMessage: String?,
+    loading: Boolean,
+    virtualised: Boolean,
+) {
+    run {
         TableHeader(columns)
         ZillitDivider()
         when {
@@ -182,7 +260,7 @@ private fun <T> TableHeader(columns: List<TableColumn<T>>) {
             Box(modifier = cellModifier(column.width)) {
                 ZillitText(
                     text = column.header.uppercase(),
-                    style = ZillitTheme.typography.labelSmall,
+                    style = ZillitTheme.typography.columnHeader,
                     color = ZillitTheme.colors.textMuted,
                     maxLines = 1,
                     textAlign = if (column.numeric) TextAlign.End else TextAlign.Start,
@@ -272,3 +350,6 @@ private fun RowScope.cellModifier(width: ColumnWidth): Modifier = when (width) {
 }
 
 private const val SKELETON_ROWS = 6
+
+/** Narrower than this and a column's text is unreadable, so the table scrolls instead. */
+private val MIN_COLUMN_WIDTH = 110.dp

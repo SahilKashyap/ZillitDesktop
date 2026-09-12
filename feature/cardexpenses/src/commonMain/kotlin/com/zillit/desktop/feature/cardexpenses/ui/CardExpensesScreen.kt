@@ -31,7 +31,10 @@ import com.zillit.desktop.feature.cardexpenses.ui.pages.AnalyticsPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.CardExtensionPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.CardOverviewPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.CardRegisterPage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.CardEditDialog
 import com.zillit.desktop.feature.cardexpenses.ui.pages.CardSettingsPage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.HistoryPage
+import com.zillit.desktop.feature.cardexpenses.ui.pages.NewCardDialog
 import com.zillit.desktop.feature.cardexpenses.ui.pages.BulkProcessPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.SplitEditorDialog
 import com.zillit.desktop.feature.cardexpenses.ui.pages.StatementReviewPage
@@ -81,8 +84,12 @@ fun CardExpensesScreen(
         CardPromptDialog(state.prompt, onEvent)
 
         // Over the page: splitting is a focused task and the queue behind
-        // stays where it was, so the next receipt is one click away.
+        // stays where it was, so the next receipt is one click away. The two
+        // card forms are over the page for the same reason — the register
+        // behind them is the context for what is being filled in.
         SplitEditorDialog(state, onEvent)
+        NewCardDialog(state, onEvent)
+        CardEditDialog(state, onEvent)
 
         ZillitToast(
             message = state.notice,
@@ -124,6 +131,7 @@ private fun CardholderHeader(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     }
 }
 
+@Suppress("CyclomaticComplexMethod") // A dispatch table; splitting it hides the mapping.
 @Composable
 private fun CardBody(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val error = state.error
@@ -141,9 +149,10 @@ private fun CardBody(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         CardDestination.BulkProcess -> BulkProcessPage(state, onEvent)
         CardDestination.AllTransactions -> TransactionsPage(state, onEvent)
         CardDestination.TopUpQueue -> TopUpQueuePage(state, onEvent)
-        CardDestination.Analytics -> AnalyticsPage(state)
+        CardDestination.Analytics -> AnalyticsPage(state, onEvent)
         CardDestination.Alerts -> AlertsPage(state, onEvent)
         CardDestination.Settings -> CardSettingsPage(state, onEvent)
+        CardDestination.History -> HistoryPage(state, onEvent)
 
         // Everything else is a queue of receipts differing only in which rows
         // arrive and what a row may do — both derived from the destination.

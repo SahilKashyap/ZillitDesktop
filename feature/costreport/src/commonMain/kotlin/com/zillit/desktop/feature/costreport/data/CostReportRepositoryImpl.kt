@@ -15,17 +15,25 @@ import com.zillit.desktop.feature.costreport.domain.CostReportRepository
 import com.zillit.desktop.feature.costreport.domain.CostReportSync
 import com.zillit.desktop.feature.costreport.domain.CrCompany
 import com.zillit.desktop.feature.costreport.domain.CrCurrency
+import com.zillit.desktop.feature.costreport.domain.CrLockState
+import com.zillit.desktop.feature.costreport.domain.CrWrite
 import com.zillit.desktop.feature.costreport.domain.CurrencyOptions
+import com.zillit.desktop.feature.costreport.domain.EtcVersion
+import com.zillit.desktop.feature.costreport.domain.EtcVersionLine
 import com.zillit.desktop.feature.costreport.domain.LedgerResult
 import com.zillit.desktop.feature.costreport.domain.LedgerType
 import com.zillit.desktop.feature.costreport.domain.LiveReport
 import com.zillit.desktop.feature.costreport.domain.SnapshotCadence
 import com.zillit.desktop.feature.costreport.domain.SnapshotDetail
 import com.zillit.desktop.feature.costreport.domain.SnapshotHeader
+import com.zillit.desktop.feature.costreport.domain.SnapshotPost
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * The cost-report service (`/api/v2/cost-reports` on its own host) plus the
@@ -121,6 +129,45 @@ class CostReportRepositoryImpl(
         ),
     ).mapData { parseLedger(it, code) }
 
+    // -- the accountant's worksheet -------------------------------------------
+
+    override suspend fun etcVersions(weekEnding: String): ZillitResult<List<EtcVersion>> =
+        get("$base/weekly-etc/versions", mapOf("week_ending" to weekEnding)).mapData(::parseEtcVersions)
+
+    override suspend fun etcVersion(versionId: String): ZillitResult<List<EtcVersionLine>> =
+        get("$base/weekly-etc/versions/${versionId.encodePath()}").mapData(::parseEtcVersionLines)
+
+    override suspend fun createEtcVersion(
+        weekEnding: String,
+        label: String,
+        lines: List<EtcVersionLine>,
+        currency: String?,
+    ): ZillitResult<CrWrite<String?>> =
+        send(HttpVerb.Post, "$base/weekly-etc/versions", etcVersionBody(weekEnding, label, lines, currency))
+            .mapWrite(::parseCreatedVersionId)
+
+    override suspend fun updateEtcVersion(
+        versionId: String,
+        lines: List<EtcVersionLine>,
+        currency: String?,
+    ): ZillitResult<CrWrite<Unit>> =
+        send(
+            HttpVerb.Patch,
+            "$base/weekly-etc/versions/${versionId.encodePath()}",
+            etcVersionPatchBody(lines, currency),
+        )
+            .mapWrite { }
+
+    override suspend fun lockState(): ZillitResult<CrLockState> =
+        get("$base/lock-period").mapData(::parseLockState)
+
+    override suspend fun lockPeriod(asOfMs: Long): ZillitResult<CrWrite<Unit>> =
+        send(HttpVerb.Post, "$base/lock-period", buildJsonObject { put("as_of", asOfMs) }).mapWrite { }
+
+    override suspend fun postSnapshot(post: SnapshotPost): ZillitResult<CrWrite<SnapshotHeader?>> =
+        send(HttpVerb.Post, "$base/snapshots", snapshotPostBody(post))
+            .mapWrite { data -> (data as? JsonObject)?.let(::parseSnapshotHeader) }
+
     // -- plumbing ------------------------------------------------------------
 
     private suspend fun get(url: String, query: Map<String, Any?> = emptyMap()) = apiClient.envelope(
@@ -130,13 +177,44 @@ class CostReportRepositoryImpl(
         queryParameters = query,
     )
 
-    private inline fun <T> ZillitResult<ApiEnvelope>.mapData(transform: (JsonElement?) -> T): ZillitResult<T> =
-        when (this) {
-            is ZillitResult.Failure -> ZillitResult.Failure(error)
-            is ZillitResult.Success -> if (data.status == 1) {
-                ZillitResult.Success(transform(data.data))
-            } else {
-                ZillitResult.Failure(ZillitError.Http(status = 200, serverMessage = data.message))
-            }
-        }
+    private suspend fun send(verb: HttpVerb, url: String, body: JsonObject) = apiClient.envelope(
+        verb = verb,
+        url = url,
+        module = RequestModule.ProjectUser,
+        body = body,
+    )
 }
+
+/** A write's value plus the server's message, which the screen shows as the confirmation. */
+private inline fun <T> ZillitResult<ApiEnvelope>.mapWrite(transform: (JsonElement?) -> T): ZillitResult<CrWrite<T>> =
+    when (this) {
+        is ZillitResult.Failure -> ZillitResult.Failure(error)
+        is ZillitResult.Success -> if (data.status == 1) {
+            ZillitResult.Success(CrWrite(transform(data.data), data.message?.takeIf { it.isNotBlank() }))
+        } else {
+            ZillitResult.Failure(ZillitError.Http(status = 200, serverMessage = data.message))
+        }
+    }
+
+internal inline fun <T> ZillitResult<ApiEnvelope>.mapData(transform: (JsonElement?) -> T): ZillitResult<T> =
+    when (this) {
+        is ZillitResult.Failure -> ZillitResult.Failure(error)
+        is ZillitResult.Success -> if (data.status == 1) {
+            ZillitResult.Success(transform(data.data))
+        } else {
+            ZillitResult.Failure(ZillitError.Http(status = 200, serverMessage = data.message))
+        }
+    }
+
+/** Version ids are opaque; the web percent-encodes them into the path, so this does too. */
+internal fun String.encodePath(): String = buildString {
+    this@encodePath.encodeToByteArray().forEach { byte ->
+        val char = byte.toInt().toChar()
+        if ((byte >= 0 && char.isLetterOrDigit()) || char in "-_.~") append(char) else append("%" + byte.hex())
+    }
+}
+
+private fun Byte.hex(): String = (toInt() and BYTE_MASK).toString(HEX_RADIX).uppercase().padStart(2, '0')
+
+private const val BYTE_MASK = 0xFF
+private const val HEX_RADIX = 16

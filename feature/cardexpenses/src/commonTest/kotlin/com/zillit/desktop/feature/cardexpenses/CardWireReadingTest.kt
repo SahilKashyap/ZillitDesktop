@@ -3,11 +3,16 @@ package com.zillit.desktop.feature.cardexpenses
 import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
 import com.zillit.desktop.feature.cardexpenses.domain.CardType
 import com.zillit.desktop.feature.cardexpenses.domain.CardWorkflowStatus
+import com.zillit.desktop.feature.cardexpenses.data.ReceiptDto
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
 import com.zillit.desktop.feature.cardexpenses.ui.cardLabel
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlinx.serialization.json.Json
 import kotlin.test.assertTrue
+
+private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
 private fun anyCard(
     id: String = "652f1a9c4b3d2e1f0a9b8c7d",
@@ -32,6 +37,8 @@ private fun anyCard(
     balance = balance,
     receiptsCommit = null,
     bsControlCode = null,
+    proposedLimit = null,
+    justification = null,
     requestedBy = null,
     rejectedBy = null,
     rejectionReason = null,
@@ -118,10 +125,68 @@ class CardWireReadingTest {
         assertEquals("Visa", cardLabel(anyCard(lastFour = "  ")), "blank is as absent as null")
     }
 
+    /**
+     * With neither, the label says "Card" and nothing more.
+     *
+     * It used to print the first six characters of the row id. That looked
+     * like a card number to anyone who did not know better — the register read
+     * "Card bb0cb7" down the whole column on a live production — and a
+     * truncated ObjectId tells the reader nothing they can act on.
+     */
     @Test
-    fun `with neither, a short id stands in rather than an empty label`() {
-        assertEquals("Card 652f1a", cardLabel(anyCard(lastFour = null, issuer = null)))
-        assertEquals("Card 652f1a", cardLabel(anyCard(lastFour = "", issuer = "")))
+    fun `with neither, the label never falls back to the id`() {
+        assertEquals("Card", cardLabel(anyCard(lastFour = null, issuer = null)))
+        assertEquals("Card", cardLabel(anyCard(lastFour = "", issuer = "")))
+    }
+
+    /**
+     * An issuer column holding a provider id is not an issuer name.
+     *
+     * Seen live: `card_issuer` came back as `fd82c1a1-d819-458a-8ed7-…` and
+     * the card face drew it under the card number.
+     */
+    @Test
+    fun `a uuid in the issuer column is not drawn as a name`() {
+        assertEquals("Card", cardLabel(anyCard(lastFour = null, issuer = "fd82c1a1-d819-458a-8ed7-9c1a2b3c4d5e")))
+        assertEquals("Card", cardLabel(anyCard(lastFour = null, issuer = "652f1a9c8d7b6e5f4a3b2c1d")))
+        // A real issuer still reads as one, hex letters and all.
+        assertEquals("Barclaycard", cardLabel(anyCard(lastFour = null, issuer = "Barclaycard")))
+        assertEquals("Amex", cardLabel(anyCard(lastFour = null, issuer = "Amex")))
+    }
+
+    /**
+     * A confidence score is a fraction on the wire, and a percentage on screen.
+     *
+     * Typed as an int once. kotlinx stops at the first element it cannot read,
+     * so a single receipt carrying `0.63` blanked the **whole** Receipt Inbox
+     * behind "The server sent something unexpected" — seen on a live
+     * production, 2026-09-12.
+     */
+    @Test
+    fun `a fractional confidence score reads as a percentage`() {
+        val receipt = json.decodeFromString(
+            ReceiptDto.serializer(),
+            """
+            {"id":"r1","amount":"84.20","match_score":0.63,"duplicate_score":0.85,
+             "personal_score":"0.4","status":"pending_code"}
+            """.trimIndent(),
+        ).toDomain()!!
+
+        assertEquals(63, receipt.matchScore)
+        assertEquals(85, receipt.duplicateScore)
+        assertEquals(40, receipt.personalScore, "a quoted fraction reads the same as a bare one")
+    }
+
+    /** Zero is no score at all, matching the web's `> 0` guard on all three. */
+    @Test
+    fun `a zero or missing score is no score`() {
+        val receipt = json.decodeFromString(
+            ReceiptDto.serializer(),
+            """{"id":"r1","amount":"1","match_score":0,"status":"pending_code"}""",
+        ).toDomain()!!
+
+        assertNull(receipt.matchScore)
+        assertNull(receipt.duplicateScore, "absent is absent")
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.assetreport.ui
 
+import com.zillit.desktop.core.common.orDash
+import com.zillit.desktop.core.common.looksLikeRawId
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.localization.localised
@@ -34,7 +36,15 @@ data class AssetUiState(
 ) {
     fun vendorName(id: String): String = vendors[id] ?: id.ifBlank { "—" }
 
-    fun departmentName(id: String): String = departments[id] ?: id.ifBlank { "—" }
+    /**
+     * A department's name.
+     *
+     * The register stores a *label key* ("accounts_department_label") as often
+     * as an id, and both were being printed raw. The dictionary resolves the
+     * key; an id nobody can resolve shows as an em dash rather than as hex.
+     */
+    fun departmentName(id: String): String =
+        departments[id] ?: id.takeIf { it.isNotBlank() && !it.looksLikeRawId() }?.localised().orDash()
 
     /** The web's haystack: description, vendor name, code, ref, department. */
     val visible: List<AssetLine>

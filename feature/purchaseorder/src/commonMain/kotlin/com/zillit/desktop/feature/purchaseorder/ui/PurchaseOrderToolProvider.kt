@@ -40,6 +40,19 @@ class PurchaseOrderToolProvider(
         var failure by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
+        // A route that names a page — the Account Hub's "Create PO" hands off
+        // `/new` — opens it; the bare tool path keeps the role's own landing.
+        // The role is passed in because two of the web's segments mean
+        // different tabs in its two modules; see PoDestination.forRoute.
+        LaunchedEffect(route, state.viewer) {
+            val shown = viewModel.currentState
+            val page = PoDestination.forRoute(route.path, shown.viewer) ?: return@LaunchedEffect
+            if (page == PoDestination.Form) {
+                if (shown.form == null) viewModel.onEvent(PoEvent.CreateOrder)
+                return@LaunchedEffect
+            }
+            if (page != shown.destination && page.visibleTo(shown.viewer)) viewModel.onEvent(PoEvent.Open(page))
+        }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {
@@ -48,6 +61,19 @@ class PurchaseOrderToolProvider(
                     // handing it to the OS is the host's business, not this
                     // module's.
                     is PoEffect.OpenAttachment -> onOpenAttachment(effect.attachment)
+                    // The editor is the Account Hub's Forms Configuration
+                    // area, opened on this module — the web's
+                    // `FormConfigLauncher` overlay, as a route. Inside the hub
+                    // that route re-shows the console; standalone it takes the
+                    // window there.
+                    PoEffect.OpenFormConfig -> navigator.navigate(WorkspaceRoute.Tool(PO_FORM_CONFIG_ROUTE))
+                    // The department view's two hand-off tabs. The web renders
+                    // both modules *inside* the PO page; the desktop sends the
+                    // host to them, because both already exist here as their
+                    // own surfaces and a second copy of either would disagree
+                    // with the first the moment one changed.
+                    PoEffect.OpenVendors -> navigator.navigate(WorkspaceRoute.Tool(HUB_VENDORS_ROUTE))
+                    PoEffect.OpenInvoices -> navigator.navigate(WorkspaceRoute.Tool(INVOICES_ROUTE))
                 }
             }
         }
@@ -61,3 +87,12 @@ class PurchaseOrderToolProvider(
 }
 
 const val PURCHASE_ORDER_PATH = "/film-tools/purchase-order"
+
+/** The Account Hub's Forms Configuration area, opened on purchase orders. */
+const val PO_FORM_CONFIG_ROUTE = "/film-tools/account-hub/form-config/purchase_orders"
+
+/** The Account Hub's Vendors area — the department view's Vendors tab. */
+const val HUB_VENDORS_ROUTE = "/film-tools/account-hub/vendors"
+
+/** The Invoices tool — the department view's Invoices tab. */
+const val INVOICES_ROUTE = "/film-tools/invoices"

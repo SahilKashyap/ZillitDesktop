@@ -55,7 +55,8 @@ class AssetScreenRenderTest {
         onNodeWithText("Camera").assertExists()
         onNodeWithText("PO-7").assertExists()
         onNodeWithText("Rental").assertExists()
-        onNodeWithText("201.00").assertExists()
+        // With the currency's symbol, as every other finance table prints it.
+        onNodeWithText("£201.00").assertExists()
         onNodeWithText("Export PDF").assertExists()
         onNodeWithText("Camera dolly").performClick()
 

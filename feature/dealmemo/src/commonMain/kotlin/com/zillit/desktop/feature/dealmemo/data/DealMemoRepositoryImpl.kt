@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.dealmemo.data
 
+import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.flatMap
@@ -250,6 +251,7 @@ internal data class DealDto(
     @SerialName("department_id") val departmentId: String? = null,
     @SerialName("department_name") val departmentName: String? = null,
     @SerialName("designation") val designation: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("weekly_rate") val weeklyRate: String? = null,
     @SerialName("daily_rate") val dailyRate: String? = null,
@@ -402,6 +404,7 @@ internal data class RateEntryDto(
     @SerialName("branch_identifier") val branchIdentifier: String? = null,
     @SerialName("union_identifier") val unionIdentifier: String? = null,
     @SerialName("production_type") val productionType: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("min_budget") val minBudget: String? = null,
     @SerialName("max_budget") val maxBudget: String? = null,

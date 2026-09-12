@@ -42,6 +42,8 @@ private fun card(
     balance = balance,
     receiptsCommit = commit,
     bsControlCode = null,
+    proposedLimit = null,
+    justification = null,
     requestedBy = requestedBy,
     rejectedBy = null,
     rejectionReason = null,

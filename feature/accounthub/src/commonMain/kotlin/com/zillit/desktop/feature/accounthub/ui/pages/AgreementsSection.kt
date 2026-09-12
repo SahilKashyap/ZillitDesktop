@@ -16,7 +16,6 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -26,6 +25,10 @@ import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.QueuedAgreementFile
+import com.zillit.desktop.feature.accounthub.ui.SetupRemoval
+import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
+import com.zillit.desktop.feature.accounthub.ui.components.SectionShell
+import com.zillit.desktop.core.designsystem.component.ZillitFileBadge
 
 private const val TITLE_WIDTH = 200
 private const val KILOBYTE = 1024.0
@@ -49,16 +52,17 @@ internal fun AgreementsSection(
     state: AccountHubUiState,
     onEvent: (AccountHubEvent) -> Unit,
     canAttach: Boolean,
+    canOpen: Boolean = false,
 ) {
     val setup = state.setup
     val editable = state.viewer.canEdit && canAttach
 
-    ZillitSectionCard(
-        modifier = Modifier.fillMaxWidth(),
-        title = "Agreements & Documents",
-        icon = ZillitIcons.File,
-        meta = "${setup.agreements.size} stored",
-        action = {
+    SectionShell(
+        title = "Agreements Documents",
+        description = "Master contract templates and signed agreements. Pick one or more files, then give each a " +
+            "name + optional description before saving.",
+        editable = editable,
+        extraActions = {
             if (editable) {
                 ZillitButton(
                     text = "Add PDFs",
@@ -71,12 +75,7 @@ internal fun AgreementsSection(
             }
         },
     ) {
-        ZillitText(
-            text = "PDFs a deal memo can offer for signature. 20 MB a file — the signing " +
-                "flow takes nothing else.",
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textSecondary,
-        )
+        FieldHint("PDF only, 20 MB a file — the signing flow takes nothing else. ${setup.agreements.size} stored.")
 
         if (!canAttach) {
             ZillitNotice(
@@ -95,8 +94,10 @@ internal fun AgreementsSection(
         setup.agreements.forEach { document ->
             StoredRow(
                 document = document,
-                editable = editable,
-                onRemove = { onEvent(AccountHubEvent.DeleteAgreementDocument(document.id)) },
+                editable = state.viewer.canEdit,
+                canOpen = canOpen,
+                onOpen = { onEvent(AccountHubEvent.OpenAgreementDocument(document.id)) },
+                onRemove = { onEvent(AccountHubEvent.AskRemove(SetupRemoval.AgreementRow(document))) },
             )
         }
     }
@@ -139,7 +140,7 @@ private fun QueueHeader(count: Int, uploading: Boolean, onEvent: (AccountHubEven
         ZillitSectionLabel("Ready to upload")
         ZillitStatusPill(label = "$count waiting", tone = StatusTone.Pending)
         ZillitButton(
-            text = "Upload $count",
+            text = "Save all $count",
             onClick = { onEvent(AccountHubEvent.UploadAgreementFiles) },
             size = ButtonSize.Small,
             loading = uploading,
@@ -164,14 +165,14 @@ private fun QueuedRow(
         ZillitTextField(
             value = row.title,
             onValueChange = { onChange(row.copy(title = it)) },
-            label = "Name",
+            placeholder = "Title *",
             enabled = enabled,
             modifier = Modifier.width(TITLE_WIDTH.dp),
         )
         ZillitTextField(
             value = row.description,
             onValueChange = { onChange(row.copy(description = it)) },
-            label = "Description",
+            placeholder = "+ Add description",
             enabled = enabled,
             modifier = Modifier.weight(1f),
         )
@@ -182,7 +183,7 @@ private fun QueuedRow(
         )
         ZillitIconButton(
             icon = ZillitIcons.Trash,
-            contentDescription = "Remove from the queue",
+            contentDescription = "Remove from pending",
             onClick = onRemove,
             enabled = enabled,
         )
@@ -190,7 +191,13 @@ private fun QueuedRow(
 }
 
 @Composable
-private fun StoredRow(document: AgreementDocument, editable: Boolean, onRemove: () -> Unit) {
+private fun StoredRow(
+    document: AgreementDocument,
+    editable: Boolean,
+    canOpen: Boolean,
+    onOpen: () -> Unit,
+    onRemove: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -209,6 +216,16 @@ private fun StoredRow(document: AgreementDocument, editable: Boolean, onRemove: 
                 ).joinToString(" · "),
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
+            )
+        }
+        ZillitFileBadge(fileName = document.name.ifBlank { document.title })
+        if (canOpen && document.media.isNotBlank()) {
+            ZillitButton(
+                text = "Open",
+                onClick = onOpen,
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Download,
             )
         }
         if (editable) {

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.assetreport.ui
 
+import com.zillit.desktop.core.common.Money
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -156,8 +157,7 @@ private fun TableHeading(state: AssetUiState, onEvent: (AssetEvent) -> Unit) {
                     append(if (state.visible.size == 1) " asset" else " assets")
                     total?.let { (sum, currency) ->
                         append(" · ")
-                        if (currency.isNotBlank()) append("$currency ")
-                        append(moneyLabel(sum))
+                        append(Money.format(sum, currency))
                     }
                 },
                 style = ZillitTheme.typography.labelSmall,
@@ -280,8 +280,10 @@ private fun LineRow(line: AssetLine, state: AssetUiState, onOpen: () -> Unit) {
         BodyCell(line.poNumber.ifBlank { "—" }, REF_SHARE)
         BodyCell(line.expenditureType.label.ifBlank { "—" }, EXP_SHARE)
         BodyCell(trimQty(line.quantity), QTY_SHARE, end = true)
-        BodyCell(moneyLabel(line.unitPrice), UNIT_SHARE, end = true)
-        BodyCell(moneyLabel(line.total), TOTAL_SHARE, end = true)
+        // The symbol, as every other finance table prints it; a bare figure
+        // in a register that spans currencies says nothing about which one.
+        BodyCell(Money.format(line.unitPrice, line.currency), UNIT_SHARE, end = true)
+        BodyCell(Money.format(line.total, line.currency), TOTAL_SHARE, end = true)
     }
 }
 
@@ -334,8 +336,8 @@ private fun DetailPage(detail: AssetDetail, state: AssetUiState, onEvent: (Asset
         }
         Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
             DetailCell("Qty", trimQty(line.quantity))
-            DetailCell("Unit Cost", "${line.currency} ${moneyLabel(line.unitPrice)}".trim())
-            DetailCell("Total", "${line.currency} ${moneyLabel(line.total)}".trim())
+            DetailCell("Unit Cost", Money.format(line.unitPrice, line.currency))
+            DetailCell("Total", Money.format(line.total, line.currency))
         }
 
         SectionLabel("CATEGORY")

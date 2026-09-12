@@ -14,6 +14,8 @@ import com.zillit.desktop.feature.costreport.domain.CostReportViewer
 import com.zillit.desktop.feature.costreport.domain.CrColumn
 import com.zillit.desktop.feature.costreport.domain.CrCompany
 import com.zillit.desktop.feature.costreport.domain.CrCurrency
+import com.zillit.desktop.feature.costreport.domain.CrLine
+import com.zillit.desktop.feature.costreport.domain.CrNominal
 import com.zillit.desktop.feature.costreport.domain.CurrencyOptions
 import com.zillit.desktop.feature.costreport.domain.ExportFormat
 import com.zillit.desktop.feature.costreport.domain.LedgerItem
@@ -196,8 +198,8 @@ class CostReportViewModelTest {
         assertTrue(week.startMs <= NOW_MS && NOW_MS <= week.endMs)
 
         // The prior weekly snapshot fed the VTP baseline.
-        assertTrue(state.current.hasPrior)
-        assertEquals(30.0, state.current.priorVariance["1110"])
+        assertTrue(state.current.baseline.hasPrior)
+        assertEquals(30.0, state.current.baseline.prevVariance("1110"))
         assertEquals(listOf("prev"), repository.snapshotCalls)
     }
 
@@ -332,13 +334,21 @@ class CostReportViewModelTest {
         assertEquals(2, ledger.result?.items?.size)
         assertEquals(listOf("2100", LedgerType.Commits, "card", "GBP"), repository.ledgerCalls.single())
 
+        // A Non-Allocated row opens too — by its bucket key, which is what the
+        // server files those lines under; the web opens them to find what to re-code.
         model.onEvent(CostReportEvent.CloseLedger)
         val bucket = sections.first { it.isUncoded }.headers.single().nominals.first { it.isBucket }
-        val notice = async { model.effects.first() }
         model.onEvent(CostReportEvent.OpenLedger(bucket, null))
         advanceUntilIdle()
+        assertNotNull(model.state.value.ledger)
+        assertEquals(bucket.identity, repository.ledgerCalls.last()[0])
+
+        // A Contractual Item has no ledger at all, so nothing opens.
+        model.onEvent(CostReportEvent.CloseLedger)
+        val bond = CrNominal("-", "Completion Bond", "__contractual__:b-1", CrLine(budget = 900.0))
+        model.onEvent(CostReportEvent.OpenLedger(bond, null))
+        advanceUntilIdle()
         assertNull(model.state.value.ledger)
-        assertTrue(notice.await() is CostReportEffect.Notice)
-        assertEquals(1, repository.ledgerCalls.size)
+        assertEquals(2, repository.ledgerCalls.size)
     }
 }

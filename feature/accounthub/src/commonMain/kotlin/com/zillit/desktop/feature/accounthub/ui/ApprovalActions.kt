@@ -1,5 +1,8 @@
 package com.zillit.desktop.feature.accounthub.ui
 
+import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.ApprovalRule
@@ -15,36 +18,53 @@ import com.zillit.desktop.feature.accounthub.domain.ApprovalTier
  * entirely is not saved as an empty chain, it is *removed*, so the department
  * falls back to the production's. The absence of a row is what "inherits"
  * means to the server.
+ *
+ * The builder is the web's full-page editor, `ApproversModule`: levels, each
+ * holding one or more rules (Default, or "Amount greater than" a threshold),
+ * each rule its own approvers; a picker that stages people before adding them;
+ * and the web's save flow step for step — see [save].
  */
+@Suppress("TooManyFunctions") // One handler per action.
 internal class ApprovalActions(private val vm: AccountHubViewModel) {
 
-
-
-
-
-
+    /**
+     * The open module's chains, and on a first read the other modules' pills
+     * and who may be picked.
+     *
+     * A read of the module already on screen is silent — no spinner over a
+     * page that is showing — which is what the web's socket refetch does
+     * after another accountant saves. Only the module still open when the
+     * answer lands is written: a quick switch must not paint one module's
+     * chains under another's name.
+     */
     fun load() {
-        val module = vm.setupState.approvals.module
-        vm.update { copy(approvals = approvals.copy(loading = true)) }
+        val approvals = vm.setupState.approvals
+        val module = approvals.module
+        val silent = approvals.loadedModule == module
+        vm.update { copy(approvals = this.approvals.copy(loading = !silent, loadError = null)) }
         vm.runResult({ vm.repo.approvalConfigs(module) }, { rows ->
-            vm.update {
+            onModule(module) {
                 copy(
-                    approvals = approvals.copy(
-                        configs = rows,
-                        loading = false,
-                        // The module on screen is answered from its own
-                        // configs — fresher than any snapshot, and after a
-                        // save it is the only correct value.
-                        configured = approvals.configured +
-                            (module to rows.any { it.isConfigured }),
-                    ),
+                    configs = rows,
+                    loading = false,
+                    loadedModule = module,
+                    // The module on screen is answered from its own configs —
+                    // fresher than any snapshot, and after a save it is the
+                    // only correct value.
+                    configured = configured + (module to rows.any { it.isConfigured }),
                 )
             }
         }, { error ->
-            vm.update { copy(approvals = approvals.copy(loading = false)) }
-            vm.report(error)
+            onModule(module) { copy(loading = false, loadError = error.localised()) }
         })
-        loadApprovalSummary()
+        if (!silent) {
+            loadApprovalSummary()
+            loadCandidates(module)
+        }
+    }
+
+    private fun onModule(module: ApprovalModule, change: ApprovalsState.() -> ApprovalsState) = vm.update {
+        if (approvals.module != module) this else copy(approvals = approvals.change())
     }
 
     /**
@@ -63,92 +83,305 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
         }, { })
     }
 
-    fun onEvent(event: AccountHubEvent) {
+    /**
+     * Who holds view rights on this module's tool. A failure is recorded as
+     * nobody, so the picker offers the accounts team alone — the web fails
+     * closed here, and so does [com.zillit.desktop.feature.accounthub.domain.ApprovalCandidates].
+     */
+    private fun loadCandidates(module: ApprovalModule) {
+        vm.update { copy(approvals = approvals.copy(candidateIds = null)) }
+        vm.runResult({ vm.repo.approverCandidateIds(module.tool) }, { ids ->
+            onModule(module) { copy(candidateIds = ids) }
+        }, {
+            onModule(module) { copy(candidateIds = emptySet()) }
+        })
+    }
+
+    @Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per action.
+    fun onEvent(event: AccountHubEvent): Boolean {
         when (event) {
-            is AccountHubEvent.SwitchApprovalModule -> {
-                vm.update { copy(approvals = approvals.copy(module = event.module, configs = emptyList())) }
-                load()
+            is AccountHubEvent.SwitchApprovalModule -> switchModule(event.module)
+            AccountHubEvent.ReloadApprovalConfigs -> load()
+            is AccountHubEvent.SearchApprovalModules -> vm.update {
+                copy(approvals = approvals.copy(moduleSearch = event.term))
             }
-            is AccountHubEvent.EditApprovalConfig -> editApprovalConfig(event.config)
-            is AccountHubEvent.UpdateApprovalConfig ->
-                vm.update { copy(approvals = approvals.copy(editing = event.config)) }
-            AccountHubEvent.AddApprovalLevel -> addApprovalLevel()
-            is AccountHubEvent.RemoveApprovalLevel -> removeApprovalLevel(event.order)
-            AccountHubEvent.SaveApprovalConfig -> saveApprovalConfig()
-            AccountHubEvent.DismissApprovalConfig -> vm.update { copy(approvals = approvals.copy(editing = null)) }
-            else -> Unit
+            is AccountHubEvent.SearchDepartments -> vm.update {
+                copy(approvals = approvals.copy(departmentSearch = event.term))
+            }
+            is AccountHubEvent.FilterDepartments -> vm.update {
+                copy(approvals = approvals.copy(departmentFilter = event.filter))
+            }
+            is AccountHubEvent.ToggleDepartmentExpanded -> vm.update {
+                val next = approvals.expanded.toMutableSet()
+                if (!next.add(event.departmentId)) next.remove(event.departmentId)
+                copy(approvals = approvals.copy(expanded = next))
+            }
+            AccountHubEvent.EditDefaultApprovals -> editDefault()
+            is AccountHubEvent.EditDepartmentConfig -> editDepartment(event.departmentId)
+            is AccountHubEvent.InsertApprovalLevel -> insertLevel(event.position)
+            is AccountHubEvent.RemoveApprovalLevel -> removeLevel(event.order)
+            is AccountHubEvent.AddApprovalRule -> addRule(event.tier)
+            is AccountHubEvent.RemoveApprovalRule -> removeRule(event.tier, event.rule)
+            is AccountHubEvent.SetApprovalRuleType -> setRuleType(event.tier, event.rule, event.type)
+            is AccountHubEvent.SetApprovalRuleAmount -> editRule(event.tier, event.rule) {
+                it.copy(amountThreshold = event.amount)
+            }
+            is AccountHubEvent.RemoveApprover -> editRule(event.tier, event.rule) {
+                it.copy(userIds = it.userIds - event.userId)
+            }
+            is AccountHubEvent.OpenApproverPicker -> openPicker(event.tier, event.rule)
+            AccountHubEvent.CloseApproverPicker -> updateBuilder { closedPicker() }
+            is AccountHubEvent.SearchApproverPicker -> updateBuilder { copy(pickerSearch = event.term) }
+            is AccountHubEvent.ToggleApproverPick -> togglePick(event.userId)
+            AccountHubEvent.AddPickedApprovers -> addPicked()
+            AccountHubEvent.SaveApprovalConfig -> save()
+            AccountHubEvent.ConfirmApprovalSave -> confirmSave()
+            AccountHubEvent.DismissApprovalConfirm -> updateBuilder { copy(confirm = null) }
+            AccountHubEvent.DismissApprovalConfig -> closeBuilder()
+            else -> return false
         }
+        return true
     }
 
-    private fun editApprovalConfig(config: ApprovalConfig?) {
-        if (!vm.mayActAsAccountant()) return
-        val target = config ?: ApprovalConfig(
-            module = vm.setupState.approvals.module,
-            scope = ApprovalScope.All,
-            tiers = listOf(ApprovalTier(order = 1)),
-        )
+    /** A new module starts with a clean toolbar, as the web's `setActive` resets search and filter. */
+    private fun switchModule(module: ApprovalModule) {
         vm.update {
-            // A chain with no levels gets one, so the editor opens on something
-            // to fill in rather than on an empty panel with an Add button.
-            val seeded = if (target.tiers.isEmpty()) target.copy(tiers = listOf(ApprovalTier(1))) else target
-            copy(approvals = approvals.copy(editing = seeded))
+            copy(
+                approvals = approvals.copy(
+                    module = module,
+                    configs = emptyList(),
+                    loadedModule = null,
+                    loadError = null,
+                    builder = null,
+                    expanded = emptySet(),
+                    departmentSearch = "",
+                    departmentFilter = DepartmentFilter.All,
+                ),
+            )
         }
+        load()
     }
 
-    private fun addApprovalLevel() = vm.update {
-        val editing = approvals.editing ?: return@update this
-        val next = editing.tiers + ApprovalTier(order = editing.tiers.size + 1)
-        copy(approvals = approvals.copy(editing = editing.copy(tiers = next)))
-    }
-
-    private fun removeApprovalLevel(order: Int) = vm.update {
-        val editing = approvals.editing ?: return@update this
-        // Renumbered on removal so the levels stay 1..N — a gap in `order` is
-        // what the sequence rule reads as an unfilled level.
-        val next = editing.tiers.filterNot { it.order == order }
-            .mapIndexed { index, tier -> tier.copy(order = index + 1) }
-        copy(approvals = approvals.copy(editing = editing.copy(tiers = next)))
-    }
-
-    private fun saveApprovalConfig() {
-        val editing = vm.setupState.approvals.editing ?: return
+    /** The production-wide chain, or one untyped level to start it. */
+    private fun editDefault() {
         if (!vm.mayActAsAccountant()) return
-        // A department chain emptied entirely means "use the production's".
-        // Saving it as an empty chain would leave documents waiting at a level
-        // with nobody in it; the server's own answer is to delete the config
-        // so the department falls back, which is what the web does too.
-        if (editing.scope == ApprovalScope.Department &&
-            editing.id.isNotBlank() &&
-            ApprovalSequence.compacted(editing.tiers).isEmpty()
-        ) {
-            return revertDepartmentToGlobal(editing.id)
-        }
-        val problem = ApprovalSequence.validationError(editing.tiers)
-        if (problem != null) {
-            vm.sendSideEffect(AccountHubEffect.Failed(problem))
-            return
-        }
-        vm.update { copy(approvals = approvals.copy(saving = true)) }
-        vm.runResult(
-            // Compacted on the way out: trailing blanks the user left behind
-            // are dropped rather than persisted as empty levels that stall a
-            // document forever.
-            { vm.repo.saveApprovalConfig(editing.copy(tiers = ApprovalSequence.compacted(editing.tiers))) },
-            {
-                vm.update {
-                    copy(
-                        approvals = approvals.copy(editing = null, saving = false),
-                        notice = "Approvers saved.",
-                    )
-                }
-                load()
-            },
-            { error ->
-                vm.update { copy(approvals = approvals.copy(saving = false)) }
-                vm.report(error)
-            },
+        val approvals = vm.setupState.approvals
+        val saved = approvals.defaultConfig
+        openBuilder(
+            ApprovalConfig(
+                id = saved?.id.orEmpty(),
+                module = approvals.module,
+                scope = ApprovalScope.All,
+                tiers = saved?.tiers.orEmpty(),
+            ),
         )
     }
+
+    /**
+     * A department's own chain — or, when it has none, the default chain as a
+     * blueprint, which is what the web's `openBuilder` does.
+     *
+     * Seeding from the default only fills the editor. Nothing is written until
+     * Save, so opening a department and cancelling leaves it inheriting.
+     */
+    private fun editDepartment(departmentId: String) {
+        if (!vm.mayActAsAccountant()) return
+        val state = vm.setupState
+        val approvals = state.approvals
+        val own = approvals.configFor(departmentId)
+        val tiers = own?.tiers?.takeIf { it.isNotEmpty() } ?: approvals.defaultConfig?.tiers.orEmpty()
+        openBuilder(
+            ApprovalConfig(
+                id = own?.id.orEmpty(),
+                module = approvals.module,
+                scope = ApprovalScope.Department,
+                departmentId = departmentId,
+                departmentName = state.departmentName(departmentId).ifBlank { own?.departmentName.orEmpty() },
+                tiers = tiers,
+            ),
+        )
+    }
+
+    /**
+     * The editor opens on something to fill in: a chain with no levels gets
+     * one, a level with no rules gets an untyped rule (the web's `makeTier`),
+     * and levels are numbered by position so "Level N" and the addressing
+     * agree even when the server's orders have gaps.
+     */
+    private fun openBuilder(target: ApprovalConfig) {
+        val tiers = target.tiers.ifEmpty { listOf(newLevel()) }.map { tier ->
+            if (tier.rules.isEmpty()) tier.copy(rules = listOf(ApprovalRule())) else tier
+        }
+        val seeded = target.copy(tiers = tiers.renumbered())
+        vm.update { copy(approvals = approvals.copy(builder = ApprovalBuilder(seeded, seeded))) }
+    }
+
+    private fun closeBuilder() = vm.update { copy(approvals = approvals.copy(builder = null)) }
+
+    private fun updateBuilder(change: ApprovalBuilder.() -> ApprovalBuilder) = vm.update {
+        val builder = approvals.builder ?: return@update this
+        copy(approvals = approvals.copy(builder = builder.change()))
+    }
+
+    private fun updateConfig(change: (ApprovalConfig) -> ApprovalConfig) = updateBuilder {
+        copy(config = change(config))
+    }
+
+    private fun editTier(order: Int, change: (ApprovalTier) -> ApprovalTier) = updateConfig { config ->
+        config.copy(tiers = config.tiers.map { if (it.order == order) change(it) else it })
+    }
+
+    private fun editRule(order: Int, index: Int, change: (ApprovalRule) -> ApprovalRule) = editTier(order) { tier ->
+        tier.copy(rules = tier.rules.mapIndexed { i, rule -> if (i == index) change(rule) else rule })
+    }
+
+    private fun newLevel() = ApprovalTier(order = 0, rules = listOf(ApprovalRule()))
+
+    private fun insertLevel(position: Int) = updateConfig { config ->
+        val rows = config.tiers.toMutableList()
+        rows.add(position.coerceIn(0, rows.size), newLevel())
+        config.copy(tiers = rows.renumbered())
+    }
+
+    private fun removeLevel(order: Int) = updateConfig { config ->
+        // Renumbered on removal so the levels stay 1..N — the cards are
+        // labelled and addressed by that number.
+        config.copy(tiers = config.tiers.filterNot { it.order == order }.renumbered())
+    }
+
+    private fun List<ApprovalTier>.renumbered() = mapIndexed { index, tier -> tier.copy(order = index + 1) }
+
+    /**
+     * "Add more". A level that already has a Default can only gain amount
+     * rules — the web adds one typed and locked — so anything else starts
+     * untyped for the user to choose.
+     */
+    private fun addRule(order: Int) = editTier(order) { tier ->
+        tier.copy(rules = tier.rules + ApprovalRule(type = if (tier.hasDefault) ApprovalRule.AMOUNT else ""))
+    }
+
+    /** A level keeps at least one rule; the web only offers the remove when there are two. */
+    private fun removeRule(order: Int, index: Int) = editTier(order) { tier ->
+        if (tier.rules.size <= 1) tier else tier.copy(rules = tier.rules.filterIndexed { i, _ -> i != index })
+    }
+
+    /**
+     * A rule's kind, clearing its threshold as the web does. A locked rule —
+     * an amount rule on a level with a Default — is refused here as well as
+     * disabled on screen, and choosing the kind a rule already has changes
+     * nothing, so re-picking "Amount greater than" does not wipe the amount.
+     */
+    private fun setRuleType(order: Int, index: Int, type: String) = editTier(order) { tier ->
+        val rule = tier.rules.getOrNull(index)
+        if (rule == null || rule.type == type || tier.locks(rule)) {
+            tier
+        } else {
+            val retyped = rule.copy(type = type, amountThreshold = null)
+            tier.copy(rules = tier.rules.mapIndexed { i, r -> if (i == index) retyped else r })
+        }
+    }
+
+    /** Only a rule with a kind has an Add Users, so only one can open the picker. */
+    private fun openPicker(order: Int, index: Int) = updateBuilder {
+        val rule = config.level(order)?.rules?.getOrNull(index)
+        if (rule == null || !rule.isTyped) {
+            this
+        } else {
+            copy(pickerTier = order, pickerRule = index, pickerSearch = "", picked = emptyList())
+        }
+    }
+
+    private fun ApprovalBuilder.closedPicker() =
+        copy(pickerTier = null, pickerRule = 0, pickerSearch = "", picked = emptyList())
+
+    /** Someone already anywhere on the level is shown as Added and cannot be ticked. */
+    private fun togglePick(userId: String) = updateBuilder {
+        val level = config.level(pickerTier) ?: return@updateBuilder this
+        when (userId) {
+            in picked -> copy(picked = picked - userId)
+            in level.userIds -> this
+            else -> copy(picked = picked + userId)
+        }
+    }
+
+    /**
+     * "Add N users": the ticked people join the rule the picker was opened
+     * for. Anyone already on the level is dropped on the way in — the web's
+     * `handleAddUsers` guards the data, not just the picker.
+     */
+    private fun addPicked() = updateBuilder {
+        val order = pickerTier ?: return@updateBuilder this
+        val taken = config.level(order)?.userIds.orEmpty().toSet()
+        val fresh = picked.distinct().filterNot { it in taken }
+        val index = pickerRule
+        copy(
+            config = config.copy(
+                tiers = config.tiers.map { tier ->
+                    if (tier.order != order) {
+                        tier
+                    } else {
+                        tier.copy(
+                            rules = tier.rules.mapIndexed { i, rule ->
+                                if (i == index) rule.copy(userIds = rule.userIds + fresh) else rule
+                            },
+                        )
+                    }
+                },
+            ),
+        ).closedPicker()
+    }
+
+    /**
+     * The web's `handleSave`, in its order.
+     *
+     * 1. Untyped rules are dropped, and levels left with nobody compact away.
+     * 2. Nothing left: a department with a saved chain asks before reverting
+     *    to the global approvers, a department never saved simply closes,
+     *    and the default chain is refused.
+     * 3. Every surviving "Amount greater than" rule needs an amount over 0.
+     * 4. A filled level below an empty one asks before the levels move up.
+     *    Trailing empty levels are dropped without asking.
+     */
+    @Suppress("ReturnCount") // One exit per step; merging them hides which step stopped the save.
+    private fun save() {
+        if (!vm.mayActAsAccountant()) return
+        val approvals = vm.setupState.approvals
+        val config = approvals.builder?.config ?: return
+        val raw = ApprovalSequence.forSave(config.tiers)
+        val compacted = ApprovalSequence.compacted(raw)
+        if (compacted.isEmpty()) {
+            if (config.scope == ApprovalScope.All) return refuse("Please add at least one level.")
+            val savedId = config.departmentId?.let(approvals::configFor)?.id?.takeIf { it.isNotBlank() }
+                ?: return closeBuilder()
+            return updateBuilder { copy(confirm = BuilderConfirm.RevertToGlobal(savedId), error = null) }
+        }
+        if (ApprovalSequence.hasInvalidAmount(compacted)) {
+            return refuse("Enter an amount greater than 0 for each \"Amount greater than\" rule.")
+        }
+        val payload = config.copy(tiers = compacted)
+        if (!ApprovalSequence.inSequence(raw)) {
+            val levels = ApprovalSequence.emptyLevels(raw)
+            return updateBuilder { copy(confirm = BuilderConfirm.EmptyLevels(levels, payload), error = null) }
+        }
+        write(payload)
+    }
+
+    private fun refuse(message: String) = updateBuilder { copy(error = message) }
+
+    private fun confirmSave() {
+        if (!vm.mayActAsAccountant()) return
+        when (val confirm = vm.setupState.approvals.builder?.confirm) {
+            is BuilderConfirm.EmptyLevels -> write(confirm.payload)
+            is BuilderConfirm.RevertToGlobal -> revertDepartmentToGlobal(confirm.configId)
+            null -> Unit
+        }
+    }
+
+    private fun write(config: ApprovalConfig) = commit(
+        call = { vm.repo.saveApprovalConfig(config) },
+        done = "Approval levels saved successfully.",
+        fallback = "Failed to save approval levels.",
+    )
 
     /**
      * Drops a department's own chain so it inherits the production's.
@@ -158,20 +391,38 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
      * how a department is put back on the default, not a deletion of anything
      * a person configured deliberately.
      */
-    private fun revertDepartmentToGlobal(configId: String) {
-        vm.update { copy(approvals = approvals.copy(saving = true)) }
-        vm.runResult({ vm.repo.deleteApprovalConfig(configId) }, {
-            vm.update {
-                copy(
-                    approvals = approvals.copy(editing = null, saving = false),
-                    notice = "This department now uses the production's approvers.",
-                )
-            }
+    private fun revertDepartmentToGlobal(configId: String) = commit(
+        call = { vm.repo.deleteApprovalConfig(configId) },
+        done = "This department will now use the global approvers.",
+        fallback = "Failed to update approvers.",
+    )
+
+    /**
+     * Sends a save or a revert. Success closes the builder and re-reads the
+     * chains; a refusal stays in the builder with the server's reason, the
+     * confirmation closed, as on the web.
+     */
+    private fun <T> commit(call: suspend () -> ZillitResult<T>, done: String, fallback: String) {
+        vm.update {
+            val cleared = approvals.builder?.copy(confirm = null, error = null)
+            copy(approvals = approvals.copy(saving = true, builder = cleared))
+        }
+        vm.runResult(call, {
+            vm.update { copy(approvals = approvals.copy(builder = null, saving = false), notice = done) }
             load()
         }, { error ->
-            vm.update { copy(approvals = approvals.copy(saving = false)) }
-            vm.report(error)
+            vm.update {
+                copy(
+                    approvals = approvals.copy(
+                        saving = false,
+                        builder = approvals.builder?.copy(confirm = null, error = error.saveMessage(fallback)),
+                    ),
+                )
+            }
         })
     }
 
+    /** The server's reason when it gave one, the web's fallback wording when it did not. */
+    private fun ZillitError.saveMessage(fallback: String): String =
+        if (this is ZillitError.Http && serverMessage.isNullOrBlank()) fallback else localised()
 }

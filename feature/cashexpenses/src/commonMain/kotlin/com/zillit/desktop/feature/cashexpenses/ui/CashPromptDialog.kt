@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.cashexpenses.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
@@ -12,8 +13,13 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
@@ -123,6 +129,30 @@ private fun PromptActions(shown: CashPrompt?, onEvent: (CashEvent) -> Unit) {
  * nothing to explain, and the server takes an empty one — so showing it
  * always would read as a required field that is silently optional.
  */
+/** One candidate: their face, their name, what they do, and a tick when chosen. */
+@Composable
+private fun AssigneeRow(person: AssigneeOption, picked: Boolean, onPick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.medium)
+            .background(if (picked) ZillitTheme.colors.accentSoft else ZillitTheme.colors.surface)
+            .clickable(onClick = onPick)
+            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CashPerson(
+            name = person.fullName,
+            userId = person.userId,
+            secondary = person.designation.takeIf { it.isNotBlank() },
+            modifier = Modifier.weight(1f),
+        )
+        if (picked) {
+            ZillitIcon(icon = ZillitIcons.Check, tint = ZillitTheme.colors.accentText, size = PICKED_TICK)
+        }
+    }
+}
+
 @Composable
 private fun ColumnScope.AssignFields(
     prompt: CashPrompt.Assign,
@@ -140,29 +170,28 @@ private fun ColumnScope.AssignFields(
         return
     }
     batch?.assignedTo?.takeIf { it.isNotBlank() }?.let { current ->
-        ZillitText(
-            text = "Currently with ${assignees.firstOrNull { it.userId == current }?.fullName ?: current}",
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textMuted,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ZillitText(
+                text = "Currently with ",
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+            CashPerson(
+                name = assignees.firstOrNull { it.userId == current }?.fullName ?: current,
+                userId = current,
+                size = SMALL_FACE,
+            )
+        }
     }
     ZillitScrollColumn(
         modifier = Modifier.fillMaxWidth().height(ASSIGNEE_LIST_HEIGHT.dp),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
         eligible.forEach { person ->
-            ZillitButton(
-                text = listOf(person.fullName, person.designation)
-                    .filter { it.isNotBlank() }
-                    .joinToString(" · "),
-                onClick = { onEvent(CashEvent.AssignPickUser(person.userId)) },
-                variant = if (prompt.selectedUserId == person.userId) {
-                    ButtonVariant.Secondary
-                } else {
-                    ButtonVariant.Tertiary
-                },
-                size = ButtonSize.Small,
-                modifier = Modifier.fillMaxWidth(),
+            AssigneeRow(
+                person = person,
+                picked = prompt.selectedUserId == person.userId,
+                onPick = { onEvent(CashEvent.AssignPickUser(person.userId)) },
             )
         }
     }
@@ -222,3 +251,5 @@ private fun CashPrompt?.isDestructive(): Boolean = when (this) {
 }
 
 private const val ASSIGNEE_LIST_HEIGHT = 180
+private val PICKED_TICK = 16.dp
+private val SMALL_FACE = 20.dp

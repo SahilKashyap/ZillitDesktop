@@ -62,7 +62,15 @@ fun CashExpensesScreen(
     state: CashUiState,
     onEvent: (CashEvent) -> Unit,
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
+    /**
+     * The crew photo for a user id — every name in this tool is shown with one.
+     *
+     * Defaulted to nothing so tests and previews compose without a host; a
+     * missing face falls back to initials rather than a gap.
+     */
+    loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap? = { null },
 ) {
+    ProvideCashFaces(loadAvatar) {
     Box(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         Column(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
             CashHeader(state, onEvent)
@@ -90,6 +98,7 @@ fun CashExpensesScreen(
             onDismiss = { onEvent(CashEvent.ClearNotice) },
             tone = ZillitToastTone.Success,
         )
+    }
     }
 }
 

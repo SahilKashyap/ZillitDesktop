@@ -1,63 +1,86 @@
 package com.zillit.desktop.feature.accounthub.ui
 
-import com.zillit.desktop.feature.accounthub.domain.ParsedBudget
-import com.zillit.desktop.feature.accounthub.domain.CoaImportMode
-import com.zillit.desktop.feature.accounthub.domain.BudgetUpload
-import com.zillit.desktop.feature.accounthub.domain.BudgetImportMeta
-import com.zillit.desktop.feature.accounthub.domain.BibleReport
-import com.zillit.desktop.feature.accounthub.domain.BibleQuery
-import com.zillit.desktop.feature.accounthub.domain.PeriodLock
-import com.zillit.desktop.feature.accounthub.domain.TrialBalanceQuery
-import com.zillit.desktop.feature.accounthub.domain.TrialBalance
-import com.zillit.desktop.feature.accounthub.domain.asRows
-import com.zillit.desktop.feature.accounthub.domain.BudgetVersion
-import com.zillit.desktop.feature.accounthub.domain.BudgetStatus
-import com.zillit.desktop.feature.accounthub.domain.BudgetRow
-import com.zillit.desktop.feature.accounthub.domain.BudgetLine
-import com.zillit.desktop.feature.accounthub.domain.NonUnionPay
-import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
-import com.zillit.desktop.feature.accounthub.domain.PurchaseOrderSetup
-import com.zillit.desktop.feature.accounthub.domain.PayrollSettings
-import com.zillit.desktop.feature.accounthub.domain.PickedAgreementFile
-import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
-import com.zillit.desktop.feature.accounthub.domain.AllowancesRentals
-import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
-import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
-import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
-import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
-import com.zillit.desktop.feature.accounthub.domain.BankAccount
-import com.zillit.desktop.feature.accounthub.domain.ChartOfAccounts
-import com.zillit.desktop.feature.accounthub.domain.CoaAccount
-import com.zillit.desktop.feature.accounthub.domain.CoaCostType
-import com.zillit.desktop.feature.accounthub.domain.CoaForest
-import com.zillit.desktop.feature.accounthub.domain.Company
-import com.zillit.desktop.feature.accounthub.domain.CountryTaxes
+import com.zillit.desktop.core.common.orDash
 import com.zillit.desktop.core.common.EpochDate
-import com.zillit.desktop.feature.accounthub.domain.CurrencySettings
-import com.zillit.desktop.feature.accounthub.domain.DayType
-import com.zillit.desktop.feature.accounthub.domain.DayTypes
 import com.zillit.desktop.core.forms.FormField
 import com.zillit.desktop.core.forms.FormFieldType
 import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.core.forms.FormSection
 import com.zillit.desktop.core.forms.FormTemplate
-import com.zillit.desktop.feature.accounthub.domain.IsoDate
+import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
+import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
+import com.zillit.desktop.feature.accounthub.domain.AllowancesRentals
+import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
+import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
+import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
+import com.zillit.desktop.feature.accounthub.domain.AssignmentRule
+import com.zillit.desktop.feature.accounthub.domain.BankAccount
+import com.zillit.desktop.feature.accounthub.domain.BudgetImportMeta
+import com.zillit.desktop.feature.accounthub.domain.BudgetLine
+import com.zillit.desktop.feature.accounthub.domain.BudgetRow
+import com.zillit.desktop.feature.accounthub.domain.BudgetStatus
+import com.zillit.desktop.feature.accounthub.domain.BudgetUpload
+import com.zillit.desktop.feature.accounthub.domain.BudgetVersion
+import com.zillit.desktop.feature.accounthub.domain.CashCloseDashboard
+import com.zillit.desktop.feature.accounthub.domain.ChartMode
+import com.zillit.desktop.feature.accounthub.domain.ChartOfAccounts
+import com.zillit.desktop.feature.accounthub.domain.ChartSort
+import com.zillit.desktop.feature.accounthub.domain.ClosingPackage
+import com.zillit.desktop.feature.accounthub.domain.CoaAccount
+import com.zillit.desktop.feature.accounthub.domain.CoaBulkRow
+import com.zillit.desktop.feature.accounthub.domain.CoaCostType
+import com.zillit.desktop.feature.accounthub.domain.CoaForest
+import com.zillit.desktop.feature.accounthub.domain.CoaImportMode
+import com.zillit.desktop.feature.accounthub.domain.CoaLineType
+import com.zillit.desktop.feature.accounthub.domain.CoaStats
+import com.zillit.desktop.feature.accounthub.domain.Company
+import com.zillit.desktop.feature.accounthub.domain.CountryTaxes
+import com.zillit.desktop.feature.accounthub.domain.CurrencySettings
+import com.zillit.desktop.feature.accounthub.domain.CustomDay
+import com.zillit.desktop.feature.accounthub.domain.DayType
+import com.zillit.desktop.feature.accounthub.domain.DayTypes
+import com.zillit.desktop.feature.accounthub.domain.DealCondition
+import com.zillit.desktop.feature.accounthub.domain.ExportFormat
 import com.zillit.desktop.feature.accounthub.domain.HubArea
+import com.zillit.desktop.feature.accounthub.domain.HubBadgeCounts
+import com.zillit.desktop.feature.accounthub.domain.HubDepartment
 import com.zillit.desktop.feature.accounthub.domain.HubSection
+import com.zillit.desktop.feature.accounthub.domain.HubUser
+import com.zillit.desktop.feature.accounthub.domain.InvoiceTeamMember
+import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
+import com.zillit.desktop.feature.accounthub.domain.IsdCountries
+import com.zillit.desktop.feature.accounthub.domain.IsdCountry
+import com.zillit.desktop.feature.accounthub.domain.IsoDate
 import com.zillit.desktop.feature.accounthub.domain.NewAccount
 import com.zillit.desktop.feature.accounthub.domain.NewVendor
-import com.zillit.desktop.feature.accounthub.domain.DealCondition
+import com.zillit.desktop.feature.accounthub.domain.NonUnionPay
+import com.zillit.desktop.feature.accounthub.domain.ParsedBudget
+import com.zillit.desktop.feature.accounthub.domain.PayRule
+import com.zillit.desktop.feature.accounthub.domain.PayRuleKind
+import com.zillit.desktop.feature.accounthub.domain.PayrollAccountRow
 import com.zillit.desktop.feature.accounthub.domain.PayrollBureau
 import com.zillit.desktop.feature.accounthub.domain.PayrollDefaults
+import com.zillit.desktop.feature.accounthub.domain.PayrollGroup
+import com.zillit.desktop.feature.accounthub.domain.PayrollSettings
+import com.zillit.desktop.feature.accounthub.domain.PeriodLock
+import com.zillit.desktop.feature.accounthub.domain.PeriodMode
+import com.zillit.desktop.feature.accounthub.domain.PickedAgreementFile
 import com.zillit.desktop.feature.accounthub.domain.ProductionSchedule
 import com.zillit.desktop.feature.accounthub.domain.ProjectBudget
 import com.zillit.desktop.feature.accounthub.domain.ProjectCurrency
+import com.zillit.desktop.feature.accounthub.domain.PurchaseOrderSetup
 import com.zillit.desktop.feature.accounthub.domain.SchedulePhase
+import com.zillit.desktop.feature.accounthub.domain.SetupGap
+import com.zillit.desktop.feature.accounthub.domain.SetupSnapshot
 import com.zillit.desktop.feature.accounthub.domain.TaxType
-import com.zillit.desktop.feature.accounthub.domain.TrackingSet
 import com.zillit.desktop.feature.accounthub.domain.TrackingNode
+import com.zillit.desktop.feature.accounthub.domain.TrackingSet
 import com.zillit.desktop.feature.accounthub.domain.Vendor
+import com.zillit.desktop.feature.accounthub.domain.VendorBank
 import com.zillit.desktop.feature.accounthub.domain.VendorChange
+import com.zillit.desktop.feature.accounthub.domain.asRows
+import com.zillit.desktop.feature.accounthub.domain.fieldErrors
 
 /**
  * One editable section of Production Setup.
@@ -100,6 +123,21 @@ data class SectionEdit<T>(
 enum class SetupTab(val slug: String, val label: String) {
     Accounting("acct", "Accounting Setup"),
     DealMemo("deal", "Deal Memo Setup"),
+    ;
+
+    /**
+     * The count on the tab's mono chip — the web's `TAB_DEFS`: nine accounting
+     * sections plus Companies and Bank Accounts, and seven deal-memo ones.
+     */
+    val count: Int get() = when (this) {
+        Accounting -> ACCOUNTING_SECTIONS
+        DealMemo -> DEAL_SECTIONS
+    }
+
+    private companion object {
+        const val ACCOUNTING_SECTIONS = 11
+        const val DEAL_SECTIONS = 7
+    }
 }
 
 /**
@@ -145,12 +183,33 @@ data class DateRangeText(val from: String = "", val to: String = "") {
     }
 }
 
+/** One named overlay, as typed. */
+data class CustomDayText(
+    val id: String,
+    val name: String = "",
+    val dates: DateRangeText = DateRangeText(),
+) {
+    fun toDomain(): CustomDay {
+        val phase = dates.toPhase()
+        return CustomDay(id = id, name = name, startDate = phase.startDate, endDate = phase.endDate)
+    }
+
+    companion object {
+        fun from(day: CustomDay) = CustomDayText(
+            id = day.id,
+            name = day.name,
+            dates = DateRangeText.from(SchedulePhase(day.startDate, day.endDate)),
+        )
+    }
+}
+
 /** The production schedule, as typed. */
 data class ScheduleForm(
     val overall: DateRangeText = DateRangeText(),
     val prep: DateRangeText = DateRangeText(),
     val shoot: DateRangeText = DateRangeText(),
     val wrap: DateRangeText = DateRangeText(),
+    val customDays: List<CustomDayText> = emptyList(),
 ) {
     fun toDomain(): ProductionSchedule {
         val whole = overall.toPhase()
@@ -160,6 +219,7 @@ data class ScheduleForm(
             prep = prep.toPhase(),
             shoot = shoot.toPhase(),
             wrap = wrap.toPhase(),
+            customDays = customDays.map { it.toDomain() },
         )
     }
 
@@ -169,6 +229,7 @@ data class ScheduleForm(
             prep = DateRangeText.from(schedule.prep),
             shoot = DateRangeText.from(schedule.shoot),
             wrap = DateRangeText.from(schedule.wrap),
+            customDays = schedule.customDays.map(CustomDayText::from),
         )
     }
 }
@@ -185,10 +246,96 @@ internal fun Double?.asAmountText(): String {
     return if (amount == whole.toDouble()) whole.toString() else amount.toString()
 }
 
+// -- production setup: the drill-down modals ----------------------------------
+
+/** The three module setups this console edits in a modal — the web's `SETUP_DETAILS`. */
+enum class SetupModal(val slug: String, val title: String, val eyebrow: String, val description: String) {
+    PurchaseOrders(
+        "po_setup",
+        "Purchase Order Entry Setup",
+        "POs",
+        "Defaults for the PO module — description formatting, rental-split handling, and auto-assignment rules.",
+    ),
+    Invoices(
+        "invoices_setup",
+        "Invoices Entry Setup",
+        "Invoices",
+        "AP controls — who can post invoices and at what limit, which events trigger an alert, and the " +
+            "sign-off chain that gates payment runs.",
+    ),
+    Payroll(
+        "payroll_settings",
+        "Payroll Entry Setup",
+        "Payroll",
+        "Approvers and the project's pay-cycle window. Drives the approval gate + week boundary used by " +
+            "every timecard.",
+    ),
+}
+
+/** One section in a modal's left nav — `name`, and the mono count chip, or a dash. */
+data class SetupModalSection(val id: String, val name: String, val count: Int? = null)
+
+/** A drill-down modal, and which of its sections is open. */
+data class SetupModalState(
+    val modal: SetupModal,
+    val section: String,
+    val loading: Boolean = false,
+    val loadError: String? = null,
+)
+
+/** Who is being picked, and for what — one dialog serves every user field. */
+data class UserPickerState(
+    val purpose: UserPickerPurpose,
+    val selected: List<String> = emptyList(),
+    val search: String = "",
+    /** The row the pick lands on — a run-authorisation level, a team-member slot. */
+    val index: Int = -1,
+    val multiple: Boolean = true,
+)
+
+enum class UserPickerPurpose {
+    PayrollApprovers,
+    InvoiceTeamMember,
+    RunAuthorisation,
+    PayrollGroupAssignee,
+    PayrollGroupCrew,
+    ClosingRecipients,
+}
+
+/** An invoices team member being added or edited in the modal's dialog. */
+data class InvoiceMemberDraft(val index: Int?, val member: InvoiceTeamMember = InvoiceTeamMember())
+
+/** The payroll-accounts grid, open over the modal's list. */
+data class PayrollAccountsDraft(
+    val rows: List<PayrollAccountRow> = emptyList(),
+    val saving: Boolean = false,
+)
+
+/** A pay rule being added or edited — the web's `RateRowModal`. */
+data class PayRuleEditor(
+    val kind: PayRuleKind,
+    val index: Int?,
+    val rule: PayRule,
+)
+
+/** A row about to be removed, named so the confirmation can say which. */
+sealed interface SetupRemoval {
+    data class CompanyRow(val company: Company) : SetupRemoval
+    data class BankRow(val bank: BankAccount) : SetupRemoval
+    data class AgreementRow(val document: AgreementDocument) : SetupRemoval
+    data class PayrollGroupRow(val group: PayrollGroup) : SetupRemoval
+    data class PayrollAccountCode(val code: String, val accountId: String?) : SetupRemoval
+}
+
+/** The currency picker's two filter chips. */
+enum class CurrencyFilter(val label: String) { All("All"), Major("Major") }
+
 /** Everything Production Setup holds. */
 data class SetupState(
     val tab: SetupTab = SetupTab.Accounting,
     val loading: Boolean = false,
+    /** True once every slice has been asked for — the tour's "unknown ≠ missing" gate. */
+    val loaded: Boolean = false,
     val companies: SectionEdit<List<Company>> = SectionEdit(emptyList()),
     val currencies: SectionEdit<CurrencySettings> = SectionEdit(CurrencySettings()),
     val taxTypes: SectionEdit<List<TaxType>> = SectionEdit(emptyList()),
@@ -233,6 +380,10 @@ data class SetupState(
     val agreementsUploading: Boolean = false,
     /** The one terms document, mid-upload. */
     val poTermsUploading: Boolean = false,
+    /** The terms document being fetched for the OS to open — the web's "Opening…". */
+    val poTermsOpening: Boolean = false,
+    /** Under the terms block, where the web shows its refusals and failures; cleared on the next attempt. */
+    val poTermsError: String? = null,
     /**
      * Banks are not a [SectionEdit].
      *
@@ -242,10 +393,38 @@ data class SetupState(
      */
     val banks: List<BankAccount> = emptyList(),
     val banksLoading: Boolean = false,
+    /** Null until the bank list has been read at least once — the tour's rule 3. */
+    val banksLoaded: Boolean = false,
     val currencyCatalogue: List<ProjectCurrency> = emptyList(),
     val countryTaxes: List<CountryTaxes> = emptyList(),
     val companyDraft: Company? = null,
     val bankDraft: BankAccount? = null,
+    val bankSaving: Boolean = false,
+    /** Which bank card has been revealed; the card re-masks itself after five seconds. */
+    val revealedBankId: String? = null,
+    // -- the drill-down modals --
+    val modal: SetupModalState? = null,
+    val poRules: SectionEdit<List<AssignmentRule>> = SectionEdit(emptyList()),
+    val invoiceRules: SectionEdit<List<AssignmentRule>> = SectionEdit(emptyList()),
+    val rulesLoading: Boolean = false,
+    val invoiceMemberDraft: InvoiceMemberDraft? = null,
+    val payrollGroups: List<PayrollGroup> = emptyList(),
+    val payrollGroupsLoading: Boolean = false,
+    val payrollGroupDraft: PayrollGroup? = null,
+    val payrollGroupSaving: Boolean = false,
+    val payrollAccounts: PayrollAccountsDraft? = null,
+    val userPicker: UserPickerState? = null,
+    // -- section-local UI --
+    val currencyFilter: CurrencyFilter = CurrencyFilter.All,
+    val currencySearch: String = "",
+    val currencyPickerOpen: Boolean = false,
+    /** The country whose catalogue rates the tax section is showing, by code. */
+    val taxCountry: String? = null,
+    val tagDraft: String = "",
+    val ruleEditor: PayRuleEditor? = null,
+    val departmentPickerOpen: Boolean = false,
+    val departmentPickerSearch: String = "",
+    val removal: SetupRemoval? = null,
 ) {
     /** Sections with unsaved edits, so the shell can warn before leaving. */
     val dirtySections: List<String>
@@ -253,7 +432,7 @@ data class SetupState(
             if (companies.dirty) add("Companies")
             if (currencies.dirty) add("Project Currencies")
             if (taxTypes.dirty) add("Tax Types")
-            if (assetTags.dirty) add("Asset Tags")
+            if (assetTags.dirty) add("Account Tags")
             if (schedule.dirty) add("Production Schedule")
             if (payrollDefaults.dirty) add("Payroll Defaults")
             if (dealConditions.dirty) add("Standard Deal Conditions")
@@ -265,14 +444,64 @@ data class SetupState(
             if (nonUnionPay.dirty) add("Non-Union Pay Breakdown")
             if (dayTypes.dirty) add("Day Types")
         }
+
+    /** Whether the open modal has unsaved work — its "Unsaved" pill and Save button. */
+    val modalDirty: Boolean
+        get() = when (modal?.modal) {
+            SetupModal.PurchaseOrders -> poSetup.dirty || poRules.dirty
+            SetupModal.Invoices -> invoicesSetup.dirty || invoiceRules.dirty
+            SetupModal.Payroll -> payrollSettings.dirty
+            null -> false
+        }
+
+    val modalSaving: Boolean
+        get() = when (modal?.modal) {
+            SetupModal.PurchaseOrders -> poSetup.saving || poRules.saving
+            SetupModal.Invoices -> invoicesSetup.saving || invoiceRules.saving
+            SetupModal.Payroll -> payrollSettings.saving
+            null -> false
+        }
+
+    /** The catalogue rows the currency picker shows, filtered and searched, chosen ones removed. */
+    val currencyChoices: List<ProjectCurrency>
+        get() {
+            val chosen = currencies.edited.currencies.map { it.code }.toSet()
+            val needle = currencySearch.trim()
+            return currencyCatalogue
+                .filter { it.code !in chosen }
+                .filter { currencyFilter == CurrencyFilter.All || it.code in CurrencySettings.MAJOR_CODES }
+                .filter {
+                    needle.isEmpty() || it.code.contains(needle, true) || it.name.contains(needle, true)
+                }
+        }
+
+    /** The tour's view of what is set up. Nothing counts until the setup has loaded. */
+    fun snapshot(coaReady: Boolean, coaEmpty: Boolean): SetupSnapshot = SetupSnapshot(
+        ready = loaded,
+        companies = companies.saved.size,
+        banks = if (banksLoaded) banks.size else null,
+        currencies = currencies.saved.currencies.size,
+        tags = assetTags.saved.size,
+        taxes = taxTypes.saved.size,
+        coaReady = coaReady,
+        coaEmpty = coaEmpty,
+        scheduleSet = schedule.saved.toDomain().isSet,
+        payRules = nonUnionPay.saved.let { it.overtimes.size + it.premiums.size + it.penalties.size },
+        entitlements = allowances.saved.let { it.allowances.size + it.rentals.size },
+        agreements = agreements.size,
+        conditions = dealConditions.saved.size,
+        bureaus = payrollBureaus.saved.size,
+    )
 }
 
-/** Which classes the chart is filtered to. */
+// -- chart of accounts ----------------------------------------------------------
+
 /** One tracking code, with the depth it reads at. */
 data class TrackingRow(val node: TrackingNode, val depth: Int, val orphaned: Boolean = false)
 
 private const val MAX_TRACKING_DEPTH = 32
 
+/** Which classes the chart is filtered to. */
 enum class ChartView(val slug: String, val label: String) {
     /** The cost side — what a production spends against. */
     Expense("accounts", "Cost Accounts"),
@@ -284,18 +513,73 @@ enum class ChartView(val slug: String, val label: String) {
     Layers("tracking", "Layers"),
 }
 
+/** A layer (set) being added or edited — the web's `SetEditorModal`. */
+data class LayerSetDraft(val set: TrackingSet, val isNew: Boolean, val saving: Boolean = false)
+
+/** A layer code being added or edited — the web's `NodeEditorModal`. */
+data class LayerNodeDraft(val node: TrackingNode, val isNew: Boolean, val saving: Boolean = false)
+
+/** What a delete confirmation on the Layers tab is about. */
+sealed interface LayerDelete {
+    data class WholeSet(val set: TrackingSet) : LayerDelete
+    data class OneNode(val setId: String, val node: TrackingNode) : LayerDelete
+}
+
+/** The full-page "New COA Entry" grid. */
+data class BulkAddState(
+    val parent: CoaAccount? = null,
+    val rows: List<CoaBulkRow> = emptyList(),
+    /** The class the grid was opened for, so a row defaults to it. */
+    val costType: CoaCostType = CoaCostType.Expense,
+) {
+    val anySaving: Boolean get() = rows.any {
+        it.status == com.zillit.desktop.feature.accounthub.domain.CoaBulkStatus.Saving
+    }
+
+    val anyError: Boolean get() = rows.any {
+        it.status == com.zillit.desktop.feature.accounthub.domain.CoaBulkStatus.Error
+    }
+
+    val anySaved: Boolean get() = rows.any {
+        it.status == com.zillit.desktop.feature.accounthub.domain.CoaBulkStatus.Saved
+    }
+
+    /** The web's save-tone label: "Saving…", "Couldn't save some rows", "All changes saved". */
+    val saveLabel: String
+        get() = when {
+            anySaving -> "Saving…"
+            anyError -> "Couldn't save some rows"
+            anySaved -> "All changes saved"
+            else -> ""
+        }
+}
+
 /** The chart of accounts screen. */
 data class ChartState(
     val view: ChartView = ChartView.Expense,
     val loading: Boolean = false,
+    /** True once the chart has answered at least once — the tour's `coaReady`. */
+    val loaded: Boolean = false,
     val accounts: List<CoaAccount> = emptyList(),
     val search: String = "",
-    /** Inactive codes are hidden by default; they exist so history resolves. */
-    val showInactive: Boolean = false,
+    /** On by default, as on the web — inactive codes exist so history resolves. */
+    val showInactive: Boolean = true,
     val expanded: Set<String> = emptySet(),
+    /** True after Expand all, so the toolbar can offer Collapse all. */
+    val expandedAll: Boolean = false,
+    val mode: ChartMode = ChartMode.Tree,
+    val sort: ChartSort = ChartSort(),
     val form: AccountForm? = null,
-    /** The analytical dimensions behind the Layers tab. Read-only in this build. */
+    val confirmDeactivate: CoaAccount? = null,
+    val bulk: BulkAddState? = null,
+    /** The analytical dimensions behind the Layers tab. */
     val trackingSets: List<TrackingSet> = emptyList(),
+    val layerSetDraft: LayerSetDraft? = null,
+    val layerNodeDraft: LayerNodeDraft? = null,
+    val layerDelete: LayerDelete? = null,
+    /** The server's refusal to delete something in use, shown in its own words. */
+    val layerInUse: String? = null,
+    val openLayers: Set<String> = emptySet(),
 ) {
     /**
      * One set's codes as a flat, indented reading order.
@@ -328,6 +612,7 @@ data class ChartState(
             .map { TrackingRow(it, depth = 0, orphaned = true) }
         return out + orphans
     }
+
     /** The rows this view shows, before the tree is built. */
     val visibleAccounts: List<CoaAccount>
         get() = accounts
@@ -344,13 +629,22 @@ data class ChartState(
 
     /** Search results replace the tree while a term is present. */
     val matches: List<CoaAccount> get() = ChartOfAccounts.search(visibleAccounts, search)
+
+    /** The table's rows: searched or all, sorted by the active column. */
+    val tableRows: List<CoaAccount>
+        get() = (if (search.isBlank()) visibleAccounts else matches).sortedWith(sort.comparator())
+
+    val stats: CoaStats get() = CoaStats.of(visibleAccounts)
+
+    val isEmpty: Boolean get() = loaded && accounts.isEmpty()
 }
 
 /**
  * The add / edit form for one chart row.
  *
- * [editing] is null when adding. Edit deliberately carries fewer fields than
- * add — the code, line type and parent are immutable once the row exists.
+ * [editing] is null when adding. On edit the line type and parent are offered
+ * for a manual row — changing either is a structural edit the server re-walks
+ * — and the cost type is locked on a budget-imported row.
  */
 data class AccountForm(
     val editing: CoaAccount? = null,
@@ -364,21 +658,70 @@ data class AccountForm(
     val isEdit: Boolean get() = editing != null
 
     val title: String get() = if (isEdit) "Edit account" else "New account"
+
+    /** Whether the edit re-types or re-parents the row. */
+    val structureChanged: Boolean
+        get() = editing != null && (draft.lineType != editing.lineType || draft.parentId != editing.parentId)
 }
 
-/** The vendor register. */
+// -- vendors --------------------------------------------------------------------
+
 /**
  * Which vendors the register shows.
  *
- * The web's three top-level tabs (`VendorsModule.TABS`), applied over the
- * fetched rows rather than re-asked of the server — verification is a boolean
- * on a row already in hand, and a round trip to hide half a list would make
- * the tab feel slower than the search does.
+ * The web's tabs (`VendorsModule.TABS`), applied over the fetched rows rather
+ * than re-asked of the server — verification is a boolean on a row already in
+ * hand, and a round trip to hide half a list would make the tab feel slower
+ * than the search does. "Added by Me" is the one a department user gets.
  */
 enum class VendorFilter(val slug: String, val label: String) {
     All("all", "All Vendors"),
     Verified("verified", "Verified"),
     Unverified("unverified", "Non-Verified"),
+    Mine("mine", "Added by Me"),
+}
+
+/** The full-page vendor form — the web's `VendorForm`. */
+data class VendorFormPage(
+    val editingId: String? = null,
+    val draft: NewVendor = NewVendor(),
+    /**
+     * The linked bank record this vendor's details live in, when it has one.
+     *
+     * Deleting bank details deletes *this*, immediately — the web's rule — and
+     * the delete is only offered while it is set. See `VendorBank`.
+     */
+    val bankId: String? = null,
+    /** The linked record is being fetched to seed the bank block. */
+    val bankLoading: Boolean = false,
+    val deletingBank: Boolean = false,
+    val saving: Boolean = false,
+    val verifying: Boolean = false,
+    /** Fields the person has left, so an error shows only once it is theirs to fix. */
+    val touched: Set<String> = emptySet(),
+    val showErrors: Boolean = false,
+    val confirmDeleteBank: Boolean = false,
+    /**
+     * The postcode lookup is on the wire — only then, not while it waits out
+     * the pause after typing. City and county show a spinner meanwhile.
+     */
+    val postcodeLooking: Boolean = false,
+) {
+    val title: String get() = if (editingId == null) "New Vendor" else "Editing"
+
+    val errors: Map<String, String> get() = draft.fieldErrors()
+
+    /** An error is shown once the field was touched, or after a refused submit. */
+    fun errorFor(field: String): String? = errors[field]?.takeIf { showErrors || field in touched }
+}
+
+/** Kept for the collaborators that predate the full-page form; the page is [VendorFormPage]. */
+data class VendorForm(
+    val editingId: String? = null,
+    val draft: NewVendor = NewVendor(),
+    val saving: Boolean = false,
+) {
+    val title: String get() = if (editingId == null) "New vendor" else "Edit vendor"
 }
 
 data class VendorsState(
@@ -390,24 +733,92 @@ data class VendorsState(
     val history: List<VendorChange> = emptyList(),
     val historyLoading: Boolean = false,
     val form: VendorForm? = null,
+    /** Who is looking, for the "Added by Me" tab. */
+    val viewerId: String = "",
+    /** The vendor open in the detail modal. */
+    val detailId: String? = null,
+    /** Bank details unmasked in the detail; re-masked after five seconds. */
+    val bankRevealed: Boolean = false,
+    /**
+     * The detail's vendor's linked bank record, and whether it is on its way.
+     *
+     * Held separately from the row because the row's own bank columns are the
+     * legacy copy — see `VendorBank.resolve`, which reads this first.
+     */
+    val bankRecord: BankAccount? = null,
+    val bankRecordLoading: Boolean = false,
+    val page: VendorFormPage? = null,
+    val confirmDelete: Vendor? = null,
+    /** The vendor whose history side panel is open. */
+    val historyFor: String? = null,
+    val verifyingId: String? = null,
+    /**
+     * A vendor a route asked to edit, before the register that holds it has
+     * loaded. Opened the moment it arrives, then cleared — the web's
+     * `?action=edit&id=` waits for its vendors the same way.
+     */
+    val pendingEditId: String? = null,
+    /**
+     * The country catalogue the form's country and dial-code pickers read.
+     *
+     * The bundled copy until the live one loads, and for good when it cannot,
+     * so neither picker is ever empty. See `IsdCountries`.
+     */
+    val countries: List<IsdCountry> = IsdCountries.bundled,
+    val countriesLoaded: Boolean = false,
 ) {
     val selected: Vendor? get() = rows.firstOrNull { it.id == selectedId }
 
+    val detail: Vendor? get() = rows.firstOrNull { it.id == detailId }
+
+    /** The detail's bank block, from the linked record when it has loaded. */
+    val detailBank: VendorBank?
+        get() = detail?.let { vendor ->
+            VendorBank.resolve(vendor, bankRecord?.takeIf { it.id == vendor.bankId })
+        }
+
     val verifiedCount: Int get() = rows.count { it.verified }
 
-    /** The rows the open tab shows. */
+    /** Whether a search or a tab narrows the register, which changes what an empty table means. */
+    val isFiltered: Boolean get() = search.isNotBlank() || filter != VendorFilter.All
+
+    /** The rows the open tab shows, before any search. */
     val visibleRows: List<Vendor>
         get() = when (filter) {
             VendorFilter.All -> rows
             VendorFilter.Verified -> rows.filter { it.verified }
             VendorFilter.Unverified -> rows.filterNot { it.verified }
+            VendorFilter.Mine -> rows.filter { it.addedBy == viewerId && viewerId.isNotBlank() }
         }
+
+    /**
+     * The open tab's rows narrowed by the search, the web's way.
+     *
+     * Matches the name, the contact person, the email, the tax number and the
+     * **department's name** — the last is why this is local: the server holds a
+     * department id, so a search for "Art" sent to it could never find the Art
+     * Department's suppliers. The tab counts stay about the whole register.
+     */
+    fun searched(departmentName: (String?) -> String): List<Vendor> {
+        val needle = search.trim().lowercase()
+        if (needle.isEmpty()) return visibleRows
+        return visibleRows.filter { vendor ->
+            listOf(
+                vendor.name,
+                vendor.contactPerson,
+                vendor.email,
+                vendor.vatNumber,
+                departmentName(vendor.departmentId),
+            ).any { it.lowercase().contains(needle) }
+        }
+    }
 
     /** How many rows each tab would show, for the count chips. */
     fun countFor(tab: VendorFilter): Int = when (tab) {
         VendorFilter.All -> rows.size
         VendorFilter.Verified -> verifiedCount
         VendorFilter.Unverified -> rows.size - verifiedCount
+        VendorFilter.Mine -> rows.count { it.addedBy == viewerId && viewerId.isNotBlank() }
     }
 }
 
@@ -424,16 +835,10 @@ data class QueuedAgreementFile(
     val description: String = "",
 )
 
-data class VendorForm(
-    val editingId: String? = null,
-    val draft: NewVendor = NewVendor(),
-    val saving: Boolean = false,
-) {
-    val title: String get() = if (editingId == null) "New vendor" else "Edit vendor"
-}
+// -- budget ---------------------------------------------------------------------
 
 /** Which step of the import the accountant is on. */
-enum class ImportStep { Upload, Preview, Done }
+enum class ImportStep(val label: String) { Upload("Upload"), Preview("Preview"), Done("Commit") }
 
 /**
  * Importing a budget file.
@@ -454,6 +859,7 @@ data class BudgetImportState(
     val mode: CoaImportMode = CoaImportMode.Default,
     /** The version the commit created, for the last step to name. */
     val created: BudgetVersion? = null,
+    val commitError: String? = null,
 ) {
     /**
      * Whether the import can be written.
@@ -479,6 +885,7 @@ data class BudgetState(
     val lines: List<BudgetLine> = emptyList(),
     val linesLoading: Boolean = false,
     val import: BudgetImportState = BudgetImportState(),
+    val openingFile: Boolean = false,
 ) {
     val selected: BudgetVersion? get() = versions.firstOrNull { it.id == selectedId }
 
@@ -488,60 +895,113 @@ data class BudgetState(
     val live: BudgetVersion? get() = versions.firstOrNull { it.status == BudgetStatus.Live }
 }
 
-/**
- * The trial balance, and the period it is asked for.
- *
- * [applied] is what the rows on screen came from; [draft] is what the filters
- * say now. They differ while the user is choosing, and the report is only
- * re-asked for on an explicit refresh — a report that re-ran on every keystroke
- * would spend the server's time on periods nobody meant.
- */
-data class TrialBalanceState(
-    val loading: Boolean = false,
-    val report: TrialBalance = TrialBalance(),
-    val draft: TrialBalanceQuery = TrialBalanceQuery(0, 0),
-    val applied: TrialBalanceQuery? = null,
-) {
-    val isDirty: Boolean get() = applied != null && applied != draft
+// -- reports --------------------------------------------------------------------
+//
+// The trial balance's state is TrialBalanceState.kt's, and the bible's its own file's.
+
+/** The three tabs of the Period Close module. */
+enum class PeriodCloseTab(val slug: String, val label: String) {
+    Close("close", "Period Close"),
+    CashClose("cash-close", "Cash & Close"),
+    Publish("publish", "Publish Package"),
 }
 
-/**
- * The closeout bible.
- *
- * Same shape as the trial balance beside it: filters are a draft until the
- * report is explicitly re-run, because this is the heaviest read on the
- * service and a period nobody meant is not worth asking for.
- */
-data class BibleReportState(
+/** The outcome of the last close attempt, shown in the form's result banner. */
+data class CloseResult(val ok: Boolean, val message: String)
+
+data class CashCloseState(
     val loading: Boolean = false,
-    val report: BibleReport = BibleReport(),
-    val draft: BibleQuery = BibleQuery(0, 0),
-    val applied: BibleQuery? = null,
-    /** Accounts the reader has folded away, by code. */
-    val collapsed: Set<String> = emptySet(),
+    val loaded: Boolean = false,
+    val dashboard: CashCloseDashboard = CashCloseDashboard(),
+    /** Ticked locally; the web never writes these back. */
+    val checked: Set<String> = emptySet(),
+)
+
+data class PublishState(
+    val packages: List<ClosingPackage> = listOf(ClosingPackage(id = 1)),
+    val nextId: Int = 2,
+    val publishing: Boolean = false,
+    val result: CloseResult? = null,
+    /** The package whose recipient menu is open, and its search text. */
+    val openMenu: Int? = null,
+    val menuQuery: String = "",
 ) {
-    val isDirty: Boolean get() = applied != null && applied != draft
+    val validPackages: List<ClosingPackage> get() = packages.filter { it.isValid }
+
+    val totalRecipients: Int get() = packages.sumOf { it.recipientCount }
+
+    val totalReports: Int get() = packages.sumOf { it.reports.size }
 }
 
 /**
  * Closing a period.
  *
- * [pending] is a date the accountant has chosen but not confirmed. Closing is
- * irreversible across every source module, so it is always a two-step act —
- * there is no unlock endpoint to undo a slip.
+ * [pendingCloseMillis] is a date the accountant has chosen but not confirmed.
+ * Closing is irreversible across every source module, so it is always a
+ * two-step act — there is no unlock endpoint to undo a slip.
  */
 data class PeriodCloseState(
     val loading: Boolean = false,
     val lock: PeriodLock = PeriodLock(),
     val closing: Boolean = false,
     val pendingCloseMillis: Long? = null,
+    val tab: PeriodCloseTab = PeriodCloseTab.Close,
+    /** The "Close through date" picker, as typed. */
+    val closeDateText: String = "",
+    val result: CloseResult? = null,
+    val cashClose: CashCloseState = CashCloseState(),
+    val publish: PublishState = PublishState(),
 )
+
+// -- approvers ------------------------------------------------------------------
+
+/** The department toolbar's segmented filter — All / Custom / Default. */
+enum class DepartmentFilter(val label: String) { All("All"), Custom("Custom"), Default("Default") }
+
+/** What the builder asks before it saves — the web's `confirmSave`. */
+sealed interface BuilderConfirm {
+    /**
+     * "Empty approval levels": a filled level sits below an empty one, so the
+     * empties go and the rest move up. [payload] is what will be sent,
+     * already compacted — the web holds the same.
+     */
+    data class EmptyLevels(val levels: List<Int>, val payload: ApprovalConfig) : BuilderConfirm
+
+    /** "Remove all approvers?" on a department chain — deleting [configId] puts it back on the global one. */
+    data class RevertToGlobal(val configId: String) : BuilderConfirm
+}
+
+/**
+ * The chain builder — a full view over the module page, as on the web.
+ *
+ * [initial] is what the server holds, so Cancel can drop the edits and the
+ * top bar can say whether anything changed.
+ */
+data class ApprovalBuilder(
+    val config: ApprovalConfig,
+    val initial: ApprovalConfig,
+    /** The level whose user picker is open, by its 1-based order. */
+    val pickerTier: Int? = null,
+    /** Which of that level's rules the picked people join, 0-based. */
+    val pickerRule: Int = 0,
+    val pickerSearch: String = "",
+    /**
+     * Ticked in the open picker and not yet added — the web's `picked`.
+     * Closing the picker drops them; "Add N users" commits them.
+     */
+    val picked: List<String> = emptyList(),
+    val confirm: BuilderConfirm? = null,
+    /** Why the last save did not go through, shown in the builder — the web's `saveMsg`. */
+    val error: String? = null,
+) {
+    val dirty: Boolean get() = config != initial
+}
 
 /** The approval chains. */
 data class ApprovalsState(
     val module: ApprovalModule = ApprovalModule.PurchaseOrders,
     /**
-     * Which modules have a chain, for the tab strip.
+     * Which modules have a chain, for the module rail.
      *
      * Absent means unknown, not unconfigured: the summary endpoint does not
      * answer for every module, and seeding the missing ones as false would pin
@@ -551,9 +1011,28 @@ data class ApprovalsState(
      */
     val configured: Map<ApprovalModule, Boolean> = emptyMap(),
     val loading: Boolean = false,
+    /**
+     * Why the open module's chains could not be read. The page shows it with
+     * a Retry in place of the chains: an empty list after a failed read would
+     * say every department is "Not configured", which is not what is known.
+     */
+    val loadError: String? = null,
+    /** The module [configs] were read for; re-reading the one on screen is silent. */
+    val loadedModule: ApprovalModule? = null,
     val configs: List<ApprovalConfig> = emptyList(),
-    val editing: ApprovalConfig? = null,
     val saving: Boolean = false,
+    val moduleSearch: String = "",
+    val departmentSearch: String = "",
+    val departmentFilter: DepartmentFilter = DepartmentFilter.All,
+    /** Department rows opened to show their levels. */
+    val expanded: Set<String> = emptySet(),
+    val builder: ApprovalBuilder? = null,
+    /**
+     * Who holds view access on the module's tool, by id. Null until the
+     * rights call answers and empty when it failed — either way the picker
+     * still offers the accounts team, and nobody else (the web fails closed).
+     */
+    val candidateIds: Set<String>? = null,
 ) {
     /** The production-wide chain, which every department falls back to. */
     val defaultConfig: ApprovalConfig?
@@ -561,7 +1040,30 @@ data class ApprovalsState(
 
     val departmentConfigs: List<ApprovalConfig>
         get() = configs.filter { it.scope == ApprovalScope.Department }
+
+    fun configFor(departmentId: String): ApprovalConfig? =
+        departmentConfigs.firstOrNull { it.departmentId == departmentId }
+
+    /** Departments matching the search and the segmented filter. */
+    fun visibleDepartments(departments: List<HubDepartment>): List<HubDepartment> {
+        val needle = departmentSearch.trim()
+        return departments
+            .filter { needle.isEmpty() || it.name.contains(needle, ignoreCase = true) }
+            .filter { dept ->
+                val custom = configFor(dept.id)?.isConfigured == true
+                when (departmentFilter) {
+                    DepartmentFilter.All -> true
+                    DepartmentFilter.Custom -> custom
+                    DepartmentFilter.Default -> !custom
+                }
+            }
+    }
+
+    fun customCount(departments: List<HubDepartment>): Int =
+        departments.count { configFor(it.id)?.isConfigured == true }
 }
+
+// -- forms configuration --------------------------------------------------------
 
 /** A field being added or inspected, addressed by section and key. */
 data class FieldFocus(val sectionKey: String, val fieldId: String? = null) {
@@ -576,6 +1078,12 @@ data class NewFieldDraft(
     val selectionType: String? = null,
 ) {
     val isReady: Boolean get() = name.isNotBlank()
+}
+
+/** The "Set Approver Level" scope choice — everyone, or one department. */
+data class ScopeModalState(val mode: ApprovalScope? = null, val departmentId: String? = null) {
+    val canContinue: Boolean get() =
+        mode == ApprovalScope.All || (mode == ApprovalScope.Department && departmentId != null)
 }
 
 /**
@@ -604,6 +1112,17 @@ data class FormConfigState(
     val renamingSectionName: String = "",
     val removingSection: FormSection? = null,
     val confirmingReset: Boolean = false,
+    val moduleSearch: String = "",
+    /** The Rearrange panel, and the section whose fields it lists. */
+    val rearrange: Boolean = false,
+    val rearrangeSection: String? = null,
+    /** The terms section being edited in the side panel. */
+    val termsEditing: Boolean = false,
+    val scopeModal: ScopeModalState? = null,
+    /** The approval-level builder the Set Approver Level flow opens. */
+    val approverBuilder: ApprovalBuilder? = null,
+    val approverSaving: Boolean = false,
+    val message: CloseResult? = null,
 ) {
     val dirty: Boolean get() = template != saved
 
@@ -623,9 +1142,36 @@ data class FormConfigState(
 
     val focusedSection: FormSection?
         get() = focus?.let { template.section(it.sectionKey) }
+
+    /** The terms section, when the module has one. */
+    val termsSection: FormSection? get() = template.section(FormTemplate.TERMS_SECTION)
+}
+
+// -- shell ----------------------------------------------------------------------
+
+/** The setup tour — the intro modal, then one step per gap. */
+data class TourState(
+    val open: Boolean = false,
+    val intro: Boolean = true,
+    val steps: List<SetupGap> = emptyList(),
+    val index: Int = 0,
+) {
+    val current: SetupGap? get() = steps.getOrNull(index)
+
+    val isLast: Boolean get() = index >= steps.lastIndex
 }
 
 /** Everything the console renders. */
+/**
+ * A film tool shown inside the console — the web's nested routes.
+ *
+ * On the web, Purchase Orders, Invoices, the spend tools and the reports render
+ * inside `AccountHubShell` with the hub sidebar still beside them. [path] is
+ * the tool route on screen (a sub-route once the tool navigates within itself),
+ * [title] the sidebar row it belongs to.
+ */
+data class EmbeddedTool(val path: String, val title: String)
+
 data class AccountHubUiState(
     val viewer: AccountHubViewer = AccountHubViewer(),
     val sections: List<HubSection> = emptyList(),
@@ -646,7 +1192,64 @@ data class AccountHubUiState(
     val approvals: ApprovalsState = ApprovalsState(),
     val formConfig: FormConfigState = FormConfigState(),
     val notice: String? = null,
+    /** The sidebar's red counts, fed by the host from the notification ledger. */
+    val badges: HubBadgeCounts = HubBadgeCounts.Empty,
+    /** The production's crew, for every user picker. */
+    val users: List<HubUser> = emptyList(),
+    val departmentList: List<HubDepartment> = emptyList(),
+    val tour: TourState = TourState(),
+    /** The open production's name, for the bible's metadata banner and the exports. */
+    val projectName: String = "",
+    /** A tool rendered inside the shell, over [area]; null shows the area itself. */
+    val embedded: EmbeddedTool? = null,
 ) {
     val loading: Boolean
         get() = setup.loading || chart.loading || vendors.loading || approvals.loading
+
+    /**
+     * A name for a user id.
+     *
+     * Never the id itself: a 24-character hex string in a table of approvers
+     * reads as a broken screen, and the web collapses the same miss to an em
+     * dash. A roster that has not landed yet shows dashes and fills in.
+     */
+    /**
+     * A person's name, never their id.
+     *
+     * Fell back to the raw id for anyone not on the roster, which put a
+     * `6a2becfdf0a26d2…` into approver chips, audit rows, period-close sign-offs
+     * and vendor history — eleven places across the hub. An id tells nobody
+     * anything and reads as corruption; a dash says, honestly, that the name
+     * could not be found.
+     */
+    fun userName(id: String): String =
+        users.firstOrNull { it.id == id }?.name?.takeIf { it.isNotBlank() } ?: UNKNOWN_PERSON
+
+    fun user(id: String): HubUser? = users.firstOrNull { it.id == id }
+
+    /** The vendor register as the open tab and the search show it. */
+    val visibleVendors: List<Vendor> get() = vendors.searched(::departmentName)
+
+    /**
+     * A department's name as a person reads it.
+     *
+     * The crew directory answers translation keys, not words: live, the vendor
+     * register's department column said `direction_label` and
+     * `assistant_directors_label`. Translated here, at the one seam every
+     * department label passes through, the way the PO tool's `departmentName`
+     * does; and an id that was never named is blank rather than 24 hex digits.
+     */
+    fun departmentName(id: String?): String =
+        id?.let { key -> departmentList.firstOrNull { it.id == key }?.name ?: setup.departments[key] }
+            ?.localised()
+            .orDash("")
+
+    /** The postable chart leaves every code typeahead offers. */
+    val codeLeaves: List<CoaAccount> get() = ChartOfAccounts.leaves(chart.accounts)
+
+    /** Whether the chart has been read, so `wrapNominal` can tell a known code from a typed one. */
+    val chartKnown: Boolean get() = chart.loaded
 }
+
+/** What a person nobody can name reads as. Never the id they were looked up by. */
+const val UNKNOWN_PERSON = "—"

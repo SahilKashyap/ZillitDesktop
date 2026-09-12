@@ -42,7 +42,11 @@ fun FormFieldInspector(config: FormConfigState, onEvent: (AccountHubEvent) -> Un
     val field = config.focusedField
 
     ZillitDialogShell(
-        title = if (focus?.isNew == true) "Add a field" else field?.name.orEmpty().ifBlank { "Field" },
+        title =
+            if (focus?.isNew == true) (if (section?.key == "line_items") "Add Custom Column" else "Add Custom Field")
+            else field?.name
+            .orEmpty()
+            .ifBlank { "Field" },
         subtitle = section?.label,
         icon = ZillitIcons.File,
         visible = focus != null && section != null,
@@ -55,7 +59,7 @@ fun FormFieldInspector(config: FormConfigState, onEvent: (AccountHubEvent) -> Un
             )
             if (focus?.isNew == true) {
                 ZillitButton(
-                    text = "Add field",
+                    text = "Add",
                     onClick = { onEvent(AccountHubEvent.AddFormField) },
                     enabled = config.draft.isReady,
                 )
@@ -81,7 +85,7 @@ private fun ColumnScope.NewFieldForm(
         value = draft.name,
         onValueChange = { onEvent(AccountHubEvent.EditNewFormField(draft.copy(name = it))) },
         label = "Field name",
-        placeholder = "Budget code",
+        placeholder = "Enter field name...",
         // The key is derived from the name and cannot be typed: it is what the
         // form stores the value under, and a person editing it by hand would
         // be renaming a column.
@@ -103,7 +107,7 @@ private fun ColumnScope.NewFieldForm(
         label = "Required",
     )
 
-    RemovedFieldsHint(section)
+    RemovedFieldsHint(section, onEvent)
 }
 
 @Composable
@@ -174,7 +178,7 @@ private fun ColumnScope.ExistingFieldForm(
     )
 
     ZillitButton(
-        text = if (field.systemDefault) "Take off the form" else "Delete field",
+        text = if (field.systemDefault) "Take off the form" else "Delete this custom field",
         onClick = { onEvent(AccountHubEvent.RemoveFormField(section.key, field.id)) },
         variant = ButtonVariant.Danger,
         leadingIcon = ZillitIcons.Trash,
@@ -205,17 +209,37 @@ private fun ColumnScope.MoveToSection(
     )
 }
 
+/**
+ * "System Fields" — the module's own fields taken off this section, each with
+ * a Restore. Listed under the section they belong to rather than in one pile,
+ * because a field only goes back where it came from.
+ */
 @Composable
-private fun ColumnScope.RemovedFieldsHint(section: FormSection) {
+private fun ColumnScope.RemovedFieldsHint(section: FormSection, onEvent: (AccountHubEvent) -> Unit) {
     val removed = section.removed
     if (removed.isEmpty()) return
-    ZillitNotice(
-        text = "${removed.size} system field(s) are off this section. Put one back from the " +
-            "section itself rather than adding a duplicate.",
-        tone = StatusTone.Pending,
-        icon = ZillitIcons.Info,
-        modifier = Modifier.fillMaxWidth(),
+    ZillitText(text = "System Fields", style = ZillitTheme.typography.label)
+    ZillitText(
+        text = "${removed.size} system field(s) are off this section. Restore one rather than adding a duplicate.",
+        style = ZillitTheme.typography.bodySmall,
+        color = ZillitTheme.colors.textSecondary,
     )
+    removed.forEach { field ->
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            ZillitText(text = field.name, style = ZillitTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            ZillitStatusPill(label = field.typeLabel, tone = StatusTone.Neutral)
+            ZillitButton(
+                text = "Restore",
+                onClick = { onEvent(AccountHubEvent.RestoreFormField(section.key, field.id)) },
+                variant = ButtonVariant.Tertiary,
+                leadingIcon = ZillitIcons.Add,
+            )
+        }
+    }
 }
 
 @Composable

@@ -39,6 +39,7 @@ import com.zillit.desktop.feature.cashexpenses.ui.BatchStatusPill
 import com.zillit.desktop.feature.cashexpenses.ui.CashDestination
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
 import com.zillit.desktop.feature.cashexpenses.ui.CashPrompt
+import com.zillit.desktop.feature.cashexpenses.ui.CashPerson
 import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
 import com.zillit.desktop.feature.cashexpenses.ui.ConfirmAction
 import com.zillit.desktop.feature.cashexpenses.ui.LifecycleBar
@@ -74,28 +75,32 @@ fun QueuePage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     FixedPage {
         QueueHeader(state, batches.size, onEvent)
 
+        // Float requests span the window rather than sharing the master
+        // column: they have nothing to do with the batch in the detail pane,
+        // and a table with three actions in half a window scrolls sideways and
+        // hides its own status column.
+        if (state.destination == CashDestination.ApprovalQueue && state.floatApprovals.isNotEmpty()) {
+            ZillitSectionCard(
+                title = "Float requests",
+                icon = ZillitIcons.Wallet,
+                meta = "${state.floatApprovals.size} waiting",
+                padded = false,
+                modifier = Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.md),
+            ) {
+                ZillitDataTable(
+                    rows = state.floatApprovals,
+                    columns = floatColumns() + floatApprovalActions(state, onEvent),
+                    key = { it.id },
+                    emptyTitle = "No float requests waiting",
+                )
+            }
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth().weight(1f),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
             Column(modifier = Modifier.weight(QUEUE_WEIGHT).fillMaxHeight()) {
-                if (state.destination == CashDestination.ApprovalQueue && state.floatApprovals.isNotEmpty()) {
-                    ZillitSectionCard(
-                        title = "Float requests",
-                        icon = ZillitIcons.Wallet,
-                        meta = "${state.floatApprovals.size} waiting",
-                        padded = false,
-                        modifier = Modifier.padding(bottom = ZillitTheme.spacing.md),
-                    ) {
-                        ZillitDataTable(
-                            rows = state.floatApprovals,
-                            columns = floatColumns() + floatApprovalActions(state, onEvent),
-                            key = { it.id },
-                            emptyTitle = "No float requests waiting",
-                        )
-                    }
-                }
-
                 ZillitSectionCard(
                     title = state.destination.label,
                     icon = ZillitIcons.Receipt,
@@ -105,7 +110,7 @@ fun QueuePage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 ) {
                     ZillitDataTable(
                         rows = batches,
-                        columns = batchColumns(state.viewer.isAccountant),
+                        columns = batchColumns(state.viewer.isAccountant, compact = true),
                         key = { it.id },
                         loading = state.loading,
                         onRowClick = { onEvent(CashEvent.SelectBatch(it.id)) },
@@ -190,10 +195,11 @@ private fun BatchDetail(state: CashUiState, batch: ClaimBatch, onEvent: (CashEve
                     text = batch.reference.ifBlank { "Batch ${batch.id.take(REF_FALLBACK)}" },
                     style = ZillitTheme.typography.titleMedium,
                 )
-                ZillitText(
-                    text = "${batch.holderName.ifBlank { batch.userId }} · ${date(batch.createdAt)}",
-                    style = ZillitTheme.typography.bodySmall,
-                    color = ZillitTheme.colors.textSecondary,
+                CashPerson(
+                    name = batch.holderName.ifBlank { batch.userId },
+                    userId = batch.userId,
+                    secondary = "Submitted ${date(batch.createdAt)}",
+                    modifier = Modifier.padding(top = ZillitTheme.spacing.xs),
                 )
             }
             BatchStatusPill(batch.status, state.viewer.isAccountant)

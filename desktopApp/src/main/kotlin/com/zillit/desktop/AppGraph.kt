@@ -273,7 +273,7 @@ private fun logBodiesRequested(): Boolean {
 }
 
 /** The storage credentials from remote config, when both halves are present. */
-private suspend fun awsKeyPair(remoteConfig: RemoteConfigRepository): Pair<String, String>? {
+internal suspend fun awsKeyPair(remoteConfig: RemoteConfigRepository): Pair<String, String>? {
     val remote = remoteConfig.current()
     val access = remote?.awsAccessKey?.takeIf { it.isNotBlank() } ?: return null
     val secret = remote?.awsSecretKey?.takeIf { it.isNotBlank() } ?: return null

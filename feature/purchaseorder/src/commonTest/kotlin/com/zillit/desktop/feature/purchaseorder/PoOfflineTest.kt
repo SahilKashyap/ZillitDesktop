@@ -24,7 +24,11 @@ import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrderRepository
 import com.zillit.desktop.feature.purchaseorder.domain.Vendor
 import com.zillit.desktop.feature.purchaseorder.ui.PoDestination
-import com.zillit.desktop.feature.purchaseorder.ui.PoDraft
+import com.zillit.desktop.core.forms.FormLayout
+import com.zillit.desktop.core.forms.FormTemplate
+import com.zillit.desktop.feature.purchaseorder.ui.PoFormMode
+import com.zillit.desktop.feature.purchaseorder.ui.toRequest
+import com.zillit.desktop.feature.purchaseorder.ui.PoFormState
 import com.zillit.desktop.feature.purchaseorder.ui.PoEvent
 import com.zillit.desktop.feature.purchaseorder.ui.PurchaseOrderViewModel
 import kotlinx.coroutines.Dispatchers
@@ -89,7 +93,8 @@ class PoOfflineTest {
             runCurrent()
         }
 
-    private val filled = PoDraft(
+    private val filled = PoFormState(
+        mode = PoFormMode.NewOrder,
         vendorName = "Panavision",
         description = "Camera package",
         currency = "GBP",
@@ -104,15 +109,15 @@ class PoOfflineTest {
         online.value = false
         runCurrent()
 
-        vm.onEvent(PoEvent.EditDraft(filled))
-        vm.onEvent(PoEvent.SubmitDraft)
+        vm.onEvent(PoEvent.EditForm(filled))
+        vm.onEvent(PoEvent.SubmitForm)
         runCurrent()
 
         assertEquals(0, repository.creates, "nothing is sent while offline")
         val queued = outbox.all().single()
         assertEquals(PO_CREATE_KIND, queued.kind)
         assertEquals(SyncState.Pending, queued.state)
-        assertEquals(PoDraft(), vm.state.value.draft, "the form is cleared once queued")
+        assertNull(vm.state.value.form, "the form closes once the order is queued")
         assertEquals(PurchaseOrderViewModel.QUEUED_NOTICE, vm.state.value.notice)
 
         val row = vm.state.value.localOrders.single()
@@ -120,7 +125,7 @@ class PoOfflineTest {
         assertEquals("Panavision", row.vendorName)
         assertEquals(2_500.0, row.total)
         assertEquals("", row.number)
-        vm.onEvent(PoEvent.Open(PoDestination.MyOrders))
+        vm.onEvent(PoEvent.Open(PoDestination.MyPos))
         runCurrent()
         assertTrue(vm.state.value.rows.first().isLocalOnly, "the local row leads My Orders")
     }
@@ -130,13 +135,13 @@ class PoOfflineTest {
         val repository = FakeOrders(createAnswer = ZillitResult.Failure(ZillitError.NoConnection()))
         val vm = viewModel(repository, support())
 
-        vm.onEvent(PoEvent.EditDraft(filled))
-        vm.onEvent(PoEvent.SubmitDraft)
+        vm.onEvent(PoEvent.EditForm(filled))
+        vm.onEvent(PoEvent.SubmitForm)
         runCurrent()
 
         assertEquals(1, repository.creates, "it was tried")
         assertEquals(1, outbox.all().size, "and then queued")
-        assertEquals(PoDraft(), vm.state.value.draft)
+        assertNull(vm.state.value.form)
     }
 
     @Test
@@ -144,12 +149,12 @@ class PoOfflineTest {
         val repository = FakeOrders(createAnswer = ZillitResult.Failure(ZillitError.Http(status = 422)))
         val vm = viewModel(repository, support())
 
-        vm.onEvent(PoEvent.EditDraft(filled))
-        vm.onEvent(PoEvent.SubmitDraft)
+        vm.onEvent(PoEvent.EditForm(filled))
+        vm.onEvent(PoEvent.SubmitForm)
         runCurrent()
 
         assertEquals(0, outbox.all().size, "a refusal is not something to send again later")
-        assertEquals(filled, vm.state.value.draft)
+        assertEquals(filled, vm.state.value.form?.copy(saving = false, problems = emptyList()))
     }
 
     @Test
@@ -157,30 +162,34 @@ class PoOfflineTest {
         val repository = FakeOrders(createAnswer = ZillitResult.Failure(ZillitError.NoConnection()))
         val vm = viewModel(repository, support = null)
 
-        vm.onEvent(PoEvent.EditDraft(filled))
-        vm.onEvent(PoEvent.SubmitDraft)
+        vm.onEvent(PoEvent.EditForm(filled))
+        vm.onEvent(PoEvent.SubmitForm)
         runCurrent()
 
         assertEquals(0, outbox.all().size)
-        assertEquals(filled, vm.state.value.draft, "the form is kept, as before")
+        assertEquals(
+            filled,
+            vm.state.value.form?.copy(saving = false, problems = emptyList()),
+            "the form is kept, as before",
+        )
     }
 
     @Test
     fun `the form is kept on disk as it is typed and restored on reopen`() = runTest(dispatcher) {
         val support = support()
         val first = viewModel(FakeOrders(), support)
-        first.onEvent(PoEvent.EditDraft(filled))
+        first.onEvent(PoEvent.EditForm(filled))
         advanceTimeBy(1_000)
         runCurrent()
 
         val second = viewModel(FakeOrders(), support)
-        assertEquals(filled, second.state.value.draft)
+        assertEquals(filled, second.state.value.form)
 
         // Raising it forgets the saved copy: a restore must not resurrect a sent order.
-        second.onEvent(PoEvent.SubmitDraft)
+        second.onEvent(PoEvent.SubmitForm)
         runCurrent()
         val third = viewModel(FakeOrders(), support)
-        assertEquals(PoDraft(), third.state.value.draft)
+        assertNull(third.state.value.form, "a restore must not resurrect a sent order")
     }
 
     @Test
@@ -214,7 +223,11 @@ class PoOfflineTest {
         label = "l",
         payload = json.encodeToString(
             QueuedPurchaseOrder.serializer(),
-            QueuedPurchaseOrder(filled.toRequest(), raisedBy = "user-1", queuedAt = queuedAt),
+            QueuedPurchaseOrder(
+                filled.toRequest(status = null, layout = FormLayout(FormTemplate())),
+                raisedBy = "user-1",
+                queuedAt = queuedAt,
+            ),
         ),
         nextAttemptAt = 0,
         createdAt = queuedAt,
@@ -298,7 +311,10 @@ class PoOfflineTest {
         }
 
         override suspend fun vendors(): ZillitResult<List<Vendor>> = ZillitResult.Success(emptyList())
-        override suspend fun orders(status: PoStatus?): ZillitResult<List<PurchaseOrder>> = myOrders()
+        override suspend fun orders(
+            status: PoStatus?,
+            departmentId: String?,
+        ): ZillitResult<List<PurchaseOrder>> = myOrders()
         override suspend fun approvalQueue(): ZillitResult<List<PurchaseOrder>> = ZillitResult.Success(emptyList())
         override suspend fun order(id: String): ZillitResult<PurchaseOrder> = unsupported()
         override suspend fun history(id: String): ZillitResult<List<PoHistoryEntry>> = ZillitResult.Success(emptyList())

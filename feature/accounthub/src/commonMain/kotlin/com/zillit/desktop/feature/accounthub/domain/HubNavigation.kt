@@ -142,10 +142,13 @@ object HubNavigation {
             items = listOf(
                 // Cost Report first, then Period Close, which is the web's
                 // own order in this group.
+                // The accountant's worksheet, as the web's sidebar opens
+                // (`${AH}/cost-report`) — not the crew tool at
+                // `/film-tools/cost-report`, which is its read-only sibling.
                 HubItem(
                     id = "cost-report",
                     label = "Cost Report",
-                    target = HubTarget.Tool("/film-tools/cost-report", "cost_report_tool"),
+                    target = HubTarget.Tool("/film-tools/account-hub/cost-report", "cost_report_tool"),
                 ),
                 HubItem(
                     id = "period-close",
@@ -302,8 +305,15 @@ object HubNavigation {
      */
     fun landingTool(viewer: AccountHubViewer): HubItem? {
         if (landing(viewer) != null) return null
-        val rows = visibleTo(viewer).flatMap { it.items }
-            .filter { it.target is HubTarget.Tool }
-        return rows.firstOrNull { it.id == "purchase-orders" } ?: rows.firstOrNull()
+        return purchaseOrdersRow(viewer) ?: toolRows(viewer).firstOrNull()
     }
+
+    /** The Purchase Orders row, when this person may open it — the web's landing for everyone. */
+    fun purchaseOrdersRow(viewer: AccountHubViewer): HubItem? =
+        toolRows(viewer).firstOrNull { it.id == PURCHASE_ORDERS_ID }
+
+    private fun toolRows(viewer: AccountHubViewer): List<HubItem> =
+        visibleTo(viewer).flatMap { it.items }.filter { it.target is HubTarget.Tool }
+
+    private const val PURCHASE_ORDERS_ID = "purchase-orders"
 }

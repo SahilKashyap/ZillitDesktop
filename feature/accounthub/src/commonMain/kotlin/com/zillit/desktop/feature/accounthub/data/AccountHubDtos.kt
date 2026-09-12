@@ -5,7 +5,21 @@
 
 package com.zillit.desktop.feature.accounthub.data
 
+import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
+import com.zillit.desktop.feature.accounthub.domain.AssignmentRule
+import com.zillit.desktop.feature.accounthub.domain.BankDetail
+import com.zillit.desktop.feature.accounthub.domain.BankDetailType
+import com.zillit.desktop.feature.accounthub.domain.CashCloseDashboard
+import com.zillit.desktop.feature.accounthub.domain.ChecklistItem
+import com.zillit.desktop.feature.accounthub.domain.CommitmentWeek
+import com.zillit.desktop.feature.accounthub.domain.CustomDay
+import com.zillit.desktop.feature.accounthub.domain.HeatCell
+import com.zillit.desktop.feature.accounthub.domain.HeatRow
+import com.zillit.desktop.feature.accounthub.domain.JournalDescriptionFormat
+import com.zillit.desktop.feature.accounthub.domain.PayrollGroup
+import com.zillit.desktop.feature.accounthub.domain.ReconRow
+import com.zillit.desktop.feature.accounthub.domain.WaterfallBar
 import com.zillit.desktop.feature.accounthub.domain.PoDescriptionFormat
 import com.zillit.desktop.feature.accounthub.domain.PoSplitType
 import com.zillit.desktop.feature.accounthub.domain.PurchaseOrderSetup
@@ -22,9 +36,6 @@ import com.zillit.desktop.feature.accounthub.domain.PayTrigger
 import com.zillit.desktop.feature.accounthub.domain.BudgetLine
 import com.zillit.desktop.feature.accounthub.domain.BudgetStatus
 import com.zillit.desktop.feature.accounthub.domain.BudgetVersion
-import com.zillit.desktop.feature.accounthub.domain.BibleAccount
-import com.zillit.desktop.feature.accounthub.domain.BibleReport
-import com.zillit.desktop.feature.accounthub.domain.LedgerTransaction
 import com.zillit.desktop.feature.accounthub.domain.ParsedBudget
 import com.zillit.desktop.feature.accounthub.domain.ParsedCode
 import com.zillit.desktop.feature.accounthub.domain.ParsedSection
@@ -72,7 +83,10 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 
 /**
@@ -109,6 +123,8 @@ data class CompanyDto(
     @SerialName("country_code") val countryCode: String? = null,
     @SerialName("bank_ids") val bankIds: List<String>? = null,
     @SerialName("tax_credits") val taxCredits: List<String>? = null,
+    @SerialName("legal_name") val legalName: String? = null,
+    @SerialName("uk") val uk: CompanyUkDto? = null,
 ) {
     fun toDomain(): Company? {
         val resolved = (id ?: altId)?.takeIf { it.isNotBlank() } ?: return null
@@ -119,9 +135,19 @@ data class CompanyDto(
             countryCode = countryCode.orEmpty(),
             bankIds = bankIds.orEmpty().filter { it.isNotBlank() },
             taxCredits = taxCredits.orEmpty().filter { it.isNotBlank() },
+            legalName = legalName.orEmpty(),
+            ukPayeRef = uk?.payeRef.orEmpty(),
+            ukAccountsOfficeRef = uk?.accountsOfficeRef.orEmpty(),
         )
     }
 }
+
+/** The UK payroll references, nested under `uk` on a company. */
+@Serializable
+data class CompanyUkDto(
+    @SerialName("paye_ref") val payeRef: String? = null,
+    @SerialName("accounts_office_ref") val accountsOfficeRef: String? = null,
+)
 
 /**
  * A bank row.
@@ -146,6 +172,9 @@ data class BankAccountDto(
     @SerialName("cheque_number") val chequeNumber: String? = null,
     @SerialName("wire_number") val wireNumber: String? = null,
     @SerialName("currency") val currency: CurrencyDto? = null,
+    @SerialName("ap_clearance_nominal_code") val apClearanceNominalCode: String? = null,
+    /** An array of typed rows, or that array JSON-encoded into a string. */
+    @SerialName("additional_details") val additionalDetails: JsonElement? = null,
 ) {
     fun toDomain(): BankAccount? {
         val resolved = (id ?: altId)?.takeIf { it.isNotBlank() } ?: return null
@@ -164,8 +193,34 @@ data class BankAccountDto(
             wireNumber = wireNumber.orEmpty(),
             currencyCode = currency?.code.orEmpty(),
             currencySymbol = currency?.symbol.orEmpty(),
+            currencyName = currency?.name.orEmpty(),
+            apClearanceNominalCode = apClearanceNominalCode.orEmpty(),
+            additionalDetails = additionalDetails.toBankDetails(),
         )
     }
+}
+
+/**
+ * Typed extra rows — `[{ field, value, field_type }]` — which arrive as an
+ * array, or as that array encoded into a string on rows saved by older
+ * clients. Vendors spell the title `label`; both are read.
+ */
+internal fun JsonElement?.toBankDetails(): List<BankDetail> = when (this) {
+    is JsonArray -> mapNotNull { row ->
+        (row as? JsonObject)?.let {
+            BankDetail(
+                title = it.str("field").ifBlank { it.str("label") },
+                value = it.str("value"),
+                fieldType = BankDetailType.from(it.str("field_type").ifBlank { null }),
+            )
+        }
+    }.filter { it.isTitled }
+    is JsonPrimitive -> contentOrNull?.takeIf { it.isNotBlank() }?.let { text ->
+        runCatching { accountHubJson.parseToJsonElement(text) }.getOrNull()
+            ?.takeIf { it is JsonArray }
+            ?.toBankDetails()
+    }.orEmpty()
+    else -> emptyList()
 }
 
 @Serializable
@@ -187,20 +242,31 @@ data class TaxTypeDto(
     @SerialName("type") val type: String? = null,
     @SerialName("identifier") val identifier: String? = null,
     @SerialName("label") val label: String? = null,
-    @SerialName("value") val value: String? = null,
+    /** Sent as a string, echoed as a number — read either way. */
+    @SerialName("value") val value: JsonPrimitive? = null,
     @SerialName("is_recoverable") val isRecoverable: Boolean? = null,
     @SerialName("nominal") val nominal: String? = null,
+    @SerialName("country") val country: String? = null,
+    @SerialName("country_code") val countryCode: String? = null,
 ) {
     fun toDomain(): TaxType = TaxType(
         type = type.orEmpty(),
         identifier = identifier.orEmpty(),
         label = label.orEmpty(),
-        value = value.orEmpty(),
+        value = value?.contentOrNull.orEmpty().asRateText(),
         // Absence is false. Only an explicit true marks a rate reclaimable —
         // defaulting the other way would let input tax be claimed that is not.
         isRecoverable = isRecoverable == true,
         nominal = nominal.orEmpty(),
+        country = country.orEmpty(),
+        storedCountryCode = countryCode?.takeIf { it.isNotBlank() },
     )
+}
+
+/** `20.0` reads back as `20`; anything that is not a number is kept as typed. */
+private fun String.asRateText(): String {
+    val number = toDoubleOrNull() ?: return this
+    return if (number == number.toLong().toDouble()) number.toLong().toString() else this
 }
 
 @Serializable
@@ -218,7 +284,11 @@ data class CountryTaxesDto(
             // the catalogue round-trips through a save and back.
             taxes = taxes.orEmpty().map { row ->
                 row.toDomain().let { tax ->
-                    tax.copy(identifier = TaxType.keyFor(code, tax.identifier))
+                    tax.copy(
+                        identifier = TaxType.keyFor(code, tax.identifier),
+                        country = country.orEmpty(),
+                        storedCountryCode = code,
+                    )
                 }
             },
         )
@@ -247,9 +317,57 @@ data class DealConditionDto(
     }
 }
 
+/**
+ * The clause list, in the three shapes it has been persisted in.
+ *
+ * `{ order, condition }` is current; `{ id, text }` is the pre-typed-schema
+ * row; a bare string is the pre-historic flat array. None of them promises an
+ * id, so one is minted per position — the id is local, and the order is
+ * rebuilt from position on save (the web's `normalize`/`denormalize`).
+ */
+internal fun JsonElement?.toDealConditions(): List<DealCondition> {
+    val rows = this as? JsonArray ?: return emptyList()
+    return rows.mapIndexed { index, row ->
+        when (row) {
+            is JsonPrimitive -> DealCondition(
+                id = "cond-$index",
+                order = index + 1,
+                condition = row.contentOrNull.orEmpty(),
+            )
+            is JsonObject -> DealCondition(
+                id = row.str("id").ifBlank { "cond-$index" },
+                order = (row["order"] as? JsonPrimitive)?.intOrNull ?: (index + 1),
+                condition = row.str("condition").ifBlank { row.str("text") },
+            )
+            else -> DealCondition(id = "cond-$index", order = index + 1)
+        }
+    }
+}
+
+/**
+ * The bureau list — an array, or the legacy `{ bureau: [...] }` wrapper — with
+ * rows that may or may not carry an id. An id-less row is still a bureau.
+ */
+internal fun JsonElement?.toPayrollBureaus(): List<PayrollBureau> {
+    val rows = when (this) {
+        is JsonArray -> this
+        is JsonObject -> this["bureau"] as? JsonArray ?: return emptyList()
+        else -> return emptyList()
+    }
+    return rows.mapIndexedNotNull { index, row ->
+        val obj = row as? JsonObject ?: return@mapIndexedNotNull null
+        PayrollBureau(
+            id = obj.str("id").ifBlank { obj.str("_id") }.ifBlank { "bureau-$index" },
+            title = obj.str("title").ifBlank { obj.str("name") },
+            description = obj.str("description"),
+        )
+    }
+}
+
 @Serializable
 data class ProjectBudgetDto(
     @SerialName("amount") val amount: Double? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
 ) {
     fun toDomain(): ProjectBudget = ProjectBudget(amount = amount, currency = currency.orEmpty())
@@ -310,6 +428,7 @@ data class CoaAccountDto(
     @SerialName("sub_cat_id") val subCategoryId: String? = null,
     @SerialName("is_active") val isActive: Boolean? = null,
     @SerialName("posting_box") val postingBox: Boolean? = null,
+    @SerialName("source") val source: String? = null,
 ) {
     fun toDomain(): CoaAccount? {
         val resolved = (id ?: altId)?.takeIf { it.isNotBlank() } ?: return null
@@ -328,6 +447,7 @@ data class CoaAccountDto(
             // Both flags are opt-out: absent reads as on.
             isActive = isActive != false,
             isPosting = postingBox != false,
+            source = source.orEmpty(),
         )
     }
 }
@@ -335,18 +455,25 @@ data class CoaAccountDto(
 @Serializable
 data class TrackingSetDto(
     @SerialName("id") val id: String? = null,
+    @SerialName("_id") val altId: String? = null,
     @SerialName("name") val name: String? = null,
     @SerialName("code") val code: String? = null,
+    @SerialName("prefix") val prefix: String? = null,
+    @SerialName("color") val color: String? = null,
+    /** `active` is what the route speaks; `is_active` is the older spelling. */
+    @SerialName("active") val active: Boolean? = null,
     @SerialName("is_active") val isActive: Boolean? = null,
     @SerialName("nodes") val nodes: List<TrackingNodeDto>? = null,
 ) {
-    fun toDomain(): TrackingSet? = id?.takeIf { it.isNotBlank() }?.let { setId ->
+    fun toDomain(): TrackingSet? = (id ?: altId)?.takeIf { it.isNotBlank() }?.let { setId ->
         TrackingSet(
             id = setId,
             name = name.orEmpty(),
             code = code.orEmpty(),
-            isActive = isActive != false,
+            isActive = (active ?: isActive) != false,
             nodes = nodes.orEmpty().mapNotNull { it.toDomain(setId) },
+            prefix = prefix.orEmpty(),
+            color = color.orEmpty(),
         )
     }
 }
@@ -354,19 +481,25 @@ data class TrackingSetDto(
 @Serializable
 data class TrackingNodeDto(
     @SerialName("id") val id: String? = null,
+    @SerialName("_id") val altId: String? = null,
     @SerialName("code") val code: String? = null,
+    /** The route's `label`; `name` is the older spelling. */
+    @SerialName("label") val label: String? = null,
     @SerialName("name") val name: String? = null,
+    @SerialName("description") val description: String? = null,
     @SerialName("parent_id") val parentId: String? = null,
+    @SerialName("active") val active: Boolean? = null,
     @SerialName("is_active") val isActive: Boolean? = null,
 ) {
-    fun toDomain(setId: String): TrackingNode? = id?.takeIf { it.isNotBlank() }?.let {
+    fun toDomain(setId: String): TrackingNode? = (id ?: altId)?.takeIf { it.isNotBlank() }?.let {
         TrackingNode(
             id = it,
             setId = setId,
             code = code.orEmpty(),
-            name = name.orEmpty(),
+            name = (label ?: name).orEmpty(),
             parentId = parentId?.takeIf { parent -> parent.isNotBlank() },
-            isActive = isActive != false,
+            isActive = (active ?: isActive) != false,
+            description = description.orEmpty(),
         )
     }
 }
@@ -400,6 +533,27 @@ data class VendorDto(
     @SerialName("status") val status: String? = null,
     @SerialName("verified") val verified: Boolean? = null,
     @SerialName("bank_account_id") val bankAccountId: String? = null,
+    @SerialName("added_by") val addedBy: String? = null,
+    @SerialName("created_by") val createdBy: String? = null,
+    @SerialName("verified_by") val verifiedBy: String? = null,
+    @SerialName("verified_at") val verifiedAt: JsonPrimitive? = null,
+    @SerialName("updated_by") val updatedBy: String? = null,
+    @SerialName("created_at") val createdAt: JsonPrimitive? = null,
+    @SerialName("updated_at") val updatedAt: JsonPrimitive? = null,
+    @SerialName("bank_name") val bankName: String? = null,
+    @SerialName("account_holder_name") val accountHolderName: String? = null,
+    @SerialName("account_number") val accountNumber: String? = null,
+    @SerialName("sort_code") val sortCode: String? = null,
+    @SerialName("iban_code") val ibanCode: String? = null,
+    @SerialName("iban_number") val ibanNumber: String? = null,
+    @SerialName("swift_code") val swiftCode: String? = null,
+    @SerialName("additional_info") val additionalInfo: JsonElement? = null,
+    @SerialName("bank_id") val bankId: String? = null,
+    @SerialName("vendor_type") val vendorType: String? = null,
+    @SerialName("company_type") val companyType: String? = null,
+    @SerialName("terms") val terms: String? = null,
+    @SerialName("default_code") val defaultCode: String? = null,
+    @SerialName("compliance") val compliance: JsonElement? = null,
 ) {
     fun toDomain(): Vendor? {
         val resolved = (id ?: altId)?.takeIf { it.isNotBlank() } ?: return null
@@ -417,6 +571,26 @@ data class VendorDto(
             // status string, which is what most of them send.
             verified = verified ?: status.equals(Vendor.VERIFIED_STATUS, ignoreCase = true),
             bankAccountId = bankAccountId?.takeIf { it.isNotBlank() },
+            status = status.orEmpty(),
+            addedBy = (addedBy ?: createdBy)?.takeIf { it.isNotBlank() },
+            verifiedBy = verifiedBy?.takeIf { it.isNotBlank() },
+            verifiedAtMillis = verifiedAt.epochMillis(),
+            updatedBy = updatedBy?.takeIf { it.isNotBlank() },
+            createdAtMillis = createdAt.epochMillis(),
+            updatedAtMillis = updatedAt.epochMillis(),
+            bankName = bankName.orEmpty(),
+            accountHolderName = accountHolderName.orEmpty(),
+            accountNumber = accountNumber.orEmpty(),
+            sortCode = sortCode.orEmpty(),
+            ibanCode = (ibanCode ?: ibanNumber).orEmpty(),
+            swiftCode = swiftCode.orEmpty(),
+            additionalInfo = additionalInfo.toBankDetails(),
+            bankId = bankId?.takeIf { it.isNotBlank() },
+            vendorType = vendorType.orEmpty(),
+            companyType = companyType.orEmpty(),
+            terms = terms.orEmpty(),
+            defaultCode = defaultCode.orEmpty(),
+            compliance = (compliance as? JsonPrimitive)?.contentOrNull.orEmpty(),
         )
     }
 }
@@ -427,17 +601,24 @@ data class VendorChangeDto(
     @SerialName("_id") val altId: String? = null,
     @SerialName("created_at") val createdAt: JsonPrimitive? = null,
     @SerialName("created") val created: JsonPrimitive? = null,
+    /** The web's history rows: `action`, `action_by`, `action_at`, `note`. */
+    @SerialName("action_at") val actionAt: JsonPrimitive? = null,
     @SerialName("user_name") val userName: String? = null,
+    @SerialName("action_by_name") val actionByName: String? = null,
+    @SerialName("action_by") val actionBy: String? = null,
     @SerialName("action") val action: String? = null,
     @SerialName("message") val message: String? = null,
+    @SerialName("note") val note: String? = null,
 ) {
-    fun toDomain(): VendorChange? {
-        val resolved = (id ?: altId)?.takeIf { it.isNotBlank() } ?: return null
+    fun toDomain(index: Int = 0): VendorChange {
+        val resolved = (id ?: altId)?.takeIf { it.isNotBlank() } ?: "change-$index"
         return VendorChange(
             id = resolved,
-            at = (createdAt ?: created).epochMillis(),
-            byName = userName.orEmpty(),
+            at = (createdAt ?: created ?: actionAt).epochMillis(),
+            byName = (userName ?: actionByName).orEmpty(),
+            byId = actionBy.orEmpty(),
             summary = (message ?: action).orEmpty(),
+            note = note.orEmpty(),
         )
     }
 }
@@ -617,6 +798,16 @@ internal fun JsonElement?.toProductionSchedule(): ProductionSchedule {
         prep = root.phaseAt("prep"),
         shoot = root.phaseAt("shoot"),
         wrap = root.phaseAt("wrap"),
+        customDays = (root["custom_days"] as? JsonArray).orEmpty().mapIndexedNotNull { index, row ->
+            (row as? JsonObject)?.let {
+                CustomDay(
+                    id = "custom-$index",
+                    name = it.str("name"),
+                    startDate = it.dateAt("start_date"),
+                    endDate = it.dateAt("end_date"),
+                )
+            }
+        },
     )
 }
 
@@ -695,6 +886,35 @@ internal fun decodeDayTypes(json: String): List<DayType> =
 internal fun decodeTaxTypes(json: String): List<TaxType> =
     accountHubJson.decodeFromString(valueList(TaxTypeDto.serializer()), json)
         .value.orEmpty().map { it.toDomain() }
+
+internal fun decodeDealConditions(json: String): List<DealCondition> =
+    accountHubJson.decodeFromString(ValueDto.serializer(JsonElement.serializer()), json)
+        .value.toDealConditions()
+
+internal fun decodePayrollBureaus(json: String): List<PayrollBureau> =
+    accountHubJson.decodeFromString(ValueDto.serializer(JsonElement.serializer()), json)
+        .value.toPayrollBureaus()
+
+internal fun decodeTrackingSets(json: String): List<TrackingSet> =
+    accountHubJson.decodeFromString(ListSerializer(TrackingSetDto.serializer()), json)
+        .mapNotNull { it.toDomain() }
+
+internal fun decodeAssignmentRules(json: String): List<AssignmentRule> =
+    accountHubJson.decodeFromString(ListSerializer(AssignmentRuleDto.serializer()), json)
+        .mapNotNull { it.toDomain() }
+
+internal fun decodePayrollGroups(json: String): List<PayrollGroup> =
+    accountHubJson.decodeFromString(ListSerializer(PayrollGroupDto.serializer()), json)
+        .mapNotNull { it.toDomain() }
+
+internal fun decodePayrollSettings(json: String): PayrollSettings =
+    accountHubJson.decodeFromString(PayrollSettingsDto.serializer(), json).toDomain()
+
+internal fun decodeNonUnionPay(json: String): NonUnionPay =
+    accountHubJson.decodeFromString(NonUnionPayDto.serializer(), json).toDomain()
+
+internal fun decodeCashClose(json: String): CashCloseDashboard =
+    accountHubJson.parseToJsonElement(json).toCashClose()
 
 // -- allowances and rentals --------------------------------------------------
 
@@ -831,6 +1051,10 @@ data class PayrollSettingsDto(
      * as "no payroll settings", which is a different thing from "not locked".
      */
     @SerialName("pay_period_locked_at") val lockedAt: JsonPrimitive? = null,
+    @SerialName("journal_description_format") val journalDescriptionFormat: String? = null,
+    @SerialName("journal_group_by_category") val journalGroupByCategory: Boolean? = null,
+    /** Bare code strings, or `{ code }` objects on some answers. */
+    @SerialName("payroll_accounts") val payrollAccounts: JsonElement? = null,
 ) {
     fun toDomain(): PayrollSettings {
         val (start, end) = PayrollSettings.sanitise(payPeriod?.startDay, payPeriod?.endDay)
@@ -841,9 +1065,145 @@ data class PayrollSettingsDto(
             payPeriodStartDay = start,
             payPeriodEndDay = end,
             payPeriodLockedAt = lockedAt?.contentOrNull?.takeIf { it.isNotBlank() }?.toLongOrNull(),
+            journalDescriptionFormat = JournalDescriptionFormat.from(journalDescriptionFormat),
+            journalGroupByCategory = journalGroupByCategory == true,
+            payrollAccounts = (payrollAccounts as? JsonArray).orEmpty().mapNotNull { row ->
+                when (row) {
+                    is JsonPrimitive -> row.contentOrNull
+                    is JsonObject -> row.str("code")
+                    else -> null
+                }?.takeIf { it.isNotBlank() }
+            },
         )
     }
 }
+
+/** One payroll group — `/api/v2/payroll/payroll-groups`. */
+@Serializable
+data class PayrollGroupDto(
+    @SerialName("_id") val id: String? = null,
+    @SerialName("id") val altId: String? = null,
+    @SerialName("assignee_id") val assigneeId: String? = null,
+    @SerialName("user_ids") val userIds: List<String>? = null,
+    @SerialName("department_ids") val departmentIds: List<String>? = null,
+    @SerialName("designation_ids") val designationIds: List<String>? = null,
+) {
+    fun toDomain(): PayrollGroup? = (id ?: altId)?.takeIf { it.isNotBlank() }?.let {
+        PayrollGroup(
+            id = it,
+            assigneeId = assigneeId.orEmpty(),
+            userIds = userIds.orEmpty().filter(String::isNotBlank),
+            departmentIds = departmentIds.orEmpty().filter(String::isNotBlank),
+            designationIds = designationIds.orEmpty().filter(String::isNotBlank),
+        )
+    }
+}
+
+/**
+ * One auto-assignment rule.
+ *
+ * The three lists occasionally arrive as JSON encoded into a string — an
+ * unparsed jsonb column — so each is read through [asStringList].
+ */
+@Serializable
+data class AssignmentRuleDto(
+    @SerialName("id") val id: String? = null,
+    @SerialName("_id") val altId: String? = null,
+    @SerialName("module") val module: String? = null,
+    @SerialName("departments") val departments: JsonElement? = null,
+    @SerialName("vendors") val vendors: JsonElement? = null,
+    @SerialName("nominal_codes") val nominalCodes: JsonElement? = null,
+    @SerialName("amount_min") val amountMin: JsonPrimitive? = null,
+    @SerialName("target_user_id") val targetUserId: String? = null,
+    @SerialName("is_active") val isActive: Boolean? = null,
+    @SerialName("priority") val priority: Int? = null,
+) {
+    fun toDomain(): AssignmentRule? = (id ?: altId)?.takeIf { it.isNotBlank() }?.let {
+        AssignmentRule(
+            id = it,
+            module = module.orEmpty(),
+            departments = departments.asStringList(),
+            vendors = vendors.asStringList(),
+            nominalCodes = nominalCodes.asStringList(),
+            amountMin = amountMin?.contentOrNull.orEmpty().asRateText(),
+            assignTo = targetUserId.orEmpty(),
+            isActive = isActive != false,
+            priority = priority ?: 0,
+            persisted = true,
+        )
+    }
+}
+
+/** A list, or a list encoded into a string; anything else is empty. */
+internal fun JsonElement?.asStringList(): List<String> = when (this) {
+    is JsonArray -> mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.filter { it.isNotBlank() }
+    is JsonPrimitive -> contentOrNull?.let { text ->
+        runCatching { accountHubJson.parseToJsonElement(text) }.getOrNull()?.takeIf { it is JsonArray }?.asStringList()
+    }.orEmpty()
+    else -> emptyList()
+}
+
+/**
+ * The Weekly Close Command Centre, pre-shaped by the server.
+ *
+ * Read off the raw tree rather than a typed DTO: every panel's rows are the
+ * server's own presentation (a bar height, a cell tint), and a strict reader
+ * would fail the whole dashboard on the first panel it renames.
+ */
+internal fun JsonElement?.toCashClose(): CashCloseDashboard {
+    val data = (this as? JsonObject)?.let { it["data"] as? JsonObject ?: it } ?: return CashCloseDashboard()
+    val progress = data["closeProgress"] as? JsonObject
+    return CashCloseDashboard(
+        progressPercent = progress?.int("pct") ?: 0,
+        progressTotal = progress?.int("total") ?: 0,
+        waterfall = data.rows("waterfall") { row ->
+            WaterfallBar(
+                label = row.str("label"),
+                type = row.str("type"),
+                height = row.int("h") ?: 0,
+                marginBottom = row.int("mb") ?: 0,
+                amount = row.str("amount"),
+            )
+        },
+        heatRows = data.rows("heatRows") { row ->
+            HeatRow(
+                label = row.str("label"),
+                cells = (row["cells"] as? JsonArray).orEmpty().mapNotNull { cell ->
+                    (cell as? JsonObject)?.let {
+                        HeatCell(value = it.str("val"), background = it.str("bg"), color = it.str("color"))
+                    }
+                },
+            )
+        },
+        checklist = data.rows("checklist") { row ->
+            ChecklistItem(
+                label = row.str("label"),
+                done = (row["done"] as? JsonPrimitive)?.booleanOrNull == true,
+                badge = row.str("badge"),
+                badgeTone = row.str("badgeV"),
+                meta = row.str("meta"),
+            )
+        },
+        recon = data.rows("recon") { row ->
+            ReconRow(supplier = row.str("supplier"), status = row.str("status"), detail = row.str("detail"))
+        },
+        weeks = data.rows("weeks") { row ->
+            CommitmentWeek(
+                label = row.str("label").ifBlank { row.str("week") },
+                amount = row.str("amount"),
+                percent = row.int("pct") ?: 0,
+                color = row.str("color"),
+                detail = row.str("detail"),
+            )
+        },
+    )
+}
+
+private fun <T> JsonObject.rows(key: String, read: (JsonObject) -> T): List<T> =
+    (this[key] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(read) }
+
+private fun JsonObject.int(key: String): Int? =
+    (this[key] as? JsonPrimitive)?.let { it.intOrNull ?: it.doubleOrNull?.toInt() ?: it.contentOrNull?.toIntOrNull() }
 
 // -- purchase order setup ----------------------------------------------------
 
@@ -986,6 +1346,9 @@ data class PayRuleDto(
     @SerialName("nominal_code") val nominalCode: String? = null,
     @SerialName("note") val note: String? = null,
     @SerialName("applies_to") val appliesTo: String? = null,
+    @SerialName("cap_type") val capType: String? = null,
+    @SerialName("cap_amount") val capAmount: Double? = null,
+    @SerialName("day_type") val dayType: String? = null,
 ) {
     fun toDomain(index: Int, kind: String): PayRule = PayRule(
         id = id?.takeIf { it.isNotBlank() } ?: "$kind-legacy-$index",
@@ -998,6 +1361,9 @@ data class PayRuleDto(
         nominalCode = nominalCode.orEmpty(),
         note = note.orEmpty(),
         appliesTo = appliesTo.orEmpty(),
+        capped = capType == "capped",
+        capAmount = capAmount.asRateText(),
+        dayType = dayType.orEmpty(),
     )
 }
 
@@ -1032,7 +1398,23 @@ data class NonUnionPayDto(
 data class BudgetAttachmentDto(
     @SerialName("name") val name: String? = null,
     @SerialName("media") val media: String? = null,
-)
+    @SerialName("bucket") val bucket: String? = null,
+    @SerialName("region") val region: String? = null,
+    @SerialName("content_type") val contentType: String? = null,
+    @SerialName("content_subtype") val contentSubtype: String? = null,
+) {
+    /** The stored file, when the row points at one. */
+    fun toDocument(): AgreementDocument? = media?.takeIf { it.isNotBlank() }?.let {
+        AgreementDocument(
+            name = name.orEmpty(),
+            media = it,
+            bucket = bucket.orEmpty(),
+            region = region.orEmpty(),
+            contentType = contentType.orEmpty(),
+            contentSubtype = contentSubtype.orEmpty().ifBlank { name.orEmpty().substringAfterLast('.', "") },
+        )
+    }
+}
 
 @Serializable
 data class BudgetVersionDto(
@@ -1042,6 +1424,7 @@ data class BudgetVersionDto(
     @SerialName("label") val label: String? = null,
     @SerialName("status") val status: String? = null,
     @SerialName("total") val total: Double? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("currency_code") val currencyCode: String? = null,
     /** Milliseconds, sometimes quoted — read as a string and parsed. */
@@ -1059,6 +1442,7 @@ data class BudgetVersionDto(
         currencyCode = currency?.takeIf { it.isNotBlank() } ?: currencyCode.orEmpty(),
         createdAtMillis = createdAt?.contentOrNull?.takeIf { it.isNotBlank() }?.toLongOrNull(),
         sourceFileName = attachment?.name.orEmpty(),
+        attachment = attachment?.toDocument(),
     )
 }
 
@@ -1093,27 +1477,44 @@ data class BudgetLineDto(
 
 // -- trial balance -----------------------------------------------------------
 
+/**
+ * One account's row, read as loosely as the web reads it.
+ *
+ * The figures and the code are raw JSON on purpose. The web takes every amount
+ * through `Number(v) || 0` and the code through `String(v)`, so a figure sent as
+ * `"1250.00"` — which is how a Postgres NUMERIC leaves a Node service — or a
+ * code sent as the number `4000` still shows. Typed fields would fail that
+ * row's decode, and the list reader skips a row it cannot decode: an account
+ * would vanish from the ledger without a word, and the totals with it.
+ */
 @Serializable
 data class TrialBalanceRowDto(
-    @SerialName("account_code") val accountCode: String? = null,
-    @SerialName("description") val description: String? = null,
-    @SerialName("name") val name: String? = null,
-    @SerialName("cost_type") val costType: String? = null,
-    @SerialName("debit") val debit: Double? = null,
-    @SerialName("credit") val credit: Double? = null,
+    @SerialName("account_code") val accountCode: JsonElement? = null,
+    @SerialName("description") val description: JsonElement? = null,
+    @SerialName("name") val name: JsonElement? = null,
+    @SerialName("cost_type") val costType: JsonElement? = null,
+    @SerialName("debit") val debit: JsonElement? = null,
+    @SerialName("credit") val credit: JsonElement? = null,
     /** The closing balance, which is the server's, not debit minus credit. */
-    @SerialName("ending") val ending: Double? = null,
+    @SerialName("ending") val ending: JsonElement? = null,
 ) {
     fun toDomain(): TrialBalanceRow = TrialBalanceRow(
         // A code can come back as the string "null" as well as absent.
-        accountCode = accountCode?.takeIf { it.isNotBlank() && it != "null" }.orEmpty(),
-        name = description?.takeIf { it.isNotBlank() } ?: name.orEmpty(),
-        costType = costType.orEmpty(),
-        debit = debit ?: 0.0,
-        credit = credit ?: 0.0,
-        ending = ending ?: 0.0,
+        accountCode = accountCode.looseText().takeIf { it != "null" }.orEmpty(),
+        name = description.looseText().ifBlank { name.looseText() },
+        costType = costType.looseText(),
+        debit = debit.looseAmount(),
+        credit = credit.looseAmount(),
+        ending = ending.looseAmount(),
     )
 }
+
+/** A string or a number as its text; blank for null, an object or an array. */
+private fun JsonElement?.looseText(): String = (this as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
+
+/** The web's `Number(v) || 0`: a number, or a numeric string, or nothing at all. */
+private fun JsonElement?.looseAmount(): Double =
+    (this as? JsonPrimitive)?.doubleOrNull?.takeIf { it.isFinite() } ?: 0.0
 
 // -- period close ------------------------------------------------------------
 
@@ -1140,71 +1541,8 @@ data class PeriodLockDto(
     )
 }
 
-// -- bible report ------------------------------------------------------------
-
-@Serializable
-data class LedgerTransactionDto(
-    @SerialName("src") val source: String? = null,
-    @SerialName("eff_date") val effectiveDate: JsonPrimitive? = null,
-    @SerialName("invoice_number") val invoiceNumber: String? = null,
-    @SerialName("po_number") val purchaseOrderNumber: String? = null,
-    @SerialName("vendor") val vendor: String? = null,
-    @SerialName("description") val description: String? = null,
-    @SerialName("currency") val currency: String? = null,
-    @SerialName("amount") val amount: Double? = null,
-) {
-    fun toDomain(): LedgerTransaction = LedgerTransaction(
-        source = source.orEmpty(),
-        effectiveDateMillis = effectiveDate?.contentOrNull?.takeIf { it.isNotBlank() }?.toLongOrNull(),
-        invoiceNumber = invoiceNumber.orEmpty(),
-        purchaseOrderNumber = purchaseOrderNumber.orEmpty(),
-        party = vendor.orEmpty(),
-        description = description.orEmpty(),
-        originalCurrency = currency.orEmpty(),
-        amount = amount ?: 0.0,
-    )
-}
-
-@Serializable
-data class BibleAccountDto(
-    @SerialName("code") val code: String? = null,
-    @SerialName("name") val name: String? = null,
-    @SerialName("total") val total: Double? = null,
-    @SerialName("transactions") val transactions: List<LedgerTransactionDto>? = null,
-) {
-    fun toDomain(): BibleAccount = BibleAccount(
-        code = code.orEmpty(),
-        name = name.orEmpty(),
-        total = total ?: 0.0,
-        transactions = transactions.orEmpty().map { it.toDomain() },
-    )
-}
-
-@Serializable
-data class BibleReportDto(
-    @SerialName("accounts") val accounts: List<BibleAccountDto>? = null,
-    @SerialName("grand_total") val grandTotal: Double? = null,
-    @SerialName("total") val total: Double? = null,
-    @SerialName("currency") val currency: String? = null,
-    @SerialName("default_currency") val defaultCurrency: String? = null,
-    @SerialName("generatedAt") val generatedAt: JsonPrimitive? = null,
-    /** Per-bucket failures, keyed by source. Reported, never swallowed. */
-    @SerialName("errors") val errors: Map<String, String>? = null,
-) {
-    fun toDomain(): BibleReport {
-        val accounts = accounts.orEmpty().map { it.toDomain() }
-        return BibleReport(
-            accounts = accounts,
-            // The server's total where it gives one. Only summed here when it
-            // does not: a bucket that failed is missing from the accounts, and
-            // a client-side sum would quietly report a smaller book.
-            grandTotal = grandTotal ?: total ?: accounts.sumOf { it.total },
-            currencyCode = currency?.takeIf { it.isNotBlank() } ?: defaultCurrency.orEmpty(),
-            generatedAtMillis = generatedAt?.contentOrNull?.takeIf { it.isNotBlank() }?.toLongOrNull(),
-            errors = errors.orEmpty(),
-        )
-    }
-}
+// The bible report's DTOs live in BibleReportDtos.kt, beside the envelope and
+// lock readers they need.
 
 // -- budget import -----------------------------------------------------------
 
@@ -1243,6 +1581,7 @@ data class ParsedUncodedDto(
 
 @Serializable
 data class ParsedBudgetDto(
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("sections") val sections: List<ParsedSectionDto>? = null,
     @SerialName("headers") val headers: List<ParsedCodeDto>? = null,

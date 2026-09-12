@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.assetreport.data
 
+import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
@@ -174,6 +175,7 @@ internal data class LineDto(
     @SerialName("account") val account: String? = null,
     @SerialName("department") val department: String? = null,
     @SerialName("vendor") val vendor: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("expenditure_type") val expenditureType: String? = null,
     @SerialName("is_tax") val isTax: Boolean? = null,

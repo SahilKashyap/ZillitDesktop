@@ -11,10 +11,12 @@ import com.zillit.desktop.feature.cardexpenses.domain.BulkAction
 import com.zillit.desktop.feature.cardexpenses.domain.BulkCoding
 import com.zillit.desktop.feature.cardexpenses.domain.BulkItem
 import com.zillit.desktop.feature.cardexpenses.domain.BulkOutcome
+import com.zillit.desktop.feature.cardexpenses.domain.ReceiptCoding
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptLine
 import com.zillit.desktop.feature.cardexpenses.domain.StatementRow
 import com.zillit.desktop.feature.cardexpenses.domain.CardAlert
 import com.zillit.desktop.feature.cardexpenses.domain.CardAnalytics
+import com.zillit.desktop.feature.cardexpenses.domain.CardDetailsEdit
 import com.zillit.desktop.feature.cardexpenses.domain.CardHistoryEntry
 import com.zillit.desktop.feature.cardexpenses.domain.CardMetadata
 import com.zillit.desktop.feature.cardexpenses.domain.CardOverview
@@ -27,6 +29,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.DraftCardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
 import com.zillit.desktop.feature.cardexpenses.domain.NewCardRequest
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptScope
+import com.zillit.desktop.feature.cardexpenses.domain.SettingsSection
 import com.zillit.desktop.feature.cardexpenses.domain.StatementImport
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonObject
@@ -83,21 +86,68 @@ class CardRepositoryImpl(
     override suspend fun cardReceipts(cardId: String): ZillitResult<List<CardReceipt>> =
         receiptList("$base/cards/$cardId/receipts")
 
+    /**
+     * Raises a card request.
+     *
+     * The limit goes as **`proposed_limit`**, not `card_limit`: a request
+     * states what the holder believes they need, and `card_limit` is the
+     * authorised figure an accountant writes when they approve. The create
+     * route's allowlist drops unknown keys without complaint, so sending the
+     * wrong one produced a card request carrying no limit at all — and
+     * likewise `justification` rather than `reason`. `card_type` and `status`
+     * are the server's to set and are not sent.
+     */
     override suspend fun requestCard(request: NewCardRequest): ZillitResult<Unit> = post(
         "$base/cards",
         buildJsonObject {
             put("user_id", JsonPrimitive(request.holderId))
-            put("card_limit", JsonPrimitive(request.limit))
-            put("card_type", JsonPrimitive(request.type.wire))
+            put("proposed_limit", JsonPrimitive(request.proposedLimit))
             putIfPresent("currency", request.currency)
             putIfPresent("department_id", request.departmentId)
+            putIfPresent("justification", request.justification)
+            // HANDOFF card-company-pin: an absent company leaves the server to
+            // derive one from the bank chain, so the key is omitted rather
+            // than blanked.
             putIfPresent("company_id", request.companyId)
             putIfPresent("card_provider_id", request.providerId)
+            putIfPresent("card_issuer", request.issuer)
             putIfPresent("bs_control_code", request.bsControlCode)
-            putIfPresent("reason", request.reason)
-            put("status", JsonPrimitive(REQUESTED))
         },
     )
+
+    /**
+     * An accountant's full edit of a card request.
+     *
+     * Carries `status: "pending"` and a recomputed balance, both of which the
+     * server acts on: the status is read as a resubmit and wipes the card's
+     * collected approvals, and the balance moves with the change to the limit.
+     * Correct on a card still in its chain; destructive on a live one, which
+     * is why [updateBsControlCode] exists as the narrow alternative.
+     *
+     * `company_id` and `card_issuer` go as empty strings rather than being
+     * omitted: an omitted key leaves the column alone, and clearing the pin is
+     * something this form has to be able to do.
+     */
+    override suspend fun updateCardDetails(
+        cardId: String,
+        edit: CardDetailsEdit,
+    ): ZillitResult<Unit> = patch(
+        "$base/cards/$cardId",
+        buildJsonObject {
+            put("card_limit", JsonPrimitive(edit.limit))
+            put("balance", JsonPrimitive(edit.balance))
+            put("card_provider_id", JsonPrimitive(edit.providerId.orEmpty()))
+            put("card_issuer", JsonPrimitive(edit.issuer.orEmpty()))
+            put("company_id", JsonPrimitive(edit.companyId.orEmpty()))
+            putIfPresent("currency", edit.currency)
+            put("bs_control_code", JsonPrimitive(edit.bsControlCode.trim()))
+            put("justification", JsonPrimitive(edit.justification.trim()))
+            put("status", JsonPrimitive(PENDING))
+        },
+    )
+
+    override suspend fun deleteCard(cardId: String): ZillitResult<Unit> =
+        delete("$base/cards/$cardId")
 
     override suspend fun approveCard(cardId: String, note: String?): ZillitResult<Unit> =
         post("$base/cards/$cardId/approve", noteBody(note))
@@ -170,11 +220,20 @@ class CardRepositoryImpl(
         get("$base/imports", ListSerializer(ImportDto.serializer()))
             .map { rows -> rows.mapNotNull { it.toDomain() } }
 
-    override suspend fun importStatement(attachmentKey: String): ZillitResult<Unit> = post(
+    override suspend fun importStatement(
+        attachmentKey: String,
+        currency: String?,
+    ): ZillitResult<Unit> = post(
         // The backend ingests via a storage pointer rather than multipart: the
         // client uploads the file first and hands over the key.
         "$base/imports/import-statement",
-        buildJsonObject { put("attachment", JsonPrimitive(attachmentKey)) },
+        buildJsonObject {
+            put("attachment", JsonPrimitive(attachmentKey))
+            // Omitted entirely when there is none to state, so the server
+            // applies the project default. An empty string would be a claim
+            // about the statement rather than the absence of one.
+            putIfPresent("currency", currency)
+        },
     )
 
     override suspend fun rerunMatching(statementId: String): ZillitResult<Unit> = post(
@@ -237,6 +296,33 @@ class CardRepositoryImpl(
     override suspend fun flagTransactionPersonal(transactionId: String): ZillitResult<Unit> =
         post("$base/transactions/$transactionId/flag-personal", null)
 
+    /**
+     * Removes a statement line.
+     *
+     * A matched receipt is **unlinked, not destroyed** — it returns to the
+     * receipt inbox as unmatched — which is why every caller refreshes the
+     * receipts alongside the transactions.
+     */
+    override suspend fun deleteTransaction(transactionId: String): ZillitResult<Unit> =
+        delete("$base/transactions/$transactionId")
+
+    /**
+     * The bulk sibling of [deleteTransaction].
+     *
+     * Ids the server does not recognise are skipped rather than failing the
+     * batch, so the returned counts describe what actually went — not what was
+     * asked for.
+     */
+    override suspend fun bulkDeleteTransactions(
+        transactionIds: List<String>,
+    ): ZillitResult<BulkOutcome> = apiClient.request(
+        verb = HttpVerb.Post,
+        url = "$base/transactions/bulk-delete",
+        serializer = BulkOutcomeDto.serializer(),
+        module = RequestModule.ProjectUser,
+        body = buildJsonObject { put("transactionIds", jsonIds(transactionIds)) },
+    ).map { it.toDomain() }
+
     // -- receipts ----------------------------------------------------------
 
     override suspend fun receipts(scope: ReceiptScope): ZillitResult<List<CardReceipt>> =
@@ -258,8 +344,17 @@ class CardRepositoryImpl(
     override suspend fun confirmReceiptMatch(receiptId: String): ZillitResult<Unit> =
         post("$base/receipts/$receiptId/confirm-match", null)
 
+    /**
+     * Uploads a batch of receipts against one card.
+     *
+     * The coding key is **`cost_code`**, not `nominal_code` — the create route
+     * and the coding routes disagree about the name, and the create route
+     * silently drops the one it does not know. `card_id` and `currency` are
+     * the card's own: a receipt is committed against a card's limit, and the
+     * server refuses a batch that does not say which.
+     */
     override suspend fun submitReceipts(
-        cardId: String?,
+        card: ExpenseCard?,
         receipts: List<DraftCardReceipt>,
     ): ZillitResult<Unit> = post(
         "$base/receipts/submit-batch",
@@ -270,12 +365,18 @@ class CardRepositoryImpl(
                     receipts.forEach { receipt ->
                         add(
                             buildJsonObject {
-                                putIfPresent("card_id", cardId)
-                                put("description", JsonPrimitive(receipt.description))
-                                put("amount", JsonPrimitive(receipt.amount.trim().toDoubleOrNull() ?: 0.0))
-                                putIfPresent("merchant", receipt.merchant)
-                                putIfPresent("nominal_code", receipt.nominalCode)
+                                putIfPresent("card_id", card?.id)
+                                putIfPresent("currency", card?.currency)
+                                putIfPresent("company_id", card?.companyId)
+                                put("description", JsonPrimitive(receipt.description.trim()))
+                                put("amount", JsonPrimitive(receipt.amountValue))
+                                put("category", JsonPrimitive(receipt.category.wire))
                                 receipt.date?.let { put("date", JsonPrimitive(it)) }
+                                put("is_urgent", JsonPrimitive(receipt.urgent))
+                                put("request_top_up", JsonPrimitive(receipt.requestTopUp))
+                                putIfPresent("cost_code", receipt.costCode)
+                                putIfPresent("episode", receipt.episode)
+                                putIfPresent("coded_description", receipt.codedDescription)
                                 putIfPresent("receipt_attachment", receipt.attachmentKey)
                             },
                         )
@@ -285,20 +386,39 @@ class CardRepositoryImpl(
         },
     )
 
-    override suspend fun submitReceiptForApproval(receiptId: String): ZillitResult<Unit> =
-        post("$base/receipts/$receiptId/submit-for-approval", null)
+    override suspend fun submitReceiptForApproval(
+        receiptId: String,
+        coding: ReceiptCoding?,
+    ): ZillitResult<Unit> = post("$base/receipts/$receiptId/submit-for-approval", coding?.body())
+
+    /**
+     * Codes a receipt and clears its first approval in one step.
+     *
+     * Offered only to a coordinator who is also an approver: they would
+     * otherwise code the receipt and then immediately approve their own
+     * coding from the next screen.
+     */
+    override suspend fun approveAndSubmitReceipt(
+        receiptId: String,
+        coding: ReceiptCoding,
+    ): ZillitResult<Unit> = post("$base/receipts/$receiptId/approve-and-submit", coding.body())
+
+    /**
+     * Saves coding without moving the receipt on.
+     *
+     * PATCH rather than the `submit-coding` route, which advances the
+     * workflow: the coding queue's "Save draft" exists precisely so a
+     * half-finished code can be put down and picked up again.
+     */
+    override suspend fun updateReceiptCoding(
+        receiptId: String,
+        coding: ReceiptCoding,
+    ): ZillitResult<Unit> = patch("$base/receipts/$receiptId", coding.body())
 
     override suspend fun codeReceipt(
         receiptId: String,
-        nominalCode: String,
-        description: String?,
-    ): ZillitResult<Unit> = post(
-        "$base/receipts/$receiptId/submit-coding",
-        buildJsonObject {
-            put("nominal_code", JsonPrimitive(nominalCode))
-            putIfPresent("code_description", description)
-        },
-    )
+        coding: ReceiptCoding,
+    ): ZillitResult<Unit> = post("$base/receipts/$receiptId/submit-coding", coding.body())
 
     override suspend fun postReceipt(receiptId: String): ZillitResult<Unit> =
         post("$base/receipts/$receiptId/post", null)
@@ -313,11 +433,7 @@ class CardRepositoryImpl(
         post("$base/receipts/$receiptId/dismiss-personal", null)
 
     override suspend fun deleteReceipt(receiptId: String): ZillitResult<Unit> =
-        apiClient.envelope(
-            verb = HttpVerb.Delete,
-            url = "$base/receipts/$receiptId",
-            module = RequestModule.ProjectUser,
-        ).map { }
+        delete("$base/receipts/$receiptId")
 
     override suspend fun receiptHistory(receiptId: String): ZillitResult<List<CardHistoryEntry>> =
         get("$base/receipts/$receiptId/history", ListSerializer(CardHistoryDto.serializer()))
@@ -441,6 +557,10 @@ class CardRepositoryImpl(
     override suspend fun cardTopUps(cardId: String): ZillitResult<List<CardTopUp>> =
         topUpList("$base/cards/$cardId/top-ups")
 
+    override suspend fun topUpHistory(topUpId: String): ZillitResult<List<CardHistoryEntry>> =
+        get("$base/topups/$topUpId/history", ListSerializer(CardHistoryDto.serializer()))
+            .map { rows -> rows.map { it.toDomain() } }
+
     override suspend fun requestTopUp(
         cardId: String,
         amount: Double,
@@ -483,22 +603,87 @@ class CardRepositoryImpl(
     override suspend fun settings(): ZillitResult<CardSettings> =
         get("$base/settings", CardSettingsDto.serializer()).map { it.toDomain() }
 
-    override suspend fun updateSettings(settings: CardSettings): ZillitResult<CardSettings> =
-        apiClient.request(
-            verb = HttpVerb.Patch,
-            url = "$base/settings",
-            serializer = CardSettingsDto.serializer(),
-            module = RequestModule.ProjectUser,
-            body = buildJsonObject {
-                put("coding_required", JsonPrimitive(settings.codingRequired))
-                put("require_senior_sign_off", JsonPrimitive(settings.requireSeniorSignOff))
-                put("auto_match_enabled", JsonPrimitive(settings.autoMatchEnabled))
-                put("auto_match_threshold", JsonPrimitive(settings.autoMatchThreshold))
-                put("duplicate_detection", JsonPrimitive(settings.duplicateDetection))
-                put("personal_spend_detection", JsonPrimitive(settings.personalSpendDetection))
-                settings.defaultCardLimit?.let { put("default_card_limit", JsonPrimitive(it)) }
-            },
-        ).map { it.toDomain() }
+    /**
+     * Saves **one section** of the settings document.
+     *
+     * A PATCH merges, so a body carrying one key leaves the rest of the
+     * document alone — which is what makes per-section saving safe when two
+     * accountants have the page open. Sending the whole document instead lets
+     * a stale copy of the coordinators overwrite a change somebody made to the
+     * providers thirty seconds earlier.
+     *
+     * Only these five keys exist on the row. An earlier build of this screen
+     * sent `auto_match_enabled`, `duplicate_detection` and three more that are
+     * not columns; the allowlist dropped every one and the page still said
+     * "Settings saved".
+     */
+    override suspend fun updateSettings(
+        section: SettingsSection,
+        settings: CardSettings,
+    ): ZillitResult<CardSettings> = apiClient.request(
+        verb = HttpVerb.Patch,
+        url = "$base/settings",
+        serializer = CardSettingsDto.serializer(),
+        module = RequestModule.ProjectUser,
+        body = settings.sectionBody(section),
+    ).map { it.toDomain() }
+
+    private fun CardSettings.sectionBody(section: SettingsSection): JsonObject = when (section) {
+        SettingsSection.Team -> buildJsonObject { put("team_members", teamBody()) }
+        SettingsSection.Coordinators -> buildJsonObject { put("department_coordinators", coordinatorBody()) }
+        SettingsSection.Overrides -> buildJsonObject { put("approval_override", overridesBody()) }
+        SettingsSection.Providers -> buildJsonObject { put("card_providers", providersBody()) }
+        // Null clears the ceiling rather than setting it to nothing, so the
+        // key goes with an explicit null instead of being left out.
+        SettingsSection.RequestCap ->
+            buildJsonObject { put("request_cap", requestCap?.let(::JsonPrimitive) ?: JsonNull) }
+    }
+
+    private fun CardSettings.teamBody() = buildJsonArray {
+        teamMembers.map { it.normalised() }.forEach { member ->
+            add(
+                buildJsonObject {
+                    put("user_id", JsonPrimitive(member.userId))
+                    // Explicit null, never absent: null is "unlimited" and zero
+                    // is "may post nothing", and an omitted key would be read
+                    // as neither.
+                    put("posting_limit", member.postingLimit?.let(::JsonPrimitive) ?: JsonNull)
+                    put("can_override", JsonPrimitive(member.canOverride))
+                    put("is_senior", JsonPrimitive(member.isSenior))
+                },
+            )
+        }
+    }
+
+    private fun CardSettings.coordinatorBody() = buildJsonArray {
+        coordinators.forEach { coordinator ->
+            add(
+                buildJsonObject {
+                    put("department_id", JsonPrimitive(coordinator.departmentId))
+                    put("user_ids", jsonIds(coordinator.userIds))
+                    put("coding_required", JsonPrimitive(coordinator.codingRequired))
+                },
+            )
+        }
+    }
+
+    private fun CardSettings.overridesBody() = buildJsonObject {
+        put("override_card_req", JsonPrimitive(overrides.overrideCardRequests))
+        put("override_receipt", JsonPrimitive(overrides.overrideReceipts))
+        put("require_coord_code", JsonPrimitive(overrides.requireCoordinatorCoding))
+        put("require_senior_sign_off", JsonPrimitive(overrides.requireSeniorSignOff))
+    }
+
+    private fun CardSettings.providersBody() = buildJsonArray {
+        providers.filter { it.name.isNotBlank() }.forEach { provider ->
+            add(
+                buildJsonObject {
+                    put("id", JsonPrimitive(provider.id))
+                    put("name", JsonPrimitive(provider.name.trim()))
+                },
+            )
+        }
+    }
 
     // -- plumbing ----------------------------------------------------------
 
@@ -526,6 +711,24 @@ class CardRepositoryImpl(
     private suspend fun patch(url: String, body: JsonObject?): ZillitResult<Unit> =
         apiClient.envelope(HttpVerb.Patch, url, RequestModule.ProjectUser, body).map { }
 
+    private suspend fun delete(url: String): ZillitResult<Unit> =
+        apiClient.envelope(HttpVerb.Delete, url, RequestModule.ProjectUser).map { }
+
+    /**
+     * The body every receipt-coding write shares.
+     *
+     * `card_id` and `currency` ride along on all of them: the service refuses a
+     * receipt write that does not name the card it belongs to, and the receipt
+     * already knows its own — so they are echoed rather than looked up.
+     */
+    private fun ReceiptCoding.body(): JsonObject = buildJsonObject {
+        put("nominal_code", JsonPrimitive(nominalCode.trim()))
+        putIfPresent("episode", episode)
+        putIfPresent("code_description", codeDescription)
+        put("card_id", cardId?.let(::JsonPrimitive) ?: JsonNull)
+        put("currency", currency?.let(::JsonPrimitive) ?: JsonNull)
+    }
+
     private fun jsonIds(ids: List<String>) =
         buildJsonArray { ids.forEach { add(JsonPrimitive(it)) } }
 
@@ -533,7 +736,7 @@ class CardRepositoryImpl(
         note?.takeIf { it.isNotBlank() }?.let { buildJsonObject { put("note", JsonPrimitive(it)) } }
 
     private companion object {
-        const val REQUESTED = "requested"
+        const val PENDING = "pending"
         const val PHYSICAL = "physical"
         const val LAST_FOUR = 4
     }

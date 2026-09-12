@@ -32,14 +32,28 @@ internal class AgreementActions(
         })
     }
 
-    fun onEvent(event: AccountHubEvent) {
+    fun onEvent(event: AccountHubEvent): Boolean {
         when (event) {
             AccountHubEvent.PickAgreementFiles -> pick()
             is AccountHubEvent.EditAgreementQueue ->
                 vm.update { copy(setup = setup.copy(agreementQueue = event.queue)) }
             AccountHubEvent.UploadAgreementFiles -> upload()
             is AccountHubEvent.DeleteAgreementDocument -> delete(event.id)
-            else -> Unit
+            is AccountHubEvent.OpenAgreementDocument -> open(event.id)
+            else -> return false
+        }
+        return true
+    }
+
+    /** Opens a stored document in the OS — by presigned URL, as both phones do. */
+    private fun open(id: String) {
+        val opener = vm.documentOpener ?: return
+        val document = vm.setupState.setup.agreements.firstOrNull { it.id == id } ?: return
+        vm.launchWork {
+            when (val opened = opener.open(document)) {
+                is ZillitResult.Failure -> vm.report(opened.error)
+                is ZillitResult.Success -> Unit
+            }
         }
     }
 
@@ -53,11 +67,14 @@ internal class AgreementActions(
         val source = files ?: return
         if (!vm.mayEdit()) return
         vm.launchWork {
+            // Refusals and failures show under the block, as the web's do,
+            // rather than as a toast over it; the next attempt clears them.
+            vm.update { copy(setup = setup.copy(poTermsError = null)) }
             val picked = source.pick(
                 SetupUpload.PurchaseOrderTerms,
                 multiple = false,
             ) { refusal ->
-                vm.sendSideEffect(AccountHubEffect.Failed(refusal))
+                vm.update { copy(setup = setup.copy(poTermsError = refusal)) }
             }.firstOrNull() ?: return@launchWork
             vm.update { copy(setup = setup.copy(poTermsUploading = true)) }
             when (val stored = source.upload(picked, caption = "", purpose = SetupUpload.PurchaseOrderTerms)) {
@@ -73,10 +90,35 @@ internal class AgreementActions(
                         ),
                     )
                 }
-                is ZillitResult.Failure -> {
-                    vm.update { copy(setup = setup.copy(poTermsUploading = false)) }
-                    vm.report(stored.error)
+                is ZillitResult.Failure -> vm.update {
+                    copy(setup = setup.copy(poTermsUploading = false, poTermsError = UPLOAD_FAILED))
                 }
+            }
+        }
+    }
+
+    /**
+     * Opens the terms document in the OS — the web's View, which shows a PDF
+     * inline and downloads a Word file. Works on a just-uploaded, not-yet-saved
+     * document too: the file is already in storage by then.
+     */
+    fun openPoTerms() {
+        val document = vm.setupState.setup.poSetup.edited.termsDocument ?: return
+        if (!document.openable) {
+            vm.update { copy(setup = setup.copy(poTermsError = METADATA_MISSING)) }
+            return
+        }
+        val opener = vm.documentOpener ?: return
+        vm.update { copy(setup = setup.copy(poTermsOpening = true, poTermsError = null)) }
+        vm.launchWork {
+            val opened = opener.open(document)
+            vm.update {
+                copy(
+                    setup = setup.copy(
+                        poTermsOpening = false,
+                        poTermsError = if (opened is ZillitResult.Failure) OPEN_FAILED else null,
+                    ),
+                )
             }
         }
     }
@@ -158,3 +200,8 @@ internal class AgreementActions(
     private fun failureMessage(failed: List<String>): String =
         "Could not upload: " + failed.joinToString(", ")
 }
+
+// The web's `TermsDocumentSection` copy, verbatim.
+private const val UPLOAD_FAILED = "Upload failed — please try again"
+private const val METADATA_MISSING = "Can't open — attachment metadata missing"
+private const val OPEN_FAILED = "Couldn't open the document — please try again"

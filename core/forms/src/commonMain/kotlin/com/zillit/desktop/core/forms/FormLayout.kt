@@ -36,6 +36,17 @@ class FormLayout(private val template: FormTemplate) {
     fun shows(sectionKey: String, label: String): Boolean =
         !isLoaded || visible(sectionKey).any { it.label == label }
 
+    /**
+     * What this production calls a field, or [fallback] where it has not
+     * renamed it.
+     *
+     * Productions do rename these — "Nominal Code" becomes "Account", "Vendor"
+     * becomes "Supplier" — and a screen that hard-codes the wording shows one
+     * name on the form and another in Forms Configuration.
+     */
+    fun label(sectionKey: String, field: String, fallback: String): String =
+        visible(sectionKey).firstOrNull { it.label == field }?.name?.takeIf { it.isNotBlank() } ?: fallback
+
     fun isRequired(sectionKey: String, label: String): Boolean =
         visible(sectionKey).firstOrNull { it.label == label }?.required == true
 

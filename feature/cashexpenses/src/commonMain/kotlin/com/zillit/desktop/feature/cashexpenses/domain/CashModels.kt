@@ -191,6 +191,9 @@ data class CashSettings(
     val requireSeniorSignOff: Boolean = false,
     val teamMembers: List<CashTeamMember> = emptyList(),
     val quickCodes: List<QuickCode> = emptyList(),
+    /** Out-of-pocket claims settled through payroll rather than a BACS run. */
+    val reimburseToPayroll: Boolean = false,
+    val deductionRules: List<DeductionRule> = emptyList(),
 )
 
 /** Someone on the cash team, with the rights the accountant granted them. */
@@ -203,11 +206,73 @@ data class CashTeamMember(
 )
 
 /** A saved cost code, offered on the coding screens. */
+/**
+ * A saved coding shortcut — "Fuel is 2400 at 20% VAT".
+ *
+ * The field names are the ones the web writes (`name`, `nominal_code`,
+ * `keywords`, `vat`). This used to read `code`/`label`, which nothing has ever
+ * written: a production configured on the web came through with no quick codes
+ * at all, and the coding editor offered an empty list.
+ */
 data class QuickCode(
-    val code: String,
-    val label: String,
+    val name: String,
+    val nominalCode: String = "",
     val keywords: List<String> = emptyList(),
+    /** Per cent, as configured; null when the category carries no default. */
+    val vat: Double? = null,
+) {
+    /** "Fuel · 2400", or just the name where no code is set. */
+    val label: String get() = if (nominalCode.isBlank()) name else "$name · $nominalCode"
+}
+
+/**
+ * A rule that fires on a receipt's category and value — the web's
+ * `deduction_rules`.
+ *
+ * Four ship as system defaults (fuel, accommodation, meals, high value), all
+ * switched off until an accountant enables one. A rule either deducts a share
+ * of the receipt, sends it for senior review, or raises a query.
+ */
+data class DeductionRule(
+    val id: String,
+    val title: String,
+    val description: String = "",
+    val processType: RuleProcess = RuleProcess.DeductAmount,
+    val thresholdType: RuleThreshold = RuleThreshold.Percentage,
+    val thresholdValue: Double = 0.0,
+    val enabled: Boolean = false,
+    /** Words matched against the receipt's description; empty means every receipt. */
+    val triggerCodes: List<String> = emptyList(),
+    /** One of the four the server ships; a production may not delete these. */
+    val systemDefault: Boolean = false,
+    /** The stored `type`, round-tripped so a save cannot rename a system rule. */
+    val type: String = "",
 )
+
+/** What a [DeductionRule] does when it fires. */
+enum class RuleProcess(val wire: String, val label: String) {
+    DeductAmount("deduct_amount", "Deduct"),
+    SeniorReview("senior_review", "Senior review"),
+    NeedQuery("need_query", "Raise a query"),
+    ;
+
+    companion object {
+        fun from(wire: String?): RuleProcess =
+            entries.firstOrNull { it.wire == wire?.trim()?.lowercase() } ?: DeductAmount
+    }
+}
+
+/** How a [DeductionRule]'s threshold is read. */
+enum class RuleThreshold(val wire: String, val label: String) {
+    Percentage("percentage", "% of the receipt"),
+    MinAmount("min_amount", "Over an amount"),
+    ;
+
+    companion object {
+        fun from(wire: String?): RuleThreshold =
+            entries.firstOrNull { it.wire == wire?.trim()?.lowercase() } ?: Percentage
+    }
+}
 
 /** The accountant's petty-cash dashboard. */
 data class PettyCashOverview(

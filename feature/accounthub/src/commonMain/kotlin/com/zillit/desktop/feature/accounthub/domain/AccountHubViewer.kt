@@ -66,6 +66,30 @@ data class AccountHubViewer(
     val canEdit: Boolean get() = canPost && (isAccountant || isAdmin)
 
     /**
+     * Whether a vendor may be added.
+     *
+     * Anyone who may post, not only the accounts team. The web offers Add Vendor
+     * to every viewer and gives department users an "Added by Me" tab to find
+     * what they raised; gating it on [canEdit] left a department user with a tab
+     * for vendors they had no way to create.
+     */
+    val mayAddVendor: Boolean get() = canPost
+
+    /**
+     * Whether this particular vendor may be edited or deleted.
+     *
+     * The web's own rule, per row: the accounts team may change any vendor, and
+     * the person who added one may change theirs. The blank-id check is
+     * load-bearing — a vendor with no recorded adder and a viewer with no id
+     * would otherwise compare equal and hand every row to every viewer.
+     */
+    fun mayModifyVendor(vendor: Vendor): Boolean {
+        if (!canPost) return false
+        if (isAccountant || isAdmin) return true
+        return userId.isNotBlank() && vendor.addedBy == userId
+    }
+
+    /**
      * Whether the operations the service reserves for the accounts department
      * may be performed.
      *

@@ -40,11 +40,13 @@ fun ZillitTheme(
 ) {
     val target = if (darkTheme) DarkColors else LightColors
     val colors = if (animateThemeChange) target.animated() else target
+    val fonts = rememberZillitFonts()
 
     CompositionLocalProvider(
         LocalZillitColors provides colors,
         LocalZillitSpacing provides ZillitSpacing(),
-        LocalZillitTypography provides ZillitTypography(),
+        LocalZillitFonts provides fonts,
+        LocalZillitTypography provides ZillitTypography(fonts),
         LocalZillitShapes provides ZillitShapes(),
     ) {
         MaterialTheme(
@@ -68,6 +70,10 @@ object ZillitTheme {
 
     val typography: ZillitTypography
         @Composable @ReadOnlyComposable get() = LocalZillitTypography.current
+
+    /** The bundled typefaces — Inter, DM Mono, Syne. */
+    val fonts: ZillitFonts
+        @Composable @ReadOnlyComposable get() = LocalZillitFonts.current
 
     val shapes: ZillitShapes
         @Composable @ReadOnlyComposable get() = LocalZillitShapes.current

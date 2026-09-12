@@ -27,6 +27,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.cashexpenses.domain.DraftReceipt
@@ -190,11 +191,10 @@ private fun ReceiptCard(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            ZillitTextField(
+            ZillitDateField(
                 value = receipt.date?.let { EpochDate.isoDate(it) }.orEmpty(),
                 onValueChange = { onChange(receipt.copy(date = parseIsoDate(it))) },
                 label = "Date of purchase",
-                placeholder = "2026-08-04",
                 modifier = Modifier.weight(1f),
             )
         }

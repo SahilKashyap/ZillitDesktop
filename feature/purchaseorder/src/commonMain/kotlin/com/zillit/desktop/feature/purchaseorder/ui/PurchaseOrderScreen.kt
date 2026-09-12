@@ -4,67 +4,63 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.common.EpochDate
-import com.zillit.desktop.core.common.Money
-import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.ColumnWidth
-import com.zillit.desktop.core.designsystem.component.StatusTone
-import com.zillit.desktop.core.designsystem.component.TableColumn
+import com.zillit.desktop.core.designsystem.component.TabStripSize
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
-import com.zillit.desktop.core.designsystem.component.ZillitDataTable
-import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitErrorState
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
-import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
-import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
-import com.zillit.desktop.core.designsystem.component.ZillitSelect
-import com.zillit.desktop.core.designsystem.component.ZillitStatTile
-import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
-import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.feature.purchaseorder.domain.PoFormFields
-import com.zillit.desktop.feature.purchaseorder.domain.PoLine
-import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
-import com.zillit.desktop.feature.purchaseorder.domain.LocalCopy
-import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
+import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.feature.purchaseorder.ui.pages.PoAddressesPage
+import com.zillit.desktop.feature.purchaseorder.ui.pages.PoDialogs
+import com.zillit.desktop.feature.purchaseorder.ui.pages.PoDraftsPage
+import com.zillit.desktop.feature.purchaseorder.ui.pages.PoEntryPage
+import com.zillit.desktop.feature.purchaseorder.ui.pages.PoFormPage
+import com.zillit.desktop.feature.purchaseorder.ui.pages.PoListPage
+import com.zillit.desktop.feature.purchaseorder.ui.pages.PoPostedPage
+import com.zillit.desktop.feature.purchaseorder.ui.pages.PoQueuePage
+import com.zillit.desktop.feature.purchaseorder.ui.pages.PoTemplatesPage
 
 /**
  * The Purchase Orders tool.
  *
- * Four surfaces on a tab strip — the production's commitments, everyone's
- * orders, your own, and the queue of decisions waiting on you — plus the form
- * that raises one. A sidebar would be too much furniture for five places.
+ * The web's own shell, one tab strip deep: a search box, the role's tabs, the
+ * action button that raises an order, then the right-hand group (Templates, PO
+ * Drafts, Delivery Addresses). An accounts assistant gets a banner saying what
+ * is missing rather than a quietly shorter strip.
+ *
+ * Two surfaces take over the page instead of appearing beside it — the form and
+ * the processing page — for the reason the web suppresses its own header for
+ * them: both are long, and a tab strip above a half-filled form invites the
+ * click that loses it.
  */
 @Composable
 fun PurchaseOrderScreen(
@@ -73,55 +69,15 @@ fun PurchaseOrderScreen(
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(ZillitTheme.colors.surface)
-                    .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.lg),
-                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-            ) {
-                ZillitPageHeader(
-                    eyebrow = "Finance",
-                    title = "Purchase Orders",
-                    description = "Commit spend with a vendor before it happens, and follow it to the ledger.",
-                    actions = {
-                        ZillitButton(
-                            text = "Refresh",
-                            onClick = { onEvent(PoEvent.Refresh) },
-                            variant = ButtonVariant.Tertiary,
-                            size = ButtonSize.Small,
-                            leadingIcon = ZillitIcons.Reload,
-                            loading = state.loading,
-                        )
-                    },
-                )
-                ZillitTabStrip(
-                    tabs = state.visibleDestinations.map { ZillitTab(it.slug, it.label) },
-                    activeId = state.destination.slug,
-                    onSelect = { slug ->
-                        PoDestination.entries.firstOrNull { it.slug == slug }
-                            ?.let { onEvent(PoEvent.Open(it)) }
-                    },
-                )
-            }
-            ZillitDivider()
-            OfflineBanner(state)
-
-            val error = state.error
-            when {
-                error != null -> ZillitErrorState(
-                    message = error.localised(),
-                    onRetry = { onEvent(PoEvent.Refresh) },
-                )
-
-                state.destination == PoDestination.Overview -> OverviewPage(state, onEvent)
-                state.destination == PoDestination.Raise -> RaisePage(state, onEvent)
-                else -> OrdersPage(state, onEvent)
-            }
+        val form = state.form
+        val entry = state.entry
+        when {
+            form != null -> PoFormPage(state, form, onEvent)
+            entry != null && state.destination == PoDestination.Entry -> PoEntryPage(state, entry, onEvent)
+            else -> Console(state, onEvent)
         }
 
-        PoPromptDialog(state.prompt, onEvent)
+        PoDialogs(state, onEvent)
         ZillitToast(
             message = state.notice,
             onDismiss = { onEvent(PoEvent.ClearNotice) },
@@ -130,894 +86,227 @@ fun PurchaseOrderScreen(
     }
 }
 
-@Suppress("LongMethod") // A dashboard: tiles and a table, read as one screen.
 @Composable
-private fun OverviewPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
-    val awaiting = state.orders.count { it.status == PoStatus.AwaitingApproval }
-    val committed = state.committedByCurrency
-    val open = state.orders.count { !it.status.isFinished }
-
-    ZillitScrollColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(ZillitTheme.spacing.xl),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-            ZillitStatTile(
-                label = "Open orders",
-                value = open.toString(),
-                sub = "Not yet closed or cancelled",
-                icon = ZillitIcons.File,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitStatTile(
-                label = "Awaiting approval",
-                value = awaiting.toString(),
-                sub = "Held up before commitment",
-                tone = StatusTone.Pending,
-                icon = ZillitIcons.Shield,
-                onClick = { onEvent(PoEvent.Open(PoDestination.ApprovalQueue)) },
-                modifier = Modifier.weight(1f),
-            )
-            ZillitStatTile(
-                label = "Committed",
-                // One currency's worth in the tile; the rest are listed below,
-                // because summing across currencies would be wrong.
-                value = committed.entries.firstOrNull()
-                    ?.let { Money.format(it.value, it.key) } ?: "—",
-                sub = if (committed.size > 1) "${committed.size} currencies" else "Approved and posted",
-                tone = StatusTone.Done,
-                icon = ZillitIcons.Ledger,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitStatTile(
-                label = "Vendors",
-                value = state.vendors.size.toString(),
-                sub = "Available to order from",
-                icon = ZillitIcons.Users,
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        if (committed.size > 1) {
-            ZillitSectionCard(title = "Committed by currency", icon = ZillitIcons.Bank) {
-                committed.forEach { (currency, amount) ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xs),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        ZillitText(
-                            text = currency.ifBlank { "Unstated currency" },
-                            style = ZillitTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                        ZillitText(
-                            text = Money.format(amount, currency),
-                            style = ZillitTheme.typography.numeric,
-                        )
-                    }
-                }
-            }
-        }
-
-        ZillitSectionCard(title = "Recent orders", icon = ZillitIcons.File, padded = false) {
-            ZillitDataTable(
-                rows = state.orders.take(RECENT_ROWS),
-                columns = orderColumns(),
-                key = { it.id },
-                loading = state.loading,
-                emptyTitle = "No purchase orders yet",
-                emptyMessage = "Raise one to commit spend with a vendor.",
-                onRowClick = { onEvent(PoEvent.Open(PoDestination.AllOrders)) },
-                virtualised = false,
-            )
-        }
-    }
-}
-
-@Suppress("LongMethod") // Filters, list and detail: one screen read together.
-@Composable
-private fun OrdersPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
-    val rows = state.rows
-    val selected = state.selected
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(ZillitTheme.spacing.xl),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
+private fun Console(state: PoUiState, onEvent: (PoEvent) -> Unit) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(ZillitTheme.colors.surface)
+                .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.lg),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
+            ZillitPageHeader(
+                eyebrow = "Transactions",
+                title = "Purchase Orders",
+                description = "Full PO lifecycle — raise, approve, process, post, invoice, and close.",
+                actions = {
+                    ZillitButton(
+                        text = "Refresh",
+                        onClick = { onEvent(PoEvent.Refresh) },
+                        variant = ButtonVariant.Tertiary,
+                        size = ButtonSize.Small,
+                        leadingIcon = ZillitIcons.Reload,
+                        loading = state.loading,
+                    )
+                },
+            )
+            // Its own row, as the web has it, but **bounded**: stretched across
+            // 1400 points it read as a banner rather than a field. It cannot
+            // ride the tab row either — a senior sees nine tabs, which leaves
+            // no width for it and truncates the last one.
             ZillitSearchField(
                 value = state.search,
                 onValueChange = { onEvent(PoEvent.Search(it)) },
-                placeholder = "Search by number, vendor or description",
-                modifier = Modifier.width(SEARCH_WIDTH),
+                placeholder = "Search all POs — by number, vendor, description, amount, code, date, item…",
+                modifier = Modifier.widthIn(max = SEARCH_WIDTH).fillMaxWidth(),
             )
-            ZillitSelect(
-                value = state.statusFilter,
-                options = listOf(null) + PoStatus.entries.filter { it != PoStatus.Unknown },
-                onSelect = { onEvent(PoEvent.Filter(it)) },
-                label = { it?.label ?: "Every status" },
-            )
-            ZillitText(
-                text = "${rows.size} order${if (rows.size == 1) "" else "s"}",
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.textSecondary,
-                modifier = Modifier.weight(1f),
-            )
-            if (state.selection.isNotEmpty() && state.viewer.isAccountant) {
-                ZillitButton(
-                    text = "Close ${state.selection.size} selected",
-                    onClick = {
-                        onEvent(
-                            PoEvent.Ask(
-                                PoPrompt.Confirm(
-                                    PoConfirmAction.CloseSelected,
-                                    "",
-                                    "Close ${state.selection.size} order(s)",
-                                    "Closing releases the remaining commitment. It cannot be undone here.",
-                                ),
-                            ),
-                        )
-                    },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                    enabled = !state.busy,
-                )
-            }
+            TabBar(state, onEvent)
         }
-
-        Row(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
-        ) {
-            ZillitSectionCard(
-                title = state.destination.label,
-                icon = ZillitIcons.File,
-                padded = false,
-                modifier = Modifier.weight(LIST_WEIGHT).fillMaxHeight(),
-            ) {
-                ZillitDataTable(
-                    rows = rows,
-                    columns = selectableColumns(state, onEvent),
-                    key = { it.id },
-                    loading = state.loading,
-                    onRowClick = { onEvent(PoEvent.Select(it.id)) },
-                    isSelected = { it.id == state.selectedId },
-                    emptyTitle = if (state.search.isBlank()) "Nothing here" else "Nothing matches that search",
-                    emptyMessage = when (state.destination) {
-                        PoDestination.ApprovalQueue -> "Orders routed to you for a decision appear here."
-                        PoDestination.MyOrders -> "Orders you raise appear here with their progress."
-                        else -> "Purchase orders on this project appear here."
-                    },
-                )
-            }
-
-            ZillitSectionCard(
-                title = "Order detail",
-                icon = ZillitIcons.Eye,
-                padded = false,
-                modifier = Modifier.weight(DETAIL_WEIGHT).fillMaxHeight(),
-            ) {
-                if (selected == null) {
-                    ZillitEmptyState(
-                        title = "Pick an order",
-                        message = "Its lines, approvals and history show here.",
-                        icon = ZillitIcons.Eye,
-                    )
-                } else {
-                    OrderDetail(state, selected, onEvent)
-                }
-            }
-        }
-    }
-}
-
-@Suppress("LongMethod") // One order, top to bottom; the order is the reading order.
-@Composable
-private fun OrderDetail(state: PoUiState, order: PurchaseOrder, onEvent: (PoEvent) -> Unit) {
-    ZillitScrollColumn(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(ZillitTheme.spacing.lg),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                ZillitText(
-                    text = order.number.ifBlank {
-                        if (order.isLocalOnly) "New order" else "Order ${order.id.take(ID_FALLBACK)}"
-                    },
-                    style = ZillitTheme.typography.titleMedium,
-                )
-                ZillitText(
-                    text = order.vendorName.ifBlank { "No vendor" },
-                    style = ZillitTheme.typography.bodySmall,
-                    color = ZillitTheme.colors.textSecondary,
-                )
-            }
-            OrderStatusPill(order)
-        }
-
-        order.local?.let { LocalOrderNotice(it) }
-
-        ZillitText(
-            text = Money.format(order.total, order.currency),
-            style = ZillitTheme.typography.displayLarge,
-        )
-
-        // A header total that disagrees with its lines is usually a line edited
-        // after the fact. Named rather than silently corrected: which figure is
-        // right is not this client's call.
-        if (order.totalsDisagree) {
-            ZillitNotice(
-                text = "The header total and the lines disagree — lines come to " +
-                    "${Money.format(order.lineTotal, order.currency)}.",
-                tone = StatusTone.Pending,
-                icon = ZillitIcons.Warning,
-            )
-        }
-
-        if (order.description.isNotBlank()) {
-            ZillitText(text = order.description, style = ZillitTheme.typography.bodyMedium)
-        }
-
-        if (order.lines.isNotEmpty()) {
-            ZillitDivider()
-            ZillitText(text = "Lines", style = ZillitTheme.typography.titleSmall)
-            order.lines.forEach { line ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        ZillitText(
-                            text = line.description.ifBlank { "Line" },
-                            style = ZillitTheme.typography.bodyMedium,
-                            maxLines = 1,
-                        )
-                        ZillitText(
-                            text = "${line.quantity} × ${Money.format(line.unitPrice, order.currency)}" +
-                                (line.nominalCode?.let { " · $it" } ?: ""),
-                            style = ZillitTheme.typography.bodySmall,
-                            color = ZillitTheme.colors.textMuted,
-                            maxLines = 1,
-                        )
-                    }
-                    ZillitText(
-                        text = Money.format(line.total, order.currency),
-                        style = ZillitTheme.typography.numeric,
-                    )
-                }
-            }
-        }
-
-        if (order.approvals.isNotEmpty()) {
-            ZillitDivider()
-            ZillitText(text = "Approval chain", style = ZillitTheme.typography.titleSmall)
-            order.approvals.forEach { step ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                ) {
-                    ZillitText(
-                        text = "${step.level}. ${step.name.ifBlank { "Unnamed approver" }}",
-                        style = ZillitTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                    )
-                    ZillitStatusPill(
-                        label = step.decision?.replaceFirstChar { it.uppercase() } ?: "Waiting",
-                        tone = if (step.decided) StatusTone.Done else StatusTone.Pending,
-                    )
-                }
-            }
-        }
-
         ZillitDivider()
-        Attachments(state, order, onEvent)
-        ZillitDivider()
-        OrderActions(state, order, onEvent)
+        OfflineBanner(state)
+        if (state.showAssistantBanner) AssistantBanner()
+
+        val error = state.error
+        if (error != null) {
+            ZillitErrorState(message = error.localised(), onRetry = { onEvent(PoEvent.Refresh) })
+            return@Column
+        }
+        // Bounded on purpose: the pages below scroll, and a scrolling child of
+        // an unbounded column is handed infinite height — which is how the
+        // order table ended up boxed into whatever was left over.
+        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            Page(state, onEvent)
+        }
     }
 }
 
 /**
- * The order's files.
+ * The strip: every tab this role has, then the action button.
  *
- * The row has always shown a count; until now there was no way to reach what
- * it was counting. A quote, a signed copy, a delivery note — the paperwork
- * that makes an order arguable.
+ * The web draws two groups of identical underline tabs with its "Enter PO" /
+ * "Create PO" button *between* them. One strip here, with the button in the
+ * trailing slot, because the design system's strip owns the overflow scrolling
+ * and the active underline — two strips side by side each claim half the row
+ * and the tabs stop lining up. The labels and their order are the web's; only
+ * the button moved to the end of the row, where a desktop primary action goes.
  */
 @Composable
-private fun Attachments(state: PoUiState, order: PurchaseOrder, onEvent: (PoEvent) -> Unit) {
-    ZillitText(text = "Attachments", style = ZillitTheme.typography.titleSmall)
-    when {
-        state.attachments.isEmpty() && order.attachmentCount > 0 -> ZillitText(
-            // The count came with the order; the files are a second call.
-            text = "Loading…",
+private fun TabBar(state: PoUiState, onEvent: (PoEvent) -> Unit) {
+    val tabs = state.mainTabs + state.registerTabs
+    ZillitTabStrip(
+        tabs = tabs.map { ZillitTab(it.slug, it.label) },
+        activeId = state.destination.slug,
+        onSelect = { slug -> tabs.firstOrNull { it.slug == slug }?.let { onEvent(PoEvent.Open(it)) } },
+        size = TabStripSize.Primary,
+        trailing = {
+            Spacer(modifier = Modifier.width(ZillitTheme.spacing.sm))
+            ZillitButton(
+                text = state.createLabel,
+                onClick = { onEvent(PoEvent.CreateOrder) },
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Add,
+            )
+        },
+    )
+}
+
+@Composable
+private fun Page(state: PoUiState, onEvent: (PoEvent) -> Unit) {
+    when (state.destination) {
+        PoDestination.Queue -> PoQueuePage(state, onEvent)
+        PoDestination.Posted -> PoPostedPage(state, onEvent)
+        PoDestination.Templates -> PoTemplatesPage(state, onEvent)
+        PoDestination.Drafts -> PoDraftsPage(state, onEvent)
+        PoDestination.DeliveryAddresses -> PoAddressesPage(state, onEvent)
+        PoDestination.Settings -> PoSettingsPage(state, onEvent)
+        PoDestination.Reports -> ComingSoon("Reports")
+        // Both hand off: the tap already sent the host somewhere else, and this
+        // is what is behind it if the hand-off could not be taken.
+        PoDestination.Vendors -> HandOff(
+            title = "Vendors",
+            message = "Vendors live in the Account Hub. Opening them there…",
+            icon = ZillitIcons.Users,
+            action = "Open Vendors",
+            onAction = { onEvent(PoEvent.OpenVendors) },
+        )
+
+        PoDestination.Invoices -> HandOff(
+            title = "Invoices",
+            message = "Invoices are their own tool. Opening it…",
+            icon = ZillitIcons.Receipt,
+            action = "Open Invoices",
+            onAction = { onEvent(PoEvent.OpenInvoices) },
+        )
+
+        PoDestination.Entry -> PoEntryPlaceholder(onEvent)
+        else -> PoListPage(state, onEvent)
+    }
+}
+
+/**
+ * The PO Entry tab with nothing being processed.
+ *
+ * The web's `activeTab === "entry"` with no `selectedPO` renders the same
+ * prompt: the tab is a *place*, not a list, and it fills when an order is
+ * picked from the queue.
+ */
+@Composable
+private fun PoEntryPlaceholder(onEvent: (PoEvent) -> Unit) {
+    ZillitEmptyState(
+        title = "No PO open",
+        message = "Pick an order from the Queue and choose Process to code it and post it to the ledger.",
+        icon = ZillitIcons.Ledger,
+        action = {
+            ZillitButton(
+                text = "Go to Queue",
+                onClick = { onEvent(PoEvent.Open(PoDestination.Queue)) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+            )
+        },
+    )
+}
+
+/** The web's own placeholder, for the tab it has not built either. */
+@Composable
+private fun ComingSoon(title: String) {
+    ZillitEmptyState(
+        title = title,
+        message = "Coming soon.",
+        icon = ZillitIcons.BarChart,
+    )
+}
+
+@Composable
+private fun HandOff(
+    title: String,
+    message: String,
+    icon: ImageVector,
+    action: String,
+    onAction: () -> Unit,
+) {
+    ZillitEmptyState(
+        title = title,
+        message = message,
+        icon = icon,
+        action = {
+            ZillitButton(text = action, onClick = onAction, variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+        },
+    )
+}
+
+/**
+ * The web's "Assistant View" notice.
+ *
+ * Worth keeping verbatim: an accounts assistant opening this tool finds two
+ * tabs missing and no explanation, and the alternative to saying so is a
+ * support question every time somebody joins the department.
+ */
+@Composable
+private fun AssistantBanner() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.md),
+    ) {
+        ZillitNotice(
+            text = "Assistant View — Some sections are hidden based on your role. Budget data, cost report " +
+                "impact, cash flow forecasts, and settings are restricted to the Production Accountant.",
+            tone = StatusTone.Pending,
+            icon = ZillitIcons.Shield,
+        )
+    }
+}
+
+/** What the person is looking at when the network is gone. */
+@Composable
+internal fun OfflineBanner(state: PoUiState) {
+    val stale = state.staleSince
+    if (!state.offline && stale == null) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(BANNER_DOT)
+                .clip(RoundedCornerShape(BANNER_DOT))
+                .background(ZillitTheme.colors.warning),
+        )
+        ZillitText(
+            text = when {
+                stale != null -> "Showing the copy saved ${EpochDate.dateTime(stale)} — you are offline."
+                else -> "You are offline. Orders you raise will be sent when you are back."
+            },
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textSecondary,
         )
-
-        state.attachments.isEmpty() -> ZillitText(
-            text = "Nothing attached to this order.",
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textMuted,
-        )
-
-        else -> state.attachments.forEach { file ->
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                ZillitText(
-                    text = file.displayName,
-                    style = ZillitTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                )
-                ZillitButton(
-                    text = "Open",
-                    onClick = { onEvent(PoEvent.OpenAttachment(file)) },
-                    variant = ButtonVariant.Tertiary,
-                    size = ButtonSize.Small,
-                )
-                // Removing paperwork from an order is the raiser's or an
-                // accountant's business, as raising it is.
-                if (state.viewer.owns(order) || state.viewer.hasFullAccess) {
-                    ZillitButton(
-                        text = "Remove",
-                        onClick = { onEvent(PoEvent.DeleteAttachment(file)) },
-                        variant = ButtonVariant.Danger,
-                        size = ButtonSize.Small,
-                        enabled = !state.busy,
-                    )
-                }
-            }
-        }
     }
 }
 
-@Suppress("LongMethod") // A rights table; flattening it is what makes it readable.
-@Composable
-private fun OrderActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEvent) -> Unit) {
-    // Nothing on the server to act on yet; the outbox owns retry and discard.
-    if (order.isLocalOnly) return
-    val actions = buildList {
-        // Approvals belong to whoever the chain routed it to; the queue is that
-        // routing, so the buttons are offered there rather than everywhere.
-        if (state.destination == PoDestination.ApprovalQueue && order.status == PoStatus.AwaitingApproval) {
-            add(
-                Triple("Approve", ButtonVariant.Primary) {
-                    PoPrompt.Confirm(
-                        PoConfirmAction.Approve,
-                        order.id,
-                        "Approve this order",
-                        "${Money.format(order.total, order.currency)} is committed with " +
-                            "${order.vendorName.ifBlank { "the vendor" }}.",
-                    ) as PoPrompt
-                },
-            )
-            add(
-                Triple("Reject", ButtonVariant.Danger) {
-                    PoPrompt.WithReason(
-                        PoReasonAction.Reject,
-                        order.id,
-                        "Reject this order",
-                        "Why it is being refused",
-                    ) as PoPrompt
-                },
-            )
-        }
-        if (state.viewer.isAccountant && order.status == PoStatus.Approved) {
-            add(
-                Triple("Post to ledger", ButtonVariant.Primary) {
-                    PoPrompt.Confirm(
-                        PoConfirmAction.Post,
-                        order.id,
-                        "Post this order",
-                        "The commitment reaches the ledger. This cannot be undone here.",
-                    ) as PoPrompt
-                },
-            )
-        }
-        if (state.viewer.isAccountant && order.status.isCommitted) {
-            add(
-                Triple("Close", ButtonVariant.Secondary) {
-                    PoPrompt.Confirm(
-                        PoConfirmAction.Close,
-                        order.id,
-                        "Close this order",
-                        "Any remaining commitment is released.",
-                    ) as PoPrompt
-                },
-            )
-        }
-        if (order.status == PoStatus.Draft && state.viewer.owns(order)) {
-            add(
-                Triple("Delete", ButtonVariant.Danger) {
-                    PoPrompt.Confirm(
-                        PoConfirmAction.Delete,
-                        order.id,
-                        "Delete this draft",
-                        "The order is removed. This cannot be undone.",
-                    ) as PoPrompt
-                },
-            )
-        }
-    }
-
-    if (actions.isEmpty()) {
-        ZillitText(
-            text = "Nothing to do on this order from here.",
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textMuted,
-        )
-        return
-    }
-
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        actions.forEach { (label, variant, prompt) ->
-            ZillitButton(
-                text = label,
-                onClick = { onEvent(PoEvent.Ask(prompt())) },
-                variant = variant,
-                size = ButtonSize.Small,
-                enabled = !state.busy,
-            )
-        }
-    }
-}
-
-@Suppress("LongMethod") // A form: header fields then its lines, read as one.
-@Composable
-private fun RaisePage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
-    val draft = state.draft
-    // What this production configured the form to be. An unread template shows
-    // every field, which is this form as it was before templates existed.
-    val form = state.form
-    val shows = { label: String -> form.shows(PoFormFields.DETAILS, label) }
-    val required = { label: String -> form.isRequired(PoFormFields.DETAILS, label) }
-
-    ZillitScrollColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(ZillitTheme.spacing.xl),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
-    ) {
-        WhoAndWhat(state, onEvent)
-
-        ZillitSectionCard(
-            title = "Lines",
-            icon = ZillitIcons.Ledger,
-            meta = Money.format(draft.total, draft.currency),
-            action = {
-                ZillitButton(
-                    text = "Add line",
-                    onClick = { onEvent(PoEvent.AddLine) },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Add,
-                )
-            },
-        ) {
-            draft.lines.forEachIndexed { index, line ->
-                LineRow(
-                    index = index,
-                    line = line,
-                    removable = draft.lines.size > 1,
-                    onChange = { updated ->
-                        onEvent(
-                            PoEvent.EditDraft(
-                                draft.copy(
-                                    lines = draft.lines.mapIndexed { i, existing ->
-                                        if (i == index) updated else existing
-                                    },
-                                ),
-                            ),
-                        )
-                    },
-                    onRemove = { onEvent(PoEvent.RemoveLine(index)) },
-                )
-            }
-        }
-
-        ZillitSectionCard(title = "Anything else", icon = ZillitIcons.Info) {
-            if (shows(PoFormFields.NOTES)) {
-                ZillitTextField(
-                    value = draft.notes,
-                    onValueChange = { onEvent(PoEvent.EditDraft(draft.copy(notes = it))) },
-                    label = if (required(PoFormFields.NOTES)) {
-                        "Note for the approver (required)"
-                    } else {
-                        "Note for the approver (optional)"
-                    },
-                    singleLine = false,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            UnansweredFieldsNotice(state)
-            Spacer(Modifier.padding(ZillitTheme.spacing.xs))
-            if (state.offline) {
-                ZillitNotice(
-                    text = "You're offline. The order will be saved on this computer and raised automatically " +
-                        "when you're back — you'll see it under My Orders as \"Waiting to send\".",
-                    tone = StatusTone.InTransit,
-                    icon = ZillitIcons.Info,
-                )
-            }
-            ZillitButton(
-                text = if (state.offline) "Save and raise when online" else "Raise this order",
-                onClick = { onEvent(PoEvent.SubmitDraft) },
-                leadingIcon = ZillitIcons.Send,
-                loading = state.busy,
-            )
-        }
-    }
-}
-
-/** Who the order is with, and what it is for. */
-@Composable
-private fun ColumnScope.WhoAndWhat(state: PoUiState, onEvent: (PoEvent) -> Unit) {
-    val draft = state.draft
-    val form = state.form
-    val shows = { label: String -> form.shows(PoFormFields.DETAILS, label) }
-    val required = { label: String -> form.isRequired(PoFormFields.DETAILS, label) }
-
-    ZillitSectionCard(title = "Who and what", icon = ZillitIcons.File) {
-        VendorRow(state, onEvent)
-        if (shows(PoFormFields.DESCRIPTION)) {
-            ZillitTextField(
-                value = draft.description,
-                onValueChange = { onEvent(PoEvent.EditDraft(draft.copy(description = it))) },
-                label = if (required(PoFormFields.DESCRIPTION)) {
-                    "What is being ordered (required)"
-                } else {
-                    "What is being ordered"
-                },
-                singleLine = false,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        CustomFields(state, onEvent)
-    }
-}
-
-/** The vendor, the code the order posts to, and the episode. */
-@Composable
-private fun VendorRow(state: PoUiState, onEvent: (PoEvent) -> Unit) {
-    val draft = state.draft
-    val form = state.form
-    val shows = { label: String -> form.shows(PoFormFields.DETAILS, label) }
-    val required = { label: String -> form.isRequired(PoFormFields.DETAILS, label) }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-
-        if (shows(PoFormFields.VENDOR)) {
-            Column(modifier = Modifier.weight(1f)) {
-                ZillitText(
-                    text = if (required(PoFormFields.VENDOR)) "Vendor (required)" else "Vendor",
-                    style = ZillitTheme.typography.label,
-                    color = ZillitTheme.colors.textSecondary,
-                )
-                ZillitSelect(
-                value = state.vendors.firstOrNull { it.id == draft.vendorId },
-                options = state.vendors,
-                onSelect = { vendor ->
-                    onEvent(
-                        PoEvent.EditDraft(
-                            draft.copy(
-                                vendorId = vendor?.id,
-                                vendorName = vendor?.name.orEmpty(),
-                                // The vendor's own currency and default
-                                // code, so the common case needs no
-                                // further typing.
-                                currency = vendor?.currency ?: draft.currency,
-                                nominalCode = vendor?.defaultNominalCode ?: draft.nominalCode,
-                            ),
-                        ),
-                    )
-                },
-                    label = { it?.name ?: "Choose a vendor" },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-        if (shows(PoFormFields.ACCOUNT_CODE)) {
-            ZillitTextField(
-                value = draft.nominalCode,
-                onValueChange = { onEvent(PoEvent.EditDraft(draft.copy(nominalCode = it))) },
-                label = if (required(PoFormFields.ACCOUNT_CODE)) {
-                    "Nominal code (required)"
-                } else {
-                    "Nominal code"
-                },
-                modifier = Modifier.weight(1f),
-            )
-        }
-        // Episode is not one of the template's system fields on either
-        // client, so it is always offered.
-        ZillitTextField(
-            value = draft.episode,
-            onValueChange = { onEvent(PoEvent.EditDraft(draft.copy(episode = it))) },
-            label = "Episode",
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-/**
- * The extra fields this production added to a purchase order.
- *
- * Rendered as plain text boxes whatever the field says its type is. The
- * template offers seven types and a source for a select, and honouring those
- * properly means the pickers this form does not have; typing a date into a
- * text box is worse than an unconfigured field but better than a control that
- * silently sends the wrong shape.
- */
-@Composable
-private fun ColumnScope.CustomFields(state: PoUiState, onEvent: (PoEvent) -> Unit) {
-    val fields = state.form.custom(PoFormFields.DETAILS)
-    if (fields.isEmpty()) return
-    val draft = state.draft
-
-    fields.forEach { field ->
-        ZillitTextField(
-            value = draft.customFields[field.label].orEmpty(),
-            onValueChange = { text ->
-                onEvent(
-                    PoEvent.EditDraft(
-                        draft.copy(customFields = draft.customFields + (field.label to text)),
-                    ),
-                )
-            },
-            label = if (field.required) "${field.name} (required)" else field.name,
-            helperText = field.typeLabel.takeIf { field.knownType == null },
-            singleLine = false,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
-/**
- * The required fields this form cannot offer.
- *
- * A template can mark one required that only the web's larger form renders —
- * a company, a department, a delivery address. Saying so is the honest
- * treatment: the raise is not blocked here, because there would be nothing on
- * screen to put right, and the server decides.
- */
-@Composable
-private fun ColumnScope.UnansweredFieldsNotice(state: PoUiState) {
-    val missing = state.form.requiredMissing(PoFormFields.DETAILS, PoFormFields.RENDERED)
-    if (missing.isEmpty()) return
-    ZillitNotice(
-        text = "This production also requires ${missing.joinToString(", ") { it.name }} on an " +
-            "order. Those are filled in on the web, not here, so this order may come back.",
-        tone = StatusTone.Pending,
-        icon = ZillitIcons.Info,
-    )
-}
-
-@Composable
-private fun LineRow(
-    index: Int,
-    line: PoLine,
-    removable: Boolean,
-    onChange: (PoLine) -> Unit,
-    onRemove: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        ZillitTextField(
-            value = line.description,
-            onValueChange = { onChange(line.copy(description = it)) },
-            label = if (index == 0) "Description" else null,
-            modifier = Modifier.weight(LINE_DESCRIPTION_WEIGHT),
-        )
-        ZillitTextField(
-            value = if (line.quantity == 0.0) "" else line.quantity.toString(),
-            onValueChange = { onChange(line.copy(quantity = it.trim().toDoubleOrNull() ?: 0.0)) },
-            label = if (index == 0) "Qty" else null,
-            keyboardType = KeyboardType.Decimal,
-            modifier = Modifier.weight(LINE_SMALL_WEIGHT),
-        )
-        ZillitTextField(
-            value = if (line.unitPrice == 0.0) "" else line.unitPrice.toString(),
-            onValueChange = { onChange(line.copy(unitPrice = it.trim().toDoubleOrNull() ?: 0.0)) },
-            label = if (index == 0) "Unit price" else null,
-            keyboardType = KeyboardType.Decimal,
-            modifier = Modifier.weight(1f),
-        )
-        ZillitTextField(
-            value = line.nominalCode.orEmpty(),
-            onValueChange = { onChange(line.copy(nominalCode = it.takeIf(String::isNotBlank))) },
-            label = if (index == 0) "Code" else null,
-            modifier = Modifier.weight(LINE_SMALL_WEIGHT),
-        )
-        if (removable) {
-            ZillitButton(
-                text = "",
-                onClick = onRemove,
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.Trash,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PoPromptDialog(prompt: PoPrompt?, onEvent: (PoEvent) -> Unit) {
-    val shown = remember(prompt) { prompt }
-    ZillitDialogShell(
-        title = when (shown) {
-            is PoPrompt.Confirm -> shown.title
-            is PoPrompt.WithReason -> shown.title
-            null -> ""
-        },
-        icon = ZillitIcons.Info,
-        visible = prompt != null,
-        onDismiss = { onEvent(PoEvent.DismissPrompt) },
-    ) {
-        when (shown) {
-            is PoPrompt.Confirm -> ZillitText(
-                text = shown.message,
-                style = ZillitTheme.typography.bodyMedium,
-                color = ZillitTheme.colors.textSecondary,
-            )
-
-            is PoPrompt.WithReason -> ZillitTextField(
-                value = shown.reason,
-                onValueChange = { onEvent(PoEvent.UpdatePrompt(shown.copy(reason = it))) },
-                label = shown.label,
-                singleLine = false,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            null -> Unit
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            Spacer(Modifier.weight(1f))
-            ZillitButton(
-                text = "Cancel",
-                onClick = { onEvent(PoEvent.DismissPrompt) },
-                variant = ButtonVariant.Tertiary,
-            )
-            ZillitButton(
-                text = if (shown is PoPrompt.WithReason) "Reject" else "Confirm",
-                onClick = { onEvent(PoEvent.ConfirmPrompt) },
-                variant = if (shown.isDestructive()) ButtonVariant.Danger else ButtonVariant.Primary,
-            )
-        }
-    }
-}
-
-private fun PoPrompt?.isDestructive(): Boolean = when (this) {
-    is PoPrompt.WithReason -> true
-    is PoPrompt.Confirm -> action == PoConfirmAction.Delete ||
-        action == PoConfirmAction.Post ||
-        action == PoConfirmAction.Close ||
-        action == PoConfirmAction.CloseSelected
-
-    null -> false
-}
-
-internal val PoStatus.tone: StatusTone
-    get() = when (this) {
-        PoStatus.Draft, PoStatus.Unknown -> StatusTone.Neutral
-        PoStatus.AwaitingApproval -> StatusTone.Pending
-        PoStatus.Approved, PoStatus.AccountsEntered -> StatusTone.Ready
-        PoStatus.Queued -> StatusTone.Progress
-        PoStatus.Posted -> StatusTone.Done
-        PoStatus.Rejected, PoStatus.Cancelled -> StatusTone.Rejected
-        PoStatus.Closed -> StatusTone.Neutral
-    }
-
-/**
- * The line under the tabs when the list is a saved copy: the network is gone
- * and these are the orders as of the last time it answered.
- */
-@Composable
-private fun OfflineBanner(state: PoUiState) {
-    val since = state.staleSince ?: return
-    ZillitNotice(
-        text = "You're offline — showing orders saved ${EpochDate.dateTime(since)}. " +
-            "They'll refresh when the connection is back.",
-        tone = StatusTone.Pending,
-        icon = ZillitIcons.Info,
-        modifier = Modifier.padding(horizontal = ZillitTheme.spacing.xl, vertical = ZillitTheme.spacing.sm),
-    )
-}
-
-/** Why a local-only order has no number, and what to do if it could not be sent. */
-@Composable
-private fun LocalOrderNotice(local: LocalCopy) {
-    ZillitNotice(
-        text = if (local.failed) {
-            "This order could not be sent: ${local.error ?: "the server refused it"}. " +
-                "Retry or discard it from Pending changes in the status bar."
-        } else {
-            "This order is saved on this computer and will be raised on the server " +
-                "as soon as you're back online. It has no number until then."
-        },
-        tone = if (local.failed) StatusTone.Rejected else StatusTone.InTransit,
-        icon = ZillitIcons.Info,
-    )
-}
-
-/**
- * The status pill, with one exception: an order that exists only on this
- * computer is not "Draft" — it is waiting to be sent, or could not be, and
- * the pill says which.
- */
-@Composable
-private fun OrderStatusPill(order: PurchaseOrder) {
-    val local = order.local
-    when {
-        local == null -> ZillitStatusPill(order.status.label, tone = order.status.tone, dot = true)
-        local.failed -> ZillitStatusPill("Not sent", tone = StatusTone.Rejected, dot = true)
-        else -> ZillitStatusPill("Waiting to send", tone = StatusTone.InTransit, dot = true)
-    }
-}
-
-@Suppress("MagicNumber") // Column proportions.
-private fun orderColumns(): List<TableColumn<PurchaseOrder>> = listOf(
-    textColumn("Number", ColumnWidth.Weight(1f)) { it.number.ifBlank { it.numberFallback() } },
-    textColumn("Vendor", ColumnWidth.Weight(1.4f)) { it.vendorName.ifBlank { "—" } },
-    textColumn("Description", ColumnWidth.Weight(1.6f), muted = true) { it.description.ifBlank { "—" } },
-    textColumn("Total", ColumnWidth.Weight(1f), numeric = true) { Money.format(it.total, it.currency) },
-    TableColumn(
-        header = "Status",
-        width = ColumnWidth.Fixed(STATUS_COLUMN),
-        cell = { OrderStatusPill(it) },
-    ),
-)
-
-/** What to show where the number would be: a local row has none yet. */
-private fun PurchaseOrder.numberFallback(): String =
-    if (isLocalOnly) "Not sent yet" else id.take(ID_FALLBACK)
-
-private fun selectableColumns(
-    state: PoUiState,
-    onEvent: (PoEvent) -> Unit,
-): List<TableColumn<PurchaseOrder>> = buildList {
-    if (state.viewer.isAccountant) {
-        add(
-            TableColumn(
-                header = "",
-                width = ColumnWidth.Fixed(CHECK_COLUMN),
-                cell = { row ->
-                    ZillitCheckbox(
-                        checked = row.id in state.selection,
-                        onCheckedChange = { onEvent(PoEvent.ToggleSelection(row.id)) },
-                    )
-                },
-            ),
-        )
-    }
-    addAll(orderColumns())
-}
-
-private const val RECENT_ROWS = 8
-private const val ID_FALLBACK = 8
-private const val LIST_WEIGHT = 1.5f
-private const val DETAIL_WEIGHT = 1f
-private const val LINE_DESCRIPTION_WEIGHT = 2f
-private const val LINE_SMALL_WEIGHT = 0.6f
-private val SEARCH_WIDTH = 320.dp
-private val STATUS_COLUMN = 150.dp
-private val CHECK_COLUMN = 40.dp
+private val BANNER_DOT = 8.dp
+private val SEARCH_WIDTH = 560.dp

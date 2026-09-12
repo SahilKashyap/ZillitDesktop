@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.purchaseorder.data
 
+import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.flatMap
@@ -8,13 +9,21 @@ import com.zillit.desktop.core.common.toAmountOrNull
 import com.zillit.desktop.core.common.toEpochMillisOrNull
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
+import com.zillit.desktop.feature.purchaseorder.domain.PoAddress
 import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
+import com.zillit.desktop.feature.purchaseorder.domain.PoEmailReceipt
+import com.zillit.desktop.feature.purchaseorder.domain.PoTemplate
 import com.zillit.desktop.core.forms.CustomFieldGroup
+import com.zillit.desktop.core.forms.CustomFieldValue
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.purchaseorder.domain.AssetFilters
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
+import com.zillit.desktop.feature.purchaseorder.domain.PoAssignmentRule
+import com.zillit.desktop.feature.purchaseorder.domain.PoDescriptionFormat
+import com.zillit.desktop.feature.purchaseorder.domain.PoSplitType
 import com.zillit.desktop.feature.purchaseorder.domain.PoApproval
 import com.zillit.desktop.feature.purchaseorder.domain.PoHistoryEntry
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
@@ -58,12 +67,13 @@ class PurchaseOrderRepositoryImpl(
 
     private val base = "${config.baseUrl(ZillitService.PurchaseOrder)}/api/v2/purchase-orders"
 
-    /**
-     * The service root without the `/purchase-orders` tail: the attachment
-     * and send routes hang off `/api/v2` directly.
-     */
-    private val serviceRoot = "${config.baseUrl(ZillitService.PurchaseOrder)}/api/v2"
     private val vendorsUrl = "${config.baseUrl(ZillitService.AccountHub)}/api/v2/vendors"
+
+    /** The Settings tab's routes — its own class, see [PoSettingsSource]. */
+    private val settingsSource = PoSettingsSource(apiClient, config)
+
+    /** The Templates and Delivery Addresses tabs — see [PoRegisterSource]. */
+    private val registerSource = PoRegisterSource(apiClient, config)
 
     /**
      * See [PurchaseOrderRepository.refreshes]. Another production's frame is
@@ -78,8 +88,15 @@ class PurchaseOrderRepositoryImpl(
             }
             ?: emptyFlow()
 
-    override suspend fun orders(status: PoStatus?): ZillitResult<List<PurchaseOrder>> =
-        list(base, status?.let { mapOf("status" to it.wire) }.orEmpty())
+    override suspend fun orders(status: PoStatus?, departmentId: String?): ZillitResult<List<PurchaseOrder>> = list(
+        base,
+        buildMap {
+            // Upper-case on the wire: the query is compared against the stored
+            // value, which is the server's own vocabulary.
+            status?.let { put("status", it.wire.uppercase()) }
+            departmentId?.takeIf { it.isNotBlank() }?.let { put("department_id", it) }
+        },
+    )
 
     override suspend fun approvalQueue(): ZillitResult<List<PurchaseOrder>> = list("$base/approval")
 
@@ -105,62 +122,51 @@ class PurchaseOrderRepositoryImpl(
         ).map { rows -> rows.map { it.toDomain() } }
 
     /**
-     * `GET /v2/list/attachments/{id}` (`purchaseOrder/api.js`).
+     * Attachments are a column of the order, written by patching the record.
      *
-     * Note the shape of these three routes: they hang off the service root,
-     * not off `/purchase-orders/{id}` like everything else on this tool. The
-     * order id is a path segment in a differently-shaped path each time.
+     * The old web module's three dedicated routes — `/v2/list/attachments/{id}`,
+     * `/v2/add/attachments/{id}`, `/v2/delete/{attachmentId}/{id}` — answer 404
+     * on every verb on develop (probed 2026-09-12). The account hub's web
+     * module never used them: it reads `attachments` off `GET /{id}` and sends
+     * the whole array back on a PATCH, so the desktop does the same.
      */
-    override suspend fun attachments(id: String): ZillitResult<List<PoAttachment>> =
-        apiClient.request(
-            verb = HttpVerb.Get,
-            url = "$serviceRoot/list/attachments/$id",
-            serializer = ListSerializer(PoAttachmentDto.serializer()),
-            module = RequestModule.ProjectUser,
-        ).map { rows -> rows.mapNotNull { it.toDomain() } }
-
-    /** `PUT /v2/add/attachments/{id}` with the files under `attachment`. */
-    override suspend fun addAttachments(id: String, files: List<PoAttachment>): ZillitResult<Unit> =
+    override suspend fun saveAttachments(id: String, files: List<PoAttachment>): ZillitResult<Unit> =
         apiClient.envelope(
-            verb = HttpVerb.Put,
-            url = "$serviceRoot/add/attachments/$id",
+            verb = HttpVerb.Patch,
+            url = "$base/$id",
+            module = RequestModule.ProjectUser,
+            body = buildJsonObject { put("attachments", files.attachmentsJson()) },
+        ).map { }
+
+    /** `POST /{id}/send-vendor-email` — no body; the server builds the mail. */
+    override suspend fun sendVendorEmail(id: String): ZillitResult<PoEmailReceipt> =
+        apiClient.request(
+            verb = HttpVerb.Post,
+            url = "$base/$id/send-vendor-email",
+            serializer = PoEmailDto.serializer(),
+            module = RequestModule.ProjectUser,
+        ).map { it.toDomain() }
+
+    /**
+     * `POST /{id}/pdf` — renders the order and answers where it was stored.
+     *
+     * The display names are passed rather than looked up: the service has no
+     * project-info endpoint, so whatever the client holds is what prints.
+     */
+    override suspend fun pdf(id: String, projectName: String, companyName: String): ZillitResult<PoAttachment> =
+        apiClient.request(
+            verb = HttpVerb.Post,
+            url = "$base/$id/pdf",
+            serializer = PoPdfDto.serializer(),
             module = RequestModule.ProjectUser,
             body = buildJsonObject {
-                put(
-                    "attachment",
-                    buildJsonArray {
-                        files.forEach { file ->
-                            add(
-                                buildJsonObject {
-                                    put("media", JsonPrimitive(file.media))
-                                    put("name", JsonPrimitive(file.displayName))
-                                    put("content_type", JsonPrimitive(file.contentType))
-                                    put("bucket", JsonPrimitive(file.bucket))
-                                    put("region", JsonPrimitive(file.region))
-                                    put("thumbnail", JsonPrimitive(""))
-                                },
-                            )
-                        }
-                    },
-                )
+                put("projectName", JsonPrimitive(projectName))
+                put("companyName", JsonPrimitive(companyName))
             },
-        ).map { }
-
-    /** `DELETE /v2/delete/{attachmentId}/{orderId}` — the ids in that order. */
-    override suspend fun deleteAttachment(attachmentId: String, orderId: String): ZillitResult<Unit> =
-        apiClient.envelope(
-            verb = HttpVerb.Delete,
-            url = "$serviceRoot/delete/$attachmentId/$orderId",
-            module = RequestModule.ProjectUser,
-        ).map { }
-
-    /** `POST /v2/send/{id}` — the order, to the supplier's inbox. */
-    override suspend fun emailToSupplier(id: String): ZillitResult<Unit> =
-        apiClient.envelope(
-            verb = HttpVerb.Post,
-            url = "$serviceRoot/send/$id",
-            module = RequestModule.ProjectUser,
-        ).map { }
+        ).flatMap { dto ->
+            dto.attachment?.toDomain()?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Unknown("The server rendered no PDF for this order."))
+        }
 
     override suspend fun create(order: NewPurchaseOrder): ZillitResult<Unit> =
         post(base, order.body())
@@ -182,6 +188,29 @@ class PurchaseOrderRepositoryImpl(
 
     override suspend fun close(id: String, note: String?): ZillitResult<Unit> =
         post("$base/$id/close", noteBody(note))
+
+    /**
+     * `PATCH /bulk` with `{po_ids, data}`.
+     *
+     * The 100-id cap is the server's (its Joi `bulkUpdateSchema`) and is
+     * answered here rather than round-tripped into a generic toast: the person
+     * selecting 140 rows can act on the answer, a 400 tells them nothing.
+     */
+    override suspend fun bulkSetEffectiveDate(ids: List<String>, effectiveDate: Long): ZillitResult<Unit> = when {
+        ids.isEmpty() -> ZillitResult.Failure(ZillitError.Unknown("Nothing is selected."))
+        ids.size > BULK_LIMIT ->
+            ZillitResult.Failure(ZillitError.Unknown("Bulk changes are limited to $BULK_LIMIT orders at a time."))
+
+        else -> apiClient.envelope(
+            verb = HttpVerb.Patch,
+            url = "$base/bulk",
+            module = RequestModule.ProjectUser,
+            body = buildJsonObject {
+                put("po_ids", buildJsonArray { ids.forEach { add(JsonPrimitive(it)) } })
+                put("data", buildJsonObject { put("effective_date", JsonPrimitive(effectiveDate)) })
+            },
+        ).map { }
+    }
 
     /**
      * Closes many orders at once, into one accounting period.
@@ -212,6 +241,62 @@ class PurchaseOrderRepositoryImpl(
         queryParameters = mapOf("limit" to VENDOR_LIMIT),
     ).map { rows -> rows.mapNotNull { it.toDomain() } }
 
+    /**
+     * Two fields on the record, not a verb of its own: the web's Reassign modal
+     * PATCHes `assigned_to` with the reason beside it, and the reason is what
+     * makes the hand-off auditable.
+     */
+    override suspend fun reassign(id: String, userId: String, reason: String): ZillitResult<Unit> =
+        apiClient.envelope(
+            verb = HttpVerb.Patch,
+            url = "$base/$id",
+            module = RequestModule.ProjectUser,
+            body = buildJsonObject {
+                put("assigned_to", JsonPrimitive(userId))
+                put("reassignment_reason", JsonPrimitive(reason))
+            },
+        ).map { }
+
+    // -- templates and delivery addresses: PoRegisterSource's -----------------
+
+    override suspend fun templates() = registerSource.templates()
+
+    override suspend fun saveTemplate(template: PoTemplate) = registerSource.saveTemplate(template)
+
+    override suspend fun deleteTemplate(id: String) = registerSource.deleteTemplate(id)
+
+    override suspend fun deliveryAddresses() = registerSource.deliveryAddresses()
+
+    override suspend fun saveDeliveryAddress(id: String?, address: PoAddress) =
+        registerSource.saveDeliveryAddress(id, address)
+
+    // -- settings: every route is PoSettingsSource's ---------------------------
+
+    override suspend fun settings() = settingsSource.settings()
+
+    override suspend fun saveDescriptionFormat(format: PoDescriptionFormat) =
+        settingsSource.saveDescriptionFormat(format)
+
+    override suspend fun saveRentalSplit(autoSplit: Boolean, splitType: PoSplitType) =
+        settingsSource.saveRentalSplit(autoSplit, splitType)
+
+    override suspend fun saveNumbering(prefix: String, allowAmendAfterApproval: Boolean) =
+        settingsSource.saveNumbering(prefix, allowAmendAfterApproval)
+
+    override suspend fun saveTermsDocument(document: PoAttachment) = settingsSource.saveTermsDocument(document)
+
+    override suspend fun saveAssetFilters(filters: AssetFilters) = settingsSource.saveAssetFilters(filters)
+
+    override suspend fun createRule(rule: PoAssignmentRule) = settingsSource.createRule(rule)
+
+    override suspend fun updateRule(rule: PoAssignmentRule) = settingsSource.updateRule(rule)
+
+    override suspend fun deleteRule(id: String) = settingsSource.deleteRule(id)
+
+    override suspend fun nominalCodes() = settingsSource.nominalCodes()
+
+    override suspend fun assetTags() = settingsSource.assetTags()
+
     private suspend fun list(url: String, query: Map<String, Any?> = emptyMap()) =
         apiClient.request(
             verb = HttpVerb.Get,
@@ -229,6 +314,9 @@ class PurchaseOrderRepositoryImpl(
 
     private companion object {
         const val VENDOR_LIMIT = 500
+
+        /** The server's own bulk cap, from its `bulkUpdateSchema`. */
+        const val BULK_LIMIT = 100
     }
 }
 
@@ -253,25 +341,25 @@ internal fun NewPurchaseOrder.body(): JsonObject = buildJsonObject {
     effectiveDate?.let { put("effective_date", JsonPrimitive(it)) }
     put("net_amount", JsonPrimitive(total))
     putIfPresent("status", status)
+    putIfPresent("vat_treatment", vatTreatment)
+    putIfPresent("delivery_address_id", deliveryAddressId)
+    deliveryDate?.let { put("delivery_date", JsonPrimitive(it)) }
+    if (deliveryAddress != null && !deliveryAddress.isEmpty) {
+        put("delivery_address", deliveryAddress.toJson())
+    }
+    // The files ride the record; there is no attachment sub-resource. The array
+    // is sent even when empty, because that is how the last one comes off —
+    // omitting the key would leave it in place.
+    put("attachments", attachments.attachmentsJson())
     // Only when the production has configured some: an empty array on every
     // order would be a column of nothing on the printed form.
-    if (customFields.isNotEmpty()) put("custom_fields", customFields.toJson())
+    if (customFields.isNotEmpty()) put("custom_fields", customFields.customFieldsJson())
     put(
         "line_items",
         buildJsonArray {
             lines.forEach { line ->
                 add(
-                    buildJsonObject {
-                        putIfPresent("id", line.id)
-                        put("description", JsonPrimitive(line.description))
-                        put("quantity", JsonPrimitive(line.quantity))
-                        put("unit_price", JsonPrimitive(line.unitPrice))
-                        put("total", JsonPrimitive(line.total))
-                        put("account", JsonPrimitive(line.nominalCode.orEmpty()))
-                        put("department", JsonPrimitive(""))
-                        put("expenditure_type", JsonPrimitive(""))
-                        line.vatRate?.let { put("tax_rate", JsonPrimitive(it)) }
-                    },
+                    line.body(),
                 )
             }
         },
@@ -279,7 +367,7 @@ internal fun NewPurchaseOrder.body(): JsonObject = buildJsonObject {
 }
 
 /** The extra fields, grouped by the section a reader sees them under. */
-private fun List<CustomFieldGroup>.toJson(): JsonArray = buildJsonArray {
+private fun List<CustomFieldGroup>.customFieldsJson(): JsonArray = buildJsonArray {
     forEach { group ->
         add(
             buildJsonObject {
@@ -315,6 +403,7 @@ internal data class PoDto(
     @SerialName("department_id") val departmentId: String? = null,
     @SerialName("company_id") val companyId: String? = null,
     @SerialName("status") val status: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     // The server's amounts, in order of preference — see [total] below.
     @SerialName("gross_amount") val grossAmount: JsonElement? = null,
@@ -334,7 +423,26 @@ internal data class PoDto(
     @SerialName("assigned") val assigned: String? = null,
     @SerialName("assigned_to") val assignedTo: String? = null,
     @SerialName("reassignment_reason") val reassignmentReason: String? = null,
+    @SerialName("reassigned_by") val reassignedBy: String? = null,
+    @SerialName("reassigned_at") val reassignedAt: String? = null,
     @SerialName("delivery") val delivery: String? = null,
+    @SerialName("delivery_address") val deliveryAddressText: String? = null,
+    @SerialName("delivery_address_id") val deliveryAddressId: String? = null,
+    @SerialName("delivery_date") val deliveryDate: String? = null,
+    @SerialName("paid_amount") val paidAmount: JsonElement? = null,
+    @SerialName("paid_at") val paidAt: String? = null,
+    @SerialName("vat_amount") val vatAmount: JsonElement? = null,
+    @SerialName("email_at") val emailAt: String? = null,
+    @SerialName("email_by") val emailBy: String? = null,
+    @SerialName("closure_reason") val closureReason: String? = null,
+    @SerialName("closed_by") val closedBy: String? = null,
+    @SerialName("closed_at") val closedAt: String? = null,
+    @SerialName("rejected_by") val rejectedBy: String? = null,
+    @SerialName("rejected_at") val rejectedAt: String? = null,
+    @SerialName("rejection_reason") val rejectionReason: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("updated_by") val updatedBy: String? = null,
+    @SerialName("custom_fields") val customFields: JsonElement? = null,
     // An array on most endpoints, a JSON *string* holding an array on some —
     // Android's `parseLineItems` handles both, so this does too.
     @SerialName("line_items") val lineItems: JsonElement? = null,
@@ -363,10 +471,30 @@ internal data class PoDto(
             raisedBy = raisedBy ?: createdBy,
             assignedTo = assignedTo ?: assigned,
             reassignmentReason = reassignmentReason,
-            deliveryAddress = delivery,
+            deliveryAddress = deliveryAddressText?.takeIf { it.isNotBlank() } ?: delivery,
             lines = parsedLines,
             approvals = approvals.orEmpty().map { it.toDomain() },
             attachmentCount = attachments?.size ?: 0,
+            grossAmount = grossAmount.toAmountOrNull() ?: 0.0,
+            paidAmount = paidAmount.toAmountOrNull() ?: 0.0,
+            paidAt = paidAt.toEpochMillisOrNull(),
+            emailAt = emailAt.toEpochMillisOrNull(),
+            emailBy = emailBy,
+            vatAmount = vatAmount.toAmountOrNull() ?: 0.0,
+            deliveryDate = deliveryDate.toEpochMillisOrNull(),
+            deliveryAddressId = deliveryAddressId,
+            closureReason = closureReason,
+            closedBy = closedBy,
+            closedAt = closedAt.toEpochMillisOrNull(),
+            rejectedBy = rejectedBy,
+            rejectedAt = rejectedAt.toEpochMillisOrNull(),
+            rejectionReason = rejectionReason,
+            reassignedBy = reassignedBy,
+            reassignedAt = reassignedAt.toEpochMillisOrNull(),
+            updatedAt = updatedAt.toEpochMillisOrNull(),
+            updatedBy = updatedBy,
+            attachments = attachments.orEmpty().mapNotNull { it.asAttachment() },
+            customFields = customFields.asCustomFieldGroups(),
         )
     }
 
@@ -420,6 +548,14 @@ internal data class PoLineDto(
     @SerialName("nominal_code") val nominalCode: String? = null,
     @SerialName("tax_rate") val taxRate: JsonElement? = null,
     @SerialName("vat_rate") val vatRate: JsonElement? = null,
+    @SerialName("tax_type") val taxType: String? = null,
+    @SerialName("expenditure_type") val expenditureType: String? = null,
+    @SerialName("department") val department: String? = null,
+    @SerialName("rental_start") val rentalStart: String? = null,
+    @SerialName("rental_end") val rentalEnd: String? = null,
+    @SerialName("tags") val tags: List<String>? = null,
+    @SerialName("split_parent_id") val splitParentId: String? = null,
+    @SerialName("is_tax") val isTax: Boolean? = null,
 ) {
     fun toDomain(): PoLine {
         // A line with no quantity is one item, not none: the wire omits the
@@ -435,6 +571,17 @@ internal data class PoLineDto(
             unitPrice = price,
             nominalCode = account?.takeIf { it.isNotBlank() } ?: nominalCode,
             vatRate = taxRate.toAmountOrNull() ?: vatRate.toAmountOrNull(),
+            // The stored figure wins where there is one: a split child's total
+            // is its own, not its quantity times a price it never carried.
+            amount = total.toAmountOrNull(),
+            expenditureType = expenditureType?.takeIf { it.isNotBlank() },
+            taxType = taxType?.takeIf { it.isNotBlank() },
+            departmentId = department?.takeIf { it.isNotBlank() },
+            rentalStart = rentalStart?.takeIf { it.isNotBlank() },
+            rentalEnd = rentalEnd?.takeIf { it.isNotBlank() },
+            tags = tags.orEmpty(),
+            splitParentId = splitParentId?.takeIf { it.isNotBlank() },
+            isTax = isTax == true,
         )
     }
 }
@@ -480,6 +627,7 @@ internal data class PoHistoryDto(
 internal data class VendorDto(
     @SerialName("id") val id: String? = null,
     @SerialName("name") val name: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("nominal_code") val nominalCode: String? = null,
 ) {
@@ -521,3 +669,115 @@ internal data class PoAttachmentDto(
         )
     }
 }
+
+/** One line, as the server's `line_items` element. */
+internal fun PoLine.body(): JsonObject = buildJsonObject {
+    putIfPresent("id", id)
+    put("description", JsonPrimitive(description))
+    put("quantity", JsonPrimitive(quantity))
+    put("unit_price", JsonPrimitive(unitPrice))
+    put("total", JsonPrimitive(total))
+    put("account", JsonPrimitive(nominalCode.orEmpty()))
+    put("department", JsonPrimitive(departmentId.orEmpty()))
+    put("expenditure_type", JsonPrimitive(expenditureType.orEmpty()))
+    putIfPresent("tax_type", taxType)
+    vatRate?.let { put("tax_rate", JsonPrimitive(it)) }
+    putIfPresent("rental_start", rentalStart)
+    putIfPresent("rental_end", rentalEnd)
+    putIfPresent("split_parent_id", splitParentId)
+    if (isTax) put("is_tax", JsonPrimitive(true))
+    if (tags.isNotEmpty()) put("tags", buildJsonArray { tags.forEach { add(JsonPrimitive(it)) } })
+}
+
+/** The files on an order, as the record's `attachments` column. */
+internal fun List<PoAttachment>.attachmentsJson(): JsonArray = buildJsonArray {
+    forEach { file ->
+        add(
+            buildJsonObject {
+                if (file.id.isNotBlank()) put("_id", JsonPrimitive(file.id))
+                put("media", JsonPrimitive(file.media))
+                put("name", JsonPrimitive(file.displayName))
+                put("content_type", JsonPrimitive(file.contentType))
+                put("bucket", JsonPrimitive(file.bucket))
+                put("region", JsonPrimitive(file.region))
+            },
+        )
+    }
+}
+
+/** A delivery address, as the order's `delivery_address` object. */
+internal fun PoAddress.toJson(): JsonObject = buildJsonObject {
+    put("name", JsonPrimitive(name))
+    put("email", JsonPrimitive(email))
+    put("phoneCode", JsonPrimitive(phoneCode))
+    put("phone", JsonPrimitive(phone))
+    put("line1", JsonPrimitive(line1))
+    put("line2", JsonPrimitive(line2))
+    put("city", JsonPrimitive(city))
+    put("state", JsonPrimitive(state))
+    put("postalCode", JsonPrimitive(postalCode))
+    put("country", JsonPrimitive(country))
+}
+
+/** An order's attachment column element, read leniently — the keys vary by route. */
+internal fun JsonObject.asAttachment(): PoAttachment? =
+    runCatching { lenientJson.decodeFromJsonElement(PoAttachmentDto.serializer(), this) }
+        .getOrNull()
+        ?.toDomain()
+
+/**
+ * `custom_fields` as the service stores it: a list of sections, each with its
+ * own named values. Read leniently because a production with no configured
+ * form sends an empty array, and one mid-migration has sent an object.
+ */
+internal fun JsonElement?.asCustomFieldGroups(): List<CustomFieldGroup> {
+    val array = this as? JsonArray ?: return emptyList()
+    return array.mapNotNull { element ->
+        runCatching { lenientJson.decodeFromJsonElement(PoCustomFieldGroupDto.serializer(), element) }
+            .getOrNull()
+            ?.toDomain()
+    }
+}
+
+@Serializable
+internal data class PoCustomFieldGroupDto(
+    @SerialName("section") val section: String? = null,
+    @SerialName("fields") val fields: List<PoCustomFieldDto>? = null,
+) {
+    fun toDomain() = CustomFieldGroup(
+        section = section.orEmpty(),
+        fields = fields.orEmpty().map { CustomFieldValue(name = it.name.orEmpty(), value = it.value.orEmpty()) },
+    )
+}
+
+@Serializable
+internal data class PoCustomFieldDto(
+    @SerialName("name") val name: String? = null,
+    @SerialName("value") val value: String? = null,
+)
+
+/** `POST /{id}/send-vendor-email` → the stamp the order keeps. */
+@Serializable
+internal data class PoEmailDto(
+    @SerialName("sent") val sent: Boolean? = null,
+    @SerialName("to") val to: String? = null,
+    @SerialName("email_at") val at: String? = null,
+    @SerialName("email_by") val by: String? = null,
+) {
+    fun toDomain() = PoEmailReceipt(
+        // A 200 that says nothing about `sent` still means the server accepted
+        // and queued the mail; only an explicit false is a refusal, and that
+        // arrives as an error envelope rather than here.
+        sent = sent != false,
+        to = to.orEmpty(),
+        at = at.toEpochMillisOrNull(),
+        by = by,
+    )
+}
+
+/** `POST /{id}/pdf` → where the rendered order was stored. */
+@Serializable
+internal data class PoPdfDto(
+    @SerialName("attachment") val attachment: PoAttachmentDto? = null,
+    @SerialName("po_number") val number: String? = null,
+)

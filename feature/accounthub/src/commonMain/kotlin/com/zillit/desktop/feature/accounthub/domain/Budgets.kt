@@ -42,6 +42,8 @@ data class BudgetVersion(
     val createdAtMillis: Long? = null,
     /** The file it was imported from, when it was. */
     val sourceFileName: String = "",
+    /** The stored source file, for "View file"; null when the version was not imported. */
+    val attachment: AgreementDocument? = null,
 )
 
 /**

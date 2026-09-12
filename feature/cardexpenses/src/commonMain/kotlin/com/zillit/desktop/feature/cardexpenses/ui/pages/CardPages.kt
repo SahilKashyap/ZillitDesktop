@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -27,12 +28,15 @@ import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.TableColumn
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDataTable
+import com.zillit.desktop.core.designsystem.component.ZillitDivider
+import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitMeter
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitStatTile
+import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.textColumn
@@ -42,6 +46,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
 import com.zillit.desktop.feature.cardexpenses.domain.CardTopUp
 import com.zillit.desktop.feature.cardexpenses.domain.CardType
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
+import com.zillit.desktop.feature.cardexpenses.ui.ALL_STATUSES
 import com.zillit.desktop.feature.cardexpenses.ui.CardAmountAction
 import com.zillit.desktop.feature.cardexpenses.ui.CardConfirmAction
 import com.zillit.desktop.feature.cardexpenses.ui.CardDestination
@@ -52,6 +57,10 @@ import com.zillit.desktop.feature.cardexpenses.ui.CardReasonAction
 import com.zillit.desktop.feature.cardexpenses.ui.CardStatusPill
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
 import com.zillit.desktop.feature.cardexpenses.ui.cardLabel
+import com.zillit.desktop.feature.cardexpenses.ui.components.CardHistoryTrail
+import com.zillit.desktop.feature.cardexpenses.ui.components.DetailPanePadding
+import com.zillit.desktop.feature.cardexpenses.ui.components.FieldGroupLabel
+import com.zillit.desktop.feature.cardexpenses.ui.components.PersonCell
 import com.zillit.desktop.feature.cardexpenses.ui.date
 import com.zillit.desktop.feature.cardexpenses.ui.money
 
@@ -163,24 +172,14 @@ fun CardOverviewPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 meta = "${overview?.cards?.size ?: 0} cards",
                 modifier = Modifier.weight(1f),
             ) {
-                val cards = overview?.cards.orEmpty()
-                val totalLimit = cards.sumOf { it.limit }
-                val totalSpent = cards.sumOf { it.spent }
-                ZillitText(
-                    text = "${money(totalSpent, currency)} of ${money(totalLimit, currency)}",
-                    style = ZillitTheme.typography.titleMedium,
-                )
-                ZillitMeter(
-                    fraction = if (totalLimit > 0) (totalSpent / totalLimit).toFloat() else 0f,
-                    tone = StatusTone.Progress,
-                )
+                CardLimitsTotal(overview?.cards.orEmpty())
             }
         }
 
         ZillitSectionCard(title = "Cards", icon = ZillitIcons.CreditCard, padded = false) {
             ZillitDataTable(
                 rows = overview?.cards.orEmpty(),
-                columns = cardColumns(),
+                columns = cardColumns(holderName = state::holderShortName),
                 key = { it.id },
                 loading = state.loading,
                 emptyTitle = "No cards issued",
@@ -190,6 +189,46 @@ fun CardOverviewPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             )
         }
     }
+}
+
+/**
+ * What the production has granted, and how much of it is gone.
+ *
+ * **Only where the cards agree on a currency.** A production can hold cards in
+ * yen and in pounds, and adding those gives a number that is not money — the
+ * dashboard was printing "¥41.56 of ¥66,959.62" over a mixed set, which is
+ * both wrong and confidently wrong. Converting needs the project's exchange
+ * rates, which this tool does not carry; naming the mix is honest and costs
+ * the reader nothing they had.
+ */
+@Composable
+private fun CardLimitsTotal(cards: List<ExpenseCard>) {
+    val currencies = cards.mapNotNull { it.currency?.takeIf(String::isNotBlank) }.distinct()
+    if (currencies.size > 1) {
+        ZillitText(
+            text = "${cards.size} cards in ${currencies.sorted().joinToString(", ")}",
+            style = ZillitTheme.typography.titleMedium,
+        )
+        ZillitText(
+            text = "Held in more than one currency, so there is no single total. " +
+                "Open the register to see each card's own.",
+            style = ZillitTheme.typography.bodySmall,
+            color = ZillitTheme.colors.textSecondary,
+        )
+        return
+    }
+
+    val currency = currencies.firstOrNull()
+    val totalLimit = cards.sumOf { it.limit }
+    val totalSpent = cards.sumOf { it.spent }
+    ZillitText(
+        text = "${money(totalSpent, currency)} of ${money(totalLimit, currency)}",
+        style = ZillitTheme.typography.titleMedium,
+    )
+    ZillitMeter(
+        fraction = if (totalLimit > 0) (totalSpent / totalLimit).toFloat() else 0f,
+        tone = StatusTone.Progress,
+    )
 }
 
 @Composable
@@ -214,12 +253,15 @@ private fun LedgerLine(label: String, value: String) {
  * Also serves the cardholder's approval queue, which is the same table with a
  * narrower row set and the approve/reject pair enabled.
  */
+@Suppress("LongMethod") // The toolbar, the table and the pane it fills; one screen.
 @Composable
 fun CardRegisterPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val approvalOnly = state.destination == CardDestination.CardsForApproval
     val rows = state.cards
         .filter { !approvalOnly || it.status in APPROVABLE }
+        .filter { state.statusFilter == ALL_STATUSES || it.status.wire == state.statusFilter }
         .filter { it.matches(state.search) }
+    val selected = state.selectedCard
 
     FixedPage {
         Row(
@@ -230,106 +272,128 @@ fun CardRegisterPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             ZillitSearchField(
                 value = state.search,
                 onValueChange = { onEvent(CardEvent.Search(it)) },
-                placeholder = "Search by holder or last four",
+                placeholder = "Search by holder, last four or code",
                 modifier = Modifier.width(SEARCH_WIDTH),
             )
+            if (!approvalOnly) {
+                StatusFilter(
+                    selected = state.statusFilter,
+                    options = state.cards.map { it.status }.distinct(),
+                    onSelect = { onEvent(CardEvent.FilterStatus(it)) },
+                )
+            }
             ZillitText(
                 text = "${rows.size} card${if (rows.size == 1) "" else "s"}",
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
                 modifier = Modifier.weight(1f),
             )
+            if (state.viewer.isAccountant && !approvalOnly) {
+                ZillitButton(
+                    text = "Issue a card",
+                    onClick = { onEvent(CardEvent.OpenNewCard(null)) },
+                    leadingIcon = ZillitIcons.Add,
+                    size = ButtonSize.Small,
+                    enabled = !state.busy,
+                )
+            }
         }
 
-        ZillitSectionCard(
-            title = if (approvalOnly) "Cards awaiting your decision" else "Card register",
-            icon = ZillitIcons.CreditCard,
-            padded = false,
-            modifier = Modifier.weight(1f),
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
-            ZillitDataTable(
-                rows = rows,
-                columns = cardColumns() + cardActionColumn(state, onEvent),
-                key = { it.id },
-                loading = state.loading,
-                onRowClick = { onEvent(CardEvent.SelectCard(it.id)) },
-                isSelected = { it.id == state.selectedCardId },
-                emptyTitle = if (approvalOnly) "Nothing waiting" else "No cards",
-                emptyMessage = if (approvalOnly) {
-                    "Card requests routed to you for approval appear here."
-                } else {
-                    "Cards appear here once crew request them."
-                },
-            )
+            ZillitSectionCard(
+                title = if (approvalOnly) "Cards awaiting your decision" else "Card register",
+                icon = ZillitIcons.CreditCard,
+                padded = false,
+                modifier = Modifier.weight(REGISTER_WEIGHT).fillMaxHeight(),
+            ) {
+                ZillitDataTable(
+                    rows = rows,
+                    // No action column: the pane beside this table carries it, and
+                    // eight columns in a half-width table is what pushed it off the end.
+                    columns = cardColumns(compact = true, holderName = state::holderShortName),
+                    key = { it.id },
+                    loading = state.loading,
+                    onRowClick = { onEvent(CardEvent.SelectCard(it.id)) },
+                    isSelected = { it.id == state.selectedCardId },
+                    emptyTitle = if (approvalOnly) "Nothing waiting" else "No cards",
+                    emptyMessage = if (approvalOnly) {
+                        "Card requests routed to you for approval appear here."
+                    } else {
+                        "Cards appear here once crew request them."
+                    },
+                )
+            }
+
+            ZillitSectionCard(
+                title = "Card",
+                icon = ZillitIcons.Eye,
+                padded = false,
+                modifier = Modifier.weight(PANE_WEIGHT).fillMaxHeight(),
+            ) {
+                if (selected == null) CardDetailPlaceholder() else CardDetailPane(state, selected, onEvent)
+            }
         }
     }
+}
+
+/**
+ * The status filter, offering only the statuses actually present.
+ *
+ * A fixed list of eleven would show ten empty options on a production with one
+ * card, and picking an empty one reads as a broken screen rather than as an
+ * empty result.
+ */
+@Composable
+private fun StatusFilter(
+    selected: String,
+    options: List<CardStatus>,
+    onSelect: (String) -> Unit,
+) {
+    if (options.size < 2) return
+    val all = listOf(ALL_STATUSES) + options.map { it.wire }
+    ZillitSelect(
+        value = selected,
+        options = all,
+        onSelect = onSelect,
+        label = { wire ->
+            if (wire == ALL_STATUSES) "All statuses" else CardStatus.from(wire).label
+        },
+        modifier = Modifier.width(FILTER_WIDTH),
+    )
 }
 
 /**
  * The single action a card's status permits.
  *
  * A card lifecycle is linear — requested, approved, active, suspended — so one
- * button per row is not a simplification, it is the shape of the thing.
+ * button per card is not a simplification, it is the shape of the thing.
+ *
+ * Drawn in two places on purpose: the register's row, and the detail pane. In
+ * the Account Hub the register is narrow enough that its action column scrolls
+ * off the end, and a card that cannot be approved from the only place it is
+ * visible is a card that cannot be approved.
  */
 @Suppress("LongMethod") // The card lifecycle table: one branch per status.
-private fun cardActionColumn(
-    state: CardUiState,
-    onEvent: (CardEvent) -> Unit,
-): TableColumn<ExpenseCard> = TableColumn(
-    header = "",
-    width = ColumnWidth.Fixed(ACTION_COLUMN),
-    cell = { card ->
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            when {
-                card.status in APPROVABLE && (state.viewer.isApprover || state.viewer.isAccountant) -> {
-                    ZillitButton(
-                        text = "Approve",
-                        onClick = {
-                            onEvent(
-                                CardEvent.Ask(
-                                    CardPrompt.Confirm(
-                                        CardConfirmAction.ApproveCard,
-                                        card.id,
-                                        "Approve this card",
-                                        "${money(card.limit, card.currency)} limit for " +
-                                            card.holderName.ifBlank { "this crew member" } + ".",
-                                    ),
-                                ),
-                            )
-                        },
-                        size = ButtonSize.Small,
-                        enabled = !state.busy,
-                    )
-                    ZillitButton(
-                        text = "Reject",
-                        onClick = {
-                            onEvent(
-                                CardEvent.Ask(
-                                    CardPrompt.WithReason(
-                                        CardReasonAction.RejectCard,
-                                        card.id,
-                                        "Reject this card request",
-                                        "Why it is being refused",
-                                    ),
-                                ),
-                            )
-                        },
-                        variant = ButtonVariant.Danger,
-                        size = ButtonSize.Small,
-                        enabled = !state.busy,
-                    )
-                }
-
-                card.status == CardStatus.Approved && state.viewer.isAccountant -> ZillitButton(
-                    text = "Activate",
+@Composable
+fun CardPrimaryAction(state: CardUiState, card: ExpenseCard, onEvent: (CardEvent) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        when {
+            card.status in APPROVABLE && (state.viewer.isApprover || state.viewer.isAccountant) -> {
+                ZillitButton(
+                    text = "Approve",
                     onClick = {
                         onEvent(
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
-                                    CardConfirmAction.ActivateCard,
+                                    CardConfirmAction.ApproveCard,
                                     card.id,
-                                    "Activate this card",
-                                    "The holder can start spending against it immediately.",
+                                    "Approve this card",
+                                    "${money(card.limit, card.currency)} limit for " +
+                                        (state.holderName(card).takeIf { it != "—" }
+                                            ?: "this crew member") + ".",
                                 ),
                             ),
                         )
@@ -337,31 +401,16 @@ private fun cardActionColumn(
                     size = ButtonSize.Small,
                     enabled = !state.busy,
                 )
-
-                card.status == CardStatus.DigitalActive && state.viewer.isAccountant -> ZillitButton(
-                    text = "Assign physical",
+                ZillitButton(
+                    text = "Reject",
                     onClick = {
                         onEvent(
                             CardEvent.Ask(
-                                CardPrompt.WithCardNumber(card.id, "Assign a physical card"),
-                            ),
-                        )
-                    },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                    enabled = !state.busy,
-                )
-
-                card.status == CardStatus.Active && state.viewer.isAccountant -> ZillitButton(
-                    text = "Suspend",
-                    onClick = {
-                        onEvent(
-                            CardEvent.Ask(
-                                CardPrompt.Confirm(
-                                    CardConfirmAction.SuspendCard,
+                                CardPrompt.WithReason(
+                                    CardReasonAction.RejectCard,
                                     card.id,
-                                    "Suspend this card",
-                                    "Spending stops at once. The holder is not told by this app.",
+                                    "Reject this card request",
+                                    "Why it is being refused",
                                 ),
                             ),
                         )
@@ -370,35 +419,86 @@ private fun cardActionColumn(
                     size = ButtonSize.Small,
                     enabled = !state.busy,
                 )
-
-                card.status == CardStatus.Suspended && state.viewer.isAccountant -> ZillitButton(
-                    text = "Reactivate",
-                    onClick = {
-                        onEvent(
-                            CardEvent.Ask(
-                                CardPrompt.Confirm(
-                                    CardConfirmAction.ReactivateCard,
-                                    card.id,
-                                    "Reactivate this card",
-                                    "Spending resumes against the remaining limit.",
-                                ),
-                            ),
-                        )
-                    },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                    enabled = !state.busy,
-                )
-
-                else -> ZillitText(
-                    text = "—",
-                    style = ZillitTheme.typography.bodySmall,
-                    color = ZillitTheme.colors.textMuted,
-                )
             }
+
+            card.status == CardStatus.Approved && state.viewer.isAccountant -> ZillitButton(
+                text = "Activate",
+                onClick = {
+                    onEvent(
+                        CardEvent.Ask(
+                            CardPrompt.Confirm(
+                                CardConfirmAction.ActivateCard,
+                                card.id,
+                                "Activate this card",
+                                "The holder can start spending against it immediately.",
+                            ),
+                        ),
+                    )
+                },
+                size = ButtonSize.Small,
+                enabled = !state.busy,
+            )
+
+            card.status == CardStatus.DigitalActive && state.viewer.isAccountant -> ZillitButton(
+                text = "Assign physical",
+                onClick = {
+                    onEvent(
+                        CardEvent.Ask(
+                            CardPrompt.WithCardNumber(card.id, "Assign a physical card"),
+                        ),
+                    )
+                },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                enabled = !state.busy,
+            )
+
+            card.status == CardStatus.Active && state.viewer.isAccountant -> ZillitButton(
+                text = "Suspend",
+                onClick = {
+                    onEvent(
+                        CardEvent.Ask(
+                            CardPrompt.Confirm(
+                                CardConfirmAction.SuspendCard,
+                                card.id,
+                                "Suspend this card",
+                                "Spending stops at once. The holder is not told by this app.",
+                            ),
+                        ),
+                    )
+                },
+                variant = ButtonVariant.Danger,
+                size = ButtonSize.Small,
+                enabled = !state.busy,
+            )
+
+            card.status == CardStatus.Suspended && state.viewer.isAccountant -> ZillitButton(
+                text = "Reactivate",
+                onClick = {
+                    onEvent(
+                        CardEvent.Ask(
+                            CardPrompt.Confirm(
+                                CardConfirmAction.ReactivateCard,
+                                card.id,
+                                "Reactivate this card",
+                                "Spending resumes against the remaining limit.",
+                            ),
+                        ),
+                    )
+                },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                enabled = !state.busy,
+            )
+
+            else -> ZillitText(
+                text = "—",
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
         }
-    },
-)
+    }
+}
 
 /**
  * The cardholder's own card, and the request form when they have none.
@@ -406,27 +506,31 @@ private fun cardActionColumn(
  * The one-card rule is explained before it is enforced: a disabled button with
  * no reason is how people end up emailing the accounts office.
  */
-@Suppress("LongMethod") // One screen: the card, its headroom, and the request form.
 @Composable
 fun MyCardPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val card = state.myCard
-    var limit by remember { mutableStateOf("") }
-    var reason by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf(CardType.Physical) }
 
     ScrollingPage {
-        if (card != null) {
-            CardFace(card, modifier = Modifier.width(CARD_FACE_WIDTH))
+        if (card != null) MyCardSummary(state, card, onEvent)
+        RequestCardSection(state, onEvent)
+    }
+}
 
-            if (card.status == CardStatus.Rejected && !card.rejectionReason.isNullOrBlank()) {
-                ZillitNotice(
-                    text = "This request was refused: ${card.rejectionReason}",
-                    tone = StatusTone.Rejected,
-                    icon = ZillitIcons.Warning,
-                )
-            }
+/** The card this person holds: its face, its headroom, and a way to correct it. */
+@Composable
+private fun MyCardSummary(state: CardUiState, card: ExpenseCard, onEvent: (CardEvent) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg)) {
+        CardFace(card, modifier = Modifier.width(CARD_FACE_WIDTH))
 
-            ZillitSectionCard(title = "Limit and headroom", icon = ZillitIcons.Wallet) {
+        if (card.status == CardStatus.Rejected && !card.rejectionReason.isNullOrBlank()) {
+            ZillitNotice(
+                text = "This request was refused: ${card.rejectionReason}",
+                tone = StatusTone.Rejected,
+                icon = ZillitIcons.Warning,
+            )
+        }
+
+        ZillitSectionCard(title = "Limit and headroom", icon = ZillitIcons.Wallet) {
                 val headroom = state.headroom
                 LedgerLine("Card limit", money(headroom.cardLimit, card.currency))
                 LedgerLine("Receipts committed", money(headroom.receiptsCommit, card.currency))
@@ -448,8 +552,37 @@ fun MyCardPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                     )
                 }
             }
-        }
 
+        if (CardRules.canEditRequest(card, state.viewer.userId, isAccountant = false)) {
+            ZillitSectionCard(title = "Correct this request", icon = ZillitIcons.Edit) {
+                ZillitText(
+                    text = "A request that has not been approved yet can still be changed. " +
+                        "Saving sends it back through the approval chain from the top.",
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textSecondary,
+                )
+                ZillitButton(
+                    text = "Edit request",
+                    onClick = { onEvent(CardEvent.OpenCardEdit(card.id)) },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Edit,
+                    enabled = !state.busy,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Asking for a card, or being told why you cannot.
+ *
+ * The one-card rule is explained before it is enforced: a disabled button with
+ * no reason is how people end up emailing the accounts office.
+ */
+@Composable
+private fun RequestCardSection(state: CardUiState, onEvent: (CardEvent) -> Unit) {
+    Column {
         val blocking = state.cards.firstOrNull {
             it.holderId == state.viewer.userId && CardRules.blocksNewRequest(it)
         }
@@ -463,46 +596,17 @@ fun MyCardPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                     icon = ZillitIcons.CreditCard,
                 )
             } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    ZillitTextField(
-                        value = limit,
-                        onValueChange = { limit = it },
-                        label = "Limit needed",
-                        placeholder = "0.00",
-                        keyboardType = KeyboardType.Decimal,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        ZillitText(
-                            text = "Card type",
-                            style = ZillitTheme.typography.label,
-                            color = ZillitTheme.colors.textSecondary,
-                        )
-                        ZillitSelect(
-                            value = type,
-                            options = CardType.entries,
-                            onSelect = { type = it },
-                            label = { it.label },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-                ZillitTextField(
-                    value = reason,
-                    onValueChange = { reason = it },
-                    label = "What it is for",
-                    singleLine = false,
-                    modifier = Modifier.fillMaxWidth(),
+                ZillitText(
+                    text = "Say what you need the card for and what limit it should carry. " +
+                        "The accounts team set the figure they authorise.",
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textSecondary,
                 )
                 ZillitButton(
-                    text = "Send request",
-                    onClick = { onEvent(CardEvent.RequestCard(limit, type, reason)) },
-                    leadingIcon = ZillitIcons.Send,
-                    loading = state.busy,
+                    text = "Request a card",
+                    onClick = { onEvent(CardEvent.OpenNewCard(state.viewer.userId)) },
+                    leadingIcon = ZillitIcons.Add,
+                    enabled = !state.busy,
                 )
             }
         }
@@ -577,23 +681,106 @@ fun CardExtensionPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
 /** The accountant's top-up inbox. */
 @Composable
 fun TopUpQueuePage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
+    val open = state.topUps.firstOrNull { it.id == state.openTopUpId }
+
     FixedPage {
-        ZillitSectionCard(
-            title = "Top-up requests",
-            icon = ZillitIcons.Wallet,
-            meta = "${state.topUps.count { it.status == PENDING }} pending",
-            padded = false,
-            modifier = Modifier.weight(1f),
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
-            ZillitDataTable(
-                rows = state.topUps,
-                columns = topUpColumns(showHolder = true) + topUpActions(state, onEvent),
-                key = { it.id },
-                loading = state.loading,
-                emptyTitle = "Nothing waiting",
-                emptyMessage = "Cardholder top-up requests land here as they are raised.",
+            ZillitSectionCard(
+                title = "Top-up requests",
+                icon = ZillitIcons.Wallet,
+                meta = "${state.topUps.count { it.status == PENDING }} pending",
+                padded = false,
+                modifier = Modifier.weight(QUEUE_WEIGHT).fillMaxHeight(),
+            ) {
+                ZillitDataTable(
+                    rows = state.topUps,
+                    columns = topUpColumns(
+                        showHolder = true,
+                        compact = true,
+                        holderName = { state.personName(it.holderId, it.holderName) },
+                    ) + topUpActions(state, onEvent),
+                    key = { it.id },
+                    loading = state.loading,
+                    onRowClick = { onEvent(CardEvent.OpenTopUpHistory(it.id)) },
+                    isSelected = { it.id == state.openTopUpId },
+                    emptyTitle = "Nothing waiting",
+                    emptyMessage = "Cardholder top-up requests land here as they are raised.",
+                )
+            }
+
+            ZillitSectionCard(
+                title = "Request",
+                icon = ZillitIcons.Eye,
+                padded = false,
+                modifier = Modifier.weight(PANE_WEIGHT).fillMaxHeight(),
+            ) {
+                if (open == null) {
+                    ZillitEmptyState(
+                        title = "Pick a request",
+                        message = "Who asked, what for, and what has been done about it so far.",
+                        icon = ZillitIcons.Wallet,
+                    )
+                } else {
+                    TopUpDetail(state, open)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One top-up request and its trail.
+ *
+ * The trail is the point: a partial payment, a skip and a completion all leave
+ * the row saying something different, and the funding queue is worked by more
+ * than one person. Without it "why is this only half funded" has no answer on
+ * screen.
+ */
+@Composable
+private fun TopUpDetail(state: CardUiState, topUp: CardTopUp) {
+    ZillitScrollColumn(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = DetailPanePadding,
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                ZillitText(
+                    text = money(topUp.amount, topUp.currency),
+                    style = ZillitTheme.typography.titleMedium,
+                )
+                ZillitText(
+                    text = listOfNotNull(
+                        state.personName(topUp.holderId, topUp.holderName).takeIf { it != "—" },
+                        topUp.cardLastFour?.let { "•••• $it" },
+                        date(topUp.createdAt).takeIf { it != "—" },
+                        topUp.method?.takeIf { it.isNotBlank() },
+                    ).joinToString(" · "),
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textSecondary,
+                )
+            }
+            ZillitStatusPill(
+                label = topUp.status.replaceFirstChar { it.uppercase() }.ifBlank { "Pending" },
+                tone = when (topUp.status) {
+                    "completed" -> StatusTone.Done
+                    "skipped" -> StatusTone.Neutral
+                    "partial" -> StatusTone.Progress
+                    else -> StatusTone.Pending
+                },
+                dot = true,
             )
         }
+
+        ZillitDivider()
+        FieldGroupLabel("History")
+        CardHistoryTrail(
+            entries = state.topUpHistory,
+            emptyMessage = "Nothing has happened to this request yet.",
+        )
     }
 }
 
@@ -677,39 +864,80 @@ private fun topUpActions(
 // -- shared columns ----------------------------------------------------------
 
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
-fun cardColumns(): List<TableColumn<ExpenseCard>> = listOf(
-    textColumn("Holder", ColumnWidth.Weight(1.4f)) { it.holderName.ifBlank { it.holderId } },
-    textColumn("Card", ColumnWidth.Weight(1f), muted = true) { cardLabel(it) },
-    textColumn("Type", ColumnWidth.Fixed(TYPE_COLUMN), muted = true) { it.type.label },
-    textColumn("Limit", ColumnWidth.Weight(1f), numeric = true) { money(it.limit, it.currency) },
-    textColumn("Available", ColumnWidth.Weight(1f), numeric = true) { money(it.balance, it.currency) },
-    TableColumn(
-        header = "Used",
-        width = ColumnWidth.Fixed(METER_COLUMN),
-        cell = { row ->
-            ZillitMeter(
-                fraction = row.consumedFraction,
-                tone = if (row.consumedFraction > NEARLY_SPENT) StatusTone.Rejected else StatusTone.Ready,
-                modifier = Modifier.width(METER_WIDTH),
-            )
-        },
-    ),
-    TableColumn(
-        header = "Status",
-        width = ColumnWidth.Fixed(STATUS_COLUMN),
-        cell = { CardStatusPill(it.status) },
-    ),
-)
+/**
+ * The card table's columns.
+ *
+ * [compact] drops the three the detail pane repeats — type, remaining balance
+ * and the meter. Eight columns in the half-width table beside an open card
+ * pushed the status off the end, so the one thing a register is read for was
+ * the one thing behind a horizontal scroll.
+ */
+fun cardColumns(
+    compact: Boolean = false,
+    /** Names the holder through the crew directory; see `CardUiState.holderName`. */
+    holderName: (ExpenseCard) -> String = { it.holderName.ifBlank { "—" } },
+): List<TableColumn<ExpenseCard>> = buildList {
+    add(
+        TableColumn(
+            header = "Holder",
+            width = ColumnWidth.Weight(1.4f),
+            cell = { PersonCell(holderName(it)) },
+        ),
+    )
+    add(textColumn("Card", ColumnWidth.Weight(1f), muted = true) { cardLabel(it) })
+    if (!compact) {
+        add(textColumn("Type", ColumnWidth.Fixed(TYPE_COLUMN), muted = true) { it.type.label })
+    }
+    add(textColumn("Limit", ColumnWidth.Weight(1f), numeric = true) { money(it.limit, it.currency) })
+    if (!compact) {
+        add(textColumn("Available", ColumnWidth.Weight(1f), numeric = true) { money(it.balance, it.currency) })
+        add(
+            TableColumn(
+                header = "Used",
+                width = ColumnWidth.Fixed(METER_COLUMN),
+                cell = { row ->
+                    ZillitMeter(
+                        fraction = row.consumedFraction,
+                        tone = if (row.consumedFraction > NEARLY_SPENT) StatusTone.Rejected else StatusTone.Ready,
+                        modifier = Modifier.width(METER_WIDTH),
+                    )
+                },
+            ),
+        )
+    }
+    add(
+        TableColumn(
+            header = "Status",
+            width = ColumnWidth.Fixed(STATUS_COLUMN),
+            cell = { CardStatusPill(it.status) },
+        ),
+    )
+}
 
 @Suppress("MagicNumber") // Column proportions.
-fun topUpColumns(showHolder: Boolean): List<TableColumn<CardTopUp>> = buildList {
+fun topUpColumns(
+    showHolder: Boolean,
+    compact: Boolean = false,
+    /** Names the holder through the crew directory; see `CardUiState.holderName`. */
+    holderName: (CardTopUp) -> String = { it.holderName.ifBlank { "—" } },
+): List<TableColumn<CardTopUp>> = buildList {
     if (showHolder) {
-        add(textColumn("Holder", ColumnWidth.Weight(1.3f)) { it.holderName.ifBlank { it.holderId.orEmpty() } })
+        add(
+            TableColumn(
+                header = "Holder",
+                width = ColumnWidth.Weight(1.3f),
+                cell = { PersonCell(holderName(it)) },
+            ),
+        )
     }
     add(textColumn("Card", ColumnWidth.Weight(1f), muted = true) { it.cardLastFour?.let { l -> "•••• $l" } ?: "—" })
     add(textColumn("Amount", ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) })
-    add(textColumn("Method", ColumnWidth.Weight(1f), muted = true) { it.method ?: "—" })
-    add(textColumn("Raised", ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
+    // Method and date are in the pane beside this table when it is compact,
+    // and three row actions need the room more than they do.
+    if (!compact) {
+        add(textColumn("Method", ColumnWidth.Weight(1f), muted = true) { it.method ?: "—" })
+        add(textColumn("Raised", ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
+    }
     add(
         TableColumn(
             header = "Status",
@@ -747,8 +975,11 @@ private const val PARTIAL = "partial"
 private const val SKIPPED = "skipped"
 private const val NEARLY_SPENT = 0.85f
 
+private const val QUEUE_WEIGHT = 1.5f
+private const val REGISTER_WEIGHT = 1.55f
+private const val PANE_WEIGHT = 1f
 private val SEARCH_WIDTH = 320.dp
-private val ACTION_COLUMN = 190.dp
+private val FILTER_WIDTH = 190.dp
 private val TOPUP_ACTION_COLUMN = 200.dp
 private val TOPUP_STATUS_COLUMN = 120.dp
 private val STATUS_COLUMN = 140.dp

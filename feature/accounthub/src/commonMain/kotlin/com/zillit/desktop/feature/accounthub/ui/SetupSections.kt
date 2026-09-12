@@ -2,6 +2,8 @@ package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.feature.accounthub.domain.DayType
 import com.zillit.desktop.feature.accounthub.domain.DayTypes
+import com.zillit.desktop.feature.accounthub.domain.ScheduleRules
+import com.zillit.desktop.feature.accounthub.domain.TaxType
 import com.zillit.desktop.feature.accounthub.domain.DealCondition
 
 /**
@@ -21,6 +23,16 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
     fun save(section: SetupSection) {
         if (!vm.mayEdit()) return
         val setup = vm.setupState.setup
+        // The web's own gates, applied before the call rather than after the
+        // server's refusal — each names the row that is wrong.
+        val refusal = when (section) {
+            SetupSection.Currencies -> setup.currencies.edited.validationError()
+            SetupSection.TaxTypes -> TaxType.problem(setup.taxTypes.edited)
+            SetupSection.Schedule -> "Fix the schedule dates before saving."
+                .takeIf { ScheduleRules.hasErrors(setup.schedule.edited.toDomain()) }
+            else -> null
+        }
+        if (refusal != null) return vm.sendSideEffect(AccountHubEffect.Failed(refusal))
         when (section) {
             SetupSection.Companies -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(companies = this.setup.companies.copy(saving = true))) },
@@ -141,7 +153,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
                 marking = {
                     copy(setup = this.setup.copy(invoicesSetup = this.setup.invoicesSetup.copy(saving = true)))
                 },
-                call = { vm.repo.saveInvoicesSetup(setup.invoicesSetup.edited) },
+                call = { vm.repo.saveInvoicesSetup(setup.invoicesSetup.edited.withRenumberedLevels()) },
                 done = { value ->
                     copy(setup = this.setup.copy(invoicesSetup = this.setup.invoicesSetup.committed(value)))
                 },

@@ -14,6 +14,9 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.HorizontalScrollbar
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
@@ -43,6 +46,38 @@ actual fun ZillitScrollRail(state: LazyListState, modifier: Modifier, reverseLay
 @Composable
 actual fun ZillitScrollRail(state: ScrollState, modifier: Modifier) {
     Rail(state, rememberScrollbarAdapter(state), reverseLayout = false, modifier = modifier)
+}
+
+/** The rail on its side: a left arrow, the thumb, a right arrow, along the bottom edge. */
+@Composable
+actual fun ZillitHorizontalScrollRail(state: ScrollState, modifier: Modifier) {
+    if (!state.canScrollForward && !state.canScrollBackward) return
+
+    val stepPx = with(LocalDensity.current) { SCROLL_RAIL_STEP.toPx() }
+    Row(
+        modifier = modifier.height(SCROLL_RAIL_WIDTH).fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RailArrow(
+            icon = ZillitIcons.ChevronLeft,
+            description = "Scroll left",
+            enabled = state.canScrollBackward,
+            state = state,
+            travel = stepPx,
+        )
+        HorizontalScrollbar(
+            adapter = rememberScrollbarAdapter(state),
+            modifier = Modifier.weight(1f),
+            style = railStyle(),
+        )
+        RailArrow(
+            icon = ZillitIcons.ChevronRight,
+            description = "Scroll right",
+            enabled = state.canScrollForward,
+            state = state,
+            travel = -stepPx,
+        )
+    }
 }
 
 @Composable

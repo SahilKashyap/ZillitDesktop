@@ -1,242 +1,21 @@
 package com.zillit.desktop.feature.cardexpenses.ui
 
 import com.zillit.desktop.core.localization.localised
-import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.cardexpenses.data.cardRefreshes
 import com.zillit.desktop.feature.cardexpenses.domain.BulkAction
 import com.zillit.desktop.feature.cardexpenses.domain.BulkCoding
-import com.zillit.desktop.feature.cardexpenses.domain.BulkItem
-import com.zillit.desktop.feature.cardexpenses.domain.ReceiptLine
-import com.zillit.desktop.feature.cardexpenses.domain.StatementRow
-import com.zillit.desktop.feature.cardexpenses.domain.CardAlert
-import com.zillit.desktop.feature.cardexpenses.domain.CardAnalytics
-import com.zillit.desktop.feature.cardexpenses.domain.CardOverview
-import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
+import com.zillit.desktop.feature.cardexpenses.domain.CardAttachmentUploader
+import com.zillit.desktop.feature.cardexpenses.domain.CardPerson
 import com.zillit.desktop.feature.cardexpenses.domain.CardRepository
-import com.zillit.desktop.feature.cardexpenses.domain.CardSettings
-import com.zillit.desktop.feature.cardexpenses.domain.CardTopUp
-import com.zillit.desktop.feature.cardexpenses.domain.CardTransaction
-import com.zillit.desktop.feature.cardexpenses.domain.CardType
+import com.zillit.desktop.feature.cardexpenses.domain.CardRules
 import com.zillit.desktop.feature.cardexpenses.domain.CardViewer
 import com.zillit.desktop.feature.cardexpenses.domain.DraftCardReceipt
-import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
-import com.zillit.desktop.feature.cardexpenses.domain.NewCardRequest
+import com.zillit.desktop.feature.cardexpenses.domain.ReceiptLine
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptScope
-import com.zillit.desktop.feature.cardexpenses.domain.StatementImport
-import com.zillit.desktop.feature.cardexpenses.domain.UploadHeadroom
 import kotlinx.coroutines.Job
-
-/** Everything the card tool is showing. */
-data class CardUiState(
-    val viewer: CardViewer,
-    val destination: CardDestination,
-    val loading: Boolean = false,
-    val error: ZillitError? = null,
-    val busy: Boolean = false,
-    val notice: String? = null,
-
-    val overview: CardOverview? = null,
-    val analytics: CardAnalytics? = null,
-    val cards: List<ExpenseCard> = emptyList(),
-    val transactions: List<CardTransaction> = emptyList(),
-    val receipts: List<CardReceipt> = emptyList(),
-    val matchCandidates: List<CardTransaction> = emptyList(),
-    val topUps: List<CardTopUp> = emptyList(),
-    val alerts: List<CardAlert> = emptyList(),
-    val imports: List<StatementImport> = emptyList(),
-    val settings: CardSettings? = null,
-    val settingsDraft: CardSettings? = null,
-    val bulkItems: List<BulkItem> = emptyList(),
-    val bulkCoding: BulkCoding = BulkCoding(),
-    /** The statement whose rows are open for review, and those rows. */
-    val openImportId: String? = null,
-    val importRows: List<StatementRow> = emptyList(),
-    /** The receipt whose splits are open, if any. */
-    val splits: SplitDraft? = null,
-
-    val search: String = "",
-    val selectedReceiptId: String? = null,
-    val selectedCardId: String? = null,
-    /** Rows ticked for a bulk approve or reject. */
-    val selection: Set<String> = emptySet(),
-    val draft: List<DraftCardReceipt> = listOf(DraftCardReceipt()),
-    val prompt: CardPrompt? = null,
-) {
-    /** This viewer's own card, for the cardholder screens. */
-    val myCard: ExpenseCard?
-        get() = cards.firstOrNull { it.holderId == viewer.userId } ?: cards.firstOrNull()
-
-    val headroom: UploadHeadroom get() = UploadHeadroom.of(myCard)
-
-    val draftTotal: Double get() = draft.sumOf { it.amount.trim().toDoubleOrNull() ?: 0.0 }
-
-    val selectedReceipt: CardReceipt? get() = receipts.firstOrNull { it.id == selectedReceiptId }
-
-    val selectedCard: ExpenseCard? get() = cards.firstOrNull { it.id == selectedCardId }
-
-    /** Bulk rows this viewer is allowed to tick. */
-    val selectableBulkItems: List<BulkItem>
-        get() = bulkItems.filter { it.selectableBy(viewer.userId) }
-
-    /** What the ticked bulk rows come to. */
-    val bulkSelectedTotal: Double
-        get() = bulkItems.filter { it.id in selection }.sumOf { it.amount }
-
-    /** The destinations this viewer may open, in sidebar order. */
-    val destinations: List<CardDestination>
-        get() = CardDestination.entries.filter { it.visibleTo(viewer) }
-}
-
-/**
- * A receipt's splits, open for editing.
- *
- * Card splits are simpler than the cash module's: no parent/child tree, just
- * a flat set of coded portions that has to add up to the receipt. The
- * constraint is the same, and so is the reason for showing it live.
- */
-data class SplitDraft(
-    val receiptId: String,
-    val receiptGross: Double,
-    val currency: String?,
-    val lines: List<ReceiptLine>,
-) {
-    val total: Double get() = lines.sumOf { it.gross }
-
-    val remaining: Double get() = receiptGross - total
-
-    val balances: Boolean get() = kotlin.math.abs(remaining) < PENNY
-
-    private companion object {
-        const val PENNY = 0.005
-    }
-}
-
-/** A question asked before something irreversible. */
-sealed interface CardPrompt {
-    data class Confirm(
-        val action: CardConfirmAction,
-        val targetId: String,
-        val title: String,
-        val message: String,
-    ) : CardPrompt
-
-    data class WithReason(
-        val action: CardReasonAction,
-        val targetId: String,
-        val title: String,
-        val label: String,
-        val reason: String = "",
-    ) : CardPrompt
-
-    data class WithAmount(
-        val action: CardAmountAction,
-        val targetId: String,
-        val title: String,
-        val label: String,
-        val amount: String = "",
-        val note: String = "",
-    ) : CardPrompt
-
-    /** Attaching a physical card number to a live digital card. */
-    data class WithCardNumber(
-        val targetId: String,
-        val title: String,
-        val number: String = "",
-    ) : CardPrompt
-}
-
-enum class CardConfirmAction {
-    ApproveCard,
-    OverrideCard,
-    ActivateCard,
-    SuspendCard,
-    ReactivateCard,
-    ApproveReceipt,
-    OverrideReceipt,
-    PostReceipt,
-    SubmitReceiptForApproval,
-    ConfirmMatch,
-    UnmatchReceipt,
-    FlagPersonal,
-    DismissDuplicate,
-    DismissPersonal,
-    DeleteReceipt,
-    CompleteTopUp,
-    SkipTopUp,
-    DismissAlert,
-    InvestigateAlert,
-    BulkApprove,
-    BulkReject,
-    PostTransaction,
-    FlagTransactionPersonal,
-}
-
-enum class CardReasonAction { RejectCard, RejectReceipt, QueryTransaction, RejectTransaction, ResolveAlert }
-
-enum class CardAmountAction { RequestTopUp, PartialTopUp }
-
-/** Everything the user can do in the card tool. */
-sealed interface CardEvent {
-    data object Refresh : CardEvent
-    data class Open(val destination: CardDestination) : CardEvent
-    data class Search(val query: String) : CardEvent
-    data class SelectReceipt(val receiptId: String?) : CardEvent
-    data class SelectCard(val cardId: String?) : CardEvent
-    data class ToggleSelection(val id: String) : CardEvent
-    data object ClearSelection : CardEvent
-    data object ClearNotice : CardEvent
-
-    data class Ask(val prompt: CardPrompt) : CardEvent
-    data class UpdatePrompt(val prompt: CardPrompt) : CardEvent
-    data object DismissPrompt : CardEvent
-    data object ConfirmPrompt : CardEvent
-
-    data object AddDraftReceipt : CardEvent
-    data class RemoveDraftReceipt(val index: Int) : CardEvent
-    data class EditDraftReceipt(val index: Int, val receipt: DraftCardReceipt) : CardEvent
-    data object SubmitDraftReceipts : CardEvent
-
-    data class RequestCard(val limit: String, val type: CardType, val reason: String) : CardEvent
-    data class MatchReceipt(val receiptId: String, val transactionId: String) : CardEvent
-    data class CodeReceipt(val receiptId: String, val code: String, val description: String?) : CardEvent
-    data class UpdateBsCode(val cardId: String, val code: String) : CardEvent
-    data class ImportStatement(val attachmentKey: String) : CardEvent
-
-    /** Opens a receipt's stored image or PDF through the host's file layer. */
-    data class ViewReceipt(val attachmentKey: String) : CardEvent
-
-    data class EditSettings(val settings: CardSettings) : CardEvent
-    data object SaveSettings : CardEvent
-
-    // -- bulk processing ---------------------------------------------------
-
-    data class EditBulkCoding(val coding: BulkCoding) : CardEvent
-    data object SelectAllBulk : CardEvent
-    data object BulkPost : CardEvent
-
-    // -- statement review --------------------------------------------------
-
-    data class OpenImport(val importId: String?) : CardEvent
-    data object ProcessImportRows : CardEvent
-    data object SubmitRowsToHolders : CardEvent
-
-    // -- receipt splits ----------------------------------------------------
-
-    data class OpenSplits(val receiptId: String) : CardEvent
-    data object CloseSplits : CardEvent
-    data class EditSplit(val index: Int, val line: ReceiptLine) : CardEvent
-    data object AddSplit : CardEvent
-    data class RemoveSplit(val index: Int) : CardEvent
-    data object SaveSplits : CardEvent
-}
-
-sealed interface CardEffect {
-    data class Failed(val message: String) : CardEffect
-    data class OpenAttachment(val key: String) : CardEffect
-}
 
 /**
  * The card tool's one view model.
@@ -244,6 +23,12 @@ sealed interface CardEffect {
  * Same shape as the cash module's, and for the same reasons — see
  * `CashExpensesViewModel`, whose account of per-destination loading and
  * reload-after-mutation applies here unchanged.
+ *
+ * Two host seams rather than repository calls, because neither belongs to this
+ * service: [people] is the open production's crew, and [uploader] is the
+ * machine's file picker and the project's object store. Both default to doing
+ * nothing, which degrades to a form that cannot pick a holder or a file rather
+ * than to a crash.
  */
 @Suppress("TooManyFunctions") // One handler per user action; the alternative is a 300-line when.
 class CardExpensesViewModel(
@@ -255,15 +40,66 @@ class CardExpensesViewModel(
      * sites, and a parameter added after it would capture that lambda instead.
      */
     private val events: SocketEventBus? = null,
+    /** The crew, for the holder picker. Read at start, not at construction. */
+    private val people: suspend () -> List<CardPerson> = { emptyList() },
+    /** Picks a file and stores it; null leaves every attach button disabled. */
+    private val uploader: CardAttachmentUploader? = null,
     /** Read at start, not at construction — see the cash module's equivalent. */
     private val viewer: () -> CardViewer,
 ) : ZillitViewModel<CardUiState, CardEvent, CardEffect>(
-    CardUiState(viewer = viewer(), destination = CardDestination.landing(viewer())),
+    CardUiState(
+        viewer = viewer(),
+        destination = CardDestination.landing(viewer()),
+        canAttachFiles = uploader != null,
+    ),
 ) {
 
     private var loadJob: Job? = null
     private var started = false
     private var listening = false
+
+    /** The register's own actions; see [CardRegisterActions]. */
+    private val register = CardRegisterActions(this)
+
+    /** Saving the production's configuration; see [CardSettingsActions]. */
+    private val configuration = CardSettingsActions(this)
+
+    /** One receipt: choosing, attaching, uploading, coding. */
+    private val receipts = CardReceiptActions(this, uploader)
+
+    /** Importing a statement and reviewing what came off it. */
+    private val statements = CardStatementActions(this, uploader)
+
+    // -- the seams the two collaborators work through ----------------------
+    //
+    // `setState`, `launch` and `sendEffect` are protected on the base class,
+    // so a collaborator cannot reach them. These four are the whole surface
+    // they need, named for what they do rather than for the machinery.
+
+    internal val repo: CardRepository get() = repository
+
+    internal val current: CardUiState get() = currentState
+
+    internal fun update(reducer: CardUiState.() -> CardUiState) = setState(reducer)
+
+    internal fun fail(message: String) = sendEffect(CardEffect.Failed(message))
+
+    internal fun run(block: suspend () -> Unit) = launch { block() }
+
+    internal fun act(success: String, block: suspend () -> ZillitResult<Unit>) =
+        act(success, clearDraft = false, block = block)
+
+    /**
+     * Uploads the drafted receipts and empties the form on success.
+     *
+     * Here rather than in [CardReceiptActions] only because clearing the draft
+     * is part of the same state write as the notice; the gate that decides
+     * whether to call it is there, with the rest of the receipt's rules.
+     */
+    internal fun submitDraftReceipts(state: CardUiState) =
+        act("Receipts uploaded", clearDraft = true) {
+            repository.submitReceipts(state.myCard, state.draft)
+        }
 
     /** Resolves who this is, then opens their landing page. Idempotent. */
     fun start() {
@@ -321,20 +157,24 @@ class CardExpensesViewModel(
                 copy(viewer = identity, destination = CardDestination.landing(identity))
             }
         }
+        // Providers only. `coding_required` belongs to /metadata — it is a
+        // fact about this viewer's department, not a project-wide switch —
+        // and copying it off /settings made every coordinator's coding queue
+        // appear or vanish with a setting nobody had touched.
         repository.settings().getOrNull()?.let { loaded ->
             setState {
                 copy(
                     settings = loaded,
                     settingsDraft = settingsDraft ?: loaded,
-                    viewer = viewer.copy(
-                        metadata = viewer.metadata.copy(
-                            codingRequired = loaded.codingRequired,
-                            cardProviders = loaded.providers,
-                        ),
-                    ),
+                    viewer = viewer.copy(metadata = viewer.metadata.copy(cardProviders = loaded.providers)),
                 )
             }
         }
+        // Read here rather than at construction: the crew belongs to the open
+        // production, which does not exist when this is built. Resolved
+        // outside the reducer — `setState` takes a plain lambda.
+        val crew = people()
+        setState { copy(people = crew) }
         load(currentState.destination)
     }
 
@@ -348,9 +188,15 @@ class CardExpensesViewModel(
                     copy(
                         destination = event.destination,
                         search = "",
+                        statusFilter = ALL_STATUSES,
                         selection = emptySet(),
                         selectedReceiptId = null,
                         selectedCardId = null,
+                        selectedTransactionId = null,
+                        openTopUpId = null,
+                        cardDetail = null,
+                        coding = null,
+                        receiptHistory = emptyList(),
                         error = null,
                     )
                 }
@@ -358,8 +204,10 @@ class CardExpensesViewModel(
             }
 
             is CardEvent.Search -> setState { copy(search = event.query) }
-            is CardEvent.SelectReceipt -> selectReceipt(event.receiptId)
-            is CardEvent.SelectCard -> setState { copy(selectedCardId = event.cardId) }
+            is CardEvent.FilterStatus -> setState { copy(statusFilter = event.status) }
+            is CardEvent.SelectReceipt -> receipts.select(event.receiptId)
+            is CardEvent.SelectCard -> register.select(event.cardId)
+            is CardEvent.SelectTransaction -> setState { copy(selectedTransactionId = event.transactionId) }
             is CardEvent.ToggleSelection -> setState {
                 copy(
                     selection = if (event.id in selection) selection - event.id else selection + event.id,
@@ -388,32 +236,61 @@ class CardExpensesViewModel(
                 )
             }
 
-            CardEvent.SubmitDraftReceipts -> submitDraft()
+            is CardEvent.AttachDraftReceipt -> receipts.attach(event.index)
+            is CardEvent.ClearDraftAttachment -> receipts.clearAttachment(event.index)
 
-            is CardEvent.RequestCard -> requestCard(event)
+            CardEvent.SubmitDraftReceipts -> receipts.submitDraft()
+
+            is CardEvent.OpenNewCard -> register.compose(event.holderId)
+            is CardEvent.EditNewCard -> setState { copy(newCard = event.draft) }
+            CardEvent.CloseNewCard -> setState { copy(newCard = null) }
+            CardEvent.SubmitNewCard -> register.submit()
+
+            is CardEvent.OpenCardEdit -> register.openEdit(event.cardId)
+            is CardEvent.EditCardDraft -> setState { copy(cardEdit = event.draft) }
+            CardEvent.CloseCardEdit -> setState { copy(cardEdit = null) }
+            CardEvent.SaveCardEdit -> register.saveEdit()
+
+            is CardEvent.EditBsCode -> setState {
+                copy(cardDetail = cardDetail?.copy(bsControlCode = event.code))
+            }
+
+            is CardEvent.SaveBsCode -> register.saveBsCode(event.cardId)
+
             is CardEvent.MatchReceipt -> act("Receipt matched") {
                 repository.matchReceipt(event.receiptId, event.transactionId)
             }
 
-            is CardEvent.CodeReceipt -> act("Coding saved") {
-                repository.codeReceipt(event.receiptId, event.code, event.description)
-            }
-
-            is CardEvent.UpdateBsCode -> act("Control code updated") {
-                repository.updateBsControlCode(event.cardId, event.code)
-            }
+            is CardEvent.EditCoding -> setState { copy(coding = event.draft) }
+            is CardEvent.OpenTopUpHistory -> openTopUpHistory(event.topUpId)
+            CardEvent.SaveCodingDraft -> receipts.commitCoding(
+                // A holder coding their own receipt has one button, and it
+                // advances the receipt; a coordinator's identical-looking
+                // "Save draft" deliberately does not.
+                if (currentState.destination == CardDestination.MyTransactions) {
+                    CodingCommit.Own
+                } else {
+                    CodingCommit.Draft
+                },
+            )
+            CardEvent.SubmitCoding -> receipts.commitCoding(CodingCommit.Submit)
+            CardEvent.ApproveAndSubmitCoding -> receipts.commitCoding(CodingCommit.ApproveAndSubmit)
 
             // The effect and the host's handler shipped with this module;
             // nothing raised it, so an accountant could read a receipt's
             // figures but never look at the receipt.
             is CardEvent.ViewReceipt -> sendEffect(CardEffect.OpenAttachment(event.attachmentKey))
 
-            is CardEvent.ImportStatement -> act("Statement imported") {
-                repository.importStatement(event.attachmentKey)
-            }
+            CardEvent.ImportStatement -> statements.import()
+            is CardEvent.EditStatementCurrency -> setState { copy(statementCurrency = event.currency) }
 
             is CardEvent.EditSettings -> setState { copy(settingsDraft = event.settings) }
-            CardEvent.SaveSettings -> saveSettings()
+            is CardEvent.SaveSettings -> configuration.save(event.section)
+            CardEvent.DiscardSettings -> setState { copy(settingsDraft = settings) }
+            is CardEvent.SetAnalyticsRange -> {
+                setState { copy(analyticsRange = event.range) }
+                load(CardDestination.Analytics)
+            }
 
             is CardEvent.EditBulkCoding -> setState { copy(bulkCoding = event.coding) }
             CardEvent.SelectAllBulk -> setState {
@@ -424,9 +301,9 @@ class CardExpensesViewModel(
 
             CardEvent.BulkPost -> bulkPost()
 
-            is CardEvent.OpenImport -> openImport(event.importId)
-            CardEvent.ProcessImportRows -> processRows()
-            CardEvent.SubmitRowsToHolders -> submitRows()
+            is CardEvent.OpenImport -> statements.open(event.importId)
+            CardEvent.ProcessImportRows -> statements.processRows()
+            CardEvent.SubmitRowsToHolders -> statements.submitRows()
 
             is CardEvent.OpenSplits -> openSplits(event.receiptId)
             CardEvent.CloseSplits -> setState { copy(splits = null) }
@@ -476,8 +353,7 @@ class CardExpensesViewModel(
         setState { copy(loading = true, error = null) }
         loadJob = launch {
             val outcome: ZillitResult<CardUiState.() -> CardUiState> = when (destination) {
-                CardDestination.Overview ->
-                    repository.overview().mapState { copy(overview = it, cards = it.cards) }
+                CardDestination.Overview -> loadOverview()
 
                 CardDestination.CardRegister ->
                     repository.cards(mineOnly = false).mapState { copy(cards = it) }
@@ -488,13 +364,12 @@ class CardExpensesViewModel(
                 CardDestination.CardsForApproval ->
                     repository.cards(mineOnly = false).mapState { copy(cards = it) }
 
-                CardDestination.ImportStatement -> loadImports()
+                CardDestination.ImportStatement -> statements.load()
 
                 CardDestination.BulkProcess ->
                     repository.bulkProcessable().mapState { copy(bulkItems = it) }
 
-                CardDestination.ReceiptInbox ->
-                    repository.receipts(ReceiptScope.All).mapState { copy(receipts = it) }
+                CardDestination.ReceiptInbox -> loadInbox()
 
                 CardDestination.MyTransactions -> loadMyTransactions()
 
@@ -516,8 +391,11 @@ class CardExpensesViewModel(
                 CardDestination.TopUpQueue ->
                     repository.topUps().mapState { copy(topUps = it) }
 
-                CardDestination.Analytics ->
-                    repository.analytics(null, null).mapState { copy(analytics = it) }
+                CardDestination.Analytics -> {
+                    val range = currentState.analyticsRange
+                    repository.analytics(range.fromOrNull, range.toOrNull)
+                        .mapState { copy(analytics = it) }
+                }
 
                 CardDestination.Alerts ->
                     repository.alerts().mapState { copy(alerts = it) }
@@ -531,6 +409,29 @@ class CardExpensesViewModel(
                 is ZillitResult.Failure -> setState { copy(loading = false, error = outcome.error) }
             }
         }
+    }
+
+    /**
+     * The dashboard's figures, with the register behind its card rows.
+     *
+     * `/overview` projects each card to a thinner field set: no status, no
+     * currency, no holder name, and `last4` where the register says
+     * `last_four`. Rendered as-is that gave a dashboard of raw ObjectIds,
+     * every status reading "Unknown", and a limits total that added yen to
+     * pounds. The web hit this as ZL-20582 and reads the amounts and the code
+     * from `/cards` keyed by id, which is what this does — the overview row
+     * supplies *which* cards, and the register supplies what they are.
+     *
+     * A failed register read is not fatal: the counts and totals are the point
+     * of the page, and thin card rows are better than no page.
+     */
+    private suspend fun loadOverview(): ZillitResult<CardUiState.() -> CardUiState> {
+        val overview = repository.overview()
+        if (overview is ZillitResult.Failure) return overview
+        val dashboard = (overview as ZillitResult.Success).data
+        val register = repository.cards(mineOnly = false).getOrNull().orEmpty().associateBy { it.id }
+        val merged = dashboard.cards.map { row -> register[row.id] ?: row }
+        return ZillitResult.Success { copy(overview = dashboard.copy(cards = merged), cards = merged) }
     }
 
     /**
@@ -564,161 +465,40 @@ class CardExpensesViewModel(
         return ZillitResult.Success { copy(receipts = mine, cards = cards) }
     }
 
-    /** Selecting a receipt also fetches what it might match, for the pane. */
-    private fun selectReceipt(receiptId: String?) {
-        setState { copy(selectedReceiptId = receiptId, matchCandidates = emptyList()) }
-        val receipt = currentState.receipts.firstOrNull { it.id == receiptId } ?: return
-        if (receipt.transactionId != null) return
+    /**
+     * The inbox needs the statement side as well as the receipts.
+     *
+     * Its work is reconciliation, and the transactions are what a receipt is
+     * being reconciled *against* — the screen names the statement line a
+     * receipt is flagged against, and offers the accountant's own
+     * flag-personal on that line rather than on the receipt.
+     */
+    private suspend fun loadInbox(): ZillitResult<CardUiState.() -> CardUiState> {
+        val receipts = repository.receipts(ReceiptScope.All)
+        if (receipts is ZillitResult.Failure) return receipts
+        val rows = (receipts as ZillitResult.Success).data
+        val imports = repository.imports().getOrNull().orEmpty()
+        val transactions = repository.transactions().getOrNull().orEmpty()
+        return ZillitResult.Success { copy(receipts = rows, imports = imports, transactions = transactions) }
+    }
+
+
+    /**
+     * Opens one top-up's trail, and closes the one that was open.
+     *
+     * A second press on the same row closes it, so the control is its own
+     * undo — the funding queue is a list of decisions and a row stuck open is
+     * a row hiding the next one.
+     */
+    private fun openTopUpHistory(topUpId: String?) {
+        val next = topUpId.takeIf { it != currentState.openTopUpId }
+        setState { copy(openTopUpId = next, topUpHistory = emptyList()) }
+        if (next == null) return
         launch {
-            repository.matchCandidates(receipt.id).getOrNull()?.let { candidates ->
-                // Guarded: the user may have moved on while this was in flight,
-                // and candidates for a receipt nobody is looking at are noise.
-                if (currentState.selectedReceiptId == receipt.id) {
-                    setState { copy(matchCandidates = candidates) }
-                }
+            repository.topUpHistory(next).getOrNull()?.let { trail ->
+                if (currentState.openTopUpId == next) setState { copy(topUpHistory = trail) }
             }
         }
-    }
-
-    // -- actions -----------------------------------------------------------
-
-    /**
-     * Submits the drafted receipts, refusing above the card's headroom.
-     *
-     * This gate blocks, unlike the cash float's: a card limit is an
-     * authorisation the production granted, and exceeding it is an overspend
-     * rather than something to route to a reimbursement.
-     */
-    private fun submitDraft() {
-        val state = currentState
-        val invalid = state.draft.firstNotNullOfOrNull { receipt ->
-            when {
-                receipt.description.isBlank() -> "Each receipt needs a description."
-                (receipt.amount.trim().toDoubleOrNull() ?: 0.0) <= 0 -> "Each receipt needs an amount."
-                receipt.attachmentKey.isNullOrBlank() -> "Each receipt needs its image or PDF attached."
-                else -> null
-            }
-        }
-        if (invalid != null) {
-            sendEffect(CardEffect.Failed(invalid))
-            return
-        }
-
-        if (state.headroom.batchExceeds(state.draftTotal)) {
-            sendEffect(
-                CardEffect.Failed(
-                    "This batch is over the card's remaining limit. " +
-                        "Ask for a top-up before uploading it.",
-                ),
-            )
-            return
-        }
-
-        act("Receipts uploaded", clearDraft = true) {
-            repository.submitReceipts(state.myCard?.id, state.draft)
-        }
-    }
-
-    private fun requestCard(event: CardEvent.RequestCard) {
-        val limit = event.limit.trim().toDoubleOrNull()
-        if (limit == null || limit <= 0) {
-            sendEffect(CardEffect.Failed("Enter the limit the card should carry."))
-            return
-        }
-        val viewer = currentState.viewer
-        // The one-card rule, enforced here as well as on the server: a refusal
-        // after the form is filled in teaches people to ignore the rule rather
-        // than ask for the existing card to be closed.
-        val blocking = currentState.cards.firstOrNull {
-            it.holderId == viewer.userId &&
-                com.zillit.desktop.feature.cardexpenses.domain.CardRules.blocksNewRequest(it)
-        }
-        if (blocking != null) {
-            sendEffect(
-                CardEffect.Failed(
-                    "You already hold a ${blocking.status.label.lowercase()} card. " +
-                        "It has to be closed or suspended before a new one can be issued.",
-                ),
-            )
-            return
-        }
-
-        act("Card requested") {
-            repository.requestCard(
-                NewCardRequest(
-                    holderId = viewer.userId,
-                    limit = limit,
-                    currency = currentState.myCard?.currency,
-                    type = event.type,
-                    departmentId = null,
-                    companyId = null,
-                    providerId = viewer.metadata.cardProviders.firstOrNull()?.id,
-                    bsControlCode = null,
-                    reason = event.reason.takeIf { it.isNotBlank() },
-                ),
-            )
-        }
-    }
-
-    /**
-     * The imports list, and the open statement's rows alongside it.
-     *
-     * Both together: the point of the screen is reviewing one statement's
-     * rows, and making that a second navigation would put a click between an
-     * accountant and the work.
-     */
-    private suspend fun loadImports(): ZillitResult<CardUiState.() -> CardUiState> {
-        val imports = repository.imports()
-        if (imports is ZillitResult.Failure) return imports
-        val loaded = (imports as ZillitResult.Success).data
-        val open = currentState.openImportId ?: loaded.firstOrNull()?.id
-        val rows = open?.let { repository.importRows(it).getOrNull() }.orEmpty()
-        return ZillitResult.Success { copy(imports = loaded, openImportId = open, importRows = rows) }
-    }
-
-    private fun openImport(importId: String?) {
-        setState { copy(openImportId = importId, importRows = emptyList(), selection = emptySet()) }
-        if (importId == null) return
-        launch {
-            repository.importRows(importId).getOrNull()?.let { rows ->
-                if (currentState.openImportId == importId) setState { copy(importRows = rows) }
-            }
-        }
-    }
-
-    private fun processRows() {
-        val importId = currentState.openImportId ?: return
-        val ids = currentState.selection.toList()
-        if (ids.isEmpty()) {
-            sendEffect(CardEffect.Failed("Tick the rows to accept first."))
-            return
-        }
-        act("${ids.size} row(s) accepted") { repository.processImport(importId, ids) }
-        setState { copy(selection = emptySet()) }
-    }
-
-    /**
-     * Sends the ticked rows to their cardholders.
-     *
-     * A row with nobody on it has nowhere to go, so those are dropped from the
-     * send and named rather than silently included.
-     */
-    private fun submitRows() {
-        val ticked = currentState.importRows.filter { it.id in currentState.selection }
-        val sendable = ticked.filter { it.canSubmit }
-        if (sendable.isEmpty()) {
-            sendEffect(
-                CardEffect.Failed(
-                    "None of the ticked rows has a cardholder on it, so there is nobody to ask.",
-                ),
-            )
-            return
-        }
-        val skipped = ticked.size - sendable.size
-        val message = "${sendable.size} row(s) sent" +
-            if (skipped > 0) " · $skipped skipped with no holder" else ""
-        act(message) { repository.submitRowsToHolders(sendable.map { it.id }) }
-        setState { copy(selection = emptySet()) }
     }
 
     private fun bulkPost() {
@@ -799,23 +579,6 @@ class CardExpensesViewModel(
         setState { copy(splits = null) }
     }
 
-    private fun saveSettings() {
-        val draft = currentState.settingsDraft ?: return
-        launch {
-            setState { copy(busy = true) }
-            when (val saved = repository.updateSettings(draft)) {
-                is ZillitResult.Success -> setState {
-                    copy(busy = false, settings = saved.data, settingsDraft = saved.data, notice = "Settings saved")
-                }
-
-                is ZillitResult.Failure -> {
-                    setState { copy(busy = false) }
-                    sendEffect(CardEffect.Failed(saved.error.localised()))
-                }
-            }
-        }
-    }
-
     private fun resolvePrompt() {
         val prompt = currentState.prompt ?: return
         setState { copy(prompt = null) }
@@ -837,29 +600,44 @@ class CardExpensesViewModel(
         }
     }
 
-    @Suppress("CyclomaticComplexMethod") // One branch per confirmable action.
+    /**
+     * The right each confirmable action needs, independent of the screen.
+     *
+     * This dispatch went straight to the repository, so a prompt arriving here
+     * approved or posted money with no check of its own — the screens gated it
+     * and the handler trusted them.
+     *
+     * The card lifecycle, posting and deleting are an accountant's; approving
+     * a receipt is an approver's; approving a card is either. The claimant's
+     * own steps — submit, match, flag, dismiss, top-up — are left alone: a
+     * person acting on their own receipt is not something any screen refuses.
+     */
+    private fun CardConfirmAction.permitted(viewer: CardViewer): Boolean = when (this) {
+        CardConfirmAction.ApproveCard -> viewer.isApprover || viewer.isAccountant
+        CardConfirmAction.ApproveReceipt -> viewer.isApprover
+        CardConfirmAction.ActivateCard,
+        CardConfirmAction.SuspendCard,
+        CardConfirmAction.ReactivateCard,
+        CardConfirmAction.PostReceipt,
+        CardConfirmAction.PostTransaction,
+        CardConfirmAction.FlagTransactionPersonal,
+        CardConfirmAction.DeleteTransaction,
+        CardConfirmAction.BulkDeleteTransactions,
+        CardConfirmAction.RerunMatching,
+        -> viewer.isAccountant
+
+        // Overriding skips other people's approvals, so it needs the grant the
+        // module's own metadata carries — being an accountant is not enough.
+        CardConfirmAction.OverrideCard, CardConfirmAction.OverrideReceipt ->
+            viewer.isAccountant && viewer.metadata.canOverride
+
+        else -> true
+    }
+
+    @Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per confirmable action.
     private fun resolveConfirm(prompt: CardPrompt.Confirm) {
         val id = prompt.targetId
-        // Each action carries the right its own screen asks for. This
-        // dispatch went straight to the repository, so a prompt arriving
-        // here approved or posted money with no check of its own — the
-        // screens gated it and the handler trusted them.
-        //
-        // The card lifecycle and posting are an accountant's (`CardPages`);
-        // approving a receipt is an approver's (`ReceiptPages`); approving a
-        // card is either. The claimant's own steps — submit, match, flag,
-        // dismiss, top-up — are left alone: a person acting on their own
-        // receipt is not something any screen refuses.
-        val allowed = when (prompt.action) {
-            CardConfirmAction.ApproveCard ->
-                currentState.viewer.isApprover || currentState.viewer.isAccountant
-            CardConfirmAction.ApproveReceipt -> currentState.viewer.isApprover
-            CardConfirmAction.ActivateCard, CardConfirmAction.SuspendCard,
-            CardConfirmAction.ReactivateCard, CardConfirmAction.PostReceipt,
-            -> currentState.viewer.isAccountant
-            else -> true
-        }
-        if (!allowed) {
+        if (!prompt.action.permitted(currentState.viewer)) {
             sendEffect(CardEffect.Failed("You do not have the rights to do that on this project."))
             return
         }
@@ -869,6 +647,7 @@ class CardExpensesViewModel(
             CardConfirmAction.ActivateCard -> act("Card activated") { repository.activateCard(id, null) }
             CardConfirmAction.SuspendCard -> act("Card suspended") { repository.suspendCard(id) }
             CardConfirmAction.ReactivateCard -> act("Card reactivated") { repository.reactivateCard(id) }
+            CardConfirmAction.DeleteCard -> register.delete(id)
             CardConfirmAction.ApproveReceipt -> act("Receipt approved") { repository.approveReceipt(id, null) }
             CardConfirmAction.OverrideReceipt -> act("Receipt overridden") { repository.overrideReceipt(id) }
             CardConfirmAction.PostReceipt -> postReceipt(id)
@@ -890,6 +669,10 @@ class CardExpensesViewModel(
             CardConfirmAction.PostTransaction -> act("Transaction posted") { repository.postTransaction(id) }
             CardConfirmAction.FlagTransactionPersonal ->
                 act("Flagged personal") { repository.flagTransactionPersonal(id) }
+
+            CardConfirmAction.DeleteTransaction -> deleteTransaction(id)
+            CardConfirmAction.BulkDeleteTransactions -> bulkDeleteTransactions()
+            CardConfirmAction.RerunMatching -> act("Matching re-run") { repository.rerunMatching(id) }
         }
     }
 
@@ -942,6 +725,49 @@ class CardExpensesViewModel(
             return
         }
         act("Receipt posted") { repository.postReceipt(receiptId) }
+    }
+
+    private fun deleteTransaction(transactionId: String) {
+        act("Transaction deleted") { repository.deleteTransaction(transactionId) }
+        setState { copy(selectedTransactionId = null) }
+    }
+
+    /**
+     * Deletes the ticked statement lines.
+     *
+     * The counts come back from the server rather than from what was asked
+     * for: ids it does not recognise are skipped instead of failing the batch,
+     * so "deleted 12" when 14 were ticked is a fact worth showing.
+     */
+    private fun bulkDeleteTransactions() {
+        val ids = currentState.selection.toList()
+        if (ids.isEmpty()) {
+            sendEffect(CardEffect.Failed("Nothing is selected."))
+            return
+        }
+        launch {
+            setState { copy(busy = true) }
+            when (val result = repository.bulkDeleteTransactions(ids)) {
+                is ZillitResult.Success -> {
+                    val outcome = result.data
+                    setState {
+                        copy(
+                            busy = false,
+                            selection = emptySet(),
+                            selectedTransactionId = null,
+                            notice = "Deleted ${outcome.succeeded}" +
+                                if (outcome.failed > 0) " · ${outcome.failed} skipped" else "",
+                        )
+                    }
+                    load(currentState.destination)
+                }
+
+                is ZillitResult.Failure -> {
+                    setState { copy(busy = false) }
+                    sendEffect(CardEffect.Failed(result.error.localised()))
+                }
+            }
+        }
     }
 
     private fun bulk(action: BulkAction) {

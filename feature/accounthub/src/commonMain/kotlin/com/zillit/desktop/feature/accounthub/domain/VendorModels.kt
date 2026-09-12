@@ -68,13 +68,146 @@ data class Vendor(
     val currencyCode: String = "",
     val verified: Boolean = false,
     val bankAccountId: String? = null,
+    /** The raw status string — `VERIFIED`, `PENDING`. */
+    val status: String = "",
+    // -- audit --
+    val addedBy: String? = null,
+    val verifiedBy: String? = null,
+    val verifiedAtMillis: Long? = null,
+    val updatedBy: String? = null,
+    val createdAtMillis: Long? = null,
+    val updatedAtMillis: Long? = null,
+    // -- bank details, flat on the row as the web reads and writes them --
+    val bankName: String = "",
+    val accountHolderName: String = "",
+    val accountNumber: String = "",
+    val sortCode: String = "",
+    val ibanCode: String = "",
+    val swiftCode: String = "",
+    val additionalInfo: List<BankDetail> = emptyList(),
+    val bankId: String? = null,
+    // -- classification --
+    val vendorType: String = "",
+    val companyType: String = "",
+    /** A payment term — `net_30`. See [VendorTerms]. */
+    val terms: String = "",
+    /** The chart code new lines default to. */
+    val defaultCode: String = "",
+    val compliance: String = "",
 ) {
     /** What to show when the register is scanned — the name, or the email if unnamed. */
     val display: String get() = name.ifBlank { email }.ifBlank { "Unnamed vendor" }
 
+    val hasBankDetails: Boolean
+        get() = listOf(bankName, accountHolderName, accountNumber, sortCode, ibanCode, swiftCode)
+            .any { it.isNotBlank() } || additionalInfo.any { it.isTitled }
+
+    val hasClassification: Boolean
+        get() = listOf(vendorType, companyType, terms, defaultCode, compliance).any { it.isNotBlank() }
+
     companion object {
         const val VERIFIED_STATUS = "VERIFIED"
     }
+}
+
+/**
+ * A vendor's bank details, from wherever they actually live.
+ *
+ * ## Two homes, one reading
+ *
+ * A vendor's bank block is **written** flat on the vendor row — `bank_name`,
+ * `iban_code`, `additional_info` — and the service keeps a linked record in
+ * `/account-hub/bank-accounts` pointed at by `bank_id`. It is **read** from that
+ * record, whose names differ: `name`, `iban_number`, `additional_details`. The
+ * flat columns on the row are the legacy copy and are empty on a vendor saved
+ * through the current flow.
+ *
+ * Reading only the row therefore showed no bank details for such a vendor, and
+ * worse, seeded an empty bank block into the edit form — so saving an unrelated
+ * change sent every bank field back as null. The web reads the record first and
+ * falls back to the row, which is what [resolve] does.
+ */
+data class VendorBank(
+    val bankName: String = "",
+    val accountHolderName: String = "",
+    val accountNumber: String = "",
+    val sortCode: String = "",
+    val ibanCode: String = "",
+    val swiftCode: String = "",
+    val additionalInfo: List<BankDetail> = emptyList(),
+) {
+    val isEmpty: Boolean
+        get() = listOf(bankName, accountHolderName, accountNumber, sortCode, ibanCode, swiftCode)
+            .all { it.isBlank() } && additionalInfo.none { it.isTitled }
+
+    companion object {
+        /**
+         * The linked record when there is one, the row's legacy copy otherwise.
+         *
+         * A record that came back empty does not override a populated row — a
+         * half-migrated vendor with details in both places should never read as
+         * having none.
+         */
+        fun resolve(vendor: Vendor, record: BankAccount?): VendorBank {
+            val fromRecord = record?.let {
+                VendorBank(
+                    bankName = it.name,
+                    accountHolderName = it.accountHolderName,
+                    accountNumber = it.accountNumber,
+                    sortCode = it.sortCode,
+                    ibanCode = it.ibanNumber,
+                    swiftCode = it.swiftCode,
+                    additionalInfo = it.additionalDetails,
+                )
+            }
+            if (fromRecord != null && !fromRecord.isEmpty) return fromRecord
+            return VendorBank(
+                bankName = vendor.bankName,
+                accountHolderName = vendor.accountHolderName,
+                accountNumber = vendor.accountNumber,
+                sortCode = vendor.sortCode,
+                ibanCode = vendor.ibanCode,
+                swiftCode = vendor.swiftCode,
+                additionalInfo = vendor.additionalInfo,
+            )
+        }
+    }
+}
+
+/** Seeds a draft's bank block from wherever the vendor's details live. See [VendorBank]. */
+fun NewVendor.withBank(bank: VendorBank): NewVendor = copy(
+    bankName = bank.bankName,
+    accountHolderName = bank.accountHolderName,
+    accountNumber = bank.accountNumber,
+    sortCode = bank.sortCode,
+    ibanCode = bank.ibanCode,
+    swiftCode = bank.swiftCode,
+    additionalInfo = bank.additionalInfo,
+)
+
+/** The payment terms a vendor can be on — the web's `PAYMENT_TERMS_OPTIONS`. */
+enum class VendorTerms(val wire: String, val label: String) {
+    Net7("net_7", "7 days"),
+    Net14("net_14", "14 days"),
+    Net30("net_30", "30 days"),
+    Net60("net_60", "60 days"),
+    ;
+
+    companion object {
+        /** `net_30` → "30 days"; an unknown value passes through; blank is a dash. */
+        fun labelFor(wire: String, fallback: String = "—"): String {
+            if (wire.isBlank()) return fallback
+            return entries.firstOrNull { it.wire == wire }?.label ?: wire
+        }
+    }
+}
+
+/** The web's vendor tabs, with the one department users get. */
+enum class VendorTab(val slug: String, val label: String) {
+    All("all", "All Vendors"),
+    Verified("verified", "Verified"),
+    Unverified("unverified", "Non-Verified"),
+    Mine("mine", "Added by Me"),
 }
 
 /** A change to a vendor, newest first, from its audit trail. */
@@ -82,7 +215,10 @@ data class VendorChange(
     val id: String,
     val at: Long? = null,
     val byName: String = "",
+    /** The actor's user id, for the roster to name when the row carries no name. */
+    val byId: String = "",
     val summary: String = "",
+    val note: String = "",
 )
 
 /** A vendor being created or edited. */
@@ -90,41 +226,135 @@ data class NewVendor(
     val name: String = "",
     val email: String = "",
     val contactPerson: String = "",
-    val phoneCountryCode: String = DEFAULT_DIAL_CODE,
+    /**
+     * Empty until someone picks one — never a silent +44.
+     *
+     * The web defaulted this to Great Britain and saved `+44` onto vendors that
+     * never chose it (ZL-20520); its fix starts empty and leans on the
+     * picker's placeholder. Same here.
+     */
+    val phoneCountryCode: String = "",
     val phoneNumber: String = "",
-    val address: VendorAddress = VendorAddress(country = DEFAULT_COUNTRY),
+    /**
+     * Empty until someone picks one — never a silent United Kingdom.
+     *
+     * Country is required, and pre-filling it made that rule unreachable: every
+     * vendor whose form nobody scrolled down was saved as UK. The web removed
+     * the default for exactly that reason, and the "Country is required" line
+     * is now what catches a skipped field.
+     */
+    val address: VendorAddress = VendorAddress(),
     val vatNumber: String = "",
     val departmentId: String? = null,
     val currencyCode: String = "",
+    val bankName: String = "",
+    val accountHolderName: String = "",
+    val accountNumber: String = "",
+    val sortCode: String = "",
+    val ibanCode: String = "",
+    val swiftCode: String = "",
+    val additionalInfo: List<BankDetail> = emptyList(),
+    val companyType: String = "",
+    val terms: String = "",
+    val defaultCode: String = "",
+    /** Carried through unchanged; the form never edits either. */
+    val vendorType: String = "",
+    val compliance: String = "",
 ) {
     /** Null when no number was entered — see [VendorPhone]. */
     fun phone(): VendorPhone? =
         phoneNumber.trim().takeIf { it.isNotEmpty() }?.let { VendorPhone(phoneCountryCode, it) }
 
+    /** Whether any bank field was touched — the web gates its bank rules on this. */
+    val hasBankInput: Boolean
+        get() = listOf(bankName, accountHolderName, accountNumber, sortCode, ibanCode, swiftCode)
+            .any { it.isNotBlank() } || additionalInfo.any { it.isTitled }
+
     companion object {
-        /** What the web's picker opens on. */
-        const val DEFAULT_DIAL_CODE = "+44"
-
-        /**
-         * Pre-filled because the service refuses an empty country and this is
-         * the one address field a user is most likely to skip.
-         */
-        const val DEFAULT_COUNTRY = "United Kingdom"
-
         fun from(vendor: Vendor) = NewVendor(
             name = vendor.name,
             email = vendor.email,
             contactPerson = vendor.contactPerson,
-            phoneCountryCode = vendor.phone?.countryCode?.ifBlank { DEFAULT_DIAL_CODE }
-                ?: DEFAULT_DIAL_CODE,
+            // The vendor's own code, or none — an edit must not quietly add a
+            // +44 to a phone that was saved without one.
+            phoneCountryCode = vendor.phone?.countryCode.orEmpty(),
             phoneNumber = vendor.phone?.number.orEmpty(),
             address = vendor.address,
             vatNumber = vendor.vatNumber,
             departmentId = vendor.departmentId,
             currencyCode = vendor.currencyCode,
+            bankName = vendor.bankName,
+            accountHolderName = vendor.accountHolderName,
+            accountNumber = vendor.accountNumber,
+            sortCode = vendor.sortCode,
+            ibanCode = vendor.ibanCode,
+            swiftCode = vendor.swiftCode,
+            additionalInfo = vendor.additionalInfo,
+            companyType = vendor.companyType,
+            terms = vendor.terms,
+            defaultCode = vendor.defaultCode,
+            vendorType = vendor.vendorType,
+            compliance = vendor.compliance,
         )
     }
 }
+
+/**
+ * The web form's per-field errors, in its own words (`VendorForm.validate`).
+ *
+ * Keyed by field so each input can show its own line; [NewVendor.validationError]
+ * is the first of them, for the one-line refusal.
+ */
+@Suppress("CyclomaticComplexMethod") // One line per rule; the list IS the contract.
+fun NewVendor.fieldErrors(): Map<String, String> = buildMap {
+    when {
+        name.isBlank() -> put("name", "Vendor name is required")
+        name.length > MAX_NAME -> put("name", "Max 200 characters")
+    }
+    when {
+        contactPerson.isBlank() -> put("contactPerson", "Contact person is required")
+        contactPerson.length > MAX_NAME -> put("contactPerson", "Max 200 characters")
+    }
+    when {
+        email.isBlank() -> put("email", "Email is required")
+        !email.isPlausibleEmail() -> put("email", "Enter a valid email")
+    }
+    if (phoneNumber.isNotBlank()) {
+        when {
+            phoneNumber.trim().length < MIN_PHONE_DIGITS -> put("phoneNumber", "Phone number must be at least 5 digits")
+            phoneNumber.length > MAX_PHONE -> put("phoneNumber", "Max 20 characters")
+        }
+    }
+    if (address.line1.isBlank()) put("line1", "Address line 1 is required")
+    when {
+        address.city.isBlank() -> put("city", "City is required")
+        address.city.length > MAX_CITY -> put("city", "Max 100 characters")
+    }
+    when {
+        address.postalCode.isBlank() -> put("postalCode", "Postal code is required")
+        address.postalCode.length > MAX_POSTCODE -> put("postalCode", "Max 20 characters")
+    }
+    if (address.country.isBlank()) put("country", "Country is required")
+    if (hasBankInput) {
+        if (bankName.isBlank()) put("bankName", "Bank name is required")
+        if (accountHolderName.isBlank()) put("accountHolderName", "Account holder is required")
+        if (accountNumber.isBlank() && ibanCode.isBlank()) {
+            put("accountNumber", "Enter an account number or an IBAN")
+            put("ibanCode", "Enter an account number or an IBAN")
+        }
+        BankAccounts.firstInvalidDetail(additionalInfo)?.let {
+            put("additionalInfo", "\"${it.title}\" is not a valid ${it.fieldType.label.lowercase()}")
+        }
+    }
+}
+
+private const val MAX_NAME = 200
+private const val MAX_PHONE = 20
+private const val MAX_CITY = 100
+private const val MAX_POSTCODE = 20
+
+/** Digits only, as the web's `sanitizePhoneInput`. */
+fun sanitisePhone(raw: String): String = raw.filter { it.isDigit() }
 
 /**
  * What the vendor form refuses to send, or null when it is ready.
@@ -142,19 +372,7 @@ data class NewVendor(
  * The email rule is stricter than "contains an @" because the server's is — it
  * refused `hire@ziltest.example` outright.
  */
-fun NewVendor.validationError(): String? = when {
-    name.isBlank() -> "Give the vendor a name."
-    contactPerson.isBlank() -> "Name a contact person."
-    email.isBlank() -> "Give the vendor an email address."
-    !email.isPlausibleEmail() -> "That email address is not valid."
-    address.line1.isBlank() -> "Give the vendor a street address."
-    address.city.isBlank() -> "Give the vendor a city."
-    address.postalCode.isBlank() -> "Give the vendor a postcode."
-    address.country.isBlank() -> "Give the vendor a country."
-    phoneNumber.isNotBlank() && phoneNumber.trim().length < MIN_PHONE_DIGITS ->
-        "A phone number needs at least $MIN_PHONE_DIGITS digits."
-    else -> null
-}
+fun NewVendor.validationError(): String? = fieldErrors().values.firstOrNull()
 
 /**
  * Local-part, `@`, domain, dot, and a two-letter-or-longer suffix.

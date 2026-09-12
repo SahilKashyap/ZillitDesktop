@@ -1,11 +1,15 @@
 package com.zillit.desktop.feature.accounthub
 
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
@@ -27,6 +31,8 @@ import com.zillit.desktop.feature.accounthub.domain.Vendor
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubScreen
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
+import com.zillit.desktop.feature.accounthub.ui.EmbeddedTool
+import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.feature.accounthub.ui.ApprovalsState
 import com.zillit.desktop.feature.accounthub.ui.ChartState
 import com.zillit.desktop.feature.accounthub.domain.DealCondition
@@ -37,7 +43,7 @@ import com.zillit.desktop.feature.accounthub.domain.TrackingSet
 import com.zillit.desktop.feature.accounthub.ui.ChartView
 import com.zillit.desktop.feature.accounthub.ui.SectionEdit
 import com.zillit.desktop.feature.accounthub.ui.SetupState
-import com.zillit.desktop.feature.accounthub.ui.VendorForm
+import com.zillit.desktop.feature.accounthub.ui.VendorFormPage
 import com.zillit.desktop.feature.accounthub.ui.VendorsState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -187,10 +193,12 @@ class AccountHubScreenRenderTest {
                 // page's title, and the section headings collide with the page
                 // eyebrows ("Configuration", "Setup"). Uppercase because
                 // `ZillitSectionLabel` renders it that way.
-                onNodeWithText("PAYROLL MANAGEMENT").assertIsDisplayed()
+                onAllNodesWithText("PAYROLL MANAGEMENT").onFirst().assertIsDisplayed()
                 // And the open screen's own title, which does appear twice —
-                // once in the sidebar, once as the page header.
-                onAllNodesWithText(area.label).onFirst().assertIsDisplayed()
+                // once in the sidebar, once as the page header. The sidebar row
+                // is the clickable one; the last rows sit below the fold of a
+                // sidebar that scrolls, so it is scrolled to rather than assumed.
+                onAllNodes(hasText(area.label) and hasClickAction()).onFirst().performScrollTo().assertIsDisplayed()
             }
         }
     }
@@ -204,7 +212,7 @@ class AccountHubScreenRenderTest {
                         AccountHubScreen(state = state(area), onEvent = {})
                     }
                 }
-                onNodeWithText("PAYROLL MANAGEMENT").assertIsDisplayed()
+                onAllNodesWithText("PAYROLL MANAGEMENT").onFirst().assertIsDisplayed()
             }
         }
     }
@@ -224,7 +232,7 @@ class AccountHubScreenRenderTest {
                     AccountHubScreen(state = state(HubArea.ProductionSetup), onEvent = {})
                 }
             }
-            onNodeWithText("Companies").assertIsDisplayed()
+            onNodeWithText("Companies / Entities").assertIsDisplayed()
             onNodeWithText("Bank Accounts").assertIsDisplayed()
             // Said out loud on the one section that has no section-level save,
             // so its absence does not read as a missing control.
@@ -270,7 +278,8 @@ class AccountHubScreenRenderTest {
             setContent {
                 ZillitTheme(darkTheme = false) { AccountHubScreen(state = layered, onEvent = {}) }
             }
-            onNodeWithText("LOC · Locations").assertExists()
+            onNodeWithText("Locations").assertExists()
+            onNodeWithText("Prefix LOC").assertExists()
             onNodeWithText("London").assertExists()
             onNodeWithText("Soho").assertExists()
         }
@@ -396,9 +405,10 @@ class AccountHubScreenRenderTest {
                     AccountHubScreen(state = dirty, onEvent = {})
                 }
             }
+            // The save lives on the section itself, as on the web — no page-level
+            // banner naming the dirty card.
             onNodeWithText("Save changes").assertIsDisplayed()
-            // Named rather than counted, so the user does not have to hunt.
-            onNodeWithText("Unsaved changes in Companies.").assertIsDisplayed()
+            onNodeWithText("Unsaved changes in Companies.").assertDoesNotExist()
         }
     }
 
@@ -496,6 +506,30 @@ class AccountHubScreenRenderTest {
         assertEquals("purchase-orders", handedOff)
     }
 
+    /**
+     * With a host that can embed, a tool row renders the tool inside the
+     * console — the web's nested routes — and the hub's own area stays behind it.
+     */
+    @Test
+    fun `a hosted tool renders inside the console when the host embeds it`() {
+        val embedded = state(HubArea.ProductionSetup).copy(
+            embedded = EmbeddedTool("/film-tools/purchase-orders", "Purchase Orders"),
+        )
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    AccountHubScreen(
+                        state = embedded,
+                        onEvent = {},
+                        embed = { tool -> ZillitText(text = "Embedded ${tool.title}") },
+                    )
+                }
+            }
+            onNodeWithText("Embedded Purchase Orders").assertIsDisplayed()
+            onNodeWithText("Companies / Entities").assertDoesNotExist()
+        }
+    }
+
     @Test
     fun `selecting a hub area navigates within the console`() {
         var opened: HubArea? = null
@@ -524,24 +558,27 @@ class AccountHubScreenRenderTest {
                     AccountHubScreen(state = state(HubArea.Vendors), onEvent = {})
                 }
             }
-            onNodeWithText("Verified").assertIsDisplayed()
-            onNodeWithText("Not verified").assertIsDisplayed()
+            // The pill on the row, not the "Verified" tab above it.
+            onAllNodesWithText("Verified").onFirst().assertIsDisplayed()
+            // "Non-Verified" is both the tab and the row's pill, as on the web
+            // (ZL-20611: one literal wherever the status is named).
+            val nonVerified = onAllNodesWithText("Non-Verified")
+            nonVerified.assertCountEquals(2)
+            nonVerified[1].assertIsDisplayed()
         }
     }
 
     /**
-     * A tall vendor form keeps its buttons on screen.
-     *
-     * `ZillitDialogShell` used to clip past its max height rather than scroll,
-     * and the first thing lost is always the action row. `assertIsDisplayed` is
-     * the point of the test — a clipped button still *exists*.
+     * The vendor form is a page of its own, as on the web, with its save in
+     * the top bar. `assertIsDisplayed` is the point of the test — a clipped
+     * button still *exists*.
      */
     @Test
     fun `a vendor form keeps its save button on screen`() {
         val withForm = state(HubArea.Vendors).let { base ->
             base.copy(
                 vendors = base.vendors.copy(
-                    form = VendorForm(draft = NewVendor(name = "Grip Co", email = "hire@grip.example")),
+                    page = VendorFormPage(draft = NewVendor(name = "Grip Co", email = "hire@grip.example")),
                 ),
             )
         }
@@ -551,7 +588,11 @@ class AccountHubScreenRenderTest {
                     AccountHubScreen(state = withForm, onEvent = {})
                 }
             }
-            onNodeWithText("Create vendor").assertIsDisplayed()
+            onNodeWithText("Create Vendor").assertIsDisplayed()
+            onNodeWithText("Vendor Details").assertIsDisplayed()
+            // The bank card sits below the fold of a page that scrolls; it exists, and
+            // asserting it is *displayed* would be testing the viewport.
+            onNodeWithText("Bank Details").assertExists()
         }
     }
 
@@ -576,9 +617,9 @@ class AccountHubScreenRenderTest {
                     AccountHubScreen(state = noChain, onEvent = {})
                 }
             }
-            // Consequence, not just absence: nothing routes until it is set.
+            // Consequence, not just absence: the web's own warning.
             onNodeWithText(
-                "No chain configured for Purchase Orders. Documents will not route until one is.",
+                "No default levels set. Departments without custom configs will have no approval flow.",
             ).assertIsDisplayed()
         }
     }

@@ -27,6 +27,18 @@ interface CardRepository {
 
     suspend fun requestCard(request: NewCardRequest): ZillitResult<Unit>
 
+    /**
+     * An accountant's full edit of a card request.
+     *
+     * Resubmits the card: the server wipes its collected approvals and the
+     * chain restarts. Only ever offered on a card that is still a request —
+     * see [updateBsControlCode] for correcting a live one.
+     */
+    suspend fun updateCardDetails(cardId: String, edit: CardDetailsEdit): ZillitResult<Unit>
+
+    /** Removes a card request that should never have been raised. */
+    suspend fun deleteCard(cardId: String): ZillitResult<Unit>
+
     suspend fun approveCard(cardId: String, note: String?): ZillitResult<Unit>
 
     suspend fun rejectCard(cardId: String, reason: String): ZillitResult<Unit>
@@ -62,8 +74,13 @@ interface CardRepository {
 
     suspend fun imports(): ZillitResult<List<StatementImport>>
 
-    /** Ingests a statement already uploaded to storage, by its attachment key. */
-    suspend fun importStatement(attachmentKey: String): ZillitResult<Unit>
+    /**
+     * Ingests a statement already uploaded to storage, by its attachment key.
+     *
+     * [currency] states what the statement is denominated in; null leaves the
+     * server to apply the project default.
+     */
+    suspend fun importStatement(attachmentKey: String, currency: String?): ZillitResult<Unit>
 
     suspend fun rerunMatching(statementId: String): ZillitResult<Unit>
 
@@ -102,6 +119,12 @@ interface CardRepository {
 
     suspend fun flagTransactionPersonal(transactionId: String): ZillitResult<Unit>
 
+    /** Removes a statement line; a matched receipt is unlinked, not deleted. */
+    suspend fun deleteTransaction(transactionId: String): ZillitResult<Unit>
+
+    /** The bulk sibling of [deleteTransaction]; unknown ids are skipped. */
+    suspend fun bulkDeleteTransactions(transactionIds: List<String>): ZillitResult<BulkOutcome>
+
     // -- receipts ----------------------------------------------------------
 
     suspend fun receipts(scope: ReceiptScope): ZillitResult<List<CardReceipt>>
@@ -114,15 +137,29 @@ interface CardRepository {
 
     suspend fun confirmReceiptMatch(receiptId: String): ZillitResult<Unit>
 
-    suspend fun submitReceipts(cardId: String?, receipts: List<DraftCardReceipt>): ZillitResult<Unit>
-
-    suspend fun submitReceiptForApproval(receiptId: String): ZillitResult<Unit>
-
-    suspend fun codeReceipt(
-        receiptId: String,
-        nominalCode: String,
-        description: String?,
+    /** Uploads a batch of receipts against [card], whose id and currency they carry. */
+    suspend fun submitReceipts(
+        card: ExpenseCard?,
+        receipts: List<DraftCardReceipt>,
     ): ZillitResult<Unit>
+
+    /** Sends a receipt for approval, saving [coding] with it when there is any. */
+    suspend fun submitReceiptForApproval(
+        receiptId: String,
+        coding: ReceiptCoding? = null,
+    ): ZillitResult<Unit>
+
+    /** Codes a receipt and clears the coordinator's own approval step with it. */
+    suspend fun approveAndSubmitReceipt(
+        receiptId: String,
+        coding: ReceiptCoding,
+    ): ZillitResult<Unit>
+
+    /** Saves coding without advancing the receipt — the coding queue's draft save. */
+    suspend fun updateReceiptCoding(receiptId: String, coding: ReceiptCoding): ZillitResult<Unit>
+
+    /** Codes a receipt and advances it out of the coding queue. */
+    suspend fun codeReceipt(receiptId: String, coding: ReceiptCoding): ZillitResult<Unit>
 
     suspend fun postReceipt(receiptId: String): ZillitResult<Unit>
 
@@ -185,6 +222,9 @@ interface CardRepository {
 
     suspend fun cardTopUps(cardId: String): ZillitResult<List<CardTopUp>>
 
+    /** One top-up's audit trail, for the funding queue's row expansion. */
+    suspend fun topUpHistory(topUpId: String): ZillitResult<List<CardHistoryEntry>>
+
     suspend fun requestTopUp(cardId: String, amount: Double, reason: String?): ZillitResult<Unit>
 
     suspend fun completeTopUp(topUpId: String): ZillitResult<Unit>
@@ -205,7 +245,16 @@ interface CardRepository {
 
     suspend fun settings(): ZillitResult<CardSettings>
 
-    suspend fun updateSettings(settings: CardSettings): ZillitResult<CardSettings>
+    /**
+     * Saves one section of the settings document and returns the whole of it.
+     *
+     * Per section because a PATCH merges: see the implementation for why
+     * sending the whole document is the wrong shape here.
+     */
+    suspend fun updateSettings(
+        section: SettingsSection,
+        settings: CardSettings,
+    ): ZillitResult<CardSettings>
 }
 
 /** Which slice of receipts a screen wants. */

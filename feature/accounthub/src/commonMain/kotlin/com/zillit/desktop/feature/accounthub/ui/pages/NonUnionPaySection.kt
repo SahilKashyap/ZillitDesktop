@@ -1,14 +1,26 @@
 package com.zillit.desktop.feature.accounthub.ui.pages
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -16,10 +28,13 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
+import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
+import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import com.zillit.desktop.core.designsystem.component.ZillitSegmented
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
+import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -32,17 +47,27 @@ import com.zillit.desktop.feature.accounthub.domain.PayRule
 import com.zillit.desktop.feature.accounthub.domain.PayRuleField
 import com.zillit.desktop.feature.accounthub.domain.PayRuleKind
 import com.zillit.desktop.feature.accounthub.domain.PayRuleTemplate
+import com.zillit.desktop.feature.accounthub.domain.PayTrigger
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
-
-private const val LABEL_WIDTH = 190
-private const val AMOUNT_WIDTH = 100
-private const val FIELD_WIDTH = 130
-private const val NOMINAL_WIDTH = 110
+import com.zillit.desktop.feature.accounthub.ui.asAmountText
+import com.zillit.desktop.feature.accounthub.ui.components.CalcField
+import com.zillit.desktop.feature.accounthub.ui.components.CoaCodeField
+import com.zillit.desktop.feature.accounthub.ui.components.quickCreateHandler
+import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
+import com.zillit.desktop.feature.accounthub.ui.components.FieldLabel
+import com.zillit.desktop.feature.accounthub.ui.components.GhostAddButton
+import com.zillit.desktop.feature.accounthub.ui.components.HoverRow
+import com.zillit.desktop.feature.accounthub.ui.components.HubSelect
+import com.zillit.desktop.feature.accounthub.ui.components.Pill
+import com.zillit.desktop.feature.accounthub.ui.components.SectionShell
+import com.zillit.desktop.feature.accounthub.ui.components.SubCard
+import com.zillit.desktop.feature.accounthub.ui.components.ToggleRow
 
 /**
- * The production's own overtime, premium and penalty rules.
+ * The production's own overtime, premium and penalty rules — the web's
+ * `NonUnionPayBreakdownSection`.
  *
  * Non-union productions have no agreement to read these from, so this is where
  * they are set — and the engine consumes them through the same shape it reads
@@ -54,332 +79,468 @@ private const val NOMINAL_WIDTH = 110
  * wrong does not fail, it pays somebody the wrong amount.
  */
 @Composable
-internal fun NonUnionPaySection(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+internal fun ColumnScope.NonUnionPaySection(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val section = state.setup.nonUnionPay
     val value = section.edited
     val editable = state.viewer.canEdit
 
-    SetupSectionCard(
+    SectionShell(
         title = "Non-Union Pay Breakdown",
-        description = "The overtime, premium and penalty rules a non-union deal is paid by.",
+        description = "Overtime / premium / penalty rules for non-union productions. Same shape as union rate cards, " +
+            "so the OT engine reads either source uniformly.",
         dirty = section.dirty,
         saving = section.saving,
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.NonUnionPay)) },
-        onRevert = { onEvent(AccountHubEvent.RevertSection(SetupSection.NonUnionPay)) },
+        onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.NonUnionPay)) },
         editable = editable,
     ) {
         ApplyScope(state, value, editable, onEvent)
-        PayRuleKind.entries.forEach { kind ->
-            RuleList(kind, value, editable, onEvent)
-        }
+        DayTypesEditor(state, onEvent)
+        PayRuleKind.entries.forEach { kind -> RuleList(kind, value, editable, state, onEvent) }
     }
+
+    PayRuleDialog(state, onEvent)
+    DepartmentPickerDialog(state, value, onEvent)
 }
 
 /**
- * Who every rule in this breakdown pays.
+ * Who every rule in this breakdown pays — the web's two option cards.
  *
  * Section-level, not per rule, and the first thing on the card because it
- * changes what all of it means. Neither choice reads as picked until somebody
+ * changes what all of it means. Neither card reads as picked until somebody
  * picks one: the server's own pristine state is "not chosen", which the engine
- * treats as everybody, and showing "Everyone" as already selected would claim
- * a decision nobody made.
+ * treats as everybody, and showing "All Departments" as already selected
+ * would claim a decision nobody made.
  */
 @Composable
-private fun ColumnScope.ApplyScope(
-    state: AccountHubUiState,
-    value: NonUnionPay,
-    editable: Boolean,
-    onEvent: (AccountHubEvent) -> Unit,
-) {
-    ZillitSectionLabel("Apply these rules to")
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        ZillitButton(
-            text = PayApplyMode.All.label,
-            onClick = { onEvent(AccountHubEvent.ApplyPayToEveryone(true)) },
-            variant = if (value.applyMode == PayApplyMode.All) {
-                ButtonVariant.Primary
-            } else {
-                ButtonVariant.Tertiary
-            },
-            size = ButtonSize.Small,
-            enabled = editable,
-        )
-        ZillitButton(
-            text = PayApplyMode.Departments.label,
-            onClick = { onEvent(AccountHubEvent.ApplyPayToEveryone(false)) },
-            variant = if (value.applyMode == PayApplyMode.Departments) {
-                ButtonVariant.Primary
-            } else {
-                ButtonVariant.Tertiary
-            },
-            size = ButtonSize.Small,
-            enabled = editable,
-        )
-    }
-
-    when {
-        value.applyMode == PayApplyMode.Unset -> ZillitText(
-            text = "Nobody has chosen yet, which pays every department — the same as choosing " +
-                "everyone. Pick one to say so on the record.",
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textSecondary,
-        )
-
-        value.applyMode == PayApplyMode.Departments -> DepartmentPicker(state, value, editable, onEvent)
-    }
-
-    if (value.appliesToNobody) {
-        ZillitNotice(
-            text = "No department is chosen, so these rules pay nobody. Pick at least one, or " +
-                "apply them to everyone.",
-            tone = StatusTone.Rejected,
-            icon = ZillitIcons.Warning,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
-/**
- * The departments the rules reach.
- *
- * A stored id the host could not name is still listed and still checked — the
- * scope is the production's, and hiding a department because this window has
- * no name for it would drop it on the next save.
- */
-@Composable
-private fun ColumnScope.DepartmentPicker(
+private fun ApplyScope(
     state: AccountHubUiState,
     value: NonUnionPay,
     editable: Boolean,
     onEvent: (AccountHubEvent) -> Unit,
 ) {
     val known = state.setup.departments
-    val ids = (known.keys + value.departmentIds).distinct().sortedBy { known[it] ?: it }
-
-    if (ids.isEmpty()) {
-        ZillitText(
-            text = "No departments to choose from on this production.",
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textSecondary,
-        )
-        return
-    }
-
-    ids.forEach { id ->
-        ZillitCheckbox(
-            checked = id in value.departmentIds,
-            onCheckedChange = { on -> onEvent(AccountHubEvent.TogglePayDepartment(id, on)) },
-            label = known[id] ?: id,
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+        ScopeCard(
+            title = "All Departments / Crew",
+            subtitle = "Rules apply to every department",
+            active = value.applyMode == PayApplyMode.All,
             enabled = editable,
+            onClick = { onEvent(AccountHubEvent.ApplyPayToEveryone(true)) },
+            modifier = Modifier.weight(1f),
+        )
+        ScopeCard(
+            title = "Select Department",
+            subtitle = when {
+                value.applyMode != PayApplyMode.Departments -> "Pick the departments these rules pay"
+                value.departmentIds.isEmpty() -> "No departments chosen"
+                else -> value.departmentIds.map { known[it] ?: it }.joinToString(", ")
+            },
+            active = value.applyMode == PayApplyMode.Departments,
+            enabled = editable,
+            onClick = {
+                onEvent(AccountHubEvent.ApplyPayToEveryone(false))
+                onEvent(AccountHubEvent.ToggleDepartmentPicker(true))
+            },
+            modifier = Modifier.weight(1f),
+        )
+    }
+    if (value.applyMode == PayApplyMode.Unset) {
+        FieldHint("Nobody has chosen yet, which pays every department — the same as choosing everyone.")
+    }
+    if (value.appliesToNobody) {
+        ZillitNotice(
+            text = "No department is chosen, so these rules pay nobody. Pick at least one, or apply them to everyone.",
+            tone = StatusTone.Rejected,
+            icon = ZillitIcons.Warning,
         )
     }
 }
+
+@Composable
+private fun ScopeCard(
+    title: String,
+    subtitle: String,
+    active: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = ZillitTheme.colors
+    Column(
+        modifier = modifier
+            .clip(ZillitTheme.shapes.large)
+            .background(if (active) colors.accentSoft else colors.surface)
+            .border(if (active) 2.dp else 1.dp, if (active) colors.accent else colors.border, ZillitTheme.shapes.large)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(ZillitTheme.spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitText(
+            text = title,
+            style = ZillitTheme.typography.titleSmall,
+            color = if (active) colors.accentText else colors.textPrimary,
+        )
+        FieldHint(subtitle)
+    }
+}
+
+/** "Select departments" — the web's picker modal with a search box. */
+@Composable
+private fun DepartmentPickerDialog(state: AccountHubUiState, value: NonUnionPay, onEvent: (AccountHubEvent) -> Unit) {
+    val setup = state.setup
+    val known = setup.departments
+    val ids = (known.keys + value.departmentIds).distinct().sortedBy { known[it] ?: it }
+    val shown = ids.filter {
+        setup.departmentPickerSearch.isBlank() || (known[it] ?: it).contains(setup.departmentPickerSearch, true)
+    }
+    ZillitDialogShell(
+        title = "Select departments",
+        subtitle = "${value.departmentIds.size} chosen",
+        icon = ZillitIcons.Users,
+        visible = setup.departmentPickerOpen,
+        onDismiss = { onEvent(AccountHubEvent.ToggleDepartmentPicker(false)) },
+        scrollable = false,
+        actions = {
+            ZillitButton(text = "Done", onClick = { onEvent(AccountHubEvent.ToggleDepartmentPicker(false)) })
+        },
+    ) {
+        ZillitSearchField(
+            value = setup.departmentPickerSearch,
+            onValueChange = { onEvent(AccountHubEvent.SearchDepartmentPicker(it)) },
+            placeholder = "Search departments…",
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (ids.isEmpty()) FieldHint("No departments to choose from on this production.")
+        Column(modifier = Modifier.fillMaxWidth().heightIn(max = PICKER_LIST).verticalScroll(rememberScrollState())) {
+            shown.forEach { id ->
+                ZillitCheckbox(
+                    checked = id in value.departmentIds,
+                    onCheckedChange = { on -> onEvent(AccountHubEvent.TogglePayDepartment(id, on)) },
+                    // A stored id the host could not name is still listed and
+                    // still checked — hiding it would drop it on the next save.
+                    label = known[id] ?: id,
+                    enabled = state.viewer.canEdit,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
+                )
+            }
+        }
+    }
+}
+
+// -- the three lists -------------------------------------------------------------
 
 @Composable
 private fun RuleList(
     kind: PayRuleKind,
     value: NonUnionPay,
     editable: Boolean,
+    state: AccountHubUiState,
     onEvent: (AccountHubEvent) -> Unit,
 ) {
     val rules = value.rulesFor(kind)
-
-    ZillitSectionLabel(kind.label)
-    ZillitText(
-        text = kind.helper,
-        style = ZillitTheme.typography.bodySmall,
-        color = ZillitTheme.colors.textSecondary,
-    )
-    if (rules.isEmpty()) EmptyLine("No ${kind.label.lowercase()} yet.")
-    rules.forEachIndexed { index, rule ->
-        PayRuleRow(
-            rule = rule,
-            kind = kind,
-            editable = editable,
-            onChange = { next ->
-                onEvent(
-                    AccountHubEvent.EditNonUnionPay(
-                        value.withRules(kind, rules.mapIndexed { i, r -> if (i == index) next else r }),
-                    ),
-                )
-            },
-            onRemove = {
-                onEvent(
-                    AccountHubEvent.EditNonUnionPay(
-                        value.withRules(kind, rules.filterIndexed { i, _ -> i != index }),
-                    ),
-                )
-            },
-        )
-    }
-    if (editable) {
-        ZillitButton(
-            text = "Add ${kind.label.dropLast(1).lowercase()}",
-            onClick = {
-                onEvent(AccountHubEvent.EditNonUnionPay(value.withRules(kind, rules + newRule(kind, rules.size))))
-            },
-            variant = ButtonVariant.Tertiary,
-            size = ButtonSize.Small,
-            leadingIcon = ZillitIcons.Add,
-        )
+    SubCard(
+        title = kind.label,
+        hint = kind.helper,
+        action = {
+            if (editable) GhostAddButton("Add rule", onClick = { onEvent(AccountHubEvent.ComposePayRule(kind, null)) })
+        },
+        padded = false,
+    ) {
+        if (rules.isEmpty()) {
+            FieldHint(
+                "No ${kind.label.lowercase()} yet — add the first one.",
+                Modifier.padding(ZillitTheme.spacing.lg),
+            )
+        }
+        rules.forEachIndexed { index, rule ->
+            HoverRow(
+                modifier = Modifier.padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
+                onClick = if (editable) ({ onEvent(AccountHubEvent.ComposePayRule(kind, index)) }) else null,
+                actions = { hovered ->
+                    if (editable && hovered) {
+                        ZillitIconButton(
+                            icon = ZillitIcons.Edit,
+                            contentDescription = "Edit rule",
+                            onClick = { onEvent(AccountHubEvent.ComposePayRule(kind, index)) },
+                        )
+                        ZillitIconButton(
+                            icon = ZillitIcons.Trash,
+                            contentDescription = "Remove rule",
+                            onClick = { onEvent(AccountHubEvent.RemovePayRule(kind, index)) },
+                            tint = ZillitTheme.colors.danger,
+                        )
+                    }
+                },
+            ) {
+                RuleSummary(rule, state, Modifier.weight(1f))
+            }
+        }
     }
 }
 
-/** A new rule starts on its list's usual condition, with that template's rate. */
-private fun newRule(kind: PayRuleKind, at: Int): PayRule {
-    val template = PayRuleTemplate.defaultFor(kind)
-    return PayRule(
-        id = "${kind.wire}-new-$at",
-        label = template.label,
-        rateType = template.defaultRateType,
-        rateAmount = template.defaultRateAmount,
-        basis = template.defaultBasis,
-        triggers = listOf(template.trigger(hours = "", clock = "", dayKinds = emptyList(), carrying = PayTriggerEmpty)),
-    )
-}
-
-private val PayTriggerEmpty = com.zillit.desktop.feature.accounthub.domain.PayTrigger()
-
+/** One rule as the web's row prints it: name, rate, the condition in words, and chips for its gates. */
+@Suppress("CyclomaticComplexMethod") // One branch per pay-rule template.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PayRuleRow(
-    rule: PayRule,
-    kind: PayRuleKind,
-    editable: Boolean,
-    onChange: (PayRule) -> Unit,
-    onRemove: () -> Unit,
-) {
-    val trigger = rule.singleTrigger
-    val template = PayRuleTemplate.of(trigger)
-
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+private fun RuleSummary(rule: PayRule, state: AccountHubUiState, modifier: Modifier = Modifier) {
+    val template = PayRuleTemplate.of(rule.singleTrigger)
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            ZillitTextField(
-                value = rule.label,
-                onValueChange = { onChange(rule.copy(label = it)) },
-                label = "Name",
-                enabled = editable,
-                modifier = Modifier.width(LABEL_WIDTH.dp),
+            ZillitText(
+                text = rule.label.ifBlank { "Unnamed rule" },
+                style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             )
-            ZillitSelect(
-                value = rule.rateType,
-                options = PayRateType.entries,
-                onSelect = { onChange(rule.copy(rateType = it)) },
-                label = { it.label },
-                enabled = editable,
-                modifier = Modifier.weight(1f),
+            Pill(rateLabel(rule), tone = StatusTone.Pending)
+            if (rule.isEnhancement) Pill("Basic + OT on top", tone = StatusTone.Progress)
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        ) {
+            FieldHint(summarise(rule, template))
+            rule.dayType.takeIf { it.isNotBlank() }?.let { code ->
+                val label = state.setup.dayTypes.edited.firstOrNull { it.dayType == code }
+                    ?.label?.ifBlank { code } ?: code
+                FieldHint("· day type $label")
+            }
+            rule.incrementMinutes?.let { FieldHint("· billed in $it-minute increments") }
+            if (rule.capped && rule.capAmount.isNotBlank()) FieldHint("· capped at ${rule.capAmount}")
+            if (rule.bdrMin != null || rule.bdrMax != null) FieldHint("· BDR " +
+                "${rule.bdrMin ?: "…"}–${rule.bdrMax ?: "…"}")
+            if (rule.nominalCode.isNotBlank()) FieldHint("· nominal ${rule.nominalCode}")
+        }
+    }
+}
+
+private fun rateLabel(rule: PayRule): String = when (rule.rateType) {
+    PayRateType.Multiplier -> "×${rule.rateAmount.ifBlank { "?" }} ${rule.basis.label.lowercase()}"
+    PayRateType.Flat -> "${rule.rateAmount.ifBlank { "?" }} flat · ${rule.basis.label.lowercase()}"
+    PayRateType.Percentage -> "${rule.rateAmount.ifBlank { "?" }}% · ${rule.basis.label.lowercase()}"
+}
+
+/** The condition in words — the web's `summarizeEntry`. */
+private fun summarise(rule: PayRule, template: PayRuleTemplate?): String {
+    val trigger = rule.singleTrigger
+        ?: return if (rule.triggers.isEmpty()) "No condition" else "${rule.triggers.size} conditions (any)"
+    if (template == null) return "Custom condition"
+    val detail = when (template.field) {
+        PayRuleField.Hours -> template.hoursFrom(trigger).takeIf { it.isNotBlank() }?.let { "$it hrs" }
+        PayRuleField.Clock -> template.clockFrom(trigger).takeIf { it.isNotBlank() }
+        PayRuleField.DayKinds -> trigger.dayKinds.joinToString(", ") { it.label }.takeIf { it.isNotBlank() }
+        PayRuleField.None -> null
+    }
+    return listOfNotNull(template.label, detail).joinToString(" · ")
+}
+
+// -- the rule editor ----------------------------------------------------------------
+
+/**
+ * Adding or editing one rule — the web's `RateRowModal`.
+ *
+ * Rule type, name, rate type, amount, base rate, the condition's own field,
+ * the day type, "Bill in increments", "Cap maximum payout", the min/max
+ * basic-daily-rate gate, "Basic + OT on top", the nominal and notes — every
+ * field the grid shows, in the web's order and with its hints.
+ */
+@Suppress("CyclomaticComplexMethod", "LongMethod") // One form, in the order the web lays it out.
+@Composable
+private fun PayRuleDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+    val editor = state.setup.ruleEditor
+    val rule = editor?.rule
+    val trigger = rule?.singleTrigger ?: PayTrigger()
+    val template = PayRuleTemplate.of(rule?.singleTrigger) ?: editor?.let { PayRuleTemplate.defaultFor(it.kind) }
+    fun update(next: PayRule) = onEvent(AccountHubEvent.EditPayRule(next))
+
+    ZillitDialogShell(
+        title = if (editor?.index == null) "Add rule" else "Edit rule",
+        subtitle = editor?.kind?.label,
+        icon = ZillitIcons.Ledger,
+        visible = editor != null,
+        onDismiss = { onEvent(AccountHubEvent.DismissPayRule) },
+        width = DIALOG_WIDTH,
+        actions = {
+            ZillitButton(
+                text = "Cancel",
+                onClick = { onEvent(AccountHubEvent.DismissPayRule) },
+                variant = ButtonVariant.Tertiary,
             )
-            ZillitTextField(
+            ZillitButton(
+                text = if (editor?.index == null) "Add rule" else "Update rule",
+                onClick = { onEvent(AccountHubEvent.CommitPayRule) },
+            )
+        },
+    ) {
+        if (editor == null || rule == null || template == null) return@ZillitDialogShell
+
+        FieldLabel("Rule type", required = true)
+        HubSelect(
+            value = template,
+            options = PayRuleTemplate.entries.toList(),
+            label = { "${it.group} · ${it.label}" },
+            onSelect = { next ->
+                if (next != null) {
+                    update(
+                        rule.copy(
+                            label =
+                                if (rule.label.isBlank() || rule.label == template.label) next.label else rule.label,
+                            rateType = if (rule.rateAmount.isBlank()) next.defaultRateType else rule.rateType,
+                            rateAmount = rule.rateAmount.ifBlank { next.defaultRateAmount },
+                            triggers = listOf(
+                                next.trigger(
+                                    hours = next.hoursFrom(trigger),
+                                    clock = next.clockFrom(trigger),
+                                    dayKinds = trigger.dayKinds,
+                                    carrying = trigger,
+                                ),
+                            ),
+                        ),
+                    )
+                }
+            },
+            searchable = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        FieldHint(template.helper)
+        if (rule.triggers.size > 1) {
+            ZillitNotice(
+                text = "This rule has several conditions (any of them fires it). Choosing a type above replaces " +
+                    "them with one.",
+                tone = StatusTone.Neutral,
+                icon = ZillitIcons.Info,
+            )
+        }
+
+        ZillitTextField(
+            value = rule.label,
+            onValueChange = { update(rule.copy(label = it)) },
+            label = "Name",
+            placeholder = template.label,
+        )
+
+        FieldLabel("Rate type")
+        ZillitSegmented(
+            options = PayRateType.entries.map { ZillitTab(it.wire, it.label) },
+            activeId = rule.rateType.wire,
+            onSelect = { wire ->
+                PayRateType.entries.firstOrNull { it.wire == wire }?.let { update(rule.copy(rateType = it)) }
+            },
+        )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            CalcField(
                 value = rule.rateAmount,
-                onValueChange = { onChange(rule.copy(rateAmount = it)) },
+                onValueChange = { update(rule.copy(rateAmount = it)) },
                 label = "Amount",
-                enabled = editable,
-                modifier = Modifier.width(AMOUNT_WIDTH.dp),
+                placeholder = "100",
+                modifier = Modifier.weight(1f),
             )
             ZillitSelect(
                 value = rule.basis,
                 options = PayRateBasis.entries,
-                onSelect = { onChange(rule.copy(basis = it)) },
+                onSelect = { update(rule.copy(basis = it)) },
                 label = { it.label },
-                enabled = editable,
                 modifier = Modifier.weight(1f),
             )
-            ZillitTextField(
-                value = rule.nominalCode,
-                onValueChange = { onChange(rule.copy(nominalCode = it)) },
-                label = "Nominal",
-                enabled = editable,
-                modifier = Modifier.width(NOMINAL_WIDTH.dp),
-            )
-            if (editable) {
-                ZillitIconButton(
-                    icon = ZillitIcons.Trash,
-                    contentDescription = "Remove ${rule.label.ifBlank { "this rule" }}",
-                    onClick = onRemove,
-                )
-            }
         }
 
-        ConditionRow(rule, kind, template, editable, onChange)
-    }
-}
+        ConditionField(template, trigger) { hours, clock, kinds ->
+            update(rule.copy(triggers = listOf(template.trigger(hours, clock, kinds, trigger))))
+        }
 
-/**
- * What fires the rule.
- *
- * A rule whose stored condition matches no template keeps it and says so
- * rather than being quietly re-tagged: picking a template here would overwrite
- * a condition somebody agreed, and a rule the engine already honours is not
- * this screen's to guess at.
- */
-@Composable
-private fun ConditionRow(
-    rule: PayRule,
-    kind: PayRuleKind,
-    template: PayRuleTemplate?,
-    editable: Boolean,
-    onChange: (PayRule) -> Unit,
-) {
-    if (rule.triggers.size > 1 || (rule.singleTrigger != null && template == null)) {
-        ZillitNotice(
-            text = "This rule's condition was not set here and is left as it is. Choosing " +
-                "one below would replace it.",
-            tone = StatusTone.Neutral,
-            icon = ZillitIcons.Info,
+        val dayTypes = state.setup.dayTypes.edited
+        HubSelect(
+            value = dayTypes.firstOrNull { it.dayType == rule.dayType },
+            options = dayTypes,
+            label = { "${it.dayType} · ${it.label}".trimEnd(' ', '·') },
+            onSelect = { update(rule.copy(dayType = it?.dayType.orEmpty())) },
+            placeholder = "Any day type",
+            fieldLabel = "Day type",
+            clearable = true,
+            searchable = false,
+            modifier = Modifier.fillMaxWidth(),
         )
-    }
-    val current = template ?: PayRuleTemplate.defaultFor(kind)
-    val trigger = rule.singleTrigger ?: PayTriggerEmpty
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitSelect(
-            value = current,
-            options = PayRuleTemplate.entries,
-            onSelect = { next ->
-                onChange(
-                    rule.copy(
-                        triggers = listOf(
-                            next.trigger(
-                                hours = next.hoursFrom(trigger),
-                                clock = next.clockFrom(trigger),
-                                dayKinds = trigger.dayKinds,
-                                carrying = trigger,
-                            ),
-                        ),
-                    ),
-                )
+        FieldLabel("Bill in increments")
+        FieldHint("Round matched windows up to a multiple of N minutes (15 = UK, 6 = US union).")
+        ZillitTextField(
+            value = rule.incrementMinutes?.toString().orEmpty(),
+            onValueChange = { text ->
+                val minutes = text.filter { it.isDigit() }.toIntOrNull()
+                update(rule.withTriggerGates(minutes, rule.bdrMin, rule.bdrMax))
             },
-            label = { "${it.group} · ${it.label}" },
-            enabled = editable,
-            modifier = Modifier.weight(1f),
+            placeholder = "Minutes — e.g. 15",
         )
-        ConditionField(current, trigger, editable) { hours, clock, kinds ->
-            onChange(rule.copy(triggers = listOf(current.trigger(hours, clock, kinds, trigger))))
+
+        ToggleRow(
+            label = "Cap maximum payout",
+            hint = "Clip the computed payout to this ceiling per matched window.",
+            checked = rule.capped,
+            onCheckedChange = { update(rule.copy(capped = it)) },
+        )
+        if (rule.capped) {
+            CalcField(
+                value = rule.capAmount,
+                onValueChange = { update(rule.copy(capAmount = it)) },
+                placeholder = "Cap amount — e.g. 500",
+            )
         }
+
+        FieldLabel("For Min/Max Basic Daily Rate")
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            CalcField(
+                value = rule.bdrMin?.let { it.asAmountText() }.orEmpty(),
+                onValueChange = { update(rule.withTriggerGates(
+                    rule.incrementMinutes,
+                    it.toDoubleOrNull(),
+                    rule.bdrMax,
+                )) },
+                placeholder = "Min BDR",
+                modifier = Modifier.weight(1f),
+            )
+            CalcField(
+                value = rule.bdrMax?.let { it.asAmountText() }.orEmpty(),
+                onValueChange = { update(rule.withTriggerGates(
+                    rule.incrementMinutes,
+                    rule.bdrMin,
+                    it.toDoubleOrNull(),
+                )) },
+                placeholder = "Max BDR",
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        ToggleRow(
+            label = "Basic + OT on Top",
+            hint = "Pay this amount over the basic rate rather than in place of it.",
+            checked = rule.isEnhancement,
+            onCheckedChange = { update(rule.copy(isEnhancement = it)) },
+        )
+
+        CoaCodeField(
+            value = rule.nominalCode,
+            onValueChange = { update(rule.copy(nominalCode = it)) },
+            accounts = state.chart.accounts,
+            label = "Nominal",
+            placeholder = "e.g. 4421",
+            onCreate = quickCreateHandler(state, onEvent),
+        )
+        ZillitTextField(
+            value = rule.note,
+            onValueChange = { update(rule.copy(note = it)) },
+            label = "Notes",
+            placeholder = "Statute reference, edge cases, etc.",
+            singleLine = false,
+        )
     }
-    ZillitText(
-        text = current.helper,
-        style = ZillitTheme.typography.bodySmall,
-        color = ZillitTheme.colors.textSecondary,
-    )
 }
 
 @Composable
 private fun ConditionField(
     template: PayRuleTemplate,
-    trigger: com.zillit.desktop.feature.accounthub.domain.PayTrigger,
-    editable: Boolean,
+    trigger: PayTrigger,
     onChange: (hours: String, clock: String, kinds: List<PayDayKind>) -> Unit,
 ) {
     when (template.field) {
@@ -387,37 +548,36 @@ private fun ConditionField(
         PayRuleField.Hours -> ZillitTextField(
             value = template.hoursFrom(trigger),
             onValueChange = { onChange(it, "", trigger.dayKinds) },
-            label = "Hours",
-            enabled = editable,
-            modifier = Modifier.width(FIELD_WIDTH.dp),
+            label = "Trigger",
+            placeholder = "hours",
+            modifier = Modifier.width(FIELD_WIDTH),
         )
         PayRuleField.Clock -> ZillitTextField(
             value = template.clockFrom(trigger),
             onValueChange = { onChange("", it, trigger.dayKinds) },
             label = "Time (HH:MM)",
-            enabled = editable,
-            modifier = Modifier.width(FIELD_WIDTH.dp),
+            placeholder = "05:00",
+            modifier = Modifier.width(FIELD_WIDTH),
         )
-        PayRuleField.DayKinds -> DayKindPicker(trigger.dayKinds, editable) {
-            onChange("", "", it)
+        PayRuleField.DayKinds -> {
+            FieldLabel("Day kinds")
+            Column {
+                PayDayKind.entries.forEach { kind ->
+                    ZillitCheckbox(
+                        checked = kind in trigger.dayKinds,
+                        onCheckedChange = { on -> onChange(
+                            "",
+                            "",
+                            if (on) trigger.dayKinds + kind else trigger.dayKinds - kind,
+                        ) },
+                        label = kind.label,
+                    )
+                }
+            }
         }
     }
 }
 
-@Composable
-private fun DayKindPicker(
-    chosen: List<PayDayKind>,
-    editable: Boolean,
-    onChange: (List<PayDayKind>) -> Unit,
-) {
-    Column {
-        PayDayKind.entries.forEach { kind ->
-            ZillitCheckbox(
-                checked = kind in chosen,
-                onCheckedChange = { on -> onChange(if (on) chosen + kind else chosen - kind) },
-                label = kind.label,
-                enabled = editable,
-            )
-        }
-    }
-}
+private val DIALOG_WIDTH = 620.dp
+private val FIELD_WIDTH = 160.dp
+private val PICKER_LIST = 320.dp

@@ -17,14 +17,13 @@ import com.zillit.desktop.feature.costreport.domain.CrColumn
 import com.zillit.desktop.feature.costreport.domain.CrCompany
 import com.zillit.desktop.feature.costreport.domain.CrCurrency
 import com.zillit.desktop.feature.costreport.domain.CrNominal
+import com.zillit.desktop.feature.costreport.domain.CrReportLoader
 import com.zillit.desktop.feature.costreport.domain.CurrencyOptions
 import com.zillit.desktop.feature.costreport.domain.ExportFormat
-import com.zillit.desktop.feature.costreport.domain.SnapshotCadence
+import com.zillit.desktop.feature.costreport.domain.LiveReport
 import com.zillit.desktop.feature.costreport.domain.SnapshotHeader
-import com.zillit.desktop.feature.costreport.domain.WeekWindow
 import com.zillit.desktop.feature.costreport.domain.buildSections
 import com.zillit.desktop.feature.costreport.domain.currentWeek
-import com.zillit.desktop.feature.costreport.domain.priorVarianceByKey
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -33,9 +32,10 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
 /**
- * Cost Report, the crew-facing film tool: the live worksheet for the current
- * production week and the timeline of posted snapshots. Read-only — seven
- * GETs and one export POST.
+ * Cost Report, the crew-facing film tool (`/film-tools/cost-report`): the
+ * current week read-only, with its own Company · Budget · Currency filters
+ * that apply as they change, and the timeline of posted snapshots. The
+ * accountant's editable worksheet is [com.zillit.desktop.feature.costreport.ui.worksheet.WorksheetViewModel].
  */
 class CostReportViewModel(
     private val repository: CostReportRepository,
@@ -48,6 +48,7 @@ class CostReportViewModel(
 ) : ZillitViewModel<CostReportUiState, CostReportEvent, CostReportEffect>(CostReportUiState()) {
 
     private var liveJob: Job? = null
+    private val loader = CrReportLoader(repository)
 
     fun start() {
         setState { copy(viewer = resolveViewer(), projectName = projectName()) }
@@ -111,10 +112,10 @@ class CostReportViewModel(
                 copy(current = current.copy(toggles = current.toggles.toggleSection(event.sectionId)))
             }
             is CostReportEvent.ToggleHeader -> setState {
-                copy(current = current.copy(toggles = current.toggles.toggleHeader(event.key)))
+                copy(current = current.copy(toggles = current.toggles.toggleHeader(event.code)))
             }
             is CostReportEvent.ToggleNominal -> setState {
-                copy(current = current.copy(toggles = current.toggles.toggleNominal(event.key)))
+                copy(current = current.copy(toggles = current.toggles.toggleNominal(event.identity)))
             }
             is CostReportEvent.OpenLedger -> openLedger(event.nominal, event.column)
             CostReportEvent.CloseLedger -> setState { copy(ledger = null) }
@@ -127,12 +128,10 @@ class CostReportViewModel(
                 copy(snapshot = snapshot?.let { it.copy(toggles = it.toggles.toggleSection(event.sectionId)) })
             }
             is CostReportEvent.ToggleSnapshotHeader -> setState {
-                copy(snapshot = snapshot?.let { it.copy(toggles = it.toggles.toggleHeader(event.key)) })
-            }
-            is CostReportEvent.ToggleSnapshotNominal -> setState {
-                copy(snapshot = snapshot?.let { it.copy(toggles = it.toggles.toggleNominal(event.key)) })
+                copy(snapshot = snapshot?.let { it.copy(toggles = it.toggles.toggleHeader(event.code)) })
             }
             is CostReportEvent.Export -> export(event.format)
+            CostReportEvent.OpenAnalytics -> sendEffect(CostReportEffect.OpenAnalytics)
         }
     }
 
@@ -235,46 +234,41 @@ class CostReportViewModel(
         setState { copy(current = this.current.copy(phase = phase, error = null, week = week, todayMs = now)) }
         liveJob?.cancel()
         liveJob = launch {
-            val prior = async { priorWeekVariance(week) }
-            val result = repository.live(
-                periodStartMs = week.startMs,
-                periodEndMs = week.endMs,
-                budgetVersionId = current.budgetVersionId,
+            // The same list feeds the week's own posted snapshot and the VTP baseline.
+            val posted = repository.snapshots(null).getOrNull().orEmpty()
+            val baseline = async { loader.baseline(posted, week) }
+            val result = loader.load(
+                coa = state.value.coa,
+                week = week,
+                budget = current.selectedBudget,
                 companyId = current.companyId,
                 currency = current.currencyCode,
+                defaultCurrency = null,
+                snapshots = posted,
             )
             when (result) {
                 is ZillitResult.Failure -> {
-                    prior.cancel()
+                    baseline.cancel()
                     setState { copy(current = this.current.copy(phase = null, error = result.error.localised())) }
                 }
                 is ZillitResult.Success -> {
-                    val (variance, hasPrior) = prior.await()
-                    val report = result.data
+                    val prior = baseline.await()
+                    val shown = result.data
                     setState {
                         copy(
                             current = this.current.copy(
                                 phase = null,
-                                report = report,
-                                sections = buildSections(coa, report.lines),
-                                priorVariance = variance,
-                                hasPrior = hasPrior,
-                                symbol = symbolFor(report.displayCurrency ?: this.current.currencyCode),
+                                report = LiveReport(emptyList(), currency = shown.serverCurrency),
+                                sections = shown.sections,
+                                baseline = prior,
+                                fromSnapshot = shown.fromSnapshot,
+                                symbol = symbolFor(shown.serverCurrency ?: this.current.currencyCode),
                             ),
                         )
                     }
                 }
             }
         }
-    }
-
-    /** The most recent weekly snapshot that ended before this week — the VTP baseline. Best effort. */
-    private suspend fun priorWeekVariance(week: WeekWindow): Pair<Map<String, Double>, Boolean> {
-        val headers = repository.snapshots(SnapshotCadence.Weekly).getOrNull().orEmpty()
-        val prior = headers.filter { (it.periodEndMs ?: Long.MAX_VALUE) < week.startMs }
-            .maxByOrNull { it.postedAtMs ?: 0L } ?: return emptyMap<String, Double>() to false
-        val detail = repository.snapshot(prior.id).getOrNull() ?: return emptyMap<String, Double>() to false
-        return priorVarianceByKey(detail.lines) to true
     }
 
     // -- posted ----------------------------------------------------------------
@@ -342,11 +336,9 @@ class CostReportViewModel(
 
     // -- ledger ----------------------------------------------------------------
 
+    /** Contractual rows have no ledger; every other row opens, Non-Allocated ones included. */
     private fun openLedger(nominal: CrNominal, column: CrColumn?) {
-        if (nominal.isBucket) {
-            sendEffect(CostReportEffect.Notice("Non-allocated rows have no ledger to open"))
-            return
-        }
+        if (nominal.isContractual) return
         val current = state.value.current
         setState {
             copy(

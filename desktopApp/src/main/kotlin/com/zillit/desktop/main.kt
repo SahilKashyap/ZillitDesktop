@@ -171,8 +171,10 @@ import com.zillit.desktop.feature.email.ui.EmailToolProvider
 import com.zillit.desktop.feature.email.ui.EmailViewModel
 import com.zillit.desktop.feature.home.ui.HomeViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import com.zillit.desktop.feature.home.ui.HomeUiState
 import com.zillit.desktop.feature.home.ui.HomeEvent
@@ -2143,7 +2145,7 @@ private fun AppGraph.Ready.cashViewer(): CashViewer {
     )
 }
 
-private fun AppGraph.Ready.poViewer(): PoViewer {
+private fun AppGraph.Ready.poViewer(permissions: ProjectPermissions): PoViewer {
     val context = projectContext?.context?.value
     val me = context?.user(context.profile?.userId)
     return PoViewer(
@@ -2151,8 +2153,18 @@ private fun AppGraph.Ready.poViewer(): PoViewer {
         departmentIdentifier = me?.department,
         designationIdentifier = me?.designation,
         isProjectAdmin = context?.isAdmin == true,
+        // The department view's All POs tab is gated on this: `is_admin` OR the
+        // tool's own posting right, which is the web's `canSeeAllPOs_department`.
+        canPostPurchaseOrders = permissions.canPost(PURCHASE_ORDER_TOOL),
+        // The id, not the identifier — both are needed and they are different
+        // strings; see PoViewer. It is on the *profile*: the crew list carries
+        // a department name and no id at all.
+        departmentId = context?.profile?.departmentId,
     )
 }
+
+/** The tool-rights identifier for purchase orders, as the grid issues it. */
+private const val PURCHASE_ORDER_TOOL = "purchase_order_tool"
 
 private fun AppGraph.Ready.timecardViewer(): TimecardViewer {
     val context = projectContext?.context?.value
@@ -2457,6 +2469,8 @@ internal class AppViewModels(
     val continuity: ContinuityViewModel?,
     /** Cost Report: the crew-facing live worksheet and posted snapshots. */
     val costReport: CostReportViewModel?,
+    /** The accountant's Cost Report worksheet — the Account Hub's REPORTS row. */
+    val costReportWorksheet: com.zillit.desktop.feature.costreport.ui.worksheet.WorksheetViewModel?,
     val saPortal: SaPortalViewModel?,
     val adDashboard: AdViewModel?,
     /** One screen for both budget tiles — see BudgetToolProvider. */
@@ -2660,17 +2674,37 @@ private fun rememberAppViewModels(
                 )
             },
             cardExpenses = ready?.let { graph ->
-                CardExpensesViewModel(graph.cardRepository, graph.socketEvents) { graph.cardViewer() }
+                CardExpensesViewModel(
+                    repository = graph.cardRepository,
+                    events = graph.socketEvents,
+                    // Both host seams: the crew belongs to the production and
+                    // the picker to this machine, and the card service offers
+                    // neither. See CardExpensesWiring.
+                    people = { graph.cardPeople() },
+                    uploader = graph.cardAttachmentUploader(),
+                    viewer = { graph.cardViewer() },
+                )
             },
             purchaseOrders = ready?.let { graph ->
                 PurchaseOrderViewModel(
                     repository = graph.purchaseOrderRepository,
-                    viewer = { graph.poViewer() },
+                    viewer = { graph.poViewer(permissions()) },
                     offline = graph.offlineSupport,
                     // The form's configuration belongs to the account hub's
                     // service, not the purchase-order one, so it is handed in
                     // rather than fetched by the module's own repository.
                     formTemplate = graph.formTemplateFor(FormModule.PurchaseOrders),
+                    // The Settings tab's pickers read the crew list, and its
+                    // terms document rides the hub's document store.
+                    people = graph.poSettingsPeople(),
+                    termsFiles = graph.poTermsFiles(),
+                    // Companies, tax types, departments and currencies — the
+                    // web fetches all four once on PO entry and shares them
+                    // between both role views; they are the hub's documents.
+                    projectSettings = graph.poProjectSettings(),
+                    // An order's own paperwork: the same store, a wider accept
+                    // rule than the terms document's.
+                    attachmentFiles = graph.poAttachmentFiles(),
                 )
             },
             timecards = ready?.let { graph ->
@@ -2702,6 +2736,18 @@ private fun rememberAppViewModels(
                     // The pay breakdown's scope names departments; the hub's
                     // own service does not list them, so the host does.
                     departments = { graph.departmentNames() },
+                    users = { graph.hubUsers() },
+                    departmentList = { graph.hubDepartments() },
+                    exporter = graph.hubExporter(),
+                    files = hubFiles(),
+                    documentOpener = graph.hubDocumentOpener(),
+                    projectId = { graph.projectContext?.context?.value?.project?.projectId.orEmpty() },
+                    projectName = { graph.projectContext?.context?.value?.project?.name.orEmpty() },
+                    tourSeen = { key -> graph.tourSeen(key) },
+                    markTourSeen = { key -> graph.markTourSeen(key) },
+                    // The console renders the other film tools inside its
+                    // shell, as the web does — see `AccountHubToolProvider.tools`.
+                    embedsTools = true,
                 )
             },
             taxFiling = ready?.buildTaxFiling(),
@@ -2885,6 +2931,7 @@ private fun rememberAppViewModels(
             location = ready?.buildLocation(permissions),
             continuity = ready?.buildContinuity(permissions),
             costReport = ready?.buildCostReport(permissions),
+            costReportWorksheet = ready?.buildCostReportWorksheet(permissions),
             saPortal = ready?.buildSaPortal(permissions),
             adDashboard = ready?.buildAdDashboard(permissions),
             budget = ready?.buildBudget(permissions, scope),
@@ -3075,6 +3122,9 @@ private fun buildRegistry(
         (graph as? AppGraph.Ready)?.continuityProvider(vm, scope)
     }
     val costReport = viewModels.costReport?.let { vm -> (graph as? AppGraph.Ready)?.costReportProvider(vm) }
+    val costReportWorksheet = viewModels.costReportWorksheet?.let { vm ->
+        (graph as? AppGraph.Ready)?.costReportWorksheetProvider(vm)
+    }
     val saPortal = viewModels.saPortal?.let { vm -> saPortalProviders(vm) }.orEmpty()
     val adDashboard = viewModels.adDashboard?.let { vm -> adDashboardProvider(vm) }
     val weather = viewModels.weather?.let { vm -> (graph as? AppGraph.Ready)?.weatherProvider(vm) }
@@ -3301,6 +3351,11 @@ private fun buildRegistry(
                     )
                 }
             },
+            // Every name in the cash tool is shown with the crew photo behind
+            // it; the same cached loader the boards and calls use.
+            loadAvatar = { userId ->
+                (graph as? AppGraph.Ready)?.let { ready -> crewFaceLoader(ready)(userId) }
+            },
         )
     }
     val cards = viewModels.cardExpenses?.let { vm ->
@@ -3350,8 +3405,26 @@ private fun buildRegistry(
     }
     val drive = viewModels.drive?.let { driveProvider(it, scope, openDriveWidget) }
     // The console hands off to the finance tools above via its own window
-    // navigator, so it needs nothing from here beyond its view model.
-    val accountHub = viewModels.accountHub?.let { AccountHubToolProvider(it) }
+    // navigator; from here it takes only the ledger's counts and the theme.
+    // Filled once every provider exists, below; the console resolves the tools
+    // it embeds through it lazily, so the registry can list the console too.
+    var registryRef: ToolRegistry? = null
+    val accountHub = viewModels.accountHub?.let { viewModel ->
+        val ready = graph as? AppGraph.Ready
+        AccountHubToolProvider(
+            viewModel,
+            tools = { path -> registryRef?.resolve(WorkspaceRoute.Tool(path)) },
+            badges = ready?.hubBadges(scope),
+            themeMode = ready?.preferences
+                ?.observeAs(ZillitPreferences.ThemeMode, ThemeMode::fromId)
+                ?.stateIn(scope, SharingStarted.Eagerly, ThemeMode.System),
+            onSetTheme = { mode ->
+                ready?.let { scope.launch { it.preferences.set(ZillitPreferences.ThemeMode, mode.name) } }
+            },
+            // Approvers, pickers and chips show crew photos, as the web's UserAvatar does.
+            loadAvatar = { userId -> ready?.let { crewFaceLoader(it)(userId) } },
+        )
+    }
     // Registered under the console's own path, which is the only place it is
     // reached from — see TaxFilingToolProvider.
     val taxFiling = viewModels.taxFiling?.let { taxFilingProvider(it) }
@@ -3409,13 +3482,15 @@ private fun buildRegistry(
         info, confidentialInfo, reports, scriptNotes,
         catering, accounts,
         boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList,
-        assetRegister, transport, location, continuity, costReport, invoices, draft,
+        assetRegister, transport, location, continuity, costReport, costReportWorksheet, invoices, draft,
         mainBudget, departmentBudget, weather, adDashboard,
         scheduleDistribution, scriptDistribution, scheduleDod,
     ) + castingTools + wardrobeTools + saPortal
     val realPaths = real.map { it.path }.toSet()
+    val registry = ToolRegistry(real + placeholderTools().filterNot { it.path in realPaths })
+    registryRef = registry
     return AppTools(
-        registry = ToolRegistry(real + placeholderTools().filterNot { it.path in realPaths }),
+        registry = registry,
         // The widgets' own copies: the same ViewModels — and the same single
         // audio player — in their one-pane shape. Built here because that is
         // where those instances live; building them outside would mint a

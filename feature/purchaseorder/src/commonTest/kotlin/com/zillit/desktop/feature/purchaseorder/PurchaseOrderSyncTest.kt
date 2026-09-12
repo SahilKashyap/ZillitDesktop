@@ -149,7 +149,10 @@ class PurchaseOrderSyncTest {
         var listLoads = 0
         var vendorLoads = 0
 
-        override suspend fun orders(status: PoStatus?): ZillitResult<List<PurchaseOrder>> = counted()
+        override suspend fun orders(
+            status: PoStatus?,
+            departmentId: String?,
+        ): ZillitResult<List<PurchaseOrder>> = counted()
         override suspend fun approvalQueue(): ZillitResult<List<PurchaseOrder>> = counted()
         override suspend fun myOrders(): ZillitResult<List<PurchaseOrder>> = counted()
 

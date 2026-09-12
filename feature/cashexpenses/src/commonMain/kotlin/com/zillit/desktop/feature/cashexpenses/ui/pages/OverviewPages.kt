@@ -32,7 +32,9 @@ import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.ui.BatchStatusPill
 import com.zillit.desktop.feature.cashexpenses.ui.CashDestination
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
+import com.zillit.desktop.feature.cashexpenses.ui.CashPerson
 import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
+import com.zillit.desktop.feature.cashexpenses.ui.personColumn
 import com.zillit.desktop.feature.cashexpenses.ui.FloatStatusPill
 import com.zillit.desktop.feature.cashexpenses.ui.date
 import com.zillit.desktop.feature.cashexpenses.ui.money
@@ -457,10 +459,9 @@ private fun FloatSummaryRow(row: CashFloat) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitText(
-            text = row.holderName.ifBlank { row.requestNumber },
-            style = ZillitTheme.typography.bodyMedium,
-            maxLines = 1,
+        CashPerson(
+            name = row.holderName.ifBlank { row.requestNumber },
+            userId = row.userId,
             modifier = Modifier.weight(1f),
         )
         ZillitText(
@@ -497,46 +498,76 @@ private fun RoutingBar(
     }
 }
 
-/** The float register's columns, shared by every screen that lists floats. */
+/**
+ * The float register's columns, shared by every screen that lists floats.
+ *
+ * [compact] is for a list that sits beside a detail pane: it keeps whose float
+ * it is, what is left and what state it is in, and drops the three columns the
+ * pane beside it already shows. A full column set in half a window does not
+ * shrink — it scrolls sideways and hides the status, which is the one column
+ * the reader is scanning for.
+ */
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
-fun floatColumns(): List<TableColumn<CashFloat>> = listOf(
-    textColumn("Holder", ColumnWidth.Weight(1.4f)) { it.holderName.ifBlank { it.userId } },
-    textColumn("Reference", ColumnWidth.Weight(1f), muted = true) { it.requestNumber.ifBlank { "—" } },
-    textColumn("Issued", ColumnWidth.Weight(1f), numeric = true) { money(it.issuedAmount, it.currency) },
-    textColumn("Balance", ColumnWidth.Weight(1f), numeric = true) { money(it.balance, it.currency) },
-    TableColumn(
-        header = "Consumed",
-        width = ColumnWidth.Fixed(METER_COLUMN),
-        cell = { row ->
-            ZillitMeter(
-                fraction = row.consumedFraction,
-                tone = if (row.consumedFraction > NEARLY_SPENT) StatusTone.Rejected else StatusTone.Ready,
-                modifier = Modifier.width(METER_WIDTH),
-            )
+fun floatColumns(compact: Boolean = false): List<TableColumn<CashFloat>> = buildList {
+    add(
+        personColumn("Holder", ColumnWidth.Weight(1.6f), userId = { it.userId }) {
+            it.holderName.ifBlank { it.userId }
         },
-    ),
-    textColumn("Requested", ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) },
-    TableColumn(
-        header = "Status",
-        width = ColumnWidth.Fixed(STATUS_COLUMN),
-        cell = { FloatStatusPill(it.status) },
-    ),
-)
+    )
+    add(textColumn("Reference", ColumnWidth.Weight(1f), muted = true) { it.requestNumber.ifBlank { "—" } })
+    if (!compact) {
+        add(textColumn("Issued", ColumnWidth.Weight(1f), numeric = true) { money(it.issuedAmount, it.currency) })
+    }
+    add(textColumn("Balance", ColumnWidth.Weight(1f), numeric = true) { money(it.balance, it.currency) })
+    if (!compact) {
+        add(
+            TableColumn(
+                header = "Consumed",
+                width = ColumnWidth.Fixed(METER_COLUMN),
+                cell = { row ->
+                    ZillitMeter(
+                        fraction = row.consumedFraction,
+                        tone = if (row.consumedFraction > NEARLY_SPENT) StatusTone.Rejected else StatusTone.Ready,
+                        modifier = Modifier.width(METER_WIDTH),
+                    )
+                },
+            ),
+        )
+        add(textColumn("Requested", ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
+    }
+    add(
+        TableColumn(
+            header = "Status",
+            width = ColumnWidth.Fixed(STATUS_COLUMN),
+            cell = { FloatStatusPill(it.status) },
+        ),
+    )
+}
 
 /** The batch table's columns. Identical everywhere a batch is listed. */
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
-fun batchColumns(accountant: Boolean): List<TableColumn<ClaimBatch>> = listOf(
-    textColumn("Reference", ColumnWidth.Weight(1.2f)) { it.reference.ifBlank { it.id.take(REF_FALLBACK) } },
-    textColumn("Submitted by", ColumnWidth.Weight(1.3f)) { it.holderName.ifBlank { it.userId } },
-    textColumn("Receipts", ColumnWidth.Fixed(COUNT_COLUMN), numeric = true) { it.claimCount.toString() },
-    textColumn("Total", ColumnWidth.Weight(1f), numeric = true) { money(it.totalGross, it.currency) },
-    textColumn("Submitted", ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) },
-    TableColumn(
-        header = "Status",
-        width = ColumnWidth.Fixed(STATUS_COLUMN),
-        cell = { BatchStatusPill(it.status, accountant) },
-    ),
-)
+fun batchColumns(accountant: Boolean, compact: Boolean = false): List<TableColumn<ClaimBatch>> = buildList {
+    add(textColumn("Reference", ColumnWidth.Weight(1.2f)) { it.reference.ifBlank { it.id.take(REF_FALLBACK) } })
+    add(
+        personColumn("Submitted by", ColumnWidth.Weight(1.6f), userId = { it.userId }) {
+            it.holderName.ifBlank { it.userId }
+        },
+    )
+    if (!compact) {
+        add(textColumn("Receipts", ColumnWidth.Fixed(COUNT_COLUMN), numeric = true) { it.claimCount.toString() })
+    }
+    add(textColumn("Total", ColumnWidth.Weight(1f), numeric = true) { money(it.totalGross, it.currency) })
+    if (!compact) {
+        add(textColumn("Submitted", ColumnWidth.Weight(1f), muted = true) { date(it.createdAt) })
+    }
+    add(
+        TableColumn(
+            header = "Status",
+            width = ColumnWidth.Fixed(STATUS_COLUMN),
+            cell = { BatchStatusPill(it.status, accountant) },
+        ),
+    )
+}
 
 /** Compact money, for tiles where the pennies are noise. */
 internal fun compactMoney(amount: Double?, currency: String?): String = Money.compact(amount, currency)

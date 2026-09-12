@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
 import com.zillit.desktop.feature.accounthub.domain.BudgetImportMeta
 import com.zillit.desktop.feature.accounthub.domain.BudgetImports
@@ -22,7 +23,7 @@ internal class BudgetImportActions(
     /** Whether the host wired storage; without it the import cannot start. */
     val isAvailable: Boolean get() = files != null
 
-    fun onEvent(event: AccountHubEvent) {
+    fun onEvent(event: AccountHubEvent): Boolean {
         when (event) {
             AccountHubEvent.OpenBudgetImport ->
                 vm.update { copy(budget = budget.copy(import = BudgetImportState(open = true))) }
@@ -39,8 +40,9 @@ internal class BudgetImportActions(
 
             AccountHubEvent.CommitBudgetImport -> commit()
 
-            else -> Unit
+            else -> return false
         }
+        return true
     }
 
     /**
@@ -52,7 +54,11 @@ internal class BudgetImportActions(
     private fun close() {
         val created = vm.setupState.budget.import.created
         vm.update { copy(budget = budget.copy(import = BudgetImportState())) }
-        if (created != null) vm.reloadBudget(selecting = created.id.takeIf { it.isNotBlank() })
+        if (created != null) {
+            vm.reloadBudget(selecting = created.id.takeIf { it.isNotBlank() })
+            // The commit wrote codes into the chart every other screen reads.
+            vm.chart.load()
+        }
     }
 
     private fun pick() {
@@ -108,7 +114,7 @@ internal class BudgetImportActions(
         val upload = import.upload ?: return
         if (!import.canCommit || !vm.mayEdit()) return
 
-        vm.update { copy(budget = budget.copy(import = budget.import.copy(committing = true))) }
+        vm.update { copy(budget = budget.copy(import = budget.import.copy(committing = true, commitError = null))) }
         vm.runResult({ vm.repo.commitBudgetImport(upload, parsed, import.meta, import.mode) }, { created ->
             vm.update {
                 copy(
@@ -125,8 +131,14 @@ internal class BudgetImportActions(
             // The wizard stays on Preview with everything intact: the usual
             // refusal is a duplicate version or a code the chart rejects, and
             // both are fixed here rather than by starting again.
-            vm.update { copy(budget = budget.copy(import = budget.import.copy(committing = false))) }
-            vm.report(error)
+            // Named on the Preview step, where the Import button lives — the
+            // web surfaces it there for the same reason.
+            vm.update {
+                copy(budget = budget.copy(import = budget.import.copy(
+                    committing = false,
+                    commitError = error.localised(),
+                )))
+            }
         })
     }
 }

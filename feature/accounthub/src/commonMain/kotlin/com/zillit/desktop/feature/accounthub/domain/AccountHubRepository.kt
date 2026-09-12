@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.accounthub.domain
 
+import kotlinx.serialization.json.JsonObject
+
 import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.core.common.ZillitResult
@@ -31,6 +33,9 @@ interface AccountHubRepository {
     suspend fun createBankAccount(account: BankAccount): ZillitResult<BankAccount>
 
     suspend fun updateBankAccount(account: BankAccount): ZillitResult<BankAccount>
+
+    /** One bank record, for a vendor's bank block. */
+    suspend fun bankAccount(id: String): ZillitResult<BankAccount>
 
     suspend fun deleteBankAccount(id: String): ZillitResult<Unit>
 
@@ -136,6 +141,37 @@ interface AccountHubRepository {
      */
     suspend fun savePayrollSettings(settings: PayrollSettings): ZillitResult<PayrollSettings>
 
+    /**
+     * Creates, renames or retires the payroll balance-sheet codes in one call.
+     *
+     * `PATCH /payroll-settings/custom-accounts { rows }`. The rows are real
+     * chart entries, so the server writes the chart and keeps
+     * `payroll_accounts` in step — which is why the plain save above ignores
+     * that list.
+     */
+    suspend fun updatePayrollAccounts(rows: List<PayrollAccountRow>): ZillitResult<PayrollSettings>
+
+    // -- payroll groups -----------------------------------------------------
+
+    suspend fun payrollGroups(): ZillitResult<List<PayrollGroup>>
+
+    suspend fun createPayrollGroup(group: PayrollGroup): ZillitResult<PayrollGroup>
+
+    suspend fun updatePayrollGroup(group: PayrollGroup): ZillitResult<PayrollGroup>
+
+    suspend fun deletePayrollGroup(id: String): ZillitResult<Unit>
+
+    // -- auto-assignment rules ----------------------------------------------
+
+    /** The module's rules — `?module=purchase_orders`. */
+    suspend fun assignmentRules(module: String): ZillitResult<List<AssignmentRule>>
+
+    suspend fun createAssignmentRule(rule: AssignmentRule): ZillitResult<AssignmentRule>
+
+    suspend fun updateAssignmentRule(rule: AssignmentRule): ZillitResult<AssignmentRule>
+
+    suspend fun deleteAssignmentRule(id: String): ZillitResult<Unit>
+
     suspend fun agreementDocuments(): ZillitResult<List<AgreementDocument>>
 
     /**
@@ -226,24 +262,32 @@ interface AccountHubRepository {
     suspend fun createAccount(account: NewAccount): ZillitResult<CoaAccount>
 
     /**
-     * Name, cost type and the two flags only.
+     * Edits a row.
      *
-     * Re-parenting or re-typing a row would cascade through every descendant's
-     * breadcrumb, which the server does not support in place. The workflow for a
-     * structural change is deactivate-and-recreate.
+     * Name, cost type and the two flags always; the line type and parent only
+     * when [AccountPatch.structureChanged] — a manual row may be re-typed or
+     * re-parented, the way the web's `AccountFormModal` allows, and the server
+     * re-walks the breadcrumb. A budget-imported row keeps its cost type.
      */
-    suspend fun updateAccount(
-        id: String,
-        name: String,
-        costType: CoaCostType,
-        isActive: Boolean,
-        isPosting: Boolean,
-    ): ZillitResult<CoaAccount>
+    suspend fun updateAccount(id: String, patch: AccountPatch): ZillitResult<CoaAccount>
 
     /** Soft delete — the code stays for historical postings to resolve against. */
     suspend fun deactivateAccount(id: String): ZillitResult<Unit>
 
     suspend fun trackingSets(): ZillitResult<List<TrackingSet>>
+
+    suspend fun createTrackingSet(set: TrackingSet): ZillitResult<TrackingSet>
+
+    suspend fun updateTrackingSet(set: TrackingSet): ZillitResult<TrackingSet>
+
+    /** Hard delete — cascades to every code under the set. */
+    suspend fun deleteTrackingSet(id: String): ZillitResult<Unit>
+
+    suspend fun createTrackingNode(node: TrackingNode): ZillitResult<TrackingNode>
+
+    suspend fun updateTrackingNode(node: TrackingNode): ZillitResult<TrackingNode>
+
+    suspend fun deleteTrackingNode(setId: String, id: String): ZillitResult<Unit>
 
     // -- vendors ------------------------------------------------------------
 
@@ -258,6 +302,12 @@ interface AccountHubRepository {
     suspend fun deleteVendor(id: String): ZillitResult<Unit>
 
     suspend fun vendorHistory(id: String): ZillitResult<List<VendorChange>>
+
+    /** The country catalogue every vendor country and dial-code picker reads. */
+    suspend fun isdCodes(): ZillitResult<List<IsdCountry>>
+
+    /** Where a postcode is, for the vendor form's city and county. */
+    suspend fun postcodePlace(countryCode: String, postcode: String): ZillitResult<PostcodePlace>
 
     // -- approvals ----------------------------------------------------------
 
@@ -279,6 +329,21 @@ interface AccountHubRepository {
 
     suspend fun deleteApprovalConfig(id: String): ZillitResult<Unit>
 
+    /**
+     * Who may be picked as an approver on [toolIdentifier]: the users holding
+     * view access on it — the web's `fetchuserapproveringrights` with
+     * `viewing_access=true`. Answered as ids; the roster names them.
+     */
+    suspend fun approverCandidateIds(toolIdentifier: String): ZillitResult<Set<String>>
+
+    // -- period close -------------------------------------------------------
+
+    /** The Weekly Close Command Centre, from the invoices service's analytics. */
+    suspend fun cashClose(): ZillitResult<CashCloseDashboard>
+
+    /** Sends the closing package(s) — `POST /closing-package/publish`. */
+    suspend fun publishClosingPackage(packages: List<ClosingPackage>): ZillitResult<Unit>
+
     // -- form templates -----------------------------------------------------
 
     /**
@@ -294,6 +359,47 @@ interface AccountHubRepository {
 
     /** Throws the production's changes away and answers with the defaults. */
     suspend fun resetFormTemplate(module: FormModule): ZillitResult<FormTemplate>
+}
+
+/**
+ * What an edit sends — see [AccountHubRepository.updateAccount].
+ *
+ * [lineType] and [parentId] go only when [structureChanged]; [code] only when
+ * it differs, which the bulk grid uses for a rename it could not express as
+ * create-then-retire.
+ */
+data class AccountPatch(
+    val name: String,
+    val costType: CoaCostType,
+    val isActive: Boolean,
+    val isPosting: Boolean,
+    val structureChanged: Boolean = false,
+    val lineType: CoaLineType? = null,
+    val parentId: String? = null,
+    val code: String? = null,
+)
+
+/**
+ * A binary export the hub asks the host to fetch — `ApiClient` speaks
+ * envelopes only, and the report routes answer with a file.
+ */
+fun interface HubExporter {
+    suspend fun export(report: HubExportReport, format: ExportFormat, body: JsonObject): ZillitResult<ByteArray>
+}
+
+enum class HubExportReport(val path: String, val fileStem: String) {
+    TrialBalance("trial-balance", "trial-balance"),
+    Bible("bible", "bible-report"),
+}
+
+/** Where an exported file goes — the host's Downloads folder, then opened. */
+fun interface HubFiles {
+    suspend fun saveAndOpen(fileName: String, bytes: ByteArray): ZillitResult<Unit>
+}
+
+/** Opens a stored document — an agreement, a budget's source file — in the OS. */
+fun interface HubDocumentOpener {
+    suspend fun open(document: AgreementDocument): ZillitResult<Unit>
 }
 
 /**

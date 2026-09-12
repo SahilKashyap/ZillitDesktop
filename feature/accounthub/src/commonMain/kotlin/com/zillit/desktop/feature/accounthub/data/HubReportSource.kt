@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.accounthub.data
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.flatMap
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
@@ -19,9 +21,15 @@ import com.zillit.desktop.feature.accounthub.domain.BibleQuery
 import com.zillit.desktop.feature.accounthub.domain.BibleReport
 import com.zillit.desktop.feature.accounthub.domain.BudgetLine
 import com.zillit.desktop.feature.accounthub.domain.BudgetVersion
+import com.zillit.desktop.feature.accounthub.domain.ClosingPackage
 import com.zillit.desktop.feature.accounthub.domain.PeriodLock
 import com.zillit.desktop.feature.accounthub.domain.TrialBalance
 import com.zillit.desktop.feature.accounthub.domain.TrialBalanceQuery
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -50,69 +58,141 @@ internal class HubReportSource(
     /** The cost-report service, which owns the two reports and the lock. */
     private val costReportBase = "${config.apiV2(ZillitService.CostReport).trimEnd('/')}/cost-reports"
 
+    /**
+     * The whole envelope rather than its `data`, as the bible reads it: a 200
+     * with `status: 0` is a refusal the web's client throws on, and the page
+     * says it could not load. Through `request` it would read as an empty
+     * ledger — "No account balances" for a report that never ran.
+     */
     suspend fun trialBalance(query: TrialBalanceQuery): ZillitResult<TrialBalance> =
-        apiClient.request(
+        apiClient.envelope(
             verb = HttpVerb.Get,
             url = "$costReportBase/trial-balance",
-            serializer = ValueDto.serializer(ListSerializer(TrialBalanceRowDto.serializer())),
             module = RequestModule.ProjectUser,
             queryParameters = buildMap {
                 put("period_start", query.periodStartMillis.toString())
                 put("period_end", query.periodEndMillis.toString())
+                query.accountStart.takeIf { it.isNotBlank() }?.let { put("account_start", it.trim()) }
+                query.accountEnd.takeIf { it.isNotBlank() }?.let { put("account_end", it.trim()) }
                 query.accountType.takeIf { it.isNotBlank() }?.let { put("account_type", it) }
+                query.companyId.takeIf { it.isNotBlank() }?.let { put("company_id", it) }
                 query.currency.takeIf { it.isNotBlank() }?.let { put("currency", it) }
                 // Sent even when false: leaving it out lets the server's own
                 // default decide, and the two have disagreed before.
                 put("zero_accounts", query.includeZeroAccounts.toString())
             },
-        ).map { row -> TrialBalance(row.value.orEmpty().map { it.toDomain() }) }
+        ).flatMap { envelope ->
+            if (envelope.status == TRIAL_BALANCE_REFUSED) {
+                ZillitResult.Failure(ZillitError.Http(status = HTTP_OK, serverMessage = envelope.message))
+            } else {
+                val rows = envelope.data?.rows(TrialBalanceRowDto.serializer()).orEmpty()
+                ZillitResult.Success(TrialBalance(rows.map { it.toDomain() }))
+            }
+        }
 
-    suspend fun bibleReport(query: BibleQuery): ZillitResult<BibleReport> = apiClient.request(
+    /**
+     * The whole envelope rather than its `data`: a refusal can arrive as a 200
+     * with `status: 0`, which the web's client throws on and shows as the run's
+     * error. The query string and both body shapes are in BibleReportDtos.kt,
+     * where they are tested.
+     */
+    suspend fun bibleReport(query: BibleQuery): ZillitResult<BibleReport> = apiClient.envelope(
         verb = HttpVerb.Get,
         url = "$costReportBase/bible",
-        serializer = ValueDto.serializer(BibleReportDto.serializer()),
         module = RequestModule.ProjectUser,
-        queryParameters = buildMap {
-            put("period_start", query.periodStartMillis.toString())
-            put("period_end", query.periodEndMillis.toString())
-            query.source.takeIf { it.isNotBlank() }?.let { put("source", it) }
-            query.accountType.takeIf { it.isNotBlank() }?.let { put("account_type", it) }
-            query.currency.takeIf { it.isNotBlank() }?.let { put("currency", it) }
-            // Only when false: the server defaults to true, and restating it
-            // would be this client asserting a default it does not own.
-            if (!query.includeOpenPurchaseOrders) put("include_open_pos", "false")
-        },
-    ).map { it.value?.toDomain() ?: BibleReport() }
+        queryParameters = query.toQueryParameters(),
+    ).flatMap { it.toBibleReport() }
 
-    suspend fun periodLock(): ZillitResult<PeriodLock> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = "$costReportBase/lock-period",
-        serializer = ValueDto.serializer(PeriodLockDto.serializer()),
-        module = RequestModule.ProjectUser,
-    ).map { it.value?.toDomain() ?: PeriodLock() }
+    /**
+     * The close boundary, read the way the web's `useCrLock` reads it.
+     *
+     * Two readings of one row: the lock route, and `last_cr_locked_date` on the
+     * combined project-settings document. The later date wins, because the lock
+     * only moves forward — and the settings reading stands in when the route
+     * fails, which the live route has done on a date stored as a string. Only
+     * when neither answers is the route's failure returned.
+     */
+    suspend fun periodLock(): ZillitResult<PeriodLock> = coroutineScope {
+        val route = async {
+            apiClient.request(
+                verb = HttpVerb.Get,
+                url = "$costReportBase/lock-period",
+                serializer = JsonElement.serializer(),
+                module = RequestModule.ProjectUser,
+            )
+        }
+        val settings = async {
+            apiClient.request(
+                verb = HttpVerb.Get,
+                url = "$hubBase/project-settings",
+                serializer = JsonElement.serializer(),
+                module = RequestModule.ProjectUser,
+            )
+        }
+        val answered = route.await()
+        val merged = laterLock(
+            (answered as? ZillitResult.Success)?.data?.toPeriodLock(),
+            (settings.await() as? ZillitResult.Success)?.data?.settingsPeriodLock(),
+        )
+        when {
+            merged != null -> ZillitResult.Success(merged)
+            answered is ZillitResult.Failure -> answered
+            else -> ZillitResult.Success(PeriodLock())
+        }
+    }
 
     suspend fun closePeriod(asOfMillis: Long): ZillitResult<PeriodLock> = apiClient.request(
         verb = HttpVerb.Post,
         url = "$costReportBase/lock-period",
-        serializer = ValueDto.serializer(PeriodLockDto.serializer()),
+        serializer = JsonElement.serializer(),
         module = RequestModule.ProjectUser,
         body = buildJsonObject { put("as_of", JsonPrimitive(asOfMillis)) },
-    ).map { it.value?.toDomain() ?: PeriodLock() }
+    ).map { it.toPeriodLock() ?: PeriodLock() }
+
+    /**
+     * `POST /closing-package/publish { packages: [{ user_ids, emails, reports }] }`.
+     *
+     * Invalid packages — no recipient, or no report — are dropped before the
+     * call, as the web's `validPackages` does; the server e-mails the rest.
+     */
+    suspend fun publishClosingPackage(packages: List<ClosingPackage>): ZillitResult<Unit> = apiClient.envelope(
+        verb = HttpVerb.Post,
+        url = "$costReportBase/closing-package/publish",
+        module = RequestModule.ProjectUser,
+        body = buildJsonObject {
+            put(
+                "packages",
+                buildJsonArray {
+                    packages.filter { it.isValid }.forEach { pkg ->
+                        add(
+                            buildJsonObject {
+                                put("user_ids", buildJsonArray { pkg.userIds.forEach { add(JsonPrimitive(it)) } })
+                                put("emails", buildJsonArray { pkg.emails.forEach { add(JsonPrimitive(it)) } })
+                                put("reports", buildJsonArray { pkg.reports.forEach { add(JsonPrimitive(it.wire)) } })
+                            },
+                        )
+                    }
+                },
+            )
+        },
+    ).map { }
 
     suspend fun budgetVersions(): ZillitResult<List<BudgetVersion>> = apiClient.request(
         verb = HttpVerb.Get,
         url = "$hubBase/budgets",
-        serializer = ValueDto.serializer(ListSerializer(BudgetVersionDto.serializer())),
+        serializer = JsonElement.serializer(),
         module = RequestModule.ProjectUser,
-    ).map { row -> row.value.orEmpty().map { it.toDomain() }.filter { it.id.isNotBlank() } }
+    ).map { payload -> payload.rows(BudgetVersionDto.serializer()).map { it.toDomain() }.filter { it.id.isNotBlank() } }
 
     suspend fun budgetLines(versionId: String): ZillitResult<List<BudgetLine>> =
         apiClient.request(
             verb = HttpVerb.Get,
             url = "$hubBase/budgets/$versionId/lines",
-            serializer = ValueDto.serializer(ListSerializer(BudgetLineDto.serializer())),
+            serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
-        ).map { row -> row.value.orEmpty().map { it.toDomain() }.filter { it.id.isNotBlank() } }
+        ).map { payload ->
+            payload.rows(BudgetLineDto.serializer()).map { it.toDomain() }.filter { it.id.isNotBlank() }
+        }
 
     // -- budget import ------------------------------------------------------
 
@@ -215,3 +295,27 @@ private fun ParsedUncoded.toJson(): JsonElement = buildJsonObject {
     put("name", JsonPrimitive(name))
     put("amount", JsonPrimitive(amount))
 }
+
+/**
+ * A list the route sends bare — `[…]` — or wrapped as `{ value: […] }` or
+ * `{ data: […] }` on other deployments.
+ *
+ * Seen live on 2026-09-11: `/cost-reports/trial-balance` and `/budgets` both
+ * answer with a bare array on develop while the web's client reads `value`
+ * first and falls back to the body. Reading one shape only turned a full
+ * ledger into "No account balances" and a saved budget into "No budget
+ * versions yet", with a toast that blamed the server.
+ */
+internal fun <T> JsonElement.rows(element: KSerializer<T>): List<T> {
+    val array = when (this) {
+        is JsonArray -> this
+        is JsonObject -> (this["value"] ?: this["data"] ?: this["rows"]) as? JsonArray
+        else -> null
+    } ?: return emptyList()
+    return array.mapNotNull { row ->
+        runCatching { accountHubJson.decodeFromJsonElement(element, row) }.getOrNull()
+    }
+}
+
+/** The trial balance's business refusal over a 200 — the envelope's `status: 0`. */
+private const val TRIAL_BALANCE_REFUSED = 0

@@ -1,46 +1,38 @@
 package com.zillit.desktop.feature.accounthub.ui
 
-import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.accounthub.data.hubRefreshes
-import com.zillit.desktop.feature.accounthub.domain.ReportPeriod
-import com.zillit.desktop.feature.accounthub.domain.TrialBalanceQuery
-import com.zillit.desktop.feature.accounthub.domain.BudgetStatus
-import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
 import com.zillit.desktop.feature.accounthub.domain.AccountHubRepository
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
-import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
-import com.zillit.desktop.feature.accounthub.domain.DealCondition
-import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
-import com.zillit.desktop.feature.accounthub.domain.ApprovalSequence
-import com.zillit.desktop.feature.accounthub.domain.ApprovalTier
-import com.zillit.desktop.feature.accounthub.domain.BankAccount
-import com.zillit.desktop.feature.accounthub.domain.CoaLineType
+import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
 import com.zillit.desktop.feature.accounthub.domain.DayTypes
-import com.zillit.desktop.feature.accounthub.domain.Companies
-import com.zillit.desktop.feature.accounthub.domain.Company
 import com.zillit.desktop.feature.accounthub.domain.HubArea
+import com.zillit.desktop.feature.accounthub.domain.HubBadgeCounts
+import com.zillit.desktop.feature.accounthub.domain.HubDepartment
+import com.zillit.desktop.feature.accounthub.domain.HubDocumentOpener
+import com.zillit.desktop.feature.accounthub.domain.HubExporter
+import com.zillit.desktop.feature.accounthub.domain.HubFiles
 import com.zillit.desktop.feature.accounthub.domain.HubNavigation
 import com.zillit.desktop.feature.accounthub.domain.HubTarget
-import com.zillit.desktop.feature.accounthub.domain.NewAccount
-import com.zillit.desktop.feature.accounthub.domain.NewVendor
-import com.zillit.desktop.feature.accounthub.domain.validationError
+import com.zillit.desktop.feature.accounthub.domain.HubUser
+import com.zillit.desktop.feature.accounthub.domain.ReportPeriod
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 
 /**
  * The Account Hub console's one view model.
  *
- * ## Four screens, one model
+ * ## Nine screens, one model
  *
  * The hub is a console, and its screens share a viewer, a sidebar and a set of
  * reference data — currencies are read by Production Setup and by Vendors,
- * companies by Production Setup and by the bank editor. Four view models would
- * mean four copies of that, fetched four times and disagreeing whenever one is
- * refreshed.
+ * companies by Production Setup and by the bank editor, the chart by every
+ * code typeahead. Nine view models would mean nine copies of that, fetched
+ * nine times and disagreeing whenever one is refreshed.
  *
  * ## Rights first, and read at start
  *
@@ -56,8 +48,14 @@ import kotlinx.coroutines.delay
  * from the server's echo. That is not a fetching preference: a combined save
  * returns the whole merged settings document, and applying it would overwrite
  * whatever a sibling section has unsaved.
+ *
+ * ## One dispatcher, many collaborators
+ *
+ * Every screen's handling lives in its own class; the view model only decides
+ * which one an event belongs to. Each collaborator answers whether it took the
+ * event, so nothing is swallowed silently on the way down the chain.
  */
-@Suppress("TooManyFunctions") // One handler per user action; see detekt.yml.
+@Suppress("TooManyFunctions", "LongParameterList") // One seam per host concern; see detekt.yml.
 class AccountHubViewModel(
     private val repository: AccountHubRepository,
     /**
@@ -91,12 +89,70 @@ class AccountHubViewModel(
      * pay breakdown's scope names departments rather than numbering them.
      */
     private val departments: suspend () -> Map<String, String> = { emptyMap() },
+    /** The crew roster, for every user picker. The host's, like the departments. */
+    private val users: suspend () -> List<HubUser> = { emptyList() },
+    /** Departments with their designations, for the payroll groups and approvers. */
+    private val departmentList: suspend () -> List<HubDepartment> = { emptyList() },
+    /** The binary report exports; null hides the export menus. */
+    internal val exporter: HubExporter? = null,
+    /** Where an export lands; null hides the export menus too. */
+    internal val files: HubFiles? = null,
+    /** Opens a stored document in the OS; null hides the Open actions. */
+    internal val documentOpener: HubDocumentOpener? = null,
+    /** The open production, for the tour's per-project seen flag. */
+    private val projectId: () -> String = { "" },
+    /** Its name, for the bible's banner and the export headers. */
+    private val projectName: () -> String = { "" },
+    /** Whether the setup tour has been dismissed on this production before. */
+    private val tourSeen: suspend (String) -> Boolean = { true },
+    private val markTourSeen: suspend (String) -> Unit = {},
+    /**
+     * Whether the host renders the other film tools inside this console.
+     *
+     * The web does — Purchase Orders, Invoices, the spend tools and the reports
+     * are nested routes under the hub shell. When true, a sidebar tool row and
+     * the setup tiles' hand-offs show the tool in place and the console lands
+     * on Purchase Orders as the web does; when false they open the tool in its
+     * own window.
+     */
+    private val embedsTools: Boolean = false,
 ) : ZillitViewModel<AccountHubUiState, AccountHubEvent, AccountHubEffect>(AccountHubUiState()) {
 
     private var started = false
     private var listening = false
     private var searchJob: Job? = null
+
     private val setupSections = SetupSections(this)
+    private val setupUi = SetupUiActions(this)
+    private val setupModal = SetupModalActions(this)
+    private val chartActions = ChartActions(this)
+    private val vendorActions = VendorActions(this)
+    private val agreementActions = AgreementActions(this, agreementFiles)
+    private val reportActions = ReportActions(this, defaultReportPeriod)
+    private val trialBalanceActions = TrialBalanceActions(this)
+    private val bibleActions = BibleActions(this)
+    private val formConfigActions = FormConfigActions(this)
+    private val approvalActions = ApprovalActions(this)
+    private val budgetImportActions = BudgetImportActions(this, agreementFiles)
+    private val tourActions = TourActions(this, projectId, tourSeen, markTourSeen)
+
+    /** The dispatch chain, in the order the screens are reached. */
+    private val handlers: List<(AccountHubEvent) -> Boolean> = listOf(
+        ::onShellEvent,
+        tourActions::onEvent,
+        setupUi::onEvent,
+        setupModal::onEvent,
+        ::onSetupEvent,
+        agreementActions::onEvent,
+        budgetImportActions::onEvent,
+        chartActions::onEvent,
+        vendorActions::onEvent,
+        approvalActions::onEvent,
+        reportActions::onEvent,
+        trialBalanceActions::onEvent,
+        bibleActions::onEvent,
+        formConfigActions::onEvent,
+    )
 
     /**
      * Resolves who this is, then opens their landing screen.
@@ -105,6 +161,17 @@ class AccountHubViewModel(
      * model shown twice, and fetching the whole hub again for the second is
      * pure waste.
      */
+    /**
+     * Whether the crew directory has been read.
+     *
+     * It is fetched once at start, but the project context that answers it
+     * loads asynchronously — a console opened a second after a production
+     * does get an empty list, and every approver, assignee and "verified by"
+     * on every screen then shows an id. So an empty roster is re-read the
+     * next time a screen opens.
+     */
+    private var rosterLoaded = false
+
     fun start() {
         if (started) return
         started = true
@@ -114,20 +181,20 @@ class AccountHubViewModel(
                 viewer = identity,
                 sections = HubNavigation.visibleTo(identity),
                 area = HubNavigation.landing(identity),
+                vendors = vendors.copy(viewerId = identity.userId),
+                projectName = projectName(),
             )
         }
         if (!identity.isBlocked) {
+            loadRoster()
             val area = currentState.area
-            if (area != null) {
-                load(area)
-            } else {
-                // No console screen for this person: open their work instead
-                // of a dead end. The web puts the same user in Purchase
-                // Orders (`HubNavigation.landingTool`).
-                HubNavigation.landingTool(identity)?.let { row ->
-                    onEvent(AccountHubEvent.OpenTool(row))
-                }
-            }
+            if (area != null) load(area)
+            // The web lands everyone on Purchase Orders (`poEntryPath.js`) with
+            // the hub beside it. Embedding makes that possible here too; a host
+            // that opens tools in their own windows keeps the console's own
+            // landing, and only a person with no console screen is handed off.
+            val landingRow = if (embedsTools) HubNavigation.purchaseOrdersRow(identity) else null
+            (landingRow ?: HubNavigation.landingTool(identity))?.let { row -> onEvent(AccountHubEvent.OpenTool(row)) }
         }
 
         // A vendor verified, an account code changed. Only the area on screen
@@ -159,51 +226,87 @@ class AccountHubViewModel(
      * `projectId` flips the moment a production is chosen, but the rights that
      * gate this screen arrive with the Home load a beat later — so the viewer
      * resolved at open is the "not yet known" one, and nothing used to replace
-     * it. Seen live 2026-08-27: Document Distribution offered no publish
-     * destination at all on a production with 42 tools switched on. Only the
-     * viewer changes here; the open page and its data are already right.
+     * it. Only the viewer changes here; the open page and its data are already
+     * right. The sidebar is rebuilt too, because which rows exist is the
+     * viewer's to say — and losing view access mid-session empties it, which
+     * is the web's live redirect (`useAccountHubViewGate`).
      */
     fun onRightsChanged() {
         // Read outside the state lambda: inside it, `viewer` is the
         // state's own viewer property rather than the supplier.
         val resolved = viewer()
-        setState { copy(viewer = resolved) }
+        setState {
+            copy(
+                viewer = resolved,
+                sections = HubNavigation.visibleTo(resolved),
+                vendors = vendors.copy(viewerId = resolved.userId),
+            )
+        }
     }
 
-    @Suppress("CyclomaticComplexMethod") // One branch per action; the work is delegated.
+    /** The host's badge ledger, mapped to the sidebar's units. */
+    fun onBadges(counts: HubBadgeCounts) = setState { copy(badges = counts) }
+
     override fun onEvent(event: AccountHubEvent) {
-        when (event) {
-            is AccountHubEvent.Open -> open(event.area)
-            is AccountHubEvent.OpenTool -> handOff(event)
-            AccountHubEvent.PickAgreementFiles,
-            is AccountHubEvent.EditAgreementQueue,
-            AccountHubEvent.UploadAgreementFiles,
-            is AccountHubEvent.DeleteAgreementDocument,
-            -> agreementActions.onEvent(event)
-            AccountHubEvent.OpenTimecardSetup ->
-                sendEffect(AccountHubEffect.OpenTool(TIMECARD_TOOL_PATH, "Time Card"))
-            is AccountHubEvent.OpenSpendSetup ->
-                sendEffect(AccountHubEffect.OpenTool(event.which.route, event.which.title))
-            AccountHubEvent.Refresh -> currentState.area?.let(::load)
-            AccountHubEvent.ClearNotice -> setState { copy(notice = null) }
-            else -> onScreenEvent(event)
-        }
+        handlers.firstOrNull { it(event) }
     }
-
-    private fun onScreenEvent(event: AccountHubEvent) {
-        when (event) {
-            is AccountHubEvent.SwitchSetupTab -> setState { copy(setup = setup.copy(tab = event.tab)) }
-            else -> if (!formConfigActions.onEvent(event)) onSetupEvent(event)
-        }
-    }
-
 
     // -- shell --------------------------------------------------------------
 
+    @Suppress("CyclomaticComplexMethod") // One branch per shell action.
+    private fun onShellEvent(event: AccountHubEvent): Boolean {
+        when (event) {
+            is AccountHubEvent.Open -> open(event.area)
+            is AccountHubEvent.OpenTool -> handOff(event)
+            is AccountHubEvent.EmbedRoute -> setState {
+                copy(embedded = embedded?.copy(path = event.path) ?: EmbeddedTool(event.path, ""))
+            }
+            AccountHubEvent.CloseEmbedded -> setState { copy(embedded = null) }
+            AccountHubEvent.Back -> sendEffect(AccountHubEffect.Back)
+            AccountHubEvent.BackToHub -> backToHub()
+            AccountHubEvent.OpenTimecardSetup -> show(TIMECARD_TOOL_PATH, "Time Card")
+            is AccountHubEvent.OpenSpendSetup -> show(event.which.route, event.which.title)
+            is AccountHubEvent.CreatePurchaseOrder -> show(PURCHASE_ORDER_NEW_PATH, "Purchase Orders")
+            AccountHubEvent.Refresh -> currentState.area?.let(::load)
+            AccountHubEvent.ClearNotice -> setState { copy(notice = null) }
+            is AccountHubEvent.SwitchSetupTab -> setState { copy(setup = setup.copy(tab = event.tab)) }
+            else -> return false
+        }
+        return true
+    }
+
     private fun open(area: HubArea) {
         if (area !in HubNavigation.areasFor(currentState.viewer)) return
-        setState { copy(area = area) }
+        setState { copy(area = area, embedded = null) }
         load(area)
+        tourActions.onAreaOpened(area)
+    }
+
+    /**
+     * Where a report page's back arrow goes: the console's landing, as
+     * [start] opens it. The web's `/film-tools/account-hub` redirects to
+     * Purchase Orders inside the shell, which is what embedding reproduces;
+     * without it the viewer's own landing screen is the hub's front door.
+     */
+    private fun backToHub() {
+        val identity = currentState.viewer
+        HubNavigation.landing(identity)?.let(::open)
+        val landingRow = if (embedsTools) HubNavigation.purchaseOrdersRow(identity) else null
+        (landingRow ?: HubNavigation.landingTool(identity))?.let { row -> onEvent(AccountHubEvent.OpenTool(row)) }
+    }
+
+    /**
+     * Shows another film tool: inside the console when the host embeds tools,
+     * as its own window otherwise. One place, so the sidebar rows, the setup
+     * tiles and "Create PO" cannot disagree about which.
+     */
+    private fun show(path: String, title: String) {
+        if (embedsTools) {
+            setState { copy(embedded = EmbeddedTool(path, title)) }
+            tourActions.onToolShown()
+        } else {
+            sendEffect(AccountHubEffect.OpenTool(path, title))
+        }
     }
 
     /**
@@ -215,21 +318,42 @@ class AccountHubViewModel(
      */
     private fun handOff(event: AccountHubEvent.OpenTool) {
         val target = event.item.target as? HubTarget.Tool ?: return
-        sendEffect(AccountHubEffect.OpenTool(target.toolPath, event.item.label))
+        show(target.toolPath, event.item.label)
     }
 
     private fun load(area: HubArea) {
+        // A roster that came back empty is read again here: the context that
+        // answers it may simply not have landed when the console started.
+        if (!rosterLoaded || currentState.users.isEmpty()) loadRoster()
         when (area) {
             HubArea.ProductionSetup -> loadSetup()
-            HubArea.ChartOfAccounts -> loadChart()
-            HubArea.Vendors -> loadVendors()
+            HubArea.ChartOfAccounts -> chartActions.load()
+            HubArea.Vendors -> vendorActions.load()
             HubArea.Approvers -> approvalActions.load()
             HubArea.Budget -> reportActions.loadBudget()
-            HubArea.TrialBalance -> reportActions.openTrialBalance()
-            HubArea.PeriodClose -> reportActions.loadPeriodLock()
-            HubArea.BibleReport -> reportActions.openBibleReport()
+            HubArea.TrialBalance -> trialBalanceActions.open()
+            HubArea.PeriodClose -> reportActions.openPeriodClose()
+            HubArea.BibleReport -> bibleActions.open()
             HubArea.FormConfig -> formConfigActions.open()
         }
+    }
+
+    /**
+     * The crew and the departments, once.
+     *
+     * Every picker on every screen reads these, and the setup's own load
+     * would otherwise fetch them again for each. Both are swallowed on
+     * failure: a picker with ids instead of names is worse to read but never
+     * loses a choice somebody made.
+     */
+    private fun loadRoster() {
+        launchResult({ ZillitResult.Success(users()) }, { rows -> setState { copy(users = rows) } }, { })
+        rosterLoaded = true
+        launchResult(
+            { ZillitResult.Success(departmentList()) },
+            { rows -> setState { copy(departmentList = rows) } },
+            { },
+        )
     }
 
     // -- production setup ---------------------------------------------------
@@ -241,6 +365,7 @@ class AccountHubViewModel(
      * whole merged document — see the class doc. Losing an accountant's unsaved
      * tax rates to a currency save is worse than eight parallel gets.
      */
+    @Suppress("LongMethod") // One launch per slice; the list is the contract.
     private fun loadSetup() {
         setState { copy(setup = setup.copy(loading = true, banksLoading = true)) }
 
@@ -301,18 +426,22 @@ class AccountHubViewModel(
         agreementActions.load()
         loadBanks()
         loadCatalogues()
+        // The code typeaheads on this page read the chart; loaded quietly so
+        // a bank's nominal can be checked against it before it is sent.
+        chartActions.ensureLoaded()
         launch {
             // The flag clears on its own rather than being counted down by each
             // call: a counter would have to survive one of them failing, and a
             // spinner that never stops is a worse bug than one that stops early.
             delay(LOAD_SETTLE_MS)
-            setState { copy(setup = setup.copy(loading = false)) }
+            setState { copy(setup = setup.copy(loading = false, loaded = true)) }
+            tourActions.onSetupLoaded()
         }
     }
 
-    private fun loadBanks() {
+    internal fun loadBanks() {
         launchResult(repository::bankAccounts, { rows ->
-            setState { copy(setup = setup.copy(banks = rows, banksLoading = false)) }
+            setState { copy(setup = setup.copy(banks = rows, banksLoading = false, banksLoaded = true)) }
         }, { error ->
             setState { copy(setup = setup.copy(banksLoading = false)) }
             report(error)
@@ -342,7 +471,7 @@ class AccountHubViewModel(
     // One line per setup event; a map keyed by event type would hide which
     // section each one belongs to, which is the only thing worth reading here.
     @Suppress("CyclomaticComplexMethod", "LongMethod")
-    private fun onSetupEvent(event: AccountHubEvent) {
+    private fun onSetupEvent(event: AccountHubEvent): Boolean {
         when (event) {
             is AccountHubEvent.EditCompanies ->
                 setState { copy(setup = setup.copy(companies = setup.companies.edit(event.companies))) }
@@ -361,38 +490,6 @@ class AccountHubViewModel(
             }
             is AccountHubEvent.EditDealConditions -> setState {
                 copy(setup = setup.copy(dealConditions = setup.dealConditions.edit(event.conditions)))
-            }
-            is AccountHubEvent.EditTrialBalanceQuery -> setState {
-                copy(trialBalance = trialBalance.copy(draft = event.query))
-            }
-            AccountHubEvent.RefreshTrialBalance -> reportActions.runTrialBalance()
-            is AccountHubEvent.ProposePeriodClose -> setState {
-                copy(periodClose = periodClose.copy(pendingCloseMillis = event.asOfMillis))
-            }
-            AccountHubEvent.ConfirmPeriodClose -> reportActions.confirmPeriodClose()
-            is AccountHubEvent.EditBibleQuery -> setState { copy(bible = bible.copy(draft = event.query)) }
-            AccountHubEvent.RefreshBibleReport -> reportActions.runBibleReport()
-            is AccountHubEvent.ToggleBibleAccount -> setState {
-                val next = if (event.code in bible.collapsed) {
-                    bible.collapsed - event.code
-                } else {
-                    bible.collapsed + event.code
-                }
-                copy(bible = bible.copy(collapsed = next))
-            }
-            AccountHubEvent.CancelPeriodClose -> setState {
-                copy(periodClose = periodClose.copy(pendingCloseMillis = null))
-            }
-            AccountHubEvent.OpenBudgetImport,
-            AccountHubEvent.CloseBudgetImport,
-            AccountHubEvent.PickBudgetFile,
-            is AccountHubEvent.EditBudgetImportMeta,
-            is AccountHubEvent.SetCoaImportMode,
-            AccountHubEvent.CommitBudgetImport,
-            -> budgetImportActions.onEvent(event)
-            is AccountHubEvent.SelectBudgetVersion -> {
-                setState { copy(budget = budget.copy(selectedId = event.id, lines = emptyList())) }
-                event.id?.let(reportActions::loadBudgetLines)
             }
             is AccountHubEvent.EditNonUnionPay -> setState {
                 copy(setup = setup.copy(nonUnionPay = setup.nonUnionPay.edit(event.value)))
@@ -430,9 +527,7 @@ class AccountHubViewModel(
                 copy(setup = setup.copy(poSetup = setup.poSetup.edit(event.value)))
             }
             AccountHubEvent.PickPoTerms -> agreementActions.pickPoTerms()
-            AccountHubEvent.ClearPoTerms -> setState {
-                copy(setup = setup.copy(poSetup = setup.poSetup.edit(setup.poSetup.edited.copy(termsDocument = null))))
-            }
+            AccountHubEvent.OpenPoTerms -> agreementActions.openPoTerms()
             is AccountHubEvent.EditPayrollSettings -> setState {
                 copy(setup = setup.copy(payrollSettings = setup.payrollSettings.edit(event.value)))
             }
@@ -444,238 +539,10 @@ class AccountHubViewModel(
             }
             is AccountHubEvent.SaveSection -> setupSections.save(event.section)
             is AccountHubEvent.RevertSection -> setupSections.revert(event.section)
-            else -> onCompanyEvent(event)
+            else -> return false
         }
+        return true
     }
-
-
-    private fun onCompanyEvent(event: AccountHubEvent) {
-        when (event) {
-            is AccountHubEvent.EditCompany -> setState {
-                copy(setup = setup.copy(companyDraft = event.company ?: Company(id = newLocalId("co"))))
-            }
-            is AccountHubEvent.UpdateCompanyDraft ->
-                setState { copy(setup = setup.copy(companyDraft = event.company)) }
-            AccountHubEvent.DismissCompanyDraft -> setState { copy(setup = setup.copy(companyDraft = null)) }
-            AccountHubEvent.CommitCompanyDraft -> commitCompanyDraft()
-            is AccountHubEvent.RemoveCompany -> setState {
-                val remaining = setup.companies.edited.filterNot { it.id == event.id }
-                copy(setup = setup.copy(companies = setup.companies.edit(remaining)))
-            }
-            else -> onBankEvent(event)
-        }
-    }
-
-    /**
-     * Folds the drafted company back into the list.
-     *
-     * The bank re-assignment happens here rather than in the dialog because it
-     * touches *other* companies: a bank moved without being taken from its
-     * previous owner ends up owned twice. See [Companies.linking].
-     */
-    private fun commitCompanyDraft() {
-        val draft = currentState.setup.companyDraft ?: return
-        setState {
-            val existing = setup.companies.edited
-            val merged = if (existing.any { it.id == draft.id }) {
-                existing.map { if (it.id == draft.id) draft else it }
-            } else {
-                existing + draft
-            }
-            copy(
-                setup = setup.copy(
-                    companies = setup.companies.edit(Companies.linking(merged, draft.id, draft.bankIds)),
-                    companyDraft = null,
-                ),
-            )
-        }
-    }
-
-    private fun onBankEvent(event: AccountHubEvent) {
-        when (event) {
-            is AccountHubEvent.EditBank -> setState {
-                copy(setup = setup.copy(bankDraft = event.account ?: BankAccount(id = "")))
-            }
-            is AccountHubEvent.UpdateBankDraft -> setState { copy(setup = setup.copy(bankDraft = event.account)) }
-            AccountHubEvent.DismissBankDraft -> setState { copy(setup = setup.copy(bankDraft = null)) }
-            AccountHubEvent.CommitBankDraft -> commitBankDraft()
-            is AccountHubEvent.DeleteBank -> deleteBank(event.id)
-            else -> onChartEvent(event)
-        }
-    }
-
-    private fun commitBankDraft() {
-        val draft = currentState.setup.bankDraft ?: return
-        if (!requireEdit()) return
-        if (draft.name.isBlank()) {
-            sendEffect(AccountHubEffect.Failed("Give the bank account a name."))
-            return
-        }
-        launchResult(
-            { if (draft.id.isBlank()) repository.createBankAccount(draft) else repository.updateBankAccount(draft) },
-            {
-                setState { copy(setup = setup.copy(bankDraft = null), notice = "Bank account saved.") }
-                loadBanks()
-            },
-            ::report,
-        )
-    }
-
-    private fun deleteBank(id: String) {
-        if (!requireEdit()) return
-        launchResult({ repository.deleteBankAccount(id) }, {
-            setState { copy(notice = "Bank account removed.") }
-            loadBanks()
-        }, ::report)
-    }
-
-    // -- chart of accounts --------------------------------------------------
-
-    private fun loadChart() {
-        setState { copy(chart = chart.copy(loading = true)) }
-        launchResult(
-            // Every row, active or not. Filtering server-side would hide the
-            // inactive codes the screen has a toggle for, and would manufacture
-            // orphans out of rows whose only problem is an inactive parent.
-            { repository.accounts(activeOnly = false) },
-            { rows -> setState { copy(chart = chart.copy(accounts = rows, loading = false)) } },
-            { error ->
-                setState { copy(chart = chart.copy(loading = false)) }
-                report(error)
-            },
-        )
-        // The Layers tab's own source. Loaded beside the chart rather than on
-        // the tab opening, so switching tabs does not stall on a request.
-        launchResult(repository::trackingSets, { sets ->
-            setState { copy(chart = chart.copy(trackingSets = sets)) }
-        }, ::report)
-    }
-
-    @Suppress("CyclomaticComplexMethod") // One branch per action.
-    private fun onChartEvent(event: AccountHubEvent) {
-        when (event) {
-            is AccountHubEvent.SwitchChartView -> setState { copy(chart = chart.copy(view = event.view)) }
-            is AccountHubEvent.SearchChart -> setState { copy(chart = chart.copy(search = event.term)) }
-            AccountHubEvent.ToggleInactiveAccounts ->
-                setState { copy(chart = chart.copy(showInactive = !chart.showInactive)) }
-            is AccountHubEvent.ToggleAccountExpanded -> setState {
-                val next = chart.expanded.toMutableSet()
-                if (!next.add(event.id)) next.remove(event.id)
-                copy(chart = chart.copy(expanded = next))
-            }
-            is AccountHubEvent.ComposeAccount -> composeAccount(event)
-            AccountHubEvent.DismissAccountForm -> setState { copy(chart = chart.copy(form = null)) }
-            AccountHubEvent.SaveAccount -> saveAccount()
-            is AccountHubEvent.DeactivateAccount -> deactivateAccount(event.id)
-            else -> onAccountFormEvent(event)
-        }
-    }
-
-    private fun composeAccount(event: AccountHubEvent.ComposeAccount) {
-        if (!requireAccountant()) return
-        val editing = event.editing
-        val form = if (editing != null) {
-            AccountForm(
-                editing = editing,
-                name = editing.name,
-                costType = editing.costType,
-                isActive = editing.isActive,
-                isPosting = editing.isPosting,
-            )
-        } else {
-            // One level below the row it was raised from, which is what
-            // "add under this" almost always means.
-            val lineType = event.parent?.lineType?.childType ?: CoaLineType.Header
-            AccountForm(draft = NewAccount(lineType = lineType, parentId = event.parent?.id))
-        }
-        setState { copy(chart = chart.copy(form = form)) }
-    }
-
-    @Suppress("CyclomaticComplexMethod") // One branch per field.
-    private fun onAccountFormEvent(event: AccountHubEvent) {
-        val form = currentState.chart.form ?: return onVendorEvent(event)
-        val next = when (event) {
-            is AccountHubEvent.SetAccountCode -> form.copy(draft = form.draft.copy(code = event.code))
-            is AccountHubEvent.SetAccountName ->
-                form.copy(name = event.name, draft = form.draft.copy(name = event.name))
-            is AccountHubEvent.SetAccountLineType -> form.copy(
-                // The parent is cleared with the level: a category's parent is
-                // not a valid parent for a section, and leaving it set is how a
-                // form ends up refusing to save with no visible reason.
-                draft = form.draft.copy(lineType = event.lineType, parentId = null),
-            )
-            is AccountHubEvent.SetAccountCostType ->
-                form.copy(costType = event.costType, draft = form.draft.copy(costType = event.costType))
-            is AccountHubEvent.SetAccountParent -> form.copy(draft = form.draft.copy(parentId = event.parentId))
-            AccountHubEvent.ToggleAccountPosting -> form.copy(
-                isPosting = !form.isPosting,
-                draft = form.draft.copy(isPosting = !form.isPosting),
-            )
-            AccountHubEvent.ToggleAccountActive -> form.copy(isActive = !form.isActive)
-            else -> return onVendorEvent(event)
-        }
-        setState { copy(chart = chart.copy(form = next)) }
-    }
-
-    private fun saveAccount() {
-        val form = currentState.chart.form ?: return
-        if (!requireAccountant()) return
-        val editing = form.editing
-        if (editing != null) {
-            launchResult(
-                { repository.updateAccount(editing.id, form.name, form.costType, form.isActive, form.isPosting) },
-                {
-                    setState { copy(chart = chart.copy(form = null), notice = "Account updated.") }
-                    loadChart()
-                },
-                { error ->
-                    setState { copy(chart = chart.copy(form = form.copy(saving = false))) }
-                    report(error)
-                },
-            )
-            return
-        }
-        val problem = form.draft.validationError(currentState.chart.accounts)
-        if (problem != null) {
-            sendEffect(AccountHubEffect.Failed(problem))
-            return
-        }
-        setState { copy(chart = chart.copy(form = form.copy(saving = true))) }
-        launchResult({ repository.createAccount(form.draft) }, {
-            setState { copy(chart = chart.copy(form = null), notice = "Account created.") }
-            loadChart()
-        }, { error ->
-            setState { copy(chart = chart.copy(form = form.copy(saving = false))) }
-            report(error)
-        })
-    }
-
-    private fun deactivateAccount(id: String) {
-        if (!requireAccountant()) return
-        launchResult({ repository.deactivateAccount(id) }, {
-            // Deactivated, not deleted: the code stays so historical postings
-            // still resolve against it.
-            setState { copy(notice = "Account deactivated.") }
-            loadChart()
-        }, ::report)
-    }
-
-    // -- vendors ------------------------------------------------------------
-
-    private val vendorActions = VendorActions(this)
-
-    private val agreementActions = AgreementActions(this, agreementFiles)
-
-    private val reportActions = ReportActions(this, defaultReportPeriod)
-
-    private val formConfigActions = FormConfigActions(this)
-
-    private val approvalActions = ApprovalActions(this)
-
-    /** The chain of screen dispatchers ends here — see [VendorActions]. */
-    internal fun onApprovalEvent(event: AccountHubEvent) = approvalActions.onEvent(event)
-
-    private val budgetImportActions = BudgetImportActions(this, agreementFiles)
 
     /** Whether a budget file can be imported at all — the host wired storage. */
     internal val canImportBudget: Boolean get() = budgetImportActions.isAvailable
@@ -696,9 +563,10 @@ class AccountHubViewModel(
     /** Whether the agreements section can accept a file at all. */
     internal val canAttachAgreements: Boolean get() = agreementFiles != null
 
-    private fun loadVendors() = vendorActions.load()
+    /** Whether the report pages may offer an export — both host seams wired. */
+    internal val canExport: Boolean get() = exporter != null && files != null
 
-    private fun onVendorEvent(event: AccountHubEvent) = vendorActions.onEvent(event)
+    internal val canOpenDocuments: Boolean get() = documentOpener != null
 
     // -- shared -------------------------------------------------------------
 
@@ -761,7 +629,7 @@ class AccountHubViewModel(
         sendEffect(AccountHubEffect.Failed(error.localised()))
     }
 
-    // -- seams for SetupSections -------------------------------------------
+    // -- seams for the collaborators ---------------------------------------
 
     internal val repo: AccountHubRepository get() = repository
 
@@ -798,6 +666,13 @@ class AccountHubViewModel(
         notice: String,
     ) = commit(marking, call, done, failed, notice)
 
+    /** The chart collaborator, for the screens that reach into it — the bank editor's code check. */
+    internal val chart: ChartActions get() = chartActions
+
+    internal val reports: ReportActions get() = reportActions
+
+    internal val approvals: ApprovalActions get() = approvalActions
+
     private var localIdCounter = 1
 
     private companion object {
@@ -810,15 +685,18 @@ class AccountHubViewModel(
          */
         const val TIMECARD_TOOL_PATH = "/film-tools/timecard"
 
+        /** A department user's "Create PO" — the PO tool's new-order page. */
+        const val PURCHASE_ORDER_NEW_PATH = "/film-tools/purchase-order/new"
+
         const val SEARCH_DEBOUNCE_MS = 300L
 
         /**
          * How long the setup spinner runs.
          *
-         * The eight slice fetches land independently and any one of them may
-         * fail; a counter would have to be unwound correctly in every failure
-         * path, and a spinner that never stops is worse than one that stops
-         * a moment early over data that is already on screen.
+         * The slice fetches land independently and any one of them may fail;
+         * a counter would have to be unwound correctly in every failure path,
+         * and a spinner that never stops is worse than one that stops a moment
+         * early over data that is already on screen.
          */
         const val LOAD_SETTLE_MS = 400L
     }

@@ -116,8 +116,26 @@ fun date(millis: Long?): String = EpochDate.date(millis).ifEmpty { "—" }
 /** `•••• 4821`, the way a card is named everywhere it appears. */
 fun cardLabel(card: ExpenseCard): String =
     card.lastFour?.takeIf { it.isNotBlank() }?.let { "•••• $it" }
-        ?: card.issuer?.takeIf { it.isNotBlank() }
-        ?: "Card ${card.id.take(CARD_ID_FALLBACK)}"
+        ?: card.issuer?.takeIf { it.readsAsAName() }
+        ?: "Card"
+
+/**
+ * Whether a string is something to show a person, or a key to look one up by.
+ *
+ * `card_issuer` holds a provider **id** on this production's cards — seen live
+ * as `fd82c1a1-d819-458a-8ed7-…` printed under the card number — so a value
+ * that is only hex and dashes is not an issuer name and must not be drawn as
+ * one. An identifier on screen is meaningless to everyone who sees it and
+ * reads as corruption.
+ */
+internal fun String.readsAsAName(): Boolean {
+    val value = trim()
+    if (value.isEmpty()) return false
+    if (value.length < IDENTIFIER_LENGTH) return true
+    return !value.all { it.isHexOrDash() }
+}
+
+private fun Char.isHexOrDash(): Boolean = isDigit() || this in HEX_LETTERS || this == '-'
 
 /**
  * A card drawn as a card.
@@ -131,6 +149,10 @@ fun CardFace(
     card: ExpenseCard,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    /** The issuer's name, where the card carries only its id. */
+    issuer: String? = null,
+    /** The holder's name, resolved through the crew; see `CardUiState.holderName`. */
+    holder: String? = null,
 ) {
     val colors = ZillitTheme.colors
     Column(
@@ -148,7 +170,8 @@ fun CardFace(
                 ZillitText(text = cardLabel(card), style = ZillitTheme.typography.titleSmall, maxLines = 1)
                 ZillitText(
                     text = listOfNotNull(
-                        card.issuer?.takeIf { it.isNotBlank() },
+                        issuer?.takeIf { it.isNotBlank() }
+                            ?: card.issuer?.takeIf { it.readsAsAName() },
                         card.type.label,
                     ).joinToString(" · "),
                     style = ZillitTheme.typography.bodySmall,
@@ -173,7 +196,8 @@ fun CardFace(
                     )
                 }
                 ZillitText(
-                    text = card.holderName.ifBlank { "Unassigned" },
+                    text = holder?.takeIf { it.isNotBlank() && it != "—" }
+                        ?: card.holderName.ifBlank { "Unassigned" },
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textSecondary,
                     maxLines = 1,
@@ -188,7 +212,8 @@ fun CardFace(
     }
 }
 
-private const val CARD_ID_FALLBACK = 6
+private const val IDENTIFIER_LENGTH = 12
+private val HEX_LETTERS = 'a'..'f'
 private const val NEARLY_SPENT = 0.85f
 private val HAIRLINE = 1.dp
 private val METER_HEIGHT = 7.dp

@@ -36,8 +36,10 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.feature.costreport.domain.CrDates
 import com.zillit.desktop.feature.costreport.domain.CrFormat
+import com.zillit.desktop.feature.costreport.domain.CrNominal
 import com.zillit.desktop.feature.costreport.domain.LedgerItem
 import com.zillit.desktop.feature.costreport.domain.LedgerType
+import com.zillit.desktop.feature.costreport.domain.isInternalAccountKey
 
 private val DIALOG_WIDTH = 1040.dp
 private val DATE_WIDTH: Dp = 96.dp
@@ -47,21 +49,28 @@ private val PARTY_WIDTH: Dp = 160.dp
 private val CODE_WIDTH: Dp = 80.dp
 private val AMOUNT_WIDTH: Dp = 110.dp
 
-/** The bottom sheet's desktop shape: a dialog listing the account's line items, actuals then commits. */
+/**
+ * The web's ledger bottom sheet, as a dialog: the account's line items,
+ * actuals then commits, each group with the server's own subtotal.
+ *
+ * An internal bucket key is an identity, never something to read — the code
+ * pill and the Code column show `-` for those, as the worksheet row does. A
+ * mis-coded account ("art_4110") still shows, so it can be traced.
+ */
 @Composable
-internal fun LedgerDialog(view: LedgerView, onEvent: (CostReportEvent) -> Unit) {
+internal fun LedgerDialog(view: LedgerView, onClose: () -> Unit) {
     val colors = ZillitTheme.colors
     val result = view.result
+    val code = ledgerCode(view.nominal.apiCode)
     ZillitDialogShell(
-        title = "${view.nominal.apiCode}  ${result?.name ?: view.nominal.name}",
+        title = "$code  ${result?.name ?: view.nominal.name}",
         subtitle = view.subtitle,
-        onDismiss = { onEvent(CostReportEvent.CloseLedger) },
+        onDismiss = onClose,
         visible = true,
         width = DIALOG_WIDTH,
         scrollable = false,
         actions = {
-            ZillitButton(text = "Close", onClick = { onEvent(CostReportEvent.CloseLedger) },
-                variant = ButtonVariant.Tertiary)
+            ZillitButton(text = "Close", onClick = onClose, variant = ButtonVariant.Tertiary)
         },
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
@@ -74,21 +83,32 @@ internal fun LedgerDialog(view: LedgerView, onEvent: (CostReportEvent) -> Unit) 
         }
         view.error?.let { ZillitNotice(text = it, tone = StatusTone.Rejected) }
         when {
-            view.loading -> Box(
+            view.loading -> Column(
                 modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.xl),
-                contentAlignment = Alignment.Center,
-            ) { ZillitSpinner() }
-            result == null || result.items.isEmpty() -> ZillitText(
-                text = "No line items for this account.",
-                style = ZillitTheme.typography.bodyMedium,
-                color = colors.textMuted,
-            )
-            else -> LedgerTable(view, result.actuals, result.commits)
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                ZillitSpinner()
+                ZillitText(
+                    "Loading account activity…",
+                    style = ZillitTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                )
+            }
+            result == null || result.items.isEmpty() -> if (view.error == null) {
+                ZillitText(
+                    text = "No entries found",
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = colors.textMuted,
+                )
+            }
+            else -> LedgerTable(view, result)
         }
         result?.let {
+            val count = it.count.takeIf { n -> n > 0 } ?: it.items.size
             ZillitText(
-                text = "${it.items.size} line items · Total: " +
-                    CrFormat.money(it.items.sumOf { i -> i.amount }, view.symbol),
+                text = "$count line item${if (count == 1) "" else "s"} · Total: " +
+                    CrFormat.money(it.total.takeIf { t -> t != 0.0 } ?: it.items.sumOf { i -> i.amount }, view.symbol),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
             )
@@ -96,19 +116,42 @@ internal fun LedgerDialog(view: LedgerView, onEvent: (CostReportEvent) -> Unit) 
     }
 }
 
+/** The code a person reads: `-` for an internal bucket key. */
+internal fun ledgerCode(code: String?): String =
+    if (code.isNullOrBlank() || isInternalAccountKey(code)) CrNominal.BUCKET_CODE else code
+
 @Composable
-private fun ColumnScope.LedgerTable(view: LedgerView, actuals: List<LedgerItem>, commits: List<LedgerItem>) {
+private fun ColumnScope.LedgerTable(
+    view: LedgerView,
+    result: com.zillit.desktop.feature.costreport.domain.LedgerResult,
+) {
+    val actuals = result.actuals
+    val commits = result.commits
     Column(Modifier.fillMaxWidth().weight(1f, fill = false)) {
         LedgerHeaderRow()
         ZillitDivider()
         LazyColumn(Modifier.fillMaxWidth()) {
             if (actuals.isNotEmpty()) {
-                item { GroupRow(LedgerType.Actuals.label, actuals, view.symbol) }
-                items(actuals) { LedgerRow(it, view.symbol) }
+                item {
+                    GroupRow(
+                        LedgerType.Actuals.label,
+                        result.actualsCount ?: actuals.size,
+                        result.actualsToDate,
+                        view.symbol,
+                    )
+                }
+                items(actuals) { LedgerRow(it, view) }
             }
             if (commits.isNotEmpty()) {
-                item { GroupRow(LedgerType.Commits.label, commits, view.symbol) }
-                items(commits) { LedgerRow(it, view.symbol) }
+                item {
+                    GroupRow(
+                        LedgerType.Commits.label,
+                        result.commitsCount ?: commits.size,
+                        result.commitments,
+                        view.symbol,
+                    )
+                }
+                items(commits) { LedgerRow(it, view) }
             }
         }
     }
@@ -134,7 +177,7 @@ private fun LedgerHeaderRow() {
 }
 
 @Composable
-private fun GroupRow(label: String, items: List<LedgerItem>, symbol: String) {
+private fun GroupRow(label: String, count: Int, total: Double, symbol: String) {
     val colors = ZillitTheme.colors
     Row(
         modifier = Modifier.fillMaxWidth().background(colors.accentSoft).padding(
@@ -142,10 +185,10 @@ private fun GroupRow(label: String, items: List<LedgerItem>, symbol: String) {
         ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitText(text = "$label · ${items.size}", style = ZillitTheme.typography.label,
+        ZillitText(text = "$label · $count item${if (count == 1) "" else "s"}", style = ZillitTheme.typography.label,
             color = colors.accentText, modifier = Modifier.weight(1f))
         ZillitText(
-            text = CrFormat.money(items.sumOf { it.amount }, symbol),
+            text = CrFormat.money(total, symbol),
             style = ZillitTheme.typography.numeric.copy(fontWeight = FontWeight.SemiBold),
             color = colors.accentText,
             textAlign = TextAlign.End,
@@ -155,7 +198,8 @@ private fun GroupRow(label: String, items: List<LedgerItem>, symbol: String) {
 }
 
 @Composable
-private fun LedgerRow(item: LedgerItem, symbol: String) {
+private fun LedgerRow(item: LedgerItem, view: LedgerView) {
+    val symbol = view.symbol
     val colors = ZillitTheme.colors
     val style = ZillitTheme.typography.bodySmall
     Row(
@@ -172,7 +216,12 @@ private fun LedgerRow(item: LedgerItem, symbol: String) {
         ZillitText(text = item.description.ifBlank { "—" }, style = style, color = colors.textPrimary, maxLines = 1,
             modifier = Modifier.weight(1f).padding(horizontal = ZillitTheme.spacing.xs))
         Cell(item.vendor.ifBlank { "—" }, PARTY_WIDTH, style, colors.textSecondary)
-        Cell(item.account ?: "—", CODE_WIDTH, ZillitTheme.typography.numeric, colors.textSecondary)
+        Cell(
+            ledgerCode(item.account ?: view.nominal.apiCode),
+            CODE_WIDTH,
+            ZillitTheme.typography.numeric,
+            colors.textSecondary,
+        )
         Cell(
             text = CrFormat.money(item.amount, symbol),
             width = AMOUNT_WIDTH,

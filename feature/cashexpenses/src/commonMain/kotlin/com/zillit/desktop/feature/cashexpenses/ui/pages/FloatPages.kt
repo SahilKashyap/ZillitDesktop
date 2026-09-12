@@ -37,6 +37,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashFormFields
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
 import com.zillit.desktop.feature.cashexpenses.ui.CashPrompt
 import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
+import com.zillit.desktop.feature.cashexpenses.ui.personColumn
 import com.zillit.desktop.feature.cashexpenses.ui.ConfirmAction
 import com.zillit.desktop.feature.cashexpenses.ui.FloatRequestDraft
 import com.zillit.desktop.feature.cashexpenses.ui.FloatStatusPill
@@ -469,7 +470,11 @@ private fun topUpActionColumn(
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
 private fun topUpColumns(showHolder: Boolean): List<TableColumn<CashTopUp>> = buildList {
     if (showHolder) {
-        add(textColumn("Holder", ColumnWidth.Weight(1.3f)) { it.holderName.ifBlank { it.userId } })
+        add(
+            personColumn("Holder", ColumnWidth.Weight(1.6f), userId = { it.userId }) {
+                it.holderName.ifBlank { it.userId }
+            },
+        )
     }
     add(textColumn("Float", ColumnWidth.Weight(1f), muted = true) { it.floatRequestNumber ?: "—" })
     add(textColumn("Requested", ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) })

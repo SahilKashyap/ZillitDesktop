@@ -6,7 +6,9 @@ import com.zillit.desktop.feature.accounthub.domain.Company
 import com.zillit.desktop.feature.accounthub.domain.CurrencySettings
 import com.zillit.desktop.feature.accounthub.domain.IsoDate
 import com.zillit.desktop.feature.accounthub.domain.NewVendor
+import com.zillit.desktop.feature.accounthub.domain.Vendor
 import com.zillit.desktop.feature.accounthub.domain.VendorAddress
+import com.zillit.desktop.feature.accounthub.domain.VendorPhone
 import com.zillit.desktop.feature.accounthub.domain.ProjectCurrency
 import com.zillit.desktop.feature.accounthub.domain.SortCode
 import com.zillit.desktop.feature.accounthub.domain.TaxType
@@ -227,13 +229,13 @@ class SetupRulesTest {
      */
     @Test
     fun `a vendor needs every field the service requires`() {
-        assertEquals("Give the vendor a name.", NewVendor().validationError())
+        assertEquals("Vendor name is required", NewVendor().validationError())
         assertEquals(
-            "Name a contact person.",
+            "Contact person is required",
             NewVendor(name = "Grip Co").validationError(),
         )
         assertEquals(
-            "Give the vendor an email address.",
+            "Email is required",
             NewVendor(name = "Grip Co", contactPerson = "Ada").validationError(),
         )
     }
@@ -265,9 +267,9 @@ class SetupRulesTest {
             address = VendorAddress(line1 = "12 Wardour Street", city = "London"),
         )
 
-        assertEquals("Give the vendor a postcode.", base.validationError())
+        assertEquals("Postal code is required", base.validationError())
         assertEquals(
-            "Give the vendor a country.",
+            "Country is required",
             base.copy(address = base.address.copy(postalCode = "W1D 6QF", country = ""))
                 .validationError(),
         )
@@ -317,11 +319,37 @@ class SetupRulesTest {
         assertNull(base.copy(phoneNumber = "7700900123").validationError())
     }
 
-    /** Country is pre-filled because it is the field most often left blank. */
+    /**
+     * ZL-20520: a new vendor picks nothing for the user. A pre-filled +44 was
+     * saved onto vendors whose phones are elsewhere, and a pre-filled country
+     * made "Country is required" unreachable.
+     */
     @Test
-    fun `a new vendor starts with a country and a dial code`() {
-        assertEquals(NewVendor.DEFAULT_COUNTRY, NewVendor().address.country)
-        assertEquals(NewVendor.DEFAULT_DIAL_CODE, NewVendor().phoneCountryCode)
+    fun `a new vendor starts with no country and no dial code`() {
+        assertEquals("", NewVendor().address.country)
+        assertEquals("", NewVendor().phoneCountryCode)
+        assertEquals(
+            "Country is required",
+            NewVendor(
+                name = "Grip Co",
+                contactPerson = "Ada",
+                email = "hire@grip.co.uk",
+                address = VendorAddress(line1 = "12 Wardour Street", city = "London", postalCode = "W1D 6QF"),
+            ).validationError(),
+        )
+    }
+
+    /** Editing a vendor saved without a dial code must not quietly add one. */
+    @Test
+    fun `editing a vendor keeps its own dial code, or none`() {
+        val codeless = Vendor(id = "v1", name = "Grip Co", phone = VendorPhone(countryCode = "", number = "7700900123"))
+
+        assertEquals("", NewVendor.from(codeless).phoneCountryCode)
+        assertEquals("", NewVendor.from(codeless.copy(phone = null)).phoneCountryCode)
+        assertEquals(
+            "+91",
+            NewVendor.from(codeless.copy(phone = VendorPhone("+91", "9876543210"))).phoneCountryCode,
+        )
     }
 
     /** No number typed means no phone object — not an empty pair. */

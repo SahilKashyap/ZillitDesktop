@@ -1,10 +1,7 @@
 package com.zillit.desktop.feature.accounthub
 
-import com.zillit.desktop.feature.accounthub.data.BibleAccountDto
-import com.zillit.desktop.feature.accounthub.data.BibleReportDto
 import com.zillit.desktop.feature.accounthub.data.PeriodLockDto
 import com.zillit.desktop.feature.accounthub.data.TrialBalanceRowDto
-import com.zillit.desktop.feature.accounthub.domain.LedgerSource
 import com.zillit.desktop.feature.accounthub.domain.TrialBalance
 import com.zillit.desktop.feature.accounthub.domain.TrialBalanceRow
 import kotlinx.serialization.json.Json
@@ -38,20 +35,20 @@ class TrialBalanceTest {
         ending = ending,
     )
 
-    /** Expense reads last; everything else alphabetically by label. */
+    /** Expense reads first, as the web draws it; everything else alphabetically by label. */
     @Test
-    fun `expense is pinned to the bottom`() {
+    fun `expense is pinned to the top`() {
         val report = TrialBalance(
             listOf(
-                row("1", "expense"),
-                row("2", "liability"),
-                row("3", "asset"),
+                row("1", "liability"),
+                row("2", "asset"),
+                row("3", "expense"),
                 row("4", "income"),
             ),
         )
 
         assertEquals(
-            listOf("Asset", "Income", "Liability", "Expense"),
+            listOf("Expense", "Asset", "Income", "Liability"),
             report.groups.map { it.label },
         )
     }
@@ -178,92 +175,4 @@ class PeriodLockTest {
     }
 }
 
-/**
- * The closeout bible.
- *
- * The report a production's books are checked against line by line. Two things
- * must not go wrong: a failed bucket must be visible, and the uncoded pile
- * must be named rather than shown as the sentinel it arrives as.
- */
-class BibleReportTest {
-
-    private val json = Json { ignoreUnknownKeys = true }
-
-    /** The uncoded bucket is real money, and gets a real name. */
-    @Test
-    fun `the uncoded sentinel is named, not printed`() {
-        val account = json.decodeFromString(
-            BibleAccountDto.serializer(),
-            """{"code":"__uncoded__","name":"__uncoded__","total":420.5,"transactions":[]}""",
-        ).toDomain()
-
-        assertTrue(account.isUncoded)
-        assertEquals("Uncoded", account.displayCode)
-        assertEquals("", account.displayName, "the sentinel is not a name either")
-        assertEquals(420.5, account.total)
-    }
-
-    /**
-     * A bucket the server could not read is surfaced.
-     *
-     * A total that quietly omits payroll is worse than one that says payroll
-     * is missing — this is what a production closes its books against.
-     */
-    @Test
-    fun `a failed bucket is carried, not swallowed`() {
-        val report = json.decodeFromString(
-            BibleReportDto.serializer(),
-            """{"accounts":[],"errors":{"payroll":"timed out"}}""",
-        ).toDomain()
-
-        assertEquals(mapOf("payroll" to "timed out"), report.errors)
-    }
-
-    /**
-     * The grand total is the server's where it gives one.
-     *
-     * Summing the accounts would silently report a smaller book whenever a
-     * bucket failed, because those accounts are simply absent.
-     */
-    @Test
-    fun `the server's total wins over a client-side sum`() {
-        val given = json.decodeFromString(
-            BibleReportDto.serializer(),
-            """{"grand_total":1000,"accounts":[{"code":"100","total":250}]}""",
-        ).toDomain()
-        assertEquals(1000.0, given.grandTotal)
-
-        val derived = json.decodeFromString(
-            BibleReportDto.serializer(),
-            """{"accounts":[{"code":"100","total":250},{"code":"200","total":250}]}""",
-        ).toDomain()
-        assertEquals(500.0, derived.grandTotal, "only summed when the server gives no total")
-    }
-
-    @Test
-    fun `transactions read their references and their original currency`() {
-        val report = json.decodeFromString(
-            BibleReportDto.serializer(),
-            """{"currency":"GBP","accounts":[{"code":"7100","name":"Camera hire","total":-50,
-               "transactions":[{"src":"invoice","eff_date":"1750000000000","invoice_number":"INV-9",
-               "po_number":"PO-3","vendor":"Panavision","description":"Lens set","currency":"USD",
-               "amount":-50}]}]}""",
-        ).toDomain()
-
-        val txn = report.accounts.single().transactions.single()
-        assertEquals("INV-9", txn.invoiceNumber)
-        assertEquals("PO-3", txn.purchaseOrderNumber)
-        assertEquals("Panavision", txn.party)
-        assertEquals("USD", txn.originalCurrency, "what it was raised in")
-        assertEquals("GBP", report.currencyCode, "what the amounts were converted to")
-        assertEquals(1, report.transactionCount)
-    }
-
-    /** A source the server sends and this client does not model still reads. */
-    @Test
-    fun `an unmodelled source is humanised rather than hidden`() {
-        assertEquals("Invoice", LedgerSource.labelFor("invoice"))
-        assertEquals("Manual Journal", LedgerSource.labelFor("manual_je"))
-        assertEquals("Something new", LedgerSource.labelFor("something_new"))
-    }
-}
+// The bible's tests are in BibleReportTest.kt.

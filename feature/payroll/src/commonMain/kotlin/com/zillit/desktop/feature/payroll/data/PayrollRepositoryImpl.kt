@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.payroll.data
 
+import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.currencyCode
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.common.toAmount
 import com.zillit.desktop.core.config.AppConfig
@@ -266,6 +268,7 @@ internal data class LineDto(
     @SerialName("department_name") val departmentName: String? = null,
     @SerialName("designation") val designation: String? = null,
     @SerialName("status") val status: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("basic_pay") val basicPay: String? = null,
     @SerialName("overtime_pay") val overtimePay: String? = null,
@@ -333,7 +336,8 @@ internal data class BankAccountDto(
     @SerialName("name") val name: String? = null,
     @SerialName("account_name") val accountName: String? = null,
     @SerialName("account_number") val accountNumber: String? = null,
-    @SerialName("currency") val currency: String? = null,
+    /** A code, or the whole currency object — see [currencyCode]. */
+    @SerialName("currency") val currency: JsonElement? = null,
 ) {
     fun toDomain(): BankAccount? {
         val identifier = (id ?: underscoreId)?.takeIf { it.isNotBlank() } ?: return null
@@ -343,7 +347,7 @@ internal data class BankAccountDto(
                 ?: accountName?.takeIf { it.isNotBlank() }
                 ?: "Account $identifier",
             accountNumber = accountNumber?.takeIf { it.isNotBlank() },
-            currency = currency,
+            currency = currency.currencyCode(),
         )
     }
 }
@@ -380,6 +384,7 @@ internal data class AllocationDto(
 internal data class PayslipDto(
     @SerialName("crew_name") val crewName: String? = null,
     @SerialName("full_name") val fullName: String? = null,
+    @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
     @SerialName("lines") val lines: List<PayslipLineDto>? = null,
     @SerialName("gross") val gross: String? = null,

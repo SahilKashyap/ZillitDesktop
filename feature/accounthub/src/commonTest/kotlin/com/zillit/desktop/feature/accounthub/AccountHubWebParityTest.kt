@@ -5,6 +5,7 @@ import com.zillit.desktop.feature.accounthub.data.AllowancesRentalsDto
 import com.zillit.desktop.feature.accounthub.data.InvoicesSetupDto
 import com.zillit.desktop.feature.accounthub.data.PayrollSettingsDto
 import com.zillit.desktop.feature.accounthub.data.PurchaseOrderSetupDto
+import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.domain.AgreementUploads
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.InvoiceAlert
@@ -12,6 +13,7 @@ import com.zillit.desktop.feature.accounthub.domain.InvoiceTeamMember
 import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
 import com.zillit.desktop.feature.accounthub.domain.PayBasis
 import com.zillit.desktop.feature.accounthub.domain.RunAuthorisationTier
+import com.zillit.desktop.feature.accounthub.domain.SetupUpload
 import com.zillit.desktop.feature.accounthub.domain.PoDescriptionFormat
 import com.zillit.desktop.feature.accounthub.domain.PoSplitType
 import com.zillit.desktop.feature.accounthub.domain.PurchaseOrderSetup
@@ -23,6 +25,7 @@ import com.zillit.desktop.feature.accounthub.ui.VendorsState
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -221,6 +224,40 @@ class AccountHubWebParityTest {
 
         assertEquals(PoDescriptionFormat.DayMonthItem, odd.descriptionFormat)
         assertEquals(PoSplitType.Weekly, odd.splitType)
+    }
+
+    /** The three the web offers, with its labels; a stored CUSTOM still decodes but is not offered. */
+    @Test
+    fun `the offered description formats are the web's three`() {
+        assertEquals(
+            listOf("DDMON → ITEM", "DDMM → ITEM", "ITEM → DDMON"),
+            PoDescriptionFormat.offered.map { it.label },
+        )
+        assertEquals(PoDescriptionFormat.Custom, PoDescriptionFormat.from("CUSTOM"))
+        assertTrue(PoDescriptionFormat.Custom !in PoDescriptionFormat.offered)
+    }
+
+    /** The section chips count what the web's `count` fields count. */
+    @Test
+    fun `the section chips follow the web`() {
+        val bare = PurchaseOrderSetup()
+        assertEquals(3, bare.rentalCount, "auto-split on, plus the two always-on rules")
+        assertEquals(2, bare.copy(autoSplitRentals = false).rentalCount)
+        assertEquals(0, bare.issuanceCount)
+        val issued = bare.copy(numberPrefix = "QW", termsDocument = AgreementDocument(name = "t.pdf"))
+        assertEquals(2, issued.issuanceCount)
+    }
+
+    /** The terms document takes what the web's `validateTermsFile` takes, and refuses in its words. */
+    @Test
+    fun `the terms document accepts the web's types and size`() {
+        val terms = SetupUpload.PurchaseOrderTerms
+        assertNull(terms.refuse("terms.docx", 1_000))
+        assertNull(terms.refuse("Terms.PDF", 1_000))
+        assertEquals("Only PDF, DOC or DOCX files are accepted", terms.refuse("terms.png", 1_000))
+        assertEquals("File must be 10MB or smaller", terms.refuse("terms.pdf", 11L * 1024 * 1024))
+        assertTrue(!AgreementDocument(name = "t.pdf").openable, "the web refuses to open one without its store keys")
+        assertTrue(AgreementDocument(name = "t.pdf", media = "m", bucket = "b", region = "r").openable)
     }
 
     /** The prefix is normalised on the way in as well as on the way out. */

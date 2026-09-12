@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.costreport.domain
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import kotlinx.coroutines.flow.Flow
@@ -82,13 +83,29 @@ data class BudgetVersion(
 }
 
 /** A production company (`project-settings/companies`). */
-data class CrCompany(val id: String, val name: String)
+data class CrCompany(val id: String, val name: String, val country: String = "") {
+    /** "Name (Country)", as the analytics entity filter names a company. */
+    val labelWithCountry: String get() = if (country.isBlank()) name else "$name ($country)"
+}
 
 /** A currency the production runs in, or one from the preset catalogue. */
-data class CrCurrency(val code: String, val name: String = "", val symbol: String = "")
+data class CrCurrency(
+    val code: String,
+    val name: String = "",
+    val symbol: String = "",
+    /** Units of this currency per one of the project default; null when the project list has none. */
+    val exr: Double? = null,
+)
 
 /** `project-settings/project-currencies`: the selected currencies and the default. */
-data class CurrencyOptions(val currencies: List<CrCurrency> = emptyList(), val defaultCode: String? = null)
+data class CurrencyOptions(val currencies: List<CrCurrency> = emptyList(), val defaultCode: String? = null) {
+    /** Each currency's `exr`, with the project default forced to 1. */
+    val rates: CurrencyRates
+        get() = CurrencyRates(
+            currencies.mapNotNull { c -> c.exr?.let { c.code to it } }.toMap() +
+                listOfNotNull(defaultCode?.let { it to 1.0 }),
+        )
+}
 
 /**
  * One aggregated line of `/live` or of a snapshot — one per (account, department)
@@ -111,6 +128,10 @@ data class CostLine(
     val efc: Double? = null,
     val variance: Double? = null,
     val level: String? = null,
+    /** The budget line's own id — what tells two contractual rows of one name apart. */
+    val id: String? = null,
+    /** `__contractual__` on a budget line with no COA code; null on everything else. */
+    val sectionId: String? = null,
 )
 
 /** `GET /live`. */
@@ -349,7 +370,7 @@ data class CostReportViewer(
     }
 }
 
-/** Every read the tool makes: seven GETs across three hosts. */
+/** Every call the tool makes, across three hosts. */
 interface CostReportRepository {
     /**
      * Socket announcements about the report — see [CostReportSync] for the
@@ -383,14 +404,52 @@ interface CostReportRepository {
 
     suspend fun snapshot(id: String): ZillitResult<SnapshotDetail>
 
-    /** `/account-line-items` for a real COA [code] (never a `.direct` or `-` row). */
+    /** `/account-line-items` for a COA code (`.direct` stripped) or a bucket's own key. */
     suspend fun accountLineItems(
         code: String,
         type: LedgerType?,
         source: String?,
         currency: String?,
     ): ZillitResult<LedgerResult>
+
+    // -- the accountant's worksheet ---------------------------------------------
+    //
+    // Defaulted so a read-only host (and the read-only tests) need not implement
+    // writes it never makes; the accountant's host overrides every one.
+
+    /** `GET /weekly-etc/versions?week_ending=YYYY-MM-DD`. */
+    suspend fun etcVersions(weekEnding: String): ZillitResult<List<EtcVersion>> = unsupported()
+
+    /** `GET /weekly-etc/versions/{id}` — the version's override rows. */
+    suspend fun etcVersion(versionId: String): ZillitResult<List<EtcVersionLine>> = unsupported()
+
+    /** `POST /weekly-etc/versions`; answers the new version's id when the server sends it. */
+    suspend fun createEtcVersion(
+        weekEnding: String,
+        label: String,
+        lines: List<EtcVersionLine>,
+        currency: String?,
+    ): ZillitResult<CrWrite<String?>> = unsupported()
+
+    /** `PATCH /weekly-etc/versions/{id}` — replaces the version's lines in place. */
+    suspend fun updateEtcVersion(
+        versionId: String,
+        lines: List<EtcVersionLine>,
+        currency: String?,
+    ): ZillitResult<CrWrite<Unit>> = unsupported()
+
+    /** `GET /lock-period`. */
+    suspend fun lockState(): ZillitResult<CrLockState> = unsupported()
+
+    /** `POST /lock-period { as_of }` — forward only; the server refuses a backwards move with 409. */
+    suspend fun lockPeriod(asOfMs: Long): ZillitResult<CrWrite<Unit>> = unsupported()
+
+    /** `POST /snapshots` — a daily, weekly or custom post of the report. */
+    suspend fun postSnapshot(post: SnapshotPost): ZillitResult<CrWrite<SnapshotHeader?>> = unsupported()
 }
+
+private fun <T> unsupported(): ZillitResult<T> =
+    ZillitResult.Failure(ZillitError.Unknown("Not available from this host."))
 
 /**
  * The host's binary POST: `snapshots/{id}/export/{format}` answers a raw
@@ -399,6 +458,14 @@ interface CostReportRepository {
  */
 interface CostReportExporter {
     suspend fun export(snapshotId: String, format: ExportFormat, body: JsonObject): ZillitResult<ByteArray>
+
+    /**
+     * `POST /export/{format}` — the worksheet as it stands, typed overrides
+     * included, rather than a posted snapshot. Defaulted for hosts that only
+     * export snapshots.
+     */
+    suspend fun exportReport(format: ExportFormat, body: JsonObject): ZillitResult<ByteArray> =
+        ZillitResult.Failure(ZillitError.Unknown("Not available from this host."))
 }
 
 /** The host's Downloads seam. */
