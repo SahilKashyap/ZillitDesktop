@@ -88,6 +88,67 @@ data class LinkedPo(
 )
 
 /**
+ * A linked order as `GET /:id/linked-pos` answers it — enough to check the
+ * invoice against without leaving the review.
+ *
+ * The list rows on the invoice itself carry only an id, a number and a total;
+ * this is the order's own record, so the two can be compared line for line.
+ */
+data class LinkedPoDetail(
+    val poId: String,
+    val poNumber: String = "",
+    val vendorName: String = "",
+    val description: String = "",
+    val status: String = "",
+    val currency: String = "",
+    val grossTotal: Double? = null,
+    val netTotal: Double? = null,
+    val raisedBy: String = "",
+    val raisedAtMs: Long? = null,
+    val lines: List<PoLine> = emptyList(),
+) {
+    val label: String get() = poNumber.ifBlank { "PO-" + poId.take(5) }
+}
+
+/** One line of a linked order. */
+data class PoLine(
+    val description: String = "",
+    val quantity: Double? = null,
+    val unitPrice: Double? = null,
+    val total: Double? = null,
+)
+
+/**
+ * One purchase order the server offers as a match — the web's
+ * `po-suggestions` rows.
+ *
+ * [score] and [confidence] are the server's own judgement and ride back out
+ * on the match so the link records why it was made.
+ */
+data class PoSuggestion(
+    val poId: String,
+    val poNumber: String = "",
+    val reference: String = "",
+    val vendorName: String = "",
+    val grossAmount: Double? = null,
+    val currency: String = "",
+    val score: Double? = null,
+    val confidence: String = "",
+) {
+    val label: String get() = poNumber.ifBlank { reference }.ifBlank { "PO-" + poId.take(5) }
+}
+
+/** The two lists the route answers: this vendor's orders, and the reader's own. */
+data class PoSuggestions(
+    val vendorPos: List<PoSuggestion> = emptyList(),
+    val userPos: List<PoSuggestion> = emptyList(),
+) {
+    val total: Int get() = vendorPos.size + userPos.size
+
+    val isEmpty: Boolean get() = total == 0
+}
+
+/**
  * The stored file, in the shape the invoices service keeps and echoes.
  * `contentType` is a CATEGORY (`document`, `image`), not a MIME type; the
  * extension in `contentSubtype` is what says how to render it.
@@ -137,6 +198,13 @@ data class Vendor(
     val address: String = "",
     val phone: String = "",
     val email: String = "",
+    /** The Vendors page's columns: who they are, how they are paid, and whether that is on file. */
+    val country: String = "",
+    val taxNumber: String = "",
+    val type: String = "",
+    val bankName: String = "",
+    val defaultNominalCode: String = "",
+    val currency: String = "",
 ) {
     /** `net_30` → "30 days", the SLA column. */
     val slaLabel: String?
@@ -229,6 +297,8 @@ data class Invoice(
     val ocrConfidence: Double? = null,
     /** The creator. */
     val userId: String = "",
+    /** Whose desk this invoice is on during entry; blank = nobody's. */
+    val assignedTo: String = "",
     val createdAtMs: Long? = null,
     val updatedBy: String = "",
     val updatedAtMs: Long? = null,

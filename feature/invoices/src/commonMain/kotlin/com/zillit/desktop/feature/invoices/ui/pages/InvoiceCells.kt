@@ -3,6 +3,16 @@
 
 package com.zillit.desktop.feature.invoices.ui.pages
 
+import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
+import com.zillit.desktop.feature.invoices.domain.InvoiceExportFormat
+import com.zillit.desktop.feature.invoices.domain.InvoiceExport
+import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -27,6 +37,7 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceBadge
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceRules
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
+import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 
 internal fun BadgeTone.statusTone(): StatusTone = when (this) {
@@ -115,15 +126,16 @@ internal fun LoadingRow() {
     }
 }
 
+/** "12 invoices", or whatever the page is counting — a creditor row is not an invoice. */
 @Composable
-internal fun CountLine(count: Int, extra: (@Composable () -> Unit)? = null) {
+internal fun CountLine(count: Int, noun: String = "invoice", extra: (@Composable () -> Unit)? = null) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitText(
-            text = "$count invoice${if (count == 1) "" else "s"}",
+            text = "$count $noun${if (count == 1) "" else "s"}",
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
         )
@@ -132,6 +144,68 @@ internal fun CountLine(count: Int, extra: (@Composable () -> Unit)? = null) {
 }
 
 /** Column weights, relative to the plain 1f text columns. */
+/**
+ * The pay-method pill's colour — the web's own mapping.
+ *
+ * Wire stands out because it leaves the building fastest and is hardest to
+ * recall; cheque is green because it is printed, not sent.
+ */
+internal fun PayMethod.tone(): StatusTone = when (this) {
+    PayMethod.Wire -> StatusTone.Rejected
+    PayMethod.Cheque -> StatusTone.Done
+    else -> StatusTone.Progress
+}
+
+/**
+ * A table in its own titled card — the web's `Panel`.
+ *
+ * Every list on the web sits inside one: a white card with a hairline border,
+ * an accented icon, a bold title and the row count on the right. A bare table
+ * on the page background is the single most visible way this port stopped
+ * looking like the web.
+ */
+@Composable
+internal fun ColumnScope.TableCard(
+    title: String,
+    icon: ImageVector,
+    meta: String? = null,
+    action: (@Composable RowScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    ZillitSectionCard(
+        modifier = Modifier.weight(1f).fillMaxWidth(),
+        title = title,
+        icon = icon,
+        meta = meta,
+        padded = false,
+        action = action,
+        content = content,
+    )
+}
+
+/**
+ * The web's export menu: the same list as PDF or as a spreadsheet.
+ *
+ * Two buttons rather than a menu — there are only ever two formats, and a
+ * menu to choose between two things is a click nobody needs.
+ */
+@Composable
+internal fun ExportActions(export: InvoiceExport, busy: Boolean, onEvent: (InvoicesEvent) -> Unit) {
+    InvoiceExportFormat.entries.forEach { format ->
+        ZillitButton(
+            text = format.label,
+            onClick = { onEvent(InvoicesEvent.Export(export, format)) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            enabled = !busy,
+        )
+    }
+}
+
+/** "12 invoices", "1 vendor" — the count the web prints beside a panel title. */
+internal fun countMeta(count: Int, noun: String = "invoice"): String =
+    "$count $noun" + if (count == 1) "" else "s"
+
 internal const val WEIGHT_NARROW = 1.1f
 internal const val WEIGHT_MEDIUM = 1.3f
 internal const val WEIGHT_WIDE = 1.4f
@@ -141,3 +215,13 @@ internal val PO_WIDTH = 120.dp
 internal val SLA_WIDTH = 80.dp
 internal val ACTIONS_WIDTH = 96.dp
 internal val SEARCH_WIDTH = 260.dp
+
+/** Widths the payments and sales tables share with the register's. */
+internal val TICK_COUNT_WIDTH = 70.dp
+internal val RUN_ACTIONS_WIDTH = 220.dp
+
+/** A muted line of explanation under a control or above a table. */
+@Composable
+internal fun MutedLine(text: String) {
+    ZillitText(text = text, style = ZillitTheme.typography.bodySmall, color = ZillitTheme.colors.textMuted)
+}

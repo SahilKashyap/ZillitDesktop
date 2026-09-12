@@ -11,6 +11,28 @@ data class InvoiceBadge(val label: String, val tone: BadgeTone)
  * do it — the server also enforces, but hiding a button the server would
  * accept is the more common bug.
  */
+/**
+ * Why an invoice was held for query — the web's `HOLD_REASONS`.
+ *
+ * The first entry is its placeholder, so a reason is a real choice; the last
+ * demands the notes that explain it.
+ */
+enum class HoldReason(val label: String) {
+    AdjustmentRequired("Invoice Adjustment Required"),
+    AwaitingCreditNote("Awaiting Credit Note"),
+    PoAmendmentNeeded("PO Amendment Needed"),
+    QueryingAmount("Querying Amount with Vendor"),
+    MissingDocumentation("Missing Supporting Documentation"),
+    TaxQuery("Tax Query"),
+    DuplicateCheck("Duplicate Invoice Check"),
+    AwaitingHodConfirmation("Awaiting HoD Confirmation"),
+    Other("Other (specify in notes)"),
+    ;
+
+    /** The web refuses "Other" with nothing written down. */
+    fun needsNotes(): Boolean = this == Other
+}
+
 object InvoiceRules {
 
     /** The "Approval" column of the department tables. */

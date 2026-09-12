@@ -185,6 +185,7 @@ internal fun parseInvoice(obj: JsonObject?): Invoice? {
         holdNote = obj.text("hold_note"),
         ocrConfidence = obj.number("ocr_confidence"),
         userId = obj.text("user_id", "created_by"),
+        assignedTo = obj.text("assigned_to", "assignedTo"),
         createdAtMs = obj.dateMs("created_at"),
         updatedBy = obj.text("updated_by"),
         updatedAtMs = obj.dateMs("updated_at"),
@@ -300,8 +301,17 @@ internal fun parseVendors(data: JsonElement?): List<Vendor> = rowsOf(data).mapNo
         address = addressText(row["address"]),
         phone = phoneText(row["phone"]),
         email = row.text("email"),
+        country = countryOf(row["address"]).ifBlank { row.text("country") },
+        taxNumber = row.text("vat_number", "tax_number", "tax_id"),
+        type = row.text("vendor_type", "type", "supplier_type"),
+        bankName = row.text("bank_name", "bankName"),
+        defaultNominalCode = row.text("default_nominal_code", "nominal_code", "default_code"),
+        currency = row.text("currency"),
     )
 }
+
+/** The country out of an address object, which is where this service keeps it. */
+internal fun countryOf(e: JsonElement?): String = (e as? JsonObject)?.text("country").orEmpty()
 
 /** `{line1,line2,city,state,postal_code,country}`, the same as a JSON string, or free text. */
 internal fun addressText(e: JsonElement?): String = when (e) {
@@ -337,7 +347,7 @@ internal fun parseBankAccounts(data: JsonElement?): List<BankAccount> = rowsOf(d
 
 // -- lenient primitives ------------------------------------------------------
 
-private fun JsonObject.firstOf(vararg names: String): JsonElement? =
+internal fun JsonObject.firstOf(vararg names: String): JsonElement? =
     names.firstNotNullOfOrNull { name -> this[name]?.takeIf { it !is JsonNull } }
 
 internal fun JsonObject.text(vararg names: String): String = when (val e = firstOf(*names)) {

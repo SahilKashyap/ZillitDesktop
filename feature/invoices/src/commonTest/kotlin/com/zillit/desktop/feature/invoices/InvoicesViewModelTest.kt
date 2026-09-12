@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.invoices
 
+import com.zillit.desktop.feature.invoices.domain.CurrencyRates
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.invoices.domain.Approval
@@ -75,7 +76,7 @@ class InvoicesViewModelTest {
             repository = repo,
             files = files,
             resolveViewer = { viewer },
-            projectCurrency = { "GBP" },
+            projectMoney = { CurrencyRates("GBP") },
             resolveUser = { id -> if (id == "me") "Me Myself" else null },
             departmentName = { id -> if (id == "d-cam") "Camera" else null },
             nowMillis = { NOW },
@@ -171,6 +172,11 @@ class InvoicesViewModelTest {
         val repo = FakeRepo()
         val files = FakeFiles(picked = listOf(PickedInvoiceFile("inv.pdf", "application/pdf", ByteArray(4))))
         val vm = viewModel(repo, files, viewer = accountant)
+        // The landing is the dashboard — the web redirects `/invoices` there —
+        // and it lists nothing, so the register is opened for the first query.
+        assertEquals(emptyList(), repo.queries)
+        vm.onEvent(InvoicesEvent.SelectPage(AccountantPage.Register))
+        advanceUntilIdle()
         assertEquals(listOf(InvoiceQuery()), repo.queries)
 
         vm.onEvent(InvoicesEvent.SelectPage(AccountantPage.Inbox))

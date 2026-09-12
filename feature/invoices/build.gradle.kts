@@ -21,6 +21,11 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
         }
+        jvmMain.dependencies {
+            // The attachment pane renders PDF pages itself; the web uses an
+            // <iframe>, which a Compose window has no equivalent of.
+            implementation(libs.pdfbox)
+        }
         commonTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)
         }

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.invoices
 
+import com.zillit.desktop.feature.invoices.domain.CurrencyRates
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.socket.SocketEventName
@@ -23,6 +24,8 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceViewer
 import com.zillit.desktop.feature.invoices.domain.InvoicesRepository
 import com.zillit.desktop.feature.invoices.domain.PickedInvoiceFile
 import com.zillit.desktop.feature.invoices.domain.Vendor
+import com.zillit.desktop.feature.invoices.ui.AccountantPage
+import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -97,14 +100,17 @@ class InvoicesSyncTest {
             repository = repository,
             files = NoFiles,
             resolveViewer = { accountant },
-            projectCurrency = { "GBP" },
+            projectMoney = { CurrencyRates("GBP") },
             resolveUser = { null },
             departmentName = { null },
             nowMillis = { 0L },
         )
         model.start()
+        // The landing is the dashboard, as the web's redirect makes it; the
+        // register is a list page, so open it before counting list loads.
+        model.onEvent(InvoicesEvent.SelectPage(AccountantPage.Register))
         runCurrent()
-        assertEquals(1, repository.listLoads, "start loads the register once")
+        assertEquals(1, repository.listLoads, "opening the register loads it once")
         assertEquals(1, repository.tierLoads)
 
         repeat(3) { events.emit(InvoiceRefresh.Rows) }

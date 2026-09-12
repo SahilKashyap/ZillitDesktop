@@ -25,6 +25,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.invoices.domain.PayMethod
@@ -97,25 +98,23 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitTextField(
+                ZillitDateField(
                     value = form.invoiceDate,
                     onValueChange = { change(form.copy(invoiceDate = it)) },
                     label = "Invoice date *",
-                    placeholder = "YYYY-MM-DD",
                     modifier = Modifier.weight(1f),
                 )
-                ZillitTextField(
+                ZillitDateField(
                     value = form.dueDate,
                     onValueChange = { change(form.copy(dueDate = it)) },
                     label = "Due date",
-                    placeholder = "YYYY-MM-DD (30 days if blank)",
+                    placeholder = "30 days if blank",
                     modifier = Modifier.weight(1f),
                 )
-                ZillitTextField(
+                ZillitDateField(
                     value = form.effectiveDate,
                     onValueChange = { change(form.copy(effectiveDate = it)) },
                     label = "Effective date *",
-                    placeholder = "YYYY-MM-DD",
                     modifier = Modifier.weight(1f),
                 )
             }

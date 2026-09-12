@@ -60,7 +60,10 @@ fun ZillitStatTile(
                 text = label.uppercase(),
                 style = ZillitTheme.typography.labelSmall,
                 color = colors.textMuted,
-                maxLines = 1,
+                // Two lines, because a clipped label is worse than a tall
+                // tile: "TOTAL INVOIC…" names nothing, and these tiles sit in
+                // rows of five where the longest label sets the height anyway.
+                maxLines = 2,
                 modifier = Modifier.weight(1f, fill = false),
             )
             icon?.let {
@@ -68,10 +71,18 @@ fun ZillitStatTile(
                 ZillitIcon(it, tint = accent, size = ZillitDimens.iconSmall)
             }
         }
+        // A long figure steps down a size rather than ellipsing: "£218,000.…"
+        // is not a number, and these tiles sit in rows of five or six where
+        // the column is narrower than the headline type wants.
+        val valueSize = when {
+            value.length <= SHORT_VALUE -> STAT_VALUE_SIZE
+            value.length <= MEDIUM_VALUE -> STAT_VALUE_MEDIUM
+            else -> STAT_VALUE_SMALL
+        }
         ZillitText(
             text = value,
             style = ZillitTheme.typography.numeric.copy(
-                fontSize = STAT_VALUE_SIZE,
+                fontSize = valueSize,
                 lineHeight = STAT_VALUE_LINE,
                 fontWeight = FontWeight.Bold,
             ),
@@ -83,7 +94,10 @@ fun ZillitStatTile(
                 text = it,
                 style = ZillitTheme.typography.bodySmall,
                 color = colors.textMuted,
-                maxLines = 1,
+                // The subtitle qualifies the figure above it — "converted to
+                // GBP", "some amounts had no rate". Clipping that leaves a
+                // number the reader cannot judge.
+                maxLines = 2,
             )
         }
     }
@@ -124,5 +138,9 @@ fun ZillitMeter(
 }
 
 private val STAT_VALUE_SIZE = 24.sp
+private val STAT_VALUE_MEDIUM = 20.sp
+private val STAT_VALUE_SMALL = 17.sp
 private val STAT_VALUE_LINE = 30.sp
+private const val SHORT_VALUE = 8
+private const val MEDIUM_VALUE = 12
 private val METER_HEIGHT = 7.dp

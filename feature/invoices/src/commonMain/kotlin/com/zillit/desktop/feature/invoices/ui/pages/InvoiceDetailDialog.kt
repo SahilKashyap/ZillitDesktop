@@ -3,6 +3,12 @@
 
 package com.zillit.desktop.feature.invoices.ui.pages
 
+import com.zillit.desktop.feature.invoices.ui.decodePreviewPages
+import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -107,11 +113,42 @@ internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, 
     if (detail.rejecting) RejectDialog(detail, onEvent)
 }
 
+/**
+ * The document itself, scrolled like the web's iframe.
+ *
+ * Pages are stacked rather than paged through: an invoice's second page is
+ * usually its line items, and a reader scrolling a browser's PDF view does
+ * not click "next page" to reach them.
+ */
+@Composable
+private fun PreviewPages(pages: List<ImageBitmap>, name: String) {
+    val scroll = rememberScrollState()
+    Row(Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.weight(1f).fillMaxHeight().verticalScroll(scroll)
+                .padding(ZillitTheme.spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            pages.forEachIndexed { index, page ->
+                Image(
+                    bitmap = page,
+                    contentDescription = if (pages.size == 1) name else "$name, page ${index + 1}",
+                    contentScale = ContentScale.FillWidth,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        ZillitScrollRail(scroll)
+    }
+}
+
 @Composable
 private fun AttachmentPane(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Unit, modifier: Modifier) {
     val colors = ZillitTheme.colors
     val attachment = detail.invoice.firstAttachment
-    val bitmap = remember(detail.preview) { detail.preview?.bytes?.let(::decodeImageBitmap) }
+    // Rendering a long PDF is not free, so it is done once per fetched file.
+    val pages = remember(detail.preview) { detail.preview?.bytes?.let(::decodePreviewPages).orEmpty() }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         Box(
             modifier = Modifier
@@ -127,12 +164,7 @@ private fun AttachmentPane(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Un
                     style = ZillitTheme.typography.bodyMedium,
                     color = colors.textMuted,
                 )
-                bitmap != null -> Image(
-                    bitmap = bitmap,
-                    contentDescription = attachment.name,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize().padding(ZillitTheme.spacing.sm),
-                )
+                pages.isNotEmpty() -> PreviewPages(pages, attachment.name)
                 detail.previewLoading -> ZillitSpinner()
                 else -> Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -145,8 +177,8 @@ private fun AttachmentPane(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Un
                     )
                     ZillitText(
                         text = when {
-                            attachment.isPdf -> "PDF preview opens in your viewer"
                             detail.previewFailed -> "Could not load the preview"
+                            attachment.isPdf -> "This PDF could not be rendered — open it to read it"
                             else -> attachment.mimeType
                         },
                         style = ZillitTheme.typography.bodySmall,

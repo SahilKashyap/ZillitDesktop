@@ -11,26 +11,44 @@ import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.invoices.domain.Accrual
 import com.zillit.desktop.feature.invoices.domain.ApprovalStatus
 import com.zillit.desktop.feature.invoices.domain.ApprovalTierConfig
 import com.zillit.desktop.feature.invoices.domain.BankAccount
+import com.zillit.desktop.feature.invoices.domain.CreditNote
 import com.zillit.desktop.feature.invoices.domain.DepartmentUpload
+import com.zillit.desktop.feature.invoices.domain.DuplicateFlag
 import com.zillit.desktop.feature.invoices.domain.EnteredInvoice
 import com.zillit.desktop.feature.invoices.domain.HistoryEntry
+import com.zillit.desktop.feature.invoices.domain.HoldReason
 import com.zillit.desktop.feature.invoices.domain.Invoice
+import com.zillit.desktop.feature.invoices.domain.InvoiceAnalytics
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
 import com.zillit.desktop.feature.invoices.domain.InvoiceExtraction
+import com.zillit.desktop.feature.invoices.domain.InvoiceOverview
 import com.zillit.desktop.feature.invoices.domain.InvoiceQuery
 import com.zillit.desktop.feature.invoices.domain.InvoiceRefresh
+import com.zillit.desktop.feature.invoices.domain.InvoiceAssignmentRule
+import com.zillit.desktop.feature.invoices.domain.InvoiceNominal
 import com.zillit.desktop.feature.invoices.domain.InvoiceSettings
+import com.zillit.desktop.feature.invoices.domain.InvoiceSetupBundle
+import com.zillit.desktop.feature.invoices.domain.InvoiceTeamRow
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.InvoicesRepository
+import com.zillit.desktop.feature.invoices.domain.LinkedPoDetail
+import com.zillit.desktop.feature.invoices.domain.PayMethod
+import com.zillit.desktop.feature.invoices.domain.PoSuggestion
+import com.zillit.desktop.feature.invoices.domain.PoSuggestions
+import com.zillit.desktop.feature.invoices.domain.RunAuthLevel
+import com.zillit.desktop.feature.invoices.domain.PaymentRun
+import com.zillit.desktop.feature.invoices.domain.SalesInvoice
 import com.zillit.desktop.feature.invoices.domain.Vendor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
 /**
@@ -132,14 +150,176 @@ class InvoicesRepositoryImpl(
 
     override suspend fun settings(): ZillitResult<InvoiceSettings> = get("$base/settings").mapData(::parseSettings)
 
+    // -- the Settings page ---------------------------------------------------
+
+    override suspend fun setup(): ZillitResult<InvoiceSetupBundle> = get("$base/settings").mapData(::parseSetup)
+
+    override suspend fun saveTeam(rows: List<InvoiceTeamRow>): ZillitResult<Unit> =
+        mutate(HttpVerb.Patch, "$base/settings", teamBody(rows)).unit()
+
+    override suspend fun saveAlerts(alerts: Set<String>): ZillitResult<Unit> =
+        mutate(HttpVerb.Patch, "$base/settings", alertsBody(alerts)).unit()
+
+    override suspend fun saveRunAuthorisation(levels: List<RunAuthLevel>): ZillitResult<Unit> =
+        mutate(HttpVerb.Patch, "$base/settings", runAuthBody(levels)).unit()
+
+    /** The module rides in the body on create; on update the rule's id already says which. */
+    override suspend fun createRule(rule: InvoiceAssignmentRule): ZillitResult<InvoiceAssignmentRule> =
+        mutate(HttpVerb.Post, "${hub}account-hub/assignment-rules", ruleBody(rule, RULE_MODULE))
+            .mapData { parseRule(it) ?: rule.copy(persisted = true) }
+
+    override suspend fun updateRule(rule: InvoiceAssignmentRule): ZillitResult<InvoiceAssignmentRule> =
+        mutate(HttpVerb.Patch, "${hub}account-hub/assignment-rules/${'$'}{rule.id}", ruleBody(rule))
+            .mapData { parseRule(it) ?: rule }
+
+    override suspend fun deleteRule(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Delete, "${hub}account-hub/assignment-rules/$id", null).unit()
+
+    override suspend fun nominalCodes(): ZillitResult<List<InvoiceNominal>> =
+        get("${hub}account-hub/chart-of-accounts", mapOf("active_only" to "true")).mapData(::parseNominals)
+
+    // -- PO matching ---------------------------------------------------------
+
+    override suspend fun poSuggestions(id: String, vendorId: String?): ZillitResult<PoSuggestions> = get(
+        "$base/$id/po-suggestions",
+        vendorId?.takeIf { it.isNotBlank() }?.let { mapOf("vendor_id" to it) }.orEmpty(),
+    ).mapData(::parsePoSuggestions)
+
+    override suspend fun match(id: String, suggestion: PoSuggestion): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/$id/match", matchBody(suggestion)).unit()
+
+    override suspend fun linkedPos(id: String): ZillitResult<List<LinkedPoDetail>> =
+        get("$base/$id/linked-pos").mapData(::parseLinkedPos)
+
     override suspend fun approvalTiers(): ZillitResult<List<ApprovalTierConfig>> =
         get("${hub}account-hub/approval-tiers", mapOf("module" to "invoices")).mapData(::parseTierConfigs)
 
     override suspend fun vendors(): ZillitResult<List<Vendor>> =
         get("${hub}vendors", mapOf("perPage" to VENDOR_PAGE.toString())).mapData(::parseVendors)
 
+    override suspend fun sendToApproval(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/$id/send-to-approval", null).unit()
+
+    /** The body is camelCase here, alone among this service's writes — see the wire note. */
+    override suspend fun hold(id: String, reason: HoldReason, notes: String): ZillitResult<Unit> = mutate(
+        HttpVerb.Post,
+        "$base/$id/hold",
+        buildJsonObject {
+            put("holdReason", JsonPrimitive(reason.label))
+            put("notes", JsonPrimitive(notes.trim()))
+        },
+    ).unit()
+
+    override suspend fun release(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/$id/release", null).unit()
+
+    override suspend fun override(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/$id/override", null).unit()
+
+    override suspend fun unmatch(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/$id/unmatch", null).unit()
+
+    override suspend fun postedInvoices(): ZillitResult<List<Invoice>> =
+        get("$base/posted", mapOf("perPage" to POSTED_PAGE.toString()))
+            .mapData { rowsOf(it).mapNotNull(::parseInvoice) }
+
+    override suspend fun accruals(): ZillitResult<List<Accrual>> =
+        get("$base/accruals").mapData(::parseAccruals)
+
+    override suspend fun regenerateAccruals(): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/accruals/regenerate", null).unit()
+
+    override suspend fun creditNotes(): ZillitResult<List<CreditNote>> =
+        get("$base/credit-notes", mapOf("perPage" to CREDIT_NOTE_PAGE.toString())).mapData(::parseCreditNotes)
+
+    override suspend fun applyCreditNote(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/credit-notes/$id/apply", null).unit()
+
+    override suspend fun disputeCreditNote(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/credit-notes/$id/dispute", null).unit()
+
+    override suspend fun analytics(): ZillitResult<InvoiceAnalytics> =
+        get("$base/analytics").mapData(::parseAnalytics)
+
+    override suspend fun overview(): ZillitResult<InvoiceOverview> =
+        get("$base/analytics/overview").mapData(::parseOverview)
+
+    override suspend fun duplicates(): ZillitResult<List<DuplicateFlag>> =
+        get("$base/duplicates").mapData(::parseDuplicates)
+
+    override suspend fun dismissDuplicate(flagId: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/duplicates/$flagId/dismiss", null).unit()
+
+    override suspend fun confirmDuplicate(flagId: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/duplicates/$flagId/confirm", null).unit()
+
     override suspend fun bankAccounts(): ZillitResult<List<BankAccount>> =
         get("${hub}account-hub/bank-accounts", mapOf("entity_type" to "production")).mapData(::parseBankAccounts)
+
+    // -- payment runs --------------------------------------------------------
+
+    override suspend fun paymentRuns(): ZillitResult<List<PaymentRun>> =
+        get("$base/active-runs").mapData(::parseRuns)
+
+    override suspend fun createPaymentRun(
+        name: String,
+        number: String,
+        payMethod: PayMethod,
+        invoiceIds: List<String>,
+    ): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/active-runs", runBody(name, number, payMethod, invoiceIds)).unit()
+
+    override suspend fun approvePaymentRun(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/active-runs/$id/approve", buildJsonObject {}).unit()
+
+    override suspend fun rejectPaymentRun(id: String, reason: String): ZillitResult<Unit> = mutate(
+        HttpVerb.Post,
+        "$base/active-runs/$id/reject",
+        buildJsonObject { put("reason", JsonPrimitive(reason.trim())) },
+    ).unit()
+
+    override suspend fun deletePaymentRun(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Delete, "$base/active-runs/$id", null).unit()
+
+    override suspend fun markPaid(ids: List<String>): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/bulk-update", bulkUpdateBody(ids, "status", InvoiceStatus.Paid.wire)).unit()
+
+    // -- sales invoices ------------------------------------------------------
+
+    override suspend fun salesInvoices(): ZillitResult<List<SalesInvoice>> =
+        get("$base/sales-invoices", mapOf("per_page" to SALES_PAGE)).mapData(::parseSalesInvoices)
+
+    override suspend fun createSalesInvoice(invoice: SalesInvoice): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/sales-invoices", salesInvoiceBody(invoice)).unit()
+
+    override suspend fun sendSalesInvoice(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/sales-invoices/$id/send", null).unit()
+
+    override suspend fun markSalesInvoicePaid(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/sales-invoices/$id/paid", null).unit()
+
+    override suspend fun deleteSalesInvoice(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Delete, "$base/sales-invoices/$id", null).unit()
+
+    // -- the entry stage -----------------------------------------------------
+
+    override suspend fun postInvoice(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/$id/post", null).unit()
+
+    override suspend fun returnToApproval(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/$id/return-to-approval", null).unit()
+
+    override suspend fun markUnderReview(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Patch, "$base/$id", buildJsonObject { put("status", JsonPrimitive("under_review")) }).unit()
+
+    override suspend fun assign(id: String, userId: String, reason: String): ZillitResult<Unit> = mutate(
+        HttpVerb.Patch,
+        "$base/$id",
+        buildJsonObject {
+            put("assigned_to", JsonPrimitive(userId))
+            put("assignment_reason", JsonPrimitive(reason))
+        },
+    ).unit()
 
     // -- plumbing ------------------------------------------------------------
 
@@ -172,5 +352,11 @@ class InvoicesRepositoryImpl(
     private companion object {
         const val HTTP_OK = 200
         const val VENDOR_PAGE = 500
+        const val POSTED_PAGE = 500
+        const val CREDIT_NOTE_PAGE = 200
+        const val SALES_PAGE = 200
+
+        /** What the hub files this module's assignment rules under. */
+        const val RULE_MODULE = "invoices"
     }
 }
