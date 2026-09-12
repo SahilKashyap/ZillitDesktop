@@ -1,146 +1,359 @@
 package com.zillit.desktop.feature.taxfiling.ui.pages
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.StatusTone
-import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
-import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
-import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.ZillitTokenField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.taxfiling.domain.BoxMapping
+import com.zillit.desktop.feature.taxfiling.domain.TaxFormat
 import com.zillit.desktop.feature.taxfiling.domain.VatBox
+import com.zillit.desktop.feature.taxfiling.domain.VatReturn
 import com.zillit.desktop.feature.taxfiling.ui.ReturnState
 import com.zillit.desktop.feature.taxfiling.ui.TaxFilingEvent
-
-private val BOX_LABEL_WIDTH = 40.dp
+import com.zillit.desktop.feature.taxfiling.ui.TaxFilingUiState
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdBoxBadge
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdButton
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdButtonSize
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdButtonVariant
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdPill
+import com.zillit.desktop.feature.taxfiling.ui.components.PillTone
+import com.zillit.desktop.feature.taxfiling.ui.components.mtdEyebrow
+import com.zillit.desktop.feature.taxfiling.ui.components.mtdPalette
+import com.zillit.desktop.feature.taxfiling.ui.components.mtdText
 
 /**
- * Which ledger entries feed each box.
+ * "Box mapping" — the web's accordion of nine boxes.
  *
- * Boxes 3 and 5 are absent by design: they are arithmetic on the others, and
- * offering a mapping for them invites a return whose own boxes disagree.
+ * Seven are mapped: each a row that opens onto its codes, layers, tags and
+ * date window. Boxes 3 and 5 are arithmetic on the rest and sit between them,
+ * read-only, box 5 in the accent as the figure the return is about.
  */
 @Composable
-fun ColumnScope.BoxMappingSection(state: ReturnState, onEvent: (TaxFilingEvent) -> Unit) {
-    val unmapped = VatBox.mappable.count { !state.mappingFor(it).isConfigured }
-
-    ZillitSectionCard(
-        title = "Box mapping",
-        icon = ZillitIcons.Filter,
-        meta = if (unmapped == 0) "All seven mapped" else "$unmapped not mapped",
-        action = {
-            ZillitButton(
-                text = "Save mapping",
-                onClick = { onEvent(TaxFilingEvent.SaveMapping) },
-                variant = ButtonVariant.Tertiary,
-            )
-        },
-    ) {
-        ZillitText(
-            text = "The mapping belongs to the company, not the period — it is saved once and " +
-                "every later return reads it.",
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textSecondary,
-        )
-
-        VatBox.mappable.forEach { box ->
-            BoxRow(box, state.mappingFor(box), onEvent)
+internal fun BoxMappingSection(
+    state: TaxFilingUiState,
+    onEvent: (TaxFilingEvent) -> Unit,
+    onOpenLayers: (VatBox) -> Unit,
+) {
+    val returnState = state.returnState
+    val shown = returnState.shown
+    Column(Modifier.fillMaxWidth()) {
+        MappingHeader(returnState, onEvent)
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            VatBox.entries.forEach { box ->
+                if (box.computed) {
+                    AutoRow(box = box, shown = shown)
+                } else {
+                    BoxRow(
+                        box = box,
+                        mapping = returnState.mappingFor(box),
+                        open = box in returnState.expanded,
+                        value = shown?.get(box),
+                        state = state,
+                        onEvent = onEvent,
+                        onOpenLayers = { onOpenLayers(box) },
+                    )
+                }
+            }
         }
     }
 }
 
+/** The section's title, and the two buttons that act on every box at once. */
 @Composable
-private fun ColumnScope.BoxRow(box: VatBox, mapping: BoxMapping, onEvent: (TaxFilingEvent) -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+private fun MappingHeader(returnState: ReturnState, onEvent: (TaxFilingEvent) -> Unit) {
+    val palette = mtdPalette()
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             ZillitText(
-                text = box.number.toString(),
-                style = ZillitTheme.typography.label,
-                modifier = Modifier.width(BOX_LABEL_WIDTH),
+                text = "Box mapping",
+                style = mtdText(16.5.sp, FontWeight.Bold, tracking = (-0.02).em),
+                color = palette.ink,
             )
+            ZillitText(
+                text = "Map general-ledger codes, layers and tags to each VAT box. " +
+                    "Reused every period for this company.",
+                style = mtdText(13.5.sp),
+                color = palette.ink3,
+                modifier = Modifier.widthIn(max = 520.dp),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MtdButton(
+                text = if (returnState.anyCollapsed) "Expand all" else "Collapse all",
+                onClick = { onEvent(TaxFilingEvent.ToggleAllBoxes) },
+                variant = MtdButtonVariant.Ghost,
+                size = MtdButtonSize.Small,
+                icon = if (returnState.anyCollapsed) ZillitIcons.Expand else ZillitIcons.Collapse,
+            )
+            MtdButton(
+                text = if (returnState.savingMapping) "Saving…" else "Save mapping",
+                onClick = { onEvent(TaxFilingEvent.SaveMapping) },
+                variant = MtdButtonVariant.Secondary,
+                size = MtdButtonSize.Small,
+                icon = ZillitIcons.Save,
+                loading = returnState.savingMapping,
+                enabled = !returnState.mappingLoading && !returnState.calculating,
+            )
+        }
+    }
+}
+
+/**
+ * A mapped box: its badge, name and figure, opening onto the fields that
+ * decide which ledger entries it reads.
+ */
+@Composable
+private fun BoxRow(
+    box: VatBox,
+    mapping: BoxMapping,
+    open: Boolean,
+    value: Double?,
+    state: TaxFilingUiState,
+    onEvent: (TaxFilingEvent) -> Unit,
+    onOpenLayers: () -> Unit,
+) {
+    val palette = mtdPalette()
+    val shape = RoundedCornerShape(14.dp)
+    val elevation by animateDpAsState(if (open) 8.dp else 1.dp, label = "boxLift")
+    val edge by animateColorAsState(if (open) palette.border2 else palette.border, label = "boxEdge")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(elevation, shape, clip = false, ambientColor = Shade, spotColor = Shade)
+            .clip(shape)
+            .background(palette.surface)
+            .border(1.dp, edge, shape),
+    ) {
+        BoxRowHeader(box, mapping, open, value) { onEvent(TaxFilingEvent.ToggleBox(box)) }
+        AnimatedVisibility(
+            visible = open,
+            enter = expandVertically(tween(EXPAND_MS)) + fadeIn(tween(EXPAND_MS)),
+            exit = shrinkVertically(tween(EXPAND_MS)) + fadeOut(tween(EXPAND_MS)),
+        ) {
+            BoxFields(box, mapping, state, onEvent, onOpenLayers)
+        }
+    }
+}
+
+/** The always-visible line of a mapped box, which opens and closes it. */
+@Composable
+private fun BoxRowHeader(box: VatBox, mapping: BoxMapping, open: Boolean, value: Double?, onToggle: () -> Unit) {
+    val palette = mtdPalette()
+    val chevron by animateFloatAsState(if (open) HALF_TURN else 0f, tween(CHEVRON_MS), label = "boxChevron")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                role = Role.Button,
+                onClickLabel = if (open) "Close box ${box.number}" else "Open box ${box.number}",
+                onClick = onToggle,
+            )
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        MtdBoxBadge(number = box.number)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             ZillitText(
                 text = box.label,
-                style = ZillitTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f),
+                style = mtdText(14.5.sp, FontWeight.SemiBold, tracking = (-0.01).em),
+                color = palette.ink,
+                maxLines = 1,
             )
-            ZillitStatusPill(
-                label = box.direction,
-                tone = StatusTone.Neutral,
-            )
-            ZillitStatusPill(
-                label = if (mapping.isConfigured) "Mapped" else "Not mapped",
-                tone = if (mapping.isConfigured) StatusTone.Done else StatusTone.Pending,
-                dot = true,
-            )
+            if (open) {
+                ZillitText(text = box.description, style = mtdText(12.5.sp), color = palette.ink3, maxLines = 1)
+            } else {
+                MappingSummary(mapping)
+            }
         }
-
-        // Zeroing is the honest answer for a production with no EU trade, and
-        // it is not the same as leaving the box unmapped: unmapped reads the
-        // ledger and finds nothing, which looks identical and means something
-        // else entirely.
-        ZillitCheckbox(
-            checked = mapping.markZero,
-            onCheckedChange = { onEvent(TaxFilingEvent.EditMapping(mapping.copy(markZero = it))) },
-            label = "File this box as zero without reading the ledger",
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            ZillitText(
+                text = TaxFormat.gbp(value, box.decimals),
+                style = mtdText(14.5.sp, FontWeight.Bold, mono = true, tracking = (-0.01).em),
+                color = if (mapping.markZero) palette.muted else palette.ink,
+                textAlign = TextAlign.End,
+            )
+            if (mapping.markZero) {
+                MtdPill(text = "Zero", tone = PillTone.Zero)
+            } else {
+                MtdPill(text = "Computed", tone = PillTone.Computed)
+            }
+        }
+        ZillitIcon(
+            icon = ZillitIcons.ChevronDown,
+            tint = palette.muted,
+            size = 15.dp,
+            modifier = Modifier.rotate(chevron),
         )
-
-        if (!mapping.markZero) {
-            CodeFields(mapping, onEvent)
-        }
     }
 }
 
+/**
+ * The collapsed row's one line: what the box reads, at a glance.
+ *
+ * "Forced to £0 — ledger ignored" for a zeroed box, "Not mapped — no ledger
+ * codes" for an empty one, and otherwise the first two codes, then how many
+ * layers and tags narrow them.
+ */
 @Composable
-private fun ColumnScope.CodeFields(mapping: BoxMapping, onEvent: (TaxFilingEvent) -> Unit) {
-    var codeInput by remember(mapping.box) { mutableStateOf("") }
-    var tagInput by remember(mapping.box) { mutableStateOf("") }
-
-    ZillitTokenField(
-        tokens = mapping.codes,
-        input = codeInput,
-        onValueChange = { tokens, text ->
-            codeInput = text
-            if (tokens != mapping.codes) {
-                onEvent(TaxFilingEvent.EditMapping(mapping.copy(codes = tokens)))
-            }
-        },
-        placeholder = "Account codes, comma separated",
-        modifier = Modifier.fillMaxWidth(),
-    )
-    ZillitTokenField(
-        tokens = mapping.tags,
-        input = tagInput,
-        onValueChange = { tokens, text ->
-            tagInput = text
-            if (tokens != mapping.tags) {
-                onEvent(TaxFilingEvent.EditMapping(mapping.copy(tags = tokens)))
-            }
-        },
-        placeholder = "Tags, comma separated",
-        modifier = Modifier.fillMaxWidth(),
-    )
+private fun MappingSummary(mapping: BoxMapping) {
+    val palette = mtdPalette()
+    when {
+        mapping.markZero -> ZillitText(
+            text = "Forced to £0 — ledger ignored",
+            style = mtdText(12.5.sp, FontWeight.SemiBold),
+            color = palette.amber,
+            maxLines = 1,
+        )
+        mapping.codes.isEmpty() -> ZillitText(
+            text = "Not mapped — no ledger codes",
+            style = mtdText(12.5.sp),
+            color = palette.muted,
+            maxLines = 1,
+        )
+        else -> ZillitText(
+            text = summaryLine(mapping),
+            style = mtdText(12.sp, mono = true, tracking = 0.02.em),
+            color = palette.ink3,
+            maxLines = 1,
+        )
+    }
 }
+
+/** `4000, 4010 +2  ·  1 layer  ·  3 tags`. */
+internal fun summaryLine(mapping: BoxMapping): String {
+    val parts = mutableListOf<String>()
+    val extra = mapping.codes.size - SUMMARY_CODES
+    parts += mapping.codes.take(SUMMARY_CODES).joinToString(", ") + if (extra > 0) " +$extra" else ""
+    mapping.layers.size.takeIf { it > 0 }?.let { parts += "$it layer${if (it == 1) "" else "s"}" }
+    mapping.tags.size.takeIf { it > 0 }?.let { parts += "$it tag${if (it == 1) "" else "s"}" }
+    return parts.joinToString("  ·  ")
+}
+
+/**
+ * Box 3 or box 5: worked out, never mapped. Box 5 wears the accent — it is the
+ * figure the return is about — and keeps its sign here; the rail and the
+ * filing carry its size and say which way it goes.
+ */
+@Composable
+private fun AutoRow(box: VatBox, shown: VatReturn?) {
+    val palette = mtdPalette()
+    val net = box == VatBox.NetDue
+    val shape = RoundedCornerShape(14.dp)
+    val value = when {
+        shown == null -> null
+        net -> shown.netSigned
+        else -> shown[box]
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (net) palette.accentWash else palette.surface2)
+            .border(1.dp, if (net) palette.accentBorder else palette.border, shape)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        MtdBoxBadge(number = box.number, highlight = net)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ZillitText(
+                text = box.label,
+                style = mtdText(14.5.sp, FontWeight.SemiBold, tracking = (-0.01).em),
+                color = palette.ink,
+            )
+            FormulaChip(text = box.direction, highlight = net)
+        }
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            ZillitText(
+                text = TaxFormat.gbp(value, box.decimals),
+                style = mtdText(if (net) 17.sp else 14.5.sp, FontWeight.Bold, mono = true, tracking = (-0.02).em),
+                color = if (net) palette.accentText else palette.ink,
+            )
+            MtdPill(text = "Auto", tone = PillTone.Auto)
+        }
+        Spacer(Modifier.width(15.dp))
+    }
+}
+
+/** `Σ (credit − debit)`, `Box 1 + Box 2` — how a box's figure is arrived at. */
+@Composable
+internal fun FormulaChip(text: String, highlight: Boolean = false) {
+    val palette = mtdPalette()
+    val shape = RoundedCornerShape(7.dp)
+    Box(
+        modifier = Modifier
+            .clip(shape)
+            .background(if (highlight) palette.surface else palette.surface3)
+            .border(1.dp, if (highlight) palette.accentBorder else palette.border, shape)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    ) {
+        ZillitText(
+            text = text,
+            style = mtdText(12.sp, FontWeight.SemiBold, mono = true),
+            color = if (highlight) palette.accentText else palette.ink2,
+        )
+    }
+}
+
+/** The direction eyebrow over the fields, as the open row starts. */
+@Composable
+internal fun DirectionLine(box: VatBox) {
+    val palette = mtdPalette()
+    Row(
+        modifier = Modifier.padding(top = 12.dp, bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ZillitText(text = "DIRECTION", style = mtdEyebrow(), color = palette.muted)
+        FormulaChip(text = box.direction)
+    }
+}
+
+private val Shade = Color.Black.copy(alpha = 0.16f)
+private const val HALF_TURN = 180f
+private const val CHEVRON_MS = 180
+private const val EXPAND_MS = 200
+private const val SUMMARY_CODES = 2

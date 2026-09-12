@@ -3,10 +3,11 @@ package com.zillit.desktop.feature.taxfiling.domain
 import com.zillit.desktop.core.common.ZillitResult
 
 /**
- * The tax-filing service.
+ * The tax-filing service, and the three account-hub lists a box mapping is
+ * picked from.
  *
  * Two kinds of call live here and the difference matters: most reach only
- * Zillit's own service, but [syncObligations] and [submitReturn] reach the tax
+ * Zillit's own services, but [syncObligations] and [submitReturn] reach the tax
  * authority, carry [FraudSignals], and in the second case file a legal return.
  */
 interface TaxFilingRepository {
@@ -16,15 +17,22 @@ interface TaxFilingRepository {
 
     suspend fun companies(): ZillitResult<List<TaxCompany>>
 
+    /** Every registration on the production, unnamed — see [TaxRegistration.named]. */
     suspend fun registrations(): ZillitResult<List<TaxRegistration>>
 
-    suspend fun createRegistration(
-        companyId: String,
-        registrationNumber: String,
-        frequency: String,
-    ): ZillitResult<Unit>
+    suspend fun createRegistration(request: RegistrationRequest): ZillitResult<Unit>
 
+    /**
+     * Removes a registration. The service disconnects it from HMRC and clears
+     * its obligation and return history; the company's box mapping is kept.
+     */
     suspend fun deleteRegistration(id: String): ZillitResult<Unit>
+
+    /**
+     * Everything the service holds for a registration, no secrets, as the
+     * pretty-printed JSON the data-portability export saves.
+     */
+    suspend fun exportRegistration(id: String): ZillitResult<String>
 
     /**
      * The authority's consent page for this registration.
@@ -76,4 +84,13 @@ interface TaxFilingRepository {
         vatReturn: VatReturn,
         signals: FraudSignals,
     ): ZillitResult<Unit>
+
+    /** The chart's postable accounts, in code order. */
+    suspend fun coaCodes(): ZillitResult<List<CoaCode>>
+
+    /** The active tracking sets, each with its pickable codes. */
+    suspend fun layerSets(): ZillitResult<List<LayerSet>>
+
+    /** The production's asset tags, as Production Setup keeps them. */
+    suspend fun assetTags(): ZillitResult<List<String>>
 }

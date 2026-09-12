@@ -1,289 +1,338 @@
 package com.zillit.desktop.feature.taxfiling.ui.pages
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.common.Money
-import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.ColumnWidth
-import com.zillit.desktop.core.designsystem.component.StatusTone
-import com.zillit.desktop.core.designsystem.component.TableColumn
-import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitDataTable
-import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
-import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
-import com.zillit.desktop.core.designsystem.component.ZillitSelect
-import com.zillit.desktop.core.designsystem.component.ZillitStatTile
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.taxfiling.domain.FilingObligation
+import com.zillit.desktop.feature.taxfiling.domain.TaxRegistration
 import com.zillit.desktop.feature.taxfiling.domain.VatBox
-import com.zillit.desktop.feature.taxfiling.domain.VatDraft
-import com.zillit.desktop.feature.taxfiling.domain.VatReturn
 import com.zillit.desktop.feature.taxfiling.ui.ReturnState
+import com.zillit.desktop.feature.taxfiling.ui.StickyViewport
 import com.zillit.desktop.feature.taxfiling.ui.TaxFilingEvent
+import com.zillit.desktop.feature.taxfiling.ui.TaxFilingUiState
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdAvatar
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdButton
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdButtonVariant
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdCard
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdDropdown
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdFieldLabel
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdIconTile
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdOption
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdPill
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdRule
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdSectionHead
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdStripDivider
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdSummaryStat
+import com.zillit.desktop.feature.taxfiling.ui.components.PillTone
+import com.zillit.desktop.feature.taxfiling.ui.components.mtdEyebrow
+import com.zillit.desktop.feature.taxfiling.ui.components.mtdPalette
+import com.zillit.desktop.feature.taxfiling.ui.components.mtdText
 
-private const val GBP = "GBP"
-private const val WHOLE_POUNDS = 0
-private val BOX_WIDTH = 56.dp
-private val AMOUNT_WIDTH = 160.dp
-private val PERIOD_WIDTH = 320.dp
-
-/** One registration's periods, its box mapping, and the return itself. */
+/**
+ * One company's VAT return — the web's `VATReturnView`.
+ *
+ * The obligation card first, then one of three things under it: a prompt to
+ * pick a period, the return already filed for a fulfilled one, or — for an
+ * open period — the box mapping beside a summary rail that stays in view
+ * while the boxes scroll.
+ */
 @Composable
-fun ColumnScope.ReturnPage(state: ReturnState, canReachAuthority: Boolean, onEvent: (TaxFilingEvent) -> Unit) {
-    if (state.registration?.connected != true) {
-        ZillitNotice(
-            text = "This registration has not authorised HMRC yet. Periods and returns stay " +
-                "unavailable until it has.",
-            tone = StatusTone.Pending,
-            icon = ZillitIcons.Shield,
-            modifier = Modifier.fillMaxWidth(),
-        )
+internal fun ReturnPage(
+    state: TaxFilingUiState,
+    onEvent: (TaxFilingEvent) -> Unit,
+    sticky: StickyViewport,
+    onOpenLayers: (VatBox) -> Unit,
+) {
+    val returnState = state.returnState
+    // Absent for the frame a closing return fades out on.
+    val registration = returnState.registration ?: return
+    DetailHeader(
+        registration = registration,
+        connecting = state.connectingId == registration.id,
+        canReachAuthority = state.canReachAuthority,
+        onEvent = onEvent,
+    )
+    Spacer(Modifier.height(22.dp))
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        ObligationCard(returnState, state.canReachAuthority, onEvent)
+        val period = returnState.period
+        when {
+            period == null -> SelectPeriodPrompt()
+            !period.isOpen -> FiledReturnPanel(period, returnState.filedForPeriod)
+            else -> MappingWithRail(state, onEvent, sticky, onOpenLayers)
+        }
     }
-
-    PeriodSection(state, canReachAuthority, onEvent)
-
-    if (state.obligations.isEmpty()) {
-        ZillitEmptyState(
-            title = "No periods known",
-            message = "Ask HMRC which periods this company owes a return for.",
-            icon = ZillitIcons.Calendar,
-        )
-        return
-    }
-
-    // A fulfilled period gets the receipt and nothing else. Leaving the
-    // mapping and the calculate button in front of a return already filed
-    // invites an accountant to redo work that cannot be submitted.
-    val period = state.period
-    if (period != null && !period.isOpen) {
-        FiledReturnPanel(period, state.filedForPeriod)
-        return
-    }
-
-    BoxMappingSection(state, onEvent)
-    DraftSection(state, onEvent)
 }
 
+/** Who is filing: the company, its number and cadence, and whether HMRC is connected. */
 @Composable
-private fun ColumnScope.PeriodSection(
-    state: ReturnState,
+private fun DetailHeader(
+    registration: TaxRegistration,
+    connecting: Boolean,
     canReachAuthority: Boolean,
     onEvent: (TaxFilingEvent) -> Unit,
 ) {
-    ZillitSectionCard(
-        title = "Period",
-        icon = ZillitIcons.Calendar,
-        meta = state.period?.let { "Due ${it.due}" },
+    val palette = mtdPalette()
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            ZillitSelect(
-                value = state.periodKey,
-                options = state.obligations.map { it.periodKey },
-                onSelect = { onEvent(TaxFilingEvent.SelectPeriod(it)) },
-                label = { key ->
-                    val row = state.obligations.firstOrNull { it.periodKey == key }
-                    when {
-                        row == null -> "Choose a period"
-                        row.isOpen -> "${row.start} to ${row.end}"
-                        else -> "${row.start} to ${row.end} · filed"
-                    }
-                },
-                enabled = state.obligations.isNotEmpty(),
-                modifier = Modifier.width(PERIOD_WIDTH),
+        MtdAvatar(name = registration.companyName, size = 52.dp)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            ZillitText(
+                text = registration.companyName,
+                style = mtdText(27.sp, FontWeight.ExtraBold, tracking = (-0.03).em, lineHeight = 30.sp),
+                color = palette.ink,
+                maxLines = 1,
             )
-            ZillitButton(
-                text = "Ask HMRC",
-                onClick = { onEvent(TaxFilingEvent.SyncObligations) },
-                variant = ButtonVariant.Tertiary,
-                leadingIcon = ZillitIcons.Reload,
-                loading = state.syncing,
-                enabled = canReachAuthority && state.registration?.connected == true,
+            RegistrationFacts(registration) {
+                MtdPill(
+                    text = registration.status,
+                    tone = if (registration.isActive) PillTone.Active else PillTone.Neutral,
+                )
+            }
+        }
+        if (registration.connected) {
+            MtdPill(text = "Connected to HMRC", tone = PillTone.Connected, leading = ZillitIcons.Shield)
+        } else {
+            MtdButton(
+                text = if (connecting) "Connecting…" else "Connect to HMRC",
+                onClick = { onEvent(TaxFilingEvent.Connect(registration)) },
+                variant = MtdButtonVariant.Primary,
+                icon = ZillitIcons.Link,
+                loading = connecting,
+                enabled = canReachAuthority,
             )
         }
+    }
+}
 
-        state.period?.takeIf { !it.isOpen }?.let { fulfilled ->
-            ZillitNotice(
-                text = "HMRC received this period's return on ${fulfilled.received}. " +
-                    "A fulfilled period cannot be filed again.",
-                tone = StatusTone.Done,
-                icon = ZillitIcons.Tick,
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ObligationCard(state: ReturnState, canReachAuthority: Boolean, onEvent: (TaxFilingEvent) -> Unit) {
+    MtdCard(modifier = Modifier.fillMaxWidth(), padding = 24.dp) {
+        MtdSectionHead(
+            title = "Obligation period",
+            subtitle = "Sync HMRC obligations for this company, then pick the open period to file.",
+            right = {
+                MtdButton(
+                    text = if (state.syncing) "Syncing…" else "Sync obligations",
+                    onClick = { onEvent(TaxFilingEvent.SyncObligations) },
+                    variant = MtdButtonVariant.Secondary,
+                    icon = ZillitIcons.Reload,
+                    loading = state.syncing,
+                    enabled = canReachAuthority,
+                )
+            },
+        )
+        MtdRule(Modifier.padding(top = 20.dp, bottom = 22.dp))
+        Column(Modifier.widthIn(max = 620.dp).fillMaxWidth()) {
+            MtdFieldLabel("Obligation period")
+            MtdDropdown(
+                value = state.periodKey.takeIf { it.isNotBlank() },
+                options = state.obligations.map { it.option() },
+                onChange = { onEvent(TaxFilingEvent.SelectPeriod(it.orEmpty())) },
+                placeholder = when {
+                    state.obligationsLoading -> "Loading obligations…"
+                    state.obligations.isNotEmpty() -> "Select an obligation…"
+                    else -> "No obligations — sync to fetch from HMRC."
+                },
+                clearable = true,
                 modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        state.period?.let { period -> SummaryStrip(period, state.connected) }
+    }
+}
+
+private fun FilingObligation.option() = MtdOption(
+    value = periodKey,
+    label = pickerLabel,
+    sub = due.takeIf { it.isNotBlank() }?.let { "Due $it" },
+    pill = if (isOpen) "Open" to PillTone.Open else "Fulfilled" to PillTone.Neutral,
+)
+
+/** The chosen period at a glance, and whether HMRC is connected to receive it. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SummaryStrip(period: FilingObligation, connected: Boolean) {
+    val palette = mtdPalette()
+    val shape = RoundedCornerShape(12.dp)
+    FlowRow(
+        modifier = Modifier
+            .padding(top = 18.dp)
+            .fillMaxWidth()
+            .clip(shape)
+            .background(palette.surface2)
+            .border(1.dp, palette.border, shape)
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        MtdSummaryStat(label = "Period", value = period.range, mono = true)
+        MtdStripDivider()
+        MtdSummaryStat(label = "Period key", value = period.periodKey, mono = true)
+        MtdStripDivider()
+        MtdSummaryStat(label = "Due", value = period.due.ifBlank { "—" })
+        MtdStripDivider()
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            ZillitText(text = "OBLIGATION", style = mtdEyebrow(), color = palette.muted)
+            MtdPill(
+                text = if (period.isOpen) "Open" else "Fulfilled",
+                tone = if (period.isOpen) PillTone.Open else PillTone.Fulfilled,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        Row(
+            modifier = Modifier.padding(start = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            val tint = if (connected) palette.green else palette.ink3
+            ZillitIcon(icon = if (connected) ZillitIcons.Shield else ZillitIcons.Link, tint = tint, size = 15.dp)
+            ZillitText(
+                text = if (connected) "Connected to HMRC" else "Not connected to HMRC",
+                style = mtdText(12.5.sp, FontWeight.Medium),
+                color = tint,
             )
         }
     }
 }
 
 @Composable
-private fun ColumnScope.DraftSection(state: ReturnState, onEvent: (TaxFilingEvent) -> Unit) {
-    val shown = state.shown
-    ZillitSectionCard(
-        title = "The nine boxes",
-        icon = ZillitIcons.Ledger,
-        meta = state.periodKey.takeIf { it.isNotBlank() },
-        action = {
-            ZillitButton(
-                text = "Export ledger",
-                onClick = { onEvent(TaxFilingEvent.ExportLedger) },
-                variant = ButtonVariant.Tertiary,
-                leadingIcon = ZillitIcons.Download,
-                loading = state.exporting,
-                enabled = state.periodKey.isNotBlank(),
-            )
-            ZillitButton(
-                text = if (shown == null) "Calculate" else "Recalculate",
-                onClick = { onEvent(TaxFilingEvent.Calculate) },
-                variant = ButtonVariant.Secondary,
-                leadingIcon = ZillitIcons.BarChart,
-                loading = state.calculating,
-                enabled = state.periodKey.isNotBlank(),
-            )
-        },
-    ) {
-        if (shown == null) {
-            ZillitEmptyState(
-                title = "Nothing calculated yet",
-                message = "Zillit reads the ledger through the mapping above and fills the " +
-                    "nine boxes. Nothing is sent to HMRC by calculating.",
-                icon = ZillitIcons.BarChart,
-            )
-            return@ZillitSectionCard
-        }
-
-        AllZeroNotice(state)
-        NetTile(shown)
-
-        ZillitDataTable(
-            rows = VatBox.entries.toList(),
-            columns = boxColumns(shown),
-            key = { it.number },
-            virtualised = false,
+private fun SelectPeriodPrompt() {
+    val palette = mtdPalette()
+    MtdCard(modifier = Modifier.fillMaxWidth(), padding = 40.dp) {
+        Column(
             modifier = Modifier.fillMaxWidth(),
-        )
-
-        SubmitRow(state, onEvent)
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            MtdIconTile(icon = ZillitIcons.Info, size = 46.dp, iconSize = 20.dp, radius = 13.dp)
+            ZillitText(
+                text = "Select an obligation period",
+                style = mtdText(16.sp, FontWeight.Bold),
+                color = palette.ink,
+            )
+            ZillitText(
+                text = "Sync HMRC obligations above, then pick a period to map its boxes and file the return.",
+                style = mtdText(13.5.sp),
+                color = palette.ink3,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 440.dp),
+            )
+        }
     }
 }
 
 /**
- * Why a return of nine zeroes is nine zeroes.
- *
- * A quiet quarter and a mapping that selects nothing look identical, and the
- * second is the one that gets filed by mistake. The counts the server kept
- * while building tell them apart.
+ * The boxes beside the summary rail — or above it, when the pane is too narrow
+ * for both. Side by side, the rail rides down with the page so Calculate and
+ * Submit stay in reach, stopping at the end of the boxes.
  */
 @Composable
-private fun ColumnScope.AllZeroNotice(state: ReturnState) {
-    val draft = state.draft ?: return
-    if (!VatDraft(draft, state.diagnostics).isAllZero) return
-
-    val scope = state.diagnostics.rowsInScope
-    val orphans = state.diagnostics.nullCompanyRows ?: 0
-    ZillitNotice(
-        text = "Every box came back at zero. Ledger rows for this company in the period: " +
-            "${scope ?: "unknown"}." +
-            (if (orphans > 0) " $orphans row(s) have no company against them." else "") +
-            " A box with no date range uses the obligation period; set one per box to " +
-            "include other dates.",
-        tone = StatusTone.Pending,
-        icon = ZillitIcons.Info,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
-private fun ColumnScope.NetTile(shown: VatReturn) {
-    ZillitStatTile(
-        label = if (shown.isPayable) "To pay HMRC" else "To reclaim from HMRC",
-        value = Money.format(shown[VatBox.NetDue], GBP),
-        sub = "Box 5",
-        tone = if (shown.isPayable) StatusTone.Pending else StatusTone.Done,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-private fun boxColumns(shown: VatReturn): List<TableColumn<VatBox>> = listOf(
-    TableColumn(
-        header = "Box",
-        width = ColumnWidth.Fixed(BOX_WIDTH),
-        cell = { box ->
-            ZillitText(text = box.number.toString(), style = ZillitTheme.typography.label)
-        },
-    ),
-    TableColumn(
-        header = "",
-        cell = { box ->
-            // A Box holds the cell, so the two lines need a Column of their
-            // own or they draw on top of one another.
-            Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-                ZillitText(text = box.label, style = ZillitTheme.typography.bodyMedium)
-                ZillitText(
-                    text = box.description,
-                    style = ZillitTheme.typography.bodySmall,
-                    color = ZillitTheme.colors.textSecondary,
-                )
+private fun MappingWithRail(
+    state: TaxFilingUiState,
+    onEvent: (TaxFilingEvent) -> Unit,
+    sticky: StickyViewport,
+    onOpenLayers: (VatBox) -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < SIDE_BY_SIDE) {
+            Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                BoxMappingSection(state, onEvent, onOpenLayers)
+                SummaryRail(state, onEvent)
             }
-        },
-    ),
-    TableColumn(
-        header = "Amount",
-        width = ColumnWidth.Fixed(AMOUNT_WIDTH),
-        numeric = true,
-        cell = { box ->
-            ZillitText(
-                // Boxes 6 to 9 file to the pound, so they are shown to the
-                // pound: a penny on screen that HMRC never receives is a
-                // figure the accountant cannot reconcile afterwards.
-                text = Money.format(
-                    shown[box],
-                    GBP,
-                    if (box.wholePounds) WHOLE_POUNDS else DEFAULT_DECIMALS,
-                ),
-                style = ZillitTheme.typography.bodyMedium,
-                color = if (box.computed) {
-                    ZillitTheme.colors.textSecondary
-                } else {
-                    ZillitTheme.colors.textPrimary
-                },
+        } else {
+            StickyRow(
+                sticky = sticky,
+                main = { BoxMappingSection(state, onEvent, onOpenLayers) },
+                rail = { SummaryRail(state, onEvent) },
             )
-        },
-    ),
-)
-
-private const val DEFAULT_DECIMALS = 2
-
-@Composable
-private fun ColumnScope.SubmitRow(state: ReturnState, onEvent: (TaxFilingEvent) -> Unit) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        ZillitText(
-            text = "Filing sends these figures to HMRC as this company's legal VAT return.",
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textSecondary,
-            modifier = Modifier.weight(1f),
-        )
-        ZillitButton(
-            text = "File with HMRC",
-            onClick = { onEvent(TaxFilingEvent.AskSubmit) },
-            leadingIcon = ZillitIcons.Send,
-            loading = state.submitting,
-            enabled = state.canSubmit,
-        )
+        }
     }
 }
+
+/**
+ * CSS `position: sticky` for the rail.
+ *
+ * The row's top is measured once in content coordinates — its window position
+ * plus the scroll, minus where the viewport starts — which does not change as
+ * the page scrolls. The rail is then offset in the layout phase straight from
+ * the scroll position, so it tracks the page with no frame of lag, clamped to
+ * the row so it never rides past the last box.
+ */
+@Composable
+private fun StickyRow(
+    sticky: StickyViewport,
+    main: @Composable () -> Unit,
+    rail: @Composable () -> Unit,
+) {
+    val topGap = with(LocalDensity.current) { STICKY_GAP.toPx() }
+    var rowTopInContent by remember { mutableFloatStateOf(0f) }
+    var rowHeight by remember { mutableIntStateOf(0) }
+    var railHeight by remember { mutableIntStateOf(0) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coordinates ->
+                rowTopInContent = coordinates.positionInWindow().y + sticky.scroll.value - sticky.viewportTop()
+                rowHeight = coordinates.size.height
+            },
+        horizontalArrangement = Arrangement.spacedBy(22.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(Modifier.weight(1f)) { main() }
+        Box(
+            modifier = Modifier
+                .width(RAIL_WIDTH)
+                .offset {
+                    val travel = (rowHeight - railHeight).coerceAtLeast(0)
+                    val wanted = sticky.scroll.value + topGap - rowTopInContent
+                    IntOffset(0, wanted.toInt().coerceIn(0, travel))
+                }
+                .onSizeChanged { railHeight = it.height },
+        ) { rail() }
+    }
+}
+
+private val SIDE_BY_SIDE = 920.dp
+private val RAIL_WIDTH = 360.dp
+private val STICKY_GAP = 18.dp

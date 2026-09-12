@@ -1,91 +1,142 @@
 package com.zillit.desktop.feature.taxfiling.ui.pages
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.zillit.desktop.core.common.Money
-import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.StatusTone
-import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
-import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.taxfiling.domain.FiledReturn
 import com.zillit.desktop.feature.taxfiling.domain.FilingObligation
+import com.zillit.desktop.feature.taxfiling.domain.TaxFormat
 import com.zillit.desktop.feature.taxfiling.domain.VatBox
-
-private const val GBP = "GBP"
-private const val WHOLE_POUNDS = 0
-private const val PENCE = 2
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdCard
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdPill
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdRule
+import com.zillit.desktop.feature.taxfiling.ui.components.MtdSectionHead
+import com.zillit.desktop.feature.taxfiling.ui.components.PillTone
+import com.zillit.desktop.feature.taxfiling.ui.components.mtdPalette
+import com.zillit.desktop.feature.taxfiling.ui.components.mtdText
 
 /**
- * A period that is done.
+ * A period that is done — the web's `FiledReturnPanel`.
  *
- * Read-only by design: HMRC has the return, the period is fulfilled, and
- * offering a mapping or a calculate button here would be offering work that
- * cannot be submitted. [filed] is present only when Zillit filed it — a period
- * fulfilled elsewhere still shows as fulfilled, with no figures to show.
+ * Read-only by design: HMRC has the return, the period is fulfilled, and a
+ * mapping or a calculate button here would offer work that cannot be
+ * submitted. [filed] is present only when Zillit filed it — a period fulfilled
+ * elsewhere still shows as fulfilled, with no figures stored to show.
  */
 @Composable
-fun ColumnScope.FiledReturnPanel(period: FilingObligation, filed: FiledReturn?) {
-    ZillitSectionCard(
-        title = "Filed return",
-        icon = ZillitIcons.Tick,
-        meta = "${period.start} to ${period.end}",
-        action = { ZillitStatusPill(label = "Fulfilled", tone = StatusTone.Done, dot = true) },
-    ) {
-        if (filed == null) {
-            ZillitNotice(
-                text = "This period was filed with HMRC, but not from Zillit — there is no " +
-                    "receipt here to show. HMRC's own account has it.",
-                tone = StatusTone.Pending,
-                icon = ZillitIcons.Info,
-                modifier = Modifier.fillMaxWidth(),
+internal fun FiledReturnPanel(period: FilingObligation, filed: FiledReturn?) {
+    val palette = mtdPalette()
+    MtdCard(modifier = Modifier.fillMaxWidth(), padding = 24.dp) {
+        MtdSectionHead(
+            title = "Filed return",
+            subtitle = "This period is fulfilled — ${period.periodKey} (${period.range}).",
+            right = { MtdPill(text = "Fulfilled", tone = PillTone.Fulfilled) },
+        )
+        MtdRule(Modifier.padding(vertical = 20.dp))
+        if (filed != null && filed.hasFigures) {
+            FiledFigures(filed)
+            Receipt(filed)
+        } else {
+            ZillitText(
+                text = buildAnnotatedString {
+                    append("This period is already ")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = palette.ink)) { append("fulfilled") }
+                    append(" with HMRC. It wasn’t filed from here, so the box figures aren’t stored locally.")
+                },
+                style = mtdText(13.5.sp),
+                color = palette.ink3,
             )
-            return@ZillitSectionCard
         }
-
-        VatBox.entries.forEach { box -> FiledFigure(box, filed) }
-
-        ZillitNotice(
-            text = filed.receiptLine(),
-            tone = StatusTone.Done,
-            icon = ZillitIcons.Shield,
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
 
-/** HMRC's form bundle number is the reference on any later query about it. */
-private fun FiledReturn.receiptLine(): String = when {
-    reference.isBlank() -> "Submitted to HMRC."
-    processedAt.isBlank() -> "Submitted. HMRC receipt $reference."
-    else -> "Submitted $processedAt. HMRC receipt $reference."
-}
-
+/** The nine boxes as filed, three across — two when the pane is narrow. */
 @Composable
-private fun ColumnScope.FiledFigure(box: VatBox, filed: FiledReturn) {
+private fun FiledFigures(filed: FiledReturn) {
+    val palette = mtdPalette()
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val across = if (maxWidth >= THREE_ACROSS) 3 else 2
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            VatBox.entries.chunked(across).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    row.forEach { box ->
+                        val shape = RoundedCornerShape(10.dp)
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(shape)
+                                .background(palette.surface2)
+                                .border(1.dp, palette.border, shape)
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            ZillitText(
+                                text = "Box ${box.number} · ${box.label}",
+                                style = mtdText(11.sp),
+                                color = palette.muted,
+                                maxLines = 1,
+                            )
+                            ZillitText(
+                                text = TaxFormat.gbp(filed.values[box], box.decimals),
+                                style = mtdText(14.sp, FontWeight.Bold, mono = true),
+                                color = palette.ink,
+                            )
+                        }
+                    }
+                    repeat(across - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}
+
+/** HMRC's form bundle number is the reference on any later query about the return. */
+@Composable
+private fun Receipt(filed: FiledReturn) {
+    val palette = mtdPalette()
+    val mono = mtdText(12.5.sp, mono = true).fontFamily
     Row(
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.padding(top = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        ZillitIcon(icon = ZillitIcons.Shield, tint = palette.green, size = 15.dp)
         ZillitText(
-            text = "Box ${box.number} · ${box.label}",
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textSecondary,
-            modifier = Modifier.weight(1f),
-        )
-        ZillitText(
-            text = Money.format(
-                filed.values[box],
-                GBP,
-                if (box.wholePounds) WHOLE_POUNDS else PENCE,
-            ),
-            style = ZillitTheme.typography.bodyMedium,
+            text = buildAnnotatedString {
+                if (filed.reference.isBlank()) {
+                    append("Submitted to HMRC.")
+                } else {
+                    append("Submitted · receipt ")
+                    withStyle(SpanStyle(color = palette.ink2, fontFamily = mono)) {
+                        append(filed.reference)
+                    }
+                    if (filed.processedAt.isNotBlank()) append(" · ${filed.processedAt}")
+                }
+            },
+            style = mtdText(12.5.sp),
+            color = palette.green,
         )
     }
 }
+
+private val THREE_ACROSS = 560.dp

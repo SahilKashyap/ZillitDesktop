@@ -778,6 +778,86 @@ object ZillitIcons {
         moveTo(9f, 12f); lineTo(11.2f, 14.2f); lineTo(15.2f, 9.8f)
     }
 
+    /** Two chain links — connecting an account to an outside service. */
+    val Link: ImageVector = stroked("Link") {
+        moveTo(9.75f, 14.25f); lineTo(14.25f, 9.75f)
+        moveTo(10.5f, 6.75f); lineTo(12f, 5.25f)
+        arcTo(3.75f, 3.75f, 0f, false, true, 17.25f, 10.5f)
+        lineTo(15.75f, 12f)
+        moveTo(13.5f, 17.25f); lineTo(12f, 18.75f)
+        arcTo(3.75f, 3.75f, 0f, false, true, 6.75f, 13.5f)
+        lineTo(8.25f, 12f)
+    }
+
+    /** A padlock — an action that waits on something else first. */
+    val Lock: ImageVector = stroked("Lock") {
+        roundedRect(left = 5f, top = 11f, right = 19f, bottom = 20f, radius = 2f)
+        moveTo(8f, 11f); lineTo(8f, 8f)
+        arcTo(4f, 4f, 0f, false, true, 16f, 8f)
+        lineTo(16f, 11f)
+    }
+
+    /** An office block — a company, as opposed to a person. */
+    val Building: ImageVector = stroked("Building") {
+        roundedRect(left = 5.5f, top = 3.5f, right = 18.5f, bottom = 20.5f, radius = 2f)
+        moveTo(9f, 8f); lineTo(11f, 8f)
+        moveTo(13f, 8f); lineTo(15f, 8f)
+        moveTo(9f, 11.5f); lineTo(11f, 11.5f)
+        moveTo(13f, 11.5f); lineTo(15f, 11.5f)
+        moveTo(10f, 20.5f); lineTo(10f, 17.5f); lineTo(14f, 17.5f); lineTo(14f, 20.5f)
+    }
+
+    /** A calculator — figures worked out from the ledger. */
+    val Calculator: ImageVector = stroked("Calculator") {
+        roundedRect(left = 5f, top = 3f, right = 19f, bottom = 21f, radius = 2.5f)
+        moveTo(8f, 7.5f); lineTo(16f, 7.5f)
+        moveTo(8.5f, 12f); lineTo(8.51f, 12f)
+        moveTo(12f, 12f); lineTo(12.01f, 12f)
+        moveTo(15.5f, 12f); lineTo(15.51f, 12f)
+        moveTo(8.5f, 16.5f); lineTo(8.51f, 16.5f)
+        moveTo(12f, 16.5f); lineTo(12.01f, 16.5f)
+        moveTo(15.5f, 16.5f); lineTo(15.51f, 16.5f)
+    }
+
+    /** A floppy disk — keep what is on screen without leaving it. */
+    val Save: ImageVector = stroked("Save") {
+        moveTo(4.5f, 6f)
+        arcTo(2.25f, 2.25f, 0f, false, true, 6.75f, 3.75f)
+        lineTo(15.75f, 3.75f); lineTo(19.5f, 7.5f); lineTo(19.5f, 18f)
+        arcTo(2.25f, 2.25f, 0f, false, true, 17.25f, 20.25f)
+        lineTo(6.75f, 20.25f)
+        arcTo(2.25f, 2.25f, 0f, false, true, 4.5f, 18f)
+        close()
+        moveTo(8.25f, 3.75f); lineTo(8.25f, 8.25f); lineTo(14.25f, 8.25f); lineTo(14.25f, 3.75f)
+        moveTo(8.25f, 20.25f); lineTo(8.25f, 15f); lineTo(15.75f, 15f); lineTo(15.75f, 20.25f)
+    }
+
+    /** Four corners pointing out — open every section at once. */
+    val Expand: ImageVector = stroked("Expand") {
+        moveTo(9f, 4f); lineTo(4f, 4f); lineTo(4f, 9f)
+        moveTo(15f, 20f); lineTo(20f, 20f); lineTo(20f, 15f)
+        moveTo(4f, 15f); lineTo(4f, 20f); lineTo(9f, 20f)
+        moveTo(20f, 9f); lineTo(20f, 4f); lineTo(15f, 4f)
+    }
+
+    /** Four corners pointing in — close every section at once. */
+    val Collapse: ImageVector = stroked("Collapse") {
+        moveTo(4f, 9f); lineTo(9f, 9f); lineTo(9f, 4f)
+        moveTo(20f, 15f); lineTo(15f, 15f); lineTo(15f, 20f)
+        moveTo(15f, 4f); lineTo(15f, 9f); lineTo(20f, 9f)
+        moveTo(9f, 20f); lineTo(9f, 15f); lineTo(4f, 15f)
+    }
+
+    /** One box over two — a filing regime and the returns under it. */
+    val Hierarchy: ImageVector = stroked("Hierarchy") {
+        roundedRect(left = 9f, top = 2.5f, right = 15f, bottom = 7.5f, radius = 1.2f)
+        roundedRect(left = 2.5f, top = 16.5f, right = 8.5f, bottom = 21.5f, radius = 1.2f)
+        roundedRect(left = 15.5f, top = 16.5f, right = 21.5f, bottom = 21.5f, radius = 1.2f)
+        moveTo(12f, 7.5f); lineTo(12f, 12f)
+        moveTo(12f, 12f); lineTo(5.5f, 12f); lineTo(5.5f, 16.5f)
+        moveTo(12f, 12f); lineTo(18.5f, 12f); lineTo(18.5f, 16.5f)
+    }
+
     /** Two figures — crew, holders, departments. */
     /** A person with a plus — the add-to-call verb. */
     val UserPlus: ImageVector = stroked("UserPlus") {
@@ -868,6 +948,20 @@ object ZillitIcons {
         moveTo(12f, 2.5f); lineTo(12f, 4.5f)
         moveTo(4.5f, 5.5f); lineTo(6f, 7f)
         moveTo(19.5f, 5.5f); lineTo(18f, 7f)
+    }
+
+    /** A closed rectangle with round corners, drawn clockwise from the top-left edge. */
+    private fun PathBuilder.roundedRect(left: Float, top: Float, right: Float, bottom: Float, radius: Float) {
+        moveTo(left + radius, top)
+        lineTo(right - radius, top)
+        arcTo(radius, radius, 0f, false, true, right, top + radius)
+        lineTo(right, bottom - radius)
+        arcTo(radius, radius, 0f, false, true, right - radius, bottom)
+        lineTo(left + radius, bottom)
+        arcTo(radius, radius, 0f, false, true, left, bottom - radius)
+        lineTo(left, top + radius)
+        arcTo(radius, radius, 0f, false, true, left + radius, top)
+        close()
     }
 
     private fun stroked(name: String, pathBuilder: PathBuilder.() -> Unit): ImageVector =
