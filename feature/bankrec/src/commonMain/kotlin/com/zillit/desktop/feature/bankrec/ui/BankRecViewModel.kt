@@ -7,135 +7,232 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.bankrec.data.BankRefresh
 import com.zillit.desktop.feature.bankrec.data.bankRefreshes
+import com.zillit.desktop.feature.bankrec.domain.BankRecBadges
+import com.zillit.desktop.feature.bankrec.domain.BankRecDirectory
+import com.zillit.desktop.feature.bankrec.domain.BankRecFiles
+import com.zillit.desktop.feature.bankrec.domain.BankRecLookups
 import com.zillit.desktop.feature.bankrec.domain.BankRecRepository
-import com.zillit.desktop.feature.bankrec.domain.StatementUploader
+import com.zillit.desktop.feature.bankrec.domain.StatementFiles
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 
 /**
  * Bank Reconciliation.
  *
- * Eight tabs over one month's statement: what it says, what the ledger says,
+ * Nine tabs over one month's statement: what it says, what the ledger says,
  * and every way the two disagree. The period is the unit throughout — more
  * than one can be open at once, because a statement spanning several months
  * opens a period per month.
  *
+ * ## One copy of each list, for every tab
+ *
+ * The periods, exceptions, fraud alerts and FX variances are fetched **here**,
+ * once, and every tab filters its own view out of them — the web's module
+ * does the same, and for the same reason: they outlive the tab switches, and
+ * a tab refetching its own copy on every visit re-asks for what the module
+ * already holds. The socket collector keeps them current.
+ *
  * The tabs are not independent. Importing a statement produces transactions,
  * exceptions, fraud alerts and FX variances together; matching a line
  * auto-accepts its fraud alert and usually clears an exception. That fan-out
- * is the service's, and the socket collector mirrors it rather than reloading
- * everything on every frame.
+ * is the service's, and the reloads after each write mirror it.
  */
+@Suppress(
+    "LongParameterList", // Each is a seam the host fills; a holder object would only rename them.
+    "TooManyFunctions", // The module's own lists, plus the small seams its collaborators call through.
+)
 class BankRecViewModel(
     private val repository: BankRecRepository,
     /** Live changes from other clients; null keeps the module load-once. */
     private val events: SocketEventBus? = null,
-    /** Where a statement file comes from. Absent leaves import unavailable. */
-    private val uploader: StatementUploader? = null,
+    /** Where a statement file comes from and is kept. Absent leaves import unavailable. */
+    private val statements: StatementFiles? = null,
     /** Builds a recipient's URL from a link token. */
     private val portalUrl: (String) -> String = { it },
+    /** Where exported PDFs and CSVs go. Absent leaves every export unavailable. */
+    private val files: BankRecFiles? = null,
+    private val directory: BankRecDirectory = BankRecDirectory { null },
+    lookups: BankRecLookups = BankRecLookups.None,
+    /** The tab counts. Absent draws no chips. */
+    private val badges: BankRecBadges? = null,
 ) : ZillitViewModel<BankRecUiState, BankRecEvent, BankRecEffect>(BankRecUiState()) {
 
+    private val lookupSource = lookups
     private var started = false
     private var listening = false
+    private var badgeJob: Job? = null
 
+    internal val periodActions = PeriodActions(this)
+    internal val importActions = ImportActions(this, statements)
     internal val workspaceActions = WorkspaceActions(this)
+    internal val matchActions = MatchActions(this)
+    internal val quickEntryActions = QuickEntryActions(this)
     internal val exceptionActions = ExceptionActions(this)
     internal val fraudActions = FraudActions(this)
     internal val fxActions = FxActions(this)
     internal val portalActions = PortalActions(this, portalUrl)
     internal val rulesActions = RulesActions(this)
-    internal val periodActions = PeriodActions(this, uploader)
 
     fun start() {
         if (started) return
         started = true
-        setState { copy(canImport = uploader != null) }
+        setState { copy(canImport = statements != null) }
         loadPeriods()
+        loadExceptions()
+        loadFraudAlerts()
+        loadFxVariances()
+        loadLookups()
         listen()
+        collectBadges()
+        markTabRead(currentState.tab)
     }
 
     /** Re-reads everything when the open production changes. */
     fun onProjectChanged() {
         started = false
+        badgeJob?.cancel()
         setState { BankRecUiState() }
         start()
     }
 
-    @Suppress("CyclomaticComplexMethod") // One branch per family; each delegates.
+    /**
+     * Opens the tab a route names — `…/bank-reconciliation/exceptions` — so a
+     * link or a sidebar deep link lands where the web's URL would.
+     */
+    fun openRoute(tail: String) {
+        val slug = tail.trim('/').substringBefore('/').substringBefore('?')
+        if (slug.isBlank()) return
+        onEvent(BankRecEvent.OpenTab(BankTab.from(slug)))
+    }
+
     override fun onEvent(event: BankRecEvent) {
         when (event) {
             is BankRecEvent.OpenTab -> openTab(event.tab)
             is BankRecEvent.OpenPeriod -> workspaceActions.openPeriod(event.periodId)
-            // The period list as well as the tab: every tab's header names the
-            // period, and a Refresh that left it stale would answer the
-            // question the user pressed it to ask.
-            BankRecEvent.Refresh -> {
-                loadPeriods()
-                reload(currentState.tab, force = true)
-            }
+            BankRecEvent.Refresh -> refreshAll()
             BankRecEvent.ClearNotice -> setState { copy(notice = null) }
             else -> route(event)
         }
     }
 
     private fun route(event: BankRecEvent) {
-        val handled = workspaceActions.onEvent(event) ||
+        val handled = periodActions.onEvent(event) ||
+            importActions.onEvent(event) ||
+            workspaceActions.onEvent(event) ||
+            matchActions.onEvent(event) ||
+            quickEntryActions.onEvent(event) ||
             exceptionActions.onEvent(event) ||
             fraudActions.onEvent(event) ||
             fxActions.onEvent(event) ||
             portalActions.onEvent(event) ||
-            rulesActions.onEvent(event) ||
-            periodActions.onEvent(event)
+            rulesActions.onEvent(event)
         if (!handled) report(ZillitError.Unknown("unhandled bank reconciliation event"))
     }
 
     private fun openTab(tab: BankTab) {
-        if (currentState.tab == tab) return
+        val previous = currentState.tab
         setState { copy(tab = tab) }
-        reload(tab)
-    }
-
-    /**
-     * Loads what a tab needs, and only on first sight.
-     *
-     * A tab already holding rows is left alone: switching between tabs is how
-     * this module is read, and refetching on every switch would make the
-     * cheapest interaction the most expensive one. [BankRecEvent.Refresh] and
-     * the socket are what bring a tab up to date.
-     */
-    internal fun reload(tab: BankTab, force: Boolean = false) {
+        markTabRead(tab)
         when (tab) {
-            BankTab.Overview, BankTab.History -> if (force || currentState.periods.isEmpty()) loadPeriods()
-            BankTab.Workspace -> workspaceActions.open(force)
-            BankTab.Exceptions -> exceptionActions.load(force)
-            BankTab.FraudAlerts -> fraudActions.load(force)
-            BankTab.FxVariances -> fxActions.load(force)
-            BankTab.GuarantorPortal -> portalActions.load(force)
-            BankTab.Settings -> rulesActions.load(force)
+            // A bare tab click opens the newest open period inline; only an
+            // explicit Open arrives in the full view.
+            BankTab.Workspace -> if (previous != BankTab.Workspace) workspaceActions.openCurrent()
+            BankTab.GuarantorPortal -> portalActions.open()
+            BankTab.Settings -> rulesActions.load(force = false)
+            else -> Unit
         }
     }
 
+    private fun refreshAll() {
+        loadPeriods()
+        loadExceptions()
+        loadFraudAlerts()
+        loadFxVariances()
+        when (currentState.tab) {
+            BankTab.Workspace -> workspaceActions.refresh()
+            BankTab.GuarantorPortal -> portalActions.open()
+            BankTab.Settings -> rulesActions.load(force = true)
+            else -> Unit
+        }
+    }
+
+    // -- the module's own lists ----------------------------------------------
+
     internal fun loadPeriods() {
-        setState { copy(periodsLoading = true) }
         launchResult(repository::bankAccounts, { rows ->
-            setState { copy(bankAccounts = rows) }
+            setState {
+                copy(
+                    bankAccounts = rows,
+                    // History opens on the first account, as the web's does.
+                    historyAccountId = historyAccountId.takeIf { id -> rows.any { it.id == id } }
+                        ?: rows.firstOrNull()?.id.orEmpty(),
+                )
+            }
         }, { })
         // Swallowed: without rates a foreign balance is shown in its own
         // currency and said to be so, which is the honest fallback rather
         // than an error over a page that otherwise works.
-        launchResult(repository::projectCurrencies, { rates ->
-            setState { copy(rates = rates) }
-        }, { })
+        launchResult(repository::projectCurrencies, { rates -> setState { copy(rates = rates) } }, { })
         launchResult(repository::periods, { rows ->
             setState { copy(periods = rows, periodsLoading = false) }
-            // The workspace follows the period list rather than holding its
-            // own: a period signed off or deleted elsewhere must not leave the
-            // reconciliation open on it.
+            periodActions.onPeriodsChanged()
             workspaceActions.onPeriodsChanged()
+            portalActions.onPeriodsChanged()
         }, { error ->
             setState { copy(periodsLoading = false) }
             report(error)
         })
+    }
+
+    internal fun loadExceptions() {
+        launchResult(repository::exceptions, { rows ->
+            setState { copy(exceptions = rows, exceptionsLoading = false) }
+        }, { error ->
+            setState { copy(exceptionsLoading = false) }
+            report(error)
+        })
+    }
+
+    internal fun loadFraudAlerts() {
+        launchResult(repository::fraudAlerts, { rows ->
+            setState { copy(fraudAlerts = rows, fraudLoading = false) }
+        }, { error ->
+            setState { copy(fraudLoading = false) }
+            report(error)
+        })
+    }
+
+    internal fun loadFxVariances() {
+        launchResult(repository::fxVariances, { rows ->
+            setState { copy(fxVariances = rows, fxLoading = false) }
+        }, { error ->
+            setState { copy(fxLoading = false) }
+            report(error)
+        })
+    }
+
+    /** Tax types, the chart, the lock and departments — each empty on failure, see [BankRecLookups]. */
+    private fun loadLookups() {
+        setState { copy(lookups = lookups.copy(company = lookupSource.company())) }
+        // Four services, so four independent reads: one slow chart must not
+        // hold back the tax types a form is already waiting on.
+        launch {
+            val taxTypes = lookupSource.taxTypes()
+            setState { copy(lookups = lookups.copy(taxTypes = taxTypes)) }
+        }
+        launch {
+            val codes = lookupSource.nominalCodes()
+            setState { copy(lookups = lookups.copy(nominalCodes = codes)) }
+        }
+        launch {
+            val locked = lookupSource.lockedThrough()
+            setState { copy(lookups = lookups.copy(lockedThrough = locked)) }
+        }
+        launch {
+            val departments = lookupSource.departments()
+            setState { copy(lookups = lookups.copy(departments = departments)) }
+        }
     }
 
     private fun listen() {
@@ -147,29 +244,49 @@ class BankRecViewModel(
         }
     }
 
+    private fun collectBadges() {
+        val source = badges ?: return
+        badgeJob = launch { source.counts.collect { counts -> setState { copy(badges = counts) } } }
+    }
+
+    /** A tab's chip clears when it is looked at — the web's clear-on-view. */
+    private fun markTabRead(tab: BankTab) {
+        val key = tab.badgeKey ?: return
+        val source = badges ?: return
+        launch { source.markRead(key) }
+    }
+
     /**
      * A slice another client has changed.
      *
-     * Only the tab on screen is refetched, plus the period list, which every
-     * tab's header reads. A background tab is reloaded when it is next opened.
+     * Every list is the module's, so each is refreshed wherever it is shown;
+     * the portal and rules are refetched only when their tab has been opened.
      */
     private fun applyRefresh(slice: BankRefresh) {
         when (slice) {
             BankRefresh.Periods -> loadPeriods()
-            BankRefresh.Workspace -> if (currentState.tab == BankTab.Workspace) workspaceActions.open(force = true)
-            BankRefresh.Exceptions -> if (currentState.tab == BankTab.Exceptions) exceptionActions.load(force = true)
-            BankRefresh.Fraud -> if (currentState.tab == BankTab.FraudAlerts) fraudActions.load(force = true)
-            BankRefresh.Fx -> if (currentState.tab == BankTab.FxVariances) fxActions.load(force = true)
-            BankRefresh.PortalLinks ->
-                if (currentState.tab == BankTab.GuarantorPortal) portalActions.load(force = true)
+            BankRefresh.Workspace -> {
+                loadPeriods()
+                workspaceActions.refresh()
+            }
 
-            BankRefresh.Rules -> if (currentState.tab == BankTab.Settings) rulesActions.load(force = true)
+            BankRefresh.Exceptions -> loadExceptions()
+            BankRefresh.Fraud -> loadFraudAlerts()
+            BankRefresh.Fx -> loadFxVariances()
+            BankRefresh.PortalLinks -> if (currentState.portal.loaded) portalActions.loadLinks()
+            BankRefresh.Rules -> if (currentState.rules.loaded) rulesActions.load(force = true)
         }
     }
 
     // -- seams for the collaborators ---------------------------------------
 
     internal val repo: BankRecRepository get() = repository
+
+    internal val exportFiles: BankRecFiles? get() = files
+
+    internal val people: BankRecDirectory get() = directory
+
+    internal val company get() = lookupSource.company()
 
     internal val ui: BankRecUiState get() = currentState
 
@@ -183,11 +300,48 @@ class BankRecViewModel(
 
     internal fun emit(effect: BankRecEffect) = sendEffect(effect)
 
-    internal fun launchWork(block: suspend CoroutineScope.() -> Unit) = launch(block)
+    internal fun launchWork(block: suspend CoroutineScope.() -> Unit): Job = launch(block)
+
+    /** Runs [block] after [millis] — the module's timed flashes and auto-closes. */
+    internal fun after(millis: Long, block: () -> Unit): Job = launch {
+        delay(millis)
+        block()
+    }
 
     internal fun <T> runResult(
         block: suspend () -> ZillitResult<T>,
         onSuccess: (T) -> Unit,
         onError: (ZillitError) -> Unit = ::report,
-    ) = launchResult(block, onSuccess, onError)
+    ): Job = launchResult(block, onSuccess, onError)
+
+    /** Saves an export and opens it, reporting either failure. */
+    internal suspend fun deliver(fileName: String, bytes: ZillitResult<ByteArray>): Boolean {
+        val target = files ?: run {
+            refuse("This installation cannot save exported files.")
+            return false
+        }
+        return when (bytes) {
+            is ZillitResult.Failure -> {
+                // The host's byte POST words its refusal from the server's own
+                // envelope ("Export answered 403: …"); an Unknown error would
+                // otherwise surface as "Something went wrong" and hide it.
+                val error = bytes.error
+                val said = (error as? ZillitError.Unknown)?.technical?.takeIf { it.isNotBlank() }
+                if (said != null) refuse(said) else report(error)
+                false
+            }
+
+            is ZillitResult.Success -> when (val saved = target.saveAndOpen(fileName, bytes.data)) {
+                is ZillitResult.Failure -> {
+                    report(saved.error)
+                    false
+                }
+
+                is ZillitResult.Success -> {
+                    notify("Exported $fileName.")
+                    true
+                }
+            }
+        }
+    }
 }

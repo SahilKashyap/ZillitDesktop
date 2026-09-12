@@ -9,6 +9,11 @@ import com.zillit.desktop.core.common.ZillitResult
  * bank accounts belong to the account hub and are read from there. That is not
  * a tidiness problem to fix — the account is the only source of a period's
  * currency, and this module has to know it to say what a balance means.
+ *
+ * The lists — exceptions, alerts, variances — are fetched whole, once, and
+ * filtered by period on the client. Every row carries its own `period_id`, so
+ * switching period is a filter rather than a request, which is how the web
+ * reads them too.
  */
 @Suppress("TooManyFunctions") // One call per endpoint; the service has this many.
 interface BankRecRepository {
@@ -16,8 +21,6 @@ interface BankRecRepository {
     // -- periods ------------------------------------------------------------
 
     suspend fun periods(): ZillitResult<List<BankPeriod>>
-
-    suspend fun period(id: String): ZillitResult<BankPeriod>
 
     /** The production's bank accounts, from the account hub. */
     suspend fun bankAccounts(): ZillitResult<List<BankAccountRef>>
@@ -30,8 +33,6 @@ interface BankRecRepository {
      * read as one comparable unit before a difference means anything.
      */
     suspend fun projectCurrencies(): ZillitResult<ProjectRates>
-
-    suspend fun updatePeriodNote(id: String, note: String): ZillitResult<Unit>
 
     /**
      * Closes a period.
@@ -47,10 +48,11 @@ interface BankRecRepository {
      * Transactions, exceptions, fraud alerts and FX variances go with them, and
      * any ledger entry they matched is un-matched. The server refuses a period
      * that has been signed off.
-     *
-     * A POST rather than a DELETE because it carries a body.
      */
     suspend fun deletePeriods(periodIds: List<String>): ZillitResult<Unit>
+
+    /** The signed-off periods as one PDF, rendered by the service. */
+    suspend fun exportPeriodsPdf(periodIds: List<String>, company: CompanyDetails): ZillitResult<ByteArray>
 
     // -- the workspace ------------------------------------------------------
 
@@ -64,11 +66,7 @@ interface BankRecRepository {
      * record, and the type has to travel with the id because an invoice, a
      * quick-added transaction and an FX posting are different tables.
      */
-    suspend fun matchTransaction(
-        id: String,
-        entityId: String,
-        kind: LedgerEntryKind,
-    ): ZillitResult<Unit>
+    suspend fun matchTransaction(id: String, entityId: String, kind: LedgerEntryKind): ZillitResult<Unit>
 
     /** Runs the matching rules over a period again. */
     suspend fun rerunAutoMatch(periodId: String): ZillitResult<Unit>
@@ -77,45 +75,51 @@ interface BankRecRepository {
      * Ingests a statement already uploaded to storage.
      *
      * The file goes to storage first and only its pointer comes here; the
-     * service takes no multipart upload.
+     * service takes no multipart upload. No period is sent: the statement's
+     * own dates decide which periods it opens, as on the web.
      */
-    suspend fun importStatement(
-        attachment: StatementUpload,
-        bankAccountId: String?,
-        periodId: String?,
-    ): ZillitResult<Unit>
+    suspend fun importStatement(attachment: StatementUpload, bankAccountId: String): ZillitResult<ImportResult>
 
     // -- exceptions ---------------------------------------------------------
 
-    suspend fun exceptions(periodId: String?): ZillitResult<List<BankException>>
+    suspend fun exceptions(): ZillitResult<List<BankException>>
 
-    suspend fun setExceptionStatus(
-        id: String,
-        status: ExceptionStatus,
-        notes: String,
-    ): ZillitResult<Unit>
+    suspend fun setExceptionStatus(id: String, status: ExceptionStatus): ZillitResult<Unit>
 
-    /** Posts an exception to the ledger and clears it. */
-    suspend fun quickAddException(id: String, form: QuickAddForm): ZillitResult<Unit>
+    /**
+     * Posts an exception to the ledger and clears it.
+     *
+     * [fromWorkspace] shapes the body the way that surface's form does: the
+     * workspace drawer sends no statement date or invoice number, and a blank
+     * effective date as null rather than as an empty string.
+     */
+    suspend fun quickAddException(id: String, form: QuickAddForm, fromWorkspace: Boolean): ZillitResult<Unit>
+
+    /** One period's exceptions as a PDF. The route takes a single period. */
+    suspend fun exportExceptionsPdf(periodId: String, company: CompanyDetails): ZillitResult<ByteArray>
 
     // -- fraud --------------------------------------------------------------
 
-    suspend fun fraudAlerts(periodId: String?): ZillitResult<List<FraudAlert>>
+    suspend fun fraudAlerts(): ZillitResult<List<FraudAlert>>
 
     suspend fun escalateFraudAlert(id: String): ZillitResult<Unit>
 
     suspend fun dismissFraudAlert(id: String): ZillitResult<Unit>
 
-    suspend fun fraudAuditLog(periodId: String?): ZillitResult<List<FraudAuditEntry>>
+    suspend fun fraudAuditLog(): ZillitResult<List<FraudAuditEntry>>
+
+    /** The audit trail as the filters on screen scope it, as CSV or PDF. */
+    suspend fun exportAuditLog(
+        format: AuditExportFormat,
+        filters: AuditFilters,
+        company: CompanyDetails,
+    ): ZillitResult<ByteArray>
 
     // -- FX -----------------------------------------------------------------
 
-    suspend fun fxVariances(periodId: String?): ZillitResult<List<FxVariance>>
+    suspend fun fxVariances(): ZillitResult<List<FxVariance>>
 
     suspend fun postFxVariance(id: String, posting: FxPosting): ZillitResult<Unit>
-
-    /** Posts every unposted variance in a period at once. */
-    suspend fun postAllFxVariances(periodId: String): ZillitResult<Unit>
 
     // -- rules --------------------------------------------------------------
 
@@ -128,11 +132,18 @@ interface BankRecRepository {
 
     // -- shared links -------------------------------------------------------
 
+    /**
+     * The summary a link to [periodId] would show, as the accountant previews
+     * it — every section, because this route names no link. Null when the
+     * service has nothing for the period.
+     */
+    suspend fun portalPreview(periodId: String, bankAccountId: String): ZillitResult<PortalPreview?>
+
     suspend fun portalLinks(): ZillitResult<List<PortalLink>>
 
-    suspend fun createPortalLink(draft: PortalLinkDraft): ZillitResult<PortalLink>
+    suspend fun createPortalLink(draft: PortalLinkDraft): ZillitResult<Unit>
 
-    suspend fun updatePortalLink(id: String, draft: PortalLinkDraft): ZillitResult<PortalLink>
+    suspend fun updatePortalLink(id: String, draft: PortalLinkDraft): ZillitResult<Unit>
 
     suspend fun revokePortalLink(id: String): ZillitResult<Unit>
 }
@@ -154,11 +165,23 @@ data class StatementUpload(
     val contentSubtype: String = "",
 )
 
-/** Where the host puts a chosen statement file. Absent leaves import unavailable. */
-fun interface StatementUploader {
-    /** Uploads and returns the pointer, or a failure the screen can show. */
-    suspend fun upload(): ZillitResult<StatementUpload?>
+/** Which file the audit trail is exported as. */
+enum class AuditExportFormat(val wire: String, val label: String, val extension: String) {
+    Csv("export-csv", "CSV", "csv"),
+    Pdf("export-pdf", "PDF", "pdf"),
 }
+
+/**
+ * Who the exported documents are for — printed in their headers.
+ *
+ * The web reads these from the open production; so does the host here.
+ */
+data class CompanyDetails(
+    val projectName: String = "",
+    val companyName: String = "",
+    val companyAddress: String = "",
+    val companyEmail: String = "",
+)
 
 /**
  * The project's default currency, and what a foreign one is worth against it.
@@ -180,5 +203,25 @@ data class ProjectRates(
         val from = code?.trim()?.uppercase().orEmpty()
         if (from.isBlank() || from == defaultCode.uppercase()) return amount
         return rateFor(from)?.let { amount / it }
+    }
+
+    /**
+     * [amounts] summed in the project's currency, each converted at its own
+     * rate — and whether any had no rate and went in at face value, which the
+     * web discloses rather than hides.
+     */
+    fun sumInDefault(amounts: List<Pair<Double, String?>>): Pair<Double, Boolean> {
+        var total = 0.0
+        var unrated = false
+        amounts.forEach { (amount, code) ->
+            val converted = toDefault(amount, code)
+            if (converted != null) {
+                total += converted
+            } else {
+                total += amount
+                unrated = true
+            }
+        }
+        return total to unrated
     }
 }

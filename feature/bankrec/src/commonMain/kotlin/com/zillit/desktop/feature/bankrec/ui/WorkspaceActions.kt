@@ -1,16 +1,10 @@
 package com.zillit.desktop.feature.bankrec.ui
 
-import com.zillit.desktop.feature.bankrec.domain.BankTransaction
-import com.zillit.desktop.feature.bankrec.domain.LedgerEntry
-import com.zillit.desktop.feature.bankrec.domain.TxnStatus
-
 /**
- * The reconciliation itself: which bank line answers which ledger entry.
+ * The reconciliation workspace: which period is open, how it is filtered, and
+ * the two period-wide acts — running the matching rules again, and signing off.
  *
- * Matching is the one act here that is invisible once done — a wrong match
- * leaves both sides reading as reconciled, and nothing on the screen says they
- * do not belong together. So every match is proposed and then confirmed, and
- * the confirmation names both sides.
+ * Matching itself is [MatchActions]; the drawer is [QuickEntryActions].
  */
 internal class WorkspaceActions(private val vm: BankRecViewModel) {
 
@@ -23,178 +17,170 @@ internal class WorkspaceActions(private val vm: BankRecViewModel) {
     fun onEvent(event: BankRecEvent): Boolean {
         when (event) {
             is BankRecEvent.FilterWorkspace -> edit { copy(filter = event.filter) }
+            is BankRecEvent.SelectRow -> edit {
+                copy(selectedId = if (selectedId == event.rowId) null else event.rowId)
+            }
+            is BankRecEvent.SetWorkspaceExpanded -> edit { copy(expanded = event.expanded) }
+            BankRecEvent.ToggleQuickEntry -> edit { copy(showQuickEntry = !showQuickEntry) }
             BankRecEvent.RerunAutoMatch -> rerun()
-            is BankRecEvent.SelectTransaction -> edit { copy(selected = event.transaction) }
-            is BankRecEvent.ProposeMatch ->
-                edit { copy(pending = PendingMatch(event.transaction, event.entry, event.wasSuggested)) }
-
-            BankRecEvent.DismissMatch -> edit { copy(pending = null) }
-            BankRecEvent.ConfirmMatch -> confirmMatch()
-            is BankRecEvent.AcceptSuggestion -> acceptSuggestion(event.transaction)
-            BankRecEvent.AskSignOff -> edit { copy(confirmingSignOff = true) }
-            is BankRecEvent.EditSignOffNote -> edit { copy(signOffNote = event.note) }
-            BankRecEvent.DismissSignOff -> edit { copy(confirmingSignOff = false) }
+            BankRecEvent.OpenSignOff -> if (workspace.periodId.isNotBlank()) edit { copy(signOff = SignOffState()) }
+            is BankRecEvent.EditSignOffNote -> edit { copy(signOff = signOff?.copy(note = event.note)) }
+            BankRecEvent.CloseSignOff -> if (workspace.signOff?.submitting != true) edit { copy(signOff = null) }
             BankRecEvent.ConfirmSignOff -> signOff()
             else -> return false
         }
         return true
     }
 
-    /** Opens the workspace on whichever period is being worked on. */
-    fun open(force: Boolean) {
-        val periodId = workspace.periodId.takeIf { id -> vm.ui.periods.any { it.id == id && it.isOpen } }
-            ?: vm.ui.currentPeriod?.id
-            ?: vm.ui.openPeriods.firstOrNull()?.id
-            ?: return edit { WorkspaceState() }
-        if (!force && periodId == workspace.periodId && workspace.transactions.isNotEmpty()) return
-        load(periodId)
-    }
-
-    fun openPeriod(periodId: String) {
-        vm.update { copy(tab = BankTab.Workspace) }
+    /**
+     * A bare Workspace tab: the newest period in progress, inline.
+     *
+     * The period already open stays open if it is still in progress — coming
+     * back to the tab is not a request for a different month.
+     */
+    fun openCurrent() {
+        val state = vm.ui
+        val keep = state.period(workspace.periodId)?.takeIf { it.isOpen }
+        val periodId = keep?.id ?: state.currentPeriod?.id
+        edit { copy(expanded = false) }
+        if (periodId == null) {
+            if (!state.periodsLoading) edit { WorkspaceState(showQuickEntry = showQuickEntry) }
+            return
+        }
         load(periodId)
     }
 
     /**
-     * Keeps the open reconciliation on a period that still exists.
+     * Overview's or History's Open: that period, in the full view.
      *
-     * Two jobs, and both matter. A period signed off or deleted by somebody
-     * else leaves the workspace showing lines that no longer belong to
-     * anything. And the tab can be opened *before* the period list has
-     * arrived — there is nothing to open on at that moment, so the workspace
-     * waits here for the list rather than staying empty until the user
-     * switches away and back.
+     * An explicit choice wins over "the first one in progress" — more than one
+     * period can be open, and picking the first would silently ignore which Open
+     * was clicked.
+     */
+    fun openPeriod(periodId: String) {
+        vm.update { copy(tab = BankTab.Workspace) }
+        edit { copy(expanded = true) }
+        load(periodId)
+    }
+
+    /** Re-reads the open period without blanking what is on screen. */
+    fun refresh() {
+        val periodId = workspace.periodId.ifBlank { return }
+        load(periodId)
+    }
+
+    /**
+     * Keeps the workspace on a period that still exists and is still open.
+     *
+     * A period signed off or deleted — here or by somebody else — leaves the
+     * workspace showing lines that no longer belong to anything open, so it
+     * moves to the next period in progress, or to its empty state. And a tab
+     * opened before the list arrived has nothing to open on until it does.
      */
     fun onPeriodsChanged() {
-        val current = workspace.periodId
-        if (current.isNotBlank() && vm.ui.periods.any { it.id == current }) return
-        if (current.isNotBlank()) edit { WorkspaceState() }
-        if (vm.ui.tab == BankTab.Workspace) open(force = true)
+        val state = vm.ui
+        if (state.tab != BankTab.Workspace && workspace.periodId.isBlank()) return
+        val current = state.period(workspace.periodId)
+        when {
+            current != null && current.isOpen -> Unit
+            state.tab == BankTab.Workspace -> {
+                val next = state.currentPeriod?.id
+                if (next == null) {
+                    edit { WorkspaceState(showQuickEntry = showQuickEntry, expanded = false) }
+                } else if (next != workspace.periodId) {
+                    load(next)
+                }
+            }
+
+            else -> edit { WorkspaceState(showQuickEntry = showQuickEntry) }
+        }
     }
 
     private fun load(periodId: String) {
-        edit { copy(periodId = periodId, loading = true, selected = null, pending = null) }
+        val switching = periodId != workspace.periodId
+        edit {
+            if (switching) {
+                WorkspaceState(
+                    periodId = periodId,
+                    loading = true,
+                    expanded = expanded,
+                    showQuickEntry = showQuickEntry,
+                )
+            } else {
+                // The same period again: the rows stay while the read runs, so
+                // a refresh never flashes the page back to a skeleton.
+                copy(loading = transactions.isEmpty() && ledger.isEmpty())
+            }
+        }
         vm.runResult({ vm.repo.workspace(periodId) }, { data ->
+            if (workspace.periodId != periodId) return@runResult
             edit {
                 copy(
                     transactions = data.transactions,
                     ledger = data.ledger,
+                    closingZillit = data.closingZillit,
                     loading = false,
+                    // A selection that no longer names a row would light nothing.
+                    selectedId = selectedId?.takeIf { id ->
+                        data.transactions.any { it.id == id } || data.ledger.any { it.id == id }
+                    },
                 )
             }
         }, { error ->
-            edit { copy(loading = false) }
+            if (workspace.periodId == periodId) edit { copy(loading = false) }
             vm.report(error)
         })
     }
 
     private fun rerun() {
         val periodId = workspace.periodId.ifBlank { return }
-        edit { copy(rerunning = true) }
+        if (workspace.rerunning) return
+        edit { copy(rerunning = true, selectedId = null) }
         vm.runResult({ vm.repo.rerunAutoMatch(periodId) }, {
             edit { copy(rerunning = false) }
-            vm.notify("Matching rules run again.")
+            vm.notify("Auto-match re-run.")
             load(periodId)
+            // A re-run moves counts, can add or remove fraud flags, and clears
+            // exceptions a new match now answers.
+            vm.loadPeriods()
+            vm.loadExceptions()
+            vm.loadFraudAlerts()
         }, { error ->
             edit { copy(rerunning = false) }
             vm.report(error)
         })
-    }
-
-    /**
-     * Takes the engine's own suggestion for a line.
-     *
-     * Still confirmed: a suggestion is a guess with a confidence on it, and
-     * accepting one reconciles two records that nothing afterwards will
-     * question.
-     */
-    private fun acceptSuggestion(transaction: BankTransaction) {
-        val entry = suggestedEntry(transaction)
-        if (entry == null) {
-            vm.refuse("There is no suggested entry to accept for this line.")
-            return
-        }
-        edit { copy(pending = PendingMatch(transaction, entry, wasSuggested = true)) }
-    }
-
-    /** The ledger entry the engine suggested, when it is still unmatched. */
-    private fun suggestedEntry(transaction: BankTransaction): LedgerEntry? =
-        transaction.matchedInvoiceIds.firstNotNullOfOrNull { id ->
-            workspace.ledger.firstOrNull { it.entityId == id && !it.isMatched }
-        }
-
-    private fun confirmMatch() {
-        val pending = workspace.pending ?: return
-        edit { copy(matching = true) }
-        vm.runResult(
-            { vm.repo.matchTransaction(pending.transaction.id, pending.entry.entityId, pending.entry.kind) },
-            {
-                edit {
-                    copy(
-                        matching = false,
-                        pending = null,
-                        selected = null,
-                        // Marked here as well as reloaded: the reload is a
-                        // round trip, and the row that was just reconciled
-                        // should not sit unmatched while it runs.
-                        transactions = transactions.map { row ->
-                            if (row.id == pending.transaction.id) {
-                                row.copy(
-                                    status = TxnStatus.Matched,
-                                    matchedInvoiceIds = listOf(pending.entry.entityId),
-                                )
-                            } else {
-                                row
-                            }
-                        },
-                        ledger = ledger.map { row ->
-                            if (row.entityId == pending.entry.entityId) {
-                                row.copy(transactionIds = row.transactionIds + pending.transaction.id)
-                            } else {
-                                row
-                            }
-                        },
-                    )
-                }
-                vm.notify("Matched to ${pending.entry.title}.")
-                // The service also clears exceptions and fraud alerts on a
-                // match, so the period counts move too.
-                vm.loadPeriods()
-            },
-            { error ->
-                edit { copy(matching = false) }
-                vm.report(error)
-            },
-        )
     }
 
     /**
      * Closes the period.
      *
-     * Marks its invoices paid, computes the closing balance and locks it.
-     * Confirmed, and the note is required when anything is still outstanding —
-     * signing off over unmatched lines is a judgement somebody will be asked
+     * Marks its invoices paid, computes the closing balance and locks it. The
+     * note is required when anything is outstanding — an unresolved fraud flag,
+     * an unmatched or suggested line, an open exception, or a difference —
+     * because signing off over those is a judgement somebody will be asked
      * about later.
      */
     private fun signOff() {
+        val dialog = workspace.signOff ?: return
         val periodId = workspace.periodId.ifBlank { return }
-        val note = workspace.signOffNote
-        if (hasOutstanding() && note.isBlank()) {
-            vm.refuse("Say why this period is being signed off with items outstanding.")
-            return
+        if (dialog.submitting) return
+        val view = vm.ui.workspaceView()
+        if (view.hasIssues && dialog.note.isBlank()) {
+            return vm.refuse("Explain why you are signing off with exceptions.")
         }
-        edit { copy(signingOff = true) }
-        vm.runResult({ vm.repo.signOffPeriod(periodId, note) }, {
-            edit { WorkspaceState() }
-            vm.notify("Period signed off.")
+        edit { copy(signOff = dialog.copy(submitting = true)) }
+        vm.runResult({ vm.repo.signOffPeriod(periodId, dialog.note.trim()) }, {
+            edit { copy(signOff = null) }
+            vm.notify("Reconciliation signed off.")
+            // The period has left "in progress"; the list decides where the
+            // workspace goes next, with no page reload.
             vm.loadPeriods()
+            vm.loadExceptions()
+            vm.loadFraudAlerts()
+            vm.loadFxVariances()
         }, { error ->
-            edit { copy(signingOff = false) }
+            edit { copy(signOff = signOff?.copy(submitting = false)) }
             vm.report(error)
         })
     }
-
-    /** Whether anything on the period still needs a person. */
-    fun hasOutstanding(): Boolean =
-        workspace.transactions.any { it.effectiveStatus != TxnStatus.Matched }
 }

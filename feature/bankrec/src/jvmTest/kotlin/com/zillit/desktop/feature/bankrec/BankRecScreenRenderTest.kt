@@ -1,380 +1,240 @@
 package com.zillit.desktop.feature.bankrec
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.feature.bankrec.domain.BankAccountRef
-import com.zillit.desktop.feature.bankrec.domain.BankException
-import com.zillit.desktop.feature.bankrec.domain.BankPeriod
-import com.zillit.desktop.feature.bankrec.domain.BankTransaction
-import com.zillit.desktop.feature.bankrec.domain.ExceptionStatus
-import com.zillit.desktop.feature.bankrec.domain.ExceptionType
-import com.zillit.desktop.feature.bankrec.domain.FraudAlert
-import com.zillit.desktop.feature.bankrec.domain.FraudStatus
-import com.zillit.desktop.feature.bankrec.domain.FraudType
-import com.zillit.desktop.feature.bankrec.domain.FxVariance
-import com.zillit.desktop.feature.bankrec.domain.LedgerEntry
-import com.zillit.desktop.feature.bankrec.domain.PeriodStatus
-import com.zillit.desktop.feature.bankrec.domain.PortalLink
+import com.zillit.desktop.feature.bankrec.domain.AuditFilters
+import com.zillit.desktop.feature.bankrec.domain.ImportResult
+import com.zillit.desktop.feature.bankrec.domain.PickedStatement
 import com.zillit.desktop.feature.bankrec.domain.PortalLinkDraft
-import com.zillit.desktop.feature.bankrec.domain.ProjectRates
-import com.zillit.desktop.feature.bankrec.domain.TxnStatus
+import com.zillit.desktop.feature.bankrec.domain.QuickAddForm
+import com.zillit.desktop.feature.bankrec.ui.AuditLogState
 import com.zillit.desktop.feature.bankrec.ui.BankRecScreen
 import com.zillit.desktop.feature.bankrec.ui.BankRecUiState
 import com.zillit.desktop.feature.bankrec.ui.BankTab
-import com.zillit.desktop.feature.bankrec.ui.ExceptionsState
-import com.zillit.desktop.feature.bankrec.ui.FraudState
-import com.zillit.desktop.feature.bankrec.ui.FxState
+import com.zillit.desktop.feature.bankrec.ui.DeleteRequest
+import com.zillit.desktop.feature.bankrec.ui.ExceptionQuickAddState
+import com.zillit.desktop.feature.bankrec.ui.ExportPdfState
+import com.zillit.desktop.feature.bankrec.ui.FxPostState
 import com.zillit.desktop.feature.bankrec.ui.ImportState
-import com.zillit.desktop.feature.bankrec.ui.PendingMatch
-import com.zillit.desktop.feature.bankrec.ui.PortalState
-import com.zillit.desktop.feature.bankrec.ui.WorkspaceState
+import com.zillit.desktop.feature.bankrec.ui.ImportStep
+import com.zillit.desktop.feature.bankrec.ui.LocalBankRecPeople
+import com.zillit.desktop.feature.bankrec.ui.MatchProposal
+import com.zillit.desktop.feature.bankrec.ui.PeriodDetailState
+import com.zillit.desktop.feature.bankrec.ui.SignOffState
 import kotlin.test.Test
+import kotlin.test.assertTrue
 
 /**
- * Composes every tab, light and dark.
+ * Composes every tab and every dialog, light and dark.
  *
  * Both themes because a colour defined in one and not the other is invisible
- * until somebody switches; every tab because a layout that throws — a
- * full-width child inside a row, a list inside a scrolling column — takes the
- * window down rather than degrading.
+ * until somebody switches; everything because a layout that throws — a
+ * full-width child inside a row, a list inside a scrolling column, an intrinsic
+ * measurement of a table — takes the window down rather than degrading.
  */
 @OptIn(ExperimentalTestApi::class)
 class BankRecScreenRenderTest {
 
-    private val account = BankAccountRef(id = "b1", name = "Barclays", currencyCode = "GBP")
-
-    private val period = BankPeriod(
-        id = "p1",
-        periodMillis = 1_743_465_600_000,
-        bankAccountId = "b1",
-        status = PeriodStatus.InProgress,
-        totalTxns = 3,
-        matchedCount = 1,
-        unmatchedCount = 1,
-        fraudCount = 1,
-        closingBank = 12_500.0,
-        closingZillit = 12_000.0,
-        difference = 500.0,
-    )
-
-    private val txn = BankTransaction(
-        id = "t1",
-        periodId = "p1",
-        vendorName = "Panavision",
-        reference = "BACS · INV-88",
-        debit = 1200.0,
-        currency = "GBP",
-        status = TxnStatus.Unmatched,
-    )
-
-    private val entry = LedgerEntry(
-        id = "led-1",
-        entityId = "inv-1",
-        title = "Panavision",
-        reference = "INV-88",
-        amount = -1200.0,
-    )
-
-    private fun state(tab: BankTab, extra: BankRecUiState.() -> BankRecUiState = { this }) =
-        BankRecUiState(
-            tab = tab,
-            periods = listOf(period),
-            bankAccounts = listOf(account),
-            rates = ProjectRates(defaultCode = "GBP"),
-        ).extra()
-
-    private fun render(
-        state: BankRecUiState,
-        dark: Boolean = false,
-        body: suspend ComposeUiTest.() -> Unit,
-    ) {
+    private fun render(state: BankRecUiState, dark: Boolean = false, body: ComposeUiTest.() -> Unit) {
         runComposeUiTest {
-            setContent { ZillitTheme(darkTheme = dark) { BankRecScreen(state) {} } }
+            setContent {
+                ZillitTheme(darkTheme = dark, animateThemeChange = false) {
+                    CompositionLocalProvider(LocalBankRecPeople provides RenderFixtures.people) {
+                        BankRecScreen(state) {}
+                    }
+                }
+            }
+            waitForIdle()
             body()
         }
+    }
+
+    private fun ComposeUiTest.seen(text: String) {
+        val found = onAllNodesWithText(text, substring = true, ignoreCase = true).fetchSemanticsNodes()
+        assertTrue(found.isNotEmpty(), "expected to find \"$text\" on screen")
     }
 
     @Test
     fun `every tab composes in both themes`() {
         listOf(false, true).forEach { dark ->
             BankTab.entries.forEach { tab ->
-                render(state(tab), dark) {
-                    onNodeWithText("Bank Reconciliation").assertExists()
-                }
+                render(RenderFixtures.state(tab), dark) { seen("Bank Reconciliation") }
             }
         }
     }
 
     @Test
-    fun `the overview shows the five figures and the fraud banner`() {
-        render(state(BankTab.Overview)) {
-            onNodeWithText("BANK BALANCE").assertExists()
-            onNodeWithText("DIFFERENCE").assertExists()
-            onNodeWithText("1 payment(s) flagged for review", substring = true).assertExists()
-            // The KPI tile, the progress card and the history row all name it.
-            onAllNodesWithText("Apr 2025").assertCountEquals(3)
-        }
-    }
-
-    /**
-     * A converted balance says so, and an unconvertible one says that instead.
-     *
-     * A figure quietly converted at a rate nobody set is the one number on
-     * this page nobody could reconcile afterwards.
-     */
-    @Test
-    fun `a foreign account with no rate is not converted silently`() {
-        val euro = state(BankTab.Overview) {
-            copy(bankAccounts = listOf(account.copy(currencyCode = "EUR")))
-        }
-
-        render(euro) {
-            onNodeWithText("EUR — no exchange rate set").assertExists()
-            onNodeWithText("Not comparable").assertExists()
+    fun `the overview shows the current period and its history`() {
+        render(RenderFixtures.state(BankTab.Overview)) {
+            seen("Bank Balance")
+            seen("Zillit Balance")
+            seen("Reconciliation History")
+            seen("Apr 2025")
         }
     }
 
     @Test
-    fun `a converted balance shows the statement's own figure beside it`() {
-        val euro = state(BankTab.Overview) {
-            copy(
-                bankAccounts = listOf(account.copy(currencyCode = "EUR")),
-                rates = ProjectRates(defaultCode = "GBP", rates = mapOf("EUR" to 1.25)),
-            )
-        }
-
-        render(euro) {
-            onNodeWithText("converted", substring = true).assertExists()
+    fun `the workspace shows both panels and the fraud line`() {
+        render(RenderFixtures.state(BankTab.Workspace)) {
+            seen("Bank Statement")
+            seen("Zillit Ledger")
+            seen("Thames Valley Catering")
+            seen("Framestore VFX Ltd")
+            seen("Quick Entry")
         }
     }
 
     @Test
-    fun `the workspace shows both sides and the filters`() {
-        val workspace = state(BankTab.Workspace) {
-            copy(
-                workspace = WorkspaceState(
-                    periodId = "p1",
-                    transactions = listOf(txn),
-                    ledger = listOf(entry),
+    fun `the exceptions tab groups what is open, foreign and actioned`() {
+        render(RenderFixtures.state(BankTab.Exceptions)) {
+            seen("Not In Zillit")
+            seen("FX Variations")
+            seen("Previously actioned")
+            seen("Quick Add")
+            seen("Investigate")
+            seen("View FX")
+        }
+    }
+
+    @Test
+    fun `the fraud tab shows the alert, its signals and both actions`() {
+        render(RenderFixtures.state(BankTab.FraudAlerts)) {
+            seen("Thames Valley Catering")
+            seen("Investigated — No Issue")
+            seen("Escalate to Finance")
+            seen("Audit Log")
+        }
+    }
+
+    @Test
+    fun `the FX tab shows the chart, the table and the journal`() {
+        render(RenderFixtures.state(BankTab.FxVariances)) {
+            seen("Bank Rates vs Budget")
+            seen("Journal Preview")
+            seen("Kodak Motion Picture")
+            // USD has no rate in Production Setup, so Post All says why it is unavailable.
+            seen("Rates missing")
+        }
+    }
+
+    @Test
+    fun `history, open banking and settings compose their content`() {
+        render(RenderFixtures.state(BankTab.History)) { seen("Mar 2025") }
+        render(RenderFixtures.state(BankTab.OpenBanking)) { seen("Coming soon") }
+        render(RenderFixtures.state(BankTab.Settings)) {
+            seen("Connected Bank Accounts")
+            seen("Auto-Match Rules")
+            seen("Fraud Detection Thresholds")
+            seen("Split payment threshold")
+        }
+    }
+
+    @Test
+    fun `the portal previews the summary and lists the links`() {
+        render(RenderFixtures.state(BankTab.GuarantorPortal)) {
+            seen("Bank Reconciliation Summary")
+            seen("Signed Off")
+            seen("Foreign Currency Payments")
+            seen("Sign-off Note")
+            seen("James Whitford")
+            seen("Re-share")
+        }
+    }
+
+    @Test
+    fun `every dialog composes in both themes`() {
+        listOf(false, true).forEach { dark ->
+            dialogStates().forEach { (title, state) ->
+                render(state, dark) { seen(title) }
+            }
+        }
+    }
+
+    companion object {
+        /** Each dialog open over a tab it opens from, with the title it must show. */
+        @Suppress("LongMethod") // Test data: one state per dialog.
+        fun dialogStates(): List<Pair<String, BankRecUiState>> {
+            val f = RenderFixtures
+            return listOf(
+                "Delete this period?" to f.state(BankTab.History).copy(deleting = DeleteRequest(
+                    listOf("p1"),
+                    "Apr 2025",
+                )),
+                "Export Reconciliation PDF" to f.state(BankTab.History).copy(exportPdf = ExportPdfState(setOf("p0"))),
+                "Period Details" to f.state(BankTab.History).copy(
+                    periodDetail = PeriodDetailState(
+                        periodId = "p0",
+                        loading = false,
+                        preview = f.preview,
+                        transactions = f.transactions,
+                        ledger = f.ledger,
+                    ),
                 ),
-            )
-        }
-
-        render(workspace) {
-            // The section label draws in capitals.
-            onNodeWithText("BANK STATEMENT · 1 LINE(S)").assertExists()
-            onNodeWithText("ZILLIT LEDGER · 1 UNMATCHED").assertExists()
-            onNodeWithText("Match by hand").assertExists()
-            onNodeWithText("Sign off period").assertExists()
-        }
-    }
-
-    /** The confirmation names both sides, which is the whole point of it. */
-    @Test
-    fun `the match confirmation names both records`() {
-        val pending = state(BankTab.Workspace) {
-            copy(
-                workspace = WorkspaceState(
-                    periodId = "p1",
-                    transactions = listOf(txn),
-                    ledger = listOf(entry),
-                    pending = PendingMatch(txn, entry, wasSuggested = true),
+                "Import Bank Statement" to f.state(BankTab.Overview).copy(
+                    import = ImportState(
+                        open = true,
+                        bankAccountId = "b1",
+                        file = PickedStatement("april.csv", ByteArray(2048)),
+                    ),
                 ),
-            )
-        }
-
-        render(pending) {
-            onNodeWithText("Reconcile these two?").assertExists()
-            onNodeWithText("Bank").assertExists()
-            onNodeWithText("Ledger").assertExists()
-            onNodeWithText("suggested by the matching rules", substring = true).assertExists()
-        }
-    }
-
-    /** Signing off over unreconciled lines says so and demands a reason. */
-    @Test
-    fun `the sign-off dialog names what is outstanding`() {
-        val signing = state(BankTab.Workspace) {
-            copy(
-                workspace = WorkspaceState(
-                    periodId = "p1",
-                    transactions = listOf(txn),
-                    confirmingSignOff = true,
+                "Importing Statement" to f.state(BankTab.Overview).copy(
+                    import = ImportState(
+                        open = true,
+                        bankAccountId = "b1",
+                        file = PickedStatement("april.csv", ByteArray(2048)),
+                        processing = true,
+                        step = ImportStep.Done.ordinal,
+                        result = ImportResult(imported = 47, matched = 39, suggested = 3, unmatched = 3, fraud = 2),
+                    ),
                 ),
-            )
-        }
-
-        render(signing) {
-            onNodeWithText("Sign off this period?").assertExists()
-            onNodeWithText("1 line(s) are still unreconciled", substring = true).assertExists()
-            onNodeWithText("Sign-off note (required)").assertExists()
-        }
-    }
-
-    @Test
-    fun `the exceptions tab splits outstanding from settled`() {
-        val exceptions = state(BankTab.Exceptions) {
-            copy(
-                exceptions = ExceptionsState(
-                    rows = listOf(
-                        BankException(
-                            id = "e1",
-                            periodId = "p1",
-                            type = ExceptionType.BankCharge,
-                            status = ExceptionStatus.Open,
-                            title = "Monthly service charge",
-                            transaction = txn.copy(debit = 35.0),
+                "Fraud Alert — Confirm Match" to f.state(BankTab.Workspace).let {
+                    it.copy(workspace = it.workspace.copy(proposal = MatchProposal("t4", "inv-3")))
+                },
+                "Manual Match" to f.state(BankTab.Workspace).let {
+                    it.copy(workspace = it.workspace.copy(manualMatchId = "t6"))
+                },
+                "Confirm Manual Match" to f.state(BankTab.Workspace).let {
+                    it.copy(workspace = it.workspace.copy(manualMatchId = "t6", manualMatchEntryId = "led-3"))
+                },
+                "Sign Off Reconciliation" to f.state(BankTab.Workspace).let {
+                    it.copy(
+                        workspace = it.workspace.copy(
+                            signOff = SignOffState(note = "Chasing Barclays for the charge."),
                         ),
-                        BankException(
-                            id = "e2",
-                            periodId = "p1",
-                            type = ExceptionType.Interest,
-                            status = ExceptionStatus.Resolved,
-                            title = "Interest",
+                    )
+                },
+                "Quick Add to Zillit Ledger" to f.state(BankTab.Exceptions).copy(
+                    exceptionsPage = f.state(BankTab.Exceptions).exceptionsPage.copy(
+                        quickAdd = ExceptionQuickAddState(
+                            "e1",
+                            QuickAddForm(date = "2025-04-07", amount = "35.00", effectiveDate = "2025-03-30"),
                         ),
                     ),
                 ),
-            )
-        }
-
-        render(exceptions) {
-            onNodeWithText("Outstanding").assertExists()
-            onNodeWithText("Settled").assertExists()
-            onNodeWithText("Post to ledger").assertExists()
-            // The title and the exception card both carry it.
-            onAllNodesWithText("Monthly service charge", substring = true).assertCountEquals(2)
-        }
-    }
-
-    @Test
-    fun `a fraud alert shows its risk, its bank details and both actions`() {
-        val fraud = state(BankTab.FraudAlerts) {
-            copy(
-                fraud = FraudState(
-                    alerts = listOf(
-                        FraudAlert(
-                            id = "a1",
-                            periodId = "p1",
-                            alertType = FraudType.MandateFraud,
-                            status = FraudStatus.Active,
-                            title = "Bank details changed",
-                            riskScore = 88,
-                            vendorName = "Panavision",
-                            vendorSortCode = "20-48-91",
-                            transaction = txn,
+                "Audit Log" to f.state(BankTab.FraudAlerts).copy(
+                    fraudPage = f.state(BankTab.FraudAlerts).fraudPage.copy(
+                        audit = AuditLogState(loading = false, entries = f.audit, filters = AuditFilters()),
+                    ),
+                ),
+                "Post FX Variance" to f.state(BankTab.FxVariances).copy(
+                    fxPage = f.state(BankTab.FxVariances).fxPage.copy(
+                        post = FxPostState(
+                            "v2",
+                            nominalCode = "7850",
+                            costCentre = "",
+                            budgetRate = "",
+                            bankRate = "1.28",
                         ),
                     ),
                 ),
+                "Generate Guarantor / Broadcaster Portal Link" to f.state(BankTab.GuarantorPortal).let {
+                    it.copy(portal = it.portal.copy(draft = PortalLinkDraft(recipientName = "James", periodId = "p0")))
+                },
             )
-        }
-
-        render(fraud) {
-            onNodeWithText("Bank details changed").assertExists()
-            onNodeWithText("Risk 88 · High risk").assertExists()
-            onNodeWithText("Sort 20-48-91", substring = true).assertExists()
-            onNodeWithText("Escalate").assertExists()
-            onNodeWithText("Dismiss").assertExists()
-        }
-    }
-
-    @Test
-    fun `the FX tab shows the variance and offers to post it`() {
-        val fx = state(BankTab.FxVariances) {
-            copy(
-                fx = FxState(
-                    rows = listOf(
-                        FxVariance(
-                            id = "v1",
-                            periodId = "p1",
-                            invoiceCurrency = "USD",
-                            foreignAmount = 1500.0,
-                            budgetAmount = 1200.0,
-                            paidAmount = 1240.0,
-                            variance = -40.0,
-                            vendorName = "Kodak",
-                        ),
-                    ),
-                ),
-            )
-        }
-
-        render(fx) {
-            onNodeWithText("Kodak").assertExists()
-            onNodeWithText("Post all unposted").assertExists()
-            onAllNodesWithText("Post").assertCountEquals(1)
-        }
-    }
-
-    @Test
-    fun `the portal tab warns what a link with transaction detail shows`() {
-        val portal = state(BankTab.GuarantorPortal) {
-            copy(
-                portal = PortalState(
-                    links = listOf(
-                        PortalLink(
-                            id = "l1",
-                            token = "abc",
-                            recipientName = "James Whitford",
-                            recipientEmail = "j@example.com",
-                            periodId = "p1",
-                        ),
-                    ),
-                    draft = PortalLinkDraft(
-                        recipientName = "James Whitford",
-                        recipientEmail = "j@example.com",
-                        periodId = "p1",
-                        permissions = setOf(
-                            com.zillit.desktop.feature.bankrec.domain.PortalPermission.TransactionDetail,
-                        ),
-                    ),
-                ),
-            )
-        }
-
-        render(portal) {
-            // The button behind the dialog, and the dialog's own title.
-            onAllNodesWithText("Share a period").assertCountEquals(2)
-            onNodeWithText("show individual payments", substring = true).assertExists()
-            onNodeWithText("actually grants access", substring = true).assertExists()
-        }
-    }
-
-    @Test
-    fun `the rules tab shows both sections and a threshold only where there is one`() {
-        render(state(BankTab.Settings)) {
-            onNodeWithText("Matching rules").assertExists()
-            onNodeWithText("Fraud detection").assertExists()
-            onNodeWithText("Barclays").assertExists()
-            // Two of the five checks carry an amount; the rest have no box.
-            onAllNodesWithText("Threshold (GBP)").assertCountEquals(2)
-        }
-    }
-
-    @Test
-    fun `deleting a period says what goes with it`() {
-        render(state(BankTab.History) { copy(deleting = listOf(period)) }) {
-            onNodeWithText("Delete this period?").assertExists()
-            onNodeWithText("Everything the reconciliation produced", substring = true).assertExists()
-        }
-    }
-
-    @Test
-    fun `the import dialog explains what a multi-month statement does`() {
-        render(state(BankTab.Overview) { copy(import = ImportState(open = true)) }) {
-            onNodeWithText("Import a statement").assertExists()
-            onNodeWithText("opens a period for each", substring = true).assertExists()
-        }
-    }
-
-    @Test
-    fun `a production with no periods says how to start one`() {
-        render(BankRecUiState(tab = BankTab.Overview)) {
-            onNodeWithText("No period open").assertExists()
         }
     }
 }

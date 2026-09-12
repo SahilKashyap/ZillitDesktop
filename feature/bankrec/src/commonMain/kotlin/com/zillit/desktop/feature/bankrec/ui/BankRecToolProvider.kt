@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.bankrec.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,9 +26,8 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
  * the web or here. The longest-prefix route resolution leaves the hub owning
  * `/film-tools/account-hub` and gives this the deeper route.
  *
- * A window of its own rather than a page inside the console: this is eight
- * tabs with a two-panel reconciliation among them, and the hub's sidebar
- * beside it would leave the workspace half a screen wide.
+ * The Account Hub embeds it in its own shell, as the web does; the workspace
+ * tab's full view gives the module's header and tabs back to the panels.
  */
 class BankRecToolProvider(
     private val viewModel: BankRecViewModel,
@@ -46,6 +46,11 @@ class BankRecToolProvider(
         var failure by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
+
+        // A deep link lands on the tab it names: the workspace resolves this
+        // provider by longest prefix, so `…/bank-reconciliation/exceptions`
+        // arrives with its tail intact, as the web's URL would.
+        LaunchedEffect(route.path) { viewModel.openRoute(route.path.removePrefix(BANK_REC_PATH)) }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {
@@ -63,7 +68,9 @@ class BankRecToolProvider(
             navigator.setTitle("Bank Reconciliation · ${state.tab.label}")
         }
 
-        BankRecScreen(state = state, onEvent = viewModel::onEvent)
+        CompositionLocalProvider(LocalBankRecPeople provides viewModel.people) {
+            BankRecScreen(state = state, onEvent = viewModel::onEvent)
+        }
 
         ZillitErrorToast(message = failure, onDismiss = { failure = null })
     }

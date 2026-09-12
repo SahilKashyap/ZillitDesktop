@@ -1,35 +1,49 @@
 package com.zillit.desktop.feature.bankrec.ui
 
+import com.zillit.desktop.feature.bankrec.domain.AuditExportFormat
+import com.zillit.desktop.feature.bankrec.domain.AuditFilters
 import com.zillit.desktop.feature.bankrec.domain.BankAccountRef
 import com.zillit.desktop.feature.bankrec.domain.BankException
 import com.zillit.desktop.feature.bankrec.domain.BankPeriod
+import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
 import com.zillit.desktop.feature.bankrec.domain.BankTransaction
+import com.zillit.desktop.feature.bankrec.domain.CompanyDetails
 import com.zillit.desktop.feature.bankrec.domain.ExceptionStatus
 import com.zillit.desktop.feature.bankrec.domain.FraudAlert
 import com.zillit.desktop.feature.bankrec.domain.FraudAuditEntry
-import com.zillit.desktop.feature.bankrec.domain.FxPosting
+import com.zillit.desktop.feature.bankrec.domain.FxDetail
 import com.zillit.desktop.feature.bankrec.domain.FxVariance
+import com.zillit.desktop.feature.bankrec.domain.ImportResult
 import com.zillit.desktop.feature.bankrec.domain.LedgerEntry
+import com.zillit.desktop.feature.bankrec.domain.NominalCode
+import com.zillit.desktop.feature.bankrec.domain.PeriodStatus
+import com.zillit.desktop.feature.bankrec.domain.PickedStatement
 import com.zillit.desktop.feature.bankrec.domain.PortalLink
 import com.zillit.desktop.feature.bankrec.domain.PortalLinkDraft
+import com.zillit.desktop.feature.bankrec.domain.PortalPreview
 import com.zillit.desktop.feature.bankrec.domain.ProjectRates
 import com.zillit.desktop.feature.bankrec.domain.QuickAddForm
+import com.zillit.desktop.feature.bankrec.domain.QuickEntryType
 import com.zillit.desktop.feature.bankrec.domain.RulesSettings
-import com.zillit.desktop.feature.bankrec.domain.TxnStatus
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
+import com.zillit.desktop.feature.bankrec.domain.TaxOption
+import com.zillit.desktop.feature.bankrec.domain.WorkspaceFilter
 
-/** The module's tabs, in the order the web lists them. */
-enum class BankTab(val slug: String, val label: String) {
-    Overview("overview", "Overview"),
-    Workspace("workspace", "Workspace"),
-    Exceptions("exceptions", "Exceptions"),
-    FraudAlerts("fraud-alerts", "Fraud Alerts"),
-    FxVariances("fx-variances", "FX Variances"),
-    History("history", "History"),
-    GuarantorPortal("guarantor-portal", "Guarantor Portal"),
-    Settings("settings", "Accounts & Rules"),
+/**
+ * The module's tabs, in the order the web lists them.
+ *
+ * [badgeKey] is the notification ledger's `level_1` for the tab. Open Banking
+ * has none: it is a placeholder on the web too, and nothing is ever filed there.
+ */
+enum class BankTab(val slug: String, val label: String, val badgeKey: String?) {
+    Overview("overview", "Overview", "bank_overview"),
+    Workspace("workspace", "Workspace", "bank_workspace"),
+    Exceptions("exceptions", "Exceptions", "bank_exceptions"),
+    FraudAlerts("fraud-alerts", "Fraud Alerts", "bank_fraud_alerts"),
+    FxVariances("fx-variances", "FX Variances", "bank_fx_variances"),
+    History("history", "History", "bank_period_history"),
+    OpenBanking("open-banking", "Open Banking", null),
+    GuarantorPortal("guarantor-portal", "Guarantor Portal", "bank_guarantor_portal"),
+    Settings("settings", "Accounts & Rules", "bank_settings"),
     ;
 
     companion object {
@@ -37,126 +51,193 @@ enum class BankTab(val slug: String, val label: String) {
     }
 }
 
-/** Which lines the workspace is showing. */
-enum class WorkspaceFilter(val slug: String, val label: String) {
-    All("all", "All"),
-    Unmatched("unmatched", "Unmatched"),
-    Suggested("suggested", "Suggested"),
-    Fraud("fraud", "Fraud"),
-    Fx("fx", "FX"),
-    ;
-
-    fun accepts(txn: BankTransaction): Boolean = when (this) {
-        All -> true
-        Unmatched -> txn.effectiveStatus == TxnStatus.Unmatched
-        Suggested -> txn.effectiveStatus == TxnStatus.Suggested
-        Fraud -> txn.effectiveStatus == TxnStatus.FraudFlag
-        Fx -> txn.fx != null
-    }
-}
-
-/** A match waiting for a person to confirm it. */
-data class PendingMatch(
-    val transaction: BankTransaction,
-    val entry: LedgerEntry,
-    val wasSuggested: Boolean,
-)
+/** "All open periods" in a period filter. */
+const val ALL_PERIODS = "all"
 
 /**
- * The reconciliation workspace for one period.
+ * Which period a list tab shows.
  *
- * [selected] is the bank line whose ledger counterpart is being chosen. Manual
- * matching is a two-step act on purpose: reconciling the wrong invoice to a
- * payment is not visible afterwards, because both then read as matched.
+ * Null is "follow the newest open period", which is what the tab opens on. A
+ * choice that is no longer open — signed off or deleted elsewhere — falls back
+ * the same way rather than leaving the list empty over a period that has gone.
  */
-data class WorkspaceState(
-    val periodId: String = "",
+fun resolvePeriodChoice(choice: String?, openPeriods: List<BankPeriod>): String = when {
+    choice == ALL_PERIODS -> ALL_PERIODS
+    choice != null && openPeriods.any { it.id == choice } -> choice
+    else -> openPeriods.firstOrNull()?.id ?: ALL_PERIODS
+}
+
+/** Which of the two period tables a selection belongs to — each keeps its own. */
+enum class PeriodScope { Overview, History }
+
+/** A delete waiting for its confirmation, with the months it names. */
+data class DeleteRequest(val ids: List<String>, val label: String, val deleting: Boolean = false)
+
+/** The read-only detail of a period, opened from View. */
+data class PeriodDetailState(
+    val periodId: String,
+    val loading: Boolean = true,
+    val preview: PortalPreview? = null,
     val transactions: List<BankTransaction> = emptyList(),
     val ledger: List<LedgerEntry> = emptyList(),
-    val filter: WorkspaceFilter = WorkspaceFilter.All,
-    val loading: Boolean = false,
-    val rerunning: Boolean = false,
-    val matching: Boolean = false,
-    val selected: BankTransaction? = null,
-    val pending: PendingMatch? = null,
-    val signingOff: Boolean = false,
-    val signOffNote: String = "",
-    val confirmingSignOff: Boolean = false,
-) {
-    val visible: List<BankTransaction> get() = transactions.filter { filter.accepts(it) }
+)
 
-    val unmatchedLedger: List<LedgerEntry> get() = ledger.filterNot { it.isMatched }
+/** The signed-off periods being chosen for a PDF. */
+data class ExportPdfState(val selected: Set<String> = emptySet(), val exporting: Boolean = false)
 
-    val matchedCount: Int get() = transactions.count { it.effectiveStatus == TxnStatus.Matched }
+/** A statement being imported — the web's two screens: choose, then watch it process. */
+data class ImportState(
+    val open: Boolean = false,
+    val bankAccountId: String = "",
+    val file: PickedStatement? = null,
+    val dragOver: Boolean = false,
+    val picking: Boolean = false,
+    val processing: Boolean = false,
+    /** 0 upload, 1 parse, 2 match, 3 checks, 4 done — see [ImportStep]. */
+    val step: Int = 0,
+    val result: ImportResult? = null,
+    val error: String? = null,
+)
 
-    val fraudCount: Int get() = transactions.count { it.hasActiveFraud }
-
-    /** The ledger entries that could answer [selected], nearest amount first. */
-    val matchCandidates: List<LedgerEntry>
-        get() {
-            val target = selected?.amount ?: return emptyList()
-            return unmatchedLedger.sortedBy { entry ->
-                entry.amount?.let { kotlin.math.abs(it - target) } ?: Double.MAX_VALUE
-            }
-        }
+/** The five steps the import dialog walks through. */
+enum class ImportStep(val label: String) {
+    Upload("Uploading statement"),
+    Parse("Parsing file & extracting transactions"),
+    Match("Auto-matching against invoices"),
+    Validate("Running fraud & compliance checks"),
+    Done("Import complete"),
 }
 
-/** The exceptions tab. */
-data class ExceptionsState(
-    val rows: List<BankException> = emptyList(),
-    val loading: Boolean = false,
-    val periodId: String = "",
-    val acting: String = "",
-    /** The exception being posted to the ledger, and the form for it. */
-    val posting: BankException? = null,
+/** A suggested match waiting for its confirmation. */
+data class MatchProposal(val transactionId: String, val invoiceId: String)
+
+/** The sign-off dialog. */
+data class SignOffState(val note: String = "", val submitting: Boolean = false)
+
+/**
+ * The quick-entry drawer beside the workspace.
+ *
+ * Two forms share one drawer: the general form that posts an exception and
+ * matches it, and the FX form that posts a variance. The nominal code and cost
+ * centre are shared between them, as on the web.
+ */
+data class QuickEntryState(
+    val type: QuickEntryType = QuickEntryType.BankCharge,
+    /** The bank line being quick-added, when the drawer was opened from one. */
+    val transactionId: String? = null,
     val form: QuickAddForm = QuickAddForm(),
-    val saving: Boolean = false,
-    val noting: BankException? = null,
-    val noteText: String = "",
-    val noteStatus: ExceptionStatus = ExceptionStatus.UnderInvestigation,
-) {
-    val outstanding: List<BankException> get() = rows.filter { it.status.isOutstanding }
+    val fraudReason: String = "",
+    val fraudPriority: String = "High",
+    val adding: Boolean = false,
+    val fx: FxDetail? = null,
+    val fxCurrency: String = "EUR",
+    val fxForeignAmount: String = "",
+    val fxBudgetRate: String = "",
+    val fxBankRate: String = "",
+    val fxPosting: Boolean = false,
+    val fxPosted: Boolean = false,
+)
 
-    val settled: List<BankException> get() = rows.filterNot { it.status.isOutstanding }
-}
-
-/** The fraud tab, and the audit trail under it. */
-data class FraudState(
-    val alerts: List<FraudAlert> = emptyList(),
-    val auditLog: List<FraudAuditEntry> = emptyList(),
-    val loading: Boolean = false,
+/** The reconciliation workspace for one period. */
+data class WorkspaceState(
     val periodId: String = "",
-    val acting: String = "",
-    val showAuditLog: Boolean = false,
-    /** The alert being escalated, held until the accountant confirms. */
-    val escalating: FraudAlert? = null,
-) {
-    val activeCount: Int get() = alerts.count { it.isOpen }
-}
-
-/** The FX tab. */
-data class FxState(
-    val rows: List<FxVariance> = emptyList(),
     val loading: Boolean = false,
-    val periodId: String = "",
-    val posting: FxVariance? = null,
-    val nominalCode: String = FxPosting.DEFAULT_NOMINAL,
-    val costCentre: String = "",
-    val saving: Boolean = false,
-    val confirmingPostAll: Boolean = false,
-) {
-    val unposted: List<FxVariance> get() = rows.filterNot { it.isPosted }
+    val transactions: List<BankTransaction> = emptyList(),
+    val ledger: List<LedgerEntry> = emptyList(),
+    /** The ledger balance from the latest workspace read, which is fresher than the period's. */
+    val closingZillit: Double? = null,
+    val filter: WorkspaceFilter = WorkspaceFilter.All,
+    val selectedId: String? = null,
+    /** A ledger row lit for a moment after "View" — scrolled to and highlighted. */
+    val flashId: String? = null,
+    /** The full view — the module's header and tabs given back to the panels. */
+    val expanded: Boolean = false,
+    val showQuickEntry: Boolean = true,
+    val rerunning: Boolean = false,
+    val quickEntry: QuickEntryState = QuickEntryState(),
+    val proposal: MatchProposal? = null,
+    val accepting: Boolean = false,
+    val manualMatchId: String? = null,
+    val manualMatchEntryId: String? = null,
+    val manualMatching: Boolean = false,
+    val signOff: SignOffState? = null,
+)
 
-    val netVariance: Double get() = rows.sumOf { it.variance }
+/** Which exception is being acted on, and with what. */
+data class ExceptionAction(val id: String, val status: ExceptionStatus)
+
+/** The exceptions dialog that posts one to the ledger. */
+data class ExceptionQuickAddState(
+    val exceptionId: String,
+    val form: QuickAddForm,
+    val saving: Boolean = false,
+)
+
+data class ExceptionsPageState(
+    val periodChoice: String? = null,
+    val acting: ExceptionAction? = null,
+    val quickAdd: ExceptionQuickAddState? = null,
+    val exporting: Boolean = false,
+)
+
+/** The two things done to an alert. */
+enum class AlertAction { Dismiss, Escalate }
+
+/** A column the audit trail can be sorted by. */
+enum class AuditSort { CreatedAt, Action, Risk, Amount, Vendor }
+
+data class AuditLogState(
+    val loading: Boolean = true,
+    val entries: List<FraudAuditEntry> = emptyList(),
+    val filters: AuditFilters = AuditFilters(),
+    val sort: AuditSort = AuditSort.CreatedAt,
+    val ascending: Boolean = false,
+    val exportMenu: Boolean = false,
+    val exporting: AuditExportFormat? = null,
+)
+
+data class FraudPageState(
+    val periodChoice: String? = null,
+    val acting: Pair<String, AlertAction>? = null,
+    val audit: AuditLogState? = null,
+)
+
+/** The dialog that posts one FX variance. */
+data class FxPostState(
+    val varianceId: String,
+    val nominalCode: String,
+    val costCentre: String,
+    val budgetRate: String,
+    val bankRate: String,
+    val posting: Boolean = false,
+    val posted: Boolean = false,
+) {
+    val budgetRateValue: Double get() = budgetRate.trim().toDoubleOrNull()?.takeIf { it > 0 } ?: 0.0
+
+    val bankRateValue: Double get() = bankRate.trim().toDoubleOrNull()?.takeIf { it > 0 } ?: 0.0
+
+    /** Both rates, or the variance is the budget figure minus nothing. */
+    val ready: Boolean get() = budgetRateValue > 0 && bankRateValue > 0
 }
+
+data class FxPageState(
+    val periodChoice: String? = null,
+    val post: FxPostState? = null,
+    val postingAll: Boolean = false,
+    val postAllMessage: String? = null,
+)
 
 /** The shared-links tab. */
 data class PortalState(
     val links: List<PortalLink> = emptyList(),
     val loading: Boolean = false,
+    val loaded: Boolean = false,
+    val selectedPeriodId: String? = null,
+    val preview: PortalPreview? = null,
+    val previewLoading: Boolean = false,
     val draft: PortalLinkDraft? = null,
-    val revoking: PortalLink? = null,
-    val copiedToken: String = "",
+    val copiedToken: String? = null,
+    val revokingId: String? = null,
 )
 
 /** The accounts and rules tab. */
@@ -164,6 +245,7 @@ data class RulesState(
     val settings: RulesSettings = RulesSettings(),
     val saved: RulesSettings = RulesSettings(),
     val loading: Boolean = false,
+    val loaded: Boolean = false,
     val savingMatch: Boolean = false,
     val savingFraud: Boolean = false,
 ) {
@@ -172,31 +254,47 @@ data class RulesState(
     val fraudDirty: Boolean get() = settings.fraud != saved.fraud
 }
 
-/** A statement being imported. */
-data class ImportState(
-    val open: Boolean = false,
-    val bankAccountId: String = "",
-    val periodId: String = "",
-    val uploading: Boolean = false,
-    val fileName: String = "",
+/** What the quick forms read from other services. */
+data class LookupState(
+    val taxTypes: List<TaxOption> = emptyList(),
+    val nominalCodes: List<NominalCode> = emptyList(),
+    val lockedThrough: String? = null,
+    val departments: Map<String, String> = emptyMap(),
+    /** The open production, for the portal summary's header and the exports. */
+    val company: CompanyDetails = CompanyDetails(),
 )
 
 /** Everything the module renders. */
 data class BankRecUiState(
     val tab: BankTab = BankTab.Overview,
     val periods: List<BankPeriod> = emptyList(),
+    /** True until the first period list lands — the skeleton, not an empty page. */
+    val periodsLoading: Boolean = true,
     val bankAccounts: List<BankAccountRef> = emptyList(),
-    val periodsLoading: Boolean = false,
     /** The project's own currency and its rates — see [ProjectRates]. */
     val rates: ProjectRates = ProjectRates(),
+    val exceptions: List<BankException> = emptyList(),
+    val exceptionsLoading: Boolean = true,
+    val fraudAlerts: List<FraudAlert> = emptyList(),
+    val fraudLoading: Boolean = true,
+    val fxVariances: List<FxVariance> = emptyList(),
+    val fxLoading: Boolean = true,
+    /** Unread per tab, keyed by [BankTab.badgeKey]. */
+    val badges: Map<String, Int> = emptyMap(),
+    val overviewSelection: Set<String> = emptySet(),
+    val historySelection: Set<String> = emptySet(),
+    val historyAccountId: String = "",
+    val deleting: DeleteRequest? = null,
+    val periodDetail: PeriodDetailState? = null,
+    val exportPdf: ExportPdfState? = null,
+    val import: ImportState = ImportState(),
     val workspace: WorkspaceState = WorkspaceState(),
-    val exceptions: ExceptionsState = ExceptionsState(),
-    val fraud: FraudState = FraudState(),
-    val fx: FxState = FxState(),
+    val exceptionsPage: ExceptionsPageState = ExceptionsPageState(),
+    val fraudPage: FraudPageState = FraudPageState(),
+    val fxPage: FxPageState = FxPageState(),
     val portal: PortalState = PortalState(),
     val rules: RulesState = RulesState(),
-    val import: ImportState = ImportState(),
-    val deleting: List<BankPeriod> = emptyList(),
+    val lookups: LookupState = LookupState(),
     val notice: String? = null,
     val canImport: Boolean = true,
 ) {
@@ -205,22 +303,43 @@ data class BankRecUiState(
         get() = periods.filter { it.isOpen }.sortedByDescending { it.periodMillis ?: 0 }
 
     /**
-     * The period the KPI row describes.
+     * The period the KPI row describes: the first one in progress.
      *
-     * The one in progress, not the newest: a signed-off month is done, and
-     * showing its figures as the current state of the reconciliation is how a
-     * finished period comes to look like an outstanding one.
+     * Not the newest: a signed-off month is done, and showing its figures as
+     * the current state of the reconciliation is how a finished period comes
+     * to look like an outstanding one.
      */
-    val currentPeriod: BankPeriod? get() = periods.firstOrNull { it.isOpen }
+    val currentPeriod: BankPeriod? get() = periods.firstOrNull { it.status == PeriodStatus.InProgress }
 
-    fun account(id: String): BankAccountRef? = bankAccounts.firstOrNull { it.id == id }
+    val workspacePeriod: BankPeriod? get() = period(workspace.periodId)
+
+    /** The History table's rows: one account's periods, as the web filters them. */
+    val historyPeriods: List<BankPeriod>
+        get() = if (historyAccountId.isBlank()) periods else periods.filter { it.bankAccountId == historyAccountId }
+
+    /** The signed-off periods — the only ones the PDF export offers. */
+    val completedPeriods: List<BankPeriod> get() = periods.filter { !it.isOpen }
+
+    fun period(id: String?): BankPeriod? = id?.let { wanted -> periods.firstOrNull { it.id == wanted } }
+
+    fun account(id: String?): BankAccountRef? = id?.let { wanted -> bankAccounts.firstOrNull { it.id == wanted } }
+
+    val projectCurrency: String get() = rates.defaultCode
 
     /** A period's own currency is its bank account's; the period carries none. */
     fun currencyOf(period: BankPeriod?): String =
-        account(period?.bankAccountId.orEmpty())?.currencyCode?.takeIf { it.isNotBlank() }
-            ?: projectCurrency
+        account(period?.bankAccountId)?.currencyCode?.takeIf { it.isNotBlank() } ?: projectCurrency
 
-    val projectCurrency: String get() = rates.defaultCode
+    /**
+     * A period's label, disambiguated by account only when two open periods
+     * share a month — the common single-account case stays clean.
+     */
+    fun periodOptionLabel(period: BankPeriod): String {
+        val month = BankRecFormat.periodLabel(period)
+        val sharesMonth = openPeriods.count { it.periodMillis == period.periodMillis } > 1
+        val name = account(period.bankAccountId)?.displayName.orEmpty()
+        return if (sharesMonth && name.isNotBlank()) "$month · $name" else month
+    }
 
     /**
      * The KPI row for [period], in one comparable currency.
@@ -248,20 +367,12 @@ data class BankRecUiState(
         )
     }
 
-    fun periodLabelFor(id: String): String =
-        periods.firstOrNull { it.id == id }?.let { periodLabel(it) } ?: "—"
-
-    /**
-     * A period's label, disambiguated by account only when two open periods
-     * share a month.
-     */
-    fun periodLabel(period: BankPeriod): String {
-        val month = monthLabel(period.periodMillis)
-        val sharesMonth = openPeriods.count { it.periodMillis == period.periodMillis } > 1
-        if (!sharesMonth) return month
-        val name = account(period.bankAccountId)?.name.orEmpty()
-        return if (name.isBlank()) month else "$month · $name"
-    }
+    /** Whether any dialog is up — keyboard shortcuts stand down while one is. */
+    val dialogOpen: Boolean
+        get() = deleting != null || periodDetail != null || exportPdf != null || import.open ||
+            workspace.proposal != null || workspace.manualMatchId != null || workspace.signOff != null ||
+            exceptionsPage.quickAdd != null || fraudPage.audit != null || fxPage.post != null ||
+            portal.draft != null
 }
 
 /**
@@ -283,38 +394,10 @@ data class BankKpi(
     val matched: Int = 0,
     val total: Int = 0,
 ) {
-    val isReconciled: Boolean get() = difference != null && difference == 0.0
+    val isReconciled: Boolean get() = difference != null && kotlin.math.abs(difference) < HALF_PENNY
+
+    private companion object {
+        /** Sums of converted decimals: exact equality calls a balanced ledger broken. */
+        const val HALF_PENNY = 0.005
+    }
 }
-
-private val MONTHS = listOf(
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-)
-
-/**
- * `Apr 2026`, read in UTC.
- *
- * The column is a first-of-month marker in UTC, so a local calendar moves it a
- * month either side of midnight — which is how a March reconciliation comes to
- * be labelled February.
- */
-fun monthLabel(periodMillis: Long?): String {
-    val millis = periodMillis ?: return EM_DASH
-    val date = Instant.fromEpochMilliseconds(millis).toLocalDateTime(TimeZone.UTC).date
-    return "${MONTHS[date.month.ordinal]} ${date.year}"
-}
-
-/** `05 Apr 2026`, also in UTC and for the same reason. */
-fun dayLabel(millis: Long?): String {
-    val value = millis ?: return EM_DASH
-    val date = Instant.fromEpochMilliseconds(value).toLocalDateTime(TimeZone.UTC).date
-    return "${date.day.toString().padStart(2, '0')} ${MONTHS[date.month.ordinal]} ${date.year}"
-}
-
-/** `05 Apr` — the workspace's own column, where the year is never in doubt. */
-fun shortDayLabel(millis: Long?): String {
-    val value = millis ?: return EM_DASH
-    val date = Instant.fromEpochMilliseconds(value).toLocalDateTime(TimeZone.UTC).date
-    return "${date.day.toString().padStart(2, '0')} ${MONTHS[date.month.ordinal]}"
-}
-
-private const val EM_DASH = "\u2014"

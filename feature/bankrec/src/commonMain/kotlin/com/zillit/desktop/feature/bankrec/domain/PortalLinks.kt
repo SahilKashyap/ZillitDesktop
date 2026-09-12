@@ -2,10 +2,10 @@ package com.zillit.desktop.feature.bankrec.domain
 
 /** Who a reconciliation summary is being shared with. */
 enum class PortalOrgType(val wire: String, val label: String) {
-    CompletionGuarantor("completion_guarantor", "Completion guarantor"),
+    CompletionGuarantor("completion_guarantor", "Completion Guarantor"),
     Broadcaster("broadcaster", "Broadcaster"),
-    CoProducer("co_producer", "Co-producer"),
-    ExternalAuditor("external_auditor", "External auditor"),
+    CoProducer("co_producer", "Co-Producer"),
+    ExternalAuditor("external_auditor", "External Auditor"),
     Investor("investor", "Investor"),
     Other("other", "Other"),
     ;
@@ -21,14 +21,15 @@ enum class PortalOrgType(val wire: String, val label: String) {
  *
  * [defaultOn] mirrors the web's own defaults. The two that are off by default
  * are the two that name people: fraud alerts and individual transactions.
+ * [shortLabel] is the chip the links table wears.
  */
-enum class PortalPermission(val wire: String, val label: String, val defaultOn: Boolean) {
-    Balances("balances", "Opening and closing balances", true),
-    ReconciliationStatus("reconciliation_status", "Reconciliation status and match rate", true),
-    Exceptions("exceptions", "Exceptions list", true),
-    FxVariance("fx_variance", "FX variance summary", true),
-    FraudAlerts("fraud_alerts", "Fraud alerts, names redacted", false),
-    TransactionDetail("transaction_detail", "Individual transaction detail", false),
+enum class PortalPermission(val wire: String, val label: String, val shortLabel: String, val defaultOn: Boolean) {
+    Balances("balances", "Opening & closing balances", "Balances", true),
+    ReconciliationStatus("reconciliation_status", "Reconciliation status & match rate", "Rec. Status", true),
+    Exceptions("exceptions", "Exceptions list (unmatched items)", "Exceptions", true),
+    FxVariance("fx_variance", "FX variance summary", "FX Variance", true),
+    FraudAlerts("fraud_alerts", "Fraud alerts (names redacted by default)", "Fraud (redacted)", false),
+    TransactionDetail("transaction_detail", "Individual transaction detail", "Transactions", false),
     ;
 
     companion object {
@@ -55,8 +56,8 @@ enum class PortalExpiry(val wire: String, val label: String) {
 
 /** Whether the accountant hears about a view. */
 enum class PortalNotify(val wire: String, val label: String) {
-    FirstView("first_view", "Email me on first view"),
-    EveryView("every_view", "Email me on every view"),
+    FirstView("first_view", "Yes — email me on first view"),
+    EveryView("every_view", "Yes — email me on every view"),
     None("none", "No notifications"),
     ;
 
@@ -74,8 +75,12 @@ enum class PortalStatus(val wire: String, val label: String) {
     ;
 
     companion object {
-        fun from(wire: String?): PortalStatus =
-            entries.firstOrNull { it.wire == wire?.lowercase() } ?: Active
+        /** Anything not active or revoked is expired, as the web reads it. */
+        fun from(wire: String?): PortalStatus = when (wire?.lowercase()) {
+            "active", null, "" -> Active
+            "revoked" -> Revoked
+            else -> Expired
+        }
     }
 }
 
@@ -93,20 +98,23 @@ data class PortalLink(
     val recipientName: String = "",
     val recipientEmail: String = "",
     val orgType: PortalOrgType = PortalOrgType.CompletionGuarantor,
+    val orgTypeWire: String = "",
     val bankAccountId: String = "",
     val periodId: String = "",
-    val permissions: Set<PortalPermission> = PortalPermission.defaults,
+    /** The server's own label for the period, which the links table prints. */
+    val periodLabel: String = "",
+    val permissions: List<PortalPermission> = PortalPermission.defaults.toList(),
     val notifyOnView: PortalNotify = PortalNotify.None,
     val status: PortalStatus = PortalStatus.Active,
     val expiresAtMillis: Long? = null,
     val createdAtMillis: Long? = null,
     val lastViewedAtMillis: Long? = null,
-    val viewCount: Int = 0,
+    val views: Int = 0,
 ) {
     val isActive: Boolean get() = status == PortalStatus.Active
 }
 
-/** A link being created or re-shared. */
+/** A link being created, edited or re-shared. */
 data class PortalLinkDraft(
     val editingId: String = "",
     val recipientName: String = "",
@@ -126,14 +134,100 @@ data class PortalLinkDraft(
      *
      * A link with no permissions is a link that shows nothing, which the web
      * also refuses — it reads as a broken page to the recipient rather than as
-     * a deliberate empty share.
+     * a deliberate empty share. [periodIds] are the periods that exist: a link
+     * to a period deleted while the dialog was open would 404 for the
+     * recipient, so it is refused here as the web refuses it.
      */
-    val problem: String?
-        get() = when {
-            recipientName.isBlank() -> "Give the recipient's name."
-            !recipientEmail.contains('@') -> "Give the recipient's email address."
-            periodId.isBlank() -> "Choose the period to share."
-            permissions.isEmpty() -> "Choose at least one thing the recipient may see."
-            else -> null
+    fun problem(periodIds: Collection<String>): String? = when {
+        recipientName.isBlank() -> "Give the recipient's name."
+        recipientEmail.isBlank() || !recipientEmail.contains('@') -> "Give the recipient's email address."
+        periodId.isBlank() || periodId !in periodIds -> "Choose the period to share."
+        permissions.isEmpty() -> "Choose at least one thing the recipient may see."
+        else -> null
+    }
+}
+
+/**
+ * The read-only summary a link shows, as the accountant previews it.
+ *
+ * ## An absent permission list is not an empty one
+ *
+ * [permissions] is null on the accountant's own preview — that route is scoped
+ * to a period, takes no link, and so says nothing about what anybody may see —
+ * and the preview then shows everything. A link-scoped answer always carries
+ * the key, and there an empty list means *nothing*. Treating the two alike
+ * either hides the whole preview from the accountant or opens fraud alerts and
+ * transaction detail to a recipient who was never granted them.
+ */
+data class PortalPreview(
+    val period: BankPeriod,
+    val bankAccountName: String = "",
+    val bankAccountHolder: String = "",
+    val bankAccountCurrency: String = "",
+    val projectName: String = "",
+    val exceptions: List<PreviewException> = emptyList(),
+    val fraudAlerts: List<PreviewFraudAlert> = emptyList(),
+    val fxVariances: List<PreviewFx> = emptyList(),
+    val transactions: List<BankTransaction> = emptyList(),
+    val ledgerEntries: List<LedgerEntry> = emptyList(),
+    val permissions: Set<PortalPermission>? = null,
+) {
+    fun allows(permission: PortalPermission): Boolean = permissions == null || permission in permissions
+
+    /**
+     * The foreign payments folded per currency, as the summary tabulates them.
+     *
+     * Totals add; the budget rate is the first row's and the bank rate the
+     * last's, which is what the web shows for a currency paid more than once.
+     */
+    val fxByCurrency: List<PreviewFxGroup>
+        get() = fxVariances.groupBy { it.currency.ifBlank { "FX" } }.map { (code, rows) ->
+            PreviewFxGroup(
+                currency = code,
+                foreignTotal = rows.sumOf { it.foreignAmount },
+                paidTotal = rows.sumOf { it.paidAmount },
+                varianceTotal = rows.sumOf { it.variance },
+                budgetRate = rows.first().budgetRate,
+                bankRate = rows.last().bankRate,
+            )
         }
 }
+
+/** An exception, as the summary lists it. */
+data class PreviewException(
+    val title: String = "",
+    val status: ExceptionStatus = ExceptionStatus.Open,
+    val debit: Double = 0.0,
+    val credit: Double = 0.0,
+    val currency: String? = null,
+) {
+    /** Money out negative. */
+    val amount: Double get() = if (debit > 0) -debit else credit
+}
+
+/** A fraud alert, as the summary lists it. */
+data class PreviewFraudAlert(
+    val title: String = "",
+    val status: FraudStatus = FraudStatus.Active,
+    val description: String = "",
+)
+
+/** A foreign payment, as the summary lists it. */
+data class PreviewFx(
+    val currency: String = "",
+    val foreignAmount: Double = 0.0,
+    val paidAmount: Double = 0.0,
+    val variance: Double = 0.0,
+    val budgetRate: Double = 0.0,
+    val bankRate: Double = 0.0,
+)
+
+/** One currency's foreign payments, totalled. */
+data class PreviewFxGroup(
+    val currency: String,
+    val foreignTotal: Double,
+    val paidTotal: Double,
+    val varianceTotal: Double,
+    val budgetRate: Double,
+    val bankRate: Double,
+)

@@ -1,96 +1,150 @@
 package com.zillit.desktop.feature.bankrec.ui
 
+import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.bankrec.domain.FxPosting
-import com.zillit.desktop.feature.bankrec.domain.FxStatus
+import com.zillit.desktop.feature.bankrec.domain.FxRates
 import com.zillit.desktop.feature.bankrec.domain.FxVariance
 
 /**
  * What a foreign payment cost against what it was budgeted at.
  *
- * Posting writes a journal, so it names the nominal it lands on and cannot be
- * undone from here. Posting a whole period at once is confirmed separately —
- * it is the same act repeated, and repeating it by mistake is a page of
- * journals to reverse.
+ * ## Posting all goes row by row, on purpose
+ *
+ * The service has a `post-all` route, and the web stopped using it: it takes
+ * only a period, so it cannot know a budget rate the screen resolved from
+ * Production Setup — or one somebody typed — and it posts its own figures
+ * while the table advertises a variance nobody stored. One post per row keeps
+ * "what you see is what posts"; the price is partial failure, which is
+ * reported by count rather than hidden.
  */
 internal class FxActions(private val vm: BankRecViewModel) {
 
-    private val state: FxState get() = vm.ui.fx
+    private val page: FxPageState get() = vm.ui.fxPage
 
-    private fun edit(reducer: FxState.() -> FxState) = vm.update { copy(fx = fx.reducer()) }
+    private fun edit(reducer: FxPageState.() -> FxPageState) = vm.update { copy(fxPage = fxPage.reducer()) }
 
     fun onEvent(event: BankRecEvent): Boolean {
         when (event) {
-            is BankRecEvent.FilterFx -> {
-                edit { copy(periodId = event.periodId) }
-                load(force = true)
+            is BankRecEvent.SetFxPeriod -> edit { copy(periodChoice = event.choice, postAllMessage = null) }
+            is BankRecEvent.OpenFxPost -> open(event.varianceId)
+            is BankRecEvent.EditFxPost -> edit {
+                copy(
+                    post = post?.copy(
+                        nominalCode = event.nominalCode,
+                        costCentre = event.costCentre,
+                        budgetRate = event.budgetRate,
+                        bankRate = event.bankRate,
+                    ),
+                )
             }
 
-            is BankRecEvent.ComposeFxPosting -> compose(event.variance)
-            is BankRecEvent.EditFxPosting ->
-                edit { copy(nominalCode = event.nominalCode, costCentre = event.costCentre) }
-
-            BankRecEvent.DismissFxPosting -> edit { copy(posting = null) }
-            BankRecEvent.ConfirmFxPosting -> post()
-            BankRecEvent.AskPostAllFx -> edit { copy(confirmingPostAll = true) }
-            BankRecEvent.DismissPostAllFx -> edit { copy(confirmingPostAll = false) }
-            BankRecEvent.ConfirmPostAllFx -> postAll()
+            BankRecEvent.CloseFxPost -> if (page.post?.posting != true) edit { copy(post = null) }
+            BankRecEvent.ConfirmFxPost -> post()
+            BankRecEvent.PostAllFx -> postAll()
             else -> return false
         }
         return true
     }
 
-    fun load(force: Boolean) {
-        if (!force && state.rows.isNotEmpty()) return
-        val periodId = state.periodId
-        edit { copy(loading = true) }
-        vm.runResult({ vm.repo.fxVariances(periodId.takeIf { it.isNotBlank() }) }, { rows ->
-            edit { copy(rows = rows, loading = false) }
-        }, { error ->
-            edit { copy(loading = false) }
-            vm.report(error)
-        })
+    /** The rows the tab shows: the chosen open period's, or every one. */
+    fun visibleRows(): List<FxVariance> {
+        val state = vm.ui
+        val periodId = resolvePeriodChoice(page.periodChoice, state.openPeriods)
+        return if (periodId == ALL_PERIODS) state.fxVariances else state.fxVariances.filter { it.periodId == periodId }
     }
 
-    private fun compose(variance: FxVariance) = edit {
-        copy(posting = variance, nominalCode = FxPosting.DEFAULT_NOMINAL, costCentre = costCentre)
+    /**
+     * Seeds the dialog from the resolution — Production Setup, the stored rate,
+     * or blank — so an already-rated row is one click to post and an unrated one
+     * lands in an empty field instead of silently posting at one to one.
+     */
+    private fun open(id: String) {
+        val row = vm.ui.fxVariances.firstOrNull { it.id == id } ?: return
+        val resolved = FxRates.resolve(row, vm.ui.rates)
+        edit {
+            copy(
+                post = FxPostState(
+                    varianceId = id,
+                    nominalCode = row.nominalCode.ifBlank { FxPosting.DEFAULT_NOMINAL },
+                    costCentre = row.costCentre,
+                    budgetRate = resolved.budget?.toString().orEmpty(),
+                    bankRate = resolved.bank?.toString().orEmpty(),
+                ),
+            )
+        }
     }
 
     private fun post() {
-        val variance = state.posting ?: return
-        val posting = FxPosting(nominalCode = state.nominalCode.trim(), costCentre = state.costCentre)
-        if (posting.nominalCode.isBlank()) {
-            return vm.refuse("Give the nominal code this variance posts to.")
-        }
-        edit { copy(saving = true) }
-        vm.runResult({ vm.repo.postFxVariance(variance.id, posting) }, {
-            edit {
-                copy(
-                    saving = false,
-                    posting = null,
-                    rows = rows.map { if (it.id == variance.id) it.copy(status = FxStatus.Posted) else it },
-                )
+        val dialog = page.post ?: return
+        if (dialog.posting || dialog.posted) return
+        if (!dialog.ready) return vm.refuse("Enter both rates to post.")
+        edit { copy(post = dialog.copy(posting = true)) }
+        val posting = FxPosting(
+            nominalCode = dialog.nominalCode.trim(),
+            costCentre = dialog.costCentre.trim(),
+            budgetRate = dialog.budgetRateValue,
+            bankRate = dialog.bankRateValue,
+        )
+        vm.runResult({ vm.repo.postFxVariance(dialog.varianceId, posting) }, {
+            edit { copy(post = post?.copy(posting = false, posted = true)) }
+            vm.loadFxVariances()
+            vm.loadPeriods()
+            // Shown as posted for a moment, then closed — and only closed if
+            // it is still this dialog: the list re-reading underneath must
+            // not take an open dialog with it.
+            vm.after(POSTED_MILLIS) {
+                if (page.post?.varianceId == dialog.varianceId) edit { copy(post = null) }
             }
-            vm.notify("Variance posted to ${posting.nominalCode}.")
         }, { error ->
-            edit { copy(saving = false) }
+            edit { copy(post = post?.copy(posting = false)) }
             vm.report(error)
         })
     }
 
     private fun postAll() {
-        val periodId = state.periodId.ifBlank { vm.ui.currentPeriod?.id.orEmpty() }
-        if (periodId.isBlank()) {
-            edit { copy(confirmingPostAll = false) }
-            return vm.refuse("Choose the period to post.")
+        if (page.postingAll) return
+        val rates = vm.ui.rates
+        val unposted = visibleRows().filterNot { it.isPosted }
+        if (unposted.isEmpty()) return
+        val blocking = unposted.filterNot { FxRates.resolve(it, rates).ok }
+        if (blocking.isNotEmpty()) {
+            return vm.refuse("Some rows are missing a budget or bank rate.")
         }
-        edit { copy(saving = true, confirmingPostAll = false) }
-        vm.runResult({ vm.repo.postAllFxVariances(periodId) }, {
-            edit { copy(saving = false) }
-            vm.notify("Every unposted variance in the period was posted.")
-            load(force = true)
-        }, { error ->
-            edit { copy(saving = false) }
-            vm.report(error)
-        })
+        edit { copy(postingAll = true, postAllMessage = null) }
+        vm.launchWork {
+            var posted = 0
+            var lastFailure: ZillitResult.Failure? = null
+            unposted.forEach { row ->
+                val resolved = FxRates.resolve(row, rates)
+                val outcome = vm.repo.postFxVariance(
+                    row.id,
+                    FxPosting(
+                        nominalCode = row.nominalCode.ifBlank { FxPosting.DEFAULT_NOMINAL },
+                        costCentre = row.costCentre,
+                        budgetRate = resolved.budget,
+                        bankRate = resolved.bank,
+                    ),
+                )
+                if (outcome is ZillitResult.Failure) lastFailure = outcome else posted++
+            }
+            val failed = unposted.size - posted
+            lastFailure?.let { vm.report(it.error) }
+            edit {
+                copy(
+                    postingAll = false,
+                    postAllMessage = if (failed > 0) {
+                        "Posted $posted of ${unposted.size} — $failed failed"
+                    } else {
+                        "Posted $posted of ${unposted.size}"
+                    },
+                )
+            }
+            vm.loadFxVariances()
+            vm.loadPeriods()
+        }
+    }
+
+    private companion object {
+        const val POSTED_MILLIS = 1_200L
     }
 }

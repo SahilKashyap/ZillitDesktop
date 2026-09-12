@@ -17,6 +17,7 @@ import com.zillit.desktop.feature.bankrec.domain.MatchRule
 import com.zillit.desktop.feature.bankrec.domain.PeriodStatus
 import com.zillit.desktop.feature.bankrec.domain.PortalPermission
 import com.zillit.desktop.feature.bankrec.domain.TxnStatus
+import com.zillit.desktop.feature.bankrec.domain.WorkspaceRows
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -61,7 +62,8 @@ class BankRecWireTest {
         assertEquals(47, period.totalTxns)
         assertEquals(12_500.55, period.closingBank)
         assertTrue(period.isOpen)
-        assertEquals(82, period.matchedPercent)
+        // Rounded, as the web's formatPercent rounds: 39 of 47 is 83%.
+        assertEquals(83, period.matchedPercent)
     }
 
     /**
@@ -209,7 +211,7 @@ class BankRecWireTest {
         assertEquals(-1200.0, rows[0].amount)
         assertTrue(rows[0].isMatched)
         assertEquals(-35.0, rows[1].amount)
-        assertEquals("7900 · Bank charges", rows[1].reference)
+        assertEquals("7900 · Bank charges", WorkspaceRows.ledgerRow(rows[1], emptyMap()).reference)
         assertEquals(4.2, rows[2].amount)
         assertFalse(rows[2].isMatched)
     }
@@ -238,9 +240,9 @@ class BankRecWireTest {
 
         assertEquals(ExceptionType.BankCharge, row.type)
         assertEquals(ExceptionStatus.UnderInvestigation, row.status)
-        assertTrue(row.status.isOutstanding)
+        assertFalse(row.status.isOpen)
         assertEquals(-35.0, row.amount)
-        assertEquals("GBP", row.currency)
+        assertEquals("GBP", row.transaction?.currency)
     }
 
     /** A type this client does not know is Unknown, not the first entry. */
@@ -333,11 +335,11 @@ class BankRecWireTest {
 
         assertEquals(
             setOf(PortalPermission.Balances, PortalPermission.Exceptions),
-            rows[0].permissions,
+            rows[0].permissions.toSet(),
         )
         assertTrue(rows[0].isActive)
-        assertEquals(3, rows[0].viewCount)
-        assertEquals(setOf(PortalPermission.FxVariance), rows[1].permissions)
+        assertEquals(3, rows[0].views)
+        assertEquals(setOf(PortalPermission.FxVariance), rows[1].permissions.toSet())
         assertFalse(rows[1].isActive)
     }
 
@@ -349,6 +351,6 @@ class BankRecWireTest {
             """{"id":"l1","permissions":["balances","something_new"]}""",
         ).toDomain()
 
-        assertEquals(setOf(PortalPermission.Balances), link.permissions)
+        assertEquals(setOf(PortalPermission.Balances), link.permissions.toSet())
     }
 }
