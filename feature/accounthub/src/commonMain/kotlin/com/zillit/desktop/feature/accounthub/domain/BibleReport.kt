@@ -127,9 +127,21 @@ data class LedgerTransaction(
 /**
  * One account's transactions, and what they come to.
  *
- * The uncoded bucket arrives under the sentinel `__uncoded__` in both the code
- * and the name. It is a real bucket carrying real money, so it is kept and
- * named plainly rather than shown as its sentinel.
+ * ## Buckets that are not chart codes
+ *
+ * The service files money it cannot put on a nominal under internal keys —
+ * `__uncoded__`, `__payroll_unallocated__`, `__fringes_unallocated__`, and the
+ * adapter's `__unallocated__` / `__unallocated__:<name>` — sent as both the code
+ * and the name. Each is a real bucket carrying real money, so it is kept, but
+ * never printed: the web's cost-report adapter calls rendering one "always a
+ * bug" (`isInternalAccountKey`), and its Bible page still leaked
+ * `__fringes_unallocated__` verbatim, seen live on 2026-09-13. `__uncoded__`
+ * keeps the web Bible's own wording, "Uncoded"; the rest take the adapter's
+ * `SYNTHETIC_NAMES`, and a key neither knows is spelled out in words.
+ *
+ * Only the double-underscore convention is masked. A mis-coded account such as
+ * `art_4110` stays as it is, as the web insists: it is the thing an accountant
+ * has to see in order to re-code it.
  */
 data class BibleAccount(
     val code: String = "",
@@ -139,9 +151,27 @@ data class BibleAccount(
 ) {
     val isUncoded: Boolean get() = code == UNCODED
 
-    val displayCode: String get() = if (isUncoded) "Uncoded" else code.ifBlank { "—" }
+    /** A service bucket rather than a code from the chart. */
+    val isInternalKey: Boolean get() = isInternal(code)
 
-    val displayName: String get() = if (name == UNCODED) "" else name
+    /** The code as printed: "Uncoded", nothing for another bucket, a dash for a missing code. */
+    val displayCode: String
+        get() = when {
+            isUncoded -> "Uncoded"
+            isInternalKey -> ""
+            else -> code.ifBlank { "—" }
+        }
+
+    val displayName: String
+        get() = when {
+            name == UNCODED -> ""
+            isInternal(name) -> nameFor(name)
+            name.isBlank() && isInternalKey && !isUncoded -> nameFor(code)
+            else -> name
+        }
+
+    /** "7100 · Camera hire", "Uncoded", "Fringes — Unallocated" — one line naming the account. */
+    val title: String get() = listOf(displayCode, displayName).filter { it.isNotBlank() }.joinToString(" · ")
 
     /** "1 entry", "12 entries" — the web's count beside the account. */
     val entriesLabel: String
@@ -149,6 +179,29 @@ data class BibleAccount(
 
     companion object {
         const val UNCODED = "__uncoded__"
+
+        private const val UNALLOCATED = "__unallocated__"
+
+        /** The web adapter's `SYNTHETIC_NAMES`, plus its null-account bucket. */
+        private val NAMES = mapOf(
+            UNCODED to "Uncoded",
+            "__uncoded_budget__" to "Budget — Unallocated",
+            "__payroll_unallocated__" to "Payroll — Unallocated",
+            "__fringes_unallocated__" to "Fringes — Unallocated",
+            UNALLOCATED to "Non-Allocated Items",
+        )
+
+        private fun isInternal(key: String): Boolean = key.startsWith("__")
+
+        private fun nameFor(key: String): String {
+            NAMES[key]?.let { return it }
+            // `__unallocated__:Production Insurance` — the name after the key is the row's own.
+            if (key.startsWith("$UNALLOCATED:")) {
+                return key.removePrefix("$UNALLOCATED:").trim().ifBlank { NAMES.getValue(UNALLOCATED) }
+            }
+            val words = key.trim('_').replace('_', ' ').trim()
+            return words.replaceFirstChar { it.uppercase() }.ifBlank { "Unallocated" }
+        }
     }
 }
 

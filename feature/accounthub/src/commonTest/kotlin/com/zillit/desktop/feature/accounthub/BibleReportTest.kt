@@ -10,6 +10,7 @@ import com.zillit.desktop.feature.accounthub.data.toBibleReport
 import com.zillit.desktop.feature.accounthub.data.toExportBody
 import com.zillit.desktop.feature.accounthub.data.toPeriodLock
 import com.zillit.desktop.feature.accounthub.data.toQueryParameters
+import com.zillit.desktop.feature.accounthub.domain.BibleAccount
 import com.zillit.desktop.feature.accounthub.domain.BibleAccountTypes
 import com.zillit.desktop.feature.accounthub.domain.BibleFilters
 import com.zillit.desktop.feature.accounthub.domain.BibleFormat
@@ -62,8 +63,48 @@ class BibleReportTest {
         assertTrue(account.isUncoded)
         assertEquals("Uncoded", account.displayCode)
         assertEquals("", account.displayName, "the sentinel is not a name either")
+        assertEquals("Uncoded", account.title)
         assertEquals(420.5, account.total)
         assertEquals("0 entries", account.entriesLabel)
+    }
+
+    /**
+     * The service's other buckets are named the way the web's cost-report
+     * adapter names them, and never printed — `__fringes_unallocated__` showed
+     * verbatim on the live develop report on 2026-09-13.
+     */
+    @Test
+    fun `service buckets are named, not printed`() {
+        fun bucket(code: String, name: String = code) = BibleAccount(code = code, name = name)
+
+        val fringes = bucket("__fringes_unallocated__")
+        assertTrue(fringes.isInternalKey)
+        assertEquals("", fringes.displayCode, "a bucket has no chart code to print")
+        assertEquals("Fringes — Unallocated", fringes.displayName)
+        assertEquals("Fringes — Unallocated", fringes.title)
+
+        assertEquals("Payroll — Unallocated", bucket("__payroll_unallocated__").title)
+        assertEquals("Budget — Unallocated", bucket("__uncoded_budget__").title)
+        assertEquals("Non-Allocated Items", bucket("__unallocated__").title)
+        assertEquals("Production Insurance", bucket("__unallocated__:Production Insurance").title)
+        assertEquals("Cash unposted", bucket("__cash_unposted__").title, "an unknown key is spelled out, not printed")
+        assertEquals("Payroll — Unallocated", bucket("__payroll_unallocated__", name = "").title)
+        assertEquals(
+            "Payroll awaiting codes",
+            bucket("__payroll_unallocated__", name = "Payroll awaiting codes").title,
+            "a real name from the server wins over the fallback",
+        )
+    }
+
+    /** Only the double-underscore convention is masked: a mis-coded account must stay visible to be re-coded. */
+    @Test
+    fun `a mis-coded account keeps its code`() {
+        val miscoded = BibleAccount(code = "art_4110", name = "Art department")
+        assertFalse(miscoded.isInternalKey)
+        assertEquals("art_4110", miscoded.displayCode)
+        assertEquals("art_4110 · Art department", miscoded.title)
+        assertEquals("7100 · Camera hire", BibleAccount(code = "7100", name = "Camera hire").title)
+        assertEquals("—", BibleAccount(code = "", name = "").title, "a missing code still reads as missing")
     }
 
     /**

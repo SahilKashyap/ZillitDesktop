@@ -184,6 +184,26 @@ class BibleReportRenderTest {
         onNodeWithText("No transactions found for the selected filters.").assertIsDisplayed()
     }
 
+    /** The live develop report of 2026-09-13 printed `__fringes_unallocated__` as both code and name. */
+    @Test
+    fun `a service bucket is named, never printed`() = runComposeUiTest {
+        val fringes = BibleAccount(
+            code = "__fringes_unallocated__",
+            name = "__fringes_unallocated__",
+            total = 1_599.09,
+            transactions = listOf(
+                LedgerTransaction("PR", 1_757_000_000_000, "", "", "Alex Reed", "Fringe", "CNY", 751.36),
+                LedgerTransaction("PR", 1_757_000_000_000, "", "", "Alex Reed", "Fringe", "CNY", 847.73),
+            ),
+        )
+        setContent(compose(ran.copy(report = report.copy(accounts = listOf(fringes)))))
+
+        onNodeWithText("Fringes — Unallocated").assertIsDisplayed()
+        onNodeWithText("TOTAL FRINGES — UNALLOCATED").assertIsDisplayed()
+        val leaked = onAllNodesWithText("__", substring = true).fetchSemanticsNodes()
+        assertTrue(leaked.isEmpty(), "no internal key on screen")
+    }
+
     @Test
     fun `run waits for a date range that reads`() = runComposeUiTest {
         val halfTyped = prepared.copy(

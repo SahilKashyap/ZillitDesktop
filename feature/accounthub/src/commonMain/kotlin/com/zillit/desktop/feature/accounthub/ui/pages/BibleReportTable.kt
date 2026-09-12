@@ -261,20 +261,23 @@ private fun AccountHeading(account: BibleAccount, symbol: String, folded: Boolea
         ) {
             ZillitIcon(
                 icon = if (folded) ZillitIcons.ChevronRight else ZillitIcons.ChevronDown,
-                contentDescription = if (folded) "Show ${account.displayCode}" else "Hide ${account.displayCode}",
+                contentDescription = if (folded) "Show ${account.title}" else "Hide ${account.title}",
                 tint = colors.textSecondary,
                 size = CHEVRON,
             )
-            ZillitText(
-                text = account.displayCode,
-                style = ZillitTheme.typography.bodySmall.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = CODE_TRACKING,
-                ),
-                color = colors.accentText,
-                maxLines = 1,
-            )
+            // A service bucket has no chart code to print; its name says what it is.
+            if (account.displayCode.isNotBlank()) {
+                ZillitText(
+                    text = account.displayCode,
+                    style = ZillitTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = CODE_TRACKING,
+                    ),
+                    color = colors.accentText,
+                    maxLines = 1,
+                )
+            }
             // The name and its count share what is left, so a long name cuts
             // off before the count does and the total keeps its column.
             Row(
@@ -359,8 +362,7 @@ private fun AccountTotal(account: BibleAccount, symbol: String) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitText(
-            text = ("Total ${account.displayCode}" + account.displayName.takeIf { it.isNotBlank() }?.let { " · $it" }
-                .orEmpty()).uppercase(),
+            text = "Total ${account.title}".uppercase(),
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.4.sp),
             color = colors.textMuted,
             maxLines = 1,
