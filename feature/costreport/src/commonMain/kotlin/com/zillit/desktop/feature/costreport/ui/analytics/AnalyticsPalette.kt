@@ -72,23 +72,19 @@ internal data class AnalyticsColors(
         }
     }
 
-    private fun variable(name: String): Color? = when (name) {
-        "ink" -> ink
-        "ink-2" -> ink2
-        "ink-3" -> ink3
-        "ink-4" -> ink4
-        "line" -> line
-        "line-2" -> line2
-        "surface" -> surface
-        else -> name.substringBefore('-').let { base ->
-            val tone = tones[base] ?: return null
-            when (name.substringAfter('-', "")) {
-                "" -> tone.fg
-                "ink" -> tone.ink
-                "soft" -> tone.soft
-                "ring" -> tone.ring
-                else -> null
-            }
+    private fun variable(name: String): Color? {
+        val base = mapOf(
+            "ink" to ink, "ink-2" to ink2, "ink-3" to ink3, "ink-4" to ink4,
+            "line" to line, "line-2" to line2, "surface" to surface,
+        )
+        base[name]?.let { return it }
+        val tone = tones[name.substringBefore('-')] ?: return null
+        return when (name.substringAfter('-', "")) {
+            "" -> tone.fg
+            "ink" -> tone.ink
+            "soft" -> tone.soft
+            "ring" -> tone.ring
+            else -> null
         }
     }
 
@@ -185,18 +181,24 @@ internal data class AnalyticsColors(
                 ALPHA_HEX -> digits
                 else -> return null
             }
-            val value = full.toLongOrNull(HEX_RADIX) ?: return null
-            val argb = (value and 0xFF) shl 24 or (value ushr 8)
+            val rgba = full.toLongOrNull(HEX_RADIX) ?: return null
+            // `rrggbbaa` → Compose's `aarrggbb`.
+            val argb = (rgba and BYTE) shl ALPHA_SHIFT or (rgba ushr BYTE_BITS)
             return Color(argb.toInt())
         }
 
         private fun rgb(text: String): Color? {
             val parts = text.substringAfter('(').substringBefore(')').split(',').map { it.trim() }
-            if (parts.size < 3) return null
-            val channels = parts.take(3).map { it.toFloatOrNull() ?: return null }
-            val alpha = parts.getOrNull(3)?.toFloatOrNull() ?: 1f
-            return Color(channels[0] / CHANNEL_MAX, channels[1] / CHANNEL_MAX, channels[2] / CHANNEL_MAX, alpha)
+            if (parts.size < RGB_CHANNELS) return null
+            val (r, g, b) = parts.take(RGB_CHANNELS).map { (it.toFloatOrNull() ?: return null) / CHANNEL_MAX }
+            val alpha = parts.getOrNull(RGB_CHANNELS)?.toFloatOrNull() ?: 1f
+            return Color(r, g, b, alpha)
         }
+
+        private const val BYTE = 0xFFL
+        private const val BYTE_BITS = 8
+        private const val ALPHA_SHIFT = 24
+        private const val RGB_CHANNELS = 3
     }
 }
 

@@ -4,9 +4,14 @@
 package com.zillit.desktop.feature.costreport.ui
 
 import androidx.compose.foundation.background
+import com.zillit.desktop.feature.costreport.domain.widestFigure
+import com.zillit.desktop.core.designsystem.component.ZillitHorizontalScrollRail
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -131,13 +136,16 @@ internal fun CrWorksheetGrid(
     var editing by remember { mutableStateOf<String?>(null) }
     BoxWithConstraints(modifier.fillMaxSize().background(colors.surface)) {
         val columns = CrColumn.entries.size
-        val valueWidth = max(MIN_VALUE_WIDTH, (maxWidth - ACCOUNT_WIDTH) / columns)
-        val tableWidth = ACCOUNT_WIDTH + valueWidth * columns
+        val widest = remember(table, symbol, decimals) { table.widestFigure(symbol, decimals) }
+        val fitted = figureWidth(widest, figureStyle(FontWeight.ExtraBold), CELL_PAD * 2 + FIGURE_GUTTER)
+        val labels = headerLabelWidth(editable = actions.onCommit != null, sortable = actions.onSort != null)
+        val valueWidth = maxOf(MIN_VALUE_WIDTH, fitted, labels, (maxWidth - ACCOUNT_WIDTH) / columns)
         val scroll = rememberScrollState()
-        Box(Modifier.fillMaxSize().then(if (tableWidth > maxWidth) Modifier.horizontalScroll(scroll) else Modifier)) {
-            Column(Modifier.width(tableWidth).fillMaxHeight()) {
+        val strip = remember(scroll, valueWidth) { GridStrip(scroll, valueWidth * columns) }
+        CompositionLocalProvider(LocalGridStrip provides strip) {
+            Column(Modifier.fillMaxSize()) {
                 GridHeader(valueWidth, sort, readOnly = actions.onCommit == null, onSort = actions.onSort)
-                LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().slidesFigures(scroll)) {
                     items(table.rows, key = { it.key }) { row ->
                         when (row) {
                             is CrRow.Section -> SectionRow(row, table.search.needle, actions)
@@ -174,18 +182,65 @@ internal fun CrWorksheetGrid(
                     symbol = symbol,
                     decimals = decimals,
                 )
+                ZillitHorizontalScrollRail(scroll, Modifier.padding(start = ACCOUNT_WIDTH))
             }
         }
     }
 }
+
+/** The figures strip every row shares: the header's scroll, and how wide the eleven columns are together. */
+private class GridStrip(val scroll: ScrollState, val width: Dp)
+
+private val LocalGridStrip = staticCompositionLocalOf<GridStrip> { error("CrWorksheetGrid provides the strip") }
+
+/** A row's value cells, slid with the header when the table is wider than the pane. */
+@Composable
+private fun RowScope.Figures(content: @Composable RowScope.() -> Unit) {
+    val strip = LocalGridStrip.current
+    RowFigures(strip.scroll, strip.width, content = content)
+}
+
+@Composable
+private fun figureStyle(weight: FontWeight) =
+    ZillitTheme.typography.numeric.copy(fontWeight = weight, letterSpacing = (-0.2).sp)
+
+/**
+ * The narrowest a value column can be without breaking a header word
+ * ("ESTIMATE", "COMMITS"): the longest word, plus the pencil and the sort
+ * arrow where they show.
+ */
+@Composable
+private fun headerLabelWidth(editable: Boolean, sortable: Boolean): Dp {
+    val longest = remember {
+        CrColumn.entries
+            .flatMap { (it.line1 + " " + it.line2).uppercase().split(' ') }
+            .maxByOrNull { it.length }
+            .orEmpty()
+    }
+    val icons = (if (editable) HEADER_PENCIL else 0.dp) + (if (sortable) HEADER_SORT else 0.dp)
+    return figureWidth(longest, headerStyle(), CELL_PAD * 2 + icons + HEADER_SLACK)
+}
+
+@Composable
+private fun headerStyle() = ZillitTheme.typography.labelSmall.copy(
+    fontWeight = FontWeight.Bold,
+    letterSpacing = 0.9.sp,
+    fontSize = 9.5.sp,
+    lineHeight = 12.sp,
+)
+
+private val HEADER_PENCIL: Dp = 12.dp
+private val HEADER_SORT: Dp = 14.dp
+private val HEADER_SLACK: Dp = 4.dp
 
 // -- header ---------------------------------------------------------------------------
 
 @Composable
 private fun GridHeader(valueWidth: Dp, sort: CrSort, readOnly: Boolean, onSort: ((CrColumn) -> Unit)?) {
     val colors = ZillitTheme.colors
+    val strip = LocalGridStrip.current
     Column(Modifier.fillMaxWidth().background(colors.surfaceSunken)) {
-        Row(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             Box(
                 Modifier.width(ACCOUNT_WIDTH).height(GROUP_ROW_HEIGHT).padding(horizontal = 14.dp),
                 contentAlignment = Alignment.BottomStart,
@@ -199,104 +254,109 @@ private fun GridHeader(valueWidth: Dp, sort: CrSort, readOnly: Boolean, onSort: 
                     color = colors.textMuted,
                 )
             }
-            CrColumnGroup.entries.forEach { group ->
-                val span = CrColumn.entries.count { it.group == group }
-                val accent = CrPalette.group(group)
-                Box(
-                    modifier = Modifier
-                        .width(valueWidth * span)
-                        .height(GROUP_ROW_HEIGHT)
-                        .drawBehind {
-                            val stroke = 2.dp.toPx()
-                            drawRect(
-                                accent ?: colors.divider,
-                                Offset(0f, size.height - stroke),
-                                Size(size.width, stroke),
-                            )
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (group.label.isNotEmpty()) {
-                        ZillitText(
-                            text = group.label.uppercase(),
-                            style = ZillitTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.4.sp,
-                                fontSize = 9.5.sp,
-                            ),
-                            color = accent ?: colors.textMuted,
-                            maxLines = 1,
-                        )
-                    }
-                }
-            }
-        }
-        Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
-            Spacer(Modifier.width(ACCOUNT_WIDTH))
-            CrColumn.entries.forEach { column ->
-                val active = sort.column == column
-                val editable = column.isEditable && !readOnly
-                val labelColor = when {
-                    active -> CrPalette.cta
-                    editable -> CrPalette.EDITABLE_ACCENT
-                    else -> colors.textMuted
-                }
-                Row(
-                    modifier = Modifier
-                        .width(valueWidth)
-                        .heightIn(min = 44.dp)
-                        .background(if (editable) CrPalette.EDITABLE_TINT else Color.Transparent)
-                        .then(if (onSort != null) Modifier.clickable { onSort(column) } else Modifier)
-                        .padding(horizontal = CELL_PAD, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.weight(1f, fill = false),
-                    ) {
-                        val style = ZillitTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.9.sp,
-                            fontSize = 9.5.sp,
-                            lineHeight = 12.sp,
-                        )
-                        ZillitText(
-                            column.line1.uppercase(),
-                            style = style,
-                            color = labelColor,
-                            textAlign = TextAlign.Center,
-                            maxLines = 2,
-                        )
-                        if (column.line2.isNotBlank()) {
-                            ZillitText(
-                                column.line2.uppercase(),
-                                style = style,
-                                color = labelColor,
-                                textAlign = TextAlign.Center,
-                                maxLines = 2,
-                            )
+            HeaderFigures(strip.scroll, strip.width) {
+                Column {
+                    Row {
+                        CrColumnGroup.entries.forEach { group ->
+                            val span = CrColumn.entries.count { it.group == group }
+                            val accent = CrPalette.group(group)
+                            Box(
+                                modifier = Modifier
+                                    .width(valueWidth * span)
+                                    .height(GROUP_ROW_HEIGHT)
+                                    .drawBehind {
+                                        val stroke = 2.dp.toPx()
+                                        drawRect(
+                                            accent ?: colors.divider,
+                                            Offset(0f, size.height - stroke),
+                                            Size(size.width, stroke),
+                                        )
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (group.label.isNotEmpty()) {
+                                    ZillitText(
+                                        text = group.label.uppercase(),
+                                        style = ZillitTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.4.sp,
+                                            fontSize = 9.5.sp,
+                                        ),
+                                        color = accent ?: colors.textMuted,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
                         }
                     }
-                    if (editable) {
-                        ZillitIcon(
-                            ZillitIcons.Edit,
-                            tint = CrPalette.EDITABLE_ACCENT,
-                            size = 9.dp,
-                            modifier = Modifier.padding(start = 3.dp),
-                        )
+                    Row(Modifier.heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CrColumn.entries.forEach { column ->
+                        val active = sort.column == column
+                        val editable = column.isEditable && !readOnly
+                        val labelColor = when {
+                            active -> CrPalette.cta
+                            editable -> CrPalette.EDITABLE_ACCENT
+                            else -> colors.textMuted
+                        }
+                        Row(
+                            modifier = Modifier
+                                .width(valueWidth)
+                                .heightIn(min = 44.dp)
+                                .background(if (editable) CrPalette.EDITABLE_TINT else Color.Transparent)
+                                .then(if (onSort != null) Modifier.clickable { onSort(column) } else Modifier)
+                                .padding(horizontal = CELL_PAD, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.weight(1f, fill = false),
+                            ) {
+                                val style = ZillitTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.9.sp,
+                                    fontSize = 9.5.sp,
+                                    lineHeight = 12.sp,
+                                )
+                                ZillitText(
+                                    column.line1.uppercase(),
+                                    style = style,
+                                    color = labelColor,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                )
+                                if (column.line2.isNotBlank()) {
+                                    ZillitText(
+                                        column.line2.uppercase(),
+                                        style = style,
+                                        color = labelColor,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2,
+                                    )
+                                }
+                            }
+                            if (editable) {
+                                ZillitIcon(
+                                    ZillitIcons.Edit,
+                                    tint = CrPalette.EDITABLE_ACCENT,
+                                    size = 9.dp,
+                                    modifier = Modifier.padding(start = 3.dp),
+                                )
+                            }
+                            if (onSort != null) {
+                                ZillitText(
+                                    text = when {
+                                        !active -> "↕"
+                                        sort.direction == SortDirection.Descending -> "▼"
+                                        else -> "▲"
+                                    },
+                                    style = ZillitTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                    color = if (active) CrPalette.cta else colors.textMuted,
+                                    modifier = Modifier.padding(start = 3.dp),
+                                )
+                            }
+                        }
                     }
-                    if (onSort != null) {
-                        ZillitText(
-                            text = when {
-                                !active -> "↕"
-                                sort.direction == SortDirection.Descending -> "▼"
-                                else -> "▲"
-                            },
-                            style = ZillitTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = if (active) CrPalette.cta else colors.textMuted,
-                            modifier = Modifier.padding(start = 3.dp),
-                        )
                     }
                 }
             }
@@ -377,16 +437,23 @@ private fun HeaderRow(
             leftAccent = accent,
             badge = row.badge?.let { it to CrPalette.section(row.section.id) },
         )
-        CrColumn.entries.forEach { column ->
-            ValueCell(
-                text = if (row.showValues) CrFormat.grid(row.figures.value(column), symbol, column, decimals) else "",
-                color = cellColor(row.figures.value(column), column),
-                bold = true,
-                width = valueWidth,
-                groupStart = column.startsGroup,
-                background = CrPalette.EDITABLE_TINT.copy(alpha = HEADER_TINT_ALPHA)
-                    .takeIf { column.isEditable && actions.onCommit != null },
-            )
+        Figures {
+            CrColumn.entries.forEach { column ->
+                ValueCell(
+                    text = if (row.showValues) CrFormat.grid(
+                        row.figures.value(column),
+                        symbol,
+                        column,
+                        decimals,
+                    ) else "",
+                    color = cellColor(row.figures.value(column), column),
+                    bold = true,
+                    width = valueWidth,
+                    groupStart = column.startsGroup,
+                    background = CrPalette.EDITABLE_TINT.copy(alpha = HEADER_TINT_ALPHA)
+                        .takeIf { column.isEditable && actions.onCommit != null },
+                )
+            }
         }
     }
     Divider()
@@ -416,14 +483,16 @@ private fun HeaderTotalRow(row: CrRow.HeaderTotal, valueWidth: Dp, symbol: Strin
                 color = colors.textSecondary,
             )
         }
-        CrColumn.entries.forEach { column ->
-            ValueCell(
-                text = CrFormat.grid(row.figures.value(column), symbol, column, decimals),
-                color = cellColor(row.figures.value(column), column),
-                bold = true,
-                width = valueWidth,
-                groupStart = column.startsGroup,
-            )
+        Figures {
+            CrColumn.entries.forEach { column ->
+                ValueCell(
+                    text = CrFormat.grid(row.figures.value(column), symbol, column, decimals),
+                    color = cellColor(row.figures.value(column), column),
+                    bold = true,
+                    width = valueWidth,
+                    groupStart = column.startsGroup,
+                )
+            }
         }
     }
     Divider()
@@ -465,37 +534,39 @@ private fun NominalRow(
             nameWeight = FontWeight.Medium,
             onCode = ledger?.let { { it(nominal, null) } },
         )
-        CrColumn.entries.forEach { column ->
-            val value = row.figures.value(column)
-            val commit = actions.onCommit
-            if (commit != null && column.isEditable) {
-                val key = "${row.key}|${column.key}"
-                EditableCell(
-                    value = value,
-                    column = column,
-                    over = column == CrColumn.Etc && value < 0,
-                    locked = locked,
-                    editing = editing == key,
-                    symbol = symbol,
-                    decimals = decimals,
-                    width = valueWidth,
-                    groupStart = column.startsGroup,
-                    onStart = { onEditing(key) },
-                    onDone = { typed ->
-                        onEditing(null)
-                        typed?.let { commit(nominal, column, it) }
-                    },
-                )
-            } else {
-                val drill = ledger != null && (column.isActuals || column.isCommits)
-                ValueCell(
-                    text = CrFormat.grid(value, symbol, column, decimals),
-                    color = cellColor(value, column),
-                    bold = false,
-                    width = valueWidth,
-                    groupStart = column.startsGroup,
-                    onClick = if (drill) ({ ledger?.invoke(nominal, column) }) else null,
-                )
+        Figures {
+            CrColumn.entries.forEach { column ->
+                val value = row.figures.value(column)
+                val commit = actions.onCommit
+                if (commit != null && column.isEditable) {
+                    val key = "${row.key}|${column.key}"
+                    EditableCell(
+                        value = value,
+                        column = column,
+                        over = column == CrColumn.Etc && value < 0,
+                        locked = locked,
+                        editing = editing == key,
+                        symbol = symbol,
+                        decimals = decimals,
+                        width = valueWidth,
+                        groupStart = column.startsGroup,
+                        onStart = { onEditing(key) },
+                        onDone = { typed ->
+                            onEditing(null)
+                            typed?.let { commit(nominal, column, it) }
+                        },
+                    )
+                } else {
+                    val drill = ledger != null && (column.isActuals || column.isCommits)
+                    ValueCell(
+                        text = CrFormat.grid(value, symbol, column, decimals),
+                        color = cellColor(value, column),
+                        bold = false,
+                        width = valueWidth,
+                        groupStart = column.startsGroup,
+                        onClick = if (drill) ({ ledger?.invoke(nominal, column) }) else null,
+                    )
+                }
             }
         }
     }
@@ -519,23 +590,25 @@ private fun SetRow(row: CrRow.Set, needle: String, valueWidth: Dp, symbol: Strin
             codeColor = colors.textMuted,
             nameWeight = FontWeight.Normal,
         )
-        CrColumn.entries.forEach { column ->
-            val value = when (column) {
-                CrColumn.Atp -> line.atp
-                CrColumn.Atd -> line.atd
-                CrColumn.Po -> line.po
-                CrColumn.Card -> line.card
-                CrColumn.Cash -> line.cash
-                CrColumn.Pr -> line.pr
-                else -> null
+        Figures {
+            CrColumn.entries.forEach { column ->
+                val value = when (column) {
+                    CrColumn.Atp -> line.atp
+                    CrColumn.Atd -> line.atd
+                    CrColumn.Po -> line.po
+                    CrColumn.Card -> line.card
+                    CrColumn.Cash -> line.cash
+                    CrColumn.Pr -> line.pr
+                    else -> null
+                }
+                ValueCell(
+                    text = if (value == null) CrFormat.DASH else CrFormat.grid(value, symbol, column, decimals),
+                    color = if (value == null || value == 0.0) colors.textMuted else null,
+                    bold = false,
+                    width = valueWidth,
+                    groupStart = column.startsGroup,
+                )
             }
-            ValueCell(
-                text = if (value == null) CrFormat.DASH else CrFormat.grid(value, symbol, column, decimals),
-                color = if (value == null || value == 0.0) colors.textMuted else null,
-                bold = false,
-                width = valueWidth,
-                groupStart = column.startsGroup,
-            )
         }
     }
     Divider()
@@ -615,21 +688,23 @@ private fun GrandTotalRow(figures: CrFigures, label: String, valueWidth: Dp, sym
                 maxLines = 2,
             )
         }
-        CrColumn.entries.forEach { column ->
-            val value = figures.value(column)
-            val color = when {
-                !column.isVariance || value == 0.0 -> ink
-                value < 0 -> CrPalette.over
-                else -> CrPalette.under
+        Figures {
+            CrColumn.entries.forEach { column ->
+                val value = figures.value(column)
+                val color = when {
+                    !column.isVariance || value == 0.0 -> ink
+                    value < 0 -> CrPalette.over
+                    else -> CrPalette.under
+                }
+                ValueCell(
+                    text = CrFormat.grid(value, symbol, column, decimals),
+                    color = color,
+                    bold = true,
+                    width = valueWidth,
+                    groupStart = column.startsGroup,
+                    weight = FontWeight.ExtraBold,
+                )
             }
-            ValueCell(
-                text = CrFormat.grid(value, symbol, column, decimals),
-                color = color,
-                bold = true,
-                width = valueWidth,
-                groupStart = column.startsGroup,
-                weight = FontWeight.ExtraBold,
-            )
         }
     }
 }
@@ -755,7 +830,7 @@ private fun ValueCell(
                 letterSpacing = (-0.2).sp,
             ),
             color = if (text == CrFormat.DASH) colors.textMuted else color ?: colors.textPrimary,
-            maxLines = 2,
+            maxLines = 1,
             textAlign = TextAlign.End,
         )
     }
@@ -820,7 +895,7 @@ private fun EditableCell(
                     value == 0.0 -> colors.textMuted
                     else -> cellColor(value, column) ?: colors.textPrimary
                 },
-                maxLines = 2,
+                maxLines = 1,
                 textAlign = TextAlign.End,
             )
         }

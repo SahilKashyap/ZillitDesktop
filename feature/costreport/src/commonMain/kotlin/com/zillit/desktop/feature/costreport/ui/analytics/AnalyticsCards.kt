@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.costreport.domain.analytics.AlertItem
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsBlock
 import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsFormat
 import com.zillit.desktop.feature.costreport.domain.analytics.MethodItem
@@ -82,14 +83,18 @@ private fun MethodCard(method: MethodItem, total: Double, context: BlockContext)
         Row(Modifier.padding(top = 2.dp)) {
             val count = method.count?.let { "$it pmts" }.orEmpty()
             val avg = method.avg?.let { " · avg ${AnalyticsFormat.money(it, context.currency)}" }.orEmpty()
-            ZillitText(count + avg, style = AnalyticsType.mono(11f), color = colors.ink3, modifier = Modifier.weight(1f))
+            ZillitText(
+                count + avg,
+                style = AnalyticsType.mono(11f),
+                color = colors.ink3,
+                modifier = Modifier.weight(1f),
+            )
             ZillitText(method.note.orEmpty(), style = AnalyticsType.mono(11f), color = colors.ink3)
         }
     }
 }
 
 /** `gauge-cards`: a mini gauge of each channel's share, its amount, a note, the claim count and turnaround. */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun GaugeCardsBlock(block: AnalyticsBlock.GaugeCards, context: BlockContext) {
     if (block.cards.isEmpty()) return
@@ -100,49 +105,55 @@ internal fun GaugeCardsBlock(block: AnalyticsBlock.GaugeCards, context: BlockCon
             SectionLabel(block.heading.dot?.let(colors::toneHex) ?: colors.red, it, block.heading.sub)
         }
         FlowGrid(minCell = 300.dp, gap = 12.dp) {
-            block.cards.forEach { card ->
-                val color = colors.css(card.color) ?: colors.ink3
-                val share = card.pct ?: "${if (sum == 0.0) 0 else (card.value / sum * PERCENT).roundToInt()}%"
-                Row(
-                    modifier = Modifier.cardSurface().padding(horizontal = 18.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    DonutChart(
-                        parts = listOf(
-                            ChartPart(card.label, card.value, color),
-                            ChartPart("", max(0.0, sum - card.value), colors.donutTrack),
-                        ),
-                        centerLabel = share,
-                        centerSub = null,
-                        describe = { AnalyticsFormat.money(it.value, context.currency) },
-                        size = 116.dp,
-                        thickness = 18.dp,
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Swatch(color)
-                            ZillitText(
-                                card.label,
-                                style = AnalyticsType.text(13f, FontWeight.Bold),
-                                color = colors.ink,
-                                modifier = Modifier.padding(start = 8.dp),
-                            )
-                        }
-                        ZillitText(
-                            card.display ?: AnalyticsFormat.money(card.value, context.currency),
-                            style = AnalyticsType.mono(24f, FontWeight.Bold, -0.02f),
-                            color = colors.ink,
-                            modifier = Modifier.padding(vertical = 4.dp),
-                        )
-                        card.note?.let { ZillitText(it, style = AnalyticsType.text(11.5f), color = colors.ink3) }
-                        if (card.count != null || card.turn != null) {
-                            FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                card.count?.let { ZillitText("$it claims", style = AnalyticsType.mono(11f), color = colors.ink3) }
-                                card.turn?.let { ZillitText("Turnaround $it", style = AnalyticsType.mono(11f), color = colors.ink3) }
-                            }
-                        }
-                    }
+            block.cards.forEach { GaugeCard(it, sum, context) }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GaugeCard(card: MethodItem, sum: Double, context: BlockContext) {
+    val colors = analyticsColors
+    val color = colors.css(card.color) ?: colors.ink3
+    val share = card.pct ?: "${if (sum == 0.0) 0 else (card.value / sum * PERCENT).roundToInt()}%"
+    Row(
+        modifier = Modifier.cardSurface().padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        DonutChart(
+            parts = listOf(
+                ChartPart(card.label, card.value, color),
+                ChartPart("", max(0.0, sum - card.value), colors.donutTrack),
+            ),
+            centerLabel = share,
+            centerSub = null,
+            describe = { AnalyticsFormat.money(it.value, context.currency) },
+            size = 116.dp,
+            thickness = 18.dp,
+        )
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Swatch(color)
+                ZillitText(
+                    card.label,
+                    style = AnalyticsType.text(13f, FontWeight.Bold),
+                    color = colors.ink,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+            ZillitText(
+                card.display ?: AnalyticsFormat.money(card.value, context.currency),
+                style = AnalyticsType.mono(24f, FontWeight.Bold, -0.02f),
+                color = colors.ink,
+                modifier = Modifier.padding(vertical = 4.dp),
+            )
+            card.note?.let { ZillitText(it, style = AnalyticsType.text(11.5f), color = colors.ink3) }
+            if (card.count != null || card.turn != null) {
+                val meta = AnalyticsType.mono(11f)
+                FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    card.count?.let { ZillitText("$it claims", style = meta, color = colors.ink3) }
+                    card.turn?.let { ZillitText("Turnaround $it", style = meta, color = colors.ink3) }
                 }
             }
         }
@@ -172,31 +183,45 @@ internal fun AlertsBlock(block: AnalyticsBlock.Alerts, context: BlockContext) {
                 )
             },
         )
-        block.alerts.forEachIndexed { i, alert ->
-            val hover = remember { MutableInteractionSource() }
-            val hovered by hover.collectIsHoveredAsState()
-            val tone = colors.tone(alert.tone)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(if (hovered && alert.module != null) colors.rowHover else Color.Transparent)
-                    .hoverable(hover)
-                    .then(alert.module?.let { Modifier.clickable { context.onSelect(it) } } ?: Modifier)
-                    .bottomRule(show = i < block.alerts.lastIndex, color = colors.line)
-                    .padding(vertical = 11.dp),
-                horizontalArrangement = Arrangement.spacedBy(11.dp),
-            ) {
-                ToneIcon(ZillitIcons.Warning, tone, box = 24.dp, glyph = 13.dp, radius = 7.dp, tint = tone.ink)
-                Column(Modifier.weight(1f)) {
-                    ZillitText(alert.title, style = AnalyticsType.text(12.5f, FontWeight.Bold, -0.005f), color = colors.ink)
-                    alert.meta?.let {
-                        ZillitText(it, style = AnalyticsType.text(11f), color = colors.ink3, modifier = Modifier.padding(top = 2.dp))
-                    }
-                }
-                if (alert.module != null) {
-                    ZillitIcon(ZillitIcons.ArrowRight, tint = colors.ink4, size = 13.dp, modifier = Modifier.padding(top = 3.dp))
-                }
+        block.alerts.forEachIndexed { i, alert -> AlertRow(alert, last = i == block.alerts.lastIndex, context) }
+    }
+}
+
+@Composable
+private fun AlertRow(alert: AlertItem, last: Boolean, context: BlockContext) {
+    val colors = analyticsColors
+    val hover = remember { MutableInteractionSource() }
+    val hovered by hover.collectIsHoveredAsState()
+    val tone = colors.tone(alert.tone)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (hovered && alert.module != null) colors.rowHover else Color.Transparent)
+            .hoverable(hover)
+            .then(alert.module?.let { Modifier.clickable { context.onSelect(it) } } ?: Modifier)
+            .bottomRule(show = !last, color = colors.line)
+            .padding(vertical = 11.dp),
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
+    ) {
+        ToneIcon(ZillitIcons.Warning, tone, box = 24.dp, glyph = 13.dp, radius = 7.dp, tint = tone.ink)
+        Column(Modifier.weight(1f)) {
+            ZillitText(alert.title, style = AnalyticsType.text(12.5f, FontWeight.Bold, -0.005f), color = colors.ink)
+            alert.meta?.let {
+                ZillitText(
+                    it,
+                    style = AnalyticsType.text(11f),
+                    color = colors.ink3,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
+        }
+        if (alert.module != null) {
+            ZillitIcon(
+                ZillitIcons.ArrowRight,
+                tint = colors.ink4,
+                size = 13.dp,
+                modifier = Modifier.padding(top = 3.dp),
+            )
         }
     }
 }
@@ -208,7 +233,11 @@ internal fun SnapshotCardsBlock(block: AnalyticsBlock.SnapshotCards, context: Bl
     if (block.modules.isEmpty()) return
     val colors = analyticsColors
     Column {
-        SectionLabel(block.heading.dot?.let(colors::toneHex) ?: colors.amber, block.heading.title ?: "By Module", block.heading.sub)
+        SectionLabel(
+            block.heading.dot?.let(colors::toneHex) ?: colors.amber,
+            block.heading.title ?: "By Module",
+            block.heading.sub,
+        )
         FlowGrid(minCell = 220.dp, gap = 14.dp) {
             metas.forEach { meta ->
                 val hover = remember { MutableInteractionSource() }

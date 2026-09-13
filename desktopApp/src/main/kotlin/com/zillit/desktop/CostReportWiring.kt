@@ -3,7 +3,14 @@ package com.zillit.desktop
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.permissions.ProjectPermissions
+import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.feature.costreport.data.AnalyticsRepositoryImpl
 import com.zillit.desktop.feature.costreport.data.CostReportRepositoryImpl
+import com.zillit.desktop.feature.costreport.domain.CrCompany
+import com.zillit.desktop.feature.costreport.domain.CurrencyOptions
+import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsFilterSource
+import com.zillit.desktop.feature.costreport.domain.analytics.AnalyticsOption
+import com.zillit.desktop.feature.costreport.ui.analytics.AnalyticsViewModel
 import com.zillit.desktop.feature.costreport.domain.CostReportExporter
 import com.zillit.desktop.feature.costreport.domain.CostReportFiles
 import com.zillit.desktop.feature.costreport.domain.CostReportViewer
@@ -40,10 +47,14 @@ internal fun costReportFiles(): CostReportFiles = object : CostReportFiles {
         }
 }
 
-/** "Name · Designation" for the posted-by lines and the export's `generated_by`. */
+/**
+ * "Name · Designation" for the posted-by lines and the export's `generated_by`.
+ * A designation arrives as a label key (`production_office_label`), so it is
+ * translated before it is shown.
+ */
 internal fun AppGraph.Ready.costReportUser(userId: String): String? =
     projectContext?.context?.value?.user(userId)?.let { user ->
-        user.designation?.takeIf { it.isNotBlank() }?.let { "${user.fullName} · $it" } ?: user.fullName
+        user.designation?.takeIf { it.isNotBlank() }?.let { "${user.fullName} · ${it.localised()}" } ?: user.fullName
     }
 
 internal fun AppGraph.Ready.buildCostReport(permissions: () -> ProjectPermissions) = CostReportViewModel(
@@ -91,6 +102,32 @@ internal fun AppGraph.Ready.buildCostReportWorksheet(permissions: () -> ProjectP
     resolveUser = ::costReportUser,
     nowMillis = System::currentTimeMillis,
 )
+
+/**
+ * The Analytics page (`/film-tools/cost-report/analytics`): the three block
+ * reads, and the filter choices from the services that own them — currencies
+ * and companies from the Account Hub, departments from the crew list, units
+ * from the units service (matched on the unit's own id, as the web sends it).
+ */
+internal fun AppGraph.Ready.buildCostReportAnalytics(): AnalyticsViewModel {
+    val reference = CostReportRepositoryImpl(apiClient, config)
+    return AnalyticsViewModel(
+        repository = AnalyticsRepositoryImpl(apiClient, config),
+        filterSource = object : AnalyticsFilterSource {
+            override suspend fun currencies(): CurrencyOptions? = reference.currencies().getOrNull()
+
+            override suspend fun companies(): List<CrCompany> = reference.companies().getOrNull().orEmpty()
+
+            override suspend fun departments(): List<AnalyticsOption> =
+                hubDepartments().map { AnalyticsOption(it.id, it.name) }
+
+            override suspend fun units(): List<AnalyticsOption> =
+                unitRepository.joinUnits().getOrNull().orEmpty().map { unit ->
+                    AnalyticsOption(unit.unitId ?: unit.id, unit.name.localised())
+                }
+        },
+    )
+}
 
 internal fun AppGraph.Ready.costReportWorksheetProvider(viewModel: WorksheetViewModel) =
     WorksheetToolProvider(viewModel = viewModel, resolveUser = ::costReportUser)

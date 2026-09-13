@@ -22,7 +22,16 @@ import kotlinx.serialization.json.put
  * Main unit, second unit, splinter — a shoot runs several at once, and which
  * one someone is on decides whose call sheets and notices they see.
  */
-data class ProductionUnit(val id: String, val name: String)
+data class ProductionUnit(
+    val id: String,
+    val name: String,
+    /**
+     * The unit's own id when the row carries one beside its record id — what
+     * a crew record and the cost report's analytics filter match on (the
+     * web's `unit_id || _id`).
+     */
+    val unitId: String? = null,
+)
 
 /** The units this user may join, and which one they are on. */
 interface UnitRepository {
@@ -96,7 +105,7 @@ private fun JsonObject.toUnit(): ProductionUnit? {
     // A unit with no name is still a unit the server knows about; showing its
     // id beats dropping it and leaving the user unable to pick their own unit.
     val name = NAME_KEYS.firstNotNullOfOrNull { text(it) } ?: id
-    return ProductionUnit(id, name)
+    return ProductionUnit(id, name, unitId = text("unit_id"))
 }
 
 private fun JsonObject.text(key: String): String? =

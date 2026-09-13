@@ -469,7 +469,8 @@ private fun KpiTile(
             color = colors.textMuted,
             maxLines = 1,
         )
-        ZillitText(
+        // A nine-figure budget in a narrow window shrinks rather than ending in "…".
+        FitFigureText(
             text = CrFormat.money(value, symbol),
             style = ZillitTheme.typography.numeric.copy(
                 fontSize = 20.sp,
@@ -477,7 +478,7 @@ private fun KpiTile(
                 letterSpacing = (-0.4).sp,
             ),
             color = ink?.let { if (colors.isDark) it.copy(alpha = DARK_INK_ALPHA) else it } ?: colors.textPrimary,
-            maxLines = 1,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }

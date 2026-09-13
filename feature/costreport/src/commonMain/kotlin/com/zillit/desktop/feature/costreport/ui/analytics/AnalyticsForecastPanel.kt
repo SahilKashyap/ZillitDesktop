@@ -8,17 +8,14 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -71,7 +68,10 @@ internal fun ForecastPanel(block: AnalyticsBlock.Forecast, context: BlockContext
         ) {
             EfcHeadline(view)
             Box(Modifier.weight(1f))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(26.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(26.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 ForecastStat("Actual to date", view.actualText)
                 ForecastStat("Committed", view.committedText)
                 ForecastStat("Est. to complete", view.etcText, hex)
@@ -103,7 +103,11 @@ private fun EfcHeadline(view: ForecastView) {
     val tone = colors.tone(view.varianceTone)
     Column {
         ZillitText("ESTIMATED FINAL COST", style = AnalyticsType.mono(10f, FontWeight.Bold, 0.1f), color = colors.ink3)
-        Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.padding(top = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             ZillitText(view.efcText, style = AnalyticsType.mono(34f, FontWeight.Bold, -0.03f), color = colors.ink)
             Row(
                 modifier = Modifier
@@ -113,7 +117,11 @@ private fun EfcHeadline(view: ForecastView) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                ZillitIcon(if (view.over) ZillitIcons.ChevronUp else ZillitIcons.ChevronDown, tint = tone.ink, size = 13.dp)
+                ZillitIcon(
+                    if (view.over) ZillitIcons.ChevronUp else ZillitIcons.ChevronDown,
+                    tint = tone.ink,
+                    size = 13.dp,
+                )
                 ZillitText(view.varianceText, style = AnalyticsType.mono(13f, FontWeight.Bold), color = tone.ink)
             }
             ZillitText(
@@ -149,7 +157,11 @@ private fun BudgetRail(view: ForecastView, hex: Color, modifier: Modifier = Modi
     val budgetAt = share(view.budget)
     Column(modifier.fillMaxWidth()) {
         StackedRail(
-            parts = listOf(share(view.actual) to 1f, share(view.committed) to COMMITTED_ALPHA, share(view.etc) to ETC_ALPHA),
+            parts = listOf(
+                share(view.actual) to 1f,
+                share(view.committed) to COMMITTED_ALPHA,
+                share(view.etc) to ETC_ALPHA,
+            ),
             color = hex,
             budgetAt = budgetAt.takeIf { view.budget > 0 },
             over = view.efc > view.budget,
@@ -157,9 +169,18 @@ private fun BudgetRail(view: ForecastView, hex: Color, modifier: Modifier = Modi
             radius = 8.dp,
         )
         AtFraction(budgetAt, Modifier.padding(top = 3.dp).height(14.dp)) {
-            ZillitText("▲ Budget ${view.budgetText}", style = AnalyticsType.mono(9.5f, FontWeight.Bold), color = colors.ink2, maxLines = 1)
+            ZillitText(
+                "▲ Budget ${view.budgetText}",
+                style = AnalyticsType.mono(9.5f, FontWeight.Bold),
+                color = colors.ink2,
+                maxLines = 1,
+            )
         }
-        FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        FlowRow(
+            Modifier.padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             RailKey(hex, 1f, "Actual", view.actualText)
             RailKey(hex, COMMITTED_ALPHA, "Committed", view.committedText)
             RailKey(hex, ETC_ALPHA, "Est. to complete", view.etcText)
@@ -199,7 +220,10 @@ internal fun StackedRail(
                     drawRect(color.copy(alpha = color.alpha * alpha), Offset(x, 0f), Size(w, size.height))
                     x += w
                 }
-                budgetAt?.let { drawRect(colors.ink, Offset(size.width * it - 1.dp.toPx(), 0f), Size(2.dp.toPx(), size.height)) }
+                budgetAt?.let {
+                    val marker = 2.dp.toPx()
+                    drawRect(colors.ink, Offset(size.width * it - marker / 2, 0f), Size(marker, size.height))
+                }
             },
     )
 }
@@ -254,24 +278,34 @@ internal fun ModuleForecastBlock(block: AnalyticsBlock.ModuleForecast, context: 
     }
 }
 
+/** A module's forecast figures, worked out once for its row. */
+private class ModuleFigures(row: ModuleForecastRow, currency: String?) {
+    val efc = row.efc ?: (row.actual + row.committed + row.etc)
+    val over = efc > row.budget
+    private val scale = (max(efc, row.budget) * RAIL_HEADROOM).takeIf { it != 0.0 } ?: 1.0
+    val parts = listOf(share(row.actual) to 1f, share(row.committed) to COMMITTED_ALPHA, share(row.etc) to ETC_ALPHA)
+    val budgetAt = share(row.budget).takeIf { row.budget > 0 }
+
+    /** Against a budget, the variance as a percentage of it; without one, the amount. */
+    val varianceText: String = run {
+        val variance = row.variance ?: (efc - row.budget)
+        val sign = if (over) "+" else "\u2212"
+        if (row.budget > 0) {
+            "$sign${fixedOne(abs(variance / row.budget * PERCENT))}%"
+        } else {
+            sign + AnalyticsFormat.money(abs(variance), currency)
+        }
+    }
+
+    private fun share(value: Double) = (value / scale).toFloat().coerceIn(0f, 1f)
+}
+
 @Composable
 private fun ModuleForecastLine(row: ModuleForecastRow, context: BlockContext, last: Boolean) {
     val colors = analyticsColors
     val meta = context.meta(row.module)
     val toneId = row.tone ?: meta?.tone ?: "grey"
-    val tone = colors.tone(toneId)
-    val hex = colors.toneHex(toneId)
-    val efc = row.efc ?: (row.actual + row.committed + row.etc)
-    val variance = row.variance ?: (efc - row.budget)
-    val over = efc > row.budget
-    val scale = (max(efc, row.budget) * RAIL_HEADROOM).takeIf { it != 0.0 } ?: 1.0
-    fun share(value: Double) = (value / scale).toFloat().coerceIn(0f, 1f)
-    val sign = if (over) "+" else "−"
-    val varianceText = if (row.budget > 0) {
-        "$sign${fixedOne(abs(variance / row.budget * PERCENT))}%"
-    } else {
-        sign + AnalyticsFormat.money(abs(variance), context.currency)
-    }
+    val figures = remember(row, context.currency) { ModuleFigures(row, context.currency) }
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     ForecastGridRow(
@@ -283,7 +317,7 @@ private fun ModuleForecastLine(row: ModuleForecastRow, context: BlockContext, la
             .padding(vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ToneIcon(moduleIcon(row.module), tone, box = 26.dp, glyph = 14.dp, radius = 7.dp)
+            ToneIcon(moduleIcon(row.module), colors.tone(toneId), box = 26.dp, glyph = 14.dp, radius = 7.dp)
             Column {
                 ZillitText(
                     meta?.label ?: AnalyticsTitles.titleFor(row.module) ?: row.module,
@@ -298,10 +332,10 @@ private fun ModuleForecastLine(row: ModuleForecastRow, context: BlockContext, la
         }
         Column {
             StackedRail(
-                parts = listOf(share(row.actual) to 1f, share(row.committed) to COMMITTED_ALPHA, share(row.etc) to ETC_ALPHA),
-                color = hex,
-                budgetAt = share(row.budget).takeIf { row.budget > 0 },
-                over = over,
+                parts = figures.parts,
+                color = colors.toneHex(toneId),
+                budgetAt = figures.budgetAt,
+                over = figures.over,
                 height = 16.dp,
                 radius = 5.dp,
             )
@@ -313,26 +347,32 @@ private fun ModuleForecastLine(row: ModuleForecastRow, context: BlockContext, la
             )
         }
         ZillitText(
-            AnalyticsFormat.money(efc, context.currency),
+            AnalyticsFormat.money(figures.efc, context.currency),
             style = AnalyticsType.mono(13f, FontWeight.Bold),
             color = colors.ink,
             textAlign = TextAlign.End,
             modifier = Modifier.fillMaxWidth(),
         )
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-            val chip = colors.tone(if (over) "red" else "green")
-            Row(
-                modifier = Modifier
-                    .background(chip.soft, CircleShape)
-                    .border(1.dp, chip.ring, CircleShape)
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                ZillitIcon(if (over) ZillitIcons.ChevronUp else ZillitIcons.ChevronDown, tint = chip.ink, size = 10.dp)
-                ZillitText(varianceText, style = AnalyticsType.mono(11f, FontWeight.Bold), color = chip.ink, maxLines = 1)
-            }
+            VarianceChip(figures.over, figures.varianceText)
         }
+    }
+}
+
+/** Red and pointing up when over budget, green and pointing down when under. */
+@Composable
+private fun VarianceChip(over: Boolean, text: String) {
+    val chip = analyticsColors.tone(if (over) "red" else "green")
+    Row(
+        modifier = Modifier
+            .background(chip.soft, CircleShape)
+            .border(1.dp, chip.ring, CircleShape)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        ZillitIcon(if (over) ZillitIcons.ChevronUp else ZillitIcons.ChevronDown, tint = chip.ink, size = 10.dp)
+        ZillitText(text, style = AnalyticsType.mono(11f, FontWeight.Bold), color = chip.ink, maxLines = 1)
     }
 }
 
@@ -343,8 +383,11 @@ private fun ForecastGridRow(modifier: Modifier = Modifier, content: @Composable 
         val gap = 14.dp.roundToPx()
         val fixed = 96.dp.roundToPx()
         val free = max(0, constraints.maxWidth - fixed * 2 - gap * 3)
-        val widths = listOf((free * 1.5f / 3.1f).toInt(), (free * 1.6f / 3.1f).toInt(), fixed, fixed)
-        val placeables = measurables.take(widths.size).mapIndexed { i, m -> m.measure(Constraints(minWidth = widths[i], maxWidth = widths[i])) }
+        val fr = MODULE_FR + RAIL_FR
+        val widths = listOf((free * MODULE_FR / fr).toInt(), (free * RAIL_FR / fr).toInt(), fixed, fixed)
+        val placeables = measurables.take(widths.size).mapIndexed { i, m ->
+            m.measure(Constraints(minWidth = widths[i], maxWidth = widths[i]))
+        }
         val height = placeables.maxOfOrNull { it.height } ?: 0
         layout(constraints.maxWidth, height) {
             var x = 0
@@ -357,7 +400,7 @@ private fun ForecastGridRow(modifier: Modifier = Modifier, content: @Composable 
 }
 
 private fun Modifier.topRule(color: Color): Modifier = drawBehind {
-    drawLine(color, Offset(0f, 0.5f), Offset(size.width, 0.5f), 1f)
+    drawLine(color, Offset(0f, HAIRLINE / 2), Offset(size.width, HAIRLINE / 2), HAIRLINE)
 }
 
 /** `toFixed(1)`. */
@@ -367,6 +410,9 @@ private fun fixedOne(value: Double): String {
 }
 
 private const val RAIL_HEADROOM = 1.02
+private const val HAIRLINE = 1f
+private const val MODULE_FR = 1.5f
+private const val RAIL_FR = 1.6f
 private const val COMMITTED_ALPHA = 0.55f
 private const val ETC_ALPHA = 0.26f
 private const val PERCENT = 100.0

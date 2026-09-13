@@ -13,10 +13,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.MeasurePolicy
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
@@ -55,12 +57,16 @@ internal fun TableBlock(block: AnalyticsBlock.Table, context: BlockContext) {
 private fun DataTable(columns: List<TableColumn>, rows: List<TableRow>, context: BlockContext) {
     if (columns.isEmpty()) return
     val colors = analyticsColors
+    val policy = remember(columns.size) { autoTablePolicy(columns.size) }
     Layout(
         modifier = Modifier.fillMaxWidth(),
+        measurePolicy = policy,
         content = {
             columns.forEach { column ->
                 Box(
-                    modifier = Modifier.bottomRule(true, colors.line).padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
+                    modifier = Modifier
+                        .bottomRule(true, colors.line)
+                        .padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
                     contentAlignment = column.alignment(),
                 ) {
                     ZillitText(
@@ -84,34 +90,36 @@ private fun DataTable(columns: List<TableColumn>, rows: List<TableRow>, context:
                 }
             }
         },
-    ) { measurables, constraints ->
-        val count = columns.size
-        val available = constraints.maxWidth
-        val widest = IntArray(count)
-        val narrowest = IntArray(count)
-        measurables.forEachIndexed { i, cell ->
-            val c = i % count
-            widest[c] = max(widest[c], cell.maxIntrinsicWidth(Constraints.Infinity))
-            // Headers do not wrap; their widest is also their narrowest.
-            narrowest[c] = max(narrowest[c], if (i < count) cell.maxIntrinsicWidth(Constraints.Infinity) else cell.minIntrinsicWidth(Constraints.Infinity))
-        }
-        val widths = columnWidths(widest, narrowest, available)
-        val rowsOfCells = measurables.chunked(count)
-        val placed = rowsOfCells.map { cells ->
-            val height = cells.mapIndexed { c, cell -> cell.maxIntrinsicHeight(widths[c]) }.max()
-            cells.mapIndexed { c, cell -> cell.measure(Constraints.fixed(widths[c], height)) }
-        }
-        val total = placed.sumOf { row -> row.first().height }
-        layout(max(available, widths.sum()), total) {
-            var y = 0
-            placed.forEach { row ->
-                var x = 0
-                row.forEachIndexed { c, p ->
-                    p.place(x, y)
-                    x += widths[c]
-                }
-                y += row.first().height
+    )
+}
+
+/** Cells in row-major order, [count] to a row, the first row the headers. */
+private fun autoTablePolicy(count: Int) = MeasurePolicy { measurables, constraints ->
+    val widest = IntArray(count)
+    val narrowest = IntArray(count)
+    measurables.forEachIndexed { i, cell ->
+        val c = i % count
+        val max = cell.maxIntrinsicWidth(Constraints.Infinity)
+        widest[c] = max(widest[c], max)
+        // Headers do not wrap; their widest is also their narrowest.
+        narrowest[c] = max(narrowest[c], if (i < count) max else cell.minIntrinsicWidth(Constraints.Infinity))
+    }
+    // Unbounded only when a parent asks how wide the table would like to be: its widest content.
+    val available = if (constraints.hasBoundedWidth) constraints.maxWidth else widest.sum()
+    val widths = columnWidths(widest, narrowest, available)
+    val placed = measurables.chunked(count).map { cells ->
+        val height = cells.mapIndexed { c, cell -> cell.maxIntrinsicHeight(widths[c]) }.max()
+        cells.mapIndexed { c, cell -> cell.measure(Constraints.fixed(widths[c], height)) }
+    }
+    layout(max(available, widths.sum()), placed.sumOf { it.first().height }) {
+        var y = 0
+        placed.forEach { row ->
+            var x = 0
+            row.forEachIndexed { c, placeable ->
+                placeable.place(x, y)
+                x += widths[c]
             }
+            y += row.first().height
         }
     }
 }
@@ -123,12 +131,14 @@ internal fun columnWidths(widest: IntArray, narrowest: IntArray, available: Int)
     return when {
         maxTotal <= available -> {
             val spare = available - maxTotal
-            IntArray(widest.size) { widest[it] + if (maxTotal == 0) spare / widest.size else (spare.toLong() * widest[it] / maxTotal).toInt() }
+            IntArray(widest.size) { c ->
+                widest[c] + if (maxTotal == 0) spare / widest.size else (spare.toLong() * widest[c] / maxTotal).toInt()
+            }
         }
         minTotal < available -> {
             val give = maxTotal - minTotal
             val room = available - minTotal
-            IntArray(widest.size) { narrowest[it] + ((widest[it] - narrowest[it]).toLong() * room / give).toInt() }
+            IntArray(widest.size) { c -> narrowest[c] + ((widest[c] - narrowest[c]).toLong() * room / give).toInt() }
         }
         else -> narrowest.copyOf()
     }
@@ -149,32 +159,47 @@ private fun TableColumn.textAlign(): TextAlign = when (align) {
 /** `column.cell` → its renderer; any other cell prints the value, formatted when the column has a `fmt`. */
 @Composable
 private fun TableCell(column: TableColumn, row: TableRow, context: BlockContext) {
-    val colors = analyticsColors
     val raw = row[column.key]
-    val mono = column.mono || column.cell == "mono" || column.cell == "card-ref"
+    when (column.cell) {
+        "card-ref" -> CardRefCell(raw.orEmpty(), row["holder"])
+        "progress" -> ProgressCell(raw, column, row, context)
+        "status-pill" -> StatusPill(raw.orEmpty(), row["tone"] ?: "grey")
+        "avatar" -> AvatarCell(raw.orEmpty(), row["role"] ?: row["sub"])
+        "method-chip" -> MethodChip(raw.orEmpty())
+        "link" -> TableLinkText(raw.orEmpty(), row["href"], context, arrow = false)
+        else -> PlainCell(column, raw, context)
+    }
+}
+
+/** `percent`, `mono`, `plain` and anything unknown: text in the column's face, formatted by its `fmt`. */
+@Composable
+private fun PlainCell(column: TableColumn, raw: String?, context: BlockContext) {
+    val mono = column.mono || column.cell == "mono"
     val weight = when {
         column.bold -> FontWeight.Bold
         mono -> FontWeight.SemiBold
         else -> FontWeight.Medium
     }
-    val style = if (mono) AnalyticsType.mono(13f, weight) else AnalyticsType.text(13f, weight)
-    when (column.cell) {
-        "card-ref" -> Column {
-            ZillitText(raw.orEmpty(), style = AnalyticsType.mono(13f, FontWeight.Bold), color = colors.ink)
-            row["holder"]?.let { ZillitText(it, style = AnalyticsType.text(11f), color = colors.ink3) }
-        }
-        "progress" -> ProgressCell(raw, column, row, context)
-        "percent" -> ZillitText(AnalyticsFormat.pct(raw?.let(AnalyticsFormat::toNumber)), style = style, color = colors.ink, textAlign = column.textAlign())
-        "status-pill" -> StatusPill(raw.orEmpty(), row["tone"] ?: "grey")
-        "avatar" -> AvatarCell(raw.orEmpty(), row["role"] ?: row["sub"])
-        "method-chip" -> MethodChip(raw.orEmpty())
-        "link" -> TableLinkText(raw.orEmpty(), row["href"], context, arrow = false)
-        else -> ZillitText(
-            text = if (column.fmt != null) AnalyticsFormat.value(raw, column.fmt, context.currency) else raw.orEmpty(),
-            style = style,
-            color = colors.ink,
-            textAlign = column.textAlign(),
-        )
+    val text = when {
+        column.cell == "percent" -> AnalyticsFormat.pct(raw?.let(AnalyticsFormat::toNumber))
+        column.fmt != null -> AnalyticsFormat.value(raw, column.fmt, context.currency)
+        else -> raw.orEmpty()
+    }
+    ZillitText(
+        text = text,
+        style = if (mono) AnalyticsType.mono(13f, weight) else AnalyticsType.text(13f, weight),
+        color = analyticsColors.ink,
+        textAlign = column.textAlign(),
+    )
+}
+
+/** A card number in bold mono, its holder under it. */
+@Composable
+private fun CardRefCell(reference: String, holder: String?) {
+    val colors = analyticsColors
+    Column {
+        ZillitText(reference, style = AnalyticsType.mono(13f, FontWeight.Bold), color = colors.ink)
+        holder?.let { ZillitText(it, style = AnalyticsType.text(11f), color = colors.ink3) }
     }
 }
 
@@ -184,7 +209,11 @@ private fun ProgressCell(raw: String?, column: TableColumn, row: TableRow, conte
     val colors = analyticsColors
     val pct = (row.number("pct") ?: 0.0).coerceIn(0.0, PROGRESS_CEILING)
     val bar = row["tone"]?.let(colors::toneHex) ?: if (pct > FULL) colors.red else colors.amber
-    Column(Modifier.widthIn(min = 120.dp), verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.End) {
+    Column(
+        Modifier.widthIn(min = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = Alignment.End,
+    ) {
         ZillitText(
             AnalyticsFormat.value(raw, column.fmt ?: "money", context.currency),
             style = AnalyticsType.mono(13f, FontWeight.Bold),
@@ -213,7 +242,9 @@ private fun AvatarCell(name: String, role: String?) {
         }
         Column {
             ZillitText(name, style = AnalyticsType.text(13f, FontWeight.Bold), color = colors.ink)
-            role?.takeIf { it.isNotBlank() }?.let { ZillitText(it, style = AnalyticsType.text(11f), color = colors.ink3) }
+            role?.takeIf { it.isNotBlank() }?.let {
+                ZillitText(it, style = AnalyticsType.text(11f), color = colors.ink3)
+            }
         }
     }
 }

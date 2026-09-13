@@ -65,7 +65,8 @@ object AnalyticsFormat {
         }
     }
 
-    fun value(number: Double?, fmt: String?, currency: String?): String =
+    /** [value] for a figure already read as a number — a chart's axis and tooltip. */
+    fun figure(number: Double?, fmt: String?, currency: String?): String =
         value(number?.let(::jsNumber), fmt, currency)
 
     /** A part's share of a whole, rounded to a whole percent; blank when there is no whole. */

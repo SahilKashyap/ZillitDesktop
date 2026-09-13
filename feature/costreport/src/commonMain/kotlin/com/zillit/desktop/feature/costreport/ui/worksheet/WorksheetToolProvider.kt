@@ -16,6 +16,7 @@ import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.feature.costreport.ui.analytics.AnalyticsToolProvider
 
 /**
  * The accountant's Cost Report as a workspace tool, at the web's path
@@ -72,6 +73,6 @@ class WorksheetToolProvider(
         const val WORKSHEET_PATH = "/film-tools/account-hub/cost-report"
 
         /** The standalone Analytics page both cost-report surfaces open. */
-        const val ANALYTICS_PATH = "/film-tools/cost-report/analytics"
+        const val ANALYTICS_PATH = AnalyticsToolProvider.ANALYTICS_PATH
     }
 }

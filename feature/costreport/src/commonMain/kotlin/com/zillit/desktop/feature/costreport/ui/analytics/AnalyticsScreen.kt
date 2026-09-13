@@ -27,7 +27,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -68,7 +70,14 @@ fun AnalyticsScreen(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -> Unit) 
         Column(Modifier.fillMaxSize().background(colors.bg)) {
             AnalyticsHeader(state, onEvent)
             Box(Modifier.fillMaxWidth().weight(1f)) {
-                ZillitScrollColumn(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                val scroll = rememberScrollState()
+                // A module opened from a card or an alert far down the page starts at its own top.
+                LaunchedEffect(state.selected) { if (scroll.value > 0) scroll.animateScrollTo(0) }
+                ZillitScrollColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = scroll,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Column(
                         Modifier
                             .widthIn(max = 1640.dp)
@@ -188,7 +197,13 @@ private fun ModuleStrip(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -> Un
             accent = analyticsColors.ink,
             onClick = { onEvent(AnalyticsEvent.Select(AnalyticsUiState.OVERVIEW)) },
         ) {
-            StripIcon(ZillitIcons.Grid, on = state.isOverview, fill = analyticsColors.ink)
+            // Ink on the light theme and near-white on the dark one, so its glyph takes the surface colour.
+            StripIcon(
+                ZillitIcons.Grid,
+                on = state.isOverview,
+                fill = analyticsColors.ink,
+                glyph = analyticsColors.surface,
+            )
             Spacer(Modifier.weight(1f).height(10.dp))
             StripLabel("Overview", state.isOverview)
             ZillitText(
@@ -248,7 +263,12 @@ private fun StripCard(on: Boolean, accent: Color, onClick: () -> Unit, content: 
 
 /** The web's `0 0 0 3px` ring and soft drop shadow around the selected card. */
 private fun Modifier.selectedRing(accent: Color): Modifier = this
-    .shadow(10.dp, RoundedCornerShape(14.dp), ambientColor = accent.copy(alpha = RING_SHADOW), spotColor = accent.copy(alpha = RING_SHADOW))
+    .shadow(
+        10.dp,
+        RoundedCornerShape(14.dp),
+        ambientColor = accent.copy(alpha = RING_SHADOW),
+        spotColor = accent.copy(alpha = RING_SHADOW),
+    )
     .drawBehind {
         val ring = 3.dp.toPx()
         drawRoundRect(
@@ -261,7 +281,7 @@ private fun Modifier.selectedRing(accent: Color): Modifier = this
     }
 
 @Composable
-private fun StripIcon(icon: ImageVector, on: Boolean, fill: Color) {
+private fun StripIcon(icon: ImageVector, on: Boolean, fill: Color, glyph: Color = Color.White) {
     val colors = analyticsColors
     val shape = RoundedCornerShape(9.dp)
     Box(
@@ -272,7 +292,7 @@ private fun StripIcon(icon: ImageVector, on: Boolean, fill: Color) {
             .then(if (on) Modifier else Modifier.border(1.dp, colors.line, shape)),
         contentAlignment = Alignment.Center,
     ) {
-        ZillitIcon(icon, tint = if (on) Color.White else colors.ink4, size = 16.dp)
+        ZillitIcon(icon, tint = if (on) glyph else colors.ink4, size = 16.dp)
     }
 }
 
@@ -307,7 +327,10 @@ private fun PageContent(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -> Un
             Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 if (page.blocks.isNotEmpty()) BlockList(page.blocks, context)
                 if (page.tabs.isNotEmpty()) {
-                    Segmented(page.tabs.map { it.id to it.label }, state.activeTab) { onEvent(AnalyticsEvent.SelectTab(it)) }
+                    Segmented(
+                        page.tabs.map { it.id to it.label },
+                        state.activeTab,
+                    ) { onEvent(AnalyticsEvent.SelectTab(it)) }
                     when (state.tabStatus) {
                         TabStatus.Loading -> LoadingSkeleton()
                         TabStatus.Error -> ErrorCard("Couldn’t load this tab.", onRetry = null)
@@ -354,7 +377,10 @@ private fun LoadingSkeleton() {
             }
             SkeletonPanel {
                 Bone(brush, 130.dp, 13.dp, Modifier.padding(bottom = 16.dp))
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Bone(brush, 176.dp, 176.dp, radius = 999.dp) }
+                Box(
+                    Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) { Bone(brush, 176.dp, 176.dp, radius = 999.dp) }
                 repeat(3) { Bone(brush, null, 12.dp, Modifier.padding(top = 10.dp)) }
             }
         }
@@ -375,7 +401,11 @@ private fun SkeletonPanel(
             .fillMaxWidth()
             .background(colors.surface, shape)
             .border(1.dp, colors.line, shape)
-            .then(if (padding > 0.dp) Modifier.padding(padding) else Modifier.padding(horizontal = 20.dp, vertical = 18.dp)),
+            .then(
+                if (padding > 0.dp) Modifier.padding(
+                    padding,
+                ) else Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+            ),
     ) {
         content()
     }
@@ -443,7 +473,9 @@ private fun EmptyCard() {
     StateCard {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(
-                Modifier.size(40.dp).background(colors.bg2, RoundedCornerShape(12.dp)).border(1.dp, colors.line, RoundedCornerShape(12.dp)),
+                Modifier.size(40.dp)
+                    .background(colors.bg2, RoundedCornerShape(12.dp))
+                    .border(1.dp, colors.line, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
             ) {
                 ZillitIcon(ZillitIcons.Info, tint = colors.ink3, size = 18.dp)

@@ -1,6 +1,5 @@
 package com.zillit.desktop.feature.accounthub.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -11,7 +10,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -39,9 +37,6 @@ class AccountHubToolProvider(
     private val viewModel: AccountHubViewModel,
     /** The sidebar's counts, from the host's notification ledger; null shows none. */
     private val badges: StateFlow<HubBadgeCounts>? = null,
-    /** The theme card: null hides it. System is resolved against the OS here. */
-    private val themeMode: StateFlow<ThemeMode>? = null,
-    private val onSetTheme: (ThemeMode) -> Unit = {},
     /**
      * Finds the provider for a tool route, so the console can render the other
      * film tools inside its shell the way the web's nested routes do. Null
@@ -69,14 +64,6 @@ class AccountHubToolProvider(
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         val state by viewModel.state.collectAsState()
         val counts = badges?.collectAsState()?.value
-        val mode = themeMode?.collectAsState()?.value
-        val systemDark = isSystemInDarkTheme()
-        val dark = when (mode) {
-            ThemeMode.Light -> false
-            ThemeMode.Dark -> true
-            ThemeMode.System -> systemDark
-            null -> null
-        }
 
         // Held here rather than in the state so a failure that has been read
         // does not reappear when the window is switched away from and back.
@@ -139,8 +126,6 @@ class AccountHubToolProvider(
                 canImportBudget = viewModel.canImportBudget,
                 canExport = viewModel.canExport,
                 canOpenDocuments = viewModel.canOpenDocuments,
-                darkTheme = dark,
-                onToggleTheme = { onSetTheme(if (dark == true) ThemeMode.Light else ThemeMode.Dark) },
                 embed = embed,
             )
         }

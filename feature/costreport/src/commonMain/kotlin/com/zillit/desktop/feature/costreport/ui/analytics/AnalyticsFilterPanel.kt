@@ -30,9 +30,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -81,7 +81,11 @@ internal fun BoxScope.FilterOverlay(state: AnalyticsUiState, onEvent: (Analytics
         exit = fadeOut(tween(FADE_MS)) + slideOutVertically(tween(FADE_MS)) { -it / SLIDE_FRACTION },
         modifier = Modifier.align(Alignment.TopCenter),
     ) {
-        Box(Modifier.widthIn(max = 1640.dp).fillMaxWidth().padding(start = 32.dp, end = 32.dp, top = 10.dp, bottom = 24.dp)) {
+        Box(
+            Modifier.widthIn(max = 1640.dp)
+                .fillMaxWidth()
+                .padding(start = 32.dp, end = 32.dp, top = 10.dp, bottom = 24.dp),
+        ) {
             FilterPanel(state, onEvent)
         }
     }
@@ -118,14 +122,20 @@ private fun FilterPanel(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -> Un
             FilterSection("Entity / company") {
                 FilterChip("All companies", on = state.draft.entity.isBlank()) { onEvent(AnalyticsEvent.SetEntity("")) }
                 state.options.entities.forEach { entity ->
-                    FilterChip(entity.label, on = state.draft.entity == entity.value) { onEvent(AnalyticsEvent.SetEntity(entity.value)) }
+                    FilterChip(
+                        entity.label,
+                        on = state.draft.entity == entity.value,
+                    ) { onEvent(AnalyticsEvent.SetEntity(entity.value)) }
                 }
             }
             DepartmentSection(state, onEvent)
             FilterSection("Unit", last = true) {
                 FilterChip("All units", on = state.draft.unitIds.isEmpty()) { onEvent(AnalyticsEvent.AllUnits) }
                 state.options.units.forEach { unit ->
-                    FilterChip(unit.label, on = unit.value in state.draft.unitIds) { onEvent(AnalyticsEvent.ToggleUnit(unit.value)) }
+                    FilterChip(
+                        unit.label,
+                        on = unit.value in state.draft.unitIds,
+                    ) { onEvent(AnalyticsEvent.ToggleUnit(unit.value)) }
                 }
             }
         }
@@ -141,7 +151,12 @@ private fun PanelHeader(state: AnalyticsUiState, onEvent: (AnalyticsEvent) -> Un
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        ZillitText("Filter analytics", style = AnalyticsType.text(14f, FontWeight.Bold), color = colors.ink, modifier = Modifier.weight(1f))
+        ZillitText(
+            "Filter analytics",
+            style = AnalyticsType.text(14f, FontWeight.Bold),
+            color = colors.ink,
+            modifier = Modifier.weight(1f),
+        )
         ZillitText(
             "$count filter${if (count == 1) "" else "s"} active",
             style = AnalyticsType.mono(11f),
@@ -236,8 +251,15 @@ private fun DepartmentSection(state: AnalyticsUiState, onEvent: (AnalyticsEvent)
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    ZillitText(byId[id]?.label ?: id, style = AnalyticsType.text(11.5f, FontWeight.SemiBold), color = Color.White)
-                    Box(Modifier.size(14.dp).background(Color.White.copy(alpha = 0.28f), CircleShape), contentAlignment = Alignment.Center) {
+                    ZillitText(
+                        byId[id]?.label ?: id,
+                        style = AnalyticsType.text(11.5f, FontWeight.SemiBold),
+                        color = Color.White,
+                    )
+                    Box(
+                        Modifier.size(14.dp).background(Color.White.copy(alpha = 0.28f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         ZillitIcon(ZillitIcons.Close, tint = Color.White, size = 8.dp)
                     }
                 }
@@ -312,7 +334,12 @@ private fun DepartmentList(
             .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        ZillitSearchField(value = search, onValueChange = onSearch, placeholder = "Search…", modifier = Modifier.fillMaxWidth())
+        ZillitSearchField(
+            value = search,
+            onValueChange = onSearch,
+            placeholder = "Search…",
+            modifier = Modifier.fillMaxWidth(),
+        )
         Column(Modifier.fillMaxWidth().heightIn(max = 280.dp).verticalScroll(rememberScrollState())) {
             if (shown.isEmpty()) {
                 ZillitText(
@@ -333,7 +360,12 @@ private fun DepartmentList(
         }
         val plural = if (shown.size == 1) "option" else "options"
         val picked = if (selected.isEmpty()) "" else " · ${selected.size} selected"
-        ZillitText("${shown.size} $plural$picked", style = AnalyticsType.text(11.5f, FontWeight.SemiBold), color = colors.ink3, modifier = Modifier.padding(4.dp))
+        ZillitText(
+            "${shown.size} $plural$picked",
+            style = AnalyticsType.text(11.5f, FontWeight.SemiBold),
+            color = colors.ink3,
+            modifier = Modifier.padding(4.dp),
+        )
     }
 }
 
@@ -348,7 +380,11 @@ private fun FilterChip(label: String, on: Boolean, onClick: () -> Unit) {
         maxLines = 1,
         modifier = Modifier
             .clip(CircleShape)
-            .then(if (on) Modifier.background(CHIP_GRADIENT) else Modifier.background(colors.surface).border(1.dp, colors.line2, CircleShape))
+            .then(
+                if (on) Modifier.background(
+                    CHIP_GRADIENT,
+                ) else Modifier.background(colors.surface).border(1.dp, colors.line2, CircleShape),
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 11.dp, vertical = 5.dp),
     )

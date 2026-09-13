@@ -272,6 +272,27 @@ data class CrTable(
 )
 
 /**
+ * The longest figure the grid will print, in the grid's own spelling — what
+ * its value columns are sized to, so no amount ever breaks across two lines.
+ * Every figure row counts, not just the grand total: a variance in brackets
+ * can be wider than the total above it.
+ */
+fun CrTable.widestFigure(symbol: String, decimals: Int): String {
+    val figures = rows.mapNotNull { row ->
+        when (row) {
+            is CrRow.Header -> row.figures.takeIf { row.showValues }
+            is CrRow.HeaderTotal -> row.figures
+            is CrRow.Nominal -> row.figures
+            else -> null
+        }
+    } + grandTotal
+    return figures
+        .flatMap { f -> CrColumn.entries.map { CrFormat.grid(f.value(it), symbol, it, decimals) } }
+        .maxByOrNull { it.length }
+        .orEmpty()
+}
+
+/**
  * The worksheet table — the web's `WorksheetTable` row loop.
  *
  * A search takes over: it always renders the pruned tree and pauses the sort

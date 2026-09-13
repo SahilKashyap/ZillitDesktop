@@ -88,7 +88,12 @@ internal fun SectionLabel(
             horizontalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             Box(Modifier.size(8.dp).background(dot, CircleShape))
-            ZillitText(title, style = AnalyticsType.text(16f, FontWeight.Bold, -0.014f), color = colors.ink, maxLines = 1)
+            ZillitText(
+                title,
+                style = AnalyticsType.text(16f, FontWeight.Bold, -0.014f),
+                color = colors.ink,
+                maxLines = 1,
+            )
             sub?.takeIf { it.isNotBlank() }?.let {
                 ZillitText(it, style = AnalyticsType.text(12f), color = colors.ink3, maxLines = 1)
             }
@@ -269,7 +274,11 @@ internal fun KpiCard(
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             ZillitText(
                 value,
-                style = AnalyticsType.text(29f, FontWeight.Bold, -0.028f).copy(lineHeight = AnalyticsType.text(29f).fontSize),
+                style = AnalyticsType.text(
+                    29f,
+                    FontWeight.Bold,
+                    -0.028f,
+                ).copy(lineHeight = AnalyticsType.text(29f).fontSize),
                 color = valueColor ?: colors.ink,
                 maxLines = 1,
             )
@@ -348,10 +357,20 @@ internal fun HBarList(rows: List<HBarItem>, labelWidth: Dp = 150.dp) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    row.code?.let { ZillitText(it, style = AnalyticsType.mono(10.5f, FontWeight.SemiBold), color = colors.ink4) }
-                    ZillitText(row.label, style = AnalyticsType.text(13f, FontWeight.SemiBold), color = colors.ink, maxLines = 1)
+                    row.code?.let {
+                        ZillitText(it, style = AnalyticsType.mono(10.5f, FontWeight.SemiBold), color = colors.ink4)
+                    }
+                    ZillitText(
+                        row.label,
+                        style = AnalyticsType.text(13f, FontWeight.SemiBold),
+                        color = colors.ink,
+                        maxLines = 1,
+                    )
                 }
-                val share = if (largest > 0) (row.value / largest).toFloat().coerceIn(MIN_BAR_SHARE, 1f) else MIN_BAR_SHARE
+                val share = if (largest > 0) (row.value / largest).toFloat().coerceIn(
+                    MIN_BAR_SHARE,
+                    1f,
+                ) else MIN_BAR_SHARE
                 RailBar(share, row.color, Modifier.weight(1f), height = 8.dp)
                 Row(
                     modifier = Modifier.widthIn(min = 96.dp),
@@ -410,8 +429,13 @@ internal fun FlowGrid(
     content: @Composable () -> Unit,
 ) {
     Layout(content = content, modifier = modifier.fillMaxWidth()) { measurables, constraints ->
-        val width = constraints.maxWidth
         val gapPx = gap.roundToPx()
+        // Unbounded only in an intrinsic-width query: answer with one row of minimum-width cells.
+        val width = if (constraints.hasBoundedWidth) {
+            constraints.maxWidth
+        } else {
+            max(0, measurables.size * (minCell.roundToPx() + gapPx) - gapPx)
+        }
         val fitting = max(1, (width + gapPx) / (minCell.roundToPx() + gapPx))
         val columns = if (fill) fitting else min(fitting, max(1, measurables.size))
         val cell = max(0, (width - gapPx * (columns - 1)) / columns)
@@ -430,16 +454,20 @@ internal fun TemplateGrid(
     content: @Composable () -> Unit,
 ) {
     Layout(content = content, modifier = modifier.fillMaxWidth()) { measurables, constraints ->
-        val width = constraints.maxWidth
         val gapPx = gap.roundToPx()
         val list = tracks.ifEmpty { listOf(GridTrack.Weight(1f)) }
         val fixed = list.sumOf { if (it is GridTrack.Fixed) it.width.roundToPx() else 0 }
+        // Unbounded only in an intrinsic-width query: the fixed tracks and gaps are all it can promise.
+        val width = if (constraints.hasBoundedWidth) constraints.maxWidth else fixed + gapPx * (list.size - 1)
         val free = max(0, width - fixed - gapPx * (list.size - 1))
         val totalFr = list.sumOf { ((it as? GridTrack.Weight)?.fr ?: 0f).toDouble() }.toFloat()
         val widths = list.map { track ->
             when (track) {
                 is GridTrack.Fixed -> track.width.roundToPx()
-                is GridTrack.Weight -> max(track.min.roundToPx(), if (totalFr > 0) (free * track.fr / totalFr).toInt() else 0)
+                is GridTrack.Weight -> max(
+                    track.min.roundToPx(),
+                    if (totalFr > 0) (free * track.fr / totalFr).toInt() else 0,
+                )
             }
         }
         placeRows(measurables, widths, gapPx, rowGap.roundToPx(), stretch, width)
@@ -458,7 +486,9 @@ private fun androidx.compose.ui.layout.MeasureScope.placeRows(
         val height = if (stretch) row.mapIndexed { i, m -> m.maxIntrinsicHeight(widths[i]) }.maxOrNull() ?: 0 else 0
         row.mapIndexed { i, m ->
             val w = widths[i]
-            if (stretch) m.measure(Constraints(w, w, height, height)) else m.measure(Constraints(minWidth = w, maxWidth = w))
+            if (stretch) m.measure(
+                Constraints(w, w, height, height),
+            ) else m.measure(Constraints(minWidth = w, maxWidth = w))
         }
     }
     val heights = rows.map { row -> row.maxOfOrNull { it.height } ?: 0 }
@@ -500,22 +530,23 @@ private fun tracksOf(token: String): List<GridTrack> {
         val inner = topLevelTokens(match.groupValues[2]).flatMap(::tracksOf)
         return List(times) { inner }.flatten()
     }
-    MINMAX.matchEntire(token)?.let { match ->
-        val low = match.groupValues[1].removeSuffix("px").toFloatOrNull() ?: 0f
-        val high = match.groupValues[2]
-        return listOf(
-            high.removeSuffix("fr").toFloatOrNull()?.takeIf { high.endsWith("fr") }?.let { GridTrack.Weight(it, low.dp) }
-                ?: GridTrack.Fixed((high.removeSuffix("px").toFloatOrNull() ?: low).dp),
-        )
-    }
-    return listOf(
-        when {
-            token.endsWith("fr") -> GridTrack.Weight(token.removeSuffix("fr").toFloatOrNull() ?: 1f)
-            token.endsWith("px") -> GridTrack.Fixed((token.removeSuffix("px").toFloatOrNull() ?: 0f).dp)
-            token.endsWith("%") -> GridTrack.Weight(token.removeSuffix("%").toFloatOrNull() ?: 1f)
-            else -> GridTrack.Weight(1f)
-        },
-    )
+    MINMAX.matchEntire(token)?.let { match -> return listOf(minmaxTrack(match.groupValues[1], match.groupValues[2])) }
+    return listOf(simpleTrack(token))
+}
+
+/** `minmax(A, Bfr)` is a weighted track no narrower than A; `minmax(A, Bpx)` is B wide. */
+private fun minmaxTrack(low: String, high: String): GridTrack {
+    val min = low.removeSuffix("px").toFloatOrNull() ?: 0f
+    val fr = high.takeIf { it.endsWith("fr") }?.removeSuffix("fr")?.toFloatOrNull()
+    if (fr != null) return GridTrack.Weight(fr, min.dp)
+    return GridTrack.Fixed((high.removeSuffix("px").toFloatOrNull() ?: min).dp)
+}
+
+private fun simpleTrack(token: String): GridTrack = when {
+    token.endsWith("fr") -> GridTrack.Weight(token.removeSuffix("fr").toFloatOrNull() ?: 1f)
+    token.endsWith("px") -> GridTrack.Fixed((token.removeSuffix("px").toFloatOrNull() ?: 0f).dp)
+    token.endsWith("%") -> GridTrack.Weight(token.removeSuffix("%").toFloatOrNull() ?: 1f)
+    else -> GridTrack.Weight(1f)
 }
 
 /** Whitespace-separated tokens, keeping parenthesised groups whole. */
@@ -527,7 +558,8 @@ private fun topLevelTokens(text: String): List<String> {
         when {
             char == '(' -> depth++.also { current.append(char) }
             char == ')' -> depth--.also { current.append(char) }
-            char.isWhitespace() && depth == 0 -> if (current.isNotEmpty()) tokens += current.toString().also { current.clear() }
+            char.isWhitespace() && depth == 0 -> if (current.isNotEmpty()) tokens += current.toString()
+                .also { current.clear() }
             else -> current.append(char)
         }
     }
@@ -535,6 +567,8 @@ private fun topLevelTokens(text: String): List<String> {
     return tokens
 }
 
-private val AUTO_REPEAT = Regex("^repeat\\(\\s*(auto-fit|auto-fill)\\s*,\\s*minmax\\(\\s*([\\d.]+)px\\s*,\\s*[\\d.]+fr\\s*\\)\\s*\\)$")
+private val AUTO_REPEAT = Regex(
+    "^repeat\\(\\s*(auto-fit|auto-fill)\\s*,\\s*minmax\\(\\s*([\\d.]+)px\\s*,\\s*[\\d.]+fr\\s*\\)\\s*\\)$",
+)
 private val REPEAT = Regex("^repeat\\(\\s*(\\d+)\\s*,\\s*(.+)\\)$")
 private val MINMAX = Regex("^minmax\\(\\s*([\\d.]+(?:px)?)\\s*,\\s*([\\d.]+(?:px|fr)?)\\s*\\)$")

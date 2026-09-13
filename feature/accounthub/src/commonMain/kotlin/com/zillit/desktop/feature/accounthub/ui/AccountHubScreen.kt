@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -98,9 +97,6 @@ fun AccountHubScreen(
     canExport: Boolean = false,
     /** Whether stored documents can be opened in the OS. */
     canOpenDocuments: Boolean = false,
-    /** The theme card: null hides it, otherwise the current mode and the flip. */
-    darkTheme: Boolean? = null,
-    onToggleTheme: () -> Unit = {},
     /**
      * Renders another film tool inside the console, as the web's nested routes
      * do; null means the host opens tools in their own windows instead.
@@ -119,7 +115,7 @@ fun AccountHubScreen(
         }
 
         Row(modifier = Modifier.fillMaxSize()) {
-            HubSidebar(state, onEvent, darkTheme, onToggleTheme)
+            HubSidebar(state, onEvent)
             // Vertical, not `ZillitDivider`: that one fills its width, and in a
             // Row it takes the whole thing and blanks the console.
             ZillitVerticalDivider()
@@ -194,17 +190,19 @@ private fun AccountHubBody(
 // -- sidebar ------------------------------------------------------------------
 
 /**
- * The web's sidebar: the header card, the theme card, then one card per group
- * with a mono uppercase heading, a peach active row with a 3px rail, and a red
- * badge capped at 99 where a row carries unread work.
+ * The web's sidebar: the header card, then one card per group with a mono
+ * uppercase heading, a peach active row with a 3px rail, and a red badge
+ * capped at 99 where a row carries unread work.
+ *
+ * No theme card, though the web has one: the app's own Settings already
+ * switches the theme for every window, and a second switch in one tool's
+ * sidebar was removed at the user's request (2026-09-13).
  */
 @Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
 @Composable
 private fun HubSidebar(
     state: AccountHubUiState,
     onEvent: (AccountHubEvent) -> Unit,
-    darkTheme: Boolean?,
-    onToggleTheme: () -> Unit,
 ) {
     val colors = ZillitTheme.colors
     Column(
@@ -232,41 +230,6 @@ private fun HubSidebar(
                     style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
                     maxLines = 1,
                 )
-            }
-        }
-        if (darkTheme != null) {
-            SidebarCard {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(ZillitTheme.shapes.medium)
-                        .clickable(onClick = onToggleTheme)
-                        .padding(ZillitTheme.spacing.sm),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                ) {
-                    ZillitIcon(
-                        icon = if (darkTheme) ZillitIcons.Moon else ZillitIcons.Sun,
-                        tint = colors.accentText,
-                        size = ZillitDimens.iconSmall,
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        ZillitText(
-                            text = if (darkTheme) "Dark mode" else "Light mode",
-                            style = ZillitTheme.typography.bodyMedium,
-                        )
-                        FieldHint("Click to switch theme")
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(THEME_DOT)
-                            .clip(CircleShape)
-                            .border(2.dp, colors.accent, CircleShape)
-                            .padding(3.dp),
-                    ) {
-                        if (darkTheme) Box(Modifier.size(THEME_DOT).clip(CircleShape).background(colors.accent))
-                    }
-                }
             }
         }
         state.sections.forEach { section ->
@@ -533,7 +496,6 @@ internal fun HubSection.headingText(): String = title.uppercase()
 private val SIDEBAR_WIDTH = 262.dp
 private val RAIL = 3.dp
 private val RAIL_HEIGHT = 14.dp
-private val THEME_DOT = 14.dp
 private val NOTE_LABEL = 110.dp
 private val INDICATOR = 8.dp
 private val INDICATOR_ACTIVE = 20.dp

@@ -43,13 +43,18 @@ data class ForecastView(
 
     /** The week the projection ends on, as an index into [labels]. */
     val projectionEnd: Int
-        get() = if (projection.isEmpty()) currentWeek - 1 else minOf(labels.size - 1, currentWeek - 1 + projection.size - 1)
+        get() = if (projection.isEmpty()) {
+            currentWeek - 1
+        } else {
+            minOf(labels.size - 1, currentWeek - 1 + projection.size - 1)
+        }
 
     companion object {
         private const val MILLION = 1_000_000.0
         private const val THOUSAND = 1_000.0
         private const val PERCENT = 100.0
         private const val TENTHS = 10.0
+        private const val HALF = 0.5
         private const val MINUS = "−"
 
         fun of(data: ForecastData, currency: String?): ForecastView {
@@ -96,7 +101,7 @@ data class ForecastView(
 
         /** `toFixed(1)`. */
         private fun fixedOne(value: Double): String {
-            val tenths = floor(value * TENTHS + 0.5).toLong()
+            val tenths = floor(value * TENTHS + HALF).toLong()
             return "${tenths / TENTHS.toLong()}.${tenths % TENTHS.toLong()}"
         }
     }

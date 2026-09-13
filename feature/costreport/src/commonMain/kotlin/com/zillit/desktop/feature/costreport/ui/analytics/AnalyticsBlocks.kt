@@ -1,3 +1,5 @@
+@file:Suppress("MatchingDeclarationName") // The block registry; BlockContext is only its argument.
+
 package com.zillit.desktop.feature.costreport.ui.analytics
 
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +32,7 @@ internal fun BlockList(blocks: List<AnalyticsBlock>, context: BlockContext, modi
 }
 
 /** The registry: one widget per block type. A block with nothing to show draws nothing. */
+@Suppress("CyclomaticComplexMethod") // One branch per block type.
 @Composable
 internal fun AnalyticsBlockView(block: AnalyticsBlock, context: BlockContext) {
     when (block) {
@@ -110,7 +113,7 @@ private fun BarsBlock(block: AnalyticsBlock.Bars, context: BlockContext) {
         BarsChart(
             labels = block.labels,
             bars = block.series.map { ChartBar(listOf(ChartPart("", it, color))) },
-            format = { AnalyticsFormat.value(it, block.fmt ?: "money", context.currency) },
+            format = { AnalyticsFormat.figure(it, block.fmt ?: "money", context.currency) },
         )
     }
 }
@@ -132,7 +135,7 @@ private fun StackedBarsBlock(block: AnalyticsBlock.StackedBars, context: BlockCo
             bars = block.stacks.map { stack ->
                 ChartBar(stack.map { ChartPart(it.label, it.value, colors.css(it.color) ?: colors.amber) })
             },
-            format = { AnalyticsFormat.value(it, block.fmt ?: "money", context.currency) },
+            format = { AnalyticsFormat.figure(it, block.fmt ?: "money", context.currency) },
         )
     }
 }
@@ -157,7 +160,7 @@ private fun TrendBlock(block: AnalyticsBlock.Trend, context: BlockContext) {
             labels = block.labels,
             series = lines,
             budget = block.budget,
-            format = { AnalyticsFormat.value(it, block.fmt ?: "money", context.currency) },
+            format = { AnalyticsFormat.figure(it, block.fmt ?: "money", context.currency) },
         )
     }
 }

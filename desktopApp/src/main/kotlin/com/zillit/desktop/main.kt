@@ -171,10 +171,8 @@ import com.zillit.desktop.feature.email.ui.EmailToolProvider
 import com.zillit.desktop.feature.email.ui.EmailViewModel
 import com.zillit.desktop.feature.home.ui.HomeViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import com.zillit.desktop.feature.home.ui.HomeUiState
 import com.zillit.desktop.feature.home.ui.HomeEvent
@@ -2471,6 +2469,8 @@ internal class AppViewModels(
     val costReport: CostReportViewModel?,
     /** The accountant's Cost Report worksheet — the Account Hub's REPORTS row. */
     val costReportWorksheet: com.zillit.desktop.feature.costreport.ui.worksheet.WorksheetViewModel?,
+    /** The cost report's Analytics page, which both cost-report screens open. */
+    val costReportAnalytics: com.zillit.desktop.feature.costreport.ui.analytics.AnalyticsViewModel?,
     val saPortal: SaPortalViewModel?,
     val adDashboard: AdViewModel?,
     /** One screen for both budget tiles — see BudgetToolProvider. */
@@ -2932,6 +2932,7 @@ private fun rememberAppViewModels(
             continuity = ready?.buildContinuity(permissions),
             costReport = ready?.buildCostReport(permissions),
             costReportWorksheet = ready?.buildCostReportWorksheet(permissions),
+            costReportAnalytics = ready?.buildCostReportAnalytics(),
             saPortal = ready?.buildSaPortal(permissions),
             adDashboard = ready?.buildAdDashboard(permissions),
             budget = ready?.buildBudget(permissions, scope),
@@ -3124,6 +3125,9 @@ private fun buildRegistry(
     val costReport = viewModels.costReport?.let { vm -> (graph as? AppGraph.Ready)?.costReportProvider(vm) }
     val costReportWorksheet = viewModels.costReportWorksheet?.let { vm ->
         (graph as? AppGraph.Ready)?.costReportWorksheetProvider(vm)
+    }
+    val costReportAnalytics = viewModels.costReportAnalytics?.let { vm ->
+        com.zillit.desktop.feature.costreport.ui.analytics.AnalyticsToolProvider(vm)
     }
     val saPortal = viewModels.saPortal?.let { vm -> saPortalProviders(vm) }.orEmpty()
     val adDashboard = viewModels.adDashboard?.let { vm -> adDashboardProvider(vm) }
@@ -3415,12 +3419,6 @@ private fun buildRegistry(
             viewModel,
             tools = { path -> registryRef?.resolve(WorkspaceRoute.Tool(path)) },
             badges = ready?.hubBadges(scope),
-            themeMode = ready?.preferences
-                ?.observeAs(ZillitPreferences.ThemeMode, ThemeMode::fromId)
-                ?.stateIn(scope, SharingStarted.Eagerly, ThemeMode.System),
-            onSetTheme = { mode ->
-                ready?.let { scope.launch { it.preferences.set(ZillitPreferences.ThemeMode, mode.name) } }
-            },
             // Approvers, pickers and chips show crew photos, as the web's UserAvatar does.
             loadAvatar = { userId -> ready?.let { crewFaceLoader(it)(userId) } },
         )
@@ -3482,7 +3480,8 @@ private fun buildRegistry(
         info, confidentialInfo, reports, scriptNotes,
         catering, accounts,
         boxSchedule, preProduction, maps, recce, externalUsers, distributionList, crewList,
-        assetRegister, transport, location, continuity, costReport, costReportWorksheet, invoices, draft,
+        assetRegister, transport, location, continuity, costReport, costReportWorksheet, costReportAnalytics,
+        invoices, draft,
         mainBudget, departmentBudget, weather, adDashboard,
         scheduleDistribution, scriptDistribution, scheduleDod,
     ) + castingTools + wardrobeTools + saPortal

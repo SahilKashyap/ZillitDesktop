@@ -62,7 +62,9 @@ class AnalyticsViewModel(
             val entities = companies.await().map { AnalyticsOption(it.id, it.labelWithCountry) }
             val departmentOptions = departments.await()
             val unitOptions = units.await()
-            setState { copy(options = options.copy(entities = entities, departments = departmentOptions, units = unitOptions)) }
+            setState {
+                copy(options = options.copy(entities = entities, departments = departmentOptions, units = unitOptions))
+            }
         }
     }
 
@@ -91,7 +93,9 @@ class AnalyticsViewModel(
         }
     }
 
-    private fun draft(change: AnalyticsFilterDraft.() -> AnalyticsFilterDraft) = setState { copy(draft = draft.change()) }
+    private fun draft(
+        change: AnalyticsFilterDraft.() -> AnalyticsFilterDraft,
+    ) = setState { copy(draft = draft.change()) }
 
     private suspend fun applyCurrencies() {
         val loaded = filterSource.currencies() ?: return

@@ -4,6 +4,13 @@
 package com.zillit.desktop.feature.costreport.ui
 
 import androidx.compose.foundation.background
+import com.zillit.desktop.feature.costreport.domain.SnapshotTable
+import com.zillit.desktop.core.designsystem.component.ZillitHorizontalScrollRail
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -100,11 +107,20 @@ internal fun SnapshotDetailTable(view: SnapshotView, callbacks: SnapshotCallback
             }
         }
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-            val valueWidth = max(VALUE_MIN, (maxWidth - CODE_WIDTH - NAME_MIN) / VALUE_COLUMNS)
-            val nameWidth = maxWidth - CODE_WIDTH - valueWidth * VALUE_COLUMNS
+            val widest = remember(table, view.symbol) { table.widestAmount(view.symbol) }
+            val fitted = figureWidth(widest, amountStyle(FontWeight.Bold), AMOUNT_PAD * 2 + FIGURE_GUTTER)
+            val longestCode = remember(table) { table.longestCode() }
+            val codeWidth = minOf(CODE_MAX, maxOf(CODE_WIDTH, figureWidth(longestCode, codeStyle(), CODE_CHROME)))
+            val valueWidth = maxOf(VALUE_MIN, fitted, (maxWidth - codeWidth - NAME_MIN) / VALUE_COLUMNS)
+            val nameWidth = max(NAME_MIN, maxWidth - codeWidth - valueWidth * VALUE_COLUMNS)
+            val scroll = rememberScrollState()
+            val strip = remember(scroll, valueWidth, codeWidth) {
+                SnapshotStrip(scroll, valueWidth * VALUE_COLUMNS, codeWidth)
+            }
+            CompositionLocalProvider(LocalSnapshotStrip provides strip) {
             Column(Modifier.fillMaxSize()) {
                 HeadRow(nameWidth, valueWidth)
-                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth().slidesFigures(scroll)) {
                     items(table.rows, key = { it.key }) { row ->
                         when (row) {
                             is SnapshotRow.Section -> BandRow(
@@ -148,40 +164,115 @@ internal fun SnapshotDetailTable(view: SnapshotView, callbacks: SnapshotCallback
                     }
                 }
                 TotalRow(table.total, nameWidth, valueWidth, view.symbol)
+                ZillitHorizontalScrollRail(scroll, Modifier.padding(start = codeWidth + nameWidth))
+            }
             }
         }
     }
 }
 
+/** The shared figures strip: the header's scroll, the eleven columns' width together, and the code column's. */
+private class SnapshotStrip(val scroll: ScrollState, val width: Dp, val codeWidth: Dp)
+
+/** The code column, as wide as its longest code up to [CODE_MAX]. */
+@Composable
+private fun codeColumn(): Dp = LocalSnapshotStrip.current.codeWidth
+
+@Composable
+private fun codeStyle() = ZillitTheme.typography.numeric.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+
+/** The longest code or section id a row prints in the code column. */
+private fun SnapshotTable.longestCode(): String = rows.mapNotNull { row ->
+    when (row) {
+        is SnapshotRow.Section -> row.section.id
+        is SnapshotRow.Header -> row.header.code
+        is SnapshotRow.Nominal -> row.nominal.code
+        is SnapshotRow.NoMatches -> null
+    }
+}.maxByOrNull { it.length }.orEmpty()
+
+private val CODE_MAX: Dp = 140.dp
+
+/** The chevron, its gap and the cell's padding around a code. */
+private val CODE_CHROME: Dp = 26.dp
+
+private val LocalSnapshotStrip =
+    staticCompositionLocalOf<SnapshotStrip> { error("SnapshotDetailTable provides the strip") }
+
+@Composable
+private fun RowScope.Figures(content: @Composable RowScope.() -> Unit) {
+    val strip = LocalSnapshotStrip.current
+    RowFigures(strip.scroll, strip.width, content = content)
+}
+
+@Composable
+private fun amountStyle(weight: FontWeight) =
+    ZillitTheme.typography.numeric.copy(fontWeight = weight, letterSpacing = (-0.2).sp)
+
+/** The detail table's money: `−£1,234.56`. */
+private fun amountText(amount: Double, symbol: String): String =
+    (if (amount < 0) "−" else "") + symbol + Money.group(kotlin.math.abs(amount), 2)
+
+/** The longest amount the table prints — what its value columns are sized to. */
+private fun SnapshotTable.widestAmount(symbol: String): String {
+    val figures = rows.mapNotNull { row ->
+        when (row) {
+            is SnapshotRow.Section -> row.figures
+            is SnapshotRow.Header -> row.figures
+            is SnapshotRow.Nominal -> row.figures
+            is SnapshotRow.NoMatches -> null
+        }
+    } + total
+    return figures
+        .flatMap { listOf(it.atd, it.po, it.card, it.cash, it.pr, it.efc, it.budget, it.variance) }
+        .filter { it != 0.0 }
+        .map { amountText(it, symbol) }
+        .maxByOrNull { it.length }
+        .orEmpty()
+}
+
+private val AMOUNT_PAD: Dp = 4.dp
+
 @Composable
 private fun HeadRow(nameWidth: Dp, valueWidth: Dp) {
     val colors = ZillitTheme.colors
+    val strip = LocalSnapshotStrip.current
     val style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp)
+    val sub = style.copy(fontSize = 10.sp)
     Column(Modifier.fillMaxWidth().background(colors.surfaceSunken)) {
-        Row(Modifier.fillMaxWidth().height(26.dp), verticalAlignment = Alignment.Bottom) {
-            HeadCell("CODE", CODE_WIDTH, style, colors.textSecondary, TextAlign.Start)
-            HeadCell("NAME", nameWidth, style, colors.textSecondary, TextAlign.Start)
-            HeadCell("ACTUALS", valueWidth * 2, style, ACTUALS_INK, TextAlign.Center, Color(0xFFECF7F0))
-            HeadCell("COMMITS", valueWidth * 4, style, COMMITS_INK, TextAlign.Center, Color(0xFFE9EFFF))
-            HeadCell("ETC", valueWidth, style, Color(0xFF7A4CD6), TextAlign.End, Color(0xFFF1EBFF))
-            HeadCell("EFC", valueWidth, style, EFC_INK, TextAlign.End, BAND)
-            HeadCell("BUDGET", valueWidth, style, colors.textSecondary, TextAlign.End)
-            HeadCell("VARIANCE", valueWidth * 2, style, ACTUALS_INK, TextAlign.Center, Color(0xFFECF7F0))
-        }
-        val sub = style.copy(fontSize = 10.sp)
-        Row(Modifier.fillMaxWidth().height(22.dp), verticalAlignment = Alignment.Top) {
-            HeadCell("", CODE_WIDTH + nameWidth, sub, colors.textMuted, TextAlign.End)
-            listOf("ATP", "ATD").forEach { HeadCell(it, valueWidth, sub, ACTUALS_INK, TextAlign.End, ACTUALS_WASH) }
-            listOf("PO", "CARD", "CASH", "PAYROLL").forEach {
-                HeadCell(it, valueWidth, sub, COMMITS_INK, TextAlign.End, Color(0xFFE9EFFF))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Row(Modifier.height(26.dp), verticalAlignment = Alignment.Bottom) {
+                HeadCell("CODE", codeColumn(), style, colors.textSecondary, TextAlign.Start)
+                HeadCell("NAME", nameWidth, style, colors.textSecondary, TextAlign.Start)
             }
-            HeadCell("", valueWidth, sub, colors.textMuted, TextAlign.End, Color(0xFFF1EBFF))
-            HeadCell("", valueWidth, sub, colors.textMuted, TextAlign.End, BAND)
-            HeadCell("", valueWidth, sub, colors.textMuted, TextAlign.End)
-            listOf(
-                "PERIOD",
-                "TOTAL",
-            ).forEach { HeadCell(it, valueWidth, sub, ACTUALS_INK, TextAlign.End, ACTUALS_WASH) }
+            HeaderFigures(strip.scroll, strip.width) {
+                Column {
+                    Row(Modifier.height(26.dp), verticalAlignment = Alignment.Bottom) {
+                        HeadCell("ACTUALS", valueWidth * 2, style, ACTUALS_INK, TextAlign.Center, Color(0xFFECF7F0))
+                        HeadCell("COMMITS", valueWidth * 4, style, COMMITS_INK, TextAlign.Center, Color(0xFFE9EFFF))
+                        HeadCell("ETC", valueWidth, style, Color(0xFF7A4CD6), TextAlign.End, Color(0xFFF1EBFF))
+                        HeadCell("EFC", valueWidth, style, EFC_INK, TextAlign.End, BAND)
+                        HeadCell("BUDGET", valueWidth, style, colors.textSecondary, TextAlign.End)
+                        HeadCell("VARIANCE", valueWidth * 2, style, ACTUALS_INK, TextAlign.Center, Color(0xFFECF7F0))
+                    }
+                    Row(Modifier.height(22.dp), verticalAlignment = Alignment.Top) {
+                        listOf(
+                            "ATP",
+                            "ATD",
+                        ).forEach { HeadCell(it, valueWidth, sub, ACTUALS_INK, TextAlign.End, ACTUALS_WASH) }
+                        listOf("PO", "CARD", "CASH", "PAYROLL").forEach {
+                            HeadCell(it, valueWidth, sub, COMMITS_INK, TextAlign.End, Color(0xFFE9EFFF))
+                        }
+                        HeadCell("", valueWidth, sub, colors.textMuted, TextAlign.End, Color(0xFFF1EBFF))
+                        HeadCell("", valueWidth, sub, colors.textMuted, TextAlign.End, BAND)
+                        HeadCell("", valueWidth, sub, colors.textMuted, TextAlign.End)
+                        listOf(
+                            "PERIOD",
+                            "TOTAL",
+                        ).forEach { HeadCell(it, valueWidth, sub, ACTUALS_INK, TextAlign.End, ACTUALS_WASH) }
+                    }
+                }
+            }
         }
         Box(Modifier.fillMaxWidth().height(2.dp).background(colors.border))
     }
@@ -235,7 +326,10 @@ private fun BandRow(
                 .heightIn(min = 38.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(Modifier.width(CODE_WIDTH).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.width(codeColumn()).padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 ZillitIcon(if (row.open) ZillitIcons.ChevronDown else ZillitIcons.ChevronRight, tint = ink, size = 9.dp)
                 Text(
                     highlighted(row.section.id, needle),
@@ -255,7 +349,7 @@ private fun BandRow(
                 color = ink,
                 modifier = Modifier.width(nameWidth).padding(horizontal = 4.dp),
             )
-            Values(row.figures, valueWidth, symbol, weight = FontWeight.SemiBold, tint = ink)
+            Figures { Values(row.figures, valueWidth, symbol, weight = FontWeight.SemiBold, tint = ink) }
         }
     }
 }
@@ -277,7 +371,7 @@ private fun HeaderLine(
             .heightIn(min = 34.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.width(CODE_WIDTH).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.width(codeColumn()).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             ZillitIcon(
                 if (row.open) ZillitIcons.ChevronDown else ZillitIcons.ChevronRight,
                 tint = colors.textSecondary,
@@ -297,7 +391,7 @@ private fun HeaderLine(
             color = colors.textPrimary,
             modifier = Modifier.width(nameWidth).padding(horizontal = 4.dp),
         )
-        Values(row.figures, valueWidth, symbol, weight = FontWeight.SemiBold, tint = null)
+        Figures { Values(row.figures, valueWidth, symbol, weight = FontWeight.SemiBold, tint = null) }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
 }
@@ -322,7 +416,7 @@ private fun FigureRow(
             style = ZillitTheme.typography.numeric.copy(fontSize = 11.5.sp),
             color = colors.textMuted,
             maxLines = 1,
-            modifier = Modifier.width(CODE_WIDTH).padding(horizontal = 4.dp),
+            modifier = Modifier.width(codeColumn()).padding(horizontal = 4.dp),
         )
         Text(
             highlighted(name, needle),
@@ -330,7 +424,7 @@ private fun FigureRow(
             color = colors.textPrimary,
             modifier = Modifier.width(nameWidth).padding(horizontal = 4.dp),
         )
-        Values(figures, valueWidth, symbol, weight = FontWeight.Medium, tint = null)
+        Figures { Values(figures, valueWidth, symbol, weight = FontWeight.Medium, tint = null) }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
 }
@@ -343,14 +437,14 @@ private fun TotalRow(total: SnapshotFigures, nameWidth: Dp, valueWidth: Dp, symb
         Modifier.fillMaxWidth().background(colors.surfaceSunken).heightIn(min = 40.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(CODE_WIDTH))
+        Box(Modifier.width(codeColumn()))
         ZillitText(
             "GRAND TOTAL",
             style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp),
             color = colors.textSecondary,
             modifier = Modifier.width(nameWidth).padding(horizontal = 4.dp),
         )
-        Values(total, valueWidth, symbol, weight = FontWeight.Bold, tint = null)
+        Figures { Values(total, valueWidth, symbol, weight = FontWeight.Bold, tint = null) }
     }
 }
 
@@ -387,17 +481,18 @@ private fun Values(figures: SnapshotFigures, width: Dp, symbol: String, weight: 
 private fun Amount(value: Double?, width: Dp, symbol: String, weight: FontWeight, tint: Color?) {
     val colors = ZillitTheme.colors
     val blank = value == null || value == 0.0
-    Box(Modifier.width(width).padding(horizontal = 4.dp, vertical = 6.dp), contentAlignment = Alignment.CenterEnd) {
+    Box(
+        Modifier.width(width).padding(horizontal = AMOUNT_PAD, vertical = 6.dp),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
         ZillitText(
-            text = value?.takeIf { !blank }?.let { amount ->
-                (if (amount < 0) "−" else "") + symbol + Money.group(kotlin.math.abs(amount), 2)
-            } ?: CrFormat.DASH,
+            text = value?.takeIf { !blank }?.let { amountText(it, symbol) } ?: CrFormat.DASH,
             style = ZillitTheme.typography.numeric.copy(
                 fontWeight = if (blank) FontWeight.Normal else weight,
                 letterSpacing = (-0.2).sp,
             ),
             color = if (blank) colors.textMuted.copy(alpha = 0.6f) else tint ?: colors.textPrimary,
-            maxLines = 2,
+            maxLines = 1,
             textAlign = TextAlign.End,
         )
     }

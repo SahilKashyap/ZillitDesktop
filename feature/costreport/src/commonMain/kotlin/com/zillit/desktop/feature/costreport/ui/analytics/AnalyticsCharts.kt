@@ -18,9 +18,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -353,7 +353,7 @@ internal fun TrendChart(
             }
             series.forEach { drawTrendSeries(it, frame, colors.surface) }
             labels.forEachIndexed { i, week ->
-                if (labels.size <= SPARSE_LABELS || i % 2 == 0 || i == labels.lastIndex) {
+                if (labels.size <= SPARSE_LABELS || showsSparseLabel(i, labels.lastIndex)) {
                     label(text, week, text.axis, colors.ink3, frame.x(i), frame.labelBaseline, Anchor.Middle)
                 }
             }
@@ -412,11 +412,24 @@ internal fun BarsChart(
             val frame = PlotFrame(size, this, BAR_PADS, bars.size, 0.0, top)
             val band = Band(frame.width, bars.size, this)
             drawGrid(text, colors, frame, BAR_GRID_STEPS, { top * it }, format)
-            drawLine(colors.grid, Offset(frame.left, frame.floor), Offset(frame.left + frame.width, frame.floor), 1.dp.toPx())
+            drawLine(
+                colors.grid,
+                Offset(frame.left, frame.floor),
+                Offset(frame.left + frame.width, frame.floor),
+                1.dp.toPx(),
+            )
             bars.forEachIndexed { i, bar ->
                 drawBar(frame, band, i, bar, top)
                 labels.getOrNull(i)?.let {
-                    label(text, it, text.axis, colors.ink3, frame.left + band.center(i), frame.labelBaseline, Anchor.Middle)
+                    label(
+                        text,
+                        it,
+                        text.axis,
+                        colors.ink3,
+                        frame.left + band.center(i),
+                        frame.labelBaseline,
+                        Anchor.Middle,
+                    )
                 }
             }
         }
@@ -487,7 +500,7 @@ internal fun DonutChart(
     val subStyle = AnalyticsType.mono(9.5f, spacingEm = 0.06f)
     var pointer by remember { mutableStateOf<Offset?>(null) }
     val arcs = remember(parts) { donutArcs(parts) }
-    val total = parts.sumOf { it.value }
+    val total = parts.sumOf { max(0.0, it.value) }
     Box(modifier.size(size)) {
         Canvas(Modifier.matchParentSize().hover { pointer = it }) {
             val stroke = thickness.toPx()
@@ -525,14 +538,25 @@ internal fun DonutChart(
 
 private class DonutArc(val part: ChartPart, val start: Float, val sweep: Float)
 
+/** As d3's pie: only positive values take a share of the ring; a negative one is a zero-width arc. */
 private fun donutArcs(parts: List<ChartPart>): List<DonutArc> {
-    val total = parts.sumOf { it.value }
+    val total = parts.sumOf { max(0.0, it.value) }
     if (total <= 0) return emptyList()
     var cursor = -QUARTER_TURN
     return parts.sortedByDescending { it.value }.map { part ->
-        val sweep = (part.value / total * FULL_TURN).toFloat()
+        val sweep = (max(0.0, part.value) / total * FULL_TURN).toFloat()
         DonutArc(part, cursor, sweep).also { cursor += sweep }
     }
+}
+
+/**
+ * Every other week, and the last — but not the one just before a last week
+ * that falls between two labels, where the pair would print as "W33W34".
+ */
+private fun showsSparseLabel(index: Int, lastIndex: Int): Boolean = when {
+    index == lastIndex -> true
+    index == lastIndex - 1 -> false
+    else -> index % 2 == 0
 }
 
 /** The arc under [pointer]: inside the ring, at an angle measured clockwise from twelve o'clock. */
@@ -576,10 +600,17 @@ internal fun ProjectionChart(
             drawGrid(text, colors, frame, GRID_STEPS, { top * it }, format)
             val by = frame.y(view.budget)
             drawDashedAcross(frame, by, colors.ink3)
-            label(text, "Budget ${view.budgetText}", text.marker, colors.ink2, frame.left + 6.dp.toPx(), by - 6.dp.toPx())
+            label(
+                text,
+                "Budget ${view.budgetText}",
+                text.marker,
+                colors.ink2,
+                frame.left + 6.dp.toPx(),
+                by - 6.dp.toPx(),
+            )
             drawProjectionLines(text, colors, frame, view, color)
             view.labels.forEachIndexed { i, week ->
-                if (i % 2 == 0 || i == view.labels.lastIndex) {
+                if (showsSparseLabel(i, view.labels.lastIndex)) {
                     label(text, week, text.axis, colors.ink3, frame.x(i), frame.labelBaseline, Anchor.Middle)
                 }
             }
@@ -589,7 +620,13 @@ internal fun ProjectionChart(
     }
 }
 
-private fun projectionTip(view: ForecastView, frame: PlotFrame, index: Int, color: Color, format: (Double) -> String): ChartTip? {
+private fun projectionTip(
+    view: ForecastView,
+    frame: PlotFrame,
+    index: Int,
+    color: Color,
+    format: (Double) -> String,
+): ChartTip? {
     val current = view.currentWeek - 1
     val value = (if (index <= current) view.cumulative.getOrNull(index) else view.projection.getOrNull(index - current))
         ?: return null
@@ -622,12 +659,23 @@ private fun DrawScope.drawProjectionLines(
     }
     val forecast = view.projection.mapIndexed { i, v -> Offset(frame.x(current + i), frame.y(v)) }
     if (forecast.isNotEmpty()) {
-        val dashed = Stroke(2.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round, pathEffect = dashes(5.dp, 5.dp))
+        val dashed = Stroke(
+            2.2.dp.toPx(),
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round,
+            pathEffect = dashes(5.dp, 5.dp),
+        )
         drawPath(linePath(forecast), color, alpha = FORECAST_ALPHA, style = dashed)
     }
     if (actual.isNotEmpty()) {
         val x = frame.x(current)
-        drawLine(colors.amber, Offset(x, frame.top), Offset(x, frame.floor), 1.4.dp.toPx(), pathEffect = dashes(4.dp, 4.dp))
+        drawLine(
+            colors.amber,
+            Offset(x, frame.top),
+            Offset(x, frame.floor),
+            1.4.dp.toPx(),
+            pathEffect = dashes(4.dp, 4.dp),
+        )
         drawMarker(Offset(x, actual.last().y), 4.5.dp, colors.amber, colors.surface)
         label(text, "TODAY · W${view.currentWeek}", text.today, colors.amber, x + 7.dp.toPx(), frame.top + 12.dp.toPx())
     }
