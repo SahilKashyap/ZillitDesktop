@@ -162,7 +162,7 @@ private fun AccountHubBody(
 ) {
     when (state.area) {
         HubArea.ProductionSetup -> ProductionSetupPage(state, onEvent, canAttachAgreements, canOpenDocuments)
-        HubArea.ChartOfAccounts -> ChartOfAccountsPage(state, onEvent)
+        HubArea.ChartOfAccounts -> ChartOfAccountsPage(state, onEvent, canImportBudget = canImportBudget)
         HubArea.Vendors -> VendorsPage(state, onEvent)
         HubArea.Approvers -> ApproversPage(state, onEvent)
         HubArea.Budget -> BudgetPage(state, onEvent, canImport = canImportBudget, canOpenDocuments = canOpenDocuments)

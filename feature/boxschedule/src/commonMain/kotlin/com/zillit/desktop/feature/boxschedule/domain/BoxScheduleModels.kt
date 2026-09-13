@@ -9,9 +9,9 @@ import com.zillit.desktop.core.permissions.ProjectPermissions
  * Not a stripboard: there are no scenes here. A project has a set of
  * [ScheduleType]s (Shoot Day, Prep, Travel, Day Off…) and a set of
  * [ScheduleBlock]s — one document per run of dates of one type — plus timed
- * [DiaryEvent]s and titled [DiaryNote]s that may hang off a block or stand
- * alone on a date. Everything is keyed by epoch-millisecond dates at local
- * midnight; the wire carries no order index and no status field.
+ * [DiaryEvent]s and titled notes that may hang off a block or stand alone on
+ * a date. Everything is keyed by epoch-millisecond dates at local midnight;
+ * the wire carries no order index and no status field.
  */
 data class ScheduleType(
     val id: String,
@@ -41,7 +41,21 @@ data class ScheduleBlock(
     val numberOfDays: Int,
     /** `by_days` or `by_dates`. */
     val dateRangeType: String,
-)
+    val createdAt: Long = 0,
+    /** Bumped by the server on every write; the list's schedule cards show it past 1. */
+    val version: Int = 0,
+) {
+    val sortedDays: List<Long> get() = calendarDays.sorted()
+    val firstDay: Long get() = calendarDays.minOrNull() ?: startDate
+    val lastDay: Long get() = calendarDays.maxOrNull() ?: endDate
+
+    /** A "Day Off" row has no running number — the web prints a dash. */
+    val isDayOff: Boolean get() = typeName.equals(DAY_OFF, ignoreCase = true)
+
+    companion object {
+        const val DAY_OFF = "Day Off"
+    }
+}
 
 /** One exploded date of a block, with its per-type running number. */
 data class ScheduleDayRow(
@@ -51,7 +65,10 @@ data class ScheduleDayRow(
     val dayNumber: Int,
     /** True when the type changed from the previous row — the only "banner". */
     val isNewBlock: Boolean,
-)
+) {
+    /** The selection and expansion key — the web's `${_id}-${singleDate}`. */
+    val key: String get() = "${block.id}-$date"
+}
 
 /** `event` or `note` — the two records behind `/events`, split by `eventType`. */
 enum class DiaryKind(val wire: String) {
@@ -61,6 +78,9 @@ enum class DiaryKind(val wire: String) {
         fun fromWire(value: String?): DiaryKind = if (value == "note") Note else Event
     }
 }
+
+/** Someone outside the production invited to an event — the wire's `{ _id, mail }`. */
+data class GuestEmail(val id: String, val mail: String)
 
 data class DiaryEvent(
     val id: String,
@@ -96,6 +116,18 @@ data class DiaryEvent(
      * event it was created with. It IS the call: everyone dials this same room.
      */
     val cncCallGroupId: String = "",
+    /** `none`, `at_time`, `5min`, `15min`, `30min`, `1hr`, `1day`. */
+    val reminder: String = "",
+    val timezone: String = "",
+    /** The title's own colour, `#RRGGBB`; blank means the theme's. */
+    val textColor: String = "",
+    /** Epoch ms; zero when the event does not repeat. */
+    val repeatEndDate: Long = 0,
+    val audience: DiaryAudience = DiaryAudience(),
+    val externalEmails: List<GuestEmail> = emptyList(),
+    val organizerExcluded: Boolean = false,
+    val createdByName: String = "",
+    val createdAt: Long = 0,
 ) {
     /** There is a call to join — a plain in-person meeting is not one. */
     val isCallJoinable: Boolean
@@ -106,6 +138,14 @@ data class DiaryEvent(
 
     /** Video where the event asked for it; audio otherwise. */
     val prefersVideoCall: Boolean get() = callType.equals("video", ignoreCase = true)
+
+    /**
+     * Whether Join is still offered — the web's `checkTimeInterval(start, end + 1h)`:
+     * anything that has not started more than half an hour ago, or that is
+     * still inside its hour of grace after the end.
+     */
+    fun isCallOpen(now: Long): Boolean =
+        now - CALL_LEAD_MS <= startDateTime || (now > startDateTime && now < endDateTime + CALL_GRACE_MS)
 
     /** List key: never `id` alone, or a whole recurring series collapses. */
     val listKey: String get() = occurrenceId.ifBlank { id }
@@ -124,6 +164,14 @@ data class DiaryEvent(
         get() = occurrenceId.substringAfterLast('_', "").toLongOrNull()?.takeIf { it > 0 }
             ?: startDateTime.takeIf { it > 0 }
             ?: date
+
+    /** The instant the calendar buckets by — the start wins over the bare date. */
+    val anchor: Long get() = startDateTime.takeIf { it > 0 } ?: date
+
+    private companion object {
+        const val CALL_LEAD_MS = 30 * 60_000L
+        const val CALL_GRACE_MS = 60 * 60_000L
+    }
 }
 
 /** What a new or edited block says: type, dates, optional title. */
@@ -140,8 +188,10 @@ data class BlockDraft(
 }
 
 /** How a colliding date is resolved on create/edit. */
-enum class ConflictAction(val wire: String) {
-    Replace("replace"), Extend("extend"), Overlap("overlap")
+enum class ConflictAction(val wire: String, val label: String) {
+    Replace("replace", "Replace"),
+    Extend("extend", "Extend"),
+    Overlap("overlap", "Overlap"),
 }
 
 /** A colliding date the server reported instead of writing. */
@@ -173,16 +223,19 @@ data class DiaryDraft(
     /** Zero when no repeat — the wire wants `0`, not null. */
     val repeatEndDate: Long = 0,
     val timezone: String = "",
-    /** Only on create: mirror into the Home calendar. */
-    val createInCalendar: Boolean = false,
+    val reminder: String = "none",
+    val textColor: String = "",
+    val audience: DiaryAudience = DiaryAudience(),
+    val externalEmails: List<GuestEmail> = emptyList(),
+    val organizerExcluded: Boolean = false,
     /**
-     * The event's call type, carried through an edit unchanged.
-     *
-     * The desktop offers no way to attach a call, so this is only ever what
-     * the event already had. It has to ride along regardless: the write sends
-     * the whole event, and a blank here erases a call somebody set on another
-     * client — the event keeps its room id and loses the type that makes it
-     * joinable.
+     * Only on create, and only once asked: mirror into the Home calendar.
+     * Null sends nothing — an edit never carries the key.
+     */
+    val createInCalendar: Boolean? = null,
+    /**
+     * The event's call type. The write sends the whole event, so a blank here
+     * erases a call somebody set on another client.
      */
     val callType: String = "",
 ) {
@@ -193,9 +246,14 @@ data class DiaryDraft(
     }
 }
 
-/** Editing scope for a recurring event. `All` omits the query params. */
-enum class RecurrenceScope(val wire: String?) {
-    Single("single"), ThisAndFollowing("this_and_following"), All(null)
+/**
+ * How far a change to a recurring occurrence reaches.
+ *
+ * An update in [All] scope omits every query parameter (the server's legacy
+ * whole-series rewrite); a delete in [All] scope sends `delete_type=all`.
+ */
+enum class RecurrenceScope(val wire: String) {
+    Single("single"), ThisAndFollowing("this_and_following"), All("all")
 }
 
 data class BoxScheduleViewer(
@@ -207,6 +265,12 @@ data class BoxScheduleViewer(
     val ready: Boolean = false,
 ) {
     val isBlocked: Boolean get() = ready && !canView && !isAdmin
+
+    /**
+     * Posting rights, or a project admin — Android's `BoxScheduleRights`
+     * (`postingAccess == true || isAdmin`). The web reads posting rights
+     * alone; the admin grant is this tool's own, deliberately kept.
+     */
     val mayEdit: Boolean get() = isAdmin || canEdit
 
     companion object {
@@ -238,6 +302,9 @@ data class BoxScheduleViewer(
  * saved, sent and compared, and must never be renamed.
  */
 const val PERSONAL_NOTE_TYPE = "crew_start"
+
+/** What the web shows for [PERSONAL_NOTE_TYPE], whatever label the server still sends. */
+const val PERSONAL_NOTE_LABEL = "Personal Note"
 
 /** A note only its author sees. Untyped notes, from before the type field existed, are General. */
 val DiaryEvent.isPersonalNote: Boolean

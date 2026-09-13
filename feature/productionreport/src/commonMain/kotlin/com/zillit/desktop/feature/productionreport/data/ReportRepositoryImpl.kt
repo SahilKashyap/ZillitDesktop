@@ -1,34 +1,38 @@
 package com.zillit.desktop.feature.productionreport.data
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
-import com.zillit.desktop.feature.productionreport.domain.ApprovalRequest
+import com.zillit.desktop.feature.productionreport.domain.ApprovalDecision
+import com.zillit.desktop.feature.productionreport.domain.MetadataUpdate
+import com.zillit.desktop.feature.productionreport.domain.ReminderRequest
+import com.zillit.desktop.feature.productionreport.domain.ReportComment
 import com.zillit.desktop.feature.productionreport.domain.ReportDetail
+import com.zillit.desktop.feature.productionreport.domain.ReportQuery
 import com.zillit.desktop.feature.productionreport.domain.ReportRepository
-import com.zillit.desktop.feature.productionreport.domain.ReportStatus
 import com.zillit.desktop.feature.productionreport.domain.ReportSummary
-import com.zillit.desktop.feature.productionreport.domain.InternalApprover
+import com.zillit.desktop.feature.productionreport.domain.ReportSyncEvent
+import com.zillit.desktop.feature.productionreport.domain.ReviewAssignee
+import com.zillit.desktop.feature.productionreport.domain.SavedTemplate
+import com.zillit.desktop.feature.productionreport.domain.SheetMember
 import com.zillit.desktop.feature.productionreport.domain.SheetMetadata
 import com.zillit.desktop.feature.productionreport.domain.SheetPayload
+import com.zillit.desktop.feature.productionreport.domain.StockTemplate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
@@ -36,16 +40,16 @@ import kotlinx.serialization.json.put
  *
  * Transcription notes, verified against the web client:
  *
- *  - the full prefix is `/api/v2`, same as the call-sheet service: the
- *    web's env base carries the `/api` segment the client never spells;
- *  - both submit calls carry `{approvers, created_by}` — unlike the call
- *    sheet, whose signature round posts an empty body;
+ *  - the full prefix is `/api/v2`: the web's env base carries the `/api`
+ *    segment its client never spells;
+ *  - both submit calls carry `{approvers, created_by}`;
  *  - editing is `POST .../revisions`, never a PUT;
  *  - approve/reject act on approval-request ids, not report ids;
- *  - the embedded revision key is camelCase `currentRevision` amid an
- *    otherwise snake_case document — both spellings are read.
+ *  - a refusal arrives as HTTP 200 with `status: 0`, so every call reads the
+ *    envelope and treats anything but `status: 1` as a failure — the web
+ *    resolves those as successes and shows empty lists.
  */
-@Suppress("TooManyFunctions") // One function per endpoint the tool speaks; a split would only rename the host.
+@Suppress("TooManyFunctions") // One function per endpoint the tool speaks.
 class ReportRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
@@ -56,89 +60,70 @@ class ReportRepositoryImpl(
 
     private val base = config.apiV2(ZillitService.ProductionReport).trimEnd('/')
 
-    /** The project API — where `access/users` answers who holds which rights. */
-    private val core = config.apiV2(ZillitService.Core).trimEnd('/')
-
-    /**
-     * See [ReportRepository.refreshes]. Another production's frame is
-     * dropped when both sides can name a project.
-     */
-    override val refreshes: Flow<Unit> =
+    override val events: Flow<ReportSyncEvent> =
         bus?.onAny(PRODUCTION_REPORT_SYNC_EVENTS)
             ?.filter { message -> message.payload.matchesProject(currentProjectId()) }
-            ?.map { }
+            ?.map { message -> syncEventOf(message.event.value, message.payload) }
             ?: emptyFlow()
 
-    override suspend fun metadata(projectId: String): ZillitResult<SheetMetadata> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = "$base/projects/$projectId/production-report-metadata",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
-    ).map { element -> parseMetadata(element) }
+    override suspend fun metadata(projectId: String): ZillitResult<SheetMetadata> =
+        call(HttpVerb.Get, "$base/projects/$projectId/production-report-metadata").mapData { ReportWire.metadata(it) }
 
-    override suspend fun saveMetadata(
-        projectId: String,
-        totalDays: String?,
-        currentShootDay: Int?,
-        finalApproverIds: List<String>?,
-        internalReceiverIds: List<String>?,
-    ): ZillitResult<Unit> = apiClient.request(
-        verb = HttpVerb.Put,
-        url = "$base/projects/$projectId/production-report-metadata",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
-        body = buildJsonObject {
-            totalDays?.takeIf { it.isNotBlank() }?.let { put("total_days", it) }
-            currentShootDay?.let { put("current_shoot_day", it) }
-            finalApproverIds?.let { put("final_approver_ids", it.toJson()) }
-            internalReceiverIds?.let { put("internal_distribution_receivers", it.toJson()) }
-        },
-    ).map { }
+    override suspend fun saveMetadata(projectId: String, update: MetadataUpdate): ZillitResult<SheetMetadata?> =
+        call(
+            HttpVerb.Put,
+            "$base/projects/$projectId/production-report-metadata",
+            body = buildJsonObject {
+                update.totalDays?.let { put("total_days", it) }
+                update.currentShootDay?.let { put("current_shoot_day", it) }
+                update.finalApproverIds?.let { put("final_approver_ids", it.toJson()) }
+                update.internalReceiverIds?.let { put("internal_distribution_receivers", it.toJson()) }
+                if (update.revokeAccessOnRemoval) put("revoke_access_on_removal", true)
+                update.dayTypeAdd?.let { put("day_type_add", it) }
+            },
+        ).mapData { data -> (data as? JsonObject)?.let { ReportWire.metadata(it) } }
 
-    override suspend fun defaultTemplate(): ZillitResult<SheetPayload?> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = "$base/default-template",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
-    ).map { element ->
-        // The web spec says `template`; the dev deployment answers a
-        // `templates` ARRAY — both are read, first entry wins.
-        val obj = element as? JsonObject
-        val template = obj?.firstOf("template")
-            ?: (obj?.firstOf("templates") as? JsonArray)?.firstOrNull()
-        template?.let { PayloadWire.parse(it) }
-    }
+    override suspend fun stockTemplates(): ZillitResult<List<StockTemplate>> =
+        call(HttpVerb.Get, "$base/default-template").mapData { ReportWire.stockTemplates(it) }
 
-    override suspend fun sheets(
-        projectId: String?,
-        statuses: List<ReportStatus>,
-        createdById: String?,
-        approverId: String?,
-    ): ZillitResult<List<ReportSummary>> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = "$base/production-reports",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
-        queryParameters = buildMap {
-            projectId?.takeIf { it.isNotBlank() }?.let { put("project_id", it) }
-            if (statuses.isNotEmpty()) put("status", statuses.joinToString(",") { it.wire })
-            createdById?.takeIf { it.isNotBlank() }?.let { put("created_by_id", it) }
-            approverId?.takeIf { it.isNotBlank() }?.let { put("approver_id", it) }
-        },
-    ).map { element ->
-        val list = (element as? JsonObject)?.firstOf("production_reports", "productionReports") as? JsonArray
-        list.elements().mapNotNull { row -> parseSummary(row as? JsonObject) }
-    }
+    override suspend fun savedTemplates(): ZillitResult<List<SavedTemplate>> =
+        call(HttpVerb.Get, "$base/production-reports/templates").mapData { ReportWire.savedTemplates(it) }
 
-    override suspend fun sheet(id: String): ZillitResult<ReportDetail> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = "$base/production-reports/$id",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
-    ).map { element ->
-        val sheet = (element as? JsonObject)?.firstOf("production_report", "productionReport") as? JsonObject
-        parseDetail(sheet)
-    }
+    override suspend fun savedTemplate(id: String): ZillitResult<SavedTemplate> =
+        call(HttpVerb.Get, "$base/production-reports/templates/$id").flatMapData { data ->
+            ReportWire.savedTemplateOf(data)?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Http(status = NOT_FOUND, serverMessage = "Template has no content"))
+        }
+
+    override suspend fun createTemplate(payload: SheetPayload): ZillitResult<SavedTemplate?> =
+        call(HttpVerb.Post, "$base/production-reports/templates", body = templateBody(payload))
+            .mapData { ReportWire.savedTemplateOf(it) }
+
+    override suspend fun updateTemplate(id: String, payload: SheetPayload): ZillitResult<Unit> =
+        call(HttpVerb.Put, "$base/production-reports/templates/$id", body = templateBody(payload)).mapData { }
+
+    override suspend fun deleteTemplate(id: String): ZillitResult<Unit> =
+        call(HttpVerb.Delete, "$base/production-reports/templates/$id").mapData { }
+
+    private fun templateBody(payload: SheetPayload) = buildJsonObject { put("payload", PayloadWire.emit(payload)) }
+
+    override suspend fun reports(query: ReportQuery): ZillitResult<List<ReportSummary>> =
+        call(
+            HttpVerb.Get,
+            "$base/production-reports",
+            query = buildMap {
+                query.projectId?.let { put("project_id", it) }
+                if (query.statuses.isNotEmpty()) put("status", query.statuses.joinToString(",") { it.wire })
+                query.createdById?.let { put("created_by_id", it) }
+                query.approverId?.let { put("approver_id", it) }
+            },
+        ).mapData { ReportWire.summaries(it) }
+
+    override suspend fun report(id: String): ZillitResult<ReportDetail> =
+        call(HttpVerb.Get, "$base/production-reports/$id").flatMapData { data ->
+            ReportWire.detail(data)?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Serialization("production report missing from the answer"))
+        }
 
     override suspend fun create(
         projectId: String,
@@ -146,26 +131,21 @@ class ReportRepositoryImpl(
         payload: SheetPayload,
         createdBy: String,
         createdById: String,
-    ): ZillitResult<ReportSummary> = apiClient.request(
-        verb = HttpVerb.Post,
-        url = "$base/production-reports",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
-        body = buildJsonObject {
-            put("payload", PayloadWire.emit(payload))
-            put("created_by", createdBy)
-            put("created_by_id", createdById)
-            put("project_id", projectId)
-            put("name", name)
-        },
-    ).map { element ->
-        val sheet = (element as? JsonObject)?.firstOf("production_report", "productionReport") as? JsonObject
-        parseSummary(sheet) ?: ReportSummary(
-            id = "", serialNo = "", name = name, status = ReportStatus.Draft,
-            createdBy = createdBy, createdById = createdById,
-            createdAt = "", updatedAt = "", publishedAt = "",
-        )
-    }
+    ): ZillitResult<ReportSummary> =
+        call(
+            HttpVerb.Post,
+            "$base/production-reports",
+            body = buildJsonObject {
+                put("payload", PayloadWire.emit(payload))
+                put("created_by", createdBy)
+                put("created_by_id", idOrNull(createdById))
+                put("project_id", projectId)
+                put("name", name)
+            },
+        ).flatMapData { data ->
+            ReportWire.summary(ReportWire.reportOf(data))?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Serialization("the created report came back without an id"))
+        }
 
     override suspend fun saveRevision(
         id: String,
@@ -173,204 +153,207 @@ class ReportRepositoryImpl(
         payload: SheetPayload,
         createdBy: String,
         createdById: String,
-    ): ZillitResult<Unit> = apiClient.request(
-        verb = HttpVerb.Post,
-        url = "$base/production-reports/$id/revisions",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
-        body = buildJsonObject {
-            put("payload", PayloadWire.emit(payload))
-            put("created_by", createdBy)
-            put("created_by_id", createdById)
-            put("name", name)
-        },
-    ).map { }
+    ): ZillitResult<ReportSummary?> =
+        call(
+            HttpVerb.Post,
+            "$base/production-reports/$id/revisions",
+            body = buildJsonObject {
+                put("payload", PayloadWire.emit(payload))
+                put("created_by", createdBy)
+                put("created_by_id", idOrNull(createdById))
+                put("name", name)
+            },
+        ).mapData { ReportWire.summary(ReportWire.reportOf(it)) }
 
-    override suspend fun delete(id: String): ZillitResult<Unit> = apiClient.request(
-        verb = HttpVerb.Delete,
-        url = "$base/production-reports/$id",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
-    ).map { }
+    override suspend fun delete(id: String): ZillitResult<Unit> =
+        call(HttpVerb.Delete, "$base/production-reports/$id").mapData { }
 
     override suspend fun submitForApproval(
         id: String,
-        approvers: List<InternalApprover>,
+        approvers: List<ReviewAssignee>,
         createdBy: String,
-    ): ZillitResult<Unit> = submitReview(id, "submit-for-approval", approvers, createdBy)
+    ): ZillitResult<Unit> =
+        call(
+            HttpVerb.Post,
+            "$base/production-reports/$id/submit-for-approval",
+            body = reviewBody(approvers, createdBy),
+        ).mapData { }
 
     override suspend fun submitForInternalApproval(
         id: String,
-        approvers: List<InternalApprover>,
+        approvers: List<ReviewAssignee>,
         createdBy: String,
-    ): ZillitResult<Unit> = submitReview(id, "submit-for-internal-approval", approvers, createdBy)
+    ): ZillitResult<Unit> =
+        call(
+            HttpVerb.Post,
+            "$base/production-reports/$id/submit-for-internal-approval",
+            body = reviewBody(approvers, createdBy),
+        )
+            .mapData { }
 
-    private suspend fun submitReview(
-        id: String,
-        action: String,
-        approvers: List<InternalApprover>,
-        createdBy: String,
-    ): ZillitResult<Unit> = apiClient.request(
-        verb = HttpVerb.Post,
-        url = "$base/production-reports/$id/$action",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
-        body = buildJsonObject {
-            put(
-                "approvers",
-                buildJsonArray {
-                    approvers.forEach { approver ->
-                        add(
-                            buildJsonObject {
-                                put("assignee_id", approver.assigneeId)
-                                put("assignee_name", approver.assigneeName)
-                                put("role", approver.role)
-                            },
-                        )
-                    }
-                },
-            )
-            put("created_by", createdBy)
-        },
-    ).map { }
+    private fun reviewBody(approvers: List<ReviewAssignee>, createdBy: String) = buildJsonObject {
+        put(
+            "approvers",
+            buildJsonArray {
+                approvers.forEach { approver ->
+                    add(
+                        buildJsonObject {
+                            put("assignee_id", approver.assigneeId)
+                            put("assignee_name", approver.assigneeName)
+                            put("role", approver.role)
+                        },
+                    )
+                }
+            },
+        )
+        put("created_by", createdBy)
+    }
 
-    override suspend fun approve(requestId: String, withoutSignature: Boolean): ZillitResult<Unit> =
-        apiClient.request(
-            verb = HttpVerb.Post,
-            url = "$base/approval-requests/$requestId/approve",
-            serializer = JsonElement.serializer(),
-            module = RequestModule.ProjectUser,
-            body = buildJsonObject { put("without_signature", withoutSignature) },
-        ).map { }
+    override suspend fun approve(requestId: String, decision: ApprovalDecision): ZillitResult<Unit> =
+        call(
+            HttpVerb.Post,
+            "$base/approval-requests/$requestId/approve",
+            body = buildJsonObject {
+                when (decision) {
+                    ApprovalDecision.Plain -> Unit
+                    ApprovalDecision.WithoutSignature -> put("without_signature", true)
+                    is ApprovalDecision.Signature -> put(
+                        "signature_image",
+                        buildJsonObject {
+                            put("media", decision.media)
+                            put("thumbnail", decision.thumbnail.ifBlank { decision.media })
+                            put("content_type", "image")
+                            put("content_subtype", "png")
+                            put("caption", "")
+                            put("duration", 1)
+                            put("height", 1)
+                            put("width", 1)
+                            put("bucket", decision.bucket)
+                            put("region", decision.region)
+                            put("name", "signature.png")
+                        },
+                    )
+                }
+            },
+        ).mapData { }
 
     override suspend fun reject(requestId: String, reason: String): ZillitResult<Unit> =
-        apiClient.request(
-            verb = HttpVerb.Post,
-            url = "$base/approval-requests/$requestId/reject",
-            serializer = JsonElement.serializer(),
-            module = RequestModule.ProjectUser,
+        call(
+            HttpVerb.Post,
+            "$base/approval-requests/$requestId/reject",
             body = buildJsonObject { put("reason", reason) },
-        ).map { }
+        )
+            .mapData { }
+
+    override suspend fun sendReminder(id: String, reminder: ReminderRequest): ZillitResult<Unit> =
+        call(
+            HttpVerb.Post,
+            "$base/production-reports/$id/send-reminder",
+            body = buildJsonObject {
+                put("sent_by", reminder.sentBy)
+                put("sent_by_id", idOrNull(reminder.sentById))
+                put("assignee_ids", reminder.assigneeIds.toJson())
+                put("sent_by_role", reminder.sentByRole)
+                put("message", reminder.message)
+            },
+        ).mapData { }
 
     override suspend fun publish(
         id: String,
         publishedBy: String,
         publishedById: String,
         continuation: Boolean,
-        notes: String,
-    ): ZillitResult<Unit> = apiClient.request(
-        verb = HttpVerb.Post,
-        url = "$base/production-reports/$id/publish",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
-        body = buildJsonObject {
-            put("published_by", publishedBy)
-            put("published_by_id", publishedById)
-            put("continuation_type", if (continuation) "CONTINUATION" else "NEW")
-            put("publish_notes", notes)
-        },
-    ).map { }
+    ): ZillitResult<Unit> =
+        call(
+            HttpVerb.Post,
+            "$base/production-reports/$id/publish",
+            body = buildJsonObject {
+                put("published_by", publishedBy)
+                put("published_by_id", idOrNull(publishedById))
+                put("continuation_type", if (continuation) "CONTINUATION" else "NEW")
+                put("publish_notes", "")
+            },
+        ).mapData { }
 
-    // Parsers --------------------------------------------------------------
+    override suspend fun comments(id: String): ZillitResult<List<ReportComment>> =
+        call(HttpVerb.Get, "$base/production-reports/$id/comments").mapData { ReportWire.comments(it) }
 
-    private fun parseMetadata(element: JsonElement): SheetMetadata {
-        val obj = element as? JsonObject ?: return SheetMetadata()
-        val custom = obj.strings("day_types", "dayTypes")
-        return SheetMetadata(
-            currentShootDay = obj.long("current_shoot_day", "currentShootDay")?.toInt() ?: 0,
-            totalDays = obj.text("total_days", "totalDays"),
-            dayTypes = (SheetMetadata.STANDARD_DAY_TYPES + custom).distinct(),
-            finalApproverIds = obj.strings("final_approver_ids", "finalApproverIds"),
-            internalReceiverIds = obj.strings(
-                "internal_distribution_receivers",
-                "internalDistributionReceivers",
-            ),
+    override suspend fun addComment(id: String, author: SheetMember?, text: String): ZillitResult<ReportComment?> =
+        call(
+            HttpVerb.Post,
+            "$base/production-reports/$id/comments",
+            body = buildJsonObject {
+                put("author_id", idOrNull(author?.userId.orEmpty()))
+                put("author_name", author?.fullName?.ifBlank { null } ?: "Unknown")
+                put("author_role", author?.designation.orEmpty())
+                put("text", text)
+            },
+        ).mapData { ReportWire.commentOf(it) }
+
+    override suspend fun editComment(id: String, commentId: String, text: String): ZillitResult<ReportComment?> =
+        call(
+            HttpVerb.Put,
+            "$base/production-reports/$id/comments/$commentId",
+            body = buildJsonObject { put("text", text) },
         )
-    }
+            .mapData { ReportWire.commentOf(it) }
 
-    private fun parseSummary(obj: JsonObject?): ReportSummary? {
-        if (obj == null) return null
-        val id = obj.text("_id", "id")
-        if (id.isBlank()) return null
-        return ReportSummary(
-            id = id,
-            serialNo = obj.text("serial_no", "serialNo"),
-            name = obj.text("name"),
-            status = ReportStatus.fromWire(obj.text("status")),
-            createdBy = obj.text("created_by", "createdBy"),
-            createdById = obj.text("created_by_id", "createdById"),
-            createdAt = obj.text("created_on", "createdAt"),
-            updatedAt = obj.text("updated_on", "updatedAt"),
-            publishedAt = obj.text("published_on", "publishedAt"),
-            reportType = reportTypeOf(obj),
-        )
-    }
-
-    /** List rows embed the current revision, so the kind is known without opening the sheet. */
-    private fun reportTypeOf(obj: JsonObject): String {
-        val revision = obj.firstOf("currentRevision", "current_revision") as? JsonObject
-        val payload = (revision?.firstOf("payload") ?: obj.firstOf("payload")) as? JsonObject
-        val shared = payload?.firstOf("shared") as? JsonObject
-        return shared?.text("reportType", "report_type").orEmpty().trim().lowercase()
-    }
-
-    private fun parseDetail(obj: JsonObject?): ReportDetail {
-        val summary = parseSummary(obj) ?: ReportSummary(
-            id = "", serialNo = "", name = "", status = ReportStatus.Unknown,
-            createdBy = "", createdById = "", createdAt = "", updatedAt = "", publishedAt = "",
-        )
-        val revision = obj?.firstOf("currentRevision", "current_revision") as? JsonObject
-        val payload = revision?.firstOf("payload") ?: obj?.firstOf("payload")
-        val approvals = (obj?.firstOf("approval_requests", "approvalRequests") as? JsonArray)
-            .elements()
-            .mapNotNull { parseApproval(it as? JsonObject) }
-        return ReportDetail(
-            summary = summary,
-            payload = PayloadWire.parse(payload),
-            approvals = approvals,
-        )
-    }
-
-    private fun parseApproval(obj: JsonObject?): ApprovalRequest? {
-        if (obj == null) return null
-        val id = obj.text("_id", "id")
-        if (id.isBlank()) return null
-        return ApprovalRequest(
-            id = id,
-            assigneeId = obj.text("assignee_id", "assigneeId"),
-            assigneeName = obj.text("assignee_name", "assigneeName"),
-            role = obj.text("role"),
-            stage = obj.text("stage").ifBlank { "FINAL" },
-            status = obj.text("status").ifBlank { "PENDING" },
-            reason = obj.text("reason"),
-            round = (obj["round"] as? JsonPrimitive)?.let { it.intOrNull ?: it.contentOrNull?.toIntOrNull() } ?: 1,
-        )
-    }
+    override suspend fun deleteComment(id: String, commentId: String): ZillitResult<Unit> =
+        call(HttpVerb.Delete, "$base/production-reports/$id/comments/$commentId").mapData { }
 
     /**
-     * Who may be picked as an approver: the users holding posting rights on
-     * the tool — `GET v2/access/users?toolIdentifier=…&posting_access=true`,
-     * the web's `fetchuserapproveringrights`. The answer is an id array;
-     * ids that arrive as objects are read by their `user_id`.
+     * Every call reads the envelope: `status: 1` is success whatever `data`
+     * holds (writes answer none), anything else is the server's refusal.
      */
-    override suspend fun postingRightsUserIds(toolIdentifier: String): ZillitResult<Set<String>> =
-        apiClient.request(
-            verb = HttpVerb.Get,
-            url = "$core/access/users?toolIdentifier=$toolIdentifier&posting_access=true",
-            serializer = JsonElement.serializer(),
-            module = RequestModule.ProjectUser,
-        ).map { payload ->
-            val data = (payload as? JsonObject)?.get("data") ?: payload
-            (data as? JsonArray).orEmpty().mapNotNullTo(mutableSetOf()) { element ->
-                when (element) {
-                    is JsonPrimitive -> element.contentOrNull?.takeIf { it.isNotBlank() }
-                    is JsonObject -> element.idText()
-                    else -> null
-                }
+    private suspend fun call(
+        verb: HttpVerb,
+        url: String,
+        body: JsonElement? = null,
+        query: Map<String, Any?> = emptyMap(),
+    ): ZillitResult<JsonElement?> =
+        when (
+            val envelope = apiClient.envelope(
+                verb = verb,
+                url = url,
+                module = RequestModule.ProjectUser,
+                body = body,
+                queryParameters = query,
+            )
+        ) {
+            is ZillitResult.Failure -> envelope
+            is ZillitResult.Success -> if (envelope.data.status == STATUS_OK) {
+                ZillitResult.Success(envelope.data.data)
+            } else {
+                ZillitResult.Failure(
+                    ZillitError.Http(
+                        status = HTTP_OK,
+                        serverMessage = envelope.data.message,
+                        messageElements = envelope.data.messageElements.orEmpty(),
+                    ),
+                )
             }
         }
-}
 
-/** `user_id` or `_id` of a rights row, blank-safe. */
-private fun JsonObject.idText(): String? =
-    ((this["user_id"] ?: this["_id"]) as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+    private inline fun <T> ZillitResult<JsonElement?>.mapData(transform: (JsonElement?) -> T): ZillitResult<T> =
+        when (this) {
+            is ZillitResult.Success -> ZillitResult.Success(transform(data))
+            is ZillitResult.Failure -> this
+        }
+
+    private inline fun <T> ZillitResult<JsonElement?>.flatMapData(
+        transform: (JsonElement?) -> ZillitResult<T>,
+    ): ZillitResult<T> =
+        when (this) {
+            is ZillitResult.Success -> transform(data)
+            is ZillitResult.Failure -> this
+        }
+
+    /** A user id, or JSON null when there is none — the web sends `null`, never an empty string. */
+    private fun idOrNull(value: String): JsonElement = if (value.isBlank()) JsonNull else JsonPrimitive(value)
+
+    private companion object {
+        const val STATUS_OK = 1
+        const val HTTP_OK = 200
+        const val NOT_FOUND = 404
+    }
+}

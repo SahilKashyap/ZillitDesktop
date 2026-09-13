@@ -1,175 +1,158 @@
 package com.zillit.desktop.feature.boxschedule.ui
 
 import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleViewer
-import com.zillit.desktop.feature.boxschedule.domain.DateConflict
+import com.zillit.desktop.feature.boxschedule.domain.CalendarMode
+import com.zillit.desktop.feature.boxschedule.domain.ContentFilter
+import com.zillit.desktop.feature.boxschedule.domain.DiaryCalendar
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
-import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
-import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfLayout
-import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfOptions
+import com.zillit.desktop.feature.boxschedule.domain.DiaryFilter
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPerson
+import com.zillit.desktop.feature.boxschedule.domain.DiaryView
+import com.zillit.desktop.feature.boxschedule.domain.ListMode
 import com.zillit.desktop.feature.boxschedule.domain.NoteType
-import com.zillit.desktop.feature.boxschedule.domain.inDiaryOrder
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleBlock
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleDayRow
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleType
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.plus
 
-/** A block being created or edited. */
-data class BlockEditor(
-    val blockId: String? = null,
-    val typeId: String = "",
-    val title: String = "",
-    /** `YYYY-MM-DD` typed dates; the VM turns them into local midnights. */
-    val startText: String = "",
-    val endText: String = "",
-    val saving: Boolean = false,
-    val conflicts: List<DateConflict> = emptyList(),
-)
-
-/** An event or note being created or edited. */
-data class DiaryEditor(
-    val eventId: String? = null,
-    val kind: DiaryKind = DiaryKind.Event,
-    val title: String = "",
-    val body: String = "",
-    /** `YYYY-MM-DD`. */
-    val dateText: String = "",
-    /** `HH:mm`; blank pair means full day. */
-    val startText: String = "",
-    val endText: String = "",
-    val location: String = "",
-    val locationLat: Double? = null,
-    val locationLng: Double? = null,
-    val color: String = "#3498DB",
-    val scheduleDayId: String = "",
-    val noteType: String = "general",
-    val repeatStatus: String = "none",
-    val saving: Boolean = false,
-    /** Carried through an edit untouched — the desktop cannot set it. */
-    val callType: String = "",
-    /** For a recurring occurrence's edit/delete: which instant it is. */
-    val occurrenceDate: Long? = null,
-    val isRecurring: Boolean = false,
-)
-
-/** The diary PDF dialog: what was picked, and whether the file is on its way. */
-data class PdfSheet(
-    val options: DiaryPdfOptions = DiaryPdfOptions(),
-    /** Posting rights on Document Distribution, read when the dialog opened. */
-    val canPublish: Boolean = false,
-    val busy: Boolean = false,
-)
-
-/** A new type being added inline. */
-data class TypeEditor(
-    val typeId: String? = null,
-    val title: String = "",
-    val color: String = "#3498DB",
-    val saving: Boolean = false,
-)
-
+/**
+ * The production diary page — the web's `BoxSchedulePage`.
+ *
+ * Data, the page chrome ([PageState]) and whatever is open over it
+ * ([DiaryOverlays]) are separate values, so a reload never closes a form and
+ * a form never has to know which view is behind it.
+ */
 data class BoxScheduleUiState(
     val viewer: BoxScheduleViewer = BoxScheduleViewer(),
     val loading: Boolean = false,
-    val busy: Boolean = false,
+    /** The first load has answered; a later load is a refresh, drawn as a pill, not a spinner. */
+    val loadedOnce: Boolean = false,
+    /** A load that failed — a banner, dismissible. Writes report through notices. */
     val error: String? = null,
     val types: List<ScheduleType> = emptyList(),
     val blocks: List<ScheduleBlock> = emptyList(),
+    /** Every block exploded into dated, numbered rows — the web's `flatSchedule`. */
     val rows: List<ScheduleDayRow> = emptyList(),
+    /** Box-schedule events and notes, with the Main Calendar's merged in read-only. */
     val events: List<DiaryEvent> = emptyList(),
-    val noteTypes: List<NoteType> = emptyList(),
-    val blockEditor: BlockEditor? = null,
-    val diaryEditor: DiaryEditor? = null,
-    val typeEditor: TypeEditor? = null,
-    val manageTypes: Boolean = false,
-    val pdfSheet: PdfSheet? = null,
+    val noteTypes: List<NoteType> = NoteType.DEFAULTS,
+    val people: List<DiaryPerson> = emptyList(),
+    val today: LocalDate = EPOCH,
+    val nowMillis: Long = 0,
+    /** The zone every date on the page is read in. */
+    val zone: TimeZone = TimeZone.UTC,
+    /** Document Distribution is wired and the viewer may post into it. */
+    val canPublish: Boolean = false,
+    /** The system printer is wired — Print Selected exists. */
+    val canPrint: Boolean = false,
+    val historyBadge: Int = 0,
+    val page: PageState = PageState(),
+    val overlays: DiaryOverlays = DiaryOverlays(),
 ) {
-    /** Events and notes for one date, standalone or linked — Personal Notes first, then General, then events. */
-    fun eventsOn(date: Long): List<DiaryEvent> = events.filter { it.date == date }.inDiaryOrder()
+    val mayEdit: Boolean get() = viewer.mayEdit
+    val todayKey: Long get() = DiaryCalendar.startOf(today, zone)
 
-    /** Events not pinned to any date row shown (their date has no block). */
-    val orphanEvents: List<DiaryEvent>
-        get() {
-            val blockDates = rows.map { it.date }.toSet()
-            return events
-                .filter { it.date !in blockDates }
-                .sortedBy { it.startDateTime.takeIf { s -> s > 0 } ?: it.date }
-        }
+    fun isPast(dayKey: Long): Boolean = dayKey < todayKey
+
+    fun block(id: String): ScheduleBlock? = blocks.firstOrNull { it.id == id }
+    fun entry(listKey: String): DiaryEvent? = events.firstOrNull { it.listKey == listKey }
+    fun person(id: String): DiaryPerson? = people.firstOrNull { it.id == id }
+
+    /** The list's rows after the search box and the type filter — what Select All selects. */
+    val filteredRows: List<ScheduleDayRow> get() = page.filter.listRows(rows, zone)
+
+    /** The rows ticked in select mode, in date order. */
+    val selectedRows: List<ScheduleDayRow> get() = rows.filter { it.key in page.selected }
+
+    companion object {
+        val EPOCH = LocalDate(1970, 1, 1)
+    }
 }
 
-sealed interface BoxScheduleEvent {
-    data object Refresh : BoxScheduleEvent
+/** The page's own controls: which view, which dates, which filter, which rows. */
+data class PageState(
+    val view: DiaryView = DiaryView.Calendar,
+    val defaultView: DiaryView = DiaryView.Calendar,
+    val calendarMode: CalendarMode = CalendarMode.Month,
+    val defaultCalendarMode: CalendarMode = CalendarMode.Month,
+    val listMode: ListMode = ListMode.ByDate,
+    val defaultListMode: ListMode = ListMode.ByDate,
+    /** The first of the month the Month view shows; null until the page knows today. */
+    val month: LocalDate? = null,
+    /** The Monday the Week view starts on. */
+    val weekStart: LocalDate? = null,
+    /** The Day view's day. */
+    val day: LocalDate? = null,
+    val filter: DiaryFilter = DiaryFilter(),
+    /** The list row opened to its day detail — `${blockId}-${date}`. */
+    val expandedRow: String? = null,
+    val selecting: Boolean = false,
+    val selected: Set<String> = emptySet(),
+) {
+    fun weekDays(): List<LocalDate> {
+        val start = weekStart ?: return emptyList()
+        return (0 until DiaryCalendar.DAYS_IN_WEEK).map { start.plus(it, DateTimeUnit.DAY) }
+    }
 
-    /** Joins the call on one event, addressed by its list key. */
-    data class JoinCall(val listKey: String) : BoxScheduleEvent
-
-    // Blocks
-    data object NewBlock : BoxScheduleEvent
-    data class EditBlock(val blockId: String) : BoxScheduleEvent
-    data class BlockChanged(
-        val typeId: String? = null,
-        val title: String? = null,
-        val startText: String? = null,
-        val endText: String? = null,
-    ) : BoxScheduleEvent
-    data object SaveBlock : BoxScheduleEvent
-    data class ResolveConflict(val action: String) : BoxScheduleEvent
-    data object CloseBlock : BoxScheduleEvent
-    data class DeleteBlockDate(val blockId: String, val date: Long) : BoxScheduleEvent
-    data class DeleteBlock(val blockId: String) : BoxScheduleEvent
-
-    // Events / notes
-    data class NewDiary(val kind: DiaryKind, val date: Long?, val scheduleDayId: String = "") : BoxScheduleEvent
-    data class EditDiary(val listKey: String) : BoxScheduleEvent
-    data class DiaryChanged(
-        val title: String? = null,
-        val body: String? = null,
-        val dateText: String? = null,
-        val startText: String? = null,
-        val endText: String? = null,
-        val location: String? = null,
-        /** Sent together with [location] when a place is picked on the map. */
-        val locationLat: Double? = null,
-        val locationLng: Double? = null,
-        val color: String? = null,
-        val noteType: String? = null,
-        val repeatStatus: String? = null,
-    ) : BoxScheduleEvent
-    data object SaveDiary : BoxScheduleEvent
-    data object CloseDiary : BoxScheduleEvent
-    data class DeleteDiary(val listKey: String) : BoxScheduleEvent
-
-    // Types
-    data object OpenTypes : BoxScheduleEvent
-    data object CloseTypes : BoxScheduleEvent
-    data object NewType : BoxScheduleEvent
-    data class EditType(val typeId: String) : BoxScheduleEvent
-    data class TypeChanged(val title: String? = null, val color: String? = null) : BoxScheduleEvent
-    data object SaveType : BoxScheduleEvent
-    data object CloseTypeEditor : BoxScheduleEvent
-    data class DeleteType(val typeId: String) : BoxScheduleEvent
-
-    /** The diary PDF: one dialog for the layout and the Personal Notes choice, then a destination. */
-    data object OpenPdf : BoxScheduleEvent
-    data class PdfChanged(val layout: DiaryPdfLayout? = null, val includePersonalNotes: Boolean? = null) :
-        BoxScheduleEvent
-    data object ClosePdf : BoxScheduleEvent
-
-    /** Saves the PDF to Downloads and opens it. */
-    data object SavePdf : BoxScheduleEvent
-
-    /** Publishes the PDF into Document Distribution. */
-    data object PublishPdf : BoxScheduleEvent
-
-    data object DismissError : BoxScheduleEvent
+    /** Snaps every mode to [date] — the web's `focusRequest`. */
+    fun focusedOn(date: LocalDate): PageState = copy(
+        month = LocalDate(date.year, date.month, 1),
+        weekStart = DiaryCalendar.weekStart(date),
+        day = date,
+    )
 }
 
-sealed interface BoxScheduleEffect {
-    data class Notice(val message: String) : BoxScheduleEffect
+/** Everything that can be open over the page. Several stack: a prompt over a drawer over a view. */
+data class DiaryOverlays(
+    val day: DayDrawer? = null,
+    /** An empty future date was clicked: "What would you like to create?" */
+    val quickAction: Long? = null,
+    /** The entry whose complete details are open — its list key. */
+    val viewing: String? = null,
+    val scheduleForm: ScheduleForm? = null,
+    val conflict: ConflictPrompt? = null,
+    val scheduleScope: ScheduleScopePrompt? = null,
+    val deleteDay: DeleteDayPrompt? = null,
+    /** "Delete Script" on a By Schedule card — the block's id. */
+    val deleteBlock: String? = null,
+    /** "Delete all schedules on this day?" — the day's key. */
+    val deleteAllOn: Long? = null,
+    val bulkDelete: Boolean = false,
+    val entryForm: EntryForm? = null,
+    val updateScope: EntryScopePrompt? = null,
+    val deleteEntry: EntryScopePrompt? = null,
+    /** "This event was created in the Calendar module…" — true when it was a delete. */
+    val calendarInfo: CalendarInfo? = null,
+    val types: TypesManager? = null,
+    val history: HistoryPanel? = null,
+    val presets: PresetsPanel? = null,
+    val pdf: PdfSheet? = null,
+    val printSelected: PrintPrompt? = null,
+    val share: SharePanel? = null,
+    val filters: FilterDraft? = null,
+    val palette: PalettePanel? = null,
+)
 
-    /**
-     * Joins an event's call, for the host to hand to the calling stack.
-     *
-     * The same room a calendar event's Join opens — this module keeps no
-     * dependency on calling, only on the id.
-     */
-    data class JoinCall(val roomId: String, val title: String, val video: Boolean) : BoxScheduleEffect
+/** The calendar's day drawer, scoped to what was clicked. */
+data class DayDrawer(val dayKey: Long, val focus: DayFocus = DayFocus.Full)
+
+sealed interface DayFocus {
+    /** A plain date click: everything on the day. */
+    data object Full : DayFocus
+
+    /** A schedule pill: that schedule alone. */
+    data class Schedule(val blockId: String) : DayFocus
+
+    /** The notes group: only notes. */
+    data object Notes : DayFocus
 }
+
+data class CalendarInfo(val forDelete: Boolean)
+
+/** The Filter dialog's choices before Apply. */
+data class FilterDraft(val typeName: String = "", val content: ContentFilter = ContentFilter.All)
+
+data class PalettePanel(val query: String = "")

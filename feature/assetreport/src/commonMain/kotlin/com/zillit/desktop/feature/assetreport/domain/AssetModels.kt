@@ -1,6 +1,5 @@
 package com.zillit.desktop.feature.assetreport.domain
 
-import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
 
 /**
@@ -24,18 +23,58 @@ data class AssetLine(
     val vendorId: String = "",
     /** A department ID — likewise. */
     val departmentId: String = "",
+    /** The order's currency; amounts are converted from it for display. */
     val currency: String = "",
     val expenditureType: ExpenditureType = ExpenditureType.Unknown,
     /** A standalone tax line — rendered, excluded from every total. */
     val isTax: Boolean = false,
-    val rentalStartMillis: Long = 0,
-    val rentalEndMillis: Long = 0,
+    val rentalStartMillis: Long? = null,
+    val rentalEndMillis: Long? = null,
     val poNumber: String = "",
     val poId: String = "",
     /** The register record's id; null until the first save. */
     val assetId: String? = null,
     val category: AssetCategory = AssetCategory.None,
 )
+
+/**
+ * One stored file — the Account Hub's canonical attachment model,
+ * `{media, bucket, region, name, content_type, content_subtype, caption}`.
+ *
+ * `content_type` is a *family* on this wire (`image`, `document`), not a MIME
+ * type, and `content_subtype` the extension; the web derives the real type
+ * from the extension for the same reason.
+ */
+data class AssetAttachment(
+    val media: String,
+    val bucket: String = "",
+    val region: String = "",
+    val name: String = "",
+    val contentType: String = "",
+    val contentSubtype: String = "",
+    val caption: String = "",
+) {
+    /** The name's extension, or the stored subtype when the name has none. */
+    val extension: String
+        get() = extensionOf(name).ifBlank { contentSubtype.trim().lowercase() }
+
+    val isImage: Boolean
+        get() = contentType.equals(IMAGE_FAMILY, ignoreCase = true) ||
+            contentType.startsWith("$IMAGE_FAMILY/", ignoreCase = true) ||
+            extension in AssetFileRules.IMAGE_EXTENSIONS
+
+    /** A half-upload — no key, bucket or region — points at no file and is refused. */
+    val isComplete: Boolean
+        get() = media.isNotBlank() && bucket.isNotBlank() && region.isNotBlank()
+
+    val displayName: String
+        get() = name.ifBlank { media.substringAfterLast('/') }.ifBlank { "Attachment" }
+
+    companion object {
+        const val IMAGE_FAMILY = "image"
+        const val DOCUMENT_FAMILY = "document"
+    }
+}
 
 /** One register record — the mutable half of a row. */
 data class AssetRecord(
@@ -44,34 +83,38 @@ data class AssetRecord(
     val category: AssetCategory = AssetCategory.None,
     /** ONE free-text note, not a thread. */
     val comments: String = "",
-    /** A user id — resolve to a name where the crew list knows it. */
+    /** A user id — resolved to "Name · Designation" where the crew list knows it. */
     val commentBy: String = "",
-    val commentAtMillis: Long = 0,
-    val attachmentNames: List<String> = emptyList(),
+    val commentAtMillis: Long? = null,
+    val attachments: List<AssetAttachment> = emptyList(),
 )
 
 /** `Keep` / `Sell`, capitalised on the wire; empty clears. */
-enum class AssetCategory(val wire: String) {
-    None(""),
-    Keep("Keep"),
-    Sell("Sell"),
+enum class AssetCategory(val wire: String, val subtitle: String) {
+    None("", ""),
+    Keep("Keep", "Retain in inventory"),
+    Sell("Sell", "List on wrap sale"),
     ;
 
     companion object {
+        /** The two a person can pick, in the web's order. */
+        val choices: List<AssetCategory> = listOf(Keep, Sell)
+
         fun fromWire(value: String?): AssetCategory =
-            entries.firstOrNull { it.wire.equals(value, ignoreCase = true) && it != None } ?: None
+            entries.firstOrNull { it != None && it.wire.equals(value?.trim(), ignoreCase = true) } ?: None
     }
 }
 
 /**
- * `Purchase` / `Rent` / `Consumption` on the wire; "Rent" displays as
- * "Rental". Android's tolerance (`rental`, `consume`, any case) is kept —
- * strictness against a live wire only manufactures Unknowns.
+ * `Purchase` / `Rent` / `Consumption` on the wire, read as the web labels them:
+ * "Rent" is *Rental* and "Consumption" is *Consumables*. Android's tolerance
+ * (`rental`, `consume`, any case) is kept — strictness against a live wire only
+ * manufactures Unknowns.
  */
 enum class ExpenditureType(val wire: String, val label: String) {
     Purchase("Purchase", "Purchase"),
     Rent("Rent", "Rental"),
-    Consumption("Consumption", "Consumption"),
+    Consumption("Consumption", "Consumables"),
     Unknown("", ""),
     ;
 
@@ -79,104 +122,55 @@ enum class ExpenditureType(val wire: String, val label: String) {
         fun fromWire(value: String?): ExpenditureType = when (value?.trim()?.lowercase()) {
             "purchase" -> Purchase
             "rent", "rental" -> Rent
-            "consumption", "consume" -> Consumption
+            "consumption", "consume", "consumables" -> Consumption
             else -> Unknown
         }
     }
 }
 
 /**
- * Rights from `asset_report_tool`. Editing follows Android's stricter rule —
- * `posting_access` gates the category, the note and the save; the web lets
- * any viewer edit, which reads like an omission rather than a decision.
- * Export follows `download_access`, again Android's rule.
+ * Rights from `asset_report_tool`.
+ *
+ * Editing follows Android's rule — `posting_access` (or admin) gates the
+ * category, the note and the attachments; the controls stay on screen for
+ * everyone and a press without the right asks an administrator. The web
+ * lets any viewer edit, which reads like an omission rather than a decision.
+ *
+ * [privileged] is the web's and Android's own word: an accountant or anyone
+ * who can post picks departments, and only their exports carry
+ * `department_ids` — everyone else is scoped to their department server-side.
  */
 data class AssetViewer(
     val canView: Boolean = true,
     val canPost: Boolean = false,
-    val canDownload: Boolean = false,
     val isAdmin: Boolean = false,
+    val isAccountant: Boolean = false,
     val ready: Boolean = false,
 ) {
-    val isBlocked: Boolean get() = ready && !canView && !isAdmin
+    val isBlocked: Boolean get() = ready && !canView && !canPost && !isAdmin
     val mayEdit: Boolean get() = isAdmin || canPost
-    val mayExport: Boolean get() = isAdmin || canDownload
+    val privileged: Boolean get() = isAccountant || mayEdit
 
     companion object {
         const val TOOL_IDENTIFIER = "asset_report_tool"
 
-        fun from(permissions: ProjectPermissions): AssetViewer {
-            if (permissions.tools.isEmpty()) return AssetViewer()
+        fun from(permissions: ProjectPermissions, isAccountant: Boolean = false): AssetViewer {
+            // Before the tools call lands every right reads false; that is
+            // "not known yet", not a refusal.
+            if (permissions.tools.isEmpty()) return AssetViewer(isAccountant = isAccountant)
             return AssetViewer(
                 canView = permissions.canView(TOOL_IDENTIFIER),
                 canPost = permissions.canPost(TOOL_IDENTIFIER),
-                canDownload = permissions.canDownload(TOOL_IDENTIFIER),
                 isAdmin = permissions.isAdmin,
+                isAccountant = isAccountant,
                 ready = true,
             )
         }
     }
 }
 
-interface AssetRepository {
-    /** Every eligible PO line — `GET purchase-orders/line-items`. */
-    suspend fun lines(): ZillitResult<List<AssetLine>>
-
-    /** The register record for one line, or null when none exists yet. */
-    suspend fun recordForLine(line: AssetLine): ZillitResult<AssetRecord?>
-
-    /**
-     * First write: one POST carrying category and note together — the only
-     * call that accepts both (`PATCH /:id` silently drops `comments`).
-     */
-    suspend fun create(
-        poId: String,
-        lineItemId: String,
-        category: AssetCategory,
-        comments: String,
-    ): ZillitResult<AssetRecord>
-
-    /** `PATCH /:id` — category only; the note has its own route. */
-    suspend fun updateCategory(assetId: String, category: AssetCategory): ZillitResult<AssetRecord>
-
-    /** `PATCH /:id/comment` — the note; empty clears note and stamp. */
-    suspend fun updateComment(assetId: String, comments: String): ZillitResult<AssetRecord>
-
-    /** Vendor id → display name, from the account-hub host. */
-    suspend fun vendors(): ZillitResult<Map<String, String>>
+/** `photo.JPG` → `jpg`; nothing for a name without one (or a leading-dot name). */
+fun extensionOf(fileName: String): String {
+    val dot = fileName.lastIndexOf('.')
+    return if (dot <= 0) "" else fileName.substring(dot + 1).trim().lowercase()
 }
-
-/** Runs the export and lands the file — bytes are the host's business. */
-fun interface AssetExport {
-    suspend fun export(format: String): ZillitResult<Unit>
-}
-
-/**
- * The visible sum: tax lines out, and only when one currency covers every
- * counted row — a mixed-currency sum is a number that means nothing.
- */
-fun assetTotal(lines: List<AssetLine>): Pair<Double, String>? {
-    val counted = lines.filter { !it.isTax }
-    if (counted.isEmpty()) return 0.0 to (lines.firstOrNull()?.currency ?: "")
-    val currencies = counted.map { it.currency }.distinct()
-    if (currencies.size > 1) return null
-    return counted.sumOf { it.total } to currencies.single()
-}
-
-/** `1,234,567.89` — en-GB grouping, always two decimals. */
-fun moneyLabel(amount: Double): String {
-    val negative = amount < 0
-    val cents = kotlin.math.round(kotlin.math.abs(amount) * CENTS_PER_UNIT).toLong()
-    val whole = (cents / CENTS_PER_UNIT).toString().reversed().chunked(GROUPING_DIGITS).joinToString(",").reversed()
-    val fraction = (cents % CENTS_PER_UNIT).toString().padStart(FRACTION_DIGITS, '0')
-    return (if (negative) "-" else "") + whole + "." + fraction
-}
-
-/** Minor units in one major unit — money is counted in cents to avoid binary fractions. */
-private const val CENTS_PER_UNIT = 100
-
-/** Thousands separators every three digits, en-GB. */
-private const val GROUPING_DIGITS = 3
-
-/** Always two decimals, padded. */
-private const val FRACTION_DIGITS = 2

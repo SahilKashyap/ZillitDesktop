@@ -3,7 +3,7 @@ package com.zillit.desktop.feature.accounthub.ui
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
-import com.zillit.desktop.feature.accounthub.domain.BudgetStatus
+import com.zillit.desktop.feature.accounthub.domain.asTree
 import com.zillit.desktop.feature.accounthub.domain.ClosingPackage
 import com.zillit.desktop.feature.accounthub.domain.ClosingReport
 import com.zillit.desktop.feature.accounthub.domain.IsoDate
@@ -28,10 +28,16 @@ internal class ReportActions(
     fun onEvent(event: AccountHubEvent): Boolean {
         when (event) {
             is AccountHubEvent.SelectBudgetVersion -> {
-                vm.update { copy(budget = budget.copy(selectedId = event.id, lines = emptyList())) }
+                vm.update {
+                    copy(budget = budget.copy(selectedId = event.id, lines = emptyList(), openGroups = emptySet()))
+                }
                 event.id?.let(::loadBudgetLines)
             }
             AccountHubEvent.OpenBudgetFile -> openBudgetFile()
+            is AccountHubEvent.ToggleBudgetGroup -> vm.update {
+                val open = budget.openGroups
+                copy(budget = budget.copy(openGroups = if (event.id in open) open - event.id else open + event.id))
+            }
             is AccountHubEvent.SwitchPeriodCloseTab -> switchCloseTab(event.tab)
             is AccountHubEvent.EditCloseDate -> vm.update {
                 copy(periodClose = periodClose.copy(closeDateText = event.text, result = null))
@@ -99,33 +105,49 @@ internal class ReportActions(
     /**
      * The versions, then the lines of whichever is selected.
      *
-     * Defaults to the Live one when there is no selection: it is the version
-     * every other screen is reading, so it is the one an accountant opening
-     * this page meant.
+     * With nothing selected, the first card is — the web's
+     * `selectedId ?? list[0].id`. A selection that no longer exists (a version
+     * removed elsewhere) falls back the same way rather than leaving the
+     * detail pane empty. The production's currencies are read once too: a
+     * version with no currency of its own shows the production's default.
      */
     fun loadBudget() {
         vm.update { copy(budget = budget.copy(loading = true)) }
         vm.runResult(vm.repo::budgetVersions, { rows ->
-            val chosen = vm.setupState.budget.selectedId
-                ?: rows.firstOrNull { it.status == BudgetStatus.Live }?.id
-                ?: rows.firstOrNull()?.id
+            val current = vm.setupState.budget.selectedId
+            val chosen = current?.takeIf { id -> rows.any { it.id == id } } ?: rows.firstOrNull()?.id
             vm.update { copy(budget = budget.copy(versions = rows, loading = false, selectedId = chosen)) }
-            chosen?.let(::loadBudgetLines)
+            // A refresh of the version already on screen keeps what was opened.
+            val refresh = chosen == current && vm.setupState.budget.lines.isNotEmpty()
+            chosen?.let { loadBudgetLines(it, keepOpen = refresh) }
         }, { error ->
             vm.update { copy(budget = budget.copy(loading = false)) }
             vm.report(error)
         })
         vm.chart.ensureLoaded()
+        if (vm.setupState.setup.currencies.saved.currencies.isEmpty()) {
+            vm.runResult(vm.repo::currencies, { settings ->
+                vm.update { copy(setup = setup.copy(currencies = setup.currencies.loaded(settings))) }
+            }, { })
+        }
     }
 
-    fun loadBudgetLines(versionId: String) {
-        vm.update { copy(budget = budget.copy(linesLoading = true, lines = emptyList())) }
+    /**
+     * A version's lines. The top-level groups open, as the web's rows do at
+     * depth 0 — unless [keepOpen], a refresh of the version already on screen,
+     * where whatever the accountant opened stays open.
+     */
+    fun loadBudgetLines(versionId: String, keepOpen: Boolean = false) {
+        vm.update {
+            copy(budget = budget.copy(linesLoading = true, lines = if (keepOpen) budget.lines else emptyList()))
+        }
         vm.runResult({ vm.repo.budgetLines(versionId) }, { rows ->
             vm.update {
                 // Only if that version is still the one on screen: a slow
                 // answer must not paint another version's lines.
                 if (budget.selectedId == versionId) {
-                    copy(budget = budget.copy(lines = rows, linesLoading = false))
+                    val open = if (keepOpen) budget.openGroups else rows.asTree().initiallyOpen
+                    copy(budget = budget.copy(lines = rows, linesLoading = false, openGroups = open))
                 } else {
                     this
                 }

@@ -1,11 +1,11 @@
 package com.zillit.desktop.feature.accounthub.domain
 
-/** What an import does to the chart of accounts it lands in. */
+/** What an import does to the chart of accounts it lands in — the web's wording. */
 enum class CoaImportMode(val wire: String, val label: String, val detail: String) {
     Append(
         "append",
-        "Merge into the chart",
-        "New codes are added beside the ones already there.",
+        "Append",
+        "Merge these codes into the existing chart — existing and new codes coexist.",
     ),
 
     /**
@@ -17,9 +17,9 @@ enum class CoaImportMode(val wire: String, val label: String, val detail: String
      */
     Override(
         "override",
-        "Replace the chart",
-        "These become the only active codes. The rest are hidden, not deleted, " +
-            "so anything already coded to them still works.",
+        "Override existing",
+        "Make these the only active codes. Existing codes are hidden (not deleted), so POs/invoices " +
+            "using them keep working.",
     ),
     ;
 
@@ -90,8 +90,28 @@ data class BudgetUpload(
     val uploadId: String = "",
     val fileName: String = "",
     val detectedFormat: String = "",
+    /** The parser's guess at whose template the file follows, when it has one. */
+    val sourceTemplate: String = "",
     val document: AgreementDocument? = null,
 )
+
+/**
+ * What the Version field says under itself — the web's version guidance.
+ *
+ * Versions are unique per production, so a suggested number can look wrong
+ * ("why v4 for a brand-new budget?") unless the field says where it came from.
+ */
+sealed interface VersionHint {
+    /** The typed version is taken; the import would be refused. */
+    data class Taken(val version: String, val by: BudgetVersion, val nextFree: String) : VersionHint
+
+    /**
+     * The typed version is free. [latest] is null when no existing version
+     * carries a number — which is not the same as there being none.
+     * [continues] is an existing budget with the same label, for "Continues …".
+     */
+    data class Free(val latest: String?, val hasVersions: Boolean, val continues: BudgetVersion?) : VersionHint
+}
 
 object BudgetImports {
 
@@ -131,6 +151,30 @@ object BudgetImports {
             .maxByOrNull { it.first }
             ?.second
 
+    /**
+     * The existing budget with this label (trimmed, ignoring case) and the
+     * highest version number — for "Continues …". Labels are not unique, so
+     * this informs and never changes the suggestion.
+     */
+    fun matchByLabel(existing: List<BudgetVersion>, label: String): BudgetVersion? {
+        val key = label.trim().lowercase()
+        if (key.isEmpty()) return null
+        val same = existing.filter { it.name.trim().lowercase() == key }
+        return same.maxByOrNull { VERSION.matchEntire(it.version.trim())?.groupValues?.get(1)?.toIntOrNull() ?: -1 }
+    }
+
+    /** The guidance under the Version field for [meta] against the production's versions. */
+    fun versionHint(existing: List<BudgetVersion>, meta: BudgetImportMeta): VersionHint {
+        val typed = meta.version.trim()
+        // Exact, as the server compares: `V4` and `v4` are different rows.
+        val clash = existing.firstOrNull { typed.isNotEmpty() && it.version.trim() == typed }
+        return if (clash != null) {
+            VersionHint.Taken(typed, clash, suggestNextVersion(existing))
+        } else {
+            VersionHint.Free(latestVersion(existing), existing.isNotEmpty(), matchByLabel(existing, meta.label))
+        }
+    }
+
     /** A readable name from a filename: no extension, no underscores. */
     fun labelFrom(fileName: String): String =
         fileName.substringBeforeLast('.')
@@ -139,7 +183,7 @@ object BudgetImports {
             .split(' ')
             .filter { it.isNotBlank() }
             .joinToString(" ")
-            .ifBlank { "Imported budget" }
+            .ifBlank { "Imported Budget" }
 
     /** An optional `v`, then digits, then anything. */
     private val VERSION = Regex("""\s*[vV]?(\d+).*""")

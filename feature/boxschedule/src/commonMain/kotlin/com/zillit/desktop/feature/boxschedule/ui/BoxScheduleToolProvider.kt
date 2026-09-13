@@ -7,9 +7,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
+import com.zillit.desktop.core.designsystem.component.ZillitToast
+import com.zillit.desktop.core.designsystem.component.ZillitToastTone
+import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
@@ -32,32 +35,40 @@ class BoxScheduleToolProvider(
      * button is not drawn.
      */
     private val onJoinCall: ((roomId: String, title: String, video: Boolean) -> Unit)? = null,
+    /** The crew's faces for the audience pickers and chips; null draws initials. */
+    private val loadAvatar: (suspend (String) -> ImageBitmap?)? = null,
 ) : ToolProvider {
 
     override val title: String = "Box Schedule"
     override val icon = ZillitToolIcons.PreProduction
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
-    override val defaultSize: DpSize = DpSize(1280.dp, 860.dp)
+    override val defaultSize: DpSize = DpSize(1320.dp, 880.dp)
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         val state by viewModel.state.collectAsState()
-        var notice by remember { mutableStateOf<String?>(null) }
+        var notice by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {
-                    is BoxScheduleEffect.Notice -> notice = effect.message
-                    is BoxScheduleEffect.JoinCall ->
-                        onJoinCall?.invoke(effect.roomId, effect.title, effect.video)
+                    is BoxScheduleEffect.Notice -> notice = effect.message to effect.success
+                    is BoxScheduleEffect.JoinCall -> onJoinCall?.invoke(effect.roomId, effect.title, effect.video)
+                    is BoxScheduleEffect.CopyText -> copyTextToClipboard(effect.text)
                 }
             }
         }
 
-        BoxScheduleScreen(state = state, onEvent = viewModel::onEvent, mayCall = onJoinCall != null)
-        ZillitErrorToast(message = notice, onDismiss = { notice = null })
+        ProvideDiaryFaces(loadAvatar) {
+            BoxScheduleScreen(state = state, onEvent = viewModel::onEvent, mayCall = onJoinCall != null)
+        }
+        ZillitToast(
+            message = notice?.first,
+            onDismiss = { notice = null },
+            tone = if (notice?.second == true) ZillitToastTone.Success else ZillitToastTone.Danger,
+        )
     }
 }
 

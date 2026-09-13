@@ -18,8 +18,16 @@ kotlin {
             implementation(project(":core:workspace"))
             implementation(project(":core:units"))
             implementation(libs.kotlinx.serialization.json)
+            // Rental ranges and the note's "last saved" stamp are local days.
+            implementation(libs.kotlinx.datetime)
+        }
+        jvmMain.dependencies {
+            // The attachment viewer renders PDF pages itself; the web puts the
+            // file in an <iframe>, which a Compose window has no equivalent of.
+            implementation(libs.pdfbox)
         }
         commonTest.dependencies {
+            implementation(libs.ktor.client.mock)
             implementation(libs.kotlinx.coroutines.test)
         }
         jvmTest.dependencies {

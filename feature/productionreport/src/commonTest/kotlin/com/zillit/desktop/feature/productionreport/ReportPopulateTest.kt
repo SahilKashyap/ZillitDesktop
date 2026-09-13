@@ -52,7 +52,9 @@ class ReportPopulateTest {
                             listOf("Role", "Name", "IN", "OUT"),
                             listOf(
                                 listOf("Operator", "Amy Beta", "", ""),
-                                listOf("Focus", "Bo Cee", "09:00", ""),
+                                listOf("Focus", "Bo Cee", "Time:09:00", ""),
+                                listOf("Loader", "Cy Dee", "", ""),
+                                listOf("Grip", "Di Eff", "", ""),
                             ),
                         ),
                     ),
@@ -68,8 +70,10 @@ class ReportPopulateTest {
                             "Camera",
                             listOf("Name", "In"),
                             listOf(
-                                listOf("amy beta", "1755133200000"),
-                                listOf("Bo Cee", "1755126000000"),
+                                listOf("amy beta", "Time:1755133200000"),
+                                listOf("Bo Cee", "Time:1755126000000"),
+                                listOf("Cy Dee", "Per HOD"),
+                                listOf("Di Eff", "1755126000000"),
                             ),
                         ),
                     ),
@@ -80,8 +84,11 @@ class ReportPopulateTest {
         val seeded = ReportPopulate.fromCallSheet(report, callSheet)
 
         val lines = seeded.rows[0].cells[0].rows
-        assertTrue(lines[0].values[2].value.matches(Regex("""\d{2}:\d{2}""")), "epoch was folded")
-        assertEquals("09:00", lines[1].values[2].value, "an existing IN was overwritten")
+        val clock = Regex("""Time:\d{2}:\d{2}""")
+        assertTrue(lines[0].values[2].value.matches(clock), "the call sheet's Time:<epoch> folds to Time:HH:mm")
+        assertEquals("Time:09:00", lines[1].values[2].value, "an existing IN was overwritten")
+        assertEquals("Per HOD", lines[2].values[2].value, "a fixed mode passes through")
+        assertTrue(lines[3].values[2].value.matches(clock), "a bare legacy epoch is read as a time too")
     }
 
     @Test
@@ -134,7 +141,7 @@ class ReportPopulateTest {
             ),
         )
 
-        val report = ComposeReport.newReport(
+        val (report, _) = ComposeReport.newReport(
             template = template,
             metadata = SheetMetadata(currentShootDay = 2, totalDays = "20"),
             members = listOf(SheetMember("u1", "Amy Beta", "Camera", "Operator")),

@@ -2,11 +2,6 @@ package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.common.orDash
 import com.zillit.desktop.core.common.EpochDate
-import com.zillit.desktop.core.forms.FormField
-import com.zillit.desktop.core.forms.FormFieldType
-import com.zillit.desktop.core.forms.FormModule
-import com.zillit.desktop.core.forms.FormSection
-import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.accounthub.domain.AccountHubViewer
 import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
@@ -18,22 +13,14 @@ import com.zillit.desktop.feature.accounthub.domain.AssignmentRule
 import com.zillit.desktop.feature.accounthub.domain.BankAccount
 import com.zillit.desktop.feature.accounthub.domain.BudgetImportMeta
 import com.zillit.desktop.feature.accounthub.domain.BudgetLine
-import com.zillit.desktop.feature.accounthub.domain.BudgetRow
 import com.zillit.desktop.feature.accounthub.domain.BudgetStatus
 import com.zillit.desktop.feature.accounthub.domain.BudgetUpload
 import com.zillit.desktop.feature.accounthub.domain.BudgetVersion
 import com.zillit.desktop.feature.accounthub.domain.CashCloseDashboard
-import com.zillit.desktop.feature.accounthub.domain.ChartMode
 import com.zillit.desktop.feature.accounthub.domain.ChartOfAccounts
-import com.zillit.desktop.feature.accounthub.domain.ChartSort
 import com.zillit.desktop.feature.accounthub.domain.ClosingPackage
 import com.zillit.desktop.feature.accounthub.domain.CoaAccount
-import com.zillit.desktop.feature.accounthub.domain.CoaBulkRow
-import com.zillit.desktop.feature.accounthub.domain.CoaCostType
-import com.zillit.desktop.feature.accounthub.domain.CoaForest
 import com.zillit.desktop.feature.accounthub.domain.CoaImportMode
-import com.zillit.desktop.feature.accounthub.domain.CoaLineType
-import com.zillit.desktop.feature.accounthub.domain.CoaStats
 import com.zillit.desktop.feature.accounthub.domain.Company
 import com.zillit.desktop.feature.accounthub.domain.CountryTaxes
 import com.zillit.desktop.feature.accounthub.domain.CurrencySettings
@@ -52,7 +39,6 @@ import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
 import com.zillit.desktop.feature.accounthub.domain.IsdCountries
 import com.zillit.desktop.feature.accounthub.domain.IsdCountry
 import com.zillit.desktop.feature.accounthub.domain.IsoDate
-import com.zillit.desktop.feature.accounthub.domain.NewAccount
 import com.zillit.desktop.feature.accounthub.domain.NewVendor
 import com.zillit.desktop.feature.accounthub.domain.NonUnionPay
 import com.zillit.desktop.feature.accounthub.domain.ParsedBudget
@@ -74,12 +60,9 @@ import com.zillit.desktop.feature.accounthub.domain.SchedulePhase
 import com.zillit.desktop.feature.accounthub.domain.SetupGap
 import com.zillit.desktop.feature.accounthub.domain.SetupSnapshot
 import com.zillit.desktop.feature.accounthub.domain.TaxType
-import com.zillit.desktop.feature.accounthub.domain.TrackingNode
-import com.zillit.desktop.feature.accounthub.domain.TrackingSet
 import com.zillit.desktop.feature.accounthub.domain.Vendor
 import com.zillit.desktop.feature.accounthub.domain.VendorBank
 import com.zillit.desktop.feature.accounthub.domain.VendorChange
-import com.zillit.desktop.feature.accounthub.domain.asRows
 import com.zillit.desktop.feature.accounthub.domain.fieldErrors
 
 /**
@@ -494,176 +477,6 @@ data class SetupState(
     )
 }
 
-// -- chart of accounts ----------------------------------------------------------
-
-/** One tracking code, with the depth it reads at. */
-data class TrackingRow(val node: TrackingNode, val depth: Int, val orphaned: Boolean = false)
-
-private const val MAX_TRACKING_DEPTH = 32
-
-/** Which classes the chart is filtered to. */
-enum class ChartView(val slug: String, val label: String) {
-    /** The cost side — what a production spends against. */
-    Expense("accounts", "Cost Accounts"),
-
-    /** Everything else: asset, liability, capital, income. */
-    BalanceSheet("balance", "Balance Sheet Codes"),
-
-    /** Analytical dimensions parallel to the nominal chart. */
-    Layers("tracking", "Layers"),
-}
-
-/** A layer (set) being added or edited — the web's `SetEditorModal`. */
-data class LayerSetDraft(val set: TrackingSet, val isNew: Boolean, val saving: Boolean = false)
-
-/** A layer code being added or edited — the web's `NodeEditorModal`. */
-data class LayerNodeDraft(val node: TrackingNode, val isNew: Boolean, val saving: Boolean = false)
-
-/** What a delete confirmation on the Layers tab is about. */
-sealed interface LayerDelete {
-    data class WholeSet(val set: TrackingSet) : LayerDelete
-    data class OneNode(val setId: String, val node: TrackingNode) : LayerDelete
-}
-
-/** The full-page "New COA Entry" grid. */
-data class BulkAddState(
-    val parent: CoaAccount? = null,
-    val rows: List<CoaBulkRow> = emptyList(),
-    /** The class the grid was opened for, so a row defaults to it. */
-    val costType: CoaCostType = CoaCostType.Expense,
-) {
-    val anySaving: Boolean get() = rows.any {
-        it.status == com.zillit.desktop.feature.accounthub.domain.CoaBulkStatus.Saving
-    }
-
-    val anyError: Boolean get() = rows.any {
-        it.status == com.zillit.desktop.feature.accounthub.domain.CoaBulkStatus.Error
-    }
-
-    val anySaved: Boolean get() = rows.any {
-        it.status == com.zillit.desktop.feature.accounthub.domain.CoaBulkStatus.Saved
-    }
-
-    /** The web's save-tone label: "Saving…", "Couldn't save some rows", "All changes saved". */
-    val saveLabel: String
-        get() = when {
-            anySaving -> "Saving…"
-            anyError -> "Couldn't save some rows"
-            anySaved -> "All changes saved"
-            else -> ""
-        }
-}
-
-/** The chart of accounts screen. */
-data class ChartState(
-    val view: ChartView = ChartView.Expense,
-    val loading: Boolean = false,
-    /** True once the chart has answered at least once — the tour's `coaReady`. */
-    val loaded: Boolean = false,
-    val accounts: List<CoaAccount> = emptyList(),
-    val search: String = "",
-    /** On by default, as on the web — inactive codes exist so history resolves. */
-    val showInactive: Boolean = true,
-    val expanded: Set<String> = emptySet(),
-    /** True after Expand all, so the toolbar can offer Collapse all. */
-    val expandedAll: Boolean = false,
-    val mode: ChartMode = ChartMode.Tree,
-    val sort: ChartSort = ChartSort(),
-    val form: AccountForm? = null,
-    val confirmDeactivate: CoaAccount? = null,
-    val bulk: BulkAddState? = null,
-    /** The analytical dimensions behind the Layers tab. */
-    val trackingSets: List<TrackingSet> = emptyList(),
-    val layerSetDraft: LayerSetDraft? = null,
-    val layerNodeDraft: LayerNodeDraft? = null,
-    val layerDelete: LayerDelete? = null,
-    /** The server's refusal to delete something in use, shown in its own words. */
-    val layerInUse: String? = null,
-    val openLayers: Set<String> = emptySet(),
-) {
-    /**
-     * One set's codes as a flat, indented reading order.
-     *
-     * Tracking codes nest by [TrackingNode.parentId] — unlike the nominal
-     * chart, which nests by code prefix — so the depth has to be walked
-     * rather than counted out of the code itself.
-     */
-    fun rows(set: TrackingSet): List<TrackingRow> {
-        val byParent = set.nodes.groupBy { it.parentId }
-        val out = mutableListOf<TrackingRow>()
-        fun walk(parentId: String?, depth: Int) {
-            if (depth > MAX_TRACKING_DEPTH) return
-            byParent[parentId].orEmpty()
-                .filter { showInactive || it.isActive }
-                .sortedBy { it.code }
-                .forEach { node ->
-                    out += TrackingRow(node, depth)
-                    walk(node.id, depth + 1)
-                }
-        }
-        walk(null, 0)
-        // A code whose parent is inactive (or missing) would otherwise vanish
-        // from a screen meant to show every dimension — the same orphan rule
-        // the nominal chart applies.
-        val shown = out.map { it.node.id }.toSet()
-        val orphans = set.nodes
-            .filter { it.id !in shown && (showInactive || it.isActive) }
-            .sortedBy { it.code }
-            .map { TrackingRow(it, depth = 0, orphaned = true) }
-        return out + orphans
-    }
-
-    /** The rows this view shows, before the tree is built. */
-    val visibleAccounts: List<CoaAccount>
-        get() = accounts
-            .filter { showInactive || it.isActive }
-            .filter { account ->
-                when (view) {
-                    ChartView.Expense -> account.costType == CoaCostType.Expense
-                    ChartView.BalanceSheet -> account.costType.isBalanceSheet
-                    ChartView.Layers -> true
-                }
-            }
-
-    val forest: CoaForest get() = ChartOfAccounts.tree(visibleAccounts)
-
-    /** Search results replace the tree while a term is present. */
-    val matches: List<CoaAccount> get() = ChartOfAccounts.search(visibleAccounts, search)
-
-    /** The table's rows: searched or all, sorted by the active column. */
-    val tableRows: List<CoaAccount>
-        get() = (if (search.isBlank()) visibleAccounts else matches).sortedWith(sort.comparator())
-
-    val stats: CoaStats get() = CoaStats.of(visibleAccounts)
-
-    val isEmpty: Boolean get() = loaded && accounts.isEmpty()
-}
-
-/**
- * The add / edit form for one chart row.
- *
- * [editing] is null when adding. On edit the line type and parent are offered
- * for a manual row — changing either is a structural edit the server re-walks
- * — and the cost type is locked on a budget-imported row.
- */
-data class AccountForm(
-    val editing: CoaAccount? = null,
-    val draft: NewAccount = NewAccount(),
-    val name: String = "",
-    val costType: CoaCostType = CoaCostType.Expense,
-    val isActive: Boolean = true,
-    val isPosting: Boolean = true,
-    val saving: Boolean = false,
-) {
-    val isEdit: Boolean get() = editing != null
-
-    val title: String get() = if (isEdit) "Edit account" else "New account"
-
-    /** Whether the edit re-types or re-parents the row. */
-    val structureChanged: Boolean
-        get() = editing != null && (draft.lineType != editing.lineType || draft.parentId != editing.parentId)
-}
-
 // -- vendors --------------------------------------------------------------------
 
 /**
@@ -851,16 +664,31 @@ enum class ImportStep(val label: String) { Upload("Upload"), Preview("Preview"),
 data class BudgetImportState(
     val open: Boolean = false,
     val step: ImportStep = ImportStep.Upload,
+    /** Whether the host takes a file dragged onto the upload step. */
+    val acceptsDrops: Boolean = false,
+    /** The file chosen or dropped, not yet uploaded — the web's staged `file`. */
+    val picked: PickedAgreementFile? = null,
     val uploading: Boolean = false,
+    /** Why the upload or the parse failed, shown on the upload step with a Retry. */
+    val parseError: String? = null,
     val committing: Boolean = false,
     val parsed: ParsedBudget? = null,
     val upload: BudgetUpload? = null,
     val meta: BudgetImportMeta = BudgetImportMeta(),
     val mode: CoaImportMode = CoaImportMode.Default,
+    /**
+     * Every version the production has, read when the wizard opens rather than
+     * taken from the page: the suggested version is only safe if it saw every
+     * one, including a budget somebody else imported since the page loaded.
+     * Null until that read answers.
+     */
+    val existing: List<BudgetVersion>? = null,
     /** The version the commit created, for the last step to name. */
     val created: BudgetVersion? = null,
     val commitError: String? = null,
 ) {
+    val canParse: Boolean get() = picked != null && !uploading
+
     /**
      * Whether the import can be written.
      *
@@ -884,12 +712,12 @@ data class BudgetState(
     val selectedId: String? = null,
     val lines: List<BudgetLine> = emptyList(),
     val linesLoading: Boolean = false,
+    /** Groups of lines opened on screen; the top level starts open, as on the web. */
+    val openGroups: Set<String> = emptySet(),
     val import: BudgetImportState = BudgetImportState(),
     val openingFile: Boolean = false,
 ) {
     val selected: BudgetVersion? get() = versions.firstOrNull { it.id == selectedId }
-
-    val rows: List<BudgetRow> get() = lines.asRows()
 
     /** The Live version, of which there is at most one. */
     val live: BudgetVersion? get() = versions.firstOrNull { it.status == BudgetStatus.Live }
@@ -993,6 +821,8 @@ data class ApprovalBuilder(
     val confirm: BuilderConfirm? = null,
     /** Why the last save did not go through, shown in the builder — the web's `saveMsg`. */
     val error: String? = null,
+    /** The page that opened the builder, and so the one that shows it. */
+    val origin: BuilderOrigin = BuilderOrigin.Approvers,
 ) {
     val dirty: Boolean get() = config != initial
 }
@@ -1061,90 +891,6 @@ data class ApprovalsState(
 
     fun customCount(departments: List<HubDepartment>): Int =
         departments.count { configFor(it.id)?.isConfigured == true }
-}
-
-// -- forms configuration --------------------------------------------------------
-
-/** A field being added or inspected, addressed by section and key. */
-data class FieldFocus(val sectionKey: String, val fieldId: String? = null) {
-    val isNew: Boolean get() = fieldId == null
-}
-
-/** What the add-a-field panel is holding before it is added. */
-data class NewFieldDraft(
-    val name: String = "",
-    val type: String = FormFieldType.Text.wire,
-    val required: Boolean = false,
-    val selectionType: String? = null,
-) {
-    val isReady: Boolean get() = name.isNotBlank()
-}
-
-/** The "Set Approver Level" scope choice — everyone, or one department. */
-data class ScopeModalState(val mode: ApprovalScope? = null, val departmentId: String? = null) {
-    val canContinue: Boolean get() =
-        mode == ApprovalScope.All || (mode == ApprovalScope.Department && departmentId != null)
-}
-
-/**
- * The per-module form editor.
- *
- * [saved] is what the server last answered with, kept beside [template] so
- * the page can say whether anything is unsaved. A form template is a document
- * that other people's screens read from, so leaving without saving is a real
- * thing to be told about.
- */
-data class FormConfigState(
-    val module: FormModule = FormModule.PurchaseOrders,
-    val template: FormTemplate = FormTemplate(),
-    val saved: FormTemplate = FormTemplate(),
-    val loading: Boolean = false,
-    val saving: Boolean = false,
-    /** Edit mode, as against the read-only preview the page opens on. */
-    val editing: Boolean = false,
-    val collapsed: Set<String> = emptySet(),
-    val focus: FieldFocus? = null,
-    val draft: NewFieldDraft = NewFieldDraft(),
-    /** A section being added: the key to insert after, or null for the top. */
-    val addingSectionAfter: String? = null,
-    val addingSectionName: String = "",
-    val renamingSection: String? = null,
-    val renamingSectionName: String = "",
-    val removingSection: FormSection? = null,
-    val confirmingReset: Boolean = false,
-    val moduleSearch: String = "",
-    /** The Rearrange panel, and the section whose fields it lists. */
-    val rearrange: Boolean = false,
-    val rearrangeSection: String? = null,
-    /** The terms section being edited in the side panel. */
-    val termsEditing: Boolean = false,
-    val scopeModal: ScopeModalState? = null,
-    /** The approval-level builder the Set Approver Level flow opens. */
-    val approverBuilder: ApprovalBuilder? = null,
-    val approverSaving: Boolean = false,
-    val message: CloseResult? = null,
-) {
-    val dirty: Boolean get() = template != saved
-
-    val sectionCount: Int get() = template.configurable.size
-
-    val fieldCount: Int get() = template.fieldCount
-
-    val customCount: Int get() = template.customFieldCount
-
-    fun isCollapsed(key: String): Boolean = key in collapsed
-
-    /** The field the inspector is showing, or null when it is adding one. */
-    val focusedField: FormField?
-        get() = focus?.fieldId?.let { id ->
-            template.section(focus.sectionKey)?.fields?.firstOrNull { it.id == id }
-        }
-
-    val focusedSection: FormSection?
-        get() = focus?.let { template.section(it.sectionKey) }
-
-    /** The terms section, when the module has one. */
-    val termsSection: FormSection? get() = template.section(FormTemplate.TERMS_SECTION)
 }
 
 // -- shell ----------------------------------------------------------------------

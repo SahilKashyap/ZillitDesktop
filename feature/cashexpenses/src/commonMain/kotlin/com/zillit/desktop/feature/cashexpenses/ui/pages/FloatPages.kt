@@ -30,6 +30,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.textColumn
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
+import com.zillit.desktop.feature.cashexpenses.domain.CashPeople
 import com.zillit.desktop.feature.cashexpenses.domain.CashTopUp
 import com.zillit.desktop.feature.cashexpenses.domain.FloatStatus
 import com.zillit.desktop.feature.cashexpenses.ui.AmountAction
@@ -37,6 +38,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashFormFields
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
 import com.zillit.desktop.feature.cashexpenses.ui.CashPrompt
 import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
+import com.zillit.desktop.feature.cashexpenses.ui.LocalCashPeople
 import com.zillit.desktop.feature.cashexpenses.ui.personColumn
 import com.zillit.desktop.feature.cashexpenses.ui.ConfirmAction
 import com.zillit.desktop.feature.cashexpenses.ui.FloatRequestDraft
@@ -53,7 +55,8 @@ import com.zillit.desktop.feature.cashexpenses.ui.money
  */
 @Composable
 fun ActiveFloatsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
-    val rows = state.activeFloats.filter { it.matches(state.search) }
+    val people = LocalCashPeople.current
+    val rows = state.activeFloats.filter { it.matches(state.search, people) }
 
     FixedPage {
         Row(
@@ -111,7 +114,8 @@ private fun floatActionColumn(
     header = "",
     width = ColumnWidth.Fixed(ACTION_COLUMN),
     cell = { row ->
-        val action = row.nextAction()
+        val holder = LocalCashPeople.current.nameOrNull(row.userId, row.holderName) ?: "the holder"
+        val action = row.nextAction(holder)
         if (action == null || !state.viewer.isAccountant) {
             ZillitText(
                 text = "—",
@@ -128,7 +132,7 @@ private fun floatActionColumn(
                                 action = action.action,
                                 targetId = row.id,
                                 title = action.label,
-                                message = action.message(row),
+                                message = action.message,
                             ),
                         ),
                     )
@@ -144,32 +148,33 @@ private fun floatActionColumn(
 private data class FloatAction(
     val label: String,
     val action: ConfirmAction,
-    val message: (CashFloat) -> String,
+    val message: String,
 )
 
-private fun CashFloat.nextAction(): FloatAction? = when (status) {
+/** [holder] is the name the confirmation addresses, already looked up. */
+private fun CashFloat.nextAction(holder: String): FloatAction? = when (status) {
     FloatStatus.Approved, FloatStatus.AcctOverride -> FloatAction(
         label = "Ready to collect",
         action = ConfirmAction.ReadyToCollect,
-        message = { "Tell ${it.holderName.ifBlank { "the holder" }} their cash is ready to pick up." },
+        message = "Tell $holder their cash is ready to pick up.",
     )
 
     FloatStatus.ReadyToCollect -> FloatAction(
         label = "Mark collected",
         action = ConfirmAction.CollectFloat,
-        message = { "Record that ${money(it.requestedAmount, it.currency)} was handed over." },
+        message = "Record that ${money(requestedAmount, currency)} was handed over.",
     )
 
     FloatStatus.Spent, FloatStatus.PendingReturn -> FloatAction(
         label = "Close float",
         action = ConfirmAction.CloseFloat,
-        message = { "Closing is final. Any outstanding return must be recorded first." },
+        message = "Closing is final. Any outstanding return must be recorded first.",
     )
 
     FloatStatus.AwaitingApproval -> FloatAction(
         label = "Issue",
         action = ConfirmAction.IssueFloat,
-        message = { "Issue this float without waiting for the approval chain." },
+        message = "Issue this float without waiting for the approval chain.",
     )
 
     else -> null
@@ -400,6 +405,7 @@ private fun topUpActionColumn(
     header = "",
     width = ColumnWidth.Fixed(TOPUP_ACTION_COLUMN),
     cell = { row ->
+        val holder = LocalCashPeople.current.nameOrNull(row.userId, row.holderName) ?: "the holder"
         if (row.status != PENDING) {
             ZillitText(
                 text = "—",
@@ -417,8 +423,7 @@ private fun topUpActionColumn(
                                     action = ConfirmAction.CompleteTopUp,
                                     targetId = row.id,
                                     title = "Complete top-up",
-                                    message = "Record ${money(row.amount, row.currency)} handed to " +
-                                        "${row.holderName.ifBlank { "the holder" }}.",
+                                    message = "Record ${money(row.amount, row.currency)} handed to $holder.",
                                 ),
                             ),
                         )
@@ -470,11 +475,9 @@ private fun topUpActionColumn(
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
 private fun topUpColumns(showHolder: Boolean): List<TableColumn<CashTopUp>> = buildList {
     if (showHolder) {
-        add(
-            personColumn("Holder", ColumnWidth.Weight(1.6f), userId = { it.userId }) {
-                it.holderName.ifBlank { it.userId }
-            },
-        )
+        // The web treats a top-up's `holder_name` as the holder's id when
+        // `user_id` is missing, so it is only a fallback for the lookup.
+        add(personColumn("Holder", ColumnWidth.Weight(1.6f), userId = { it.userId }) { it.holderName })
     }
     add(textColumn("Float", ColumnWidth.Weight(1f), muted = true) { it.floatRequestNumber ?: "—" })
     add(textColumn("Requested", ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) })
@@ -514,10 +517,11 @@ private fun crewFloatColumns(): List<TableColumn<CashFloat>> = listOf(
     ),
 )
 
-private fun CashFloat.matches(query: String): Boolean {
+/** By the name on screen, which is the crew list's rather than the row's — see [CashPeople]. */
+private fun CashFloat.matches(query: String, people: CashPeople): Boolean {
     if (query.isBlank()) return true
     val needle = query.trim().lowercase()
-    return holderName.lowercase().contains(needle) ||
+    return people.nameOrNull(userId, holderName).orEmpty().lowercase().contains(needle) ||
         requestNumber.lowercase().contains(needle) ||
         purpose?.lowercase()?.contains(needle) == true
 }

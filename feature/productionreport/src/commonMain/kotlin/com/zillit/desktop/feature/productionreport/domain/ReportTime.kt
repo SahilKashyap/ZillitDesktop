@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.productionreport.domain
 
 import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
@@ -72,6 +73,42 @@ object ReportTime {
             stored.startsWith("Other:") -> stored.removePrefix("Other:")
             else -> stored
         }
+
+    /** Whether [value] is an epoch-ms number from an older writer — the only thing the codec rewrites. */
+    fun isLegacyEpoch(value: String): Boolean = legacyEpoch(value.trim()) != null
+
+    /** Today's local calendar date in wire shape — `todayYmd()`. */
+    fun todayYmd(nowMillis: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
+        val date = Instant.fromEpochMilliseconds(nowMillis).toLocalDateTime(zone).date
+        return "${date.year}-${date.monthNumber.pad()}-${date.dayOfMonth.pad()}"
+    }
+
+    /**
+     * The document header's date — `Wednesday 5th March, 2025`. A wire date
+     * is a LOCAL calendar day (the web parsed it as UTC midnight and showed the
+     * day before west of UTC); a legacy epoch folds to local; blank is `""`;
+     * anything unreadable shows as written.
+     */
+    fun headerDate(value: String, zone: TimeZone = TimeZone.currentSystemDefault()): String {
+        val ymd = toWireDate(value, zone)
+        if (ymd.isEmpty()) return value.trim()
+        val date = runCatching { LocalDate.parse(ymd) }.getOrNull() ?: return value.trim()
+        val day = date.dayOfMonth
+        val suffix = when {
+            day in TEENS -> "th"
+            day % DECADE == 1 -> "st"
+            day % DECADE == 2 -> "nd"
+            day % DECADE == THIRD -> "rd"
+            else -> "th"
+        }
+        val weekday = date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
+        val month = date.month.name.lowercase().replaceFirstChar { it.uppercase() }
+        return "$weekday $day$suffix $month, ${date.year}"
+    }
+
+    private val TEENS = 11..13
+    private const val DECADE = 10
+    private const val THIRD = 3
 
     private fun legacyEpoch(value: String): Long? =
         value.toLongOrNull()?.takeIf { it in EPOCH_MS_MIN until EPOCH_MS_MAX }

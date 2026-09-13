@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.boxschedule.data
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.AppConfig
+import com.zillit.desktop.core.config.ZillitRealtimeEndpoint
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
@@ -14,30 +15,30 @@ import com.zillit.desktop.feature.boxschedule.domain.BlockDraft
 import com.zillit.desktop.feature.boxschedule.domain.BlockWrite
 import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleRepository
 import com.zillit.desktop.feature.boxschedule.domain.ConflictAction
-import com.zillit.desktop.feature.boxschedule.domain.DateConflict
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
-import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
 import com.zillit.desktop.feature.boxschedule.domain.DiaryPdf
 import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfAction
 import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfOptions
+import com.zillit.desktop.feature.boxschedule.domain.DiaryRevision
+import com.zillit.desktop.feature.boxschedule.domain.HistoryEntry
 import com.zillit.desktop.feature.boxschedule.domain.NoteType
+import com.zillit.desktop.feature.boxschedule.domain.PERSONAL_NOTE_LABEL
+import com.zillit.desktop.feature.boxschedule.domain.PERSONAL_NOTE_TYPE
 import com.zillit.desktop.feature.boxschedule.domain.RecurrenceScope
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleBlock
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleType
+import com.zillit.desktop.feature.boxschedule.domain.UserPreset
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 
 /**
@@ -53,9 +54,10 @@ import kotlinx.serialization.json.put
  *  - `repeatEndDate` is `0` when there is no repeat, not null;
  *  - `scheduleDayId` is OMITTED (never null) when an event stands alone;
  *  - a recurring edit's `occurrence_date` is the occurrence's `startDateTime`;
- *    scope `all` omits the query params entirely.
+ *    scope `all` omits the query params entirely on an update, and sends
+ *    `delete_type=all` alone on a delete.
  */
-@Suppress("TooManyFunctions") // One function per REST route; the service has twenty-one.
+@Suppress("TooManyFunctions") // One function per REST route; the service has twenty-five.
 class BoxScheduleRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
@@ -64,7 +66,12 @@ class BoxScheduleRepositoryImpl(
     private val currentProjectId: () -> String? = { null },
 ) : BoxScheduleRepository {
 
-    private val base = "${config.apiV2(ZillitService.PreAndProduction).trimEnd('/')}/box-schedule"
+    private val api = config.apiV2(ZillitService.PreAndProduction).trimEnd('/')
+    private val base = "$api/box-schedule"
+    private val presetBase = "$api/user-preset"
+
+    /** The web app's origin — a share link is a path on it. */
+    private val webOrigin = config.realtime[ZillitRealtimeEndpoint.Call]?.trimEnd('/').orEmpty()
 
     /**
      * See [BoxScheduleRepository.refreshes]. Another production's frame is
@@ -82,8 +89,24 @@ class BoxScheduleRepositoryImpl(
             (data as? JsonArray).items().mapNotNull { parseType(it as? JsonObject) }
         }
 
-    override suspend fun createType(title: String, color: String): ZillitResult<Unit> =
-        write(HttpVerb.Post, "$base/types", buildJsonObject { put("title", title); put("color", color) })
+    override suspend fun createType(title: String, color: String): ZillitResult<String?> =
+        when (
+            val envelope = apiClient.envelope(
+                HttpVerb.Post,
+                "$base/types",
+                RequestModule.ProjectUser,
+                buildJsonObject { put("title", title); put("color", color) },
+            )
+        ) {
+            is ZillitResult.Failure -> envelope
+            is ZillitResult.Success ->
+                if (envelope.data.status == 0) {
+                    ZillitResult.Failure(rejected(envelope.data))
+                } else {
+                    val id = (envelope.data.data as? JsonObject)?.text("_id", "id")
+                    ZillitResult.Success(id?.takeIf { it.isNotBlank() })
+                }
+        }
 
     override suspend fun updateType(id: String, title: String?, color: String?): ZillitResult<Unit> =
         write(
@@ -139,7 +162,8 @@ class BoxScheduleRepositoryImpl(
                 }
             }
             is ZillitResult.Failure -> {
-                // A 409 carries the same `conflicts` list in its body.
+                // A 409's body is not carried this far; the caller names the
+                // colliding dates from the schedule it already holds.
                 val error = envelope.error
                 if (error is ZillitError.Http && error.status == HTTP_CONFLICT) {
                     ZillitResult.Success(BlockWrite.Conflicts(emptyList()))
@@ -150,11 +174,29 @@ class BoxScheduleRepositoryImpl(
         }
     }
 
-    override suspend fun deleteBlock(id: String): ZillitResult<Unit> =
-        write(HttpVerb.Delete, "$base/days/$id", null)
+    override suspend fun renameBlock(id: String, title: String): ZillitResult<Unit> =
+        write(HttpVerb.Put, "$base/days/$id", buildJsonObject { put("title", title) })
 
-    override suspend fun removeDates(entries: Map<String, List<Long>>): ZillitResult<Unit> =
-        write(
+    override suspend fun changeSingleDay(
+        id: String,
+        date: Long,
+        typeId: String,
+        action: ConflictAction,
+    ): ZillitResult<Unit> = write(
+        HttpVerb.Put,
+        "$base/days/$id/single-date",
+        buildJsonObject {
+            put("date", date)
+            put("typeId", typeId)
+            put("action", action.wire)
+        },
+    )
+
+    override suspend fun deleteBlock(id: String): ZillitResult<String?> =
+        writeWithMessage(HttpVerb.Delete, "$base/days/$id", null)
+
+    override suspend fun removeDates(entries: Map<String, List<Long>>): ZillitResult<String?> =
+        writeWithMessage(
             HttpVerb.Post,
             "$base/days/remove-dates",
             buildJsonObject {
@@ -190,14 +232,20 @@ class BoxScheduleRepositoryImpl(
                 (data as? JsonArray).items().mapNotNull { parseEvent(it as? JsonObject) }
             }
 
+    /**
+     * The note kinds, with the Personal Note's label forced — the web's
+     * `normalizeNoteTypeOptions`: the server may still send "Crew Start".
+     */
     override suspend fun noteTypes(): ZillitResult<List<NoteType>> =
         get("$base/events/note-types").mapData { data ->
-            (data as? JsonArray).items().mapNotNull { row ->
+            val rows = (data as? JsonArray) ?: ((data as? JsonObject)?.get("data") as? JsonArray)
+            rows.items().mapNotNull { row ->
                 val obj = row as? JsonObject ?: return@mapNotNull null
+                val value = obj.text("value")
                 NoteType(
-                    value = obj.text("value"),
-                    label = obj.text("label"),
-                    hideDistribution = obj.bool("hide_distribution"),
+                    value = value,
+                    label = if (value == PERSONAL_NOTE_TYPE) PERSONAL_NOTE_LABEL else obj.text("label"),
+                    hideDistribution = obj.text("hide_distribution").equals("true", ignoreCase = true),
                 ).takeIf { it.value.isNotBlank() }
             }
         }
@@ -214,25 +262,72 @@ class BoxScheduleRepositoryImpl(
         HttpVerb.Put,
         "$base/events/$id",
         eventWire(draft, create = false),
-        query = recurrenceQuery("update_type", scope, occurrenceDate),
+        query = updateQuery(scope, occurrenceDate),
     )
 
     override suspend fun deleteEvent(
         id: String,
-        scope: RecurrenceScope,
+        scope: RecurrenceScope?,
         occurrenceDate: Long?,
     ): ZillitResult<Unit> = write(
         HttpVerb.Delete,
         "$base/events/$id",
         null,
-        query = recurrenceQuery("delete_type", scope, occurrenceDate),
+        query = deleteQuery(scope, occurrenceDate),
     )
 
-    private fun recurrenceQuery(key: String, scope: RecurrenceScope, occurrenceDate: Long?): Map<String, Any?> =
-        buildMap {
-            scope.wire?.let { wire ->
-                put(key, wire)
-                occurrenceDate?.let { put("occurrence_date", it) }
+    override suspend fun history(): ZillitResult<List<HistoryEntry>> =
+        apiClient.envelope(
+            HttpVerb.Get,
+            "$base/activity-log",
+            RequestModule.ProjectUser,
+            queryParameters = mapOf("limit" to HISTORY_PAGE, "page" to 0),
+            options = CallOptions(readCache = false),
+        ).mapData(::parseHistory)
+
+    override suspend fun revisions(): ZillitResult<List<DiaryRevision>> =
+        apiClient.envelope(
+            HttpVerb.Get,
+            "$base/revisions",
+            RequestModule.ProjectUser,
+            options = CallOptions(readCache = false),
+        ).mapData(::parseRevisions)
+
+    override suspend fun presets(): ZillitResult<List<UserPreset>> =
+        get(presetBase).mapData(::parsePresets)
+
+    override suspend fun savePreset(presetId: String?, name: String, userIds: List<String>): ZillitResult<Unit> =
+        write(
+            HttpVerb.Post,
+            presetBase,
+            buildJsonObject {
+                put("preset_name", name.trim())
+                put("user_ids", buildJsonArray { userIds.forEach { add(JsonPrimitive(it)) } })
+                presetId?.takeIf { it.isNotBlank() }?.let { put("preset_id", it) }
+            },
+        )
+
+    override suspend fun deletePreset(presetId: String): ZillitResult<Unit> =
+        write(HttpVerb.Delete, "$presetBase/$presetId", null)
+
+    override suspend fun shareLink(): ZillitResult<String> =
+        when (
+            val envelope = apiClient.envelope(
+                HttpVerb.Post,
+                "$base/share/generate-link",
+                RequestModule.ProjectUser,
+                buildJsonObject { },
+            )
+        ) {
+            is ZillitResult.Failure -> envelope
+            is ZillitResult.Success -> {
+                val path = (envelope.data.data as? JsonObject)?.text("shareUrl").orEmpty()
+                when {
+                    envelope.data.status == 0 -> ZillitResult.Failure(rejected(envelope.data))
+                    path.isBlank() -> ZillitResult.Failure(ZillitError.Serialization("the share answer named no link"))
+                    path.startsWith("http") -> ZillitResult.Success(path)
+                    else -> ZillitResult.Success("$webOrigin/${path.trimStart('/')}")
+                }
             }
         }
 
@@ -267,14 +362,26 @@ class BoxScheduleRepositoryImpl(
         url: String,
         body: JsonObject?,
         query: Map<String, Any?> = emptyMap(),
-    ): ZillitResult<Unit> =
+    ): ZillitResult<Unit> = when (val result = writeWithMessage(verb, url, body, query)) {
+        is ZillitResult.Failure -> result
+        is ZillitResult.Success -> ZillitResult.Success(Unit)
+    }
+
+    /** A write whose success message the page shows — the web's `apiMessage`. */
+    private suspend fun writeWithMessage(
+        verb: HttpVerb,
+        url: String,
+        body: JsonObject?,
+        query: Map<String, Any?> = emptyMap(),
+    ): ZillitResult<String?> =
         when (val envelope = apiClient.envelope(verb, url, RequestModule.ProjectUser, body, query)) {
             is ZillitResult.Failure -> envelope
             is ZillitResult.Success ->
                 if (envelope.data.status == 0) {
                     ZillitResult.Failure(rejected(envelope.data))
                 } else {
-                    ZillitResult.Success(Unit)
+                    val nested = (envelope.data.data as? JsonObject)?.text("message")
+                    ZillitResult.Success(nested?.takeIf { it.isNotBlank() } ?: envelope.data.message)
                 }
         }
 
@@ -290,189 +397,31 @@ class BoxScheduleRepositoryImpl(
         }
 
     private fun rejected(envelope: ApiEnvelope): ZillitError =
-        ZillitError.Http(status = HTTP_OK, serverMessage = envelope.message ?: "something_went_wrong")
+        ZillitError.Http(
+            status = HTTP_OK,
+            serverMessage = envelope.message ?: "something_went_wrong",
+            messageElements = envelope.messageElements.orEmpty(),
+        )
 
     private companion object {
         const val HTTP_OK = 200
         const val HTTP_CONFLICT = 409
+        const val HISTORY_PAGE = 200
     }
 }
 
-
-// Parsers --------------------------------------------------------------
-
-private fun parseType(obj: JsonObject?): ScheduleType? {
-    if (obj == null) return null
-    val id = obj.text("_id", "id")
-    if (id.isBlank()) return null
-    return ScheduleType(
-        id = id,
-        title = obj.text("title"),
-        color = obj.text("color"),
-        systemDefined = obj.bool("systemDefined"),
-    )
-}
-
-private fun parseBlock(obj: JsonObject?): ScheduleBlock? {
-    if (obj == null) return null
-    val id = obj.text("_id", "id")
-    if (id.isBlank()) return null
-    val typeField = obj["typeId"]
-    val typeId = (typeField as? JsonObject)?.text("_id", "id") ?: (typeField as? JsonPrimitive)?.content.orEmpty()
-    return ScheduleBlock(
-        id = id,
-        title = obj.text("title"),
-        typeId = typeId,
-        typeName = obj.text("typeName").ifBlank { (typeField as? JsonObject)?.text("title").orEmpty() },
-        color = obj.text("color").ifBlank { (typeField as? JsonObject)?.text("color").orEmpty() },
-        calendarDays = (obj["calendarDays"] as? JsonArray).items().mapNotNull { it.epochMs() },
-        startDate = obj.long("startDate") ?: 0,
-        endDate = obj.long("endDate") ?: 0,
-        numberOfDays = obj.long("numberOfDays")?.toInt() ?: 0,
-        dateRangeType = obj.text("dateRangeType"),
-    )
-}
-
-private fun parseEvent(obj: JsonObject?): DiaryEvent? {
-    if (obj == null) return null
-    val id = obj.text("_id", "id")
-    if (id.isBlank()) return null
-    val kind = DiaryKind.fromWire(obj.text("eventType"))
-    return DiaryEvent(
-        id = id,
-        kind = kind,
-        title = obj.text("title"),
-        body = if (kind == DiaryKind.Note) obj.text("notes") else obj.text("description"),
-        date = obj.long("date") ?: 0,
-        startDateTime = obj.long("startDateTime") ?: 0,
-        endDateTime = obj.long("endDateTime") ?: 0,
-        fullDay = obj.bool("fullDay"),
-        location = obj.text("location"),
-        locationLat = obj.double("locationLat"),
-        locationLng = obj.double("locationLng"),
-        color = obj.text("color"),
-        scheduleDayId = obj.text("scheduleDayId"),
-        noteType = obj.text("noteType"),
-        repeatStatus = obj.text("repeatStatus"),
-        occurrenceId = obj.text("occurrenceId"),
-        masterEventId = obj.text("masterEventId"),
-        isRecurringInstance = obj.bool("isRecurringInstance"),
-        calendarEventId = obj.text("calendarEventId"),
-        callType = obj.text("callType"),
-        cncCallGroupId = obj.text("cncCallGroupId"),
-    )
-}
-
-private fun parseConflicts(data: JsonElement?): List<DateConflict> =
-    ((data as? JsonObject)?.get("conflicts") as? JsonArray).items().mapNotNull { row ->
-        val obj = row as? JsonObject ?: return@mapNotNull null
-        DateConflict(
-            date = obj.long("date") ?: return@mapNotNull null,
-            existingType = obj.text("existingType"),
-            existingColor = obj.text("existingColor"),
-            existingTitle = obj.text("existingTitle"),
-        )
+/** An update: `update_type` + `occurrence_date` for one occurrence or the tail; nothing for the series. */
+internal fun updateQuery(scope: RecurrenceScope, occurrenceDate: Long?): Map<String, Any?> = buildMap {
+    if (scope != RecurrenceScope.All) {
+        put("update_type", scope.wire)
+        occurrenceDate?.let { put("occurrence_date", it) }
     }
+}
 
-/** The event/note body — the exact contract, pinned by test. */
-internal fun eventWire(draft: DiaryDraft, create: Boolean): JsonObject = buildJsonObject {
-    // OMITTED, never null, when unlinked.
-    if (draft.scheduleDayId.isNotBlank()) put("scheduleDayId", draft.scheduleDayId)
-    put("date", draft.date)
-    put("eventType", draft.kind.wire)
-    put("title", draft.title.trim())
-    put("color", draft.color)
-    if (draft.kind == DiaryKind.Note) {
-        put("notes", draft.body)
-        put("noteType", draft.noteType)
-    } else {
-        put("description", draft.body)
-        put("startDateTime", draft.startDateTime)
-        put("endDateTime", draft.endDateTime)
-        put("fullDay", draft.fullDay)
-        put("location", draft.location)
-        // Beside the text, as the web sends them (`CreateEventModal.jsx:540`):
-        // null when the place was typed rather than picked, never omitted.
-        put("locationLat", draft.locationLat)
-        put("locationLng", draft.locationLng)
-        put("repeatStatus", draft.repeatStatus)
-        put("repeatEndDate", draft.repeatEndDate)
-        if (draft.timezone.isNotBlank()) put("timezone", draft.timezone)
-        put("reminder", "none")
-        // What the event already had, not a blank: the write sends the whole
-        // event, so hardcoding "" here erased a call set on another client.
-        put("callType", draft.callType)
-        if (create) put("createEventInCalendar", draft.createInCalendar)
+/** A delete: nothing for a plain row; `delete_type`, plus the occurrence for anything short of the series. */
+internal fun deleteQuery(scope: RecurrenceScope?, occurrenceDate: Long?): Map<String, Any?> = buildMap {
+    if (scope != null) {
+        put("delete_type", scope.wire)
+        if (scope != RecurrenceScope.All) occurrenceDate?.let { put("occurrence_date", it) }
     }
-    // Distribution is deliberately unset: the desktop offers no audience picker
-    // yet, and the wire wants empty arrays rather than nulls when it is.
-    put("distributeTo", "")
-    put("distributeUserIds", buildJsonArray { })
-    put("distributeDepartmentIds", buildJsonArray { })
 }
-
-// Lenient readers ----------------------------------------------------------
-
-private fun JsonObject.firstOf(vararg names: String): JsonElement? =
-    names.firstNotNullOfOrNull { name -> this[name]?.takeIf { it !is JsonNull } }
-
-private fun JsonObject.text(vararg names: String): String =
-    (firstOf(*names) as? JsonPrimitive)?.content.orEmpty()
-
-private fun JsonObject.long(vararg names: String): Long? =
-    firstOf(*names)?.epochMs()
-
-/** Coordinates arrive as numbers or numeric strings, like every other value here. */
-private fun JsonObject.double(vararg names: String): Double? =
-    (firstOf(*names) as? JsonPrimitive)?.content?.toDoubleOrNull()
-
-private fun JsonObject.bool(vararg names: String): Boolean =
-    (firstOf(*names) as? JsonPrimitive)?.content.equals("true", ignoreCase = true)
-
-/**
- * The web's `parseEpochMs`: numbers or numeric strings; values at or below
- * 1e12 are SECONDS and are scaled up.
- */
-private fun JsonElement.epochMs(): Long? {
-    val primitive = this as? JsonPrimitive ?: return null
-    val value = primitive.longOrNull ?: primitive.doubleOrNull?.toLong() ?: return null
-    return if (value in 1..SECONDS_CEILING) value * MS_PER_SECOND else value
-}
-
-private fun JsonArray?.items(): List<JsonElement> = this?.toList() ?: emptyList()
-
-private const val SECONDS_CEILING = 1_000_000_000_000L
-private const val MS_PER_SECOND = 1_000L
-
-/**
- * The `/pdf` query, as the phones send it: `watermark`, `action` and
- * `format` always, and `includePersonalNotes=false` only when the user
- * chose Without. Omitting it is the server's include-everything default, so
- * the default request is byte-identical to the one sent before the option
- * existed (box-schedule-personal-notes.md §2.1).
- */
-internal fun diaryPdfQuery(options: DiaryPdfOptions, action: DiaryPdfAction, watermark: String): Map<String, Any?> =
-    buildMap {
-        put("watermark", watermark)
-        put("action", action.wire)
-        put("format", options.layout.wire)
-        if (!options.includePersonalNotes) put("includePersonalNotes", "false")
-    }
-
-/** The staged file off the attachment shape, or null when the answer names no storage key. */
-internal fun parseDiaryPdf(obj: JsonObject?): DiaryPdf? {
-    val media = obj?.text("media")?.takeIf { it.isNotBlank() } ?: return null
-    return DiaryPdf(
-        media = media,
-        name = obj.text("name").ifBlank { DEFAULT_PDF_NAME },
-        bucket = obj.text("bucket"),
-        region = obj.text("region"),
-        contentType = obj.text("content_type"),
-        contentSubtype = obj.text("content_subtype"),
-        thumbnail = obj.text("thumbnail"),
-        caption = obj.text("caption"),
-        fileSizeBytes = obj.text("file_size").toLongOrNull() ?: 0L,
-    )
-}
-
-private const val DEFAULT_PDF_NAME = "Box Schedule.pdf"

@@ -210,7 +210,7 @@ private fun SettingSwitch(
 
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
 private fun teamColumns(): List<TableColumn<CashTeamMember>> = listOf(
-    personColumn("Name", ColumnWidth.Weight(1.8f), userId = { it.userId }) { it.name.ifBlank { it.userId } },
+    personColumn("Name", ColumnWidth.Weight(1.8f), userId = { it.userId }) { it.name },
     TableColumn(
         header = "Seniority",
         width = ColumnWidth.Weight(1f),

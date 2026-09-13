@@ -83,9 +83,23 @@ class HomeFeedRepositoryImpl(
      * web's `reportsApi` points them.
      */
     private val service: ZillitService = ZillitService.Units,
+    /**
+     * The segment the chat routes sit under, inside [board]. Every board says
+     * `chat` (`info/chat/...`) except the production report's unit chat, whose
+     * routes hang straight off `production-report/` on the report service —
+     * the web's `productionReportApi` and Android's `PRODUCTION_REPORT_CHAT_*`
+     * both spell them that way. Empty means none.
+     */
+    private val chatSegment: String = "chat",
 ) : HomeFeedRepository {
 
     private val home get() = "${config.apiV2(service)}$board/"
+
+    /** The chat routes' root, with its trailing slash: `…/home/chat/`, or `…/production-report/`. */
+    private val chat get() = if (chatSegment.isEmpty()) home else "$home$chatSegment/"
+
+    /** The root itself, where a post is created: `…/home/chat`, or `…/production-report`. */
+    private val chatCollection get() = chat.removeSuffix("/")
 
     /** Home's `home/unit/...` routes stay on the `home` segment for other boards. */
     private val homeUnits get() = "${config.apiV2(ZillitService.Units)}home/"
@@ -117,13 +131,13 @@ class HomeFeedRepositoryImpl(
     ): ZillitResult<List<Notice>> =
         apiClient.request(
             verb = HttpVerb.Get,
-            url = "${home}chat/$unitId/$beforeMillis/previous",
+            url = "${chat}$unitId/$beforeMillis/previous",
             serializer = ListSerializer(JsonElement.serializer()),
             module = RequestModule.ProjectUser,
             // The only page ever asked for is the newest one, from "now" — a
             // URL that differs on every load. Kept under one name so the board
             // still shows offline what it showed last time.
-            options = CallOptions(cacheAs = "${home}chat/$unitId/newest"),
+            options = CallOptions(cacheAs = "${chat}$unitId/newest"),
         ).map { rows ->
             rows.mapNotNull { readNotice(it, ::decryptBody) }.forDisplay()
         }
@@ -194,7 +208,7 @@ class HomeFeedRepositoryImpl(
 
         return apiClient.request(
             verb = HttpVerb.Post,
-            url = "${home}chat",
+            url = chatCollection,
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
             body = jsonBody(
@@ -248,7 +262,7 @@ class HomeFeedRepositoryImpl(
 
         return apiClient.request(
             verb = HttpVerb.Post,
-            url = "${home}chat",
+            url = chatCollection,
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
             body = jsonBody(
@@ -275,7 +289,7 @@ class HomeFeedRepositoryImpl(
     override suspend fun watermarkedAttachment(noticeId: String): ZillitResult<NoticeAttachment> =
         apiClient.request(
             verb = HttpVerb.Get,
-            url = "${home}chat/watermark/$noticeId",
+            url = "${chat}watermark/$noticeId",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
         ).flatMap { row ->
@@ -296,7 +310,7 @@ class HomeFeedRepositoryImpl(
     override suspend fun readBy(noticeId: String, commentId: String?): ZillitResult<ReadBy> =
         apiClient.request(
             verb = HttpVerb.Get,
-            url = "${home}chat/readby/$noticeId",
+            url = "${chat}readby/$noticeId",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
             queryParameters = commentId?.let { mapOf("commentId" to it) }.orEmpty(),
@@ -321,7 +335,7 @@ class HomeFeedRepositoryImpl(
 
         return apiClient.request(
             verb = HttpVerb.Put,
-            url = "${home}chat/${notice.id}",
+            url = "${chat}${notice.id}",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
             body = jsonBody(
@@ -373,7 +387,7 @@ class HomeFeedRepositoryImpl(
 
         return apiClient.request(
             verb = HttpVerb.Post,
-            url = "${home}chat/comments/$noticeId",
+            url = "${chat}comments/$noticeId",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
             body = jsonBody(
@@ -408,7 +422,7 @@ class HomeFeedRepositoryImpl(
 
         return apiClient.request(
             verb = HttpVerb.Put,
-            url = "${home}chat/comments/$noticeId/$commentId",
+            url = "${chat}comments/$noticeId/$commentId",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
             body = jsonBody(EditCommentDto(message = encrypted, messageTranslation = encrypted)),
@@ -424,7 +438,7 @@ class HomeFeedRepositoryImpl(
     ): ZillitResult<Unit> =
         apiClient.envelope(
             verb = HttpVerb.Delete,
-            url = "${home}chat/comments/$noticeId/$commentId",
+            url = "${chat}comments/$noticeId/$commentId",
             module = RequestModule.ProjectUser,
         ).map { }
 
@@ -441,7 +455,7 @@ class HomeFeedRepositoryImpl(
 
         return apiClient.request(
             verb = HttpVerb.Put,
-            url = "${home}chat/$noticeId",
+            url = "${chat}$noticeId",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
             body = jsonBody(EditCommentDto(message = encrypted, messageTranslation = encrypted)),
@@ -457,7 +471,7 @@ class HomeFeedRepositoryImpl(
     override suspend fun deleteNotice(noticeId: String): ZillitResult<Unit> =
         apiClient.envelope(
             verb = HttpVerb.Put,
-            url = "${home}chat/delete/chats",
+            url = "${chat}delete/chats",
             module = RequestModule.ProjectUser,
             body = jsonBody(DeleteNoticesDto(chatIds = listOf(noticeId))),
         ).map { }

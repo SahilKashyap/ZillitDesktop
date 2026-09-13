@@ -21,6 +21,7 @@ import com.zillit.desktop.core.designsystem.component.ColumnWidth
 import com.zillit.desktop.core.designsystem.component.TableColumn
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.feature.cashexpenses.domain.CashPeople
 
 /**
  * Faces for the cash tool — the crew photo beside every name.
@@ -39,28 +40,44 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 val LocalCashFaces: ProvidableCompositionLocal<suspend (String) -> ImageBitmap?> =
     staticCompositionLocalOf { { _: String -> null } }
 
-/** Puts [load] in reach of every person shown below it. */
+/**
+ * Who each user id is — the name beside every face.
+ *
+ * A local for the same reason as [LocalCashFaces]: the names are drawn in the
+ * same table cells. Empty by default, so a screen composed without a crew list
+ * says "Unknown" rather than printing ids.
+ */
+val LocalCashPeople: ProvidableCompositionLocal<CashPeople> = staticCompositionLocalOf { CashPeople() }
+
+/** Puts [load] and [people] in reach of every person shown below them. */
 @Composable
-fun ProvideCashFaces(load: suspend (String) -> ImageBitmap?, content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalCashFaces provides load, content = content)
+fun ProvideCashFaces(
+    load: suspend (String) -> ImageBitmap?,
+    people: CashPeople = CashPeople(),
+    content: @Composable () -> Unit,
+) {
+    CompositionLocalProvider(LocalCashFaces provides load, LocalCashPeople provides people, content = content)
 }
 
 /**
  * One person: their photo, their name, and optionally what they are here as.
  *
- * [userId] may be blank — a float can outlive the crew member who held it —
- * in which case the avatar falls back to initials from the name, which is what
- * [ZillitAvatar] does with no image anyway.
+ * The name is looked up from [userId] in [LocalCashPeople], as the web does on
+ * every cash screen; [recordedName] is what the row itself carried, used only
+ * when the crew list does not know the id. Never the id itself — see
+ * [CashPeople]. With no [userId] (a float can outlive the crew member who held
+ * it) the avatar falls back to initials, which is what [ZillitAvatar] does with
+ * no image anyway.
  */
 @Composable
 fun CashPerson(
-    name: String,
     userId: String?,
     modifier: Modifier = Modifier,
+    recordedName: String? = null,
     secondary: String? = null,
     size: Dp = PERSON_AVATAR,
 ) {
-    val shown = name.ifBlank { "Unknown" }
+    val shown = LocalCashPeople.current.nameOf(userId, recordedName)
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
@@ -116,15 +133,19 @@ private const val PERSON_WEIGHT = 1.4f
  * A table column of people — the face beside the name, in a cell.
  *
  * Its own helper rather than `textColumn`, because a column of names is the
- * one column in these tables an accountant scans by recognition.
+ * one column in these tables an accountant scans by recognition. The name
+ * comes from [userId]; [recordedName] is the row's own, for someone the crew
+ * list does not know — see [CashPerson].
  */
 fun <T> personColumn(
     header: String,
     width: ColumnWidth = ColumnWidth.Weight(PERSON_WEIGHT),
     userId: (T) -> String?,
-    name: (T) -> String,
+    recordedName: (T) -> String? = { null },
 ): TableColumn<T> = TableColumn(
     header = header,
     width = width,
-    cell = { row -> CashPerson(name = name(row), userId = userId(row), modifier = Modifier.fillMaxWidth()) },
+    cell = { row ->
+        CashPerson(userId = userId(row), recordedName = recordedName(row), modifier = Modifier.fillMaxWidth())
+    },
 )

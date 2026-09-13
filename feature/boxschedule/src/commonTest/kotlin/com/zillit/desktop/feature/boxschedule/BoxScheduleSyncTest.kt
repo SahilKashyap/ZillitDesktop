@@ -1,26 +1,11 @@
 package com.zillit.desktop.feature.boxschedule
 
-import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.boxschedule.data.matchesProject
-import com.zillit.desktop.feature.boxschedule.domain.BlockDraft
-import com.zillit.desktop.feature.boxschedule.domain.BlockWrite
-import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleRepository
 import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleViewer
-import com.zillit.desktop.feature.boxschedule.domain.ConflictAction
-import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
-import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
 import com.zillit.desktop.feature.boxschedule.domain.MainCalendarLookup
-import com.zillit.desktop.feature.boxschedule.domain.DiaryPdf
-import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfAction
-import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfOptions
-import com.zillit.desktop.feature.boxschedule.domain.NoteType
-import com.zillit.desktop.feature.boxschedule.domain.RecurrenceScope
-import com.zillit.desktop.feature.boxschedule.domain.ScheduleBlock
-import com.zillit.desktop.feature.boxschedule.domain.ScheduleType
 import com.zillit.desktop.feature.boxschedule.ui.BoxScheduleViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -50,44 +35,11 @@ class BoxScheduleSyncTest {
 
     @AfterTest fun tearDown() = Dispatchers.resetMain()
 
-    private class FakeRepository(override val refreshes: Flow<Unit>) : BoxScheduleRepository {
-        var blockLoads = 0
-
-        override suspend fun types() = ZillitResult.Success(emptyList<ScheduleType>())
-        override suspend fun createType(title: String, color: String) = ZillitResult.Success(Unit)
-        override suspend fun updateType(id: String, title: String?, color: String?) =
-            ZillitResult.Success(Unit)
-        override suspend fun deleteType(id: String) = ZillitResult.Success(Unit)
-        override suspend fun blocks(): ZillitResult<List<ScheduleBlock>> {
-            blockLoads++
-            return ZillitResult.Success(emptyList())
-        }
-        override suspend fun createBlock(draft: BlockDraft, resolve: ConflictAction?):
-            ZillitResult<BlockWrite> = ZillitResult.Success(BlockWrite.Saved)
-        override suspend fun updateBlock(id: String, draft: BlockDraft, resolve: ConflictAction?):
-            ZillitResult<BlockWrite> = ZillitResult.Success(BlockWrite.Saved)
-        override suspend fun deleteBlock(id: String) = ZillitResult.Success(Unit)
-        override suspend fun removeDates(entries: Map<String, List<Long>>) = ZillitResult.Success(Unit)
-        override suspend fun duplicateBlock(sourceId: String, newStartDate: Long) =
-            ZillitResult.Success(Unit)
-        override suspend fun events(scheduleDayId: String?) =
-            ZillitResult.Success(emptyList<DiaryEvent>())
-        override suspend fun noteTypes() = ZillitResult.Success(emptyList<NoteType>())
-        override suspend fun pdf(options: DiaryPdfOptions, action: DiaryPdfAction, watermark: String) =
-            ZillitResult.Success(DiaryPdf(media = "box/diary.pdf", name = "Box Schedule.pdf"))
-        override suspend fun createEvent(draft: DiaryDraft) = ZillitResult.Success(Unit)
-        override suspend fun updateEvent(
-            id: String, draft: DiaryDraft, scope: RecurrenceScope, occurrenceDate: Long?,
-        ) = ZillitResult.Success(Unit)
-        override suspend fun deleteEvent(id: String, scope: RecurrenceScope, occurrenceDate: Long?) =
-            ZillitResult.Success(Unit)
-    }
-
     @Test
     fun `an emitted event re-runs the load once, and a second start does not stack`() =
         runTest(dispatcher) {
             val events = MutableSharedFlow<Unit>()
-            val repository = FakeRepository(events)
+            val repository = FakeDiaryRepository(refreshes = events)
             val model = BoxScheduleViewModel(
                 repository = repository,
                 calendar = MainCalendarLookup { _, _ -> emptyList() },

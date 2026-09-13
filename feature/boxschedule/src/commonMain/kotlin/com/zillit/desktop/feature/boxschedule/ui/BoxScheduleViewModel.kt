@@ -1,498 +1,321 @@
-@file:Suppress("TooManyFunctions") // One handler per user act.
-
 package com.zillit.desktop.feature.boxschedule.ui
 
-import com.zillit.desktop.core.localization.localised
-import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
-import com.zillit.desktop.feature.boxschedule.domain.BlockDraft
-import com.zillit.desktop.feature.boxschedule.domain.BlockWrite
+import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleHost
 import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleRepository
 import com.zillit.desktop.feature.boxschedule.domain.BoxScheduleViewer
-import com.zillit.desktop.feature.boxschedule.domain.ConflictAction
-import com.zillit.desktop.feature.boxschedule.domain.DiaryClock
-import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
+import com.zillit.desktop.feature.boxschedule.domain.CalendarMode
+import com.zillit.desktop.feature.boxschedule.domain.DiaryCalendar
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
 import com.zillit.desktop.feature.boxschedule.domain.DiaryMath
-import com.zillit.desktop.feature.boxschedule.domain.DiaryPdf
-import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfAction
-import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfPublisher
-import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfTransfer
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPreferences
+import com.zillit.desktop.feature.boxschedule.domain.DiaryView
+import com.zillit.desktop.feature.boxschedule.domain.ListMode
 import com.zillit.desktop.feature.boxschedule.domain.MainCalendarLookup
-import com.zillit.desktop.feature.boxschedule.domain.RecurrenceScope
+import com.zillit.desktop.feature.boxschedule.domain.NoteType
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.conflate
+import kotlinx.datetime.LocalDate
 
 /**
- * The production diary.
+ * The production diary — the web's `BoxSchedulePage`.
  *
- * Every mutation is fire-then-refetch, like the web (nothing is optimistic
- * except nothing — the web's one splice path is for recurring PUTs, and this
- * client refetches instead). Types are refetched with the blocks because
- * their names and colours are denormalised onto every block.
+ * Every mutation is fire-then-refetch, as the web's `refreshAll` after each
+ * write. Types are refetched with the blocks because their names and colours
+ * are denormalised onto every block. The page's surfaces each have their own
+ * handler — [ScheduleActions], [EntryActions], [PanelActions] — and this class
+ * keeps the load, the chrome and the dispatch.
+ *
+ * Every write is re-checked against [BoxScheduleViewer.mayEdit] in its
+ * handler, not only hidden on screen: a button can outlive the rights that
+ * drew it.
  */
+@Suppress("TooManyFunctions") // The load, the page's chrome, and the helpers its three action classes share.
 class BoxScheduleViewModel(
-    private val repository: BoxScheduleRepository,
+    repository: BoxScheduleRepository,
     private val calendar: MainCalendarLookup,
     private val resolveViewer: () -> BoxScheduleViewer,
     private val nowMillis: () -> Long,
-    /** Saves the generated PDF and opens it; null on a host without Downloads. */
-    private val transfer: DiaryPdfTransfer? = null,
-    /** Publishes it into Document Distribution; null on a host without the library. */
-    private val publisher: DiaryPdfPublisher? = null,
-    /** Posting rights on Document Distribution, read when the dialog opens. */
-    private val canPublish: () -> Boolean = { false },
-    /** Stamped onto the PDF — the phones send the user's full name. */
-    private val watermark: () -> String = { "" },
+    internal val host: BoxScheduleHost = BoxScheduleHost(),
 ) : ZillitViewModel<BoxScheduleUiState, BoxScheduleEvent, BoxScheduleEffect>(BoxScheduleUiState()) {
 
+    internal val repo: BoxScheduleRepository = repository
+
+    private val schedules = ScheduleActions(this)
+    private val entries = EntryActions(this)
+    private val panels = PanelActions(this)
+
+    private var listening = false
+
     fun start() {
-        setState { copy(viewer = resolveViewer()) }
+        val zone = host.zone()
+        val now = nowMillis()
+        val today = DiaryCalendar.dateOf(now, zone)
+        setState {
+            copy(
+                viewer = resolveViewer(),
+                zone = zone,
+                nowMillis = now,
+                today = today,
+                people = host.directory.people(),
+                canPublish = host.publisher != null && host.canPublish(),
+                canPrint = host.printer != null,
+                page = if (page.month == null) page.focusedOn(today) else page,
+            )
+        }
         refresh()
         listenOnce()
+        launch { restoreDefaults() }
     }
 
     /**
      * Re-runs the one big load when the socket says another client changed
      * the diary — the web's three `BoxScheduleSocketRefresh` mounts
-     * (`boxScheduleV2/index.jsx:1538-1554`) collapse into this refresh,
-     * which already refetches types, blocks, events, and the calendar
-     * merge. Guarded so a second start (the window reopening) does not
-     * stack collectors; `conflate()` folds a burst into one reload — the
-     * web debounces ~300ms for the same reason.
+     * (`boxScheduleV2/index.jsx:1538-1554`) collapse into this refresh.
+     * Guarded so a second start (the window reopening) does not stack
+     * collectors; `conflate()` folds a burst into one reload — the web
+     * debounces ~300ms for the same reason.
      */
     private fun listenOnce() {
         if (listening) return
         listening = true
-        launch {
-            repository.refreshes.conflate().collect { refresh() }
+        launch { repo.refreshes.conflate().collect { refresh() } }
+        launch { host.historyBadge.collect { count -> setState { copy(historyBadge = count) } } }
+    }
+
+    /** The views the viewer chose as defaults — `localStorage` on the web, preferences here. */
+    private suspend fun restoreDefaults() {
+        val prefs = host.preferences
+        val view = prefs.read(DiaryPreferences.DEFAULT_VIEW)?.let { saved ->
+            DiaryView.entries.firstOrNull { it.name == saved }
+        }
+        val mode = prefs.read(DiaryPreferences.CALENDAR_MODE)?.let { saved ->
+            CalendarMode.entries.firstOrNull { it.name == saved }
+        }
+        val list = prefs.read(DiaryPreferences.LIST_MODE)?.let { saved ->
+            ListMode.entries.firstOrNull { it.name == saved }
+        }
+        setState {
+            copy(
+                page = page.copy(
+                    view = view ?: page.view,
+                    defaultView = view ?: page.defaultView,
+                    calendarMode = mode ?: page.calendarMode,
+                    defaultCalendarMode = mode ?: page.defaultCalendarMode,
+                    listMode = list ?: page.listMode,
+                    defaultListMode = list ?: page.defaultListMode,
+                ),
+            )
         }
     }
 
-    private var listening = false
-
-    @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
     override fun onEvent(event: BoxScheduleEvent) {
         when (event) {
-            BoxScheduleEvent.Refresh -> refresh()
-            is BoxScheduleEvent.JoinCall -> joinCall(event.listKey)
-            BoxScheduleEvent.NewBlock -> setState {
-                copy(blockEditor = BlockEditor(typeId = types.firstOrNull()?.id.orEmpty()))
-            }
-            is BoxScheduleEvent.EditBlock -> openBlock(event.blockId)
-            is BoxScheduleEvent.BlockChanged -> setState {
-                copy(
-                    blockEditor = blockEditor?.copy(
-                        typeId = event.typeId ?: blockEditor.typeId,
-                        title = event.title ?: blockEditor.title,
-                        startText = event.startText ?: blockEditor.startText,
-                        endText = event.endText ?: blockEditor.endText,
-                        conflicts = emptyList(),
-                    ),
-                )
-            }
-            BoxScheduleEvent.SaveBlock -> saveBlock(resolve = null)
-            is BoxScheduleEvent.ResolveConflict -> saveBlock(
-                resolve = ConflictAction.entries.firstOrNull { it.wire == event.action },
-            )
-            BoxScheduleEvent.CloseBlock -> setState { copy(blockEditor = null) }
-            is BoxScheduleEvent.DeleteBlockDate -> deleteBlockDate(event.blockId, event.date)
-            is BoxScheduleEvent.DeleteBlock -> run(
-                { repository.deleteBlock(event.blockId) },
-                "Schedule removed",
-            )
-            is BoxScheduleEvent.NewDiary -> setState {
-                copy(
-                    diaryEditor = DiaryEditor(
-                        kind = event.kind,
-                        dateText = DiaryClock.ymd(event.date ?: nowMillis()),
-                        scheduleDayId = event.scheduleDayId,
-                        noteType = noteTypes.firstOrNull()?.value ?: "general",
-                    ),
-                )
-            }
-            is BoxScheduleEvent.EditDiary -> openDiary(event.listKey)
-            is BoxScheduleEvent.DiaryChanged -> setState {
-                copy(
-                    diaryEditor = diaryEditor?.copy(
-                        title = event.title ?: diaryEditor.title,
-                        body = event.body ?: diaryEditor.body,
-                        dateText = event.dateText ?: diaryEditor.dateText,
-                        startText = event.startText ?: diaryEditor.startText,
-                        endText = event.endText ?: diaryEditor.endText,
-                        location = event.location ?: diaryEditor.location,
-                        // Typing a location clears the coordinates it no longer
-                        // describes; picking one sets both together.
-                        locationLat = if (event.location != null && event.locationLat == null) {
-                            null
-                        } else {
-                            event.locationLat ?: diaryEditor.locationLat
-                        },
-                        locationLng = if (event.location != null && event.locationLng == null) {
-                            null
-                        } else {
-                            event.locationLng ?: diaryEditor.locationLng
-                        },
-                        color = event.color ?: diaryEditor.color,
-                        noteType = event.noteType ?: diaryEditor.noteType,
-                        repeatStatus = event.repeatStatus ?: diaryEditor.repeatStatus,
-                    ),
-                )
-            }
-            BoxScheduleEvent.SaveDiary -> saveDiary()
-            BoxScheduleEvent.CloseDiary -> setState { copy(diaryEditor = null) }
-            is BoxScheduleEvent.DeleteDiary -> deleteDiary(event.listKey)
-            BoxScheduleEvent.OpenTypes -> setState { copy(manageTypes = true) }
-            BoxScheduleEvent.CloseTypes -> setState { copy(manageTypes = false, typeEditor = null) }
-            BoxScheduleEvent.NewType -> setState { copy(typeEditor = TypeEditor()) }
-            is BoxScheduleEvent.EditType -> setState {
-                val type = types.firstOrNull { it.id == event.typeId }
-                copy(
-                    typeEditor = type?.let {
-                        TypeEditor(typeId = it.id, title = it.title, color = it.color)
-                    },
-                )
-            }
-            is BoxScheduleEvent.TypeChanged -> setState {
-                copy(
-                    typeEditor = typeEditor?.copy(
-                        title = event.title ?: typeEditor.title,
-                        color = event.color ?: typeEditor.color,
-                    ),
-                )
-            }
-            BoxScheduleEvent.SaveType -> saveType()
-            BoxScheduleEvent.CloseTypeEditor -> setState { copy(typeEditor = null) }
-            is BoxScheduleEvent.DeleteType -> run({ repository.deleteType(event.typeId) }, "Type removed")
-            BoxScheduleEvent.OpenPdf -> setState {
-                copy(pdfSheet = PdfSheet(canPublish = publisher != null && canPublish()))
-            }
-            is BoxScheduleEvent.PdfChanged -> setState {
-                copy(
-                    pdfSheet = pdfSheet?.copy(
-                        options = pdfSheet.options.copy(
-                            layout = event.layout ?: pdfSheet.options.layout,
-                            includePersonalNotes = event.includePersonalNotes ?: pdfSheet.options.includePersonalNotes,
-                        ),
-                    ),
-                )
-            }
-            BoxScheduleEvent.ClosePdf -> setState { copy(pdfSheet = null) }
-            BoxScheduleEvent.SavePdf -> deliverPdf(done = null) { transfer?.open(it) }
-            BoxScheduleEvent.PublishPdf ->
-                deliverPdf(done = "Published to Document Distribution") { publisher?.publish(it) }
-            BoxScheduleEvent.DismissError -> setState { copy(error = null) }
+            is PageEvent -> onPage(event)
+            is DayEvent -> onDay(event)
+            is ScheduleEvent -> schedules.onEvent(event)
+            is EntryEvent -> entries.onEvent(event)
+            is PanelEvent -> panels.onEvent(event)
         }
     }
 
-    /**
-     * Asks the server for the diary as chosen, then hands the staged file to
-     * one destination. `action=print` for the library as well: the phones
-     * send the same, and the server only logs the verb.
-     */
-    private fun deliverPdf(done: String?, deliver: suspend (DiaryPdf) -> ZillitResult<Unit>?) {
-        val sheet = state.value.pdfSheet ?: return
-        if (sheet.busy) return
-        setState { copy(pdfSheet = sheet.copy(busy = true)) }
-        launch {
-            val outcome = when (val pdf = repository.pdf(sheet.options, DiaryPdfAction.Print, watermark())) {
-                is ZillitResult.Failure -> pdf
-                is ZillitResult.Success -> deliver(pdf.data)
-                    ?: ZillitResult.Failure(ZillitError.Validation("This is not available here."))
-            }
-            when (outcome) {
-                is ZillitResult.Failure -> {
-                    setState { copy(pdfSheet = pdfSheet?.copy(busy = false)) }
-                    sendEffect(BoxScheduleEffect.Notice(outcome.error.userMessage))
-                }
-                is ZillitResult.Success -> {
-                    setState { copy(pdfSheet = null) }
-                    done?.let { sendEffect(BoxScheduleEffect.Notice(it)) }
-                }
-            }
-        }
-    }
+    // Load ------------------------------------------------------------------
 
-    private fun refresh() {
+    internal fun refresh() {
         setState { copy(loading = true) }
         launch {
             coroutineScope {
-                val types = async { repository.types() }
-                val blocks = async { repository.blocks() }
-                val events = async { repository.events() }
-                val noteTypes = async { repository.noteTypes() }
+                val types = async { repo.types() }
+                val blocks = async { repo.blocks() }
+                val events = async { repo.events() }
+                val noteTypes = async { repo.noteTypes() }
                 // The web's window: a year either side of now.
-                val calendarEvents = async {
-                    calendar.events(nowMillis() - YEAR_MS, nowMillis() + YEAR_MS)
-                }
+                val now = nowMillis()
+                val mirrored = async { calendar.events(now - YEAR_MS, now + YEAR_MS) }
 
-                val typeList = types.await().orError()
-                val blockList = blocks.await().orError()
-                val eventList = events.await().orError()
-                val noteTypeList = noteTypes.await().let { (it as? ZillitResult.Success)?.data.orEmpty() }
-                val merged = DiaryMath.mergeWithCalendar(eventList.orEmpty(), calendarEvents.await())
+                val typeList = types.await()
+                val blockList = blocks.await()
+                val eventList = events.await()
+                val kinds = (noteTypes.await() as? ZillitResult.Success)?.data.orEmpty()
+                val failure = listOf(
+                    typeList,
+                    blockList,
+                    eventList,
+                ).filterIsInstance<ZillitResult.Failure>().firstOrNull()
+                val merged = (eventList as? ZillitResult.Success)?.data?.let {
+                    DiaryMath.mergeWithCalendar(it, mirrored.await())
+                }
+                val zone = host.zone()
 
                 setState {
+                    val nextBlocks = (blockList as? ZillitResult.Success)?.data ?: this.blocks
                     copy(
                         loading = false,
-                        types = typeList ?: this.types,
-                        blocks = blockList ?: this.blocks,
-                        rows = DiaryMath.explode(blockList ?: this.blocks),
-                        events = merged,
-                        noteTypes = noteTypeList,
+                        loadedOnce = true,
+                        error = failure?.error?.localised() ?: error,
+                        types = (typeList as? ZillitResult.Success)?.data ?: this.types,
+                        blocks = nextBlocks,
+                        rows = DiaryMath.explode(nextBlocks, zone),
+                        events = merged ?: this.events,
+                        noteTypes = kinds.ifEmpty { this.noteTypes.ifEmpty { NoteType.DEFAULTS } },
+                        people = host.directory.people(),
+                        nowMillis = now,
+                        today = DiaryCalendar.dateOf(now, zone),
+                        canPublish = host.publisher != null && host.canPublish(),
                     )
                 }
             }
         }
     }
 
-    private fun <T> ZillitResult<T>.orError(): T? = when (this) {
-        is ZillitResult.Success -> data
-        is ZillitResult.Failure -> {
-            val message = this.error.localised()
-            setState { copy(error = message) }
-            null
-        }
-    }
+    // Page ------------------------------------------------------------------
 
-    private fun run(block: suspend () -> ZillitResult<Unit>, notice: String) {
-        setState { copy(busy = true) }
-        launch {
-            when (val result = block()) {
-                is ZillitResult.Success -> {
-                    setState { copy(busy = false) }
-                    sendEffect(BoxScheduleEffect.Notice(notice))
-                    refresh()
-                }
-                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.localised()) }
+    @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per control.
+    private fun onPage(event: PageEvent) {
+        when (event) {
+            PageEvent.Refresh -> refresh()
+            PageEvent.DismissError -> setState { copy(error = null) }
+            is PageEvent.SetView -> updatePage { copy(view = event.view, selecting = false, selected = emptySet()) }
+            is PageEvent.SaveDefaultView -> saveDefault(
+                DiaryPreferences.DEFAULT_VIEW,
+                event.view.name,
+                event.view.label,
+            ) {
+                copy(view = event.view, defaultView = event.view)
             }
+            is PageEvent.SetCalendarMode -> updatePage { copy(calendarMode = event.mode) }
+            is PageEvent.SaveDefaultCalendarMode ->
+                saveDefault(DiaryPreferences.CALENDAR_MODE, event.mode.name, "${event.mode.label} View") {
+                    copy(calendarMode = event.mode, defaultCalendarMode = event.mode)
+                }
+            is PageEvent.SetListMode -> updatePage { copy(listMode = event.mode) }
+            is PageEvent.SaveDefaultListMode ->
+                saveDefault(DiaryPreferences.LIST_MODE, event.mode.name, event.mode.label, list = true) {
+                    copy(listMode = event.mode, defaultListMode = event.mode)
+                }
+            is PageEvent.Step -> step(event.forward)
+            PageEvent.Today -> setState { copy(page = page.focusedOn(today)) }
+            is PageEvent.Search -> updatePage { copy(filter = filter.copy(search = event.text)) }
+            PageEvent.OpenFilters -> updateOverlays {
+                copy(filters = FilterDraft(currentState.page.filter.typeName, currentState.page.filter.content))
+            }
+            is PageEvent.DraftContent -> updateOverlays {
+                // Events and notes have no type: choosing one of them clears a type pick.
+                val clearType = !event.content.showsSchedules
+                val typeName = if (clearType) "" else filters?.typeName.orEmpty()
+                copy(filters = filters?.copy(content = event.content, typeName = typeName))
+            }
+            is PageEvent.DraftType -> updateOverlays { copy(filters = filters?.copy(typeName = event.typeName)) }
+            PageEvent.ClearFilters -> updateOverlays { copy(filters = filters?.let { FilterDraft() }) }
+            PageEvent.ApplyFilters -> applyFilters()
+            PageEvent.CloseFilters -> updateOverlays { copy(filters = null) }
+            is PageEvent.ToggleRow -> updatePage {
+                if (selecting) this else copy(expandedRow = if (expandedRow == event.key) null else event.key)
+            }
+            PageEvent.EnterSelect -> if (mayEdit()) updatePage {
+                copy(selecting = true, selected = emptySet(), expandedRow = null)
+            }
+            PageEvent.ExitSelect -> updatePage { copy(selecting = false, selected = emptySet()) }
+            is PageEvent.ToggleSelect -> updatePage {
+                copy(selected = if (event.key in selected) selected - event.key else selected + event.key)
+            }
+            PageEvent.SelectAll -> setState { copy(page = page.copy(selected = filteredRows.map { it.key }.toSet())) }
+            PageEvent.DeselectAll -> updatePage { copy(selected = emptySet()) }
+            PageEvent.TogglePalette -> updateOverlays { copy(palette = if (palette == null) PalettePanel() else null) }
+            is PageEvent.PaletteQuery -> updateOverlays { copy(palette = palette?.copy(query = event.text)) }
+            is PageEvent.RunCommand -> runCommand(event.command)
+            PageEvent.ClosePalette -> updateOverlays { copy(palette = null) }
+            is PageEvent.JoinCall -> joinCall(event.listKey)
         }
     }
 
-    // Blocks ---------------------------------------------------------------
+    private fun onDay(event: DayEvent) {
+        when (event) {
+            is DayEvent.OpenDay -> updateOverlays {
+                copy(day = DayDrawer(event.dayKey, event.focus), quickAction = null)
+            }
+            DayEvent.ShowFullDay -> updateOverlays { copy(day = day?.copy(focus = DayFocus.Full)) }
+            DayEvent.CloseDay -> updateOverlays { copy(day = null) }
+            is DayEvent.OpenQuickAction -> {
+                // An empty past date offers nothing to create, and a viewer without rights has nothing to create with.
+                if (mayEdit() && !currentState.isPast(event.dayKey)) {
+                    updateOverlays { copy(quickAction = event.dayKey, day = null) }
+                }
+            }
+            DayEvent.CloseQuickAction -> updateOverlays { copy(quickAction = null) }
+            is DayEvent.ViewEntry -> updateOverlays { copy(viewing = event.listKey) }
+            DayEvent.CloseViewEntry -> updateOverlays { copy(viewing = null) }
+        }
+    }
 
-    private fun openBlock(blockId: String) {
-        val block = state.value.blocks.firstOrNull { it.id == blockId } ?: return
+    private fun step(forward: Boolean) {
+        setState {
+            val next = when (page.calendarMode) {
+                CalendarMode.Month -> page.copy(month = DiaryCalendar.step(
+                    CalendarMode.Month,
+                    page.month ?: today,
+                    forward,
+                ))
+                CalendarMode.Week -> {
+                    val start = page.weekStart ?: DiaryCalendar.weekStart(today)
+                    page.copy(weekStart = DiaryCalendar.step(CalendarMode.Week, start, forward))
+                }
+                CalendarMode.Day -> page.copy(day = DiaryCalendar.step(CalendarMode.Day, page.day ?: today, forward))
+            }
+            copy(page = next)
+        }
+    }
+
+    private fun applyFilters() {
+        val draft = currentState.overlays.filters ?: return
         setState {
             copy(
-                blockEditor = BlockEditor(
-                    blockId = block.id,
-                    typeId = block.typeId,
-                    title = block.title,
-                    startText = DiaryClock.ymd(block.calendarDays.minOrNull() ?: block.startDate),
-                    endText = DiaryClock.ymd(block.calendarDays.maxOrNull() ?: block.endDate),
-                ),
+                page = page.copy(filter = page.filter.copy(typeName = draft.typeName, content = draft.content)),
+                overlays = overlays.copy(filters = null),
             )
         }
     }
 
-    private fun saveBlock(resolve: ConflictAction?) {
-        val editor = state.value.blockEditor ?: return
-        val start = DiaryClock.midnightOf(editor.startText)
-        val end = DiaryClock.midnightOf(editor.endText.ifBlank { editor.startText })
-        val validRange = start != null && end != null && end >= start
-        if (editor.typeId.isBlank() || !validRange) {
-            setState { copy(error = "Pick a type and a valid date range (YYYY-MM-DD)") }
-            return
-        }
-        checkNotNull(start)
-        checkNotNull(end)
-        val draft = BlockDraft(
-            typeId = editor.typeId,
-            title = editor.title.trim(),
-            calendarDays = DiaryMath.rangeDays(start, end),
-            byDates = false,
-        )
-        setState { copy(blockEditor = blockEditor?.copy(saving = true, conflicts = emptyList())) }
+    private fun saveDefault(
+        key: String,
+        value: String,
+        label: String,
+        list: Boolean = false,
+        apply: PageState.() -> PageState,
+    ) {
+        updatePage(apply)
         launch {
-            val result = if (editor.blockId == null) {
-                repository.createBlock(draft, resolve)
-            } else {
-                repository.updateBlock(editor.blockId, draft, resolve)
+            host.preferences.write(key, value)
+            val where = when {
+                list -> "list view"
+                key == DiaryPreferences.CALENDAR_MODE -> "calendar view"
+                else -> "view"
             }
-            when (result) {
-                is ZillitResult.Success -> when (val write = result.data) {
-                    BlockWrite.Saved -> {
-                        setState { copy(blockEditor = null) }
-                        sendEffect(BoxScheduleEffect.Notice("Schedule saved"))
-                        refresh()
-                    }
-                    is BlockWrite.Conflicts -> setState {
-                        copy(
-                            blockEditor = blockEditor?.copy(
-                                saving = false,
-                                conflicts = write.conflicts.ifEmpty {
-                                    // A bare 409: we know there was a clash, not where.
-                                    listOf(
-                                        com.zillit.desktop.feature.boxschedule.domain.DateConflict(
-                                            date = start, existingType = "another schedule",
-                                            existingColor = "", existingTitle = "",
-                                        ),
-                                    )
-                                },
-                            ),
-                        )
-                    }
-                }
-                is ZillitResult.Failure -> setState {
-                    copy(blockEditor = blockEditor?.copy(saving = false), error = result.error.localised())
-                }
-            }
+            notice("$label is now your default $where.", success = true)
         }
     }
 
-    private fun deleteBlockDate(blockId: String, date: Long) {
-        val block = state.value.blocks.firstOrNull { it.id == blockId } ?: return
-        run(
-            {
-                if (block.calendarDays.size <= 1) {
-                    repository.deleteBlock(blockId)
-                } else {
-                    repository.removeDates(mapOf(blockId to listOf(date)))
-                }
-            },
-            "Date removed",
-        )
-    }
-
-    // Events / notes -------------------------------------------------------
-
-    private fun openDiary(listKey: String) {
-        val event = state.value.events.firstOrNull { it.listKey == listKey } ?: return
-        if (event.calendarSourced) {
-            sendEffect(BoxScheduleEffect.Notice("Calendar events are edited from the Home calendar"))
-            return
+    @Suppress("CyclomaticComplexMethod") // Command fan-out: one line per palette entry.
+    private fun runCommand(command: DiaryCommand) {
+        updateOverlays { copy(palette = null) }
+        if (command.writes && !mayEdit()) return
+        when (command) {
+            DiaryCommand.NewSchedule -> onEvent(ScheduleEvent.NewSchedule())
+            DiaryCommand.NewEvent -> onEvent(EntryEvent.NewEntry(DiaryKind.Event))
+            DiaryCommand.NewNote -> onEvent(EntryEvent.NewEntry(DiaryKind.Note))
+            DiaryCommand.EditTypes -> onEvent(PanelEvent.OpenTypes)
+            DiaryCommand.CalendarView -> onEvent(PageEvent.SetView(DiaryView.Calendar))
+            DiaryCommand.ListView -> onEvent(PageEvent.SetView(DiaryView.List))
+            DiaryCommand.Today -> onEvent(PageEvent.Today)
+            DiaryCommand.Previous -> onEvent(PageEvent.Step(forward = false))
+            DiaryCommand.Next -> onEvent(PageEvent.Step(forward = true))
+            DiaryCommand.History -> onEvent(PanelEvent.OpenHistory)
+            DiaryCommand.ShareLink -> onEvent(PanelEvent.OpenShare)
+            DiaryCommand.Print -> panels.printNow()
         }
-        setState {
-            copy(
-                diaryEditor = DiaryEditor(
-                    eventId = event.masterId,
-                    kind = event.kind,
-                    title = event.title,
-                    body = event.body,
-                    dateText = DiaryClock.ymd(event.date),
-                    startText = if (event.fullDay) "" else DiaryClock.hm(event.startDateTime),
-                    endText = if (event.fullDay) "" else DiaryClock.hm(event.endDateTime),
-                    location = event.location,
-                    color = event.color.ifBlank { DiaryDraft.DEFAULT_EVENT_COLOR },
-                    scheduleDayId = event.scheduleDayId,
-                    noteType = event.noteType.ifBlank { "general" },
-                    repeatStatus = event.repeatStatus.ifBlank { "none" },
-                    callType = event.callType,
-                    occurrenceDate = event.occurrenceDate.takeIf { event.isRecurring },
-                    isRecurring = event.isRecurring,
-                ),
-            )
-        }
-    }
-
-    private fun saveDiary() {
-        val editor = state.value.diaryEditor ?: return
-        val draft = editor.toDraft() ?: run {
-            setState {
-                copy(error = "A title, a valid date (YYYY-MM-DD) and HH:mm times ending after start are needed")
-            }
-            return
-        }
-        setState { copy(diaryEditor = diaryEditor?.copy(saving = true)) }
-        launch {
-            val result = if (editor.eventId == null) {
-                repository.createEvent(draft)
-            } else {
-                // Recurring rows edit the whole series here; per-occurrence
-                // scopes need a picker this build does not have yet.
-                repository.updateEvent(editor.eventId, draft, RecurrenceScope.All, null)
-            }
-            when (result) {
-                is ZillitResult.Success -> {
-                    setState { copy(diaryEditor = null) }
-                    val saved = if (editor.kind == DiaryKind.Note) "Note saved" else "Event saved"
-                    sendEffect(BoxScheduleEffect.Notice(saved))
-                    refresh()
-                }
-                is ZillitResult.Failure -> setState {
-                    copy(diaryEditor = diaryEditor?.copy(saving = false), error = result.error.localised())
-                }
-            }
-        }
-    }
-
-    private fun deleteDiary(listKey: String) {
-        val event = state.value.events.firstOrNull { it.listKey == listKey } ?: return
-        if (event.calendarSourced) {
-            sendEffect(BoxScheduleEffect.Notice("Calendar events are removed from the Home calendar"))
-            return
-        }
-        run({ repository.deleteEvent(event.masterId, RecurrenceScope.All, null) }, "Removed")
-    }
-
-    // Types ----------------------------------------------------------------
-
-    private fun saveType() {
-        val editor = state.value.typeEditor ?: return
-        if (editor.title.isBlank()) {
-            setState { copy(error = "A type needs a name") }
-            return
-        }
-        setState { copy(typeEditor = typeEditor?.copy(saving = true)) }
-        launch {
-            val result = if (editor.typeId == null) {
-                repository.createType(editor.title.trim(), editor.color)
-            } else {
-                val current = state.value.types.firstOrNull { it.id == editor.typeId }
-                // System types may only be recoloured; send only what changed.
-                repository.updateType(
-                    editor.typeId,
-                    title = editor.title.trim().takeIf { it != current?.title && current?.systemDefined != true },
-                    color = editor.color.takeIf { it != current?.color },
-                )
-            }
-            when (result) {
-                is ZillitResult.Success -> {
-                    setState { copy(typeEditor = null) }
-                    refresh()
-                }
-                is ZillitResult.Failure -> setState {
-                    copy(typeEditor = typeEditor?.copy(saving = false), error = result.error.localised())
-                }
-            }
-        }
-    }
-
-    /** The editor's text into a wire draft, or null when it does not parse. */
-    private fun DiaryEditor.toDraft(): DiaryDraft? {
-        val date = DiaryClock.midnightOf(dateText)
-        val fullDay = kind == DiaryKind.Note || (startText.isBlank() && endText.isBlank())
-        val start = when {
-            date == null -> null
-            fullDay -> date
-            else -> DiaryClock.instantOf(dateText, startText)
-        }
-        val end = when {
-            date == null -> null
-            fullDay -> date + DiaryMath.DAY_MS - 1
-            else -> DiaryClock.instantOf(dateText, endText)
-        }
-        val valid = title.isNotBlank() && date != null && start != null && end != null && end >= start
-        if (!valid) return null
-        return DiaryDraft(
-            kind = kind,
-            title = title,
-            body = body,
-            date = checkNotNull(date),
-            startDateTime = checkNotNull(start),
-            endDateTime = checkNotNull(end),
-            fullDay = fullDay,
-            location = location,
-            color = color,
-            scheduleDayId = scheduleDayId,
-            noteType = noteType,
-            repeatStatus = repeatStatus,
-            repeatEndDate = 0,
-            callType = callType,
-        )
     }
 
     /**
@@ -503,9 +326,9 @@ class BoxScheduleViewModel(
      * into nothing.
      */
     private fun joinCall(listKey: String) {
-        val event = currentState.events.firstOrNull { it.listKey == listKey } ?: return
+        val event = currentState.entry(listKey) ?: return
         if (!event.isCallJoinable || !event.hasCallRoom) {
-            sendEffect(BoxScheduleEffect.Notice("This event has no call to join."))
+            notice("This event has no call to join.")
             return
         }
         sendEffect(
@@ -516,6 +339,31 @@ class BoxScheduleViewModel(
             ),
         )
     }
+
+    // For the action classes -------------------------------------------------
+
+    internal fun mayEdit(): Boolean = currentState.viewer.mayEdit
+
+    internal fun update(reducer: BoxScheduleUiState.() -> BoxScheduleUiState) = setState(reducer)
+
+    internal fun updatePage(reducer: PageState.() -> PageState) = setState { copy(page = page.reducer()) }
+
+    internal fun updateOverlays(reducer: DiaryOverlays.() -> DiaryOverlays) =
+        setState { copy(overlays = overlays.reducer()) }
+
+    internal fun work(block: suspend () -> Unit) {
+        launch { block() }
+    }
+
+    internal fun notice(message: String, success: Boolean = false) =
+        sendEffect(BoxScheduleEffect.Notice(message, success))
+
+    internal fun copyText(text: String) = sendEffect(BoxScheduleEffect.CopyText(text))
+
+    internal fun now(): Long = nowMillis()
+
+    /** Snaps the calendar to a saved item's date, so the viewer sees their work. */
+    internal fun focusOn(date: LocalDate) = updatePage { focusedOn(date) }
 
     private companion object {
         const val YEAR_MS = 365L * DiaryMath.DAY_MS

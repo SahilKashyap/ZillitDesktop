@@ -203,7 +203,6 @@ import com.zillit.desktop.feature.cashexpenses.ui.CashExpensesViewModel
 import com.zillit.desktop.core.localization.Labels
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.ProjectPermissions
-import com.zillit.desktop.feature.dealmemo.domain.DealViewer
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoToolProvider
 import com.zillit.desktop.feature.dealmemo.ui.DealMemoViewModel
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
@@ -231,12 +230,8 @@ import com.zillit.desktop.feature.esignature.data.EsignRepositoryImpl
 import com.zillit.desktop.feature.esignature.domain.EsignViewer
 import com.zillit.desktop.feature.esignature.ui.EsignToolProvider
 import com.zillit.desktop.feature.esignature.ui.EsignViewModel
-import com.zillit.desktop.feature.productionreport.data.ReportRepositoryImpl
 import com.zillit.desktop.feature.productionreport.domain.ReportKind
-import com.zillit.desktop.feature.productionreport.domain.ReportViewer
-import com.zillit.desktop.feature.productionreport.ui.ProductionReportToolProvider
 import com.zillit.desktop.feature.productionreport.ui.ReportViewModel
-import com.zillit.desktop.feature.boxschedule.data.BoxScheduleRepositoryImpl
 import com.zillit.desktop.feature.boxschedule.ui.BOX_SCHEDULE_PATH
 import com.zillit.desktop.feature.boxschedule.ui.BoxScheduleToolProvider
 import com.zillit.desktop.feature.boxschedule.ui.BoxScheduleViewModel
@@ -1338,6 +1333,7 @@ private fun BackgroundWork(
     BoardRealtime(ready, "catering", viewModels.catering)
     // The Accounts board's segment key is the singular "account".
     BoardRealtime(ready, "account", viewModels.accounts)
+    BoardRealtime(ready, PRODUCTION_REPORT_BOARD, viewModels.productionReportChat)
 }
 
 /**
@@ -2191,22 +2187,6 @@ private fun UpdateStatus.toNotice(): UpdateNotice? = when (this) {
     UpdateStatus.Unknown, UpdateStatus.UpToDate -> null
 }
 
-private fun AppGraph.Ready.dealViewer(permissions: ProjectPermissions): DealViewer {
-    val context = projectContext?.context?.value
-    val me = context?.user(context.profile?.userId)
-    return DealViewer(
-        userId = context?.profile?.userId.orEmpty(),
-        departmentIdentifier = me?.department,
-        designationIdentifier = me?.designation,
-        // The admin override rides along in `canPost` — "an administrator
-        // can reach everything", as the admin grid puts it.
-        hasPostingRights = permissions.canPost(DEAL_MEMO_TOOL_IDENTIFIER),
-    )
-}
-
-/** The web's `TOOLS_NAME.deal_memo_tool` (`useDealMemoRights.js:36`). */
-private const val DEAL_MEMO_TOOL_IDENTIFIER = "deal_memo_tool"
-
 /**
  * Monday of the current week, in the machine's own zone.
  *
@@ -2293,66 +2273,10 @@ private fun AppGraph.Ready.callSheetViewer(permissions: ProjectPermissions): Cal
     )
 }
 
-private fun AppGraph.Ready.productionReportViewer(
-    permissions: ProjectPermissions,
-    kind: ReportKind = ReportKind.Production,
-): ReportViewer {
-    val context = projectContext?.context?.value
-    val me = context?.user(context.profile?.userId)
-    return ReportViewer.from(
-        permissions = permissions,
-        userId = context?.profile?.userId.orEmpty(),
-        displayName = context?.profile?.fullName.orEmpty(),
-        designation = me?.designation.orEmpty(),
-        toolIdentifier = kind.toolIdentifier,
-    )
-}
-
-/**
- * One report engine, three tools: the production report, and the AD / Wrap
- * reports that ride the same service under `shared.reportType`.
- */
-private fun AppGraph.Ready.buildReport(
-    kind: ReportKind,
-    permissions: () -> ProjectPermissions,
-    today: () -> kotlinx.datetime.LocalDate,
-): ReportViewModel = ReportViewModel(
-    repository = ReportRepositoryImpl(
-        apiClient,
-        config,
-        bus = socketEvents,
-        currentProjectId = { projectContext?.context?.value?.project?.projectId },
-    ),
-    kind = kind,
-    delivery = productionReportDelivery(),
-    callSheets = productionReportCallSheets(CallSheetRepositoryImpl(apiClient, config)),
-    resolveViewer = { productionReportViewer(permissions(), kind) },
-    projectId = { projectContext?.context?.value?.project?.projectId },
-    membersProvider = { reportMembers() },
-    todayYmd = {
-        val day = today()
-        "${day.year}-" +
-            "${day.monthNumber.toString().padStart(2, '0')}-" +
-            day.dayOfMonth.toString().padStart(2, '0')
-    },
-)
-
 /** The crew as the call sheet's employee sections and pickers need them. */
 private fun AppGraph.Ready.sheetMembers(): List<SheetMember> =
     projectContext?.context?.value?.users.orEmpty().map { user ->
         SheetMember(
-            userId = user.userId,
-            fullName = user.fullName,
-            department = user.department.orEmpty(),
-            designation = user.designation.orEmpty(),
-        )
-    }
-
-/** The same crew, in the report module's own type. */
-private fun AppGraph.Ready.reportMembers():
-    List<com.zillit.desktop.feature.productionreport.domain.SheetMember> =
-    projectContext?.context?.value?.users.orEmpty().map { user ->
-        com.zillit.desktop.feature.productionreport.domain.SheetMember(
             userId = user.userId,
             fullName = user.fullName,
             department = user.department.orEmpty(),
@@ -2424,6 +2348,8 @@ internal class AppViewModels(
     val callSheet: CallSheetViewModel?,
     /** The daily production report, seeded from the last call sheet. */
     val productionReport: ReportViewModel?,
+    /** The production report tool's unit chat — its Chat workspace. */
+    val productionReportChat: HomeFeedViewModel?,
     /** AD and Wrap reports: the production-report engine on their own templates. */
     val adReport: ReportViewModel?,
     val wrapReport: ReportViewModel?,
@@ -2722,9 +2648,7 @@ private fun rememberAppViewModels(
                     now = { System.currentTimeMillis() },
                 )
             },
-            dealMemos = ready?.let { graph ->
-                DealMemoViewModel(graph.dealMemoRepository) { graph.dealViewer(permissions()) }
-            },
+            dealMemos = ready?.buildDealMemos(permissions),
             accountHub = ready?.let { graph ->
                 AccountHubViewModel(
                     repository = graph.accountHubRepository,
@@ -2837,6 +2761,7 @@ private fun rememberAppViewModels(
                 )
             },
             productionReport = ready?.buildReport(ReportKind.Production, permissions, ::today),
+            productionReportChat = ready?.productionReportChatFeed(permissions),
             adReport = ready?.buildReport(ReportKind.Ad, permissions, ::today),
             wrapReport = ready?.buildReport(ReportKind.Wrap, permissions, ::today),
             sides = ready?.let { graph ->
@@ -2890,25 +2815,7 @@ private fun rememberAppViewModels(
             scriptNotes = ready?.scriptNotesFeed(permissions),
             catering = ready?.cateringFeed(permissions),
             accounts = ready?.accountsFeed(permissions),
-            boxSchedule = ready?.let { graph ->
-                BoxScheduleViewModel(
-                    repository = BoxScheduleRepositoryImpl(
-                        graph.apiClient,
-                        graph.config,
-                        bus = graph.socketEvents,
-                        currentProjectId = {
-                            graph.projectContext?.context?.value?.project?.projectId
-                        },
-                    ),
-                    calendar = graph.diaryCalendarLookup(),
-                    resolveViewer = { graph.boxScheduleViewer(permissions()) },
-                    nowMillis = System::currentTimeMillis,
-                    transfer = graph.diaryPdfTransfer(),
-                    publisher = graph.diaryPdfPublisher(permissions),
-                    canPublish = { permissions().canPost(DOC_DISTRIBUTION_TOOL) },
-                    watermark = { graph.projectContext?.context?.value?.profile?.fullName.orEmpty() },
-                )
-            },
+            boxSchedule = ready?.buildBoxSchedule(permissions),
             maps = ready?.let { graph ->
                 MapViewModel(
                     repository = MapRepositoryImpl(
@@ -3090,11 +2997,12 @@ private fun buildRegistry(
             )
         }
     }
+    val diaryFaces = (graph as? AppGraph.Ready)?.let(::crewFaceLoader)
     val boxSchedule = viewModels.boxSchedule?.let {
-        BoxScheduleToolProvider(it, BOX_SCHEDULE_PATH, onJoinCall = joinDiaryCall)
+        BoxScheduleToolProvider(it, BOX_SCHEDULE_PATH, onJoinCall = joinDiaryCall, loadAvatar = diaryFaces)
     }
     val preProduction = viewModels.boxSchedule?.let {
-        BoxScheduleToolProvider(it, PRE_PRODUCTION_PATH, onJoinCall = joinDiaryCall)
+        BoxScheduleToolProvider(it, PRE_PRODUCTION_PATH, onJoinCall = joinDiaryCall, loadAvatar = diaryFaces)
     }
     val maps = viewModels.maps?.let {
         MapToolProvider(
@@ -3401,7 +3309,9 @@ private fun buildRegistry(
             val timecards = viewModels.timecards?.let { TimecardToolProvider(it) }
 
     val payroll = viewModels.payroll?.let { PayrollToolProvider(it) }
-    val deals = viewModels.dealMemos?.let { DealMemoToolProvider(it) }
+    val deals = viewModels.dealMemos?.let { vm ->
+        (graph as? AppGraph.Ready)?.dealMemoProvider(vm) ?: DealMemoToolProvider(vm)
+    }
     val distribution = viewModels.docDist?.let {
         // openInBrowser is the guarded launcher — https only, so a presigned
         // storage URL opens and anything else is refused.
@@ -3468,9 +3378,11 @@ private fun buildRegistry(
             },
         )
     }
-    val productionReport = viewModels.productionReport?.let { ProductionReportToolProvider(it) }
-    val adReport = viewModels.adReport?.let { ProductionReportToolProvider(it) }
-    val wrapReport = viewModels.wrapReport?.let { ProductionReportToolProvider(it) }
+    val productionReport = viewModels.productionReport?.let {
+        reportToolProvider(it, graph, chatViewModel, viewModels.productionReportChat, boardContext)
+    }
+    val adReport = viewModels.adReport?.let { reportToolProvider(it, graph, chatViewModel) }
+    val wrapReport = viewModels.wrapReport?.let { reportToolProvider(it, graph, chatViewModel) }
     val real = listOfNotNull(
         home, chat, email, signatures, mailSettings, mailContacts, settings, admin, notifications,
         sos, help,

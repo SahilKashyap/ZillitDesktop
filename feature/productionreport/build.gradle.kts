@@ -17,10 +17,12 @@ kotlin {
             implementation(project(":core:permissions"))
             implementation(project(":core:localization"))
             implementation(project(":core:workspace"))
+            implementation(project(":core:locationpicker"))
             implementation(libs.kotlinx.datetime)
             implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {
+            implementation(libs.ktor.client.mock)
             implementation(libs.kotlinx.coroutines.test)
         }
         jvmTest.dependencies {

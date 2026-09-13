@@ -2,7 +2,6 @@ package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.core.forms.FormSection
-import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
 import com.zillit.desktop.feature.accounthub.domain.AssignmentRule
@@ -143,14 +142,31 @@ sealed interface AccountHubEvent {
     /** Opens the version's source file in the OS. */
     data object OpenBudgetFile : AccountHubEvent
 
+    /** Opens or closes a group of budget lines — the chevron on a row that has children. */
+    data class ToggleBudgetGroup(val id: String) : AccountHubEvent
+
     // -- importing a budget --------------------------------------------------
 
     data object OpenBudgetImport : AccountHubEvent
 
     data object CloseBudgetImport : AccountHubEvent
 
-    /** Picks a budget file and parses it, writing nothing. */
+    /** Chooses a budget file in the picker. Nothing is uploaded until [ParseBudgetFile]. */
     data object PickBudgetFile : AccountHubEvent
+
+    /**
+     * A budget file dragged onto the upload step — the web's drop zone.
+     *
+     * Not a data class: a byte array compares by identity, so generated
+     * equality would be wrong rather than merely slow.
+     */
+    class DropBudgetFile(val name: String, val bytes: ByteArray) : AccountHubEvent
+
+    /** Uploads the chosen file and asks the server what it makes of it, writing nothing. */
+    data object ParseBudgetFile : AccountHubEvent
+
+    /** From the preview back to the upload step, keeping the chosen file. */
+    data object BackToBudgetUpload : AccountHubEvent
 
     data class EditBudgetImportMeta(val meta: BudgetImportMeta) : AccountHubEvent
 
@@ -382,7 +398,8 @@ sealed interface AccountHubEvent {
 
     data class SortChart(val key: ChartSortKey) : AccountHubEvent
 
-    data class ToggleAccountExpanded(val id: String) : AccountHubEvent
+    /** Opens or closes one tree row; [depth] decides whether it started open. */
+    data class ToggleAccountExpanded(val id: String, val depth: Int = 0) : AccountHubEvent
 
     /** Expand all when collapsed, collapse all when expanded. */
     data object ToggleExpandAll : AccountHubEvent
@@ -428,7 +445,8 @@ sealed interface AccountHubEvent {
 
     data class OpenBulkAdd(val parent: CoaAccount? = null) : AccountHubEvent
     data class EditBulkRow(val row: CoaBulkRow) : AccountHubEvent
-    data class AddBulkRows(val count: Int) : AccountHubEvent
+    /** [focus] hands the caret to the new row's code — Tab off the last row, not the button. */
+    data class AddBulkRows(val count: Int, val focus: Boolean = false) : AccountHubEvent
     data class RemoveBulkRow(val localId: String) : AccountHubEvent
     /** Done: flushes anything still mid-debounce, then closes and reloads. */
     data object FinishBulkAdd : AccountHubEvent
@@ -569,6 +587,7 @@ sealed interface AccountHubEvent {
 
     // -- forms configuration -------------------------------------------------
 
+    /** Another module's form. With unsaved edits on screen it asks first. */
     data class OpenFormModule(val module: FormModule) : AccountHubEvent
 
     data class SearchFormModules(val term: String) : AccountHubEvent
@@ -581,23 +600,34 @@ sealed interface AccountHubEvent {
      */
     data class OpenFormConfig(val module: FormModule) : AccountHubEvent
 
-    /** Enters or leaves edit mode. Leaving throws unsaved changes away. */
+    /** Reads the module's template again, after a read that failed. */
+    data object ReloadFormTemplate : AccountHubEvent
+
+    /** Enters or leaves edit mode. Leaving keeps the edits, as on the web. */
     data class EditForm(val editing: Boolean) : AccountHubEvent
 
-    data class ToggleFormSection(val key: String) : AccountHubEvent
-
-    data class NudgeFormSection(val key: String, val delta: Int) : AccountHubEvent
+    /** The preview banner's Discard: asks, then puts back what the server holds. */
+    data object AskDiscardFormChanges : AccountHubEvent
+    data object DismissDiscardFormChanges : AccountHubEvent
+    data object ConfirmDiscardFormChanges : AccountHubEvent
 
     /** Rearrange mode, and which section's fields its panel lists. */
     data class ToggleRearrange(val on: Boolean) : AccountHubEvent
     data class PickRearrangeSection(val key: String?) : AccountHubEvent
+
+    /** A section dropped where [toKey] sits — by a drag, or by its up and down arrows. */
     data class MoveFormSection(val fromKey: String, val toKey: String) : AccountHubEvent
 
+    /** A field dropped where [toId] sits, within one section — by a drag, or by its arrows. */
+    data class MoveFormField(val sectionKey: String, val fromId: String, val toId: String) : AccountHubEvent
+
+    /** The insert rail: a new section after [afterKey], or at the top when it is null. */
     data class ComposeFormSection(val afterKey: String?) : AccountHubEvent
     data class EditFormSectionName(val name: String) : AccountHubEvent
     data object DismissFormSection : AccountHubEvent
     data object AddFormSection : AccountHubEvent
 
+    /** A custom section's name, edited in place. */
     data class RenameFormSection(val key: String, val label: String) : AccountHubEvent
     data class EditFormSectionRename(val name: String) : AccountHubEvent
     data object DismissFormSectionRename : AccountHubEvent
@@ -607,11 +637,18 @@ sealed interface AccountHubEvent {
     data object DismissRemoveFormSection : AccountHubEvent
     data object ConfirmRemoveFormSection : AccountHubEvent
 
-    /** Opens the inspector on a field, or on a new one when [fieldId] is null. */
+    /**
+     * Opens the property panel on a field, or the add-a-field panel when
+     * [fieldId] is null. The field already open closes it, as a second click
+     * does on the web.
+     */
     data class FocusFormField(val sectionKey: String, val fieldId: String?) : AccountHubEvent
     data object DismissFormField : AccountHubEvent
 
     data class EditNewFormField(val draft: NewFieldDraft) : AccountHubEvent
+
+    /** The add-a-field panel's "System Fields" list. */
+    data class ToggleSystemFields(val open: Boolean) : AccountHubEvent
     data object AddFormField : AccountHubEvent
 
     /**
@@ -625,12 +662,7 @@ sealed interface AccountHubEvent {
 
     data class RestoreFormField(val sectionKey: String, val fieldId: String) : AccountHubEvent
 
-    data class NudgeFormField(
-        val sectionKey: String,
-        val fieldId: String,
-        val delta: Int,
-    ) : AccountHubEvent
-
+    /** A custom field to the end of another section. System fields stay where the module reads them. */
     data class MoveFormFieldToSection(
         val sectionKey: String,
         val fieldId: String,
@@ -655,25 +687,16 @@ sealed interface AccountHubEvent {
         val selectionType: String?,
     ) : AccountHubEvent
 
-    /** The terms-of-engagement clauses, edited in the side panel. */
-    data class ToggleTermsEditor(val open: Boolean) : AccountHubEvent
-    data class SetTerm(val index: Int, val text: String) : AccountHubEvent
-    data object AddTerm : AccountHubEvent
-    data class RemoveTerm(val index: Int) : AccountHubEvent
-
     data object SaveFormTemplate : AccountHubEvent
 
     data object AskResetFormTemplate : AccountHubEvent
     data object DismissResetFormTemplate : AccountHubEvent
     data object ConfirmResetFormTemplate : AccountHubEvent
 
-    /** "Set Approver Level": the scope modal, then a builder saved through the approvals API. */
+    /** "Set Approver Level": the scope modal, then the Approvers page's builder on that chain. */
     data class OpenApproverScope(val open: Boolean) : AccountHubEvent
     data class PickApproverScope(val scope: ApprovalScope?, val departmentId: String? = null) : AccountHubEvent
     data object ContinueApproverScope : AccountHubEvent
-    data class UpdateFormApprovers(val config: ApprovalConfig) : AccountHubEvent
-    data object SaveFormApprovers : AccountHubEvent
-    data object DismissFormApprovers : AccountHubEvent
 }
 
 /** Which Production Setup section a save or revert applies to. */

@@ -460,8 +460,12 @@ private fun FloatSummaryRow(row: CashFloat) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         CashPerson(
-            name = row.holderName.ifBlank { row.requestNumber },
             userId = row.userId,
+            recordedName = row.holderName,
+            // The reference under the name, as the web's overview row carries
+            // it: it is what the float register is searched by, and it still
+            // identifies the float when its holder has left the crew list.
+            secondary = row.requestNumber.takeIf { it.isNotBlank() },
             modifier = Modifier.weight(1f),
         )
         ZillitText(
@@ -509,11 +513,7 @@ private fun RoutingBar(
  */
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
 fun floatColumns(compact: Boolean = false): List<TableColumn<CashFloat>> = buildList {
-    add(
-        personColumn("Holder", ColumnWidth.Weight(1.6f), userId = { it.userId }) {
-            it.holderName.ifBlank { it.userId }
-        },
-    )
+    add(personColumn("Holder", ColumnWidth.Weight(1.6f), userId = { it.userId }) { it.holderName })
     add(textColumn("Reference", ColumnWidth.Weight(1f), muted = true) { it.requestNumber.ifBlank { "—" } })
     if (!compact) {
         add(textColumn("Issued", ColumnWidth.Weight(1f), numeric = true) { money(it.issuedAmount, it.currency) })
@@ -548,11 +548,7 @@ fun floatColumns(compact: Boolean = false): List<TableColumn<CashFloat>> = build
 @Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
 fun batchColumns(accountant: Boolean, compact: Boolean = false): List<TableColumn<ClaimBatch>> = buildList {
     add(textColumn("Reference", ColumnWidth.Weight(1.2f)) { it.reference.ifBlank { it.id.take(REF_FALLBACK) } })
-    add(
-        personColumn("Submitted by", ColumnWidth.Weight(1.6f), userId = { it.userId }) {
-            it.holderName.ifBlank { it.userId }
-        },
-    )
+    add(personColumn("Submitted by", ColumnWidth.Weight(1.6f), userId = { it.userId }) { it.holderName })
     if (!compact) {
         add(textColumn("Receipts", ColumnWidth.Fixed(COUNT_COLUMN), numeric = true) { it.claimCount.toString() })
     }

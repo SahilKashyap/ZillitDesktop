@@ -1,541 +1,389 @@
 package com.zillit.desktop.feature.dealmemo.data
 
-import com.zillit.desktop.core.common.CurrencyCodeSerializer
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.flatMap
 import com.zillit.desktop.core.common.map
-import com.zillit.desktop.core.common.toAmount
-import com.zillit.desktop.core.common.toAmountOrNull
-import com.zillit.desktop.core.common.toEpochMillisOrNull
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.ApiEnvelope
+import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
-import com.zillit.desktop.feature.dealmemo.domain.Agreement
-import com.zillit.desktop.feature.dealmemo.domain.AmendmentAck
-import com.zillit.desktop.feature.dealmemo.domain.BasicRateDetails
-import com.zillit.desktop.feature.dealmemo.domain.RateCardEntry
-import com.zillit.desktop.feature.dealmemo.domain.RateTier
-import com.zillit.desktop.feature.dealmemo.domain.Deal
+import com.zillit.desktop.feature.dealmemo.domain.ApprovalTier
+import com.zillit.desktop.feature.dealmemo.domain.ApprovalTierConfig
+import com.zillit.desktop.feature.dealmemo.domain.DealDoc
+import com.zillit.desktop.feature.dealmemo.domain.DealExport
 import com.zillit.desktop.feature.dealmemo.domain.DealHistoryEntry
+import com.zillit.desktop.feature.dealmemo.domain.DealMemoMetadata
 import com.zillit.desktop.feature.dealmemo.domain.DealMemoRepository
-import com.zillit.desktop.feature.dealmemo.domain.DealRates
-import com.zillit.desktop.feature.dealmemo.domain.DealStatus
-import com.zillit.desktop.feature.dealmemo.domain.NewDeal
-import com.zillit.desktop.feature.dealmemo.domain.Union
+import com.zillit.desktop.feature.dealmemo.domain.DealOverview
+import com.zillit.desktop.feature.dealmemo.domain.DealPdfKind
+import com.zillit.desktop.feature.dealmemo.domain.DealRefresh
+import com.zillit.desktop.feature.dealmemo.domain.DealSignTarget
+import com.zillit.desktop.feature.dealmemo.domain.DealTemplate
+import com.zillit.desktop.feature.dealmemo.domain.DealTemplateSummary
+import com.zillit.desktop.feature.dealmemo.domain.DealWrite
+import com.zillit.desktop.feature.dealmemo.domain.DepartmentCount
+import com.zillit.desktop.feature.dealmemo.domain.DocRead
+import com.zillit.desktop.feature.dealmemo.domain.ProjectSection
+import com.zillit.desktop.feature.dealmemo.domain.SavedRecord
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.mapNotNull
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
-/** Every `/api/v2/deal-memo` route. */
+/**
+ * Posts a request and hands back the file it answers with — the register
+ * exports. The host owns it: bytes do not travel through the JSON client, and
+ * a JSON envelope where a file was expected must come back as a failure.
+ */
+fun interface DealFileFetcher {
+    suspend fun post(url: String, body: JsonObject?): ZillitResult<ByteArray>
+}
+
+/** Every `/api/v2/deal-memo` route the tool calls, and the notice template on the hub. */
+@Suppress("TooManyFunctions") // One function per server operation.
 class DealMemoRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
     /** Null keeps the tool socket-less — tests, and hosts without a bus. */
     bus: SocketEventBus? = null,
     private val currentProjectId: () -> String? = { null },
+    private val files: DealFileFetcher = DealFileFetcher { _, _ ->
+        ZillitResult.Failure(ZillitError.Unknown("Exports are not available here."))
+    },
 ) : DealMemoRepository {
 
     private val base = "${config.baseUrl(ZillitService.DealMemo)}/api/v2/deal-memo"
+    private val projectSettingsUrl = "${config.baseUrl(ZillitService.AccountHub)}/api/v2/account-hub/project-settings"
+    private val noticeTemplateUrl = "$projectSettingsUrl/notice-template"
+    private val bankAccountsUrl = "${config.baseUrl(ZillitService.AccountHub)}/api/v2/account-hub/bank-accounts"
 
-    /**
-     * See [DealMemoRepository.refreshes]. Another production's frame is
-     * dropped when both sides can name a project — the same cross-project
-     * gate the web's account-hub wrapper applies before any handler runs.
-     */
-    override val refreshes: Flow<Unit> =
-        bus?.onAny(DEAL_SYNC_EVENTS, DealSyncEnvelope.serializer())
-            ?.mapNotNull { (_, envelope) ->
-                Unit.takeIf { envelope.inProject(currentProjectId()) }
+    /** Frames that name another production are dropped — the web's cross-project gate. */
+    override val refreshes: Flow<DealRefresh> =
+        bus?.onAny(DEAL_EVENT_KEYS.keys, DealSyncEnvelope.serializer())
+            ?.mapNotNull { (event, envelope) ->
+                envelope.takeIf { it.inProject(currentProjectId()) }?.toRefresh(event)
             }
             ?: emptyFlow()
 
-    private companion object {
-        /** The whole card in one call — it is browsed, not paged. */
-        const val RATE_LIMIT = 500
+    // -- reads ---------------------------------------------------------------
+
+    override suspend fun deals(): ZillitResult<List<DealDoc>> =
+        read("$base/deals").map { data -> DocRead.objects(data).map(::DealDoc) }
+
+    override suspend fun overview(): ZillitResult<DealOverview> = read("$base/deals/overview").map { data ->
+        val body = data as? JsonObject
+        val stats = DocRead.obj(body, "stats")
+        fun stat(key: String) = DocRead.number(stats, key) ?: 0.0
+        DealOverview(
+            total = stat("total"),
+            approved = stat("approved"),
+            awaitingApproval = stat("awaiting_approval"),
+            totalValue = stat("total_value"),
+            active = stat("active"),
+            issued = stat("issued"),
+            draft = stat("draft"),
+            recent = DocRead.objects(body?.get("recent")).map(::DealDoc),
+            departmentBreakdown = DocRead.objects(body?.get("department_breakdown")).mapNotNull { row ->
+                DocRead.text(row, "department")?.let { DepartmentCount(it, DocRead.number(row, "count") ?: 0.0) }
+            },
+        )
     }
 
-    override suspend fun deals(status: DealStatus?): ZillitResult<List<Deal>> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = "$base/deals",
-        serializer = ListSerializer(DealDto.serializer()),
-        module = RequestModule.ProjectUser,
-        queryParameters = status?.let { mapOf("status" to it.wire) }.orEmpty(),
-    ).map { rows -> rows.mapNotNull { it.toDomain() } }
+    /** The page reads a flat list; anything else is nothing waiting. */
+    override suspend fun approvalQueue(): ZillitResult<List<DealDoc>> =
+        read("$base/deals/approval").map { data -> DocRead.objects(data).map(::DealDoc) }
 
-    /**
-     * The viewer's own deal.
-     *
-     * Absent is an ordinary answer — plenty of crew are on a production before
-     * their deal is written — so this returns null rather than an error, and
-     * the screen says so plainly.
-     */
-    override suspend fun myDeal(): ZillitResult<Deal?> = apiClient.requestOrNull(
-        verb = HttpVerb.Get,
-        url = "$base/deal",
-        serializer = DealDto.serializer(),
-        module = RequestModule.ProjectUser,
-    ).map { it?.toDomain() }
-
-    override suspend fun deal(id: String): ZillitResult<Deal> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = "$base/deals/$id",
-        serializer = DealDto.serializer(),
-        module = RequestModule.ProjectUser,
-    ).flatMap { dto ->
-        dto.toDomain()?.let { ZillitResult.Success(it) }
-            ?: ZillitResult.Failure(ZillitError.Serialization("deal $id came back without an id"))
+    override suspend fun metadata(): ZillitResult<DealMemoMetadata> = read("$base/metadata").flatMap { data ->
+        val body = data as? JsonObject
+            ?: return@flatMap ZillitResult.Failure(ZillitError.Serialization("metadata response empty"))
+        ZillitResult.Success(
+            DealMemoMetadata(
+                isApprover = DocRead.flag(body, "is_approver"),
+                approverDepartmentIds = DocRead.array(body["approver_department_ids"])
+                    .mapNotNull { (it as? JsonPrimitive)?.content },
+                approvalTierConfigs = DocRead.objects(body["approval_tier_configs"]).map(::tierConfigOf),
+                loaded = true,
+            ),
+        )
     }
 
-    override suspend fun history(id: String): ZillitResult<List<DealHistoryEntry>> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = "$base/deals/$id/history",
-        serializer = ListSerializer(DealHistoryDto.serializer()),
-        module = RequestModule.ProjectUser,
-    ).map { rows -> rows.map { it.toDomain() } }
+    override suspend fun myDeal(): ZillitResult<DealDoc?> =
+        read("$base/deal").map { data -> (data as? JsonObject)?.let(::DealDoc) }
 
-    /**
-     * The body is the web's step-wise payload with a client-minted 24-hex
-     * `_id` — see [createBody]. The backend spreads it straight into its
-     * Mongo document, so any other shape "saves" a row every read path
-     * ignores while still answering success.
-     */
-    override suspend fun create(deal: NewDeal, notify: Boolean): ZillitResult<Unit> =
-        apiClient.envelope(
-            verb = HttpVerb.Post,
-            url = "$base/deals",
-            module = RequestModule.ProjectUser,
-            body = deal.createBody(newClientDealId()),
-            // Whether the crew member is emailed is the caller's decision, not
-            // a side effect of saving: a correction typed twice should not
-            // notify twice. The server reads it off the query string only
-            // (`deal-memo.js:129-137`).
-            queryParameters = mapOf("notify" to notify),
-        ).map { }
+    override suspend fun deal(id: String): ZillitResult<DealDoc> = read("$base/deals/$id").flatMap { data ->
+        (data as? JsonObject)?.let { ZillitResult.Success(DealDoc(it)) }
+            ?: ZillitResult.Failure(ZillitError.Serialization("deal $id came back empty"))
+    }
 
-    override suspend fun update(id: String, deal: NewDeal, notify: Boolean): ZillitResult<Unit> =
+    override suspend fun history(id: String): ZillitResult<List<DealHistoryEntry>> =
+        read("$base/deals/$id/history").map { data ->
+            val rows = (data as? JsonArray) ?: (data as? JsonObject)?.get("data")
+            DocRead.objects(rows).map { row ->
+                DealHistoryEntry(
+                    action = DocRead.text(row, "action").orEmpty(),
+                    actionBy = DocRead.text(row, "action_by"),
+                    actionAt = DocRead.epoch(row, "action_at"),
+                    note = DocRead.text(row, "note"),
+                )
+            }
+        }
+
+    override suspend fun templates(): ZillitResult<List<DealTemplateSummary>> =
+        read("$base/templates").map { data ->
+            DocRead.objects(data).mapNotNull { row ->
+                val id = DocRead.text(row, "_id") ?: return@mapNotNull null
+                DealTemplateSummary(
+                    id = id,
+                    name = DocRead.text(row, "name").orEmpty(),
+                    createdBy = DocRead.text(row, "created_by"),
+                    createdAt = DocRead.epoch(row, "created_at") ?: DocRead.epoch(row, "createdAt"),
+                )
+            }
+        }
+
+    override suspend fun template(id: String): ZillitResult<DealTemplate> =
+        read("$base/templates/$id").flatMap { data ->
+            val row = data as? JsonObject
+                ?: return@flatMap ZillitResult.Failure(ZillitError.Serialization("setup $id came back empty"))
+            ZillitResult.Success(
+                DealTemplate(
+                    id = DocRead.text(row, "_id") ?: id,
+                    name = DocRead.text(row, "name").orEmpty(),
+                    form = templateForm(row),
+                    createdBy = DocRead.text(row, "created_by"),
+                    createdAt = DocRead.epoch(row, "created_at") ?: DocRead.epoch(row, "createdAt"),
+                ),
+            )
+        }
+
+    // -- list actions ------------------------------------------------------------
+
+    override suspend fun activate(id: String): ZillitResult<String?> = write(HttpVerb.Post, "$base/deals/$id/activate")
+
+    override suspend fun chase(id: String): ZillitResult<String?> = write(HttpVerb.Post, "$base/deals/$id/chase")
+
+    override suspend fun delete(id: String): ZillitResult<String?> = write(HttpVerb.Delete, "$base/deals/$id")
+
+    override suspend fun sendNotice(id: String, lastPayDay: Long, content: String): ZillitResult<String?> =
+        write(
+            HttpVerb.Post,
+            "$base/deals/$id/send-notice",
+            buildJsonObject {
+                put("last_pay_day", lastPayDay)
+                put("content", content)
+            },
+        )
+
+    override suspend fun deactivate(id: String, lastPayDate: Long): ZillitResult<String?> =
+        write(HttpVerb.Post, "$base/deals/$id/deactivate", buildJsonObject { put("last_pay_date", lastPayDate) })
+
+    override suspend fun export(kind: DealExport): ZillitResult<ByteArray> = when (kind) {
+        // Filters never travel: the server exports the whole register, drafts excluded.
+        DealExport.RegisterPdf, DealExport.RegisterExcel ->
+            files.post("$base/deals/export", buildJsonObject { put("format", kind.wire) })
+        DealExport.StartForms -> files.post("$base/deals/export/start-forms", null)
+    }
+
+    // -- notice template ------------------------------------------------------------
+
+    override suspend fun noticeTemplate(): ZillitResult<String?> = read(noticeTemplateUrl).map { data ->
+        DocRead.text(data as? JsonObject, "value")
+    }
+
+    /** Wrapped as `{value}`, never a bare string. */
+    override suspend fun saveNoticeTemplate(value: String): ZillitResult<String?> =
+        write(HttpVerb.Patch, noticeTemplateUrl, buildJsonObject { put("value", value) })
+
+    override suspend fun projectSettings(): ZillitResult<JsonObject> = read(projectSettingsUrl).map { data ->
+        DocRead.obj(data as? JsonObject, "settings") ?: JsonObject(emptyMap())
+    }
+
+    // -- the deal page ---------------------------------------------------------------------
+
+    override suspend fun portalLink(id: String): ZillitResult<String?> =
+        read("$base/deals/$id/portal-link").map { data -> DocRead.text(data as? JsonObject, "token") }
+
+    /** `{signature: undefined, comment: undefined}` serialises to `{}`. */
+    override suspend fun approve(id: String): ZillitResult<String?> =
+        write(HttpVerb.Post, "$base/deals/$id/approve", JsonObject(emptyMap()))
+
+    override suspend fun rejectAsCrew(reason: String): ZillitResult<String?> =
+        write(HttpVerb.Post, "$base/deal/reject-crew", buildJsonObject { put("reason", reason) })
+
+    override suspend fun sendForApproval(id: String): ZillitResult<String?> =
+        write(HttpVerb.Post, "$base/deals/$id/send-for-approval")
+
+    override suspend fun acknowledgeAmendment(): ZillitResult<String?> =
+        write(HttpVerb.Post, "$base/deal/acknowledge-amendment", JsonObject(emptyMap()))
+
+    override suspend fun saveCrewDetails(body: JsonObject): ZillitResult<DealWrite> =
         apiClient.envelope(
             verb = HttpVerb.Patch,
-            url = "$base/deals/$id",
+            url = "$base/deal/crew-details",
             module = RequestModule.ProjectUser,
-            // A full snapshot minus `status` and `_id` — the web's PATCH shape
-            // (`DMCreatePage.jsx:1503-1506`, `useDealAutosave.js:23-27`).
-            body = deal.updateBody(),
-            queryParameters = mapOf("notify" to notify),
-        ).map { }
+            body = body,
+        )
+            .flatMap { it.refusedOrOk() }
+            .map { envelope ->
+                DealWrite(envelope.message?.takeIf(String::isNotBlank), (envelope.data as? JsonObject)?.let(::DealDoc))
+            }
 
-    /**
-     * The web posts an empty body — the server resolves the caller's own
-     * deal from the auth headers, no URL id, no body (`deal-memo.js:108-113`),
-     * so [id] never reaches the wire. Kept on the signature because the
-     * caller names which deal it believes it is confirming.
-     */
-    override suspend fun acknowledge(id: String): ZillitResult<Unit> = apiClient.envelope(
-        verb = HttpVerb.Post,
-        url = "$base/deal/acknowledge-amendment",
-        module = RequestModule.ProjectUser,
-        body = buildJsonObject { },
-    ).map { }
+    override suspend fun updateDealRules(id: String, body: JsonObject): ZillitResult<String?> =
+        write(HttpVerb.Patch, "$base/deals/$id/deal-rules", body)
 
-    override suspend fun chase(id: String): ZillitResult<Unit> = apiClient.envelope(
-        verb = HttpVerb.Post,
-        url = "$base/deals/$id/chase",
-        module = RequestModule.ProjectUser,
-    ).map { }
+    override suspend fun updateNominalCodes(id: String, body: JsonObject): ZillitResult<String?> =
+        write(HttpVerb.Patch, "$base/deals/$id/nominal-codes", body)
 
-    override suspend fun unions(): ZillitResult<List<Union>> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = "$base/unions",
-        serializer = ListSerializer(UnionDto.serializer()),
-        module = RequestModule.ProjectUser,
-    ).map { rows -> rows.mapNotNull { it.toDomain() } }
-
-    override suspend fun agreements(unionId: String?): ZillitResult<List<Agreement>> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = unionId?.let { "$base/unions/$it/agreements" } ?: "$base/agreements",
-        serializer = ListSerializer(AgreementDto.serializer()),
-        module = RequestModule.ProjectUser,
-    ).map { rows -> rows.mapNotNull { it.toDomain() } }
-
-    override suspend fun rateCard(
-        unionId: String?,
-        departmentIdentifier: String?,
-        productionType: String?,
-    ): ZillitResult<List<RateCardEntry>> = apiClient.request(
-        verb = HttpVerb.Get,
-        url = "$base/designation-rates",
-        serializer = ListSerializer(RateEntryDto.serializer()),
-        module = RequestModule.ProjectUser,
-        queryParameters = buildMap {
-            unionId?.let { put("union_identifier", it) }
-            departmentIdentifier?.let { put("department_identifier", it) }
-            productionType?.let { put("production_type", it) }
-            put("limit", RATE_LIMIT)
-        },
-    ).map { rows -> rows.mapNotNull { it.toDomain() } }
-
-    override suspend fun resolveRate(
-        departmentIdentifier: String,
-        designationIdentifier: String,
-        productionType: String,
-        agreementId: String?,
-        unionId: String?,
-        budget: Double?,
-    ): ZillitResult<RateCardEntry?> = apiClient.requestOrNull(
-        verb = HttpVerb.Get,
-        url = "$base/designation-rates/resolve",
-        serializer = RateEntryDto.serializer(),
-        module = RequestModule.ProjectUser,
-        queryParameters = buildMap {
-            put("department_identifier", departmentIdentifier)
-            put("designation_identifier", designationIdentifier)
-            put("production_type", productionType)
-            agreementId?.let { put("agreement_identifier", it) }
-            unionId?.let { put("union_identifier", it) }
-            // Omitted rather than sent as null: that axis then matches
-            // anything, which is what an unstated budget means. Experience is
-            // not sent at all — the resolver has no experience axis.
-            budget?.let { put("budget", it) }
-        },
-        // A role the card publishes no rate for answers with no data, and that
-        // is the ordinary case for an unnegotiated role: the cascade then falls
-        // back to the agreement's own scale, which is the whole point of it.
-    ).map { it?.toDomain() }
-
-    override suspend fun basicRateDetails(agreementId: String): ZillitResult<BasicRateDetails?> =
-        apiClient.request(
-            verb = HttpVerb.Get,
-            url = "$base/agreements/$agreementId",
-            serializer = AgreementDetailDto.serializer(),
+    /** `data.attachment`, or the data itself; one without media, bucket and region is a failure. */
+    override suspend fun generatePdf(id: String, kind: DealPdfKind, context: JsonObject): ZillitResult<JsonObject> {
+        val path = when (kind) {
+            DealPdfKind.DealMemo -> "pdf"
+            DealPdfKind.StartForm -> "crew-start-form/pdf"
+        }
+        val missing = when (kind) {
+            DealPdfKind.DealMemo -> "pdf_attachment_missing"
+            DealPdfKind.StartForm -> "crew_start_form_pdf_attachment_missing"
+        }
+        return apiClient.envelope(
+            verb = HttpVerb.Post,
+            url = "$base/deals/$id/$path",
             module = RequestModule.ProjectUser,
-        ).map { it.basicRateDetails?.toDomain() }
-
-}
-
-/**
- * A stored deal, in the schema the web reads back.
- *
- * The nested step-wise blocks are the source — crew name from
- * `crew_details.crew_name` (`DMDealsPage.jsx:362,375`; `dealCrew.js:57-58`),
- * rates from `rates.daily.rate` / `rates.weekly.rate` / `hr_rate`
- * (`DMDealsPage.jsx:493`, `DMDealPreviewPage.jsx:1522,2954`), dates from
- * `deal.start_date` / `deal.end_date` (`DMDealsPage.jsx:491-492`), status
- * top-level (`DMDealsPage.jsx:490`). The old flat keys stay as fallbacks
- * because they cost nothing to keep reading.
- */
-@Serializable
-internal data class DealDto(
-    @SerialName("_id") val mongoId: String? = null,
-    @SerialName("id") val id: String? = null,
-    @SerialName("user_id") val userId: String? = null,
-    @SerialName("status") val status: String? = null,
-    @SerialName("crew_details") val crewDetails: CrewDetailsDto? = null,
-    @SerialName("territory_union") val territoryUnion: TerritoryUnionDto? = null,
-    @SerialName("deal") val terms: DealTermsDto? = null,
-    @SerialName("rates") val rateBlock: RatesDto? = null,
-    @SerialName("allowances") val allowances: List<EntitlementDto>? = null,
-    @SerialName("rentals") val rentals: List<EntitlementDto>? = null,
-    @SerialName("amendment_ack") val amendmentAck: AmendmentAckDto? = null,
-    @SerialName("created_at") val createdAt: String? = null,
-    // -- legacy flat keys, fallback only --------------------------------
-    @SerialName("crew_name") val crewName: String? = null,
-    @SerialName("full_name") val fullName: String? = null,
-    @SerialName("email") val email: String? = null,
-    @SerialName("department_id") val departmentId: String? = null,
-    @SerialName("department_name") val departmentName: String? = null,
-    @SerialName("designation") val designation: String? = null,
-    @Serializable(with = CurrencyCodeSerializer::class)
-    @SerialName("currency") val currency: String? = null,
-    @SerialName("weekly_rate") val weeklyRate: String? = null,
-    @SerialName("daily_rate") val dailyRate: String? = null,
-    @SerialName("hourly_rate") val hourlyRate: String? = null,
-    @SerialName("overtime_rate") val overtimeRate: String? = null,
-    @SerialName("standard_hours") val standardHours: String? = null,
-    @SerialName("days_per_week") val daysPerWeek: String? = null,
-    @SerialName("box_rental") val boxRental: String? = null,
-    @SerialName("vehicle_allowance") val vehicleAllowance: String? = null,
-    @SerialName("start_date") val startDate: String? = null,
-    @SerialName("end_date") val endDate: String? = null,
-    @SerialName("union_name") val unionName: String? = null,
-    @SerialName("agreement_name") val agreementName: String? = null,
-    @SerialName("nominal_code") val nominalCode: String? = null,
-    @SerialName("notes") val notes: String? = null,
-    @SerialName("amended_at") val amendedAt: String? = null,
-    @SerialName("acknowledged_at") val acknowledgedAt: String? = null,
-) {
-    @Suppress("LongMethod", "CyclomaticComplexMethod") // One fallback chain per field, listed once.
-    fun toDomain(): Deal? {
-        val identifier = (mongoId ?: id)?.takeIf { it.isNotBlank() } ?: return null
-        val cd = crewDetails
-        val rt = rateBlock
-        return Deal(
-            id = identifier,
-            userId = userId.orEmpty(),
-            crewName = firstFilled(cd?.crewName, cd?.fullLegalName, crewName, fullName).orEmpty(),
-            email = firstFilled(cd?.email, email),
-            // The identifier is the authoritative column (`dealCrew.js:61-63`
-            // reads `cd.department_identifier || cd.department_id`, then the
-            // deal's top-level id).
-            departmentId = firstFilled(cd?.departmentIdentifier, cd?.departmentId, departmentId),
-            departmentName = firstFilled(
-                humanisedIdentifier(cd?.departmentIdentifier, "department_"),
-                departmentName,
-            ),
-            // Custom free-text designation wins, then the identifier
-            // humanised the way the web's fallback does (`dealCrew.js:65-67`,
-            // `data/utils.js:88`).
-            designation = firstFilled(
-                cd?.customDesignation,
-                humanisedIdentifier(cd?.designationIdentifier, "designation_", cd?.departmentIdentifier),
-                cd?.designationId,
-                designation,
-            ),
-            status = DealStatus.from(status),
-            currency = firstFilled(rt?.contractCurrency, currency),
-            rates = DealRates(
-                weeklyRate = (rt?.weekly?.rate ?: weeklyRate).toAmount(),
-                dailyRate = (rt?.daily?.rate ?: dailyRate).toAmount(),
-                hourlyRate = (rt?.hrRate ?: hourlyRate).toAmount(),
-                overtimeRate = overtimeRate.toAmount(),
-                standardHours = (rt?.daily?.hrs ?: standardHours).toAmount(),
-                daysPerWeek = daysPerWeek.toAmount(),
-                boxRental = rentals.entitlementAmount("box") ?: boxRental.toAmount(),
-                vehicleAllowance = allowances.entitlementAmount("vehicle") ?: vehicleAllowance.toAmount(),
-            ),
-            startDate = (terms?.startDate ?: startDate).toEpochMillisOrNull(),
-            endDate = (terms?.endDate ?: endDate).toEpochMillisOrNull(),
-            unionName = firstFilled(territoryUnion?.unionIdentifier, unionName),
-            agreementName = firstFilled(territoryUnion?.agreementIdentifier, agreementName),
-            nominalCode = firstFilled(rt?.nominalCode, nominalCode),
-            notes = firstFilled(terms?.additionalNotes, notes),
-            amendedAt = amendedAt.toEpochMillisOrNull(),
-            acknowledgedAt = acknowledgedAt.toEpochMillisOrNull(),
-            createdAt = createdAt.toEpochMillisOrNull(),
-            amendmentAck = AmendmentAck.from(amendmentAck?.status),
-            designationIdentifier = firstFilled(cd?.designationIdentifier),
+            body = context,
         )
+            .flatMap { it.refusedOrOk() }
+            .flatMap { envelope ->
+                val data = envelope.data as? JsonObject
+                val attachment = (DocRead.obj(data, "attachment") ?: data)
+                    ?.takeIf { att -> ATTACHMENT_KEYS.all { DocRead.text(att, it) != null } }
+                attachment?.let { ZillitResult.Success(it) }
+                    ?: ZillitResult.Failure(ZillitError.Http(status = HTTP_OK, serverMessage = missing))
+            }
     }
-}
 
-/** The first candidate with something in it. */
-private fun firstFilled(vararg candidates: String?): String? =
-    candidates.firstOrNull { !it.isNullOrBlank() }
-
-/** The enabled row whose id or name mentions [keyword], if the deal carries one. */
-private fun List<EntitlementDto>?.entitlementAmount(keyword: String): Double? = this
-    ?.firstOrNull { row ->
-        row.enable != false &&
-            (row.id.orEmpty().contains(keyword, ignoreCase = true) ||
-                row.name.orEmpty().contains(keyword, ignoreCase = true))
+    override suspend fun sign(id: String, target: DealSignTarget, attachment: JsonObject): ZillitResult<String?> {
+        val path = when (target) {
+            DealSignTarget.DealMemo -> "deal-pdf/sign"
+            DealSignTarget.StartForm -> "crew-start-form-pdf/sign"
+            is DealSignTarget.Document -> "additional-documents/${target.docId}/sign"
+        }
+        return write(HttpVerb.Post, "$base/deals/$id/$path", buildJsonObject { put("attachment", attachment) })
     }
-    ?.amount?.toAmountOrNull()
 
-/** `crew_details` — the write shape at `toDealMemoPayload.js:783-869`. */
-@Serializable
-internal data class CrewDetailsDto(
-    @SerialName("crew_name") val crewName: String? = null,
-    @SerialName("full_legal_name") val fullLegalName: String? = null,
-    @SerialName("department_identifier") val departmentIdentifier: String? = null,
-    @SerialName("department_id") val departmentId: String? = null,
-    @SerialName("designation_identifier") val designationIdentifier: String? = null,
-    @SerialName("designation_id") val designationId: String? = null,
-    @SerialName("custom_designation") val customDesignation: String? = null,
-    @SerialName("email") val email: String? = null,
-)
+    // -- authoring --------------------------------------------------------------------
 
-/** `territory_union` — identifiers only; the port shows them as written. */
-@Serializable
-internal data class TerritoryUnionDto(
-    @SerialName("union_identifier") val unionIdentifier: String? = null,
-    @SerialName("agreement_identifier") val agreementIdentifier: String? = null,
-)
+    /** `notify` rides the query string; the server ignores it in a body. */
+    override suspend fun createDeal(body: JsonObject, notify: Boolean): ZillitResult<SavedRecord> =
+        saved(HttpVerb.Post, "$base/deals", body, mapOf("notify" to notify))
 
-/** The `deal` block — dates as epoch millis (`toDealMemoPayload.js:346-354`). */
-@Serializable
-internal data class DealTermsDto(
-    @SerialName("start_date") val startDate: String? = null,
-    @SerialName("end_date") val endDate: String? = null,
-    @SerialName("additional_notes") val additionalNotes: String? = null,
-)
+    override suspend fun updateDeal(id: String, body: JsonObject, notify: Boolean): ZillitResult<SavedRecord> =
+        saved(HttpVerb.Patch, "$base/deals/$id", body, mapOf("notify" to notify))
 
-/** The `rates` block (`toDealMemoPayload.js:930-968`). */
-@Serializable
-internal data class RatesDto(
-    @SerialName("contract_currency") val contractCurrency: String? = null,
-    @SerialName("daily") val daily: RateAndHoursDto? = null,
-    @SerialName("weekly") val weekly: RateAndHoursDto? = null,
-    @SerialName("hr_rate") val hrRate: String? = null,
-    @SerialName("nominal_code") val nominalCode: String? = null,
-)
+    override suspend fun submitDeal(id: String): ZillitResult<String?> = write(HttpVerb.Post, "$base/deals/$id/submit")
 
-@Serializable
-internal data class RateAndHoursDto(
-    @SerialName("rate") val rate: String? = null,
-    @SerialName("hrs") val hrs: String? = null,
-)
+    override suspend fun createTemplate(body: JsonObject): ZillitResult<SavedRecord> =
+        saved(HttpVerb.Post, "$base/templates", body)
 
-/** One allowance/rental row — the slice this port reads of `mapEntitlement`'s shape. */
-@Serializable
-internal data class EntitlementDto(
-    @SerialName("id") val id: String? = null,
-    @SerialName("name") val name: String? = null,
-    @SerialName("amount") val amount: String? = null,
-    @SerialName("enable") val enable: Boolean? = null,
-)
+    override suspend fun updateTemplate(id: String, body: JsonObject): ZillitResult<SavedRecord> =
+        saved(HttpVerb.Patch, "$base/templates/$id", body)
 
-/** `amendment_ack` — 'none' | 'pending' | 'acknowledged' (`DMDealPreviewPage.jsx:1427`). */
-@Serializable
-internal data class AmendmentAckDto(
-    @SerialName("status") val status: String? = null,
-)
+    override suspend fun deleteTemplate(id: String): ZillitResult<String?> =
+        write(HttpVerb.Delete, "$base/templates/$id")
 
-@Serializable
-internal data class RateEntryDto(
-    @SerialName("id") val id: String? = null,
-    @SerialName("department_identifier") val departmentIdentifier: String? = null,
-    @SerialName("designation_identifier") val designationIdentifier: String? = null,
-    @SerialName("branch_identifier") val branchIdentifier: String? = null,
-    @SerialName("union_identifier") val unionIdentifier: String? = null,
-    @SerialName("production_type") val productionType: String? = null,
-    @Serializable(with = CurrencyCodeSerializer::class)
-    @SerialName("currency") val currency: String? = null,
-    @SerialName("min_budget") val minBudget: String? = null,
-    @SerialName("max_budget") val maxBudget: String? = null,
-    /** Arrays: a card may publish several tiers per role. See [RateCascade]. */
-    @SerialName("hourly") val hourly: List<TierDto>? = null,
-    @SerialName("daily") val daily: List<TierDto>? = null,
-    @SerialName("weekly") val weekly: List<TierDto>? = null,
-) {
-    fun toDomain(): RateCardEntry? {
-        val identifier = id?.takeIf { it.isNotBlank() } ?: return null
-        val department = departmentIdentifier?.takeIf { it.isNotBlank() } ?: return null
-        val designation = designationIdentifier?.takeIf { it.isNotBlank() } ?: return null
-        return RateCardEntry(
-            id = identifier,
-            departmentIdentifier = department,
-            designationIdentifier = designation,
-            branchIdentifier = branchIdentifier,
-            unionIdentifier = unionIdentifier,
-            productionType = productionType,
-            currency = currency,
-            minBudget = minBudget.toAmountOrNull(),
-            maxBudget = maxBudget.toAmountOrNull(),
-            // The first published tier stands in until an agreement says which
-            // day length this deal is under — see RateCascade.pickTier.
-            hourly = hourly?.firstOrNull()?.toDomain(),
-            daily = daily?.firstOrNull()?.toDomain(),
-            weekly = weekly?.firstOrNull()?.toDomain(),
+    override suspend fun writeProjectSection(section: ProjectSection, body: JsonElement): ZillitResult<String?> =
+        apiClient.envelope(
+            verb = if (section.post) HttpVerb.Post else HttpVerb.Patch,
+            url = "$projectSettingsUrl/${section.path}",
+            module = RequestModule.ProjectUser,
+            body = body,
+        ).flatMap { it.refusedOrOk() }.map { it.message?.takeIf(String::isNotBlank) }
+
+    override suspend fun deleteAgreementDocument(id: String): ZillitResult<String?> =
+        write(HttpVerb.Delete, "$projectSettingsUrl/${ProjectSection.AgreementsDocuments.path}/$id")
+
+    override suspend fun bankAccount(id: String): ZillitResult<JsonObject> =
+        read("$bankAccountsUrl/$id").flatMap { data ->
+            (data as? JsonObject)?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Serialization("bank account $id came back empty"))
+        }
+
+    override suspend fun updateBankAccount(id: String, bank: JsonObject): ZillitResult<String?> =
+        write(HttpVerb.Patch, "$bankAccountsUrl/$id", bank)
+
+    /** A create or update that answers the record — its `_id` and `deal_reference` adopted by the caller. */
+    private suspend fun saved(
+        verb: HttpVerb,
+        url: String,
+        body: JsonObject,
+        query: Map<String, Any?> = emptyMap(),
+    ): ZillitResult<SavedRecord> =
+        apiClient.envelope(
+            verb = verb,
+            url = url,
+            module = RequestModule.ProjectUser,
+            body = body,
+            queryParameters = query,
         )
-    }
+            .flatMap { it.refusedOrOk() }
+            .map { envelope ->
+                val data = envelope.data as? JsonObject
+                SavedRecord(
+                    id = DocRead.text(data, "_id") ?: DocRead.text(data, "id"),
+                    reference = DocRead.text(data, "deal_reference"),
+                    message = envelope.message?.takeIf(String::isNotBlank),
+                    data = data,
+                )
+            }
 
-    /** Every published tier, for the caller that knows the agreement's hours. */
-    fun tiers(): Triple<List<RateTier>, List<RateTier>, List<RateTier>> = Triple(
-        hourly.orEmpty().map { it.toDomain() },
-        daily.orEmpty().map { it.toDomain() },
-        weekly.orEmpty().map { it.toDomain() },
-    )
+    // -- plumbing ---------------------------------------------------------------------
+
+    private suspend fun read(url: String): ZillitResult<JsonElement?> =
+        apiClient.envelope(verb = HttpVerb.Get, url = url, module = RequestModule.ProjectUser)
+            .flatMap { it.refusedOrOk() }
+            .map(ApiEnvelope::data)
+
+    /** A write whose answer is its message; a body-less POST goes out with no body at all. */
+    private suspend fun write(verb: HttpVerb, url: String, body: JsonObject? = null): ZillitResult<String?> =
+        apiClient.envelope(verb = verb, url = url, module = RequestModule.ProjectUser, body = body)
+            .flatMap { it.refusedOrOk() }
+            .map { it.message?.takeIf(String::isNotBlank) }
 }
 
-@Serializable
-internal data class TierDto(
-    @SerialName("base_rate") val baseRate: String? = null,
-    @SerialName("min_rate") val minRate: String? = null,
-    @SerialName("max_rate") val maxRate: String? = null,
-    @SerialName("work_hrs") val workHours: String? = null,
-    @SerialName("day_type") val dayType: String? = null,
-) {
-    fun toDomain() = RateTier(
-        baseRate = baseRate.toAmountOrNull(),
-        minRate = minRate.toAmountOrNull(),
-        maxRate = maxRate.toAmountOrNull(),
-        workHours = workHours.toAmountOrNull(),
-        dayType = dayType,
-    )
-}
+private const val HTTP_OK = 200
+private val ATTACHMENT_KEYS = listOf("media", "bucket", "region")
 
-@Serializable
-internal data class AgreementDetailDto(
-    @SerialName("basic_rate_details") val basicRateDetails: BasicRateDetailsDto? = null,
+private fun tierConfigOf(json: JsonObject): ApprovalTierConfig = ApprovalTierConfig(
+    scope = DocRead.text(json, "scope").orEmpty(),
+    departmentId = DocRead.text(json, "department_id"),
+    tiers = DocRead.objects(json["tiers"]).map { tier ->
+        ApprovalTier(
+            order = DocRead.number(tier, "order")?.toInt() ?: 0,
+            rules = DocRead.objects(tier["rules"]).map { rule ->
+                DocRead.array(rule["user_ids"]).mapNotNull { (it as? JsonPrimitive)?.content }
+            },
+        )
+    },
 )
 
-@Serializable
-internal data class BasicRateDetailsDto(
-    @SerialName("hourly") val hourly: TierDto? = null,
-    @SerialName("daily") val daily: TierDto? = null,
-    @SerialName("weekly") val weekly: TierDto? = null,
-    @SerialName("day_type") val dayType: String? = null,
-) {
-    fun toDomain() = BasicRateDetails(
-        hourly = hourly?.toDomain(),
-        daily = daily?.toDomain(),
-        weekly = weekly?.toDomain(),
-        dayType = dayType,
-    )
-}
-
-@Serializable
-internal data class UnionDto(
-    @SerialName("identifier") val identifier: String? = null,
-    @SerialName("id") val id: String? = null,
-    @SerialName("name") val name: String? = null,
-    @SerialName("agreement_count") val agreementCount: Int? = null,
-) {
-    fun toDomain(): Union? {
-        val resolved = (identifier ?: id)?.takeIf { it.isNotBlank() } ?: return null
-        return Union(
-            id = resolved,
-            name = name?.takeIf { it.isNotBlank() } ?: resolved,
-            agreementCount = agreementCount ?: 0,
-        )
+/** `template_data ?? form ?? row` — an object, or a JSON string of one. */
+internal fun templateForm(row: JsonObject): JsonObject? {
+    val candidate = row["template_data"]?.takeUnless { it is JsonNull }
+        ?: row["form"]?.takeUnless { it is JsonNull }
+        ?: row
+    return when (candidate) {
+        is JsonObject -> candidate
+        is JsonPrimitive -> candidate.takeIf { it.isString }?.content
+            ?.let { runCatching { HttpClientFactory.json.parseToJsonElement(it) as? JsonObject }.getOrNull() }
+        else -> null
     }
-}
-
-@Serializable
-internal data class AgreementDto(
-    @SerialName("identifier") val identifier: String? = null,
-    @SerialName("id") val id: String? = null,
-    @SerialName("name") val name: String? = null,
-    @SerialName("union_id") val unionId: String? = null,
-    @SerialName("effective_from") val effectiveFrom: String? = null,
-) {
-    fun toDomain(): Agreement? {
-        val resolved = (identifier ?: id)?.takeIf { it.isNotBlank() } ?: return null
-        return Agreement(
-            id = resolved,
-            name = name?.takeIf { it.isNotBlank() } ?: resolved,
-            unionId = unionId,
-            effectiveFrom = effectiveFrom.toEpochMillisOrNull(),
-        )
-    }
-}
-
-/**
- * One audit-trail row: `{ action, action_by, action_at, note }` — the shape
- * the history endpoint returns (`deal-memo.js:117-119`) and the shared
- * HistoryPanel reads (`ui/HistoryPanel.jsx:169,224-239`). The old
- * `user_id`/`created_at` spellings stay as fallbacks.
- */
-@Serializable
-internal data class DealHistoryDto(
-    @SerialName("action") val action: String? = null,
-    @SerialName("status") val status: String? = null,
-    @SerialName("action_by") val actionBy: String? = null,
-    @SerialName("user_id") val userId: String? = null,
-    @SerialName("note") val note: String? = null,
-    @SerialName("action_at") val actionAt: String? = null,
-    @SerialName("created_at") val createdAt: String? = null,
-) {
-    fun toDomain() = DealHistoryEntry(
-        action = action ?: status.orEmpty(),
-        userId = actionBy ?: userId,
-        note = note,
-        at = (actionAt ?: createdAt).toEpochMillisOrNull(),
-    )
 }

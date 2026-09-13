@@ -54,7 +54,11 @@ data class CashUiState(
     val topUps: List<CashTopUp> = emptyList(),
     val floatTopUps: List<CashTopUp> = emptyList(),
     val queueBatches: List<ClaimBatch> = emptyList(),
-    /** Who a batch may be handed to, resolved by the host from the crew. */
+    /**
+     * The production's crew, resolved by the host: who a batch may be handed
+     * to, and where every name on these pages comes from — the cash service
+     * sends people as ids. See `CashPeople`.
+     */
     val assignees: List<AssigneeOption> = emptyList(),
     val myBatches: List<ClaimBatch> = emptyList(),
     val reconciliations: List<Reconciliation> = emptyList(),

@@ -49,7 +49,6 @@ import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
 import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
 import com.zillit.desktop.feature.accounthub.domain.BankAccount
-import com.zillit.desktop.feature.accounthub.domain.CoaAccount
 import com.zillit.desktop.feature.accounthub.domain.CoaCostType
 import com.zillit.desktop.feature.accounthub.domain.Company
 import com.zillit.desktop.feature.accounthub.domain.CountryTaxes
@@ -128,6 +127,9 @@ class AccountHubRepositoryImpl(
 
     /** Payroll groups, auto-assignment rules and the chart's layers — see [HubSetupSource]. */
     private val setupSource = HubSetupSource(apiClient, config)
+
+    /** The chart of accounts — see [HubChartSource]. */
+    private val chartSource = HubChartSource(apiClient, config)
 
     /** The vendor register and the approval chains — see [HubRegisterSource]. */
     private val register = HubRegisterSource(apiClient, config)
@@ -707,58 +709,15 @@ class AccountHubRepositoryImpl(
         module = RequestModule.Device,
     ).map { rows -> rows.mapNotNull { it.toDomain() } }
 
-    // -- chart of accounts --------------------------------------------------
+    // -- chart of accounts — see [HubChartSource] ------------------------------
 
-    override suspend fun accounts(activeOnly: Boolean): ZillitResult<List<CoaAccount>> =
-        apiClient.request(
-            verb = HttpVerb.Get,
-            url = "$hubBase/chart-of-accounts",
-            serializer = ListSerializer(CoaAccountDto.serializer()),
-            module = RequestModule.ProjectUser,
-            queryParameters = mapOf("active_only" to if (activeOnly) "true" else null),
-        ).map { rows -> rows.mapNotNull { it.toDomain() } }
+    override suspend fun accounts(activeOnly: Boolean) = chartSource.accounts(activeOnly)
 
-    override suspend fun createAccount(account: NewAccount): ZillitResult<CoaAccount> =
-        writeAccount(
-            verb = HttpVerb.Post,
-            url = "$hubBase/chart-of-accounts",
-            body = buildJsonObject {
-                put("code", JsonPrimitive(account.code.trim()))
-                put("name", JsonPrimitive(account.name.trim()))
-                put("line_type", JsonPrimitive(account.lineType.wire))
-                put("cost_type", JsonPrimitive(account.costType.wire))
-                // The immediate parent only. The server walks up from it to fill
-                // the rest of the breadcrumb, and sending a partial breadcrumb
-                // here would have it disagree with the ancestors.
-                put("parent_id", account.parentId?.let(::JsonPrimitive) ?: JsonNull)
-                put("posting_box", JsonPrimitive(account.isPosting))
-            },
-        )
+    override suspend fun createAccount(account: NewAccount) = chartSource.createAccount(account)
 
-    override suspend fun updateAccount(id: String, patch: AccountPatch): ZillitResult<CoaAccount> = writeAccount(
-        verb = HttpVerb.Patch,
-        url = "$hubBase/chart-of-accounts/$id",
-        // The line type and parent go only when the structure changed: the
-        // server re-walks the breadcrumb then, which is the expensive half of
-        // the write, and the web gates it the same way (`structureChanged`).
-        body = buildJsonObject {
-            put("name", JsonPrimitive(patch.name.trim()))
-            put("cost_type", JsonPrimitive(patch.costType.wire))
-            put("is_active", JsonPrimitive(patch.isActive))
-            put("posting_box", JsonPrimitive(patch.isPosting))
-            patch.code?.takeIf { it.isNotBlank() }?.let { put("code", JsonPrimitive(it.trim())) }
-            if (patch.structureChanged) {
-                patch.lineType?.let { put("line_type", JsonPrimitive(it.wire)) }
-                put("parent_id", patch.parentId?.let(::JsonPrimitive) ?: JsonNull)
-            }
-        },
-    )
+    override suspend fun updateAccount(id: String, patch: AccountPatch) = chartSource.updateAccount(id, patch)
 
-    override suspend fun deactivateAccount(id: String): ZillitResult<Unit> = apiClient.envelope(
-        verb = HttpVerb.Delete,
-        url = "$hubBase/chart-of-accounts/$id",
-        module = RequestModule.ProjectUser,
-    ).map { }
+    override suspend fun deactivateAccount(id: String) = chartSource.deactivateAccount(id)
 
     // -- vendors and approvals — see [HubRegisterSource] -------------------------
 
@@ -889,17 +848,6 @@ class AccountHubRepositoryImpl(
         },
     ).map { it.toDomain() ?: account }
 
-    private suspend fun writeAccount(
-        verb: HttpVerb,
-        url: String,
-        body: JsonElement,
-    ): ZillitResult<CoaAccount> = apiClient.request(
-        verb = verb,
-        url = url,
-        serializer = CoaAccountDto.serializer(),
-        module = RequestModule.ProjectUser,
-        body = body,
-    ).map { it.toDomain() ?: CoaAccount(id = "") }
 
 }
 

@@ -74,7 +74,7 @@ class BudgetImportTest {
     @Test
     fun `a name is read out of the filename`() {
         assertEquals("Sound budget v2", BudgetImports.labelFrom("Sound_budget-v2.xlsx"))
-        assertEquals("Imported budget", BudgetImports.labelFrom(".pdf"))
+        assertEquals("Imported Budget", BudgetImports.labelFrom(".pdf"))
     }
 
     /**

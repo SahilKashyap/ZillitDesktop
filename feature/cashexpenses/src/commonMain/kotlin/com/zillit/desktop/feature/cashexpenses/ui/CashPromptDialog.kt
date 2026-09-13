@@ -26,6 +26,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.BatchAssignment
 import com.zillit.desktop.feature.cashexpenses.domain.AssigneeOption
@@ -142,9 +143,11 @@ private fun AssigneeRow(person: AssigneeOption, picked: Boolean, onPick: () -> U
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CashPerson(
-            name = person.fullName,
             userId = person.userId,
-            secondary = person.designation.takeIf { it.isNotBlank() },
+            recordedName = person.fullName,
+            // A designation can arrive as its label key; the crew list does
+            // not translate it, so it is done here.
+            secondary = person.designation.takeIf { it.isNotBlank() }?.localised(),
             modifier = Modifier.weight(1f),
         )
         if (picked) {
@@ -176,11 +179,7 @@ private fun ColumnScope.AssignFields(
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textMuted,
             )
-            CashPerson(
-                name = assignees.firstOrNull { it.userId == current }?.fullName ?: current,
-                userId = current,
-                size = SMALL_FACE,
-            )
+            CashPerson(userId = current, size = SMALL_FACE)
         }
     }
     ZillitScrollColumn(

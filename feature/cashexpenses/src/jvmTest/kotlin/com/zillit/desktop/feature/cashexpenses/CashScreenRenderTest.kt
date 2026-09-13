@@ -8,9 +8,13 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.feature.cashexpenses.domain.AssigneeOption
 import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashMetadata
+import com.zillit.desktop.feature.cashexpenses.domain.CashSettings
+import com.zillit.desktop.feature.cashexpenses.domain.CashTeamMember
+import com.zillit.desktop.feature.cashexpenses.domain.CashTopUp
 import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.domain.Claim
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
@@ -19,6 +23,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.FloatStatus
 import com.zillit.desktop.feature.cashexpenses.ui.CashDestination
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
 import com.zillit.desktop.feature.cashexpenses.ui.CashExpensesScreen
+import com.zillit.desktop.feature.cashexpenses.ui.CashPrompt
 import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -301,6 +306,29 @@ class CashScreenRenderTest {
         }
     }
 
+    /**
+     * Seen live 2026-09-13: the header drew the shared queues and nothing else.
+     * They are a full-width tab strip placed beside the pipeline switcher's
+     * weighted row, so they took the whole width and the switcher got none.
+     * From Audit Queue, Approval Queue or History there was no way back to the
+     * Petty Cash pages, and Out of Pocket could not be opened at all.
+     */
+    @Test
+    fun `the pipeline switcher shows beside the shared queues`() {
+        listOf(CashDestination.History, CashDestination.PettyCashOverview).forEach { destination ->
+            runComposeUiTest {
+                setContent {
+                    ZillitTheme(darkTheme = false) {
+                        CashExpensesScreen(state = state(destination), onEvent = {})
+                    }
+                }
+                onNodeWithText("Petty Cash").assertIsDisplayed()
+                onNodeWithText("Out of Pocket").assertIsDisplayed()
+                onNodeWithText("Audit Queue").assertIsDisplayed()
+            }
+        }
+    }
+
     @Test
     fun `clicking a shared tab asks to open that destination`() {
         var opened: CashDestination? = null
@@ -399,6 +427,135 @@ class CashScreenRenderTest {
                 }
             }
             onNodeWithText("Balanced").assertIsDisplayed()
+        }
+    }
+
+    // -- names, never ids ------------------------------------------------------
+
+    private val adaId = "6a2beb3023a3156e75c3ef85"
+    private val graceId = "6a3c7609ad621f8c3c0717df"
+    private val strangerId = "6a2beb2f23a3156e75c3e85e"
+    private val productionCrew = listOf(
+        AssigneeOption(userId = adaId, fullName = "Ada Lovelace", designation = "Production Accountant"),
+        AssigneeOption(userId = graceId, fullName = "Grace Hopper"),
+    )
+
+    /**
+     * Rows as the cash service sends them: a user id and no name. A top-up's
+     * id rides in `holder_name`, which the web reads as one.
+     */
+    private fun nameless(destination: CashDestination, holder: String = adaId) = state(destination).copy(
+        assignees = productionCrew,
+        activeFloats = listOf(sampleFloat().copy(userId = holder, holderName = "")),
+        floatApprovals = listOf(sampleFloat().copy(userId = holder, holderName = "")),
+        queueBatches = listOf(sampleBatch().copy(userId = holder, holderName = "")),
+        selectedBatchId = "batch-1",
+        topUps = listOf(
+            CashTopUp(
+                id = "top-up-1",
+                userId = "",
+                holderName = holder,
+                amount = 150.0,
+                currency = "GBP",
+                status = "pending",
+                note = null,
+                floatRequestNumber = "PC-001",
+                floatIssued = 1_000.0,
+                floatBalance = 40.0,
+                floatRequestedAmount = 1_000.0,
+                createdAt = 1_754_000_000_000,
+            ),
+        ),
+        settings = CashSettings(
+            teamMembers = listOf(
+                CashTeamMember(userId = holder, name = "", isSenior = true, canOverride = false, postingLimit = null),
+            ),
+        ),
+    )
+
+    private val namedPages = listOf(
+        CashDestination.ActiveFloats,
+        CashDestination.ApprovalQueue,
+        CashDestination.TopUps,
+        CashDestination.Settings,
+    )
+
+    /**
+     * Reported from the live app: user ids where names belong. The rows carry
+     * no name, and the cells fell back to the id. The web names each person
+     * from the production's user list; so does this, on every page that lists
+     * people.
+     */
+    @Test
+    fun `people are named from the crew list, not shown as ids`() {
+        namedPages.forEach { destination ->
+            runComposeUiTest {
+                setContent {
+                    ZillitTheme(darkTheme = false) {
+                        CashExpensesScreen(state = nameless(destination), onEvent = {})
+                    }
+                }
+                assertTrue(
+                    onAllNodesWithText("Ada Lovelace").fetchSemanticsNodes().isNotEmpty(),
+                    "no name on $destination",
+                )
+                onAllNodesWithText(adaId, substring = true).assertCountEquals(0)
+            }
+        }
+    }
+
+    @Test
+    fun `someone the crew list does not know is unknown, still not an id`() {
+        namedPages.forEach { destination ->
+            runComposeUiTest {
+                setContent {
+                    ZillitTheme(darkTheme = false) {
+                        CashExpensesScreen(state = nameless(destination, holder = strangerId), onEvent = {})
+                    }
+                }
+                assertTrue(
+                    onAllNodesWithText("Unknown").fetchSemanticsNodes().isNotEmpty(),
+                    "no placeholder on $destination",
+                )
+                onAllNodesWithText(strangerId, substring = true).assertCountEquals(0)
+            }
+        }
+    }
+
+    /** The queue's search reads the name on screen, which the row itself never carried. */
+    @Test
+    fun `the queue search finds a batch by the looked-up name`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    CashExpensesScreen(
+                        state = nameless(CashDestination.AuditQueue).copy(search = "lovelace"),
+                        onEvent = {},
+                    )
+                }
+            }
+            assertTrue(onAllNodesWithText("RB-0042").fetchSemanticsNodes().isNotEmpty(), "batch filtered out")
+            onAllNodesWithText("Nothing matches that search").assertCountEquals(0)
+        }
+    }
+
+    @Test
+    fun `the assign dialog names who has the batch now`() {
+        val signOff = nameless(CashDestination.PettyCashSignOff).let { base ->
+            base.copy(
+                queueBatches = listOf(sampleBatch().copy(userId = graceId, holderName = "", assignedTo = adaId)),
+                prompt = CashPrompt.Assign(batchId = "batch-1", title = "Reassign batch", label = "Reassign"),
+            )
+        }
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    CashExpensesScreen(state = signOff, onEvent = {})
+                }
+            }
+            onNodeWithText("Currently with ").assertExists()
+            assertTrue(onAllNodesWithText("Ada Lovelace").fetchSemanticsNodes().isNotEmpty(), "current holder")
+            onAllNodesWithText(adaId, substring = true).assertCountEquals(0)
         }
     }
 

@@ -64,6 +64,7 @@ import com.zillit.desktop.feature.accounthub.domain.ApprovalTier
 import com.zillit.desktop.feature.accounthub.domain.HubDepartment
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
+import com.zillit.desktop.feature.accounthub.ui.BuilderOrigin
 import com.zillit.desktop.feature.accounthub.ui.DepartmentFilter
 import com.zillit.desktop.feature.accounthub.ui.HubPage
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
@@ -92,7 +93,8 @@ import com.zillit.desktop.feature.accounthub.ui.components.rememberHubFace
  */
 @Composable
 fun ApproversPage(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
-    val builder = state.approvals.builder
+    // A chain opened from Forms Configuration is shown there, not here.
+    val builder = state.approvals.builder?.takeIf { it.origin == BuilderOrigin.Approvers }
     if (builder != null) {
         ApprovalBuilderView(state, builder, onEvent)
     } else {

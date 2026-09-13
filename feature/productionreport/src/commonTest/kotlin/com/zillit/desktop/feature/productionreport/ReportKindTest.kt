@@ -65,22 +65,35 @@ class ReportKindTest {
 
     @Test
     fun `composing a wrap report keeps its kind and takes no crew sections`() {
-        val composed = ComposeReport.newReport(
+        val crew = listOf(SheetMember("u1", "Ana", "Camera", "DoP"))
+        val (composed, shootDay) = ComposeReport.newReport(
             template = ReportTemplates.wrap(),
             metadata = SheetMetadata(currentShootDay = 4, totalDays = "30"),
-            members = emptyList(),
+            members = crew,
             todayYmd = "2026-08-18",
+            regenerateCrew = ReportKind.Wrap.generatesCrewSections,
         )
         assertEquals("wrap", composed.shared.reportType)
         assertEquals("5", composed.shared.shootDayNumber)
-        assertEquals(4, composed.rows.size)
+        assertEquals(5, shootDay)
+        assertEquals(4, composed.rows.size, "only the production report regenerates crew sections")
 
-        val withCrew = ComposeReport.newReport(
+        val (ad, _) = ComposeReport.newReport(
             template = ReportTemplates.ad(),
             metadata = SheetMetadata(),
-            members = listOf(SheetMember("u1", "Ana", "Camera", "DoP")),
+            members = crew,
             todayYmd = "2026-08-18",
+            regenerateCrew = ReportKind.Ad.generatesCrewSections,
         )
-        assertTrue(withCrew.rows.size > ReportTemplates.ad().rows.size)
+        assertEquals(ReportTemplates.ad().rows.size, ad.rows.size)
+
+        val (production, _) = ComposeReport.newReport(
+            template = ReportTemplates.ad(),
+            metadata = SheetMetadata(),
+            members = crew,
+            todayYmd = "2026-08-18",
+            regenerateCrew = ReportKind.Production.generatesCrewSections,
+        )
+        assertTrue(production.rows.size > ReportTemplates.ad().rows.size)
     }
 }

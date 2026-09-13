@@ -201,11 +201,11 @@ internal class HubReportSource(
     ): ZillitResult<Pair<ParsedBudget, BudgetUpload>> = apiClient.request(
         verb = HttpVerb.Post,
         url = "$hubBase/budgets/import:dry-run",
-        serializer = ValueDto.serializer(BudgetDryRunDto.serializer()),
+        serializer = JsonElement.serializer(),
         module = RequestModule.ProjectUser,
         body = buildJsonObject { put("attachment", document.toImportJson()) },
-    ).map { row ->
-        val answer = row.value
+    ).map { payload ->
+        val answer = payload.importAnswer(BudgetDryRunDto.serializer())
         val parsed = answer?.parsed?.toDomain() ?: ParsedBudget()
         val upload = BudgetUpload(
             uploadId = answer?.upload?.id ?: answer?.uploadId.orEmpty(),
@@ -213,6 +213,7 @@ internal class HubReportSource(
                 ?: answer?.attachment?.toDomain()?.name
                 ?: document.name,
             detectedFormat = answer?.upload?.detectedFormat ?: answer?.detectedFormat.orEmpty(),
+            sourceTemplate = answer?.upload?.sourceTemplate ?: answer?.sourceTemplate.orEmpty(),
             // The server's own pointer where it echoes one, so the commit
             // names the file the dry run actually read.
             document = answer?.attachment?.toDomain()?.takeIf { it.media.isNotBlank() } ?: document,
@@ -228,7 +229,7 @@ internal class HubReportSource(
     ): ZillitResult<BudgetVersion?> = apiClient.request(
         verb = HttpVerb.Post,
         url = "$hubBase/budgets/import:commit",
-        serializer = ValueDto.serializer(BudgetImportResultDto.serializer()),
+        serializer = JsonElement.serializer(),
         module = RequestModule.ProjectUser,
         body = buildJsonObject {
             // Both identifiers: the audit-row id an older backend wants, and
@@ -249,7 +250,21 @@ internal class HubReportSource(
             // decide would make the choice on screen a suggestion.
             put("coa_mode", JsonPrimitive(mode.wire))
         },
-    ).map { it.value?.budget?.toDomain() }
+    ).map { payload -> payload.importAnswer(BudgetImportResultDto.serializer())?.budget?.toDomain() }
+}
+
+/**
+ * The import routes' answer object, bare or wrapped.
+ *
+ * The web reads it bare — `(res.data || res).parsed` — and never looks for a
+ * `value` key; this read only `value` before, which would have turned every
+ * dry run into an empty parse. Both are accepted, so a route that adopts the
+ * settings slices' `{ value: … }` convention later still reads.
+ */
+private fun <T> JsonElement.importAnswer(serializer: KSerializer<T>): T? {
+    val body = this as? JsonObject ?: return null
+    val inner = body["value"] as? JsonObject ?: body
+    return runCatching { accountHubJson.decodeFromJsonElement(serializer, inner) }.getOrNull()
 }
 
 /** The stored file, as the import routes name it. */

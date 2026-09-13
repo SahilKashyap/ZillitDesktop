@@ -2,19 +2,23 @@ package com.zillit.desktop.feature.accounthub.ui
 
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.feature.accounthub.domain.AgreementDocument
 import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
 import com.zillit.desktop.feature.accounthub.domain.BudgetImportMeta
 import com.zillit.desktop.feature.accounthub.domain.BudgetImports
+import com.zillit.desktop.feature.accounthub.domain.PickedAgreementFile
 import com.zillit.desktop.feature.accounthub.domain.SetupUpload
 
 /**
- * Importing a budget file.
+ * Importing a budget file — the web's `ImportBudgetWizard`.
  *
- * Two calls with a review between them, and the review is the point: the parse
- * is a guess at somebody else's spreadsheet, and the commit writes codes into
- * the chart of accounts that every other tool codes against. Nothing is
- * written until the accountant has looked at what the parse made.
+ * Upload, Preview, Commit. Choosing a file only stages it; "Parse file"
+ * uploads it and asks the server what it makes of it, writing nothing. The
+ * review is the point: the parse is a guess at somebody else's spreadsheet,
+ * and the commit writes codes into the chart of accounts every other tool
+ * codes against.
  */
+@Suppress("TooManyFunctions") // One handler per step of the wizard.
 internal class BudgetImportActions(
     private val vm: AccountHubViewModel,
     private val files: AgreementFiles?,
@@ -23,42 +27,48 @@ internal class BudgetImportActions(
     /** Whether the host wired storage; without it the import cannot start. */
     val isAvailable: Boolean get() = files != null
 
+    /** Whether a file can be dragged onto the upload step. */
+    val acceptsDrops: Boolean get() = files?.acceptsDrops == true
+
     fun onEvent(event: AccountHubEvent): Boolean {
         when (event) {
-            AccountHubEvent.OpenBudgetImport ->
-                vm.update { copy(budget = budget.copy(import = BudgetImportState(open = true))) }
-
-            AccountHubEvent.CloseBudgetImport -> close()
-
+            AccountHubEvent.OpenBudgetImport -> open()
+            AccountHubEvent.CloseBudgetImport -> updateImport { BudgetImportState() }
             AccountHubEvent.PickBudgetFile -> pick()
-
-            is AccountHubEvent.EditBudgetImportMeta ->
-                vm.update { copy(budget = budget.copy(import = budget.import.copy(meta = event.meta))) }
-
-            is AccountHubEvent.SetCoaImportMode ->
-                vm.update { copy(budget = budget.copy(import = budget.import.copy(mode = event.mode))) }
-
+            is AccountHubEvent.DropBudgetFile -> drop(event.name, event.bytes)
+            AccountHubEvent.ParseBudgetFile -> parse()
+            AccountHubEvent.BackToBudgetUpload -> updateImport {
+                copy(step = ImportStep.Upload, commitError = null)
+            }
+            is AccountHubEvent.EditBudgetImportMeta -> updateImport { copy(meta = event.meta) }
+            is AccountHubEvent.SetCoaImportMode -> updateImport { copy(mode = event.mode) }
             AccountHubEvent.CommitBudgetImport -> commit()
-
             else -> return false
         }
         return true
     }
 
+    private fun updateImport(change: BudgetImportState.() -> BudgetImportState) =
+        vm.update { copy(budget = budget.copy(import = budget.import.change())) }
+
     /**
-     * Closes the wizard, and reloads the versions when one was created.
+     * Opens on the upload step and reads every version the production has.
      *
-     * The reload is here rather than at the commit so the accountant sees the
-     * result they were shown, then finds the list already carrying it.
+     * Read here, as the web's wizard does, rather than taken from the page: a
+     * suggested version is only worth anything if it saw a budget someone else
+     * imported since the page loaded. A failed read never blocks the import —
+     * the page's list stands in, and the server stays the authority on clashes.
      */
-    private fun close() {
-        val created = vm.setupState.budget.import.created
-        vm.update { copy(budget = budget.copy(import = BudgetImportState())) }
-        if (created != null) {
-            vm.reloadBudget(selecting = created.id.takeIf { it.isNotBlank() })
-            // The commit wrote codes into the chart every other screen reads.
-            vm.chart.load()
-        }
+    private fun open() {
+        if (!vm.mayEdit()) return
+        // Read out here: inside the update, `acceptsDrops` would be the state's own field, always false.
+        val drops = acceptsDrops
+        updateImport { BudgetImportState(open = true, acceptsDrops = drops) }
+        vm.runResult(vm.repo::budgetVersions, { rows ->
+            updateImport { if (open) copy(existing = rows) else this }
+        }, {
+            updateImport { if (open) copy(existing = vm.setupState.budget.versions) else this }
+        })
     }
 
     private fun pick() {
@@ -66,79 +76,94 @@ internal class BudgetImportActions(
         if (!vm.mayEdit()) return
         vm.launchWork {
             val file = source.pick(SetupUpload.BudgetImport, multiple = false) { refusal ->
-                vm.sendSideEffect(AccountHubEffect.Failed(refusal))
+                updateImport { copy(parseError = refusal) }
             }.firstOrNull() ?: return@launchWork
+            stage(file)
+        }
+    }
 
-            vm.update { copy(budget = budget.copy(import = budget.import.copy(uploading = true))) }
+    /** A file dragged onto the drop zone, held exactly as a picked one. */
+    private fun drop(name: String, bytes: ByteArray) {
+        val source = files ?: return
+        if (!vm.mayEdit() || vm.setupState.budget.import.uploading) return
+        source.adopt(name, bytes, SetupUpload.BudgetImport) { refusal ->
+            updateImport { copy(parseError = refusal) }
+        }?.let(::stage)
+    }
+
+    private fun stage(file: PickedAgreementFile) = updateImport {
+        if (open) copy(picked = file, parseError = null) else this
+    }
+
+    /**
+     * Uploads the staged file, then the dry run. Either failure stays on the
+     * upload step with the reason and a Retry — the web's inline banner — and
+     * the staged file is kept, so a retry needs no second pick.
+     */
+    private fun parse() {
+        val source = files ?: return
+        val import = vm.setupState.budget.import
+        val file = import.picked ?: return
+        if (!import.canParse || !vm.mayEdit()) return
+        updateImport { copy(uploading = true, parseError = null) }
+        vm.launchWork {
             when (val stored = source.upload(file, caption = "", purpose = SetupUpload.BudgetImport)) {
-                is ZillitResult.Failure -> {
-                    vm.update { copy(budget = budget.copy(import = budget.import.copy(uploading = false))) }
-                    vm.report(stored.error)
+                is ZillitResult.Failure -> updateImport {
+                    copy(uploading = false, parseError = stored.error.localised())
                 }
-                is ZillitResult.Success -> parse(stored.data.copy(name = file.name))
+                is ZillitResult.Success -> dryRun(stored.data.copy(name = file.name), file.name)
             }
         }
     }
 
-    /** The dry run: what the server made of the file, without writing anything. */
-    private fun parse(document: com.zillit.desktop.feature.accounthub.domain.AgreementDocument) {
+    private fun dryRun(document: AgreementDocument, fileName: String) {
         vm.runResult({ vm.repo.dryRunBudgetImport(document) }, { (parsed, upload) ->
-            vm.update {
+            updateImport {
+                if (!open) return@updateImport this
+                val known = existing ?: vm.setupState.budget.versions
                 copy(
-                    budget = budget.copy(
-                        import = budget.import.copy(
-                            uploading = false,
-                            step = ImportStep.Preview,
-                            parsed = parsed,
-                            upload = upload,
-                            // Suggested, not imposed: the accountant only has
-                            // to type if they want something else.
-                            meta = BudgetImportMeta(
-                                version = BudgetImports.suggestNextVersion(budget.versions),
-                                label = BudgetImports.labelFrom(upload.fileName),
-                                description = "Imported from ${upload.fileName}",
-                            ),
-                        ),
+                    uploading = false,
+                    step = ImportStep.Preview,
+                    parsed = parsed,
+                    upload = upload,
+                    commitError = null,
+                    // Suggested, not imposed: the accountant only has to type
+                    // if they want something else.
+                    meta = BudgetImportMeta(
+                        version = BudgetImports.suggestNextVersion(known),
+                        label = BudgetImports.labelFrom(fileName),
+                        description = "Imported from $fileName",
                     ),
                 )
             }
         }, { error ->
-            vm.update { copy(budget = budget.copy(import = budget.import.copy(uploading = false))) }
-            vm.report(error)
+            updateImport { copy(uploading = false, parseError = error.localised()) }
         })
     }
 
+    /**
+     * Writes the reviewed parse.
+     *
+     * On success the page's list is refreshed at once and the new version
+     * selected, while the wizard shows what was imported until Done — the
+     * web's `onImported`. A refusal (usually a taken version or a code the
+     * chart rejects) stays on the preview, everything intact, with the reason
+     * above the buttons.
+     */
     private fun commit() {
         val import = vm.setupState.budget.import
         val parsed = import.parsed ?: return
         val upload = import.upload ?: return
         if (!import.canCommit || !vm.mayEdit()) return
 
-        vm.update { copy(budget = budget.copy(import = budget.import.copy(committing = true, commitError = null))) }
+        updateImport { copy(committing = true, commitError = null) }
         vm.runResult({ vm.repo.commitBudgetImport(upload, parsed, import.meta, import.mode) }, { created ->
-            vm.update {
-                copy(
-                    budget = budget.copy(
-                        import = budget.import.copy(
-                            committing = false,
-                            step = ImportStep.Done,
-                            created = created,
-                        ),
-                    ),
-                )
-            }
+            updateImport { copy(committing = false, step = ImportStep.Done, created = created) }
+            vm.reloadBudget(selecting = created?.id?.takeIf { it.isNotBlank() })
+            // The commit wrote codes into the chart every other screen reads.
+            vm.chart.load()
         }, { error ->
-            // The wizard stays on Preview with everything intact: the usual
-            // refusal is a duplicate version or a code the chart rejects, and
-            // both are fixed here rather than by starting again.
-            // Named on the Preview step, where the Import button lives — the
-            // web surfaces it there for the same reason.
-            vm.update {
-                copy(budget = budget.copy(import = budget.import.copy(
-                    committing = false,
-                    commitError = error.localised(),
-                )))
-            }
+            updateImport { copy(committing = false, commitError = error.localised()) }
         })
     }
 }

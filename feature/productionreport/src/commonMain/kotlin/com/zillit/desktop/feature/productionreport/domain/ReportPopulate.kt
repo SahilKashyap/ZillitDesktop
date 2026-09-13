@@ -62,9 +62,10 @@ object ReportPopulate {
                         line.copy(
                             values = line.values.mapIndexed { index, atom ->
                                 if (index == inAt) {
-                                    // Wall-clock wire: a call sheet carries
-                                    // epoch times, a report carries HH:mm.
-                                    atom.copy(value = ReportTime.toWireTime(seed))
+                                    // A call sheet carries `Time:<epoch>`; a
+                                    // report's IN cell is mode-prefixed
+                                    // wall clock, `Time:HH:mm`.
+                                    atom.copy(value = inValueFromCallSheet(seed))
                                 } else {
                                     atom
                                 }
@@ -73,6 +74,19 @@ object ReportPopulate {
                     }
                 },
             )
+        }
+    }
+
+    /**
+     * The web copies the call sheet's raw `Time:<epoch ms>` and leans on the
+     * editor's legacy reader; this folds it to the report's own encoding once.
+     */
+    internal fun inValueFromCallSheet(raw: String): String {
+        val trimmed = raw.trim()
+        return if (trimmed.startsWith("Time:")) {
+            "Time:" + ReportTime.toWireTime(trimmed.removePrefix("Time:"))
+        } else {
+            ReportTime.encodeInOut(trimmed)
         }
     }
 

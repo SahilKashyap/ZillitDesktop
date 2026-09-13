@@ -38,9 +38,6 @@ import com.zillit.desktop.feature.accounthub.ui.ChartState
 import com.zillit.desktop.feature.accounthub.domain.DealCondition
 import com.zillit.desktop.feature.accounthub.domain.PayrollBureau
 import com.zillit.desktop.feature.accounthub.ui.SetupTab
-import com.zillit.desktop.feature.accounthub.domain.TrackingNode
-import com.zillit.desktop.feature.accounthub.domain.TrackingSet
-import com.zillit.desktop.feature.accounthub.ui.ChartView
 import com.zillit.desktop.feature.accounthub.ui.SectionEdit
 import com.zillit.desktop.feature.accounthub.ui.SetupState
 import com.zillit.desktop.feature.accounthub.ui.VendorFormPage
@@ -238,64 +235,6 @@ class AccountHubScreenRenderTest {
             // so its absence does not read as a missing control.
             onNodeWithText("Each account saves on its own — there is no section-level save here.")
                 .assertIsDisplayed()
-        }
-    }
-
-    /**
-     * The Layers tab shows what the accounts service holds.
-     *
-     * It drew a notice and nothing else before — the notice claimed reading
-     * was wired while nothing ever called for the data.
-     */
-    @Test
-    fun `the layers tab lists the production's tracking dimensions`() {
-        val layered = state(HubArea.ChartOfAccounts).let { base ->
-            base.copy(
-                chart = base.chart.copy(
-                    view = ChartView.Layers,
-                    trackingSets = listOf(
-                        TrackingSet(
-                            id = "s1",
-                            name = "Locations",
-                            code = "LOC",
-                            nodes = listOf(
-                                TrackingNode(id = "a", setId = "s1", code = "LON", name = "London"),
-                                TrackingNode(
-                                    id = "b",
-                                    setId = "s1",
-                                    code = "LON-01",
-                                    name = "Soho",
-                                    parentId = "a",
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            )
-        }
-
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) { AccountHubScreen(state = layered, onEvent = {}) }
-            }
-            onNodeWithText("Locations").assertExists()
-            onNodeWithText("Prefix LOC").assertExists()
-            onNodeWithText("London").assertExists()
-            onNodeWithText("Soho").assertExists()
-        }
-    }
-
-    @Test
-    fun `a production with no layers is told so rather than shown a bare notice`() {
-        val none = state(HubArea.ChartOfAccounts).let { base ->
-            base.copy(chart = base.chart.copy(view = ChartView.Layers))
-        }
-
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) { AccountHubScreen(state = none, onEvent = {}) }
-            }
-            onNodeWithText("This project has no tracking dimensions configured.").assertExists()
         }
     }
 
@@ -605,7 +544,8 @@ class AccountHubScreenRenderTest {
                 }
             }
             onNodeWithText("1000").assertIsDisplayed()
-            onNodeWithText("Production").assertIsDisplayed()
+            // A top-level group's name is drawn in capitals, as the web's tree draws it.
+            onNodeWithText("PRODUCTION").assertIsDisplayed()
         }
 
         val noChain = state(HubArea.Approvers).let { base ->

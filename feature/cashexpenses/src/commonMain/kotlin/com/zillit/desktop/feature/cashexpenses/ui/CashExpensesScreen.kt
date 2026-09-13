@@ -4,10 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
@@ -22,6 +25,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.cashexpenses.domain.CashPeople
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 import com.zillit.desktop.feature.cashexpenses.ui.pages.ActiveFloatsPage
 import com.zillit.desktop.feature.cashexpenses.ui.pages.CashExtensionPage
@@ -70,7 +74,9 @@ fun CashExpensesScreen(
      */
     loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap? = { null },
 ) {
-    ProvideCashFaces(loadAvatar) {
+    // The cash service sends people as ids; the crew list is what names them.
+    val people = remember(state.assignees) { CashPeople(state.assignees) }
+    ProvideCashFaces(loadAvatar, people) {
     Box(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         Column(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
             CashHeader(state, onEvent)
@@ -100,6 +106,27 @@ fun CashExpensesScreen(
         )
     }
     }
+}
+
+/**
+ * The cross-pipeline queues, at the trailing end of the pipeline switcher.
+ *
+ * As wide as its tabs and no wider. A tab strip fills whatever width it is
+ * given, and as the switcher's trailing content that was the whole header: the
+ * switcher measured to nothing, so a shared queue had no way back to the
+ * pipeline pages and Out of Pocket could not be opened at all (seen live
+ * 2026-09-13).
+ */
+@Composable
+private fun SharedQueueTabs(state: CashUiState, onEvent: (CashEvent) -> Unit) {
+    ZillitTabStrip(
+        tabs = state.sharedDestinations.map { ZillitTab(it.slug, it.label) },
+        activeId = state.destination.slug,
+        onSelect = { slug ->
+            CashDestination.fromSlug(slug)?.let { onEvent(CashEvent.Open(it)) }
+        },
+        modifier = androidx.compose.ui.Modifier.width(IntrinsicSize.Max),
+    )
 }
 
 @Composable
@@ -142,15 +169,7 @@ private fun CashHeader(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             activeId = if (state.onSharedPage) null else state.pipeline.wire,
             onSelect = { onEvent(CashEvent.SwitchPipeline(ExpenseType.from(it))) },
             size = TabStripSize.Primary,
-            trailing = {
-                ZillitTabStrip(
-                    tabs = state.sharedDestinations.map { ZillitTab(it.slug, it.label) },
-                    activeId = state.destination.slug,
-                    onSelect = { slug ->
-                        CashDestination.fromSlug(slug)?.let { onEvent(CashEvent.Open(it)) }
-                    },
-                )
-            },
+            trailing = { SharedQueueTabs(state, onEvent) },
         )
 
         if (!state.onSharedPage) {

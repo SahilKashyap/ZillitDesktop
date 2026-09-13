@@ -255,17 +255,34 @@ data class FormTemplate(val sections: List<FormSection> = emptyList()) {
         mapField(sectionKey, fieldId, edit)
 
     /** One step up or down within its own section. */
-    fun nudgeField(sectionKey: String, fieldId: String, delta: Int): FormTemplate =
-        mapSection(sectionKey) { section ->
-            val rows = section.ordered
-            val from = rows.indexOfFirst { it.id == fieldId }
-            val to = from + delta
-            if (from < 0 || to !in rows.indices) return@mapSection section
-            val moved = rows.toMutableList()
-            moved[from] = rows[to]
-            moved[to] = rows[from]
-            section.copy(fields = moved)
-        }.renumberFields(sectionKey)
+    fun nudgeField(sectionKey: String, fieldId: String, delta: Int): FormTemplate {
+        val rows = section(sectionKey)?.ordered ?: return this
+        val from = rows.indexOfFirst { it.id == fieldId }
+        val to = from + delta
+        if (from < 0 || to !in rows.indices) return this
+        val moved = rows.toMutableList()
+        moved[from] = rows[to]
+        moved[to] = rows[from]
+        return mapSection(sectionKey) { it.copy(fields = moved) }.renumberFields(sectionKey)
+    }
+
+    /**
+     * Moves [fromId] to where [toId] sits within their section — the
+     * rearrange panel's drop.
+     *
+     * Keyed for the reason sections are: the panel lists only the fields on
+     * the form, so a position taken from it names a different row whenever a
+     * field above is off the form.
+     */
+    fun moveField(sectionKey: String, fromId: String, toId: String): FormTemplate {
+        if (fromId == toId) return this
+        val rows = section(sectionKey)?.ordered?.toMutableList() ?: return this
+        val from = rows.indexOfFirst { it.id == fromId }
+        val to = rows.indexOfFirst { it.id == toId }
+        if (from < 0 || to < 0) return this
+        rows.add(to, rows.removeAt(from))
+        return mapSection(sectionKey) { it.copy(fields = rows) }.renumberFields(sectionKey)
+    }
 
     /** Moves a field to the end of another section. */
     fun moveFieldToSection(fromKey: String, fieldId: String, toKey: String): FormTemplate {

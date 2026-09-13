@@ -61,7 +61,8 @@ class CashExpensesViewModel(
      */
     private val viewer: () -> CashViewer,
     /**
-     * Who a batch may be handed to.
+     * The production's crew: who a batch may be handed to, and the name for
+     * every user id the cash service sends (see `CashPeople`).
      *
      * A host seam rather than a repository call: the crew list belongs to the
      * open production, not to this service, and every other module that picks
@@ -122,9 +123,6 @@ class CashExpensesViewModel(
                     copy(viewer = identity, destination = CashDestination.landing(identity, pipeline))
                 }
             }
-            // Read here rather than at construction: the crew belongs to the
-            // open production, which does not exist when this is built.
-            setState { copy(assignees = assignees()) }
             load(currentState.destination)
         }
 
@@ -314,7 +312,14 @@ class CashExpensesViewModel(
     @Suppress("CyclomaticComplexMethod") // A dispatch table; splitting it hides the mapping.
     private fun load(destination: CashDestination) {
         loadJob?.cancel()
-        setState { copy(loading = true, error = null) }
+        // The crew is re-read with every page rather than once at start: it
+        // belongs to the open production, and every name on these pages is
+        // looked up in it. Read once, a tool opened before the production's
+        // user list arrived would have no names until the next production
+        // switch. Read outside the state lambda, where `assignees` is the
+        // state's list rather than the supplier.
+        val crew = assignees()
+        setState { copy(loading = true, error = null, assignees = crew) }
         loadJob = launch {
             val outcome: ZillitResult<CashUiState.() -> CashUiState> = when (destination) {
                 CashDestination.PettyCashOverview ->

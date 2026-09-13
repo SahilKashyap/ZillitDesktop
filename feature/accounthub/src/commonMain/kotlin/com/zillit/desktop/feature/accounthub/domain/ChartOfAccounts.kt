@@ -35,9 +35,21 @@ enum class CoaLineType(val wire: String, val label: String) {
     val parentType: CoaLineType?
         get() = entries.firstOrNull { it.depth == depth - 1 }
 
-    /** The level immediately below, for defaulting a new child's type. */
+    /** The level immediately below, or null for the leaf. */
     val childType: CoaLineType?
         get() = entries.firstOrNull { it.depth == depth + 1 }
+
+    /**
+     * The "+" action's tooltip, in the chart's own vocabulary — the web's
+     * `ADD_CHILD_LABEL`. Null for the leaf, which takes no children.
+     */
+    val addChildLabel: String?
+        get() = when (this) {
+            Header -> "Add Header for Group"
+            Section -> "Add Nominal for Headers"
+            Category -> "Add Sub-code for nominals"
+            SubCategory -> null
+        }
 
     companion object {
         fun from(wire: String?): CoaLineType? =
@@ -61,8 +73,9 @@ enum class CoaCostType(val wire: String, val label: String) {
         /**
          * Defaults to [Expense].
          *
-         * That is what budget-imported rows carry, and it is by far the
-         * commonest class on a production's chart.
+         * That is the column default on both the budget import and a manual
+         * add, so an untagged row belongs to the cost side — the web's
+         * `isExpenseRow` reads a missing class the same way.
          */
         fun from(wire: String?): CoaCostType =
             entries.firstOrNull { it.wire == wire?.lowercase() } ?: Expense
@@ -102,9 +115,9 @@ data class CoaAccount(
     /**
      * Where the row came from — `budget` for a code the import created.
      *
-     * A budget row's cost type is locked on the web: the budget's own class is
-     * what the cost report reads, and re-typing it here would have the two
-     * disagree.
+     * A budget row's cost type and structure are locked: the budget's own
+     * taxonomy is what the cost report reads, and the server refuses a change
+     * of class on such a row.
      */
     val source: String = "",
 ) {
@@ -119,14 +132,34 @@ data class CoaAccount(
             CoaLineType.SubCategory -> categoryId
         }
 
+    /** The ancestors' ids, top down, without the self-reference at this row's own level. */
+    val ancestorIds: List<String>
+        get() = listOfNotNull(headId, sectionId, categoryId).filter { it != id }
+
     val display: String get() = listOf(code, name).filter { it.isNotBlank() }.joinToString(" · ")
+
+    /**
+     * The label every surface prints — the web's `coaLabel`.
+     *
+     * The name is optional, so a nameless code reads as the bare code rather
+     * than a dangling "5000 — ".
+     */
+    fun label(separator: String = "—"): String = if (name.isNotEmpty()) "$code $separator $name" else code
 
     companion object {
         const val BUDGET_SOURCE = "budget"
     }
 }
 
-/** The stat strip over the chart — the web's five cards. */
+/** What an edit answered — the saved row and how many descendants its class change reached. */
+data class CoaUpdate(val account: CoaAccount, val cascadedDescendants: Int = 0)
+
+/**
+ * The stat strip over the chart — the web's five cards.
+ *
+ * Counted over the tab's rows *before* Show inactive filters them, as the web
+ * counts: the strip describes the chart, not the current filter.
+ */
 data class CoaStats(
     val total: Int = 0,
     val headers: Int = 0,
@@ -138,9 +171,10 @@ data class CoaStats(
         fun of(rows: List<CoaAccount>) = CoaStats(
             total = rows.size,
             headers = rows.count { it.lineType == CoaLineType.Header },
-            // "Nominals" on the strip is the mid level, as the web counts it.
+            // The web's own mapping: "Nominals" counts sections and "Codes"
+            // counts categories, whatever the level labels say.
             nominals = rows.count { it.lineType == CoaLineType.Section },
-            codes = rows.count { it.lineType == CoaLineType.Category || it.lineType == CoaLineType.SubCategory },
+            codes = rows.count { it.lineType == CoaLineType.Category },
             active = rows.count { it.isActive },
         )
     }
@@ -158,113 +192,170 @@ data class CoaNode(val account: CoaAccount, val children: List<CoaNode> = emptyL
  * Ordering, tree-building and parent validation for the chart.
  *
  * Kept out of the UI because two consumers need identical answers: the chart
- * screen and, in time, the cost report's worksheet adapter. Two implementations
- * of "which code comes first" is how the web ended up with a tree and a table
- * that disagreed.
+ * screen's tree and its table. Two implementations of "which code comes first"
+ * is how the web ended up with a tree and a table that disagreed.
  */
 object ChartOfAccounts {
 
     /**
-     * Ascending code order.
+     * Ascending code order — the web's `compareCoaCodeNumeric`.
      *
      * `code` is free text, so it is read as a **number** first: "9" before
-     * "99" before "1000", never string order.
+     * "99" before "1000", never string order. A code carrying a letter is not
+     * sortable as a number and goes to the end ("125L", "ADMIN"); so does a
+     * blank one, which parsed as zero would sort to the very top.
      *
-     * The conversion is a whole-string parse, not a prefix one. A prefix parse
-     * reads "125L" as 125 and files it between 124 and 126; a code carrying any
-     * letter is not sortable as a number at all and belongs at the end. Blank
-     * is treated the same way — parsed as zero it would sort to the very top,
-     * which is exactly where a missing code should not be.
+     * Two refinements the web makes and this follows. A hyphenated budget code
+     * ("1100-10") orders by its leading number, so it files beside "1100"
+     * instead of sinking to the tail. And ties — equal values, or two
+     * unsortable codes — fall back to a natural text order, where "1100-2"
+     * comes before "1100-10".
      *
      * Dotted sub-codes read as decimals, so "1100.10" sorts *before* "1100.2".
-     * That is deliberate and is the opposite of segment-wise ordering, where
-     * `.10` would be the tenth child.
+     * That is deliberate and is the opposite of segment-wise ordering.
      */
     fun compareCodes(a: String?, b: String?): Int {
         val left = a.orEmpty().trim()
         val right = b.orEmpty().trim()
-        val leftNumber = left.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
-        val rightNumber = right.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
+        val leftNumber = codeNumber(left)
+        val rightNumber = codeNumber(right)
         return when {
             leftNumber != null && rightNumber != null ->
-                leftNumber.compareTo(rightNumber).takeIf { it != 0 } ?: left.compareTo(right)
+                leftNumber.compareTo(rightNumber).takeIf { it != 0 } ?: naturalCompare(left, right)
             // Exactly one is a number: it wins, pushing the unsortable one down.
             leftNumber != null -> -1
             rightNumber != null -> 1
-            else -> left.compareTo(right)
+            else -> naturalCompare(left, right)
         }
+    }
+
+    /**
+     * A code's numeric value, or null when it is not a number.
+     *
+     * A whole-string parse, never a prefix one: "125L" is not 125. The grammar
+     * is a plain decimal on purpose — the JVM's own parser also accepts "1f"
+     * and "1d", which would file two text codes among the numbers.
+     */
+    private fun codeNumber(code: String): Double? {
+        if (code.isEmpty()) return null
+        if (DECIMAL.matches(code)) return code.toDoubleOrNull()?.takeIf { it.isFinite() }
+        return HYPHENATED.matchEntire(code)?.groupValues?.get(1)?.toDoubleOrNull()
+    }
+
+    /** Digit runs compare by value, everything else without regard to case. */
+    internal fun naturalCompare(a: String, b: String): Int {
+        val left = CHUNK.findAll(a).map { it.value }.toList()
+        val right = CHUNK.findAll(b).map { it.value }.toList()
+        for (index in 0 until minOf(left.size, right.size)) {
+            val order = compareChunks(left[index], right[index])
+            if (order != 0) return order
+        }
+        return left.size.compareTo(right.size).takeIf { it != 0 } ?: a.compareTo(b)
+    }
+
+    private fun compareChunks(a: String, b: String): Int {
+        val bothDigits = a.first().isDigit() && b.first().isDigit()
+        if (!bothDigits) return a.lowercase().compareTo(b.lowercase())
+        val left = a.trimStart('0')
+        val right = b.trimStart('0')
+        return left.length.compareTo(right.length).takeIf { it != 0 } ?: left.compareTo(right)
     }
 
     /**
      * Flat rows to a forest, children sorted by code.
      *
      * Rows whose parent is absent from [rows] — normally because the parent is
-     * inactive and the caller asked for active rows only — are **orphans**.
-     * They are returned separately rather than dropped: a code the server still
-     * accepts postings against, missing from the screen that is supposed to
-     * list every code, is worse than one shown without its ancestry.
+     * inactive and Show inactive is off — are **orphans**. They are returned
+     * separately rather than dropped: a code the server still accepts postings
+     * against, missing from the screen that is supposed to list every code, is
+     * worse than one shown without its ancestry.
      */
     fun tree(rows: List<CoaAccount>): CoaForest {
         val childrenOf = rows.groupBy { it.parentId }
         val known = rows.map { it.id }.toSet()
+        val byCode = Comparator<CoaAccount> { x, y -> compareCodes(x.code, y.code) }
 
-        fun build(account: CoaAccount): CoaNode = CoaNode(
+        fun build(account: CoaAccount, seen: Set<String>): CoaNode = CoaNode(
             account = account,
             children = childrenOf[account.id].orEmpty()
-                .sortedWith { a, b -> compareCodes(a.code, b.code) }
-                .map(::build),
+                // A row naming itself, or a loop in bad data, must not recurse forever.
+                .filter { it.id !in seen }
+                .sortedWith(byCode)
+                .map { build(it, seen + it.id) },
         )
 
-        val roots = rows.filter { it.parentId == null }
-            .sortedWith { a, b -> compareCodes(a.code, b.code) }
-            .map(::build)
+        val roots = rows.filter { it.parentId == null }.sortedWith(byCode).map { build(it, setOf(it.id)) }
         val orphans = rows.filter { it.parentId != null && it.parentId !in known }
-            .sortedWith { a, b -> compareCodes(a.code, b.code) }
-            .map(::build)
+            .sortedWith(byCode)
+            .map { build(it, setOf(it.id)) }
         return CoaForest(roots = roots, orphans = orphans)
     }
 
     /**
-     * Which rows may be the parent of a new row of [lineType].
+     * The tree cut down to a search — the web's `TreeView` filter.
      *
-     * Empty for a header, which has no parent — and that is a legitimate answer,
-     * not a failure to find one.
+     * A node stays when its code or name contains [term] or when something
+     * beneath it does, so every hit keeps the path above it. Blank keeps all.
      */
-    fun parentOptions(rows: List<CoaAccount>, lineType: CoaLineType): List<CoaAccount> {
+    fun filter(nodes: List<CoaNode>, term: String): List<CoaNode> {
+        val needle = term.trim()
+        if (needle.isEmpty()) return nodes
+
+        fun keep(node: CoaNode): CoaNode? {
+            val children = node.children.mapNotNull(::keep)
+            val hit = node.account.code.contains(needle, ignoreCase = true) ||
+                node.account.name.contains(needle, ignoreCase = true)
+            return if (hit || children.isNotEmpty()) node.copy(children = children) else null
+        }
+        return nodes.mapNotNull(::keep)
+    }
+
+    /**
+     * Which rows may be the parent of a row of [lineType].
+     *
+     * Active rows exactly one level above, never the row itself. Empty for a
+     * header, which has no parent — a legitimate answer, not a failure.
+     */
+    fun parentOptions(rows: List<CoaAccount>, lineType: CoaLineType, excludingId: String? = null): List<CoaAccount> {
         val required = lineType.parentType ?: return emptyList()
-        return rows.filter { it.lineType == required && it.isActive }
+        return rows.filter { it.lineType == required && it.isActive && it.id != excludingId }
             .sortedWith { a, b -> compareCodes(a.code, b.code) }
     }
 
     /**
-     * Why this parent will not do, or null when it will.
+     * Why this parent will not do, or null when it will — the web's
+     * `validateParent`.
      *
-     * Returned as prose because it is shown to the person who picked it; a
-     * boolean would leave the form saying only that something is wrong.
+     * The parent is **optional** below the top: a row saved without one sits at
+     * the root of the tree. What is refused is a parent at the wrong level, the
+     * row itself, or an id the chart does not hold.
      */
-    fun parentProblem(lineType: CoaLineType, parent: CoaAccount?): String? {
+    fun parentProblem(
+        lineType: CoaLineType,
+        parentId: String?,
+        rows: List<CoaAccount>,
+        selfId: String? = null,
+    ): String? {
         val required = lineType.parentType
-        // The labels are used verbatim rather than lowercased with an article
-        // in front: they are proper names on this screen ("Headers", "Nominal",
-        // "Code"), and "a headers" is what article-fitting produces.
+        val wanted = parentId?.takeIf { it.isNotBlank() }
+        val parent = wanted?.let { id -> rows.firstOrNull { it.id == id } }
         return when {
-            required == null && parent != null ->
-                "${lineType.tagLabel} sits at the top and cannot have a parent."
-            required == null -> null
-            parent == null -> "Choose the ${required.tagLabel} row this sits under."
+            required == null -> if (wanted != null) "Header rows cannot have a parent." else null
+            wanted == null -> null
+            wanted == selfId -> "A row cannot be its own parent."
+            parent == null -> "Parent not found in this project."
             parent.lineType != required ->
-                "${lineType.tagLabel} sits under ${required.tagLabel}, " +
-                    "not ${parent.lineType.tagLabel}."
+                "Parent must be a ${required.tagLabel}; \"${parent.code}\" is a ${parent.lineType.tagLabel}."
             else -> null
         }
     }
 
     /**
-     * Whether [code] is already taken.
+     * Whether [code] is already taken, by an active row or a retired one.
      *
-     * The code is the natural key and is immutable after create, so this is
-     * checked before the call rather than after the server's 409 — by then the
-     * form has been dismissed.
+     * The code is the natural key and the server's uniqueness spans inactive
+     * rows too, so a retired code cannot be created again — it has to be
+     * reactivated.
      */
     fun codeTaken(rows: List<CoaAccount>, code: String, excludingId: String? = null): Boolean =
         rows.any { it.id != excludingId && it.code.equals(code.trim(), ignoreCase = true) }
@@ -278,7 +369,17 @@ object ChartOfAccounts {
         }
     }
 
-    /** The row's ancestry, top down, as the table's breadcrumb prints it. */
+    /**
+     * The row's ancestry as the table's second line prints it: each
+     * ancestor's name, or its code when it has none, top down.
+     *
+     * Read from the breadcrumb columns rather than by chasing parents, so a
+     * missing middle level does not hide the levels above it.
+     */
+    fun breadcrumb(byId: Map<String, CoaAccount>, account: CoaAccount): List<String> =
+        account.ancestorIds.mapNotNull { byId[it] }.map { it.name.ifEmpty { it.code } }
+
+    /** The row's ancestry, top down, following each level's parent. */
     fun path(rows: List<CoaAccount>, account: CoaAccount): List<CoaAccount> {
         val byId = rows.associateBy { it.id }
         val out = mutableListOf<CoaAccount>()
@@ -290,6 +391,32 @@ object ChartOfAccounts {
             guard++
         }
         return out
+    }
+
+    /** How many rows sit directly beneath [id] — the re-type warning's count. */
+    fun childCount(rows: List<CoaAccount>, id: String): Int = rows.count { it.parentId == id }
+
+    /**
+     * The parent a row keeps when its line type changes — the web's re-default.
+     *
+     * A header has none. Otherwise the current parent survives if it still sits
+     * one level above; failing that, the row the form was opened from, if it
+     * does; failing that, none — so a type change never strands the form on a
+     * parent it cannot save.
+     */
+    fun reparent(
+        lineType: CoaLineType,
+        currentParentId: String?,
+        preselected: CoaAccount?,
+        rows: List<CoaAccount>,
+    ): String? {
+        val required = lineType.parentType ?: return null
+        val current = rows.firstOrNull { it.id == currentParentId }
+        return when {
+            current?.lineType == required -> current.id
+            preselected?.lineType == required -> preselected.id
+            else -> null
+        }
     }
 
     /**
@@ -314,18 +441,23 @@ object ChartOfAccounts {
     }
 
     private const val SUGGEST_LIMIT = 8
+    private val DECIMAL = Regex("""[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?""")
+    private val HYPHENATED = Regex("""(\d+)[\d-]*""")
+    private val CHUNK = Regex("""\d+|\D+""")
 }
 
 /** How the chart is drawn — the web's Tree | Table switch. */
 enum class ChartMode(val label: String) { Tree("Tree"), Table("Table") }
 
-/** The table's sortable columns. */
-enum class ChartSortKey(val label: String) {
-    Code("Code"),
-    Type("Type"),
-    Name("Name"),
-    CostType("Cost type"),
-    Status("Status"),
+/**
+ * The table's sortable columns. [key] is the word the footer prints
+ * ("Sorted by cost ↑"), as the web prints its sort key.
+ */
+enum class ChartSortKey(val label: String, val key: String) {
+    Code("Code", "code"),
+    Type("Type", "type"),
+    Name("Name", "name"),
+    CostType("Cost type", "cost"),
 }
 
 /** A column and a direction. */
@@ -339,19 +471,18 @@ data class ChartSort(val key: ChartSortKey = ChartSortKey.Code, val ascending: B
             ChartSortKey.Code -> Comparator { a, b -> ChartOfAccounts.compareCodes(a.code, b.code) }
             ChartSortKey.Type -> compareBy { it.lineType.depth }
             ChartSortKey.Name -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }
-            ChartSortKey.CostType -> compareBy { it.costType.label }
-            ChartSortKey.Status -> compareBy<CoaAccount> { !it.isActive }.thenBy { !it.isPosting }
+            ChartSortKey.CostType -> compareBy { it.costType.wire }
         }
         return if (ascending) base else base.reversed()
     }
 }
 
 /**
- * One row of the bulk-add grid ("New COA Entry").
+ * One row of the bulk-add grid ("New COA Entry") — the web's `blankRow`.
  *
- * The web autosaves each row two seconds after its last edit, once it has a
- * code; a rename of a saved row is a create-then-deactivate because the code
- * is the natural key. The status is what the row's trailing chip prints.
+ * Only what the grid edits. The autosave's bookkeeping — the code and level the
+ * server holds, what was last sent — lives with the saver, because none of it
+ * is drawn.
  */
 data class CoaBulkRow(
     val localId: String,
@@ -361,49 +492,119 @@ data class CoaBulkRow(
     val name: String = "",
     val isActive: Boolean = true,
     val isPosting: Boolean = true,
-    val parentId: String? = null,
     /** The server's id once the row has been created. */
     val serverId: String? = null,
-    /** The code the server holds, so a rename can be told from an edit. */
-    val savedCode: String = "",
-    val status: CoaBulkStatus = CoaBulkStatus.Idle,
-    val error: String = "",
 ) {
-    val isSaved: Boolean get() = serverId != null
-
-    val isRename: Boolean get() = isSaved && savedCode.isNotBlank() && !savedCode.equals(code.trim(), true)
+    val normalisedCode: String get() = code.trim().uppercase()
 }
 
-enum class CoaBulkStatus(val label: String) {
-    Idle(""),
-    Saving("Saving…"),
-    Saved("Saved"),
-    Error("Couldn't save"),
-    Duplicate("Duplicate code"),
-}
+/** Where a grid row's autosave stands. A row never saved has no status at all. */
+enum class CoaBulkStatus { Saving, Saved, Error }
 
-/** Rules for the bulk grid, shared by the screen and its saver. */
+/** Rules for the bulk grid, shared by the screen and its saver — the web's `coaBulkRows`. */
 object CoaBulk {
     const val SAVE_DEBOUNCE_MS = 2_000L
     const val BATCH_ROWS = 5
 
-    /** A row is written once it has a code and either is new or has changed. */
-    fun isReady(row: CoaBulkRow): Boolean = row.code.isNotBlank() && row.status != CoaBulkStatus.Saving
+    /** A code alone makes a row saveable; the display name is optional. */
+    fun isReady(row: CoaBulkRow): Boolean = row.code.isNotBlank()
+
+    /** Codes that cannot be created: the chart's, active or retired, and the ones this session made. */
+    fun takenCodes(chart: List<CoaAccount>, createdCodes: Set<String>): Set<String> =
+        chart.map { it.code.trim().uppercase() }.toSet() + createdCodes
 
     /**
-     * Whether [row]'s code collides with the chart or with another grid row.
+     * The rows whose code collides — the web's `computeDupIds`.
      *
-     * A saved row is compared against everything but itself, so its own
-     * server record does not read as its duplicate.
+     * A code already taken flags only a row not yet saved: once a row is
+     * created its own code joins [taken], and without that guard every saved
+     * row would flag itself. Two grid rows sharing a code both flag.
      */
-    fun isDuplicate(row: CoaBulkRow, rows: List<CoaBulkRow>, chart: List<CoaAccount>): Boolean {
-        val code = row.code.trim()
-        if (code.isEmpty()) return false
-        val inChart = chart.any { it.id != row.serverId && it.code.equals(code, ignoreCase = true) }
-        val inGrid = rows.any { it.localId != row.localId && it.code.trim().equals(code, ignoreCase = true) }
-        return inChart || inGrid
+    fun duplicateIds(rows: List<CoaBulkRow>, taken: Set<String>): Set<String> {
+        val firstWith = mutableMapOf<String, String>()
+        val out = mutableSetOf<String>()
+        rows.forEach { row ->
+            val code = row.normalisedCode
+            if (code.isEmpty()) return@forEach
+            if (code in taken && row.serverId == null) out += row.localId
+            val earlier = firstWith[code]
+            if (earlier != null) {
+                out += row.localId
+                out += earlier
+            } else {
+                firstWith[code] = row.localId
+            }
+        }
+        return out
     }
+
+    /**
+     * Why a row is flagged, for its tooltip — the web's `dupMessage`.
+     *
+     * The distinctions matter because the remedies differ: a live code is
+     * simply taken, a retired one has to be reactivated from the chart rather
+     * than created again, and a code used and removed in this session is
+     * reserved just the same.
+     */
+    fun duplicateMessage(
+        row: CoaBulkRow,
+        rows: List<CoaBulkRow>,
+        chart: List<CoaAccount>,
+        createdCodes: Set<String>,
+    ): String? {
+        val code = row.normalisedCode
+        if (code.isEmpty()) return null
+        if (rows.any { it.localId != row.localId && it.normalisedCode == code }) {
+            return "Code \"$code\" is used by another row in this list"
+        }
+        val match = chart.firstOrNull { it.code.trim().equals(code, ignoreCase = true) }
+        return when {
+            match != null && !match.isActive ->
+                "Code \"$code\" was previously used and retired — reactivate it from the Chart of Accounts " +
+                    "list instead of creating it again"
+            match != null -> "Code \"$code\" already exists"
+            code in createdCodes -> "Code \"$code\" was already used earlier in this session and can't be reused here"
+            else -> null
+        }
+    }
+
+    /** What a create sends: the whole row under the page's one parent. */
+    fun newAccount(row: CoaBulkRow, parentId: String?) = NewAccount(
+        code = row.normalisedCode,
+        name = row.name.trim(),
+        lineType = row.lineType,
+        costType = row.costType,
+        parentId = parentId,
+        isPosting = row.isPosting,
+        isActive = row.isActive,
+    )
+
+    /**
+     * What an update sends — the narrow form, plus the level and parent when
+     * the row was re-typed. The code never rides along: it has no in-place
+     * rename, and a changed code is a create-then-retire instead.
+     */
+    fun patch(row: CoaBulkRow, retype: Boolean, parentId: String?) = AccountPatch(
+        name = row.name.trim(),
+        costType = row.costType,
+        isActive = row.isActive,
+        isPosting = row.isPosting,
+        structureChanged = retype,
+        lineType = row.lineType.takeIf { retype },
+        parentId = parentId,
+    )
+
+    /** The fields an update carries, for telling a real change from a repeat. */
+    fun snapshot(row: CoaBulkRow) = CoaBulkSnapshot(row.name.trim(), row.costType, row.isActive, row.isPosting)
 }
+
+/** See [CoaBulk.snapshot]. */
+data class CoaBulkSnapshot(
+    val name: String,
+    val costType: CoaCostType,
+    val isActive: Boolean,
+    val isPosting: Boolean,
+)
 
 /**
  * The chart as a forest, plus whatever could not be placed in it.
@@ -441,7 +642,12 @@ data class TrackingSet(
     val shownPrefix: String get() = prefix.ifBlank { code }
 }
 
-/** One code within a [TrackingSet]. Nests via [parentId], unlike the chart. */
+/**
+ * One code within a [TrackingSet].
+ *
+ * [parentId] exists in the schema for a deeper tree later; the layers tab is
+ * flat, as the web's is, and never writes one.
+ */
 data class TrackingNode(
     val id: String,
     val setId: String = "",
@@ -452,6 +658,7 @@ data class TrackingNode(
     val isActive: Boolean = true,
     /** Optional notes, shown on hover in the picker. */
     val description: String = "",
+    val sortOrder: Int = 0,
 )
 
 /** The palette a new layer is coloured from, by position — the web's `DEFAULT_COLORS`. */
@@ -475,6 +682,13 @@ object TrackingSets {
     /** Upper-cased, letters and digits, at most ten — as the web normalises it as it is typed. */
     fun normalisePrefix(raw: String): String =
         raw.uppercase().filter { it.isLetterOrDigit() }.take(PREFIX_MAX)
+
+    /**
+     * A layer's codes in reading order — the web's `sortNodes`: by the stored
+     * order, then by code. Flat, every code, active or not.
+     */
+    fun ordered(nodes: List<TrackingNode>): List<TrackingNode> =
+        nodes.sortedWith(compareBy<TrackingNode> { it.sortOrder }.thenBy { it.code })
 
     /** Why a set cannot be saved, or null. A blank prefix is allowed: the server derives one. */
     fun setProblem(name: String, prefix: String): String? = when {

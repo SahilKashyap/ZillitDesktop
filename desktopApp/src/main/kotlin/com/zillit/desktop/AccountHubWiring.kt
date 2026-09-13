@@ -149,6 +149,26 @@ internal fun AppGraph.Ready.agreementFiles(): AgreementFiles {
             }
         }
 
+        override val acceptsDrops: Boolean = true
+
+        // A dropped file is held exactly as a picked one is, so the upload
+        // below cannot tell the two apart — and the same rules refuse it.
+        override fun adopt(
+            name: String,
+            bytes: ByteArray,
+            purpose: SetupUpload,
+            onRefused: (String) -> Unit,
+        ): PickedAgreementFile? {
+            val refusal = purpose.refuse(name, bytes.size.toLong())
+            if (refusal != null) {
+                onRefused("$name: $refusal")
+                return null
+            }
+            val handle = UUID.randomUUID().toString()
+            pending[handle] = bytes
+            return PickedAgreementFile(name = name, bytes = bytes.size.toLong(), handle = handle)
+        }
+
         override suspend fun upload(
             file: PickedAgreementFile,
             caption: String,

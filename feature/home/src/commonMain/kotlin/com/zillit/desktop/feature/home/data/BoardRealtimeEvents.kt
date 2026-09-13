@@ -126,6 +126,9 @@ internal val BOARD_REALTIME_EVENTS: Map<String, BoardRealtimeEvents> = mapOf(
         reloadExtras = listOf("confidential_info:posting-rights:update", "confidential_info:chat:archived"),
     ),
     "reports" to chatBoard(prefix = "reports"),
+    // The production report tool's unit chat (`:2412-2489`, readby `:1653`): messages and
+    // comments only — no singular delete, rights or archive events on this prefix.
+    "production-report" to chatBoard(prefix = "production_report"),
     "script-notes" to chatBoard(
         prefix = "script_notes",
         reloadExtras = listOf("script_notes:posting-rights:update"),

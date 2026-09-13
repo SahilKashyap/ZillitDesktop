@@ -4,507 +4,462 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
-import com.zillit.desktop.feature.dealmemo.domain.Agreement
-import com.zillit.desktop.feature.dealmemo.domain.BasicRateDetails
-import com.zillit.desktop.feature.dealmemo.domain.RateCascade
-import com.zillit.desktop.feature.dealmemo.domain.RateCardEntry
-import com.zillit.desktop.feature.dealmemo.domain.RateResolution
-import com.zillit.desktop.feature.dealmemo.domain.Deal
-import com.zillit.desktop.feature.dealmemo.domain.DealHistoryEntry
+import com.zillit.desktop.feature.dealmemo.domain.DealDoc
+import com.zillit.desktop.feature.dealmemo.domain.DealMemoMetadata
 import com.zillit.desktop.feature.dealmemo.domain.DealMemoRepository
-import com.zillit.desktop.feature.dealmemo.domain.DealRates
-import com.zillit.desktop.feature.dealmemo.domain.DealStatus
-import com.zillit.desktop.feature.dealmemo.domain.DealViewer
-import com.zillit.desktop.feature.dealmemo.domain.NewDeal
-import com.zillit.desktop.feature.dealmemo.domain.Union
+import com.zillit.desktop.feature.dealmemo.domain.DealPerson
+import com.zillit.desktop.feature.dealmemo.domain.DealRefresh
+import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey
+import com.zillit.desktop.feature.dealmemo.domain.authoring.ProjectSettingsView
+import com.zillit.desktop.feature.dealmemo.domain.rates.DealReferenceData
+import com.zillit.desktop.feature.dealmemo.ui.builder.BuilderActions
+import com.zillit.desktop.feature.dealmemo.ui.documents.DealPdfWork
+import com.zillit.desktop.feature.dealmemo.ui.documents.platformPdfWork
+import com.zillit.desktop.feature.dealmemo.ui.preview.CoaState
+import com.zillit.desktop.feature.dealmemo.ui.preview.DealPreviewActions
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlin.random.Random
+import kotlin.time.Clock
 
-/** The pages the deal memo tool offers. */
-enum class DealDestination(val slug: String, val label: String) {
-    /** The crew member's own terms. */
-    MyDeal("mine", "My Deal"),
-    AllDeals("all", "All Deals"),
-    Create("create", "New Deal"),
-    RateCard("rates", "Rate Card"),
-    ;
+/** The badge ledger's deal-memo counts, and the reads that clear them. */
+interface DealMemoBadgeSource {
+    val counts: Flow<DealBadgeCounts>
 
-    /**
-     * Whether [viewer] may open this page.
-     *
-     * The production's deals and the create form are write-access only —
-     * everyone else's rates are not a crew member's business, and this is the
-     * one gate that keeps them out of them.
-     */
-    fun visibleTo(viewer: DealViewer): Boolean = when (this) {
-        MyDeal -> true
-        AllDeals, Create, RateCard -> viewer.canWriteDeals
-    }
+    /** `notification:level:read` for a whole tab. */
+    fun readTab(unit: DealBadgeUnit)
+
+    /** The same, narrowed to one deal (`level_3`). */
+    fun readDeal(unit: DealBadgeUnit, dealId: String)
 }
 
-/** Everything the deal memo tool is showing. */
-data class DealUiState(
-    val viewer: DealViewer,
-    val destination: DealDestination = DealDestination.MyDeal,
-    val loading: Boolean = false,
-    val busy: Boolean = false,
-    val error: ZillitError? = null,
-    val notice: String? = null,
-    val deals: List<Deal> = emptyList(),
-    val myDeal: Deal? = null,
-    val history: List<DealHistoryEntry> = emptyList(),
-    val unions: List<Union> = emptyList(),
-    val agreements: List<Agreement> = emptyList(),
-    val search: String = "",
-    val statusFilter: DealStatus? = null,
-    val selectedId: String? = null,
-    val draft: DealDraft = DealDraft(),
-    val prompt: DealPrompt? = null,
-    val rateCard: List<RateCardEntry> = emptyList(),
-    /** The agreement's own scale, which roles fall back to. */
-    val agreementRates: BasicRateDetails? = null,
-    /** The rate the current selection resolves to, once looked up. */
-    val resolvedRate: RateResolution? = null,
-    val rateLookupFailed: Boolean = false,
-) {
-    val selected: Deal? get() = deals.firstOrNull { it.id == selectedId }
-
-    val visibleDestinations: List<DealDestination>
-        get() = DealDestination.entries.filter { it.visibleTo(viewer) }
-
-    val rows: List<Deal>
-        get() = deals.filter { deal ->
-            (statusFilter == null || deal.status == statusFilter) &&
-                (
-                    search.isBlank() ||
-                        deal.crewName.lowercase().contains(search.trim().lowercase()) ||
-                        deal.designation?.lowercase()?.contains(search.trim().lowercase()) == true
-                    )
-        }
-
-    /**
-     * Whether the drafted weekly rate sits inside the agreement's envelope.
-     *
-     * Null when there is nothing to compare against. Paying under a collective
-     * agreement is a dispute waiting to happen, and the person writing the deal
-     * is usually the last to hear the floor moved.
-     */
-    val weeklyWithinEnvelope: Boolean?
-        get() {
-            val tier = resolvedRate?.weekly ?: return null
-            val rate = draft.weeklyRate.trim().toDoubleOrNull() ?: return null
-            if (rate <= 0) return null
-            return RateCascade.withinEnvelope(tier, rate)
-        }
-
-    /** Deals whose terms changed and have not been re-confirmed. */
-    val awaitingAcknowledgement: List<Deal> get() = deals.filter { it.awaitingReacknowledgement }
+/** Where an exported file lands — the host saves and opens it. */
+fun interface DealFileSaver {
+    suspend fun save(fileName: String, bytes: ByteArray): ZillitResult<Unit>
 }
 
-/** The New Deal form. */
-data class DealDraft(
-    val userId: String = "",
-    val crewName: String = "",
-    val designation: String = "",
-    val currency: String? = null,
-    val weeklyRate: String = "",
-    val dailyRate: String = "",
-    val overtimeRate: String = "",
-    val standardHours: String = "",
-    val daysPerWeek: String = "",
-    val boxRental: String = "",
-    val unionId: String? = null,
-    val agreementId: String? = null,
-    val nominalCode: String = "",
-    val notes: String = "",
-    val departmentIdentifier: String? = null,
-    val productionType: String? = null,
-    /** The production's budget, which decides which rate tier applies. */
-    val budget: String = "",
-) {
-    fun toRequest() = NewDeal(
-        userId = userId.trim(),
-        crewName = crewName.trim(),
-        // The rate-card department identifier — the wire's authoritative
-        // department column (`crew_details.department_identifier`,
-        // toDealMemoPayload.js:796-800).
-        departmentId = departmentIdentifier,
-        designation = designation.takeIf { it.isNotBlank() },
-        currency = currency,
-        rates = DealRates(
-            weeklyRate = weeklyRate.trim().toDoubleOrNull() ?: 0.0,
-            dailyRate = dailyRate.trim().toDoubleOrNull() ?: 0.0,
-            overtimeRate = overtimeRate.trim().toDoubleOrNull() ?: 0.0,
-            standardHours = standardHours.trim().toDoubleOrNull() ?: 0.0,
-            daysPerWeek = daysPerWeek.trim().toDoubleOrNull() ?: 0.0,
-            boxRental = boxRental.trim().toDoubleOrNull() ?: 0.0,
-        ),
-        startDate = null,
-        endDate = null,
-        unionId = unionId,
-        agreementId = agreementId,
-        nominalCode = nominalCode.takeIf { it.isNotBlank() },
-        notes = notes.takeIf { it.isNotBlank() },
-    )
-}
-
-sealed interface DealPrompt {
-    data class Confirm(
-        val action: DealConfirmAction,
-        val targetId: String,
-        val title: String,
-        val message: String,
-    ) : DealPrompt
-}
-
-enum class DealConfirmAction { Acknowledge, Chase }
-
-sealed interface DealEvent {
-    data object Refresh : DealEvent
-    data class Open(val destination: DealDestination) : DealEvent
-    data class Search(val query: String) : DealEvent
-    data class Filter(val status: DealStatus?) : DealEvent
-    data class Select(val id: String?) : DealEvent
-    data object ClearNotice : DealEvent
-    data class Ask(val prompt: DealPrompt) : DealEvent
-    data object DismissPrompt : DealEvent
-    data object ConfirmPrompt : DealEvent
-    data class EditDraft(val draft: DealDraft) : DealEvent
-    data class SubmitDraft(val notify: Boolean) : DealEvent
-
-    // -- rate card ---------------------------------------------------------
-
-    /** Looks up the published rate for the drafted role. */
-    data object ResolveRate : DealEvent
-
-    /** Copies the resolved rate into the form. */
-    data object ApplyResolvedRate : DealEvent
-
-    data class BrowseRateCard(val departmentIdentifier: String?) : DealEvent
-}
-
-sealed interface DealEffect {
-    data class Failed(val message: String) : DealEffect
-}
-
-/** The deal memo tool's view model. */
+/**
+ * The deal memo tool — the web's `DealMemoModule`: one entry, many pages,
+ * and the rights, approver metadata, setups and directory every page shares.
+ *
+ * Each page's work lives in its own collaborator; this class owns only what is
+ * shared — where the viewer is, what they may see, and when a page is entered.
+ */
+@Suppress("LongParameterList", "TooManyFunctions") // One seam per host concern, each a test hook with a default.
 class DealMemoViewModel(
-    private val repository: DealMemoRepository,
-    private val viewer: () -> DealViewer,
-) : ZillitViewModel<DealUiState, DealEvent, DealEffect>(DealUiState(viewer = viewer())) {
+    internal val repository: DealMemoRepository,
+    internal val reference: DealReferenceData,
+    private val viewer: () -> DealMemoViewer,
+    private val loadPeople: suspend () -> Map<String, DealPerson> = { emptyMap() },
+    internal val badges: DealMemoBadgeSource? = null,
+    internal val files: DealFileSaver? = null,
+    internal val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+    private val metadataRetryDelays: List<Long> = DealMemoMetadata.RETRY_DELAYS_MILLIS,
+    /** The production's own data — companies, units, countries, chart of accounts. */
+    internal val productionData: DealProductionData = DealProductionData.None,
+    /** Storage and the signature library; without it documents can't be opened or signed. */
+    internal val store: DealDocumentStore? = null,
+    internal val pdf: DealPdfWork = platformPdfWork(),
+    /** Where PDF rendering and stamping run — never the UI thread. */
+    internal val workDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    internal val newId: () -> String = { "row-${Random.nextLong().toULong().toString(RADIX)}" },
+) : ZillitViewModel<DealMemoUiState, DealMemoEvent, DealMemoEffect>(DealMemoUiState()) {
 
-    private var loadJob: Job? = null
+    private val deals = DealListActions(this)
+    private val tabPages = TabPageActions(this)
+    private val notices = NoticesActions(this)
+    private val noticeTemplate = NoticeTemplateActions(this)
+    private val rates = GlobalRatesActions(this)
+    internal val preview = DealPreviewActions(this)
+    internal val templateStore = TemplateStore(this)
+    internal val builder = BuilderActions(this)
+    private val hub = SetupHubActions(this)
+    private var coaJob: Job? = null
+    private var productionJob: Job? = null
+    private var settingsJob: Job? = null
+    private var settingsReadAt = 0L
+    private var crewJob: Job? = null
+    private var directoryJob: Job? = null
+    private var agenciesJob: Job? = null
+
     private var started = false
+    private var listening = false
+    private var enteredPage: DealMemoRoute? = null
+    private val sessionJobs = mutableListOf<Job>()
+    private val refreshJobs = mutableMapOf<DealRefreshKey, Job>()
+    private var toastCounter = 0L
 
+    /** Opens the tool: rights, metadata, directory and setups, then the first page. */
     fun start() {
         if (started) return
         started = true
-        val identity = viewer()
-        setState {
-            copy(
-                viewer = identity,
-                destination = if (identity.canWriteDeals) DealDestination.AllDeals else DealDestination.MyDeal,
-            )
-        }
-        if (identity.canWriteDeals) {
-            launch { repository.unions().getOrNull()?.let { list -> setState { copy(unions = list) } } }
-        }
+        setState { copy(viewer = viewer()) }
+        loadMetadata()
+        loadDirectory()
+        if (currentState.rights.canPost) loadTemplates()
         listenOnce()
-        load(currentState.destination)
+        syncPage()
+    }
+
+    /** A production switch starts the tool over, keeping only the page asked for. */
+    fun onProjectChanged() {
+        sessionJobs.forEach { it.cancel() }
+        sessionJobs.clear()
+        builder.reset()
+        templateStore.reset()
+        listOf(coaJob, productionJob, settingsJob, crewJob, agenciesJob).forEach { it?.cancel() }
+        coaJob = null
+        productionJob = null
+        settingsJob = null
+        settingsReadAt = 0L
+        crewJob = null
+        agenciesJob = null
+        preview.reset()
+        started = false
+        enteredPage = null
+        val route = currentState.route
+        setState { DealMemoUiState(route = route) }
+        start()
+    }
+
+    /** The tool grid or member list answered — re-resolve what the viewer may see. */
+    fun onRightsChanged() {
+        val resolved = viewer()
+        setState { copy(viewer = resolved) }
+        if (resolved.rights.canPost && currentState.templates.rows == null && !templateStore.loading) loadTemplates()
+        syncPage()
+    }
+
+    @Suppress("CyclomaticComplexMethod")
+    override fun onEvent(event: DealMemoEvent) {
+        when (event) {
+            is DealsEvent -> deals.onEvent(event)
+            is OverviewEvent -> tabPages.onEvent(event)
+            is MyDealEvent -> tabPages.onEvent(event)
+            is NoticesEvent -> notices.onEvent(event)
+            is NoticeTemplateEvent -> noticeTemplate.onEvent(event)
+            is RatesEvent -> rates.onEvent(event)
+            is RulesEvent -> if (currentState.builder?.rules != null) builder.onRules(event) else preview.onEvent(event)
+            is PreviewEvent, is SignerEvent, is NominalsEvent, is CrewFormEvent -> preview.onEvent(event)
+            is BuilderEvent -> builder.onEvent(event)
+            is SetupHubEvent -> hub.onEvent(event)
+            is DealMemoEvent.OpenPath -> navigate(DealMemoRoute.parse(event.path.removePrefix(DEAL_MEMO_PATH)))
+            is DealMemoEvent.Navigate -> navigate(event.route)
+            DealMemoEvent.LeaveTool -> sendEffect(DealMemoEffect.LeaveTool)
+            DealMemoEvent.DismissToast -> setState { copy(toast = null) }
+            is DealMemoEvent.OpenHistory -> openHistory(event.deal)
+            DealMemoEvent.CloseHistory -> setState { copy(history = null) }
+        }
+    }
+
+    // -- seams for the collaborators -------------------------------------------------
+
+    internal val ui: DealMemoUiState get() = currentState
+
+    internal fun update(reducer: DealMemoUiState.() -> DealMemoUiState) = setState(reducer)
+
+    internal fun work(block: suspend CoroutineScope.() -> Unit): Job = launch(block)
+
+    internal fun navigate(route: DealMemoRoute?) {
+        setState { copy(route = route) }
+        syncPage()
+    }
+
+    /** A success toast: the server's message, else the web's fallback key, in words. */
+    internal fun toastSuccess(serverMessage: String?, fallbackKey: String) =
+        toast(DealMessages.text(serverMessage, fallbackKey), DealToastTone.Success)
+
+    internal fun toastError(error: ZillitError, fallbackKey: String? = null) {
+        val server = (error as? ZillitError.Http)?.serverMessage?.takeIf { it.isNotBlank() }
+        val message = when {
+            server != null -> DealMessages.override(server) ?: error.localised()
+            fallbackKey != null && error is ZillitError.Http -> DealMessages.text(null, fallbackKey)
+            else -> error.localised()
+        }
+        toast(message, DealToastTone.Error)
+    }
+
+    /** The chart of accounts, once per production — every nominal picker shares it. */
+    internal fun ensureCoa() {
+        val coa = currentState.coa
+        if (coa.loaded || coa.loading) return
+        setState { copy(coa = this.coa.copy(loading = true, failed = false)) }
+        coaJob = launch {
+            when (val result = productionData.chartOfAccounts()) {
+                is ZillitResult.Success -> setState { copy(coa = CoaState(loaded = true, accounts = result.data)) }
+                is ZillitResult.Failure -> setState { copy(coa = CoaState(failed = true)) }
+            }
+        }
+    }
+
+    internal fun toast(message: String, tone: DealToastTone) {
+        toastCounter += 1
+        setState { copy(toast = DealToast(message, tone, toastCounter)) }
     }
 
     /**
-     * Folds the socket's deal announcements into the screen: another client's
-     * create, decision or termination lands as a reload of whatever page is
-     * open — the web's `ah:deal_memo:*` refetch pattern. The rate card is left
-     * alone: no `deal:*` event changes the published scale, and reloading a
-     * 500-row catalogue over it would be pure noise. Guarded so a project
-     * switch restarting the tool does not stack collectors, and debounced
-     * because one action fans into several frames (the web coalesces at
-     * `accountHubListeners.js` `DEBOUNCE_MS = 500`).
+     * The setups sweep's result, waiting for the one in flight rather than
+     * starting another — the Create gate asks while the first load may still
+     * be running.
+     */
+    internal suspend fun awaitTemplates() {
+        templateStore.await()
+    }
+
+    /** The setups list moved — the hub's inline create may have just been answered. */
+    internal fun onTemplatesChanged() {
+        hub.reconcile()
+    }
+
+    /** Waits for the departments master — a saved deal hydrates its department and role through it. */
+    internal suspend fun awaitDirectory() {
+        directoryJob?.join()
+    }
+
+    /** The companies, units and countries the pages name things with — once per production. */
+    internal fun ensureProduction() {
+        if (currentState.production.loaded || productionJob?.isActive == true) return
+        val data = productionData
+        setState { copy(production = production.copy(project = data.project(), webOrigin = data.webOrigin())) }
+        productionJob = launch {
+            val companies = data.companies()
+            val units = data.units()
+            val countries = data.countries()
+            setState {
+                copy(
+                    production = production.copy(
+                        companies = companies,
+                        units = units,
+                        countries = countries,
+                        loaded = true,
+                    ),
+                )
+            }
+            builder.reconcile()
+        }
+    }
+
+    /**
+     * Production Setup's document: loaded on first use, then refreshed
+     * silently on every later entry older than two seconds — the web's
+     * nested provider refresh.
+     */
+    internal fun ensureProjectSettings() {
+        val settings = currentState.projectSettings
+        when {
+            settingsJob?.isActive == true -> Unit
+            !settings.loaded -> {
+                setState { copy(projectSettings = projectSettings.copy(loading = true)) }
+                readProjectSettings()
+            }
+            clock() - settingsReadAt >= SETTINGS_FRESH_MILLIS -> readProjectSettings()
+        }
+    }
+
+    /** A silent re-read after a page wrote to Production Setup — a read already in flight may predate the write. */
+    internal fun refreshProjectSettings() {
+        settingsJob?.cancel()
+        readProjectSettings()
+    }
+
+    /** [refreshProjectSettings], waited for — the page shows the written rows before it moves on. */
+    internal suspend fun reloadProjectSettings() {
+        refreshProjectSettings()
+        settingsJob?.join()
+    }
+
+    /** A failed re-read keeps what was loaded; only a first failure leaves the page with nothing. */
+    private fun readProjectSettings() {
+        settingsJob = launch {
+            val result = repository.projectSettings()
+            if (result is ZillitResult.Success) settingsReadAt = clock()
+            setState {
+                val kept = projectSettings.view.takeIf { result is ZillitResult.Failure && projectSettings.loaded }
+                copy(
+                    projectSettings = ProjectSettingsState(
+                        view = kept ?: ProjectSettingsView(result.getOrNull()),
+                        loading = false,
+                        loaded = true,
+                    ),
+                )
+            }
+            builder.reconcile()
+        }
+    }
+
+    /** The production's members with their master ids — read once per production. */
+    internal fun ensureCrewDirectory() {
+        if (currentState.crewDirectory != null || crewJob?.isActive == true) return
+        crewJob = launch {
+            val crew = reference.crew().getOrNull().orEmpty()
+            setState { copy(crewDirectory = crew) }
+        }
+    }
+
+    /** The project's registered agencies, once per production — the Representing Agency picker. */
+    internal fun ensureAgencies() {
+        if (agenciesJob != null) return
+        agenciesJob = launch {
+            reference.agencies().getOrNull()?.let { agencies ->
+                setState { copy(production = production.copy(agencies = agencies)) }
+            }
+        }
+    }
+
+    // -- pages ------------------------------------------------------------------------
+
+    /** Enters the page now on screen, once — mounting a page is entering it. */
+    @Suppress("CyclomaticComplexMethod")
+    private fun syncPage() {
+        val page = currentState.page
+        if (page == enteredPage) return
+        enteredPage = page
+        if (!page.isBuilder) builder.leave()
+        when (page) {
+            is DealMemoRoute.Tab -> when (page.tab) {
+                DealTab.Overview -> tabPages.enterOverview()
+                DealTab.Deals -> deals.enter()
+                DealTab.MyDeal -> tabPages.enterMyDeal()
+                DealTab.ApprovalQueue -> tabPages.enterQueue()
+                DealTab.Notices -> notices.enter()
+            }
+            DealMemoRoute.GlobalRates -> rates.enter()
+            DealMemoRoute.NoticeTemplate -> noticeTemplate.enter()
+            is DealMemoRoute.Deal -> preview.enter(page)
+            DealMemoRoute.CompleteDetails -> tabPages.enterCompleteDetails()
+            is DealMemoRoute.QuickDeal, is DealMemoRoute.EditDeal, is DealMemoRoute.TemplateBuilder ->
+                builder.enter(page)
+            is DealMemoRoute.SetupHub -> if (page.setupId != null) builder.enter(page) else hub.enter()
+            else -> Unit
+        }
+    }
+
+    /**
+     * `GET /metadata`, retried after 2 s, 8 s and 30 s. Until it answers with
+     * data, the approver's gates stay closed; a 200 without data is a failure.
+     */
+    private fun loadMetadata() {
+        sessionJobs += launch {
+            for (wait in listOf(0L) + metadataRetryDelays) {
+                if (wait > 0) delay(wait)
+                val result = repository.metadata()
+                if (result is ZillitResult.Success) {
+                    setState { copy(metadata = result.data) }
+                    syncPage()
+                    return@launch
+                }
+            }
+        }
+    }
+
+    /** The departments master and the production's people — every list resolves names through them. */
+    private fun loadDirectory() {
+        directoryJob = launch {
+            reference.departments().getOrNull()?.let { catalogue -> setState { copy(catalogue = catalogue) } }
+            setState { copy(directoryReady = true) }
+        }.also(sessionJobs::add)
+        sessionJobs += launch {
+            val people = loadPeople()
+            setState { copy(people = people) }
+        }
+    }
+
+    /** One sweep per entry: the slim list, then every setup's payload for its group. */
+    private fun loadTemplates() {
+        templateStore.load()
+        sessionJobs += launch {
+            templateStore.await()
+            builder.reconcile()
+            hub.reconcile()
+        }
+    }
+
+    /**
+     * Other clients' deal announcements, coalesced per key over the web's 500 ms,
+     * and answered with a silent reload of whichever page listens to that key.
      */
     private fun listenOnce() {
         if (listening) return
         listening = true
-        launch {
-            repository.refreshes.collect {
-                syncJob?.cancel()
-                syncJob = launch {
-                    delay(SYNC_DEBOUNCE_MILLIS)
-                    if (currentState.destination != DealDestination.RateCard) {
-                        load(currentState.destination)
-                    }
-                }
-            }
-        }
-    }
-
-    private var listening = false
-    private var syncJob: Job? = null
-
-    fun onProjectChanged() {
-        started = false
-        start()
-    }
-
-    /**
-     * Swaps in the real rights once the tool grid has answered.
-     *
-     * `projectId` flips the moment a production is chosen, but the rights that
-     * gate this screen arrive with the Home load a beat later — so the viewer
-     * resolved at open is the "not yet known" one, and nothing used to replace
-     * it. Seen live 2026-08-27: Document Distribution offered no publish
-     * destination at all on a production with 42 tools switched on. Only the
-     * viewer changes here; the open page and its data are already right.
-     */
-    fun onRightsChanged() {
-        // Read outside the state lambda: inside it, `viewer` is the
-        // state's own viewer property rather than the supplier.
-        val resolved = viewer()
-        setState { copy(viewer = resolved) }
-    }
-
-    @Suppress("CyclomaticComplexMethod") // One branch per user action.
-    override fun onEvent(event: DealEvent) {
-        when (event) {
-            DealEvent.Refresh -> load(currentState.destination)
-            is DealEvent.Open -> {
-                setState { copy(destination = event.destination, selectedId = null, error = null) }
-                load(event.destination)
-            }
-
-            is DealEvent.Search -> setState { copy(search = event.query) }
-            is DealEvent.Filter -> setState { copy(statusFilter = event.status) }
-            is DealEvent.Select -> selectDeal(event.id)
-            DealEvent.ClearNotice -> setState { copy(notice = null) }
-            is DealEvent.Ask -> setState { copy(prompt = event.prompt) }
-            DealEvent.DismissPrompt -> setState { copy(prompt = null) }
-            DealEvent.ConfirmPrompt -> resolvePrompt()
-            is DealEvent.EditDraft -> editDraft(event.draft)
-            is DealEvent.SubmitDraft -> submitDraft(event.notify)
-            DealEvent.ResolveRate -> resolveRate()
-            DealEvent.ApplyResolvedRate -> applyResolvedRate()
-            is DealEvent.BrowseRateCard -> browseRateCard(event.departmentIdentifier)
-        }
-    }
-
-    private fun load(destination: DealDestination) {
-        loadJob?.cancel()
-        setState { copy(loading = true, error = null) }
-        loadJob = launch {
-            when (destination) {
-                DealDestination.MyDeal -> when (val result = repository.myDeal()) {
-                    is ZillitResult.Success -> setState { copy(loading = false, myDeal = result.data) }
-                    is ZillitResult.Failure -> setState { copy(loading = false, error = result.error) }
-                }
-
-                DealDestination.RateCard -> {
-                    when (val result = repository.rateCard(currentState.draft.unionId, null, null)) {
-                        is ZillitResult.Success -> setState { copy(loading = false, rateCard = result.data) }
-                        is ZillitResult.Failure -> setState { copy(loading = false, error = result.error) }
-                    }
-                }
-
-                else -> when (val result = repository.deals(null)) {
-                    is ZillitResult.Success -> setState { copy(loading = false, deals = result.data) }
-                    is ZillitResult.Failure -> setState { copy(loading = false, error = result.error) }
-                }
-            }
-        }
-    }
-
-    private fun selectDeal(id: String?) {
-        setState { copy(selectedId = id, history = emptyList()) }
-        if (id == null) return
-        launch {
-            repository.history(id).getOrNull()?.let { entries ->
-                if (currentState.selectedId == id) setState { copy(history = entries) }
-            }
-        }
-    }
-
-    /**
-     * Updates the form, refetching the agreements when the union changes.
-     *
-     * The agreement list is union-scoped, so leaving a stale one on screen
-     * would offer terms that do not belong to the union just chosen.
-     */
-    private fun editDraft(draft: DealDraft) {
-        val unionChanged = draft.unionId != currentState.draft.unionId
-        setState {
-            copy(draft = if (unionChanged) draft.copy(agreementId = null) else draft)
-        }
-        if (unionChanged) {
+        launch { repository.refreshes.collect(::onRefresh) }
+        badges?.let { source ->
             launch {
-                val agreements = repository.agreements(draft.unionId).getOrNull().orEmpty()
-                if (currentState.draft.unionId == draft.unionId) {
-                    setState { copy(agreements = agreements) }
+                source.counts.collect { counts ->
+                    val before = currentState.badges.tab(DealBadgeUnit.Notices)
+                    setState { copy(badges = counts) }
+                    // Notices reads its tab on entry and on every change while open.
+                    val page = currentState.page
+                    if (page == DealMemoRoute.Tab(DealTab.Notices) && counts.tab(DealBadgeUnit.Notices) != before) {
+                        source.readTab(DealBadgeUnit.Notices)
+                    }
                 }
             }
         }
     }
 
-    private fun browseRateCard(departmentIdentifier: String?) = launch {
-        val entries = repository.rateCard(currentState.draft.unionId, departmentIdentifier, null)
-        if (entries is ZillitResult.Success) setState { copy(rateCard = entries.data) }
+    private fun onRefresh(refresh: DealRefresh) {
+        // A detail frame for another deal is not this page's business.
+        val foreign = refresh.dealId != null && refresh.dealId != currentState.preview?.dealId
+        refresh.keys.filterNot { it == DealRefreshKey.Detail && foreign }.forEach { key ->
+            refreshJobs[key]?.cancel()
+            refreshJobs[key] = launch {
+                delay(REFRESH_DEBOUNCE_MILLIS)
+                reloadFor(key)
+            }
+        }
     }
 
-    /**
-     * Looks up what this role should be paid, and by whose authority.
-     *
-     * The agreement's own scale is fetched alongside the role's rate because
-     * the cascade needs both: a designation that publishes only its hours still
-     * takes its rate from the agreement, and asking for one without the other
-     * would show a blank where a rate exists. A failed lookup is recorded so
-     * the screen can say "no published rate" rather than showing nothing and
-     * leaving the reader to guess whether it looked.
-     */
-    private fun resolveRate() {
-        val draft = currentState.draft
-        val department = draft.departmentIdentifier
-        val designation = draft.designation
-        if (department.isNullOrBlank() || designation.isBlank()) {
-            sendEffect(DealEffect.Failed("Pick a department and a role before looking up a rate."))
-            return
+    private fun reloadFor(key: DealRefreshKey) {
+        val page = currentState.page as? DealMemoRoute.Tab
+        when (key) {
+            DealRefreshKey.Registry -> when (page?.tab) {
+                DealTab.Deals -> deals.reload()
+                DealTab.Overview -> tabPages.reloadOverview()
+                DealTab.Notices -> notices.reload()
+                else -> Unit
+            }
+            DealRefreshKey.Approval -> if (page?.tab == DealTab.ApprovalQueue) tabPages.reloadQueue()
+            DealRefreshKey.Mine -> {
+                val mine = page?.tab == DealTab.MyDeal || currentState.page == DealMemoRoute.CompleteDetails
+                if (mine) tabPages.reloadMyDeal()
+            }
+            DealRefreshKey.Detail -> if (currentState.page is DealMemoRoute.Deal) preview.refresh()
+            DealRefreshKey.Templates -> Unit
         }
+    }
+
+    private fun openHistory(deal: DealDoc) {
+        val id = deal.id
+        setState { copy(history = HistoryState(dealId = id, subtitle = deal.reference ?: deal.crewName.orEmpty())) }
         launch {
-            setState { copy(busy = true, rateLookupFailed = false) }
-            val entry = repository.resolveRate(
-                departmentIdentifier = department,
-                designationIdentifier = designation,
-                productionType = draft.productionType.orEmpty(),
-                agreementId = draft.agreementId,
-                unionId = draft.unionId,
-                budget = draft.budget.trim().toDoubleOrNull(),
-            ).getOrNull()
-            val agreementScale = draft.agreementId?.let { repository.basicRateDetails(it).getOrNull() }
-            val resolution = RateCascade.resolve(entry, agreementScale)
+            val result = repository.history(id)
             setState {
+                if (history?.dealId != id) return@setState this
                 copy(
-                    busy = false,
-                    agreementRates = agreementScale,
-                    resolvedRate = resolution.takeIf { it.hasAnything },
-                    rateLookupFailed = !resolution.hasAnything,
+                    history = when (result) {
+                        is ZillitResult.Success -> history.copy(
+                            loading = false,
+                            entries = result.data.sortedByDescending { it.actionAt ?: 0L },
+                        )
+                        is ZillitResult.Failure -> history.copy(loading = false, error = result.error.localised())
+                    },
                 )
             }
         }
     }
 
-    /**
-     * Copies the resolved base rates into the form.
-     *
-     * Only the base rates and the hours — the envelope stays advisory, because
-     * a deal at the minimum and a deal that happens to equal the minimum are
-     * different things and the person writing it should choose.
-     */
-    private fun applyResolvedRate() {
-        val resolved = currentState.resolvedRate ?: return
-        setState {
-            copy(
-                draft = draft.copy(
-                    weeklyRate = resolved.weekly?.baseRate?.toString() ?: draft.weeklyRate,
-                    dailyRate = resolved.daily?.baseRate?.toString() ?: draft.dailyRate,
-                    standardHours = resolved.daily?.workHours?.toString() ?: draft.standardHours,
-                ),
-                notice = "Published rate applied",
-            )
-        }
-    }
-
-    private fun submitDraft(notify: Boolean) {
-        val request = currentState.draft.toRequest()
-        val invalid = request.validationError()
-        if (invalid != null) {
-            sendEffect(DealEffect.Failed(invalid))
-            return
-        }
-        act(if (notify) "Deal created and sent" else "Deal created", clearDraft = true) {
-            repository.create(request, notify)
-        }
-    }
-
-    private fun resolvePrompt() {
-        val prompt = currentState.prompt ?: return
-        setState { copy(prompt = null) }
-        when (prompt) {
-            is DealPrompt.Confirm -> when (prompt.action) {
-                DealConfirmAction.Acknowledge ->
-                    act("Terms acknowledged") { repository.acknowledge(prompt.targetId) }
-
-                DealConfirmAction.Chase -> {
-                    // Nudging a crew member is the production's act, not the
-                    // crew member's. The screen offers it only where
-                    // `canWriteDeals` holds (`DealMemoScreen`), and the whole
-                    // All Deals destination is gated on the same — but this
-                    // handler took any prompt that reached it.
-                    if (!currentState.viewer.canWriteDeals) {
-                        sendEffect(DealEffect.Failed("You do not have rights to issue deals."))
-                        return
-                    }
-                    val deal = currentState.deals.firstOrNull { it.id == prompt.targetId }
-                    if (deal == null) {
-                        sendEffect(DealEffect.Failed("That deal is no longer on screen."))
-                        return
-                    }
-                    // A bodyless nudge, exactly as both phones send it. This was
-                    // an `update` with the deal projected back into a request —
-                    // which re-sent every crew-detail key as blank and wiped the
-                    // crew member's own entries. See `Deal.toRequest`.
-                    act("Crew member reminded") { repository.chase(deal.id) }
-                }
-            }
-        }
-    }
-
-    private fun act(
-        success: String,
-        clearDraft: Boolean = false,
-        block: suspend () -> ZillitResult<Unit>,
-    ) = launch {
-        setState { copy(busy = true) }
-        when (val result = block()) {
-            is ZillitResult.Success -> {
-                setState {
-                    copy(busy = false, notice = success, draft = if (clearDraft) DealDraft() else draft)
-                }
-                load(currentState.destination)
-            }
-
-            is ZillitResult.Failure -> {
-                setState { copy(busy = false) }
-                sendEffect(DealEffect.Failed(result.error.localised()))
-            }
-        }
-    }
-
     companion object {
-        /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
-        const val SYNC_DEBOUNCE_MILLIS = 500L
+        /** The web's refetch coalescing window — `accountHubListeners.js` `DEBOUNCE_MS`. */
+        const val REFRESH_DEBOUNCE_MILLIS = 500L
+        private const val RADIX = 36
+
+        /** `ENTRY_FRESH_MS`: an entry within this long of the last read skips the refresh. */
+        private const val SETTINGS_FRESH_MILLIS = 2_000L
     }
 }
 
-/** The deal's own terms, as an update request — for a re-send. */
-/**
- * A deal projected back into a create request.
- *
- * **Lossy.** [Deal] carries the terms this client reads, not the crew member's
- * own entries — legal name, bank, emergency contacts, passport uploads. Sending
- * this as an update blanks all of them, which is why re-notifying goes through
- * [DealMemoRepository.chase] and never through an update.
- */
-internal fun Deal.toRequest() = NewDeal(
-    userId = userId,
-    crewName = crewName,
-    departmentId = departmentId,
-    // The raw stored identifier, never the display string — the wire keeps
-    // designation under `crew_details.designation_identifier`.
-    designation = designationIdentifier ?: designation,
-    currency = currency,
-    rates = rates,
-    startDate = startDate,
-    endDate = endDate,
-    unionId = null,
-    agreementId = null,
-    nominalCode = nominalCode,
-    notes = notes,
-)
+const val DEAL_MEMO_PATH = "/film-tools/deal-memo"

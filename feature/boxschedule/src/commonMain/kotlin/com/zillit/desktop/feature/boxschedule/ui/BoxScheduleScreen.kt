@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.boxschedule.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,40 +10,82 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
-import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.feature.boxschedule.domain.DiaryClock
-import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
-import com.zillit.desktop.feature.boxschedule.domain.ScheduleDayRow
-import com.zillit.desktop.feature.boxschedule.domain.isPersonalNote
-import com.zillit.desktop.feature.boxschedule.ui.pages.BlockEditorDialog
-import com.zillit.desktop.feature.boxschedule.ui.pages.DiaryEditorDialog
+import com.zillit.desktop.feature.boxschedule.domain.DiaryView
+import com.zillit.desktop.feature.boxschedule.ui.pages.AudiencePickerDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.BulkDeleteDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.CalendarInfoDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.CalendarReminderPrompt
+import com.zillit.desktop.feature.boxschedule.ui.pages.CommandPaletteDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.ConflictDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.DayDrawerSheet
+import com.zillit.desktop.feature.boxschedule.ui.pages.DeleteAllOnDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.DeleteBlockDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.DeleteDayDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.DiaryCalendarView
+import com.zillit.desktop.feature.boxschedule.ui.pages.DiaryHeader
+import com.zillit.desktop.feature.boxschedule.ui.pages.DiaryListView
+import com.zillit.desktop.feature.boxschedule.ui.pages.EntryDetailsSheet
+import com.zillit.desktop.feature.boxschedule.ui.pages.EntryFormSheet
+import com.zillit.desktop.feature.boxschedule.ui.pages.EntryScopeDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.FilterDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.GuestsDialogView
+import com.zillit.desktop.feature.boxschedule.ui.pages.HistoryDetailDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.HistorySheet
 import com.zillit.desktop.feature.boxschedule.ui.pages.PdfOptionsDialog
-import com.zillit.desktop.feature.boxschedule.ui.pages.TypesDialog
-import com.zillit.desktop.feature.boxschedule.ui.pages.hexColor
+import com.zillit.desktop.feature.boxschedule.ui.pages.PresetsDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.PrintSelectedDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.QuickActionDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.ScheduleFormSheet
+import com.zillit.desktop.feature.boxschedule.ui.pages.ScheduleScopeDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.SelectionBar
+import com.zillit.desktop.feature.boxschedule.ui.pages.ShareDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.TypesManagerDialog
+import com.zillit.desktop.feature.boxschedule.ui.pages.ViewBar
 
 /**
- * The production diary: one row per scheduled date, its type badge and
- * running number, and the events and notes on that day.
+ * The production diary page — the web's `BoxSchedulePage`: the toolbar and
+ * masthead, the view bar or select mode's bar, the Calendar or List view,
+ * and whatever is open over them.
+ *
+ * Single-key shortcuts — N, E, T, ← and → — work while nothing is open over
+ * the page and the search box is not being typed in; Cmd/Ctrl+K opens the
+ * command palette from anywhere.
  */
 @Composable
 fun BoxScheduleScreen(
@@ -49,298 +93,156 @@ fun BoxScheduleScreen(
     onEvent: (BoxScheduleEvent) -> Unit,
     mayCall: Boolean = false,
 ) {
-    Box(Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(ZillitTheme.spacing.lg),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        ) {
-            Chrome(state = state, onEvent = onEvent)
-            when {
-                state.loading && state.rows.isEmpty() ->
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { ZillitSpinner() }
-                state.rows.isEmpty() && state.orphanEvents.isEmpty() -> ZillitText(
-                    text = "No schedule yet — add the first block of days.",
-                    style = ZillitTheme.typography.bodyMedium,
-                    color = ZillitTheme.colors.textMuted,
+    val focus = remember { FocusRequester() }
+    var searching by remember { mutableStateOf(false) }
+    val nothingOpen = state.overlays == DiaryOverlays()
+    LaunchedEffect(nothingOpen) { if (nothingOpen) runCatching { focus.requestFocus() } }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(ZillitTheme.colors.canvas)
+            .onPreviewKeyEvent { key -> paletteShortcut(key, onEvent) }
+            .onKeyEvent { key -> nothingOpen && !searching && pageShortcut(key, state, onEvent) }
+            .focusRequester(focus)
+            .focusable(),
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            DiaryHeader(state, onEvent)
+            if (state.page.selecting) SelectionBar(
+                state,
+                onEvent,
+            ) else ViewBar(state, onEvent, onSearchFocus = { searching = it })
+            state.error?.let { message ->
+                ZillitNotice(
+                    text = message,
+                    tone = StatusTone.Rejected,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    action = {
+                        ZillitButton(
+                            "Dismiss",
+                            onClick = { onEvent(PageEvent.DismissError) },
+                            variant = ButtonVariant.Tertiary,
+                            size = ButtonSize.Small,
+                        )
+                    },
                 )
-                else -> DiaryList(state = state, onEvent = onEvent, mayCall = mayCall)
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                PageBody(state, onEvent)
+                if (state.loading && state.loadedOnce) {
+                    RefreshingPill(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
+                }
             }
         }
-        state.blockEditor?.let { BlockEditorDialog(state = state, editor = it, onEvent = onEvent) }
-        state.diaryEditor?.let { DiaryEditorDialog(state = state, editor = it, onEvent = onEvent) }
-        if (state.manageTypes) TypesDialog(state = state, onEvent = onEvent)
-        state.pdfSheet?.let { PdfOptionsDialog(sheet = it, onEvent = onEvent) }
+        DiaryOverlayHost(state, onEvent, mayCall)
     }
 }
 
 @Composable
-private fun Chrome(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> Unit) {
-    ZillitPageHeader(
-        title = "Box Schedule",
-        description = "The project diary — shoot days, prep, travel and what happens on each.",
-        actions = {
-            // Anyone who can read the diary can take it away as a file — the
-            // dialog decides what of theirs goes into it.
-            if (!state.viewer.isBlocked) {
-                ZillitButton(
-                    text = "PDF",
-                    onClick = { onEvent(BoxScheduleEvent.OpenPdf) },
-                    variant = ButtonVariant.Tertiary,
-                )
-            }
-            if (state.viewer.mayEdit) {
-                ZillitButton(
-                    text = "Types",
-                    onClick = { onEvent(BoxScheduleEvent.OpenTypes) },
-                    variant = ButtonVariant.Tertiary,
-                )
-                ZillitButton(
-                    text = "Add note",
-                    onClick = { onEvent(BoxScheduleEvent.NewDiary(DiaryKind.Note, null)) },
-                    variant = ButtonVariant.Secondary,
-                )
-                ZillitButton(
-                    text = "Add event",
-                    onClick = { onEvent(BoxScheduleEvent.NewDiary(DiaryKind.Event, null)) },
-                    variant = ButtonVariant.Secondary,
-                )
-                ZillitButton(
-                    text = "Add schedule",
-                    onClick = { onEvent(BoxScheduleEvent.NewBlock) },
-                    loading = state.busy,
-                )
-            }
-        },
-    )
-    if (state.viewer.isBlocked) {
-        ZillitNotice(text = "You do not have access to the box schedule.")
-    }
-    state.error?.let { message ->
-        ZillitNotice(
-            text = message,
-            tone = StatusTone.Rejected,
-            action = {
-                ZillitButton(
-                    text = "Dismiss",
-                    onClick = { onEvent(BoxScheduleEvent.DismissError) },
-                    variant = ButtonVariant.Tertiary,
-                    size = ButtonSize.Small,
-                )
-            },
+private fun PageBody(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> Unit) {
+    when {
+        state.viewer.isBlocked -> ZillitEmptyState(
+            title = "No access",
+            message = "You do not have access to Production Diary/Box Schedule.",
+            icon = ZillitIcons.Lock,
+            modifier = Modifier.fillMaxSize(),
         )
+        state.loading && !state.loadedOnce && state.blocks.isEmpty() ->
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ZillitSpinner() }
+        state.page.view == DiaryView.Calendar -> DiaryCalendarView(state, onEvent)
+        else -> DiaryListView(state, onEvent)
     }
 }
 
+/** "Refreshing…" — a reload over data already on screen, which stays put. */
 @Composable
-private fun DiaryList(
-    state: BoxScheduleUiState,
-    onEvent: (BoxScheduleEvent) -> Unit,
-    mayCall: Boolean,
-) {
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        items(state.rows, key = { "${it.block.id}:${it.date}" }) { row ->
-            DayRow(state = state, row = row, onEvent = onEvent, mayCall = mayCall)
-        }
-        val orphans = state.orphanEvents
-        if (orphans.isNotEmpty()) {
-            item {
-                ZillitText(
-                    text = "OTHER DATES",
-                    style = ZillitTheme.typography.bodySmall,
-                    color = ZillitTheme.colors.textMuted,
-                    modifier = Modifier.padding(top = ZillitTheme.spacing.md),
-                )
-            }
-            items(orphans, key = { "orphan:${it.listKey}" }) { event ->
-                ZillitSectionCard {
-                    EventLine(
-                        state = state,
-                        event = event,
-                        onEvent = onEvent,
-                        showDate = true,
-                        mayCall = mayCall,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-@Suppress("LongMethod") // One row: date column, events column, action strip.
-private fun DayRow(
-    state: BoxScheduleUiState,
-    row: ScheduleDayRow,
-    onEvent: (BoxScheduleEvent) -> Unit,
-    mayCall: Boolean,
-) {
-    val colors = ZillitTheme.colors
-    ZillitSectionCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        ) {
-            Column(Modifier.width(DATE_COLUMN)) {
-                ZillitText(text = DiaryClock.dayLabel(row.date), style = ZillitTheme.typography.titleSmall)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-                ) {
-                    Box(
-                        Modifier
-                            .size(SWATCH)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(hexColor(row.block.color) ?: colors.accent),
-                    )
-                    ZillitText(
-                        text = "${row.block.typeName} ${row.dayNumber}",
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                    )
-                }
-                if (row.block.title.isNotBlank()) {
-                    ZillitText(
-                        text = row.block.title,
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textMuted,
-                    )
-                }
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                val onDay = state.eventsOn(row.date)
-                if (onDay.isEmpty()) {
-                    ZillitText(
-                        text = "Nothing scheduled",
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textMuted,
-                    )
-                }
-                onDay.forEach { event ->
-                    EventLine(
-                        state = state,
-                        event = event,
-                        onEvent = onEvent,
-                        showDate = false,
-                        mayCall = mayCall,
-                    )
-                }
-            }
-            if (state.viewer.mayEdit) {
-                Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                    ZillitButton(
-                        text = "+",
-                        onClick = { onEvent(BoxScheduleEvent.NewDiary(DiaryKind.Event, row.date, row.block.id)) },
-                        variant = ButtonVariant.Tertiary,
-                        size = ButtonSize.Small,
-                    )
-                    ZillitButton(
-                        text = "Edit",
-                        onClick = { onEvent(BoxScheduleEvent.EditBlock(row.block.id)) },
-                        variant = ButtonVariant.Tertiary,
-                        size = ButtonSize.Small,
-                    )
-                    ZillitButton(
-                        text = "Remove",
-                        onClick = { onEvent(BoxScheduleEvent.DeleteBlockDate(row.block.id, row.date)) },
-                        variant = ButtonVariant.Danger,
-                        size = ButtonSize.Small,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun EventLine(
-    state: BoxScheduleUiState,
-    event: DiaryEvent,
-    onEvent: (BoxScheduleEvent) -> Unit,
-    showDate: Boolean,
-    mayCall: Boolean,
-) {
+private fun RefreshingPill(modifier: Modifier) {
     val colors = ZillitTheme.colors
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier
+            .shadow(4.dp, RoundedCornerShape(999.dp))
+            .clip(RoundedCornerShape(999.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.border, RoundedCornerShape(999.dp))
+            .padding(horizontal = 12.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(
-            Modifier
-                .size(SWATCH)
-                .clip(RoundedCornerShape(SWATCH))
-                .background(hexColor(event.color) ?: colors.accent),
+        ZillitSpinner(size = 12.dp)
+        ZillitText(
+            "Refreshing…",
+            style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = colors.textMuted,
         )
-        Column(Modifier.weight(1f)) {
-            ZillitText(
-                text = event.title.ifBlank { if (event.kind == DiaryKind.Note) "Note" else "Event" },
-                style = ZillitTheme.typography.bodyMedium,
-            )
-            val meta = buildList {
-                if (showDate) add(DiaryClock.dayLabel(event.date))
-                if (event.kind == DiaryKind.Note) {
-                    // The server's own label for the type — "Personal Note"
-                    // since the rename — so the row says what the dropdown says.
-                    val typeLabel = state.noteTypes.firstOrNull { it.value == event.noteType }?.label
-                    add(if (event.isPersonalNote) (typeLabel ?: "Personal Note").lowercase() else "note")
-                } else if (!event.fullDay) {
-                    add("${DiaryClock.hm(event.startDateTime)}–${DiaryClock.hm(event.endDateTime)}")
-                } else {
-                    add("all day")
-                }
-                if (event.location.isNotBlank()) add(event.location)
-                if (event.isRecurring) add("repeats")
-                if (event.calendarSourced) add("from calendar")
-            }
-            ZillitText(
-                text = meta.joinToString("  ·  "),
-                style = ZillitTheme.typography.bodySmall,
-                color = colors.textMuted,
-            )
-        }
-        EventActions(state, event, mayCall, onEvent)
     }
 }
 
-/**
- * The buttons on one event row.
- *
- * Join sits OUTSIDE the edit gate deliberately: read-only crew reach this
- * screen, and joining a call is not editing the schedule.
- */
+/** Everything open over the page, drawn in the order it stacks. */
+@Suppress("CyclomaticComplexMethod") // One line per surface the page can open.
 @Composable
-private fun EventActions(
-    state: BoxScheduleUiState,
-    event: DiaryEvent,
-    mayCall: Boolean,
-    onEvent: (BoxScheduleEvent) -> Unit,
-) {
-    if (mayCall && event.isCallJoinable && event.hasCallRoom) {
-        ZillitButton(
-            text = "Join call",
-            onClick = { onEvent(BoxScheduleEvent.JoinCall(event.listKey)) },
-            variant = ButtonVariant.Primary,
-            size = ButtonSize.Small,
-        )
+private fun DiaryOverlayHost(state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> Unit, mayCall: Boolean) {
+    val o = state.overlays
+    o.day?.let { DayDrawerSheet(state, it, onEvent, mayCall) }
+    o.viewing?.let { key -> state.entry(key)?.let { EntryDetailsSheet(state, it, onEvent, mayCall) } }
+    o.quickAction?.let { QuickActionDialog(state, it, onEvent) }
+    o.scheduleForm?.let { ScheduleFormSheet(state, it, onEvent) }
+    o.entryForm?.let { form ->
+        EntryFormSheet(state, form, onEvent)
+        form.audiencePicker?.let { AudiencePickerDialog(state, it, onEvent) }
+        form.guestsDialog?.let { GuestsDialogView(it, onEvent) }
+        if (form.askCalendar) CalendarReminderPrompt(onEvent)
     }
-    if (state.viewer.mayEdit && !event.calendarSourced) {
-        ZillitButton(
-            text = "Edit",
-            onClick = { onEvent(BoxScheduleEvent.EditDiary(event.listKey)) },
-            variant = ButtonVariant.Tertiary,
-            size = ButtonSize.Small,
-        )
-        ZillitButton(
-            text = "Delete",
-            onClick = { onEvent(BoxScheduleEvent.DeleteDiary(event.listKey)) },
-            variant = ButtonVariant.Danger,
-            size = ButtonSize.Small,
-        )
+    o.conflict?.let { ConflictDialog(state, it, onEvent) }
+    o.scheduleScope?.let { prompt ->
+        state.block(prompt.blockId)?.let { ScheduleScopeDialog(state, prompt, it, onEvent) }
     }
+    o.deleteDay?.let { DeleteDayDialog(it, onEvent) }
+    o.deleteBlock?.let { id -> state.block(id)?.let { DeleteBlockDialog(state, it, onEvent) } }
+    o.deleteAllOn?.let { DeleteAllOnDialog(state, it, onEvent) }
+    if (o.bulkDelete) BulkDeleteDialog(state.page.selected.size, onEvent)
+    o.updateScope?.let { prompt ->
+        state.entry(prompt.listKey)?.let { EntryScopeDialog(state, prompt, it, delete = false, onEvent = onEvent) }
+    }
+    o.deleteEntry?.let { prompt ->
+        state.entry(prompt.listKey)?.let { EntryScopeDialog(state, prompt, it, delete = true, onEvent = onEvent) }
+    }
+    o.calendarInfo?.let { CalendarInfoDialog(it, onEvent) }
+    o.types?.let { TypesManagerDialog(state, it, onEvent) }
+    o.history?.let { panel ->
+        HistorySheet(state, panel, onEvent)
+        panel.detailId?.let { id ->
+            panel.entries.firstOrNull { it.id == id }?.let { HistoryDetailDialog(state, panel, it, onEvent) }
+        }
+    }
+    o.presets?.let { PresetsDialog(state, it, onEvent) }
+    o.filters?.let { FilterDialog(state, it, onEvent) }
+    o.pdf?.let { PdfOptionsDialog(it, onEvent) }
+    o.printSelected?.let { PrintSelectedDialog(it, state.page.selected.size, onEvent) }
+    o.share?.let { ShareDialog(it, onEvent) }
+    o.palette?.let { CommandPaletteDialog(state, it, onEvent) }
 }
 
-private val DATE_COLUMN = 180.dp
-private val SWATCH = 12.dp
+/** Cmd/Ctrl+K toggles the palette, wherever focus is. */
+private fun paletteShortcut(key: KeyEvent, onEvent: (BoxScheduleEvent) -> Unit): Boolean {
+    val command = key.isMetaPressed || key.isCtrlPressed
+    if (key.type != KeyEventType.KeyDown || key.key != Key.K || !command) return false
+    onEvent(PageEvent.TogglePalette)
+    return true
+}
+
+/** N new schedule, E new event, T today, ← and → — the writes only for someone who may post. */
+private fun pageShortcut(key: KeyEvent, state: BoxScheduleUiState, onEvent: (BoxScheduleEvent) -> Unit): Boolean {
+    val modified = key.isMetaPressed || key.isCtrlPressed || key.isAltPressed
+    if (key.type != KeyEventType.KeyDown || modified) return false
+    val event = when (key.key) {
+        Key.N -> ScheduleEvent.NewSchedule().takeIf { state.mayEdit }
+        Key.E -> EntryEvent.NewEntry(DiaryKind.Event).takeIf { state.mayEdit }
+        Key.T -> PageEvent.Today
+        Key.DirectionLeft -> PageEvent.Step(forward = false)
+        Key.DirectionRight -> PageEvent.Step(forward = true)
+        else -> null
+    } ?: return false
+    onEvent(event)
+    return true
+}

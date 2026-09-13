@@ -6,26 +6,23 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.LocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
+import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
 import com.zillit.desktop.feature.boxschedule.ui.BoxScheduleEvent
-import com.zillit.desktop.feature.boxschedule.ui.BoxScheduleUiState
-import com.zillit.desktop.feature.boxschedule.ui.DiaryEditor
-import com.zillit.desktop.feature.boxschedule.ui.pages.DiaryEditorDialog
+import com.zillit.desktop.feature.boxschedule.ui.EntryEvent
+import com.zillit.desktop.feature.boxschedule.ui.EntryForm
+import com.zillit.desktop.feature.boxschedule.ui.pages.EntryFormSheet
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * A diary event's Location is picked on a map, and only the line travels.
- *
- * `eventWire` (BoxScheduleRepositoryImpl.kt:364) sends `location` as a string
- * and carries no coordinate fields, so the pick's numbers are deliberately
- * dropped. The web's boxScheduleV2 modal does send `locationLat`/`locationLng`
- * beside it (`CreateEventModal.jsx:540`) — carrying those is a wire change,
- * pinned by BoxScheduleSyncTest, not a form change.
+ * An event's location is typed or picked on a map; a pick sends the line and
+ * its coordinates together — the web's `locationLat` / `locationLng`.
  */
 @OptIn(ExperimentalTestApi::class)
 class DiaryLocationPickRenderTest {
@@ -41,22 +38,31 @@ class DiaryLocationPickRenderTest {
         lng = 72.82,
     )
 
+    private val form = EntryForm(
+        kind = DiaryKind.Event,
+        startDate = DiarySamples.today,
+        timezone = DiarySamples.zone.id,
+    )
+
     @Test
-    fun `picking a place writes its line into the editor`() = runComposeUiTest {
+    fun `picking a place writes its line and its coordinates`() = runComposeUiTest {
         val events = mutableListOf<BoxScheduleEvent>()
         setContent {
             ZillitTheme {
                 CompositionLocalProvider(LocalLocationPicker provides FakePicker(aria)) {
-                    DiaryEditorDialog(BoxScheduleUiState(), DiaryEditor(dateText = "2026-08-25"), events::add)
+                    EntryFormSheet(DiarySamples.state(), form, events::add)
                 }
             }
         }
-
-        onNodeWithText("Pick on map").performClick()
         waitForIdle()
 
-        val changed = events.filterIsInstance<BoxScheduleEvent.DiaryChanged>().mapNotNull { it.location }.last()
-        assertEquals("Aria Hotel, 12 Marine Drive, Mumbai", changed)
+        onNodeWithText("Pick on map").performScrollTo().performClick()
+        waitForIdle()
+
+        assertEquals(
+            EntryEvent.SetLocation("Aria Hotel, 12 Marine Drive, Mumbai", 18.94, 72.82),
+            events.filterIsInstance<EntryEvent.SetLocation>().last(),
+        )
     }
 
     @Test
@@ -65,22 +71,24 @@ class DiaryLocationPickRenderTest {
         setContent {
             ZillitTheme {
                 CompositionLocalProvider(LocalLocationPicker provides FakePicker(null)) {
-                    DiaryEditorDialog(BoxScheduleUiState(), DiaryEditor(location = "Base camp"), events::add)
+                    EntryFormSheet(DiarySamples.state(), form.copy(location = "Base camp"), events::add)
                 }
             }
         }
-
-        onNodeWithText("Pick on map").performClick()
         waitForIdle()
 
-        assertEquals(emptyList(), events.filterIsInstance<BoxScheduleEvent.DiaryChanged>())
+        onNodeWithText("Pick on map").performScrollTo().performClick()
+        waitForIdle()
+
+        assertEquals(emptyList<EntryEvent.SetLocation>(), events.filterIsInstance<EntryEvent.SetLocation>())
     }
 
     @Test
-    fun `with no picker wired the location is still a plain typed field`() = runComposeUiTest {
-        setContent { ZillitTheme { DiaryEditorDialog(BoxScheduleUiState(), DiaryEditor(), onEvent = {}) } }
+    fun `with no picker wired the location is a plain typed field`() = runComposeUiTest {
+        setContent { ZillitTheme { EntryFormSheet(DiarySamples.state(), form, onEvent = {}) } }
+        waitForIdle()
 
-        onNodeWithText("Location").assertExists()
+        onNodeWithText("Add Location", ignoreCase = true).assertExists()
         onAllNodesWithText("Pick on map").assertCountEquals(0)
     }
 }

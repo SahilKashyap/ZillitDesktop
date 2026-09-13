@@ -163,7 +163,7 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
     }
 
     /** The production-wide chain, or one untyped level to start it. */
-    private fun editDefault() {
+    private fun editDefault(origin: BuilderOrigin = BuilderOrigin.Approvers) {
         if (!vm.mayActAsAccountant()) return
         val approvals = vm.setupState.approvals
         val saved = approvals.defaultConfig
@@ -174,7 +174,56 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
                 scope = ApprovalScope.All,
                 tiers = saved?.tiers.orEmpty(),
             ),
+            origin,
         )
+    }
+
+    /**
+     * Forms Configuration's "Set Approver Level": the same chain, opened from
+     * another page — the web's second surface over the same approval-tiers
+     * route, with this page's builder and save rules rather than a copy of
+     * them.
+     *
+     * [configs] were just read for [module] and become this page's as well, so
+     * the save's department checks read what the builder was seeded from, and
+     * the Approvers page next opens on the module last edited. A department
+     * without its own chain starts from the production's, as it does here and
+     * as the web's `handleScopeSelect` does.
+     */
+    fun openFromForms(
+        module: ApprovalModule,
+        configs: List<ApprovalConfig>,
+        scope: ApprovalScope,
+        departmentId: String?,
+    ) {
+        if (!vm.mayActAsAccountant()) return
+        val switching = vm.setupState.approvals.module != module
+        vm.update {
+            val base = if (switching) {
+                approvals.copy(
+                    expanded = emptySet(),
+                    departmentSearch = "",
+                    departmentFilter = DepartmentFilter.All,
+                )
+            } else {
+                approvals
+            }
+            copy(
+                approvals = base.copy(
+                    module = module,
+                    configs = configs,
+                    loadedModule = module,
+                    loading = false,
+                    loadError = null,
+                    configured = base.configured + (module to configs.any { it.isConfigured }),
+                ),
+            )
+        }
+        if (switching || vm.setupState.approvals.candidateIds == null) loadCandidates(module)
+        when (scope) {
+            ApprovalScope.All -> editDefault(BuilderOrigin.Forms)
+            ApprovalScope.Department -> departmentId?.let { editDepartment(it, BuilderOrigin.Forms) }
+        }
     }
 
     /**
@@ -184,7 +233,7 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
      * Seeding from the default only fills the editor. Nothing is written until
      * Save, so opening a department and cancelling leaves it inheriting.
      */
-    private fun editDepartment(departmentId: String) {
+    private fun editDepartment(departmentId: String, origin: BuilderOrigin = BuilderOrigin.Approvers) {
         if (!vm.mayActAsAccountant()) return
         val state = vm.setupState
         val approvals = state.approvals
@@ -199,6 +248,7 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
                 departmentName = state.departmentName(departmentId).ifBlank { own?.departmentName.orEmpty() },
                 tiers = tiers,
             ),
+            origin,
         )
     }
 
@@ -208,12 +258,12 @@ internal class ApprovalActions(private val vm: AccountHubViewModel) {
      * and levels are numbered by position so "Level N" and the addressing
      * agree even when the server's orders have gaps.
      */
-    private fun openBuilder(target: ApprovalConfig) {
+    private fun openBuilder(target: ApprovalConfig, origin: BuilderOrigin) {
         val tiers = target.tiers.ifEmpty { listOf(newLevel()) }.map { tier ->
             if (tier.rules.isEmpty()) tier.copy(rules = listOf(ApprovalRule())) else tier
         }
         val seeded = target.copy(tiers = tiers.renumbered())
-        vm.update { copy(approvals = approvals.copy(builder = ApprovalBuilder(seeded, seeded))) }
+        vm.update { copy(approvals = approvals.copy(builder = ApprovalBuilder(seeded, seeded, origin = origin))) }
     }
 
     private fun closeBuilder() = vm.update { copy(approvals = approvals.copy(builder = null)) }

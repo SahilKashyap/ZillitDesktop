@@ -71,6 +71,7 @@ import com.zillit.desktop.feature.accounthub.ui.BuilderConfirm
 import com.zillit.desktop.feature.accounthub.ui.UNKNOWN_PERSON
 import com.zillit.desktop.feature.accounthub.ui.asAmountText
 import com.zillit.desktop.feature.accounthub.ui.components.CalcField
+import com.zillit.desktop.feature.accounthub.ui.components.DashedInsertRail
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
 import com.zillit.desktop.feature.accounthub.ui.components.HubConfirmDialog
 import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
@@ -95,6 +96,7 @@ internal fun ApprovalBuilderView(
     state: AccountHubUiState,
     builder: ApprovalBuilder,
     onEvent: (AccountHubEvent) -> Unit,
+    chrome: BuilderChrome = BuilderChrome.Approvers,
 ) {
     val colors = ZillitTheme.colors
     val config = builder.config
@@ -104,7 +106,7 @@ internal fun ApprovalBuilderView(
         config.departmentName.ifBlank { state.departmentName(config.departmentId) }.ifBlank { "Department" }
     }
     Column(modifier = Modifier.fillMaxSize().background(colors.canvas)) {
-        BuilderTopBar(config, department, state.approvals.saving, onEvent)
+        BuilderTopBar(config, department, state.approvals.saving, chrome, onEvent)
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
         ZillitScrollColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -115,15 +117,8 @@ internal fun ApprovalBuilderView(
                 modifier = Modifier.widthIn(max = BUILDER_MAX_WIDTH).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
             ) {
-                BuilderHeading(config, department)
-                TipBanner(
-                    if (department == null) {
-                        "Configuring default approval levels for all departments. This baseline applies to every " +
-                            "department without a custom override."
-                    } else {
-                        "Configuring approval levels for $department. This overrides the default configuration."
-                    },
-                )
+                if (chrome.heading) BuilderHeading(config, department)
+                TipBanner(chrome.tip(department))
                 builder.error?.let { ZillitNotice(text = it, tone = StatusTone.Rejected, icon = ZillitIcons.Warning) }
                 Column {
                     InsertRail(0, onEvent)
@@ -137,12 +132,59 @@ internal fun ApprovalBuilderView(
     }
 }
 
+/**
+ * The words around a chain builder, which differ by the page that opened it:
+ * the breadcrumb's first word (which also closes the builder), the module's
+ * name, what the production-wide chain is called, whether the compact hero
+ * shows, and the banner over the levels.
+ */
+internal data class BuilderChrome(
+    val root: String,
+    val moduleLabel: String?,
+    val allLabel: String,
+    val heading: Boolean,
+    val tip: (department: String?) -> String,
+) {
+    companion object {
+        val Approvers = BuilderChrome(
+            root = "Approvers",
+            moduleLabel = null,
+            allLabel = "Default Approval Levels",
+            heading = true,
+            tip = { department ->
+                if (department == null) {
+                    "Configuring default approval levels for all departments. This baseline applies to every " +
+                        "department without a custom override."
+                } else {
+                    "Configuring approval levels for $department. This overrides the default configuration."
+                }
+            },
+        )
+
+        /** Forms Configuration's builder — the web's own crumb and banner, no hero. */
+        fun forms(moduleLabel: String) = BuilderChrome(
+            root = "Forms",
+            moduleLabel = moduleLabel,
+            allLabel = "All Departments",
+            heading = false,
+            tip = { department ->
+                if (department == null) {
+                    "Configuring approval levels for all departments. Changes will apply uniformly."
+                } else {
+                    "Configuring approval levels for $department."
+                }
+            },
+        )
+    }
+}
+
 /** Back, "APPROVERS / Purchase Orders • Camera", Cancel and Save changes. */
 @Composable
 private fun BuilderTopBar(
     config: ApprovalConfig,
     department: String?,
     saving: Boolean,
+    chrome: BuilderChrome,
     onEvent: (AccountHubEvent) -> Unit,
 ) {
     val colors = ZillitTheme.colors
@@ -161,17 +203,17 @@ private fun BuilderTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            MonoLabel("Approvers", modifier = Modifier.clickable(onClick = close), color = colors.accentText)
+            MonoLabel(chrome.root, modifier = Modifier.clickable(onClick = close), color = colors.accentText)
             ZillitText(text = "/", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
             ZillitText(
-                text = config.module.label,
+                text = chrome.moduleLabel ?: config.module.label,
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.textSecondary,
                 maxLines = 1,
             )
             ZillitText(text = "•", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
             ZillitText(
-                text = department ?: "Default Approval Levels",
+                text = department ?: chrome.allLabel,
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
             )
@@ -225,33 +267,7 @@ private fun BuilderHeading(config: ApprovalConfig, department: String?) {
 /** The dashed line with a round "+" — inserts a level at [position] (0-based). */
 @Composable
 private fun InsertRail(position: Int, onEvent: (AccountHubEvent) -> Unit) {
-    val colors = ZillitTheme.colors
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    Box(modifier = Modifier.fillMaxWidth().height(RAIL_HEIGHT), contentAlignment = Alignment.Center) {
-        ApprovalDashedRule()
-        ZillitTooltip("Insert level here") {
-            Box(
-                modifier = Modifier
-                    .size(RAIL_BUTTON)
-                    .clip(CircleShape)
-                    .background(if (hovered) colors.accent else colors.surface)
-                    .border(RAIL_BORDER, if (hovered) colors.accent else colors.borderStrong, CircleShape)
-                    .hoverable(interaction)
-                    .clickable(interactionSource = interaction, indication = null) {
-                        onEvent(AccountHubEvent.InsertApprovalLevel(position))
-                    }
-                    .semantics { contentDescription = "Insert level here" },
-                contentAlignment = Alignment.Center,
-            ) {
-                ZillitIcon(
-                    icon = ZillitIcons.Add,
-                    tint = if (hovered) colors.textOnAccent else colors.textMuted,
-                    size = RAIL_ICON,
-                )
-            }
-        }
-    }
+    DashedInsertRail("Insert level here") { onEvent(AccountHubEvent.InsertApprovalLevel(position)) }
 }
 
 /** One level: its number, its rules, "Add more", and "Remove level" while there are others. */
@@ -690,10 +706,6 @@ private val RULE_TYPES = listOf(ApprovalRule.DEFAULT to "Default", ApprovalRule.
 private const val ADDED_ALPHA = 0.45f
 private val BUILDER_MAX_WIDTH = 1040.dp
 private val HEADING_TILE = 40.dp
-private val RAIL_HEIGHT = 36.dp
-private val RAIL_BUTTON = 26.dp
-private val RAIL_BORDER = 1.5.dp
-private val RAIL_ICON = 12.dp
 private val LEVEL_BADGE = 22.dp
 private val ACTION_ICON = 12.dp
 private val RULE_SELECT = 200.dp

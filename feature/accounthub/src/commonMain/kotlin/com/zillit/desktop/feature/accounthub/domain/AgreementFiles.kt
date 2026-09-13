@@ -116,4 +116,19 @@ interface AgreementFiles {
         caption: String,
         purpose: SetupUpload = SetupUpload.Agreement,
     ): ZillitResult<AgreementDocument>
+
+    /** Whether [adopt] works here — a host that cannot take dropped bytes offers no drop zone. */
+    val acceptsDrops: Boolean get() = false
+
+    /**
+     * A file dragged onto the window instead of chosen in the picker — the
+     * web's drop zone. The same rules as [pick] apply, refusals included.
+     * Null when it was refused or the host does not take drops.
+     */
+    fun adopt(
+        name: String,
+        bytes: ByteArray,
+        purpose: SetupUpload,
+        onRefused: (String) -> Unit,
+    ): PickedAgreementFile? = null
 }

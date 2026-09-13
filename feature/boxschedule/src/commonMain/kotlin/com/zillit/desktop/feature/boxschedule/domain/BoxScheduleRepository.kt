@@ -11,9 +11,10 @@ sealed interface BlockWrite {
 }
 
 /**
- * The production diary service — `/api/v2/box-schedule/...` on the
- * pre-and-production host.
+ * The production diary service — `/api/v2/box-schedule/...` and
+ * `/api/v2/user-preset` on the pre-and-production host.
  */
+@Suppress("TooManyFunctions") // One suspend fun per server operation; the web's service has as many.
 interface BoxScheduleRepository {
 
     /**
@@ -27,7 +28,9 @@ interface BoxScheduleRepository {
     val refreshes: Flow<Unit> get() = emptyFlow()
 
     suspend fun types(): ZillitResult<List<ScheduleType>>
-    suspend fun createType(title: String, color: String): ZillitResult<Unit>
+
+    /** Creates a type; the answer names the new type's id when the server sent one. */
+    suspend fun createType(title: String, color: String): ZillitResult<String?>
     suspend fun updateType(id: String, title: String?, color: String?): ZillitResult<Unit>
     suspend fun deleteType(id: String): ZillitResult<Unit>
 
@@ -43,10 +46,21 @@ interface BoxScheduleRepository {
     /** Full-array replace of the block's dates; same conflict routing. */
     suspend fun updateBlock(id: String, draft: BlockDraft, resolve: ConflictAction? = null): ZillitResult<BlockWrite>
 
-    suspend fun deleteBlock(id: String): ZillitResult<Unit>
+    /** `PUT /days/:id` with the title alone — a one-day edit that kept its type. */
+    suspend fun renameBlock(id: String, title: String): ZillitResult<Unit>
+
+    /**
+     * `PUT /days/:id/single-date` — moves one date of a block to another type.
+     * The server splits the block, logs, bumps revisions and broadcasts, in
+     * one atomic write.
+     */
+    suspend fun changeSingleDay(id: String, date: Long, typeId: String, action: ConflictAction): ZillitResult<Unit>
+
+    /** Deletes a whole block; the answer is the server's own message, when it sent one. */
+    suspend fun deleteBlock(id: String): ZillitResult<String?>
 
     /** Removes single dates from blocks; a block left empty is deleted server-side. */
-    suspend fun removeDates(entries: Map<String, List<Long>>): ZillitResult<Unit>
+    suspend fun removeDates(entries: Map<String, List<Long>>): ZillitResult<String?>
 
     suspend fun duplicateBlock(sourceId: String, newStartDate: Long): ZillitResult<Unit>
 
@@ -71,7 +85,8 @@ interface BoxScheduleRepository {
     /**
      * Edits one event or note. For a recurring occurrence, [scope] decides how
      * far the change reaches and [occurrenceDate] MUST be the occurrence's
-     * `startDateTime` — sending the start-of-day matches nothing.
+     * `startDateTime` — sending the start-of-day matches nothing. [RecurrenceScope.All]
+     * sends no parameters at all.
      */
     suspend fun updateEvent(
         id: String,
@@ -80,18 +95,47 @@ interface BoxScheduleRepository {
         occurrenceDate: Long? = null,
     ): ZillitResult<Unit>
 
+    /**
+     * Deletes one event or note. Null [scope] is a plain whole-document delete
+     * with no parameters; a recurring row sends `delete_type`, and
+     * `occurrence_date` for every scope but [RecurrenceScope.All].
+     */
     suspend fun deleteEvent(
         id: String,
-        scope: RecurrenceScope = RecurrenceScope.All,
+        scope: RecurrenceScope? = null,
         occurrenceDate: Long? = null,
     ): ZillitResult<Unit>
+
+    /** `GET /activity-log?limit=200&page=0` — the History drawer. */
+    suspend fun history(): ZillitResult<List<HistoryEntry>>
+
+    /** `GET /revisions` — the snapshots the history details pair with. */
+    suspend fun revisions(): ZillitResult<List<DiaryRevision>>
+
+    suspend fun presets(): ZillitResult<List<UserPreset>>
+
+    /** `POST /user-preset`; a [presetId] makes it an update. */
+    suspend fun savePreset(presetId: String?, name: String, userIds: List<String>): ZillitResult<Unit>
+
+    suspend fun deletePreset(presetId: String): ZillitResult<Unit>
+
+    /** `POST /share/generate-link` — the read-only link, made absolute against the web app. */
+    suspend fun shareLink(): ZillitResult<String>
 }
 
 data class NoteType(
     val value: String,
     val label: String,
     val hideDistribution: Boolean,
-)
+) {
+    companion object {
+        /** What the form offers when the server's list has not answered — the web's seed. */
+        val DEFAULTS = listOf(
+            NoteType("general", "General", hideDistribution = false),
+            NoteType(PERSONAL_NOTE_TYPE, PERSONAL_NOTE_LABEL, hideDistribution = true),
+        )
+    }
+}
 
 /**
  * The Main Calendar's events for the diary's merge — a different service, so

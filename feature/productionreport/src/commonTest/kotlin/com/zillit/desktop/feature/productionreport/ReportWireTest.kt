@@ -37,7 +37,7 @@ class ReportWireTest {
     """.trimIndent()
 
     @Test
-    fun `dates stay strings and clocks normalise on the way out`() {
+    fun `dates stay strings and values go back exactly as stored`() {
         val payload = PayloadWire.parse(Json.parseToJsonElement(wire))
         assertEquals("2026-08-14", payload.shared.dateYmd)
 
@@ -51,7 +51,7 @@ class ReportWireTest {
         val inValue = atoms[2].jsonObject["value"] as JsonPrimitive
         val outValue = atoms[3].jsonObject["value"] as JsonPrimitive
         assertTrue(inValue.isString && outValue.isString)
-        assertEquals("Time:06:30", inValue.content, "a clock in an IN column becomes a Time: entry")
+        assertEquals("6:30", inValue.content, "a stored value goes back as the web sends it — verbatim")
         assertEquals("Per HOD", outValue.content)
     }
 
@@ -83,5 +83,32 @@ class ReportWireTest {
 
         assertEquals("Notes", payload.rows[0].cells[0].title)
         assertEquals("wrapped early", payload.rows[0].cells[0].rows[0].values[0].value)
+    }
+
+    @Test
+    fun `keys this client does not model survive a round trip`() {
+        val extra = wire
+            .replace("\"approverIds\":[\"a1\"]", "\"approverIds\":[\"a1\"],\"currentScript\":\"Blue pages\"")
+            .replace("\"section_title\":\"Camera\"", "\"section_title\":\"Camera\",\"header_groups\":[{\"key\":\"g\"}]")
+        val out = PayloadWire.emit(PayloadWire.parse(Json.parseToJsonElement(extra)))
+        assertEquals("Blue pages", (out["shared"]!!.jsonObject["currentScript"] as JsonPrimitive).content)
+        val cell = out["page_rows"]!!.jsonArray[0].jsonObject["page_row_cells"]!!.jsonArray[0].jsonObject
+        assertEquals(1, cell["header_groups"]!!.jsonArray.size)
+    }
+
+    @Test
+    fun `a legacy epoch in a time column folds to a clock on the way out`() {
+        val epoch = wire.replace("\"6:30\"", "\"1755129600000\"")
+        val out = PayloadWire.emit(PayloadWire.parse(Json.parseToJsonElement(epoch)))
+        val atoms = out["page_rows"]!!.jsonArray[0].jsonObject["page_row_cells"]!!
+            .jsonArray[0].jsonObject["rows"]!!.jsonArray[0].jsonObject["row"]!!.jsonArray
+        assertTrue(Regex("""\d{2}:\d{2}""").matches((atoms[2].jsonObject["value"] as JsonPrimitive).content))
+    }
+
+    @Test
+    fun `a stock template's presentation keys never enter a report`() {
+        val template = "{\"id\":\"t1\",\"name\":\"Feature\",\"isCreateYourOwn\":false," + wire.trim().removePrefix("{")
+        val out = PayloadWire.emit(PayloadWire.parse(Json.parseToJsonElement(template)))
+        assertTrue(out.keys.none { it in setOf("id", "name", "isCreateYourOwn") })
     }
 }

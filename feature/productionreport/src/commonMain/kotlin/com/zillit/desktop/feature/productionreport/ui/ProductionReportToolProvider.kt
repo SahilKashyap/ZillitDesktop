@@ -1,15 +1,18 @@
 package com.zillit.desktop.feature.productionreport.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
+import com.zillit.desktop.core.designsystem.component.ZillitToast
+import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
@@ -24,9 +27,16 @@ import com.zillit.desktop.feature.productionreport.domain.ReportKind
  */
 class ProductionReportToolProvider(
     private val viewModel: ReportViewModel,
+    /** A crew member's photo for the report's faces; null draws initials. */
+    private val loadAvatar: suspend (String) -> ImageBitmap? = { null },
+    /**
+     * The tool's unit chat for the Chat workspace, drawn with this window's
+     * route and navigator; null leaves the manager alone.
+     */
+    private val chat: (@Composable (route: WorkspaceRoute, navigator: WindowNavigator) -> Unit)? = null,
+    /** Opens a one-to-one chat from this window — "Chat with Approver" / "Chat with Creator". */
+    private val openChat: ((navigator: WindowNavigator, userId: String, fullName: String) -> Unit)? = null,
 ) : ToolProvider {
-
-    private val kind: ReportKind get() = viewModel.kind
 
     override val path: String = viewModel.kind.path
     override val title: String = viewModel.kind.title
@@ -36,24 +46,38 @@ class ProductionReportToolProvider(
     }
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
-    override val defaultSize: DpSize = DpSize(1280.dp, 860.dp)
+    override val defaultSize: DpSize = DpSize(1360.dp, 880.dp)
 
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         val state by viewModel.state.collectAsState()
-        var notice by remember { mutableStateOf<String?>(null) }
+        var toast by remember { mutableStateOf<ReportEffect.Toast?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
+        DisposableEffect(viewModel, navigator) {
+            openChat?.let { open ->
+                viewModel.attachChat { userId, fullName ->
+                    open(navigator, userId, fullName)
+                    true
+                }
+            }
+            onDispose { viewModel.attachChat(null) }
+        }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {
-                    is ReportEffect.Notice -> notice = effect.message
+                    is ReportEffect.Toast -> toast = effect
                 }
             }
         }
 
-        ProductionReportScreen(state = state, onEvent = viewModel::onEvent)
-        ZillitErrorToast(message = notice, onDismiss = { notice = null })
+        val chatPane: (@Composable () -> Unit)? = chat?.let { host -> @Composable { host(route, navigator) } }
+        ProductionReportScreen(state = state, onEvent = viewModel::onEvent, chat = chatPane, loadAvatar = loadAvatar)
+        ZillitToast(
+            message = toast?.message,
+            onDismiss = { toast = null },
+            tone = if (toast?.isError == true) ZillitToastTone.Danger else ZillitToastTone.Success,
+        )
     }
 }
 

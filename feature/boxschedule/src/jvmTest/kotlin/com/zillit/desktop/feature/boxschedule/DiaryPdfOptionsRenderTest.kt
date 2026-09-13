@@ -5,43 +5,57 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfLayout
+import com.zillit.desktop.feature.boxschedule.domain.DiaryPdfOptions
 import com.zillit.desktop.feature.boxschedule.ui.BoxScheduleEvent
+import com.zillit.desktop.feature.boxschedule.ui.PanelEvent
+import com.zillit.desktop.feature.boxschedule.ui.PdfDestination
 import com.zillit.desktop.feature.boxschedule.ui.PdfSheet
 import com.zillit.desktop.feature.boxschedule.ui.pages.PdfOptionsDialog
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * The diary PDF dialog: one prompt with the layout and the Personal Notes
- * choice, defaulting to the file the server always sent, and a publish
- * button only for someone with posting rights on Document Distribution.
+ * "PDF options" — the web's prompt before a print or a publish: the layout,
+ * and whether the viewer's own Personal Notes go in.
  */
 @OptIn(ExperimentalTestApi::class)
 class DiaryPdfOptionsRenderTest {
 
     @Test
-    fun `the dialog opens on Calendar with Personal Notes and offers Save`() = runComposeUiTest {
+    fun `the prompt offers both layouts and Personal Notes, and Submit sends what was chosen`() = runComposeUiTest {
         val events = mutableListOf<BoxScheduleEvent>()
-        setContent {
-            ZillitTheme { PdfOptionsDialog(sheet = PdfSheet(), onEvent = events::add) }
-        }
+        setContent { ZillitTheme { PdfOptionsDialog(PdfSheet(PdfDestination.Print), events::add) } }
+        waitForIdle()
 
-        onNodeWithText("Diary PDF").assertExists()
+        onNodeWithText("PDF options").assertExists()
         onNodeWithText("Calendar").assertExists()
-        onNodeWithText("With Personal Notes").assertExists()
-        onNodeWithText("Publish to Document Distribution").assertDoesNotExist()
-        onNodeWithText("Save PDF").performClick()
-        assertEquals(listOf<BoxScheduleEvent>(BoxScheduleEvent.SavePdf), events)
+        onNodeWithText("Include my Personal Notes").performClick()
+        onNodeWithText("List").performClick()
+        onNodeWithText("Submit").performClick()
+
+        assertEquals(
+            listOf<BoxScheduleEvent>(
+                PanelEvent.SetPdfPersonalNotes(false),
+                PanelEvent.SetPdfLayout(DiaryPdfLayout.List),
+                PanelEvent.SubmitPdf,
+            ),
+            events,
+        )
     }
 
     @Test
-    fun `posting rights on the library add the publish destination`() = runComposeUiTest {
+    fun `a publish names its destination, and a busy submit cannot be cancelled`() = runComposeUiTest {
         val events = mutableListOf<BoxScheduleEvent>()
         setContent {
-            ZillitTheme { PdfOptionsDialog(sheet = PdfSheet(canPublish = true), onEvent = events::add) }
+            ZillitTheme {
+                PdfOptionsDialog(PdfSheet(PdfDestination.Publish, DiaryPdfOptions(), busy = true), events::add)
+            }
         }
+        waitForIdle()
 
-        onNodeWithText("Publish to Document Distribution").performClick()
-        assertEquals(listOf<BoxScheduleEvent>(BoxScheduleEvent.PublishPdf), events)
+        onNodeWithText("Publish to Document Distribution").assertExists()
+        onNodeWithText("Cancel").performClick()
+        assertEquals(emptyList<BoxScheduleEvent>(), events)
     }
 }

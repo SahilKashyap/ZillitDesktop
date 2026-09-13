@@ -100,6 +100,19 @@ class BoardRealtimeTest {
     }
 
     @Test
+    fun `the production report's unit chat listens on its underscore prefix, messages and comments only`() {
+        assertEquals(
+            setOf(
+                "production_report:message:added", "production_report:message:edited",
+                "production_report:message:deleted:multiple", "production_report:message:comment:added",
+                "production_report:message:comment:edited", "production_report:message:comment:deleted",
+                "production_report:message:readby:update",
+            ),
+            names("production-report"),
+        )
+    }
+
+    @Test
     fun `catering adds its unit lifecycle and archive events`() {
         assertEquals(
             setOf(

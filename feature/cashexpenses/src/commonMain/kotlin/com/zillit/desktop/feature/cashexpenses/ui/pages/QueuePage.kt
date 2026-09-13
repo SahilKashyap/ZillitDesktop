@@ -30,6 +30,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
+import com.zillit.desktop.feature.cashexpenses.domain.CashPeople
 import com.zillit.desktop.feature.cashexpenses.domain.Claim
 import com.zillit.desktop.feature.cashexpenses.domain.BatchAssignment
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
@@ -43,6 +44,7 @@ import com.zillit.desktop.feature.cashexpenses.ui.CashPerson
 import com.zillit.desktop.feature.cashexpenses.ui.CashUiState
 import com.zillit.desktop.feature.cashexpenses.ui.ConfirmAction
 import com.zillit.desktop.feature.cashexpenses.ui.LifecycleBar
+import com.zillit.desktop.feature.cashexpenses.ui.LocalCashPeople
 import com.zillit.desktop.feature.cashexpenses.ui.ReasonedAction
 import com.zillit.desktop.feature.cashexpenses.ui.FloatStatusPill
 import com.zillit.desktop.feature.cashexpenses.ui.date
@@ -69,7 +71,8 @@ import com.zillit.desktop.feature.cashexpenses.ui.money
 @Suppress("LongMethod") // Header, queue and detail pane: one screen, read together.
 @Composable
 fun QueuePage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
-    val batches = state.queueBatches.filter { it.matches(state.search) }
+    val people = LocalCashPeople.current
+    val batches = state.queueBatches.filter { it.matches(state.search, people) }
     val selected = batches.firstOrNull { it.id == state.selectedBatchId }
 
     FixedPage {
@@ -184,6 +187,7 @@ private fun QueueHeader(state: CashUiState, count: Int, onEvent: (CashEvent) -> 
 @Suppress("LongMethod") // One batch, top to bottom; the order is the reading order.
 @Composable
 private fun BatchDetail(state: CashUiState, batch: ClaimBatch, onEvent: (CashEvent) -> Unit) {
+    val submitter = LocalCashPeople.current.nameOrNull(batch.userId, batch.holderName)
     ZillitScrollColumn(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(ZillitTheme.spacing.lg),
@@ -196,8 +200,8 @@ private fun BatchDetail(state: CashUiState, batch: ClaimBatch, onEvent: (CashEve
                     style = ZillitTheme.typography.titleMedium,
                 )
                 CashPerson(
-                    name = batch.holderName.ifBlank { batch.userId },
                     userId = batch.userId,
+                    recordedName = batch.holderName,
                     secondary = "Submitted ${date(batch.createdAt)}",
                     modifier = Modifier.padding(top = ZillitTheme.spacing.xs),
                 )
@@ -220,7 +224,7 @@ private fun BatchDetail(state: CashUiState, batch: ClaimBatch, onEvent: (CashEve
         if (batch.reimbursementAmount > 0) {
             ZillitNotice(
                 text = "${money(batch.reimbursementAmount, batch.currency)} is owed back to " +
-                    batch.holderName.ifBlank { "the submitter" } +
+                    (submitter ?: "the submitter") +
                     (batch.paymentMethod?.let { " via $it" } ?: ""),
                 tone = StatusTone.Progress,
                 icon = ZillitIcons.Bank,
@@ -561,6 +565,7 @@ private fun floatApprovalActions(
         header = "",
         width = ColumnWidth.Fixed(FLOAT_ACTION_COLUMN),
         cell = { row ->
+            val holder = LocalCashPeople.current.nameOrNull(row.userId, row.holderName) ?: "this crew member"
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 if (state.viewer.isApprover) {
                     ZillitButton(
@@ -572,8 +577,7 @@ private fun floatApprovalActions(
                                         ConfirmAction.ApproveFloat,
                                         row.id,
                                         "Approve this float",
-                                        "${money(row.requestedAmount, row.currency)} for " +
-                                            row.holderName.ifBlank { "this crew member" } + ".",
+                                        "${money(row.requestedAmount, row.currency)} for $holder.",
                                     ),
                                 ),
                             )
@@ -673,11 +677,12 @@ fun PaymentRoutingPage(state: CashUiState) {
     }
 }
 
-private fun ClaimBatch.matches(query: String): Boolean {
+/** By the name on screen, as the web's queues search `getUserName(user_id)` — see [CashPeople]. */
+private fun ClaimBatch.matches(query: String, people: CashPeople): Boolean {
     if (query.isBlank()) return true
     val needle = query.trim().lowercase()
     return reference.lowercase().contains(needle) ||
-        holderName.lowercase().contains(needle) ||
+        people.nameOrNull(userId, holderName).orEmpty().lowercase().contains(needle) ||
         notes?.lowercase()?.contains(needle) == true
 }
 

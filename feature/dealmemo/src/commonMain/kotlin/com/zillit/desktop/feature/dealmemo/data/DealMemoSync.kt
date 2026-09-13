@@ -1,50 +1,64 @@
 package com.zillit.desktop.feature.dealmemo.data
 
 import com.zillit.desktop.core.socket.SocketEventName
+import com.zillit.desktop.feature.dealmemo.domain.DealRefresh
+import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey
+import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey.Approval
+import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey.Detail
+import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey.Mine
+import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey.Registry
+import com.zillit.desktop.feature.dealmemo.domain.DealRefreshKey.Templates
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * The deal-memo hub's lifecycle events — every wire name the web's handler map
- * subscribes on the shared socket (`accountHubListeners.js:1495-1620`,
- * attached via `listenerSocket.js:2658-2661`) and bridges to the `ah:deal_memo:*`
- * refetch keys the pages answer with a plain reload (`DMDealsPage.jsx:305`,
- * `DMMyDealPage.jsx:71`, `DMApprovalQueuePage.jsx:245`, `DMOverviewPage.jsx:120`).
+ * The deal-memo events the web subscribes on the shared socket, with the
+ * refetch keys each one bridges to (`accountHubListeners.js:1584-1731`).
  *
- * The legacy deal-memo surfaces' events — `dealmemo:uploadnda` /
- * `dealmemo:deletenda` (`listenerSocket.js:1988-1994`) and the e-signature
- * stream's `document:counter:signed` (`listenerSocket.js:2374`) — are
- * deliberately absent: they announce the settings-page NDA lists and the
- * user-side contract-status page, neither of which this tool shows, so a
- * subscription would only reload the deals list over something it cannot
- * display.
+ * `deal:tier-approved` is kebab-case and templates emit `deal:template:*` —
+ * a wrong name fails silently, so these are the wire names verbatim.
+ * `deal:deactivate_scheduled` deliberately leaves My Deal alone: crew never
+ * see a scheduled deactivation.
  */
-val DEAL_SYNC_EVENTS: List<SocketEventName> = listOf(
-    SocketEventName("deal:created"),
-    SocketEventName("deal:submitted"),
-    SocketEventName("deal:tier-approved"),
-    SocketEventName("deal:approved"),
-    SocketEventName("deal:rejected"),
-    SocketEventName("deal:activated"),
-    SocketEventName("deal:completed"),
-    SocketEventName("deal:cancelled"),
-    SocketEventName("deal:deactivate_scheduled"),
-    SocketEventName("deal:updated"),
-    SocketEventName("deal:approval_reset"),
-    SocketEventName("deal:deleted"),
-)
+internal val DEAL_EVENT_KEYS: Map<SocketEventName, Set<DealRefreshKey>> = mapOf(
+    "deal:created" to setOf(Registry, Approval),
+    "deal:submitted" to setOf(Registry, Approval, Detail),
+    "deal:tier-approved" to setOf(Registry, Approval, Detail),
+    "deal:approved" to setOf(Registry, Approval, Mine, Detail),
+    "deal:rejected" to setOf(Registry, Approval, Mine, Detail),
+    "deal:activated" to setOf(Registry, Mine, Detail),
+    "deal:completed" to setOf(Registry, Mine, Detail),
+    "deal:cancelled" to setOf(Registry, Approval, Mine, Detail),
+    "deal:deactivate_scheduled" to setOf(Registry, Detail),
+    "deal:updated" to setOf(Registry, Detail),
+    "deal:approval_reset" to setOf(Registry, Approval, Mine, Detail),
+    "deal:deleted" to setOf(Registry, Approval, Mine),
+    "deal:template:created" to setOf(Templates),
+    "deal:template:updated" to setOf(Templates),
+    "deal:template:deleted" to setOf(Templates),
+).mapKeys { (name, _) -> SocketEventName(name) }
 
 /**
  * The slice of the account-hub envelope this port reads: which production the
- * frame is about. The web drops cross-project frames before any handler runs
- * (`accountHubListeners.js:14-33, 2060-2072`); everything else in the payload
- * is ignored because the port refetches rather than patching rows.
+ * frame is about, and which deal. The web drops cross-project frames before
+ * any handler runs; the deal id is the first of `deal_id`, `_id`, `id`.
  */
 @Serializable
 internal data class DealSyncEnvelope(
     @SerialName("project_id") val projectId: String? = null,
+    @SerialName("data") val data: JsonObject? = null,
 ) {
     /** A frame that names another production is not ours; unnamed ones pass. */
     fun inProject(here: String?): Boolean =
         projectId == null || here == null || projectId == here
+
+    val dealId: String?
+        get() = listOf("deal_id", "_id", "id").firstNotNullOfOrNull { key ->
+            (data?.get(key) as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() && it != "null" }
+        }
+
+    fun toRefresh(event: SocketEventName): DealRefresh? =
+        DEAL_EVENT_KEYS[event]?.let { keys -> DealRefresh(keys, dealId) }
 }

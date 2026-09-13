@@ -1,13 +1,11 @@
 package com.zillit.desktop.feature.boxschedule
 
 import com.zillit.desktop.feature.boxschedule.data.eventWire
-import com.zillit.desktop.feature.boxschedule.domain.DiaryClock
 import com.zillit.desktop.feature.boxschedule.domain.DiaryDraft
 import com.zillit.desktop.feature.boxschedule.domain.DiaryEvent
 import com.zillit.desktop.feature.boxschedule.domain.DiaryKind
 import com.zillit.desktop.feature.boxschedule.domain.DiaryMath
 import com.zillit.desktop.feature.boxschedule.domain.ScheduleBlock
-import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -104,7 +102,7 @@ class DiaryMathTest {
         val body = eventWire(
             DiaryDraft(
                 kind = DiaryKind.Event, title = " Crew call ", body = "d", date = 10, startDateTime = 11,
-                endDateTime = 12, fullDay = false, scheduleDayId = "",
+                endDateTime = 12, fullDay = false, scheduleDayId = "", createInCalendar = false,
             ),
             create = true,
         )
@@ -118,6 +116,7 @@ class DiaryMathTest {
             DiaryDraft(
                 kind = DiaryKind.Note, title = "n", body = "text", date = 10, startDateTime = 10,
                 endDateTime = 10, fullDay = true, scheduleDayId = "day-1", noteType = "crew_start",
+                createInCalendar = true,
             ),
             create = false,
         )
@@ -125,18 +124,6 @@ class DiaryMathTest {
         assertEquals("text", (note["notes"] as JsonPrimitive).content)
         assertNull(note["description"])
         assertNull(note["createEventInCalendar"], "only create sends the calendar flag")
-    }
-
-    @Test
-    fun `clock parses and formats round trip in a fixed zone`() {
-        val zone = TimeZone.of("Asia/Kolkata")
-        val midnight = DiaryClock.midnightOf("2026-08-14", zone)!!
-        assertEquals("2026-08-14", DiaryClock.ymd(midnight, zone))
-        val at = DiaryClock.instantOf("2026-08-14", "06:30", zone)!!
-        assertEquals("06:30", DiaryClock.hm(at, zone))
-        assertEquals("Fri 14 Aug", DiaryClock.dayLabel(midnight, zone))
-        assertNull(DiaryClock.midnightOf("14/08/2026", zone))
-        assertNull(DiaryClock.instantOf("2026-08-14", "25:00", zone))
     }
 
     private fun event(

@@ -197,6 +197,30 @@ class FormTemplateTest {
         )
     }
 
+    /**
+     * A drop lands the field where the target sits, whatever is hidden above.
+     *
+     * The rearrange panel lists only the fields on the form; addressing the
+     * drop by position would move the wrong field whenever one is hidden.
+     */
+    @Test
+    fun `dropping a field moves it to the target's place by key`() {
+        val withHidden = template().hideField("header", "date")
+
+        val moved = withHidden.moveField("header", "notes", "vendor")
+
+        assertEquals(listOf("notes", "vendor", "date"), moved.section("header")!!.ordered.map { it.label })
+        assertEquals(listOf(1, 2, 3), moved.section("header")!!.ordered.map { it.order })
+    }
+
+    @Test
+    fun `dropping a field on a key the section does not hold changes nothing`() {
+        val template = template()
+
+        assertEquals(template, template.moveField("header", "vendor", "nowhere"))
+        assertEquals(template, template.moveField("header", "vendor", "vendor"))
+    }
+
     /** A field moved into another section lands at the end of it, renumbered. */
     @Test
     fun `a field moved between sections is renumbered in both`() {

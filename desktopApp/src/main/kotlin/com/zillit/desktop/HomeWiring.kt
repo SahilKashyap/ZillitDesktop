@@ -457,19 +457,23 @@ internal suspend fun fetchChatAudio(
         )?.data
 
 /**
- * A film tool that is a notice board — Info and Confidential Info.
+ * A film tool that is a notice board — Info and Confidential Info, and the
+ * production report tool's unit chat.
  *
  * The web mounts the Home unit-chat component under a different REST
  * segment (`info`, `confidentialinfo`) with ONE unit, resolved from the
  * production's tool list by identifier — never from `home/unit`. The
  * repository is the Home one on that segment; the unit provider is the tool
  * entry itself, folded into a [HomeUnit] so the board's tab strip and
- * composer gate work unchanged.
+ * composer gate work unchanged. The report chat is the same board on the
+ * report service, with no `chat/` segment ([service], [chatSegment]).
  */
 internal fun AppGraph.Ready.boardFeed(
     board: String,
     toolIdentifier: String,
     permissions: () -> ProjectPermissions,
+    service: ZillitService = ZillitService.Units,
+    chatSegment: String = "chat",
 ): HomeFeedViewModel {
     val units: suspend () -> ZillitResult<List<HomeUnit>> = {
         val access = permissions().access(toolIdentifier)
@@ -493,7 +497,7 @@ internal fun AppGraph.Ready.boardFeed(
             )
         }
     }
-    return boardFeed(board, toolIdentifier, units)
+    return boardFeed(board, toolIdentifier, units, service, chatSegment = chatSegment)
 }
 
 /**
@@ -579,6 +583,7 @@ private fun AppGraph.Ready.boardFeed(
     service: ZillitService = ZillitService.Units,
     /** The `notification:read` module; defaults to `<tool>_label`, which Accounts breaks. */
     readModule: String = "${toolIdentifier.removeSuffix("_tool")}_label",
+    chatSegment: String = "chat",
 ): HomeFeedViewModel {
     val repository = HomeFeedRepositoryImpl(
         apiClient = apiClient,
@@ -589,6 +594,7 @@ private fun AppGraph.Ready.boardFeed(
         board = board,
         units = units,
         service = service,
+        chatSegment = chatSegment,
     )
     return HomeFeedViewModel(
         repository = repository,

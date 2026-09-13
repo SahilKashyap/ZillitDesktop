@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.boxschedule.domain
 
+import kotlinx.datetime.TimeZone
+
 /**
  * The diary's pure rules, transcribed from the web so both clients agree on
  * what a schedule looks like once exploded into rows.
@@ -15,9 +17,13 @@ object DiaryMath {
      * Blocks → one row per date, ascending, numbered per type name, with a
      * marker wherever the type changes from the previous row.
      */
-    fun explode(blocks: List<ScheduleBlock>): List<ScheduleDayRow> {
+    fun explode(blocks: List<ScheduleBlock>, zone: TimeZone? = null): List<ScheduleDayRow> {
+        // Read in a zone, every date is its local midnight — the key the calendar and the day details use.
         val dated = blocks.flatMap { block ->
-            block.calendarDays.map { date -> block to date }
+            block.calendarDays
+                .map { date -> zone?.let { DiaryCalendar.dayKey(date, it) } ?: date }
+                .distinct()
+                .map { date -> block to date }
         }.sortedBy { it.second }
 
         val counters = mutableMapOf<String, Int>()

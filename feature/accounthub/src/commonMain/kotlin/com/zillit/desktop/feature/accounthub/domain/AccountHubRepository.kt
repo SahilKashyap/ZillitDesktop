@@ -262,14 +262,15 @@ interface AccountHubRepository {
     suspend fun createAccount(account: NewAccount): ZillitResult<CoaAccount>
 
     /**
-     * Edits a row.
+     * Edits a row — only the fields [patch] sets.
      *
-     * Name, cost type and the two flags always; the line type and parent only
-     * when [AccountPatch.structureChanged] — a manual row may be re-typed or
-     * re-parented, the way the web's `AccountFormModal` allows, and the server
-     * re-walks the breadcrumb. A budget-imported row keeps its cost type.
+     * The line type and parent go only when [AccountPatch.structureChanged] — a
+     * manual row may be re-typed or re-parented, the way the web's
+     * `AccountFormModal` allows, and the server re-walks the breadcrumb. A class
+     * change cascades to every descendant server-side, and the answer says how
+     * many ([CoaUpdate.cascadedDescendants]).
      */
-    suspend fun updateAccount(id: String, patch: AccountPatch): ZillitResult<CoaAccount>
+    suspend fun updateAccount(id: String, patch: AccountPatch): ZillitResult<CoaUpdate>
 
     /** Soft delete — the code stays for historical postings to resolve against. */
     suspend fun deactivateAccount(id: String): ZillitResult<Unit>
@@ -364,15 +365,16 @@ interface AccountHubRepository {
 /**
  * What an edit sends — see [AccountHubRepository.updateAccount].
  *
- * [lineType] and [parentId] go only when [structureChanged]; [code] only when
- * it differs, which the bulk grid uses for a rename it could not express as
- * create-then-retire.
+ * A null field is left out of the body, so the table's cost-type select sends
+ * the class alone, as the web's does, rather than re-sending a name it may hold
+ * a stale copy of. [lineType] and [parentId] go only when [structureChanged];
+ * [code] only when set.
  */
 data class AccountPatch(
-    val name: String,
-    val costType: CoaCostType,
-    val isActive: Boolean,
-    val isPosting: Boolean,
+    val name: String? = null,
+    val costType: CoaCostType? = null,
+    val isActive: Boolean? = null,
+    val isPosting: Boolean? = null,
     val structureChanged: Boolean = false,
     val lineType: CoaLineType? = null,
     val parentId: String? = null,
@@ -415,16 +417,18 @@ data class NewAccount(
     val costType: CoaCostType = CoaCostType.Expense,
     val parentId: String? = null,
     val isPosting: Boolean = true,
+    val isActive: Boolean = true,
 ) {
-    /** What the form refuses to send, or null when it is ready. */
-    fun validationError(rows: List<CoaAccount>): String? {
-        val parent = rows.firstOrNull { it.id == parentId }
-        return when {
-            code.isBlank() -> "Give the account a code."
-            name.isBlank() -> "Give the account a name."
-            ChartOfAccounts.codeTaken(rows, code) -> "Code $code is already in use."
-            else -> ChartOfAccounts.parentProblem(lineType, parent)
-        }
+    /**
+     * What the form refuses to send, or null when it is ready — the web's rules.
+     *
+     * The name is optional (a code alone is an account) and so is the parent
+     * below the top level; a taken code and a parent at the wrong level are not.
+     */
+    fun validationError(rows: List<CoaAccount>): String? = when {
+        code.isBlank() -> "Code is required"
+        ChartOfAccounts.codeTaken(rows, code) -> "Code \"${code.trim().uppercase()}\" already exists"
+        else -> ChartOfAccounts.parentProblem(lineType, parentId, rows)
     }
 }
 

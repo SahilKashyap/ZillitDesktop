@@ -1,216 +1,98 @@
 package com.zillit.desktop.feature.accounthub.ui
 
-import com.zillit.desktop.core.socket.SocketEventBus
-import com.zillit.desktop.feature.accounthub.data.formTemplateRefreshes
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.forms.FormField
 import com.zillit.desktop.core.forms.FormFieldType
 import com.zillit.desktop.core.forms.FormModule
-import com.zillit.desktop.feature.accounthub.domain.ApprovalConfig
-import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
-import com.zillit.desktop.feature.accounthub.domain.ApprovalRule
-import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
-import com.zillit.desktop.feature.accounthub.domain.ApprovalSequence
-import com.zillit.desktop.feature.accounthub.domain.ApprovalTier
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 import com.zillit.desktop.core.forms.FormSection
 import com.zillit.desktop.core.forms.FormTemplate
+import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.accounthub.data.formTemplateRefreshes
+import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
+import com.zillit.desktop.feature.accounthub.domain.ApprovalScope
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubNavigation
 
 /**
- * Forms Configuration: which fields a module's form shows, and in what order.
+ * Forms Configuration: which fields a module's form shows, in what order, and
+ * which are required — the web's `FormConfigModule`.
  *
  * Its own class for the reason the other collaborators are — the console's
  * view model is already long — and because this one is a document editor
- * rather than a record editor. Every mutation is a pure transformation on
- * [FormTemplate]; nothing here talks to the server except load, save and
- * reset.
+ * rather than a record editor. Every change to the form is a pure
+ * transformation on [FormTemplate]; nothing here talks to the server except
+ * load, save and reset, and "Set Approver Level" hands its chain to
+ * [ApprovalActions] once it has been read.
  */
 @Suppress("TooManyFunctions") // One handler per user action, as on the view model itself.
 internal class FormConfigActions(private val vm: AccountHubViewModel) {
-
-    private companion object {
-        /** The terms section's clause list, kept in its extras. */
-        const val TERMS_VALUES = "values"
-    }
 
     /**
      * Forms Configuration, or false when the event is not one of its own.
      *
      * A boolean rather than a fall-through `else -> Unit`: this dispatcher sits
-     * between two others, and one that swallowed everything it did not
-     * recognise would silently eat the chart's and the vendors' events.
+     * behind others, and one that swallowed everything it did not recognise
+     * would silently eat their events.
      */
     // One branch per action; every one of them delegates.
     @Suppress("CyclomaticComplexMethod", "LongMethod")
     fun onEvent(event: AccountHubEvent): Boolean {
         when (event) {
             is AccountHubEvent.OpenFormConfig -> openFor(event.module)
-            is AccountHubEvent.OpenFormModule -> openModule(event.module)
+            is AccountHubEvent.OpenFormModule -> askSwitch(event.module)
+            is AccountHubEvent.SearchFormModules -> edit { copy(moduleSearch = event.term) }
+            AccountHubEvent.ReloadFormTemplate -> load(state.module)
             is AccountHubEvent.EditForm -> setEditing(event.editing)
-            is AccountHubEvent.ToggleFormSection -> toggleSection(event.key)
-            is AccountHubEvent.NudgeFormSection -> nudgeSection(event.key, event.delta)
+            AccountHubEvent.AskDiscardFormChanges -> edit { copy(discard = DiscardIntent.Revert) }
+            AccountHubEvent.DismissDiscardFormChanges -> edit { copy(discard = null) }
+            AccountHubEvent.ConfirmDiscardFormChanges -> confirmDiscard()
+            is AccountHubEvent.ToggleRearrange -> toggleRearrange(event.on)
+            is AccountHubEvent.PickRearrangeSection -> edit { copy(rearrangeSection = event.key) }
+            is AccountHubEvent.MoveFormSection -> changeTemplate { moveSection(event.fromKey, event.toKey) }
+            is AccountHubEvent.MoveFormField ->
+                changeTemplate { moveField(event.sectionKey, event.fromId, event.toId) }
             is AccountHubEvent.ComposeFormSection -> composeSection(event.afterKey)
-            is AccountHubEvent.EditFormSectionName -> editSectionName(event.name)
-            AccountHubEvent.DismissFormSection -> dismissSection()
+            is AccountHubEvent.EditFormSectionName ->
+                edit { copy(composer = composer?.copy(name = event.name)) }
+            AccountHubEvent.DismissFormSection -> edit { copy(composer = null) }
             AccountHubEvent.AddFormSection -> addSection()
             is AccountHubEvent.RenameFormSection -> startRename(event.key, event.label)
-            is AccountHubEvent.EditFormSectionRename -> editRename(event.name)
-            AccountHubEvent.DismissFormSectionRename -> dismissRename()
+            is AccountHubEvent.EditFormSectionRename -> edit { copy(rename = rename?.copy(name = event.name)) }
+            AccountHubEvent.DismissFormSectionRename -> edit { copy(rename = null) }
             AccountHubEvent.SaveFormSectionRename -> saveRename()
             is AccountHubEvent.AskRemoveFormSection -> askRemoveSection(event.section)
-            AccountHubEvent.DismissRemoveFormSection -> dismissRemoveSection()
+            AccountHubEvent.DismissRemoveFormSection -> edit { copy(removingSection = null) }
             AccountHubEvent.ConfirmRemoveFormSection -> confirmRemoveSection()
             is AccountHubEvent.FocusFormField -> focusField(event.sectionKey, event.fieldId)
-            AccountHubEvent.DismissFormField -> dismissField()
-            is AccountHubEvent.EditNewFormField -> editDraft(event.draft)
+            AccountHubEvent.DismissFormField -> edit { copy(focus = null, draft = NewFieldDraft()) }
+            is AccountHubEvent.EditNewFormField -> edit { copy(draft = event.draft) }
+            is AccountHubEvent.ToggleSystemFields -> edit { copy(systemFieldsOpen = event.open) }
             AccountHubEvent.AddFormField -> addField()
             is AccountHubEvent.RemoveFormField -> removeField(event.sectionKey, event.fieldId)
             is AccountHubEvent.RestoreFormField ->
-                restoreField(event.sectionKey, event.fieldId)
-            is AccountHubEvent.NudgeFormField ->
-                nudgeField(event.sectionKey, event.fieldId, event.delta)
+                changeTemplate { restoreField(event.sectionKey, event.fieldId) }
             is AccountHubEvent.MoveFormFieldToSection ->
                 moveFieldToSection(event.sectionKey, event.fieldId, event.toKey)
             is AccountHubEvent.SetFormFieldName ->
-                setFieldName(event.sectionKey, event.fieldId, event.name)
-            is AccountHubEvent.SetFormFieldType ->
-                setFieldType(event.sectionKey, event.fieldId, event.type)
+                changeField(event.sectionKey, event.fieldId) { it.copy(name = event.name) }
+            is AccountHubEvent.SetFormFieldType -> setFieldType(event.sectionKey, event.fieldId, event.type)
             is AccountHubEvent.SetFormFieldRequired ->
-                setFieldRequired(event.sectionKey, event.fieldId, event.required)
+                changeField(event.sectionKey, event.fieldId) { it.copy(required = event.required) }
             is AccountHubEvent.SetFormFieldSelection ->
                 setFieldSelection(event.sectionKey, event.fieldId, event.selectionType)
             AccountHubEvent.SaveFormTemplate -> save()
             AccountHubEvent.AskResetFormTemplate -> askReset()
-            AccountHubEvent.DismissResetFormTemplate -> dismissReset()
+            AccountHubEvent.DismissResetFormTemplate -> edit { copy(confirmingReset = false) }
             AccountHubEvent.ConfirmResetFormTemplate -> confirmReset()
-            is AccountHubEvent.SearchFormModules -> edit { copy(moduleSearch = event.term) }
-            is AccountHubEvent.ToggleRearrange -> edit { copy(rearrange = event.on, rearrangeSection = null) }
-            is AccountHubEvent.PickRearrangeSection -> edit { copy(rearrangeSection = event.key) }
-            is AccountHubEvent.MoveFormSection -> moveSection(event.fromKey, event.toKey)
-            is AccountHubEvent.ToggleTermsEditor -> edit { copy(termsEditing = event.open) }
-            is AccountHubEvent.SetTerm -> editTerms {
-                terms -> terms.mapIndexed { i, t -> if (i == event.index) event.text else t }
+            is AccountHubEvent.OpenApproverScope -> openScope(event.open)
+            is AccountHubEvent.PickApproverScope -> edit {
+                copy(scopeModal = ScopeModalState(mode = event.scope, departmentId = event.departmentId))
             }
-            AccountHubEvent.AddTerm -> editTerms { it + "" }
-            is AccountHubEvent.RemoveTerm -> editTerms { it.filterIndexed { i, _ -> i != event.index } }
-            is AccountHubEvent.OpenApproverScope ->
-                edit { copy(scopeModal = if (event.open) ScopeModalState() else null) }
-            is AccountHubEvent.PickApproverScope ->
-                edit { copy(scopeModal = ScopeModalState(mode = event.scope, departmentId = event.departmentId)) }
             AccountHubEvent.ContinueApproverScope -> continueScope()
-            is AccountHubEvent.UpdateFormApprovers ->
-                edit { copy(approverBuilder = approverBuilder?.copy(config = event.config)) }
-            AccountHubEvent.SaveFormApprovers -> saveApprovers()
-            AccountHubEvent.DismissFormApprovers -> edit { copy(approverBuilder = null) }
             else -> return false
         }
         return true
-    }
-
-    // -- rearranging -----------------------------------------------------------
-
-    private fun moveSection(fromKey: String, toKey: String) {
-        if (!vm.mayEdit()) return
-        template { moveSection(fromKey, toKey) }
-    }
-
-    // -- terms of engagement ---------------------------------------------------
-
-    /**
-     * The terms section's clauses live in its `values` array — a key this
-     * client does not model on [FormSection], so it is edited through the
-     * extras that round-trip every save.
-     */
-    private fun editTerms(change: (List<String>) -> List<String>) {
-        if (!vm.mayEdit()) return
-        val section = state.termsSection ?: return
-        val current = (section.extras[TERMS_VALUES] as? JsonArray).orEmpty()
-            .mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-        val next = change(current)
-        val updated = section.copy(
-            extras = section.extras + (TERMS_VALUES to JsonArray(next.map { JsonPrimitive(it) })),
-        )
-        template { copy(sections = sections.map { if (it.key == section.key) updated else it }) }
-    }
-
-    // -- set approver level ----------------------------------------------------
-
-    /**
-     * "Set Approver Level": the scope chosen, load the module's chain for it
-     * and open the builder — the same tier builder the Approvers page uses,
-     * saved through the same route. A department without its own chain
-     * starts on one empty level, as there.
-     */
-    private fun continueScope() {
-        val scope = state.scopeModal ?: return
-        if (!scope.canContinue || !vm.mayActAsAccountant()) return
-        val module = approvalModule(state.module)
-        val approvalScope = scope.mode ?: return
-        edit { copy(scopeModal = null, approverSaving = true) }
-        vm.runResult({ vm.repo.approvalConfigs(module) }, { rows ->
-            val existing = rows.firstOrNull {
-                it.scope == approvalScope &&
-                    (approvalScope == ApprovalScope.All || it.departmentId == scope.departmentId)
-            }
-            val target = existing ?: ApprovalConfig(
-                module = module,
-                scope = approvalScope,
-                departmentId = scope.departmentId,
-                departmentName = vm.setupState.departmentName(scope.departmentId),
-                tiers = listOf(ApprovalTier(order = 1, rules = listOf(ApprovalRule(type = "default")))),
-            )
-            val seeded = target.copy(
-                tiers = target.tiers.ifEmpty { listOf(ApprovalTier(1)) }.map { tier ->
-                    if (tier.rules.isEmpty()) tier.copy(rules = listOf(ApprovalRule(type = "default"))) else tier
-                },
-            )
-            edit { copy(approverBuilder = ApprovalBuilder(seeded, seeded), approverSaving = false) }
-        }, { error ->
-            edit { copy(approverSaving = false) }
-            vm.report(error)
-        })
-    }
-
-    @Suppress("ReturnCount") // One guard per rule; merging them loses which failed.
-
-    private fun saveApprovers() {
-        val builder = state.approverBuilder ?: return
-        if (!vm.mayActAsAccountant()) return
-        val config = builder.config
-        if (config.tiers.isEmpty()) return vm.sendSideEffect(AccountHubEffect.Failed("Please add at least one level."))
-        val badAmount = config.tiers.flatMap { it.rules }.any {
-            it.type == "amount" && (it.amountThreshold ?: 0.0) <= 0.0
-        }
-        if (badAmount) {
-            return vm.sendSideEffect(
-                AccountHubEffect.Failed("Enter an amount greater than 0 for each \"Amount greater than\" rule."),
-            )
-        }
-        val compacted = ApprovalSequence.compacted(config.tiers)
-        if (compacted.isEmpty()) return vm.sendSideEffect(AccountHubEffect.Failed("Add at least one approver."))
-        edit { copy(approverSaving = true) }
-        vm.runResult({ vm.repo.saveApprovalConfig(config.copy(tiers = compacted)) }, {
-            edit {
-                copy(
-                    approverBuilder = null,
-                    approverSaving = false,
-                    message = CloseResult(true, "Approval levels saved successfully."),
-                )
-            }
-            vm.update { copy(notice = "Approval levels saved successfully.") }
-        }, { error ->
-            edit { copy(approverSaving = false) }
-            vm.report(error)
-        })
-    }
-
-    /** The approval module a form module's approvers are saved under. */
-    private fun approvalModule(module: FormModule): ApprovalModule = when (module) {
-        FormModule.PurchaseOrders -> ApprovalModule.PurchaseOrders
-        FormModule.CashExpenses -> ApprovalModule.CashExpenses
     }
 
     private val state: FormConfigState get() = vm.setupState.formConfig
@@ -218,9 +100,17 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
     private fun edit(reducer: FormConfigState.() -> FormConfigState) =
         vm.update { copy(formConfig = formConfig.reducer()) }
 
-    /** Rewrites the template, leaving everything else where it is. */
-    private fun template(transform: FormTemplate.() -> FormTemplate) =
+    /** Rewrites the template, for a person who may edit it. */
+    private fun changeTemplate(transform: FormTemplate.() -> FormTemplate) {
+        if (!vm.mayEdit()) return
         edit { copy(template = template.transform()) }
+    }
+
+    private fun changeField(sectionKey: String, fieldId: String, change: (FormField) -> FormField) =
+        changeTemplate { editField(sectionKey, fieldId, change) }
+
+    private fun field(sectionKey: String, fieldId: String): FormField? =
+        state.template.section(sectionKey)?.fields?.firstOrNull { it.id == fieldId }
 
     // -- loading ------------------------------------------------------------
 
@@ -239,9 +129,10 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
         }
     }
 
+    /** Opening the page keeps whatever is unsaved on it, and otherwise reads the module afresh. */
     fun open() {
-        if (state.saved.sections.isNotEmpty() && !state.dirty) return
-        load(state.module)
+        if (state.dirty) return
+        load(state.module, silent = state.saved.sections.isNotEmpty())
     }
 
     /**
@@ -254,137 +145,188 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
     fun openFor(module: FormModule) {
         if (HubArea.FormConfig !in HubNavigation.areasFor(vm.setupState.viewer)) return
         vm.update { copy(area = HubArea.FormConfig) }
-        openModule(module)
+        if (module != state.module) askSwitch(module) else open()
     }
 
-    fun openModule(module: FormModule) {
-        if (module == state.module && state.saved.sections.isNotEmpty()) return
-        edit { FormConfigState(module = module) }
+    /**
+     * Another module's form. Unsaved edits on this one are asked about first:
+     * the web silently drops them, and an hour of rearranging is not a thing a
+     * click on the rail should be able to lose.
+     */
+    private fun askSwitch(module: FormModule) {
+        if (module == state.module) return
+        if (state.dirty) {
+            edit { copy(discard = DiscardIntent.Switch(module)) }
+        } else {
+            switchTo(module)
+        }
+    }
+
+    private fun switchTo(module: FormModule) {
+        edit { FormConfigState(module = module, moduleSearch = moduleSearch) }
         load(module)
+    }
+
+    private fun confirmDiscard() {
+        when (val intent = state.discard) {
+            DiscardIntent.Revert -> edit {
+                copy(template = saved, discard = null, focus = null, rename = null, draft = NewFieldDraft())
+            }
+            is DiscardIntent.Switch -> switchTo(intent.module)
+            null -> Unit
+        }
     }
 
     /**
      * Re-reads without disturbing the editor.
      *
      * Driven by the socket when another accountant saves or resets the same
-     * module. An unsaved local edit wins: overwriting someone mid-sentence to
+     * module. An unsaved local edit wins: overwriting someone mid-change to
      * show them a change they did not make is worse than a stale preview, and
      * the page says when it is holding unsaved work.
      */
     fun refresh(module: FormModule) {
-        if (module != state.module || state.dirty) return
+        if (module != state.module || state.dirty || state.busy) return
         load(module, silent = true)
     }
 
+    /**
+     * Reads [module]'s template. Only the module still open when the answer
+     * lands is written, so a quick switch cannot paint one form under the
+     * other's name.
+     */
     private fun load(module: FormModule, silent: Boolean = false) {
-        if (!silent) edit { copy(loading = true) }
+        if (!silent) edit { copy(loading = true, loadFailed = false) }
         vm.runResult({ vm.repo.formTemplate(module) }, { loaded ->
-            edit { copy(template = loaded, saved = loaded, loading = false) }
+            edit {
+                if (this.module != module || dirty) {
+                    copy(loading = false)
+                } else {
+                    copy(template = loaded, saved = loaded, loading = false, loadFailed = false)
+                }
+            }
         }, { error ->
-            edit { copy(loading = false) }
-            vm.report(error)
+            edit {
+                if (this.module != module) this else copy(loading = false, loadFailed = saved.sections.isEmpty())
+            }
+            if (!silent) vm.report(error)
         })
     }
 
     // -- mode ---------------------------------------------------------------
 
-    /** Leaving edit mode throws unsaved changes away, which is what Cancel means. */
-    fun setEditing(editing: Boolean) = edit {
-        if (editing) {
-            copy(editing = true)
-        } else {
+    /**
+     * Edit mode, or back to the preview.
+     *
+     * Back keeps the edits, as the web's does; the preview then says they are
+     * unsaved and offers to save or discard them. What closes is only what
+     * belongs to the editor: an open panel, a rename in progress.
+     */
+    private fun setEditing(editing: Boolean) {
+        if (editing && !vm.setupState.viewer.canEdit) return
+        edit {
             copy(
-                editing = false,
-                template = saved,
+                editing = editing,
                 focus = null,
                 draft = NewFieldDraft(),
                 rearrange = false,
-                termsEditing = false,
+                rearrangeSection = null,
+                rename = null,
+                systemFieldsOpen = false,
             )
         }
     }
 
-    fun toggleSection(key: String) = edit {
-        copy(collapsed = if (key in collapsed) collapsed - key else collapsed + key)
+    /** Rearrange and the property panel share the right-hand side; opening one closes the other, as on the web. */
+    private fun toggleRearrange(on: Boolean) = edit {
+        copy(rearrange = on, rearrangeSection = null, focus = if (on) null else focus)
     }
 
     // -- sections -----------------------------------------------------------
 
-    fun nudgeSection(key: String, delta: Int) {
+    private fun composeSection(afterKey: String?) {
         if (!vm.mayEdit()) return
-        template { nudgeSection(key, delta) }
+        edit { copy(composer = SectionComposer(afterKey = afterKey)) }
     }
 
-    fun composeSection(afterKey: String?) =
-        edit { copy(addingSectionAfter = afterKey, addingSectionName = "") }
-
-    fun editSectionName(name: String) = edit { copy(addingSectionName = name) }
-
-    fun dismissSection() = edit { copy(addingSectionAfter = null, addingSectionName = "") }
-
-    fun addSection() {
+    private fun addSection() {
         if (!vm.mayEdit()) return
-        val name = state.addingSectionName.trim()
-        if (name.isEmpty()) return
-        val after = state.addingSectionAfter
+        val composer = state.composer ?: return
+        if (!composer.isReady) return
         edit {
             copy(
-                template = template.addSection(name, after, vm.nowMillis()),
-                addingSectionAfter = null,
-                addingSectionName = "",
+                template = template.addSection(composer.name, composer.afterKey, vm.nowMillis()),
+                composer = null,
             )
         }
     }
 
-    fun startRename(key: String, label: String) =
-        edit { copy(renamingSection = key, renamingSectionName = label) }
-
-    fun editRename(name: String) = edit { copy(renamingSectionName = name) }
-
-    fun dismissRename() = edit { copy(renamingSection = null, renamingSectionName = "") }
-
-    fun saveRename() {
+    /** Only a section this production added has a name to change; the module's own keep theirs. */
+    private fun startRename(key: String, label: String) {
         if (!vm.mayEdit()) return
-        val key = state.renamingSection ?: return
-        val name = state.renamingSectionName
+        val section = state.template.section(key) ?: return
+        if (section.systemDefault) return
+        edit { copy(rename = SectionRename(key, label)) }
+    }
+
+    /** A blank name leaves the section as it was, which is what the web's blur does. */
+    private fun saveRename() {
+        val rename = state.rename ?: return
+        if (!vm.mayEdit()) return
         edit {
             copy(
-                template = template.renameSection(key, name),
-                renamingSection = null,
-                renamingSectionName = "",
+                template = if (rename.name.isBlank()) template else template.renameSection(rename.key, rename.name),
+                rename = null,
             )
         }
     }
 
-    fun askRemoveSection(section: FormSection) =
+    /** The module's own sections are part of its schema and are not offered for removal — nor removed here. */
+    private fun askRemoveSection(section: FormSection) {
+        if (!vm.mayEdit() || section.systemDefault) return
         edit { copy(removingSection = section) }
+    }
 
-    fun dismissRemoveSection() = edit { copy(removingSection = null) }
-
-    fun confirmRemoveSection() {
-        if (!vm.mayEdit()) return
+    private fun confirmRemoveSection() {
         val section = state.removingSection ?: return
+        if (!vm.mayEdit() || section.systemDefault) return
         edit {
             copy(
                 template = template.removeSection(section.key),
                 removingSection = null,
                 focus = focus?.takeIf { it.sectionKey != section.key },
+                rearrangeSection = rearrangeSection?.takeIf { it != section.key },
+                rename = rename?.takeIf { it.key != section.key },
             )
         }
     }
 
     // -- fields -------------------------------------------------------------
 
-    fun focusField(sectionKey: String, fieldId: String?) =
-        edit { copy(focus = FieldFocus(sectionKey, fieldId), draft = NewFieldDraft()) }
-
-    fun dismissField() = edit { copy(focus = null, draft = NewFieldDraft()) }
-
-    fun editDraft(draft: NewFieldDraft) = edit { copy(draft = draft) }
-
-    fun addField() {
+    /**
+     * The property panel on a field, or the add-a-field panel.
+     *
+     * Clicking the field already open closes it; any click here closes
+     * Rearrange, which shares the panel's side of the page.
+     */
+    private fun focusField(sectionKey: String, fieldId: String?) {
         if (!vm.mayEdit()) return
-        val focus = state.focus ?: return
+        val next = FieldFocus(sectionKey, fieldId)
+        edit {
+            val same = fieldId != null && focus == next
+            copy(
+                focus = if (same) null else next,
+                draft = NewFieldDraft(),
+                systemFieldsOpen = false,
+                rearrange = false,
+                rearrangeSection = null,
+            )
+        }
+    }
+
+    private fun addField() {
+        if (!vm.mayEdit()) return
+        val focus = state.focus?.takeIf { it.isNew } ?: return
         val draft = state.draft
         if (!draft.isReady) return
         edit {
@@ -397,11 +339,11 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
                     // Only a select field reads from anywhere; carrying a
                     // source on a text field would have the form try to
                     // populate a box that has no options.
-                    selectionType = draft.selectionType
-                        ?.takeIf { draft.type == FormFieldType.Select.wire },
+                    selectionType = draft.selectionType?.takeIf { draft.type == FormFieldType.Select.wire },
                 ),
                 focus = null,
                 draft = NewFieldDraft(),
+                systemFieldsOpen = false,
             )
         }
     }
@@ -414,9 +356,9 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
      * "remove" means "take it off this form" and the add-a-field panel offers
      * it again.
      */
-    fun removeField(sectionKey: String, fieldId: String) {
+    private fun removeField(sectionKey: String, fieldId: String) {
         if (!vm.mayEdit()) return
-        val field = state.template.section(sectionKey)?.fields?.firstOrNull { it.id == fieldId } ?: return
+        val field = field(sectionKey, fieldId) ?: return
         edit {
             copy(
                 template = if (field.systemDefault) {
@@ -429,28 +371,23 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
         }
     }
 
-    fun restoreField(sectionKey: String, fieldId: String) {
+    /**
+     * A custom field to another section.
+     *
+     * Only a custom field: the module's forms find their system fields in the
+     * section the module put them in — a Purchase Order reads its vendor from
+     * `po_details` — and one moved elsewhere would read as taken off the form.
+     */
+    private fun moveFieldToSection(sectionKey: String, fieldId: String, toKey: String) {
         if (!vm.mayEdit()) return
-        template { restoreField(sectionKey, fieldId) }
-    }
-
-    fun nudgeField(sectionKey: String, fieldId: String, delta: Int) {
-        if (!vm.mayEdit()) return
-        template { nudgeField(sectionKey, fieldId, delta) }
-    }
-
-    fun moveFieldToSection(sectionKey: String, fieldId: String, toKey: String) {
-        if (!vm.mayEdit()) return
+        val field = field(sectionKey, fieldId) ?: return
+        if (field.systemDefault || state.template.section(toKey) == null) return
         edit {
-            copy(
-                template = template.moveFieldToSection(sectionKey, fieldId, toKey),
-                focus = null,
-            )
+            val moved = template.moveFieldToSection(sectionKey, fieldId, toKey)
+            val landed = moved.section(toKey)?.ordered?.lastOrNull()
+            copy(template = moved, focus = landed?.let { FieldFocus(toKey, it.id) })
         }
     }
-
-    fun setFieldName(sectionKey: String, fieldId: String, name: String) =
-        editField(sectionKey, fieldId) { it.copy(name = name) }
 
     /**
      * A system field's type is the schema's, not the production's.
@@ -459,88 +396,130 @@ internal class FormConfigActions(private val vm: AccountHubViewModel) {
      * number. The web disables the control; this refuses the change as well,
      * because a guard only on the screen is not a guard.
      */
-    fun setFieldType(sectionKey: String, fieldId: String, type: String) {
-        val field = state.template.section(sectionKey)?.fields?.firstOrNull { it.id == fieldId } ?: return
+    private fun setFieldType(sectionKey: String, fieldId: String, type: String) {
+        val field = field(sectionKey, fieldId) ?: return
         if (field.systemDefault) return
-        editField(sectionKey, fieldId) { row ->
+        changeField(sectionKey, fieldId) { row ->
             row.copy(
                 type = type,
                 // A field that is no longer a select has nothing to read from.
-                selectionType = row.selectionType
-                    ?.takeIf { type == FormFieldType.Select.wire },
+                selectionType = row.selectionType?.takeIf { type == FormFieldType.Select.wire },
             )
         }
     }
 
-    fun setFieldRequired(sectionKey: String, fieldId: String, required: Boolean) =
-        editField(sectionKey, fieldId) { it.copy(required = required) }
-
-    fun setFieldSelection(sectionKey: String, fieldId: String, selectionType: String?) =
-        editField(sectionKey, fieldId) { it.copy(selectionType = selectionType) }
-
-    private fun editField(
-        sectionKey: String,
-        fieldId: String,
-        change: (FormField) -> FormField,
-    ) {
-        if (!vm.mayEdit()) return
-        template { editField(sectionKey, fieldId, change) }
+    /** Where a custom select reads its options from; the module's own fields keep theirs. */
+    private fun setFieldSelection(sectionKey: String, fieldId: String, selectionType: String?) {
+        val field = field(sectionKey, fieldId) ?: return
+        if (field.systemDefault || field.type != FormFieldType.Select.wire) return
+        changeField(sectionKey, fieldId) { it.copy(selectionType = selectionType) }
     }
 
     // -- saving -------------------------------------------------------------
 
-    fun save() {
-        if (!vm.mayEdit()) return
+    /**
+     * Sends the whole template. The editor stays open, as the web's does, so a
+     * change after a save is one more click rather than a trip back in.
+     */
+    private fun save() {
+        if (!vm.mayEdit() || state.busy) return
         val module = state.module
         val template = state.template
         edit { copy(saving = true) }
         vm.runResult({ vm.repo.saveFormTemplate(module, template) }, {
-            edit {
-                copy(
-                    saved = template,
-                    saving = false,
-                    editing = false,
-                    focus = null,
-                    rearrange = false,
-                    termsEditing = false,
-                    message = CloseResult(true, "Form template saved successfully."),
-                )
-            }
+            edit { if (this.module == module) copy(saved = template, saving = false) else copy(saving = false) }
             vm.update { copy(notice = "Form template saved successfully.") }
         }, { error ->
             edit { copy(saving = false) }
-            vm.report(error)
+            fail(error, "Failed to save form template.")
         })
     }
 
-    fun askReset() = edit { copy(confirmingReset = true) }
-
-    fun dismissReset() = edit { copy(confirmingReset = false) }
+    private fun askReset() {
+        if (!vm.mayEdit() || state.busy) return
+        edit { copy(confirmingReset = true) }
+    }
 
     /**
      * Back to the system defaults.
      *
-     * Confirmed because it throws away every custom field and every reorder
-     * this production has made, for everybody, and there is no undo.
+     * Confirmed, where the web resets on the click: it throws away every
+     * custom field and every reorder this production has made, for everybody
+     * at once, without a save and without an undo.
      */
-    fun confirmReset() {
-        if (!vm.mayEdit()) return
+    private fun confirmReset() {
+        if (!vm.mayEdit() || state.busy) return
         val module = state.module
-        edit { copy(saving = true, confirmingReset = false) }
+        edit { copy(resetting = true, confirmingReset = false) }
         vm.runResult({ vm.repo.resetFormTemplate(module) }, { defaults ->
             edit {
-                copy(
-                    template = defaults,
-                    saved = defaults,
-                    saving = false,
-                    focus = null,
-                    message = CloseResult(true, "Template reset to defaults."),
-                )
+                if (this.module != module) {
+                    copy(resetting = false)
+                } else {
+                    copy(
+                        template = defaults,
+                        saved = defaults,
+                        resetting = false,
+                        focus = null,
+                        rename = null,
+                        rearrangeSection = null,
+                    )
+                }
             }
             vm.update { copy(notice = "Template reset to defaults.") }
         }, { error ->
-            edit { copy(saving = false) }
+            edit { copy(resetting = false) }
+            fail(error, "Failed to reset template.")
+        })
+    }
+
+    /** The server's own reason when it gave one; the web's words when it did not. */
+    private fun fail(error: ZillitError, fallback: String) {
+        val silent = error is ZillitError.Http && error.serverMessage.isNullOrBlank()
+        val message = if (silent) fallback else error.localised()
+        vm.sendSideEffect(AccountHubEffect.Failed(message))
+    }
+
+    // -- set approver level ----------------------------------------------------
+
+    /** Opens the scope question — or closes it, and stops waiting on a chain being read for it. */
+    private fun openScope(open: Boolean) {
+        if (open && !vm.setupState.viewer.canActAsAccountant) return
+        edit { copy(scopeModal = if (open) ScopeModalState() else null, approverLoad = null) }
+    }
+
+    /**
+     * "Set Approver Level": the scope chosen, read the module's chains and
+     * open the Approvers page's builder on the one for that scope — a
+     * department without its own starting from the production's, as the web
+     * does. Saving goes through that builder's rules, so a chain is written
+     * the same way from either page.
+     */
+    private fun continueScope() {
+        val scope = state.scopeModal ?: return
+        val mode = scope.mode ?: return
+        if (!scope.canContinue || !vm.mayActAsAccountant()) return
+        val module = approvalModule(state.module)
+        val load = ApproverLoad(mode, scope.departmentId.takeIf { mode == ApprovalScope.Department })
+        edit { copy(scopeModal = null, approverLoad = load) }
+        vm.runResult({ vm.repo.approvalConfigs(module) }, { rows ->
+            if (state.approverLoad != load) return@runResult
+            edit { copy(approverLoad = null) }
+            vm.approvals.openFromForms(module, rows, load.scope, load.departmentId)
+        }, { error ->
+            if (state.approverLoad != load) return@runResult
+            edit { copy(approverLoad = null) }
             vm.report(error)
         })
     }
+
+    /** The approval module a form module's approvers are saved under. */
+    private fun approvalModule(module: FormModule): ApprovalModule = when (module) {
+        FormModule.PurchaseOrders -> ApprovalModule.PurchaseOrders
+        FormModule.CashExpenses -> ApprovalModule.CashExpenses
+    }
 }
+
+/** What an approver load in progress reads as, for the builder's placeholder chrome. */
+internal fun ApproverLoad.scopeLabel(state: AccountHubUiState): String =
+    if (scope == ApprovalScope.All) "All Departments" else state.departmentName(departmentId).ifBlank { "Department" }

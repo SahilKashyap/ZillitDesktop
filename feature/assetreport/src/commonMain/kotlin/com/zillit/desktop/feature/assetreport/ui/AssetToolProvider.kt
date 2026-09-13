@@ -9,7 +9,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
+import com.zillit.desktop.core.designsystem.component.ZillitToast
+import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
@@ -30,22 +31,28 @@ class AssetToolProvider(
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         val state by viewModel.state.collectAsState()
-        var notice by remember { mutableStateOf<String?>(null) }
+        var notice by remember { mutableStateOf<AssetEffect.Notice?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
-        LaunchedEffect(viewModel) {
+        LaunchedEffect(viewModel, navigator) {
             viewModel.effects.collect { effect ->
                 when (effect) {
-                    is AssetEffect.Notice -> notice = effect.text
+                    is AssetEffect.Notice -> notice = effect
+                    // The web's "Back to Film Tools": wherever the register was opened from.
+                    AssetEffect.Leave -> if (navigator.canGoBack) navigator.back() else navigator.close()
                 }
             }
         }
 
-        AssetScreen(state = state, onEvent = viewModel::onEvent)
-        ZillitErrorToast(message = notice ?: state.error, onDismiss = {
-            notice = null
-            viewModel.onEvent(AssetEvent.DismissError)
-        })
+        AssetScreen(state = state, onEvent = viewModel::onEvent, media = viewModel)
+        val shown = notice
+        ZillitToast(
+            message = shown?.text ?: state.error,
+            tone = if (shown?.success == true) ZillitToastTone.Success else ZillitToastTone.Danger,
+            onDismiss = {
+                if (shown != null) notice = null else viewModel.onEvent(AssetEvent.DismissError)
+            },
+        )
     }
 
     companion object {

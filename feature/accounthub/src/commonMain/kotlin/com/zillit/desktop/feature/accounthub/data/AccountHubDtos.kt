@@ -429,7 +429,17 @@ data class CoaAccountDto(
     @SerialName("is_active") val isActive: Boolean? = null,
     @SerialName("posting_box") val postingBox: Boolean? = null,
     @SerialName("source") val source: String? = null,
+    /**
+     * On an edit's answer: how many descendants a change of class reached.
+     * An element, because a count that arrives quoted must not fail the save.
+     */
+    @SerialName("_cascaded_descendants") val cascadedDescendants: JsonElement? = null,
 ) {
+    fun cascadedCount(): Int {
+        val primitive = cascadedDescendants as? JsonPrimitive ?: return 0
+        return (primitive.intOrNull ?: primitive.contentOrNull?.trim()?.toIntOrNull() ?: 0).coerceAtLeast(0)
+    }
+
     fun toDomain(): CoaAccount? {
         val resolved = (id ?: altId)?.takeIf { it.isNotBlank() } ?: return null
         return CoaAccount(
@@ -490,6 +500,8 @@ data class TrackingNodeDto(
     @SerialName("parent_id") val parentId: String? = null,
     @SerialName("active") val active: Boolean? = null,
     @SerialName("is_active") val isActive: Boolean? = null,
+    /** The layer's own ordering, ahead of the code — the web sorts by it first. */
+    @SerialName("sort_order") val sortOrder: JsonElement? = null,
 ) {
     fun toDomain(setId: String): TrackingNode? = (id ?: altId)?.takeIf { it.isNotBlank() }?.let {
         TrackingNode(
@@ -500,6 +512,9 @@ data class TrackingNodeDto(
             parentId = parentId?.takeIf { parent -> parent.isNotBlank() },
             isActive = (active ?: isActive) != false,
             description = description.orEmpty(),
+            sortOrder = (sortOrder as? JsonPrimitive)?.let { order ->
+                order.intOrNull ?: order.contentOrNull?.trim()?.toIntOrNull()
+            } ?: 0,
         )
     }
 }
@@ -1451,6 +1466,8 @@ data class BudgetLineDto(
     @SerialName("id") val id: String? = null,
     @SerialName("_id") val altId: String? = null,
     @SerialName("account") val account: String? = null,
+    /** The chart's name for the code — what the web's Name column prints. */
+    @SerialName("name") val name: String? = null,
     @SerialName("uncoded_name") val uncodedName: String? = null,
     @SerialName("amount") val amount: Double? = null,
     @SerialName("rollup_total") val rollupTotal: Double? = null,
@@ -1462,6 +1479,7 @@ data class BudgetLineDto(
     fun toDomain(): BudgetLine = BudgetLine(
         id = id?.takeIf { it.isNotBlank() } ?: altId.orEmpty(),
         account = account.orEmpty(),
+        name = name.orEmpty(),
         uncodedName = uncodedName.orEmpty(),
         amount = amount ?: 0.0,
         rollupTotal = rollupTotal,
@@ -1615,6 +1633,7 @@ data class BudgetDryRunDto(
     @SerialName("upload") val upload: BudgetUploadRowDto? = null,
     @SerialName("upload_id") val uploadId: String? = null,
     @SerialName("detectedFormat") val detectedFormat: String? = null,
+    @SerialName("sourceTemplate") val sourceTemplate: String? = null,
     @SerialName("attachment") val attachment: AgreementDocumentDto? = null,
 )
 
@@ -1623,6 +1642,7 @@ data class BudgetUploadRowDto(
     @SerialName("id") val id: String? = null,
     @SerialName("original_filename") val fileName: String? = null,
     @SerialName("detected_format") val detectedFormat: String? = null,
+    @SerialName("source_template") val sourceTemplate: String? = null,
 )
 
 /** What the commit answers with: the version it created. */
