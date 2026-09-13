@@ -283,7 +283,8 @@ class CallCoordinatorTest {
         }
         return CallApi(
             apiClient = com.zillit.desktop.core.network.ApiClient(
-                httpClient = com.zillit.desktop.core.network.HttpClientFactory.create({ CoordinatorMockEngineFactory(engine) }),
+                httpClient = com.zillit.desktop.core.network.HttpClientFactory
+                    .create({ CoordinatorMockEngineFactory(engine) }),
                 headerProvider = { _, _, _, _ -> emptyMap() },
             ),
             config = com.zillit.desktop.core.config.AppConfig(
