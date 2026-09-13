@@ -1,159 +1,1191 @@
 <!DOCTYPE html>
 <!--
-  The map host page for the Zillit Desktop Maps tool.
+  The map page for the Zillit Desktop Map tool.
 
-  Loaded into embedded Chromium (KCEF) from a local file, mirroring the web's
-  map page (src/components/map_components/GoogleMapComponent.jsx): pins as
-  labelled markers, studio zones as circles, a click on empty map proposing a
-  pin there. Kotlin drives it through `window.zillitMap.*` and hears back over
-  the CEF message router as one-line JSON — the contract lives in
-  MapCanvasWire.kt; change either side only with the other.
+  Loaded into embedded Chromium (JCEF) from a local file. It is the web's
+  `components/map-module/components/map/MapView.jsx` map, minus the React:
+  typed pins with clustering and spiderfying, the active studio zone, the
+  info cards (hover and click), Pin Location mode with its draggable preview
+  pin, dragging saved pins to move them, the Places search, driving routes,
+  the floating Cities control and the "How to Use" guide.
 
-  The Google Maps key is NOT in this file. The page loads without it, announces
-  `{"type":"ready"}`, and Kotlin answers with `zillitMap.boot(key)` — the key
+  Why the cards and controls are HTML here and not Compose: the browser view is
+  a heavyweight surface that paints above every Compose pixel in the window.
+  Anything that has to float over the map must live on the map's own layer.
+
+  Kotlin drives the page through `window.zillitMap.*` with one JSON string per
+  call, and hears back over the CEF message router as one-line JSON. The
+  contract lives in `feature/maps/.../data/MapCanvasWire.kt`; change either
+  side only with the other.
+
+  The Google Maps key is NOT in this file. The page announces
+  `{"type":"ready"}` and the host answers with `zillitMap.boot(key)` — the key
   exists only in the page runtime, never in the extracted file.
+
+  Every string that came off the wire is written with textContent, never
+  innerHTML: pin names are user input.
 -->
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>Zillit Map</title>
-    <style>
-        html, body, #map {
-            margin: 0;
-            height: 100%;
-            width: 100%;
-            background: #e5e3df; /* Google's own map-loading grey */
-        }
-    </style>
+<meta charset="utf-8">
+<title>Zillit Map</title>
+<style>
+  :root {
+    --surface: #ffffff;
+    --text: #1f2937;
+    --text2: #6b7280;
+    --muted: #9ca3af;
+    --border: #e5e7eb;
+    --accent: #F99300;
+    --soft: #FFF7ED;
+    --info-soft: #EFF6FF;
+    --chip-text: #EA580C;
+    color-scheme: light;
+  }
+  :root.dark {
+    --soft: #3a2f22;
+    --info-soft: #1e3a5f;
+    color-scheme: dark;
+  }
+  html, body, #map {
+    margin: 0; height: 100%; width: 100%;
+    background: #e5e3df;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px; overflow: hidden;
+  }
+  body.pin-mode #map, body.pin-mode #map * { cursor: crosshair !important; }
+  button { font-family: inherit; }
+  svg.fi { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 2;
+           stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+  @keyframes cardIn { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+  @keyframes floatIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+
+  /* ---- Info cards (MarkerInfoWindow, the zone card, the pin/place cards) ---- */
+  .card-anchor { position: absolute; transform: translate(-50%, -100%); padding-bottom: 42px; pointer-events: none; }
+  .card-wrap { animation: cardIn .18s ease-out both; transform-origin: bottom center; pointer-events: auto; }
+  .card { position: relative; width: 320px; background: var(--surface); color: var(--text); border-radius: 12px;
+          overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.15); }
+  .card.narrow { width: 280px; }
+  .card .bar { height: 3px; }
+  .card .body { padding: 14px 16px 12px; }
+  .card .close { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; border: none;
+                 background: rgba(0,0,0,.05); color: #9ca3af; cursor: pointer; display: flex; align-items: center;
+                 justify-content: center; font-size: 12px; }
+  .card .close:hover { background: rgba(0,0,0,.1); color: #374151; }
+  .card .badges { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .card .type { color: #fff; padding: 3px 10px; border-radius: 6px; font-size: 13px; font-weight: 600;
+                display: inline-flex; align-items: center; gap: 4px; }
+  .card .soft-badge { padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 500; background: var(--info-soft); color: #1D4ED8; }
+  .card .scene { font-size: 13px; color: var(--muted); }
+  .card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; line-height: 1.3; color: var(--text); padding-right: 22px; }
+  .card .row { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 8px; font-size: 13px; line-height: 1.5; color: var(--text2); }
+  .card .row .chip { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+                     flex-shrink: 0; font-size: 14px; }
+  .card .row .text { padding-top: 4px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .card .row.center { align-items: center; }
+  .card .row.center .text { padding-top: 0; }
+  .card .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .card .subs { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+  .card .sub { font-size: 12px; padding: 2px 8px; border-radius: 4px; background: var(--soft); color: var(--chip-text); font-weight: 500;
+               display: inline-flex; align-items: center; gap: 4px; }
+  .card .desc { margin: 0 0 8px; font-size: 13px; color: var(--muted); line-height: 1.5; overflow: hidden;
+                display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .card .actions { display: flex; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .card .act { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 0;
+               border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer;
+               font-size: 13px; font-weight: 500; color: var(--text); transition: all .15s; white-space: nowrap; }
+  .card .act:hover { border-color: var(--accent); color: var(--accent); }
+  .card .act.primary { border: none; background: var(--accent); color: #fff; }
+  .card .act.primary:hover { background: #e08500; color: #fff; }
+  .card .arrow { width: 0; height: 0; margin: 0 auto; border-left: 10px solid transparent; border-right: 10px solid transparent;
+                 border-top: 10px solid var(--surface); filter: drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
+
+  /* ---- Floating controls ---- */
+  .float { position: absolute; z-index: 5; }
+  #cities { top: 12px; left: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px; border: none;
+          background: #fff; color: #EA580C; font-size: 13px; font-weight: 600; cursor: pointer;
+          box-shadow: 0 4px 6px -1px rgba(0,0,0,.12), 0 2px 4px -2px rgba(0,0,0,.1); }
+  .pill:hover { background: #FFF7ED; }
+  .pill.small { padding: 5px 12px; font-size: 12px; cursor: default; }
+  .count { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px;
+           border-radius: 999px; font-size: 12px; font-weight: 700; line-height: 1; background: #FFEDD5; color: #C2410C; box-sizing: border-box; }
+  .count.small { min-width: 18px; height: 18px; font-size: 10px; padding: 0 4px; }
+  .count.danger { background: #EF4444; color: #fff; box-shadow: 0 0 0 2px #fff; }
+  .truncate { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  #places { top: 12px; right: 190px; }
+  .round { width: 40px; height: 40px; border-radius: 50%; border: none; background: #fff; color: #4b5563; cursor: pointer;
+           display: flex; align-items: center; justify-content: center; font-size: 16px;
+           box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+  .round:hover { color: #111827; }
+  .search-box { display: flex; align-items: center; background: #fff; border-radius: 8px; overflow: hidden;
+                box-shadow: 0 2px 8px rgba(0,0,0,.25); border: 1px solid #e5e7eb; }
+  .search-box input { width: 240px; padding: 9px 12px; border: none; outline: none; font-size: 13px; color: #111827; }
+  .search-box button { border: none; background: transparent; color: #9ca3af; padding: 8px 10px; cursor: pointer; font-size: 14px; }
+
+  #guide { top: 64px; right: 12px; width: 370px; max-width: calc(100% - 24px); border-radius: 12px; overflow: hidden;
+           background: #111827; border: 1px solid rgba(255,255,255,.12); box-shadow: 0 12px 32px -8px rgba(0,0,0,.55);
+           animation: floatIn .22s ease-out both; }
+  #guide .head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
+  #guide .head.open { border-bottom: 1px solid rgba(255,255,255,.1); }
+  #guide .toggle { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; background: transparent; border: none;
+                   padding: 0; cursor: pointer; color: #fff; text-align: left; font-size: 15px; font-weight: 600; }
+  #guide .toggle .fi.help { color: #F99300; font-size: 17px; }
+  #guide .toggle .fi.chev { color: rgba(255,255,255,.6); font-size: 16px; }
+  #guide .dismiss { width: 28px; height: 28px; border-radius: 6px; border: none; background: transparent; cursor: pointer;
+                    color: rgba(255,255,255,.65); display: flex; align-items: center; justify-content: center; font-size: 17px; }
+  #guide .dismiss:hover { background: rgba(255,255,255,.08); color: #fff; }
+  #guide ol { margin: 0; padding: 14px 16px; list-style: none; display: flex; flex-direction: column; gap: 12px; }
+  #guide li { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; line-height: 1.55; color: rgba(255,255,255,.92); }
+  #guide li .n { width: 20px; height: 20px; margin-top: 2px; border-radius: 50%; background: #F99300; color: #111827;
+                 display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+</style>
 </head>
 <body>
 <div id="map"></div>
+<div id="cities" class="float" hidden></div>
+<div id="places" class="float" hidden></div>
+<div id="guide" class="float" hidden></div>
 <script>
-    'use strict';
+'use strict';
 
-    /* JS → Kotlin: one-line JSON over the CEF message router. */
-    function send(payload) {
-        if (window.cefQuery) {
-            window.cefQuery({ request: JSON.stringify(payload) });
-        }
+/* ===================================================================== */
+/* JS -> Kotlin                                                          */
+/* ===================================================================== */
+
+function send(payload) {
+  if (window.cefQuery) window.cefQuery({ request: JSON.stringify(payload) });
+}
+
+/* ===================================================================== */
+/* Constants — the web module's values                                   */
+/* ===================================================================== */
+
+var MILES_TO_METERS = 1609.34;
+var FALLBACK_CENTER = { lat: 34.0522, lng: -118.2437 };   /* MAP_DEFAULT_CENTER */
+var FALLBACK_ZOOM = 12;
+var CLUSTER_MAX_ZOOM = 15;
+var CLUSTER_GRID_PX = 60;
+var NEARBY_DEGREES = 0.0001;                                /* useSpiderfier */
+var HOVER_IN_MS = 120;                                      /* req M */
+var HOVER_OUT_MS = 250;
+var GUIDE_STEPS = [
+  'Add the required city to the Map Module.',
+  'Create a Studio Zone (if required).',
+  'Add the required locations by placing pins on the map.'
+];
+
+/* Feather icons (react-icons/fi), inline. Static markup — never data. */
+var ICON = {
+  pin: '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+  tag: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>',
+  edit: '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>',
+  eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+  nav: '<polygon points="3 11 22 2 13 21 11 13 3 11"/>',
+  x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  disc: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>',
+  crosshair: '<circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/>',
+  map: '<polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>',
+  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  chevronRight: '<polyline points="9 18 15 12 9 6"/>',
+  chevronUp: '<polyline points="18 15 12 9 6 15"/>',
+  chevronDown: '<polyline points="6 9 12 15 18 9"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>'
+};
+
+function svgIcon(name, extraClass) {
+  var span = document.createElement('span');
+  span.innerHTML = '<svg class="fi' + (extraClass ? ' ' + extraClass : '') + '" viewBox="0 0 24 24">' + ICON[name] + '</svg>';
+  return span.firstChild;
+}
+
+function el(tag, className, text) {
+  var node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = text;
+  return node;
+}
+
+function xmlEscape(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c];
+  });
+}
+
+function fixed6(n) { return Number(n).toFixed(6); }
+
+/* ===================================================================== */
+/* State                                                                  */
+/* ===================================================================== */
+
+var map = null;
+var geocoder = null;
+var booted = false;
+var scene = null;
+var lastNonce = null;
+var pending = { scene: null, theme: null, camera: [] };
+
+var markers = {};          /* id -> { marker, data, key } */
+var clusterMarkers = [];
+var spider = { positions: {}, legs: [] };
+var zoneCircle = null, zoneKey = null;
+var draft = { circle: null, centre: null, pin: null };
+var preview = { marker: null, info: null };
+var place = { marker: null, data: null };
+var route = { renderer: null };
+var cards = { selected: null, hover: null, zone: null, preview: null, place: null };
+var hover = { inTimer: null, outTimer: null, id: null };
+var draggingId = null;
+var guideState = { visible: true, collapsed: false };
+var CardOverlay = null;
+
+/* ===================================================================== */
+/* Theme                                                                  */
+/* ===================================================================== */
+
+function applyTheme(theme) {
+  if (!theme) return;
+  var root = document.documentElement;
+  root.style.setProperty('--surface', theme.surface);
+  root.style.setProperty('--text', theme.text);
+  root.style.setProperty('--text2', theme.textSecondary);
+  root.style.setProperty('--muted', theme.textMuted);
+  root.style.setProperty('--border', theme.border);
+  root.style.setProperty('--accent', theme.accent);
+  root.classList.toggle('dark', !!theme.dark);
+}
+
+/* ===================================================================== */
+/* Card overlay — an HTML card pinned to a point on the map              */
+/* ===================================================================== */
+
+function defineOverlay() {
+  CardOverlay = function (position, content) {
+    this.position = position;
+    this.anchor = el('div', 'card-anchor');
+    var wrap = el('div', 'card-wrap');
+    wrap.appendChild(content);
+    this.anchor.appendChild(wrap);
+    this.wrap = wrap;
+    /* Clicks on a card are the card's, not the map's. */
+    ['click', 'mousedown', 'dblclick', 'wheel', 'contextmenu'].forEach(function (type) {
+      wrap.addEventListener(type, function (e) { e.stopPropagation(); });
+    });
+  };
+  CardOverlay.prototype = new google.maps.OverlayView();
+  CardOverlay.prototype.onAdd = function () { this.getPanes().floatPane.appendChild(this.anchor); };
+  CardOverlay.prototype.draw = function () {
+    var projection = this.getProjection();
+    if (!projection) return;
+    var point = projection.fromLatLngToDivPixel(new google.maps.LatLng(this.position.lat, this.position.lng));
+    if (!point) return;
+    this.anchor.style.left = point.x + 'px';
+    this.anchor.style.top = point.y + 'px';
+  };
+  CardOverlay.prototype.onRemove = function () {
+    if (this.anchor.parentNode) this.anchor.parentNode.removeChild(this.anchor);
+  };
+}
+
+function closeCard(slot) {
+  if (cards[slot]) { cards[slot].setMap(null); cards[slot] = null; }
+}
+
+function openCard(slot, position, content) {
+  closeCard(slot);
+  var overlay = new CardOverlay(position, content);
+  overlay.setMap(map);
+  cards[slot] = overlay;
+  return overlay;
+}
+
+/** Pan only as much as needed so a card above [position] is not clipped. */
+function panToFitCard(position) {
+  setTimeout(function () {
+    if (!map) return;
+    var bounds = map.getBounds();
+    if (!bounds) return;
+    var ne = bounds.getNorthEast(), sw = bounds.getSouthWest();
+    var div = map.getDiv();
+    var latPerPx = (ne.lat() - sw.lat()) / div.offsetHeight;
+    var lngPerPx = (ne.lng() - sw.lng()) / div.offsetWidth;
+    var ABOVE = 300, BELOW = 50, HALF_W = 170, PAD = 15;
+    var panX = 0, panY = 0;
+    if (position.lat + ABOVE * latPerPx > ne.lat()) panY = -((position.lat + ABOVE * latPerPx - ne.lat()) / latPerPx + PAD);
+    if (position.lat - BELOW * latPerPx < sw.lat()) panY = (sw.lat() - (position.lat - BELOW * latPerPx)) / latPerPx + PAD;
+    if (position.lng + HALF_W * lngPerPx > ne.lng()) panX = (position.lng + HALF_W * lngPerPx - ne.lng()) / lngPerPx + PAD;
+    if (position.lng - HALF_W * lngPerPx < sw.lng()) panX = -((sw.lng() - (position.lng - HALF_W * lngPerPx)) / lngPerPx + PAD);
+    if (panX !== 0 || panY !== 0) map.panBy(panX, panY);
+  }, 0);
+}
+
+/* ---- Card builders ---- */
+
+/** A card with its accent bar, close button and pointer arrow; fill `body`, place `holder`. */
+function cardShell(accent, narrow, onClose) {
+  var holder = el('div');
+  var card = el('div', narrow ? 'card narrow' : 'card');
+  var bar = el('div', 'bar'); bar.style.background = accent; card.appendChild(bar);
+  var close = el('button', 'close'); close.title = 'Close';
+  close.appendChild(svgIcon('x'));
+  close.addEventListener('click', function (e) { e.stopPropagation(); onClose(); });
+  card.appendChild(close);
+  var body = el('div', 'body'); card.appendChild(body);
+  holder.appendChild(card);
+  holder.appendChild(el('div', 'arrow'));
+  return { body: body, finish: function () { return holder; } };
+}
+
+function infoRow(iconName, chipBg, chipColor, text, mono, center) {
+  var row = el('div', 'row' + (center ? ' center' : ''));
+  var chip = el('span', 'chip'); chip.style.background = chipBg; chip.style.color = chipColor;
+  chip.appendChild(svgIcon(iconName));
+  row.appendChild(chip);
+  var span = el('span', 'text' + (mono ? ' mono' : ''), text);
+  row.appendChild(span);
+  return row;
+}
+
+function actionButton(label, iconName, primary, onClick) {
+  var button = el('button', primary ? 'act primary' : 'act');
+  button.appendChild(svgIcon(iconName));
+  button.appendChild(document.createTextNode(label));
+  button.addEventListener('click', function (e) { e.stopPropagation(); onClick(); });
+  return button;
+}
+
+/** `MarkerInfoWindow` — a saved pin's card, for click and for hover. */
+function locationCard(data, slot) {
+  var shell = cardShell(data.color, false, function () { closeCard(slot); if (slot === 'hover') hover.id = null; });
+  var body = shell.body;
+  if (data.type || data.sceneNumber) {
+    var badges = el('div', 'badges');
+    if (data.type) {
+      var type = el('span', 'type', data.icon + ' ' + data.type);
+      type.style.background = data.color;
+      badges.appendChild(type);
     }
+    if (data.sceneNumber) badges.appendChild(el('span', 'scene', 'SC ' + data.sceneNumber));
+    body.appendChild(badges);
+  }
+  body.appendChild(el('h3', null, data.name));
+  if (data.address) body.appendChild(infoRow('pin', 'var(--soft)', '#F99300', data.address));
+  if (data.subTypes && data.subTypes.length) {
+    var subs = el('div', 'subs');
+    data.subTypes.forEach(function (s) { var sub = el('span', 'sub'); sub.appendChild(svgIcon('tag')); sub.appendChild(document.createTextNode(s)); subs.appendChild(sub); });
+    body.appendChild(subs);
+  }
+  if (data.description) body.appendChild(el('p', 'desc', data.description));
+  body.appendChild(infoRow('globe', 'var(--info-soft)', '#3B82F6', fixed6(data.lat) + ', ' + fixed6(data.lng), true, true));
+  var actions = el('div', 'actions');
+  actions.appendChild(actionButton('Edit', 'edit', false, function () { closeAllCards(); send({ type: 'marker-action', action: 'edit', id: data.id }); }));
+  actions.appendChild(actionButton('Share', 'share', false, function () { send({ type: 'marker-action', action: 'share', id: data.id }); }));
+  actions.appendChild(actionButton('View', 'eye', false, function () { closeAllCards(); send({ type: 'marker-action', action: 'view', id: data.id }); }));
+  actions.appendChild(actionButton('Directions', 'nav', true, function () { closeAllCards(); send({ type: 'marker-action', action: 'directions', id: data.id }); }));
+  body.appendChild(actions);
+  var holder = shell.finish();
+  if (slot === 'hover') {
+    /* The card is a hover target itself: travelling from the pin onto it
+       must not close it (spec §5.1). */
+    holder.addEventListener('mouseenter', clearHoverTimers);
+    holder.addEventListener('mouseleave', scheduleHoverOut);
+  }
+  return holder;
+}
 
-    var map = null;
-    var drawn = [];            /* live Marker/Circle objects, replaced whole */
-    var pendingPins = null;    /* setPins arriving before the map exists */
-    var pendingCenter = null;
-    var booted = false;
+/** `StudioZoneCircle`'s card. */
+function zoneCard(zone) {
+  var accent = '#1B4F72';
+  var shell = cardShell(accent, true, function () { closeCard('zone'); });
+  var body = shell.body;
+  var badges = el('div', 'badges');
+  var tag = el('span', 'type'); tag.style.background = accent; tag.appendChild(svgIcon('disc')); tag.appendChild(document.createTextNode(' Studio Zone'));
+  badges.appendChild(tag);
+  if (zone.type) badges.appendChild(el('span', 'soft-badge', zone.type));
+  body.appendChild(badges);
+  body.appendChild(el('h3', null, zone.name));
+  if (zone.address) body.appendChild(infoRow('pin', 'var(--soft)', '#F99300', zone.address));
+  if (zone.streets) body.appendChild(infoRow('crosshair', '#E0E7FF', '#4F46E5', zone.streets, false, true));
+  var miles = Number(zone.radiusMiles);
+  body.appendChild(infoRow('disc', '#E8F4F8', accent, 'Radius: ' + miles + ' mi (' + (miles * 1.60934).toFixed(1) + ' km)', false, true));
+  body.appendChild(infoRow('globe', 'var(--info-soft)', '#3B82F6', fixed6(zone.lat) + ', ' + fixed6(zone.lng), true, true));
+  var actions = el('div', 'actions');
+  actions.appendChild(actionButton('Edit Zone', 'edit', false, function () { closeCard('zone'); send({ type: 'zone-action', action: 'edit', id: zone.id }); }));
+  body.appendChild(actions);
+  return shell.finish();
+}
 
-    /* The web's Circle radius unit conversion (GoogleMapComponent.jsx:43). */
-    var MILES_TO_METERS = 1609.344;
+/** `PlacesSearchInfoWindow` — a searched place, or the pin being placed. */
+function placeCard(info, accent, pinLabel, onPin, onDirections, onClose) {
+  var shell = cardShell(accent, false, onClose);
+  var body = shell.body;
+  body.appendChild(el('h3', null, info.name || 'Selected Location'));
+  if (info.address && info.address !== info.name) body.appendChild(infoRow('pin', 'var(--soft)', '#F99300', info.address));
+  body.appendChild(infoRow('globe', 'var(--info-soft)', '#3B82F6', fixed6(info.lat) + ', ' + fixed6(info.lng), true, true));
+  var actions = el('div', 'actions');
+  if (onPin) actions.appendChild(actionButton(pinLabel, 'pin', false, onPin));
+  if (onDirections) actions.appendChild(actionButton('Directions', 'nav', true, onDirections));
+  body.appendChild(actions);
+  return shell.finish();
+}
 
-    /* Google's global hook for a refused key — a bad key, or a
-       referrer-restricted key rejecting this file:// origin. Without it the
-       map is a silent grey slab; with it Kotlin shows a readable error. */
-    window.gm_authFailure = function () {
-        send({ type: 'auth-failed' });
-    };
+function closeAllCards() {
+  closeCard('selected'); closeCard('hover'); closeCard('zone');
+  hover.id = null;
+}
 
-    /* Called by Google's script once it has loaded. */
-    window.__zmInit = function () {
-        /* The web's map options (GoogleMapComponent.jsx:929-948) and its
-           fallback centre (:108-111). */
-        map = new google.maps.Map(document.getElementById('map'), {
-            center: { lat: 28.5355, lng: 77.391 },
-            zoom: 15,
-            streetViewControl: false,
-            fullscreenControl: false,
-            clickableIcons: false,
-            mapTypeControl: false
+/* ===================================================================== */
+/* Pin icons                                                              */
+/* ===================================================================== */
+
+function pinIcon(color, glyph) {
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="50" viewBox="0 0 40 50">' +
+    '<path d="M20 0 C8.95 0 0 8.95 0 20 C0 35 20 50 20 50 C20 50 40 35 40 20 C40 8.95 31.05 0 20 0Z" fill="' + xmlEscape(color) + '"/>' +
+    '<circle cx="20" cy="20" r="12" fill="white" opacity="0.9"/>' +
+    '<text x="20" y="25" text-anchor="middle" font-size="14" font-family="-apple-system, Segoe UI, sans-serif">' + xmlEscape(glyph) + '</text></svg>';
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(40, 50),
+    anchor: new google.maps.Point(20, 50)
+  };
+}
+
+function simplePin(color, width, height, inner) {
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '" viewBox="0 0 30 40">' +
+    '<path d="M15 0 C6.7 0 0 6.7 0 15 C0 26.25 15 40 15 40 C15 40 30 26.25 30 15 C30 6.7 23.3 0 15 0Z" fill="' + color + '"/>' +
+    (inner || '<circle cx="15" cy="15" r="6" fill="white"/>') + '</svg>';
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(width, height),
+    anchor: new google.maps.Point(width / 2, height)
+  };
+}
+
+function clusterIcon(size) {
+  var r = size / 2;
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '">' +
+    '<circle cx="' + r + '" cy="' + r + '" r="' + (r - 2) + '" fill="#3B82F6" opacity="0.9"/>' +
+    '<circle cx="' + r + '" cy="' + r + '" r="' + Math.round(size * 0.3) + '" fill="#2563EB"/></svg>';
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(size, size),
+    anchor: new google.maps.Point(r, r)
+  };
+}
+
+/* ===================================================================== */
+/* Saved pins: diff, drag, hover, click, spiderfy, cluster               */
+/* ===================================================================== */
+
+function markerKey(m) { return [m.color, m.icon].join('|'); }
+
+function renderMarkers(next) {
+  var wanted = {};
+  var snap = next.nonce !== lastNonce;
+  (next.markers || []).forEach(function (m) { wanted[m.id] = m; });
+
+  Object.keys(markers).forEach(function (id) {
+    if (!wanted[id]) {
+      markers[id].marker.setMap(null);
+      delete markers[id];
+      if (hover.id === id) { closeCard('hover'); hover.id = null; }
+      if (cards.selected && cards.selected.markerId === id) closeCard('selected');
+    }
+  });
+
+  Object.keys(wanted).forEach(function (id) {
+    var data = wanted[id];
+    var entry = markers[id];
+    var position = { lat: data.lat, lng: data.lng };
+    if (next.pendingMove && next.pendingMove.id === id) position = { lat: next.pendingMove.lat, lng: next.pendingMove.lng };
+    var draggable = !!next.draggable && next.lockedId !== id;
+    if (!entry) {
+      var marker = new google.maps.Marker({
+        map: map, position: position, title: data.name,
+        icon: pinIcon(data.color, data.icon), draggable: draggable,
+        animation: google.maps.Animation.DROP
+      });
+      entry = markers[id] = { marker: marker, data: data, key: markerKey(data) };
+      wireMarker(entry, id);
+    } else {
+      entry.data = data;
+      if (entry.key !== markerKey(data)) { entry.marker.setIcon(pinIcon(data.color, data.icon)); entry.key = markerKey(data); }
+      entry.marker.setTitle(data.name);
+      entry.marker.setDraggable(draggable);
+      if (draggingId !== id) {
+        var current = entry.marker.getPosition();
+        var moved = !current || Math.abs(current.lat() - position.lat) > 1e-9 || Math.abs(current.lng() - position.lng) > 1e-9;
+        if (moved || snap) entry.marker.setPosition(position);
+      }
+    }
+  });
+  lastNonce = next.nonce;
+  unspiderfy();
+  recluster();
+}
+
+function wireMarker(entry, id) {
+  var marker = entry.marker;
+  marker.addListener('click', function () { onMarkerClick(id); });
+  marker.addListener('mouseover', function () { scheduleHoverIn(id); });
+  marker.addListener('mouseout', scheduleHoverOut);
+  marker.addListener('dragstart', function () {
+    draggingId = id;
+    /* The card is anchored above the pin; it would travel with it and cover
+       the ground being aimed at. */
+    closeCard('hover'); hover.id = null;
+    if (cards.selected && cards.selected.markerId === id) closeCard('selected');
+  });
+  marker.addListener('dragend', function (e) {
+    draggingId = null;
+    if (!e.latLng) return;
+    send({ type: 'marker-dragged', id: id, lat: e.latLng.lat(), lng: e.latLng.lng() });
+  });
+}
+
+function positionOf(id) {
+  var entry = markers[id];
+  if (!entry) return null;
+  var p = entry.marker.getPosition();
+  return p ? { lat: p.lat(), lng: p.lng() } : { lat: entry.data.lat, lng: entry.data.lng };
+}
+
+function openLocationCard(id) {
+  var entry = markers[id];
+  if (!entry) return;
+  clearHoverTimers();
+  closeCard('hover'); hover.id = null;
+  var position = positionOf(id);
+  var overlay = openCard('selected', position, locationCard(Object.assign({}, entry.data, position), 'selected'));
+  overlay.markerId = id;
+  panToFitCard(position);
+}
+
+function onMarkerClick(id) {
+  var entry = markers[id];
+  if (!entry) return;
+  if (spider.positions[id]) { openLocationCard(id); return; }
+  unspiderfy();
+  var here = entry.data;
+  var overlapping = Object.keys(markers).map(function (k) { return markers[k].data; }).filter(function (d) {
+    return Math.abs(d.lat - here.lat) < NEARBY_DEGREES && Math.abs(d.lng - here.lng) < NEARBY_DEGREES;
+  });
+  if (overlapping.length > 1) spiderfy(here.lat, here.lng, overlapping);
+  openLocationCard(id);
+}
+
+/* useSpiderfier: spread overlapping pins in a circle, legs to the centre. */
+function spiderfy(lat, lng, list) {
+  var radius = 112 / Math.pow(2, map.getZoom() || 13);
+  var step = (2 * Math.PI) / list.length;
+  list.forEach(function (d, i) {
+    var angle = step * i - Math.PI / 2;
+    var p = { lat: lat + radius * Math.cos(angle), lng: lng + radius * Math.sin(angle) };
+    spider.positions[d.id] = p;
+    if (markers[d.id]) markers[d.id].marker.setPosition(p);
+    spider.legs.push(new google.maps.Polyline({ path: [{ lat: lat, lng: lng }, p], strokeColor: '#3B82F6', strokeWeight: 2.5, strokeOpacity: 0.7, map: map }));
+  });
+  recluster();
+}
+
+function unspiderfy() {
+  var ids = Object.keys(spider.positions);
+  spider.legs.forEach(function (leg) { leg.setMap(null); });
+  spider = { positions: {}, legs: [] };
+  ids.forEach(function (id) {
+    var entry = markers[id];
+    if (!entry || draggingId === id) return;
+    var p = { lat: entry.data.lat, lng: entry.data.lng };
+    if (scene && scene.pendingMove && scene.pendingMove.id === id) p = { lat: scene.pendingMove.lat, lng: scene.pendingMove.lng };
+    entry.marker.setPosition(p);
+  });
+}
+
+/* ---- Hover preview (req M, web only) ---- */
+
+function clearHoverTimers() {
+  if (hover.inTimer) clearTimeout(hover.inTimer);
+  if (hover.outTimer) clearTimeout(hover.outTimer);
+  hover.inTimer = null; hover.outTimer = null;
+}
+
+function scheduleHoverIn(id) {
+  clearHoverTimers();
+  hover.inTimer = setTimeout(function () {
+    /* A real selection wins — two cards open at once is never right. */
+    if (cards.selected || draggingId || !markers[id]) return;
+    hover.id = id;
+    var position = positionOf(id);
+    openCard('hover', position, locationCard(Object.assign({}, markers[id].data, position), 'hover'));
+  }, HOVER_IN_MS);
+}
+
+function scheduleHoverOut() {
+  clearHoverTimers();
+  hover.outTimer = setTimeout(function () { closeCard('hover'); hover.id = null; }, HOVER_OUT_MS);
+}
+
+/* ---- Clustering (MarkerClusterer: gridSize 60, maxZoom 15) ---- */
+
+function worldPixel(lat, lng, zoom) {
+  var scale = 256 * Math.pow(2, zoom);
+  var sin = Math.min(Math.max(Math.sin(lat * Math.PI / 180), -0.9999), 0.9999);
+  return {
+    x: (lng + 180) / 360 * scale,
+    y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale
+  };
+}
+
+function recluster() {
+  clusterMarkers.forEach(function (c) { c.setMap(null); });
+  clusterMarkers = [];
+  if (!map) return;
+  var zoom = map.getZoom();
+  var ids = Object.keys(markers);
+  var clustering = zoom <= CLUSTER_MAX_ZOOM && Object.keys(spider.positions).length === 0 && !(scene && scene.pinMode);
+  if (!clustering) {
+    ids.forEach(function (id) { if (!markers[id].marker.getMap()) markers[id].marker.setMap(map); });
+    return;
+  }
+  var cells = {};
+  ids.forEach(function (id) {
+    var p = positionOf(id);
+    var px = worldPixel(p.lat, p.lng, zoom);
+    var key = Math.floor(px.x / CLUSTER_GRID_PX) + ':' + Math.floor(px.y / CLUSTER_GRID_PX);
+    (cells[key] = cells[key] || []).push(id);
+  });
+  Object.keys(cells).forEach(function (key) {
+    var members = cells[key];
+    if (members.length < 2) {
+      var single = markers[members[0]].marker;
+      if (!single.getMap()) single.setMap(map);
+      return;
+    }
+    var bounds = new google.maps.LatLngBounds();
+    members.forEach(function (id) { markers[id].marker.setMap(null); bounds.extend(positionOf(id)); });
+    var size = members.length < 10 ? 40 : (members.length < 100 ? 50 : 60);
+    var cluster = new google.maps.Marker({
+      map: map, position: bounds.getCenter(), icon: clusterIcon(size), zIndex: 1000,
+      label: { text: String(members.length), color: '#ffffff', fontSize: size >= 60 ? '15px' : (size >= 50 ? '14px' : '13px'), fontWeight: '600' }
+    });
+    cluster.addListener('click', function () { map.fitBounds(bounds, 50); });
+    clusterMarkers.push(cluster);
+  });
+}
+
+/* ===================================================================== */
+/* Zone, drafts, preview pin, place, route                                */
+/* ===================================================================== */
+
+function renderZone(next) {
+  var zone = next.zone;
+  var key = zone ? [zone.id, zone.lat, zone.lng, zone.radiusMiles].join('|') : null;
+  if (!zone) {
+    if (zoneCircle) { zoneCircle.setMap(null); zoneCircle = null; }
+    closeCard('zone');
+    zoneKey = null;
+    return;
+  }
+  if (!zoneCircle) {
+    zoneCircle = new google.maps.Circle({
+      map: map, fillColor: '#1B4F72', fillOpacity: 0.12, strokeColor: '#1B4F72',
+      strokeOpacity: 1, strokeWeight: 3, zIndex: 1
+    });
+    zoneCircle.addListener('click', function (e) {
+      if (scene && scene.pinMode) { if (e.latLng) dropPreview(e.latLng.lat(), e.latLng.lng()); return; }
+      if (!scene || !scene.zone) return;
+      var z = scene.zone;
+      openCard('zone', { lat: z.lat, lng: z.lng }, zoneCard(z));
+      panToFitCard({ lat: z.lat, lng: z.lng });
+    });
+  }
+  if (key !== zoneKey) {
+    zoneCircle.setCenter({ lat: zone.lat, lng: zone.lng });
+    zoneCircle.setRadius(Number(zone.radiusMiles) * MILES_TO_METERS);
+    closeCard('zone');
+    zoneKey = key;
+  }
+  /* In pin mode the circle must not swallow the tap that places a pin. */
+  zoneCircle.setOptions({ clickable: true });
+}
+
+function renderDrafts(next) {
+  var dz = next.draftZone;
+  if (dz) {
+    var centre = { lat: dz.lat, lng: dz.lng };
+    if (!draft.circle) {
+      draft.circle = new google.maps.Circle({ map: map, fillColor: '#3B82F6', fillOpacity: 0.15, strokeColor: '#3B82F6', strokeOpacity: 0.85, strokeWeight: 2, clickable: false, zIndex: 2 });
+    }
+    draft.circle.setCenter(centre);
+    draft.circle.setRadius(Number(dz.radiusMiles) * MILES_TO_METERS);
+    if (!draft.centre) {
+      draft.centre = new google.maps.Marker({ map: map, position: centre, draggable: true, zIndex: 9000, icon: simplePin('#3B82F6', 30, 40), title: 'Drag to move the zone centre' });
+      draft.centre.addListener('dragend', function (e) { if (e.latLng) send({ type: 'draft-zone-moved', lat: e.latLng.lat(), lng: e.latLng.lng() }); });
+    } else {
+      draft.centre.setPosition(centre);
+    }
+  } else {
+    if (draft.circle) { draft.circle.setMap(null); draft.circle = null; }
+    if (draft.centre) { draft.centre.setMap(null); draft.centre = null; }
+  }
+  var dp = next.draftPin;
+  if (dp) {
+    var at = { lat: dp.lat, lng: dp.lng };
+    if (!draft.pin) {
+      draft.pin = new google.maps.Marker({ map: map, position: at, draggable: true, zIndex: 9500, icon: simplePin('#E74C3C', 30, 40), title: 'Drag to adjust the location' });
+      draft.pin.addListener('dragend', function (e) { if (e.latLng) send({ type: 'draft-pin-moved', lat: e.latLng.lat(), lng: e.latLng.lng() }); });
+    } else {
+      draft.pin.setPosition(at);
+    }
+  } else if (draft.pin) {
+    draft.pin.setMap(null); draft.pin = null;
+  }
+}
+
+/* ---- Pin Location mode: the preview pin and its card ---- */
+
+function dropPreview(lat, lng) {
+  preview.info = { lat: lat, lng: lng, name: '', address: 'Loading address…' };
+  if (!preview.marker) {
+    preview.marker = new google.maps.Marker({ map: map, position: { lat: lat, lng: lng }, draggable: true, cursor: 'grab', zIndex: 9999, icon: simplePin('#E74C3C', 30, 40) });
+    preview.marker.addListener('dragstart', function () { closeCard('preview'); });
+    preview.marker.addListener('dragend', function (e) { if (e.latLng) dropPreview(e.latLng.lat(), e.latLng.lng()); });
+  } else {
+    preview.marker.setPosition({ lat: lat, lng: lng });
+  }
+  showPreviewCard();
+  panToFitCard({ lat: lat, lng: lng });
+  reverseGeocode(lat, lng, function (result) {
+    if (!preview.info || preview.info.lat !== lat || preview.info.lng !== lng) return;
+    preview.info.name = result ? pinName(result) : '';
+    preview.info.address = result ? (result.formatted_address || '') : '';
+    showPreviewCard();
+  });
+}
+
+function showPreviewCard() {
+  if (!preview.info) return;
+  var info = preview.info;
+  openCard('preview', { lat: info.lat, lng: info.lng }, placeCard(
+    { lat: info.lat, lng: info.lng, name: info.name || 'New Location', address: info.address },
+    '#E74C3C', 'Add Location',
+    function () { send({ type: 'preview-action', action: 'add', lat: info.lat, lng: info.lng, name: info.name || '', address: info.address === 'Loading address…' ? '' : info.address }); },
+    null,
+    function () { clearPreview(); }
+  ));
+}
+
+function clearPreview() {
+  closeCard('preview');
+  if (preview.marker) { preview.marker.setMap(null); preview.marker = null; }
+  preview.info = null;
+}
+
+function pinName(result) {
+  var comps = result.address_components || [];
+  function find(types) { var c = comps.find(function (x) { return types.some(function (t) { return x.types.indexOf(t) >= 0; }); }); return c ? c.long_name : ''; }
+  return find(['point_of_interest', 'establishment']) || find(['sublocality_level_1', 'sublocality']) || find(['route']) ||
+    (result.formatted_address || '').split(',')[0] || '';
+}
+
+/* ---- Places search ---- */
+
+function renderPlacesControl() {
+  var host = document.getElementById('places');
+  host.hidden = false;
+  host.textContent = '';
+  var open = el('button', 'round'); open.title = 'Search places on map';
+  open.appendChild(svgIcon('search'));
+  host.appendChild(open);
+  open.addEventListener('click', function () {
+    host.textContent = '';
+    var box = el('div', 'search-box');
+    var input = el('input'); input.type = 'text'; input.placeholder = 'Search any place...'; input.autocomplete = 'off';
+    var close = el('button'); close.appendChild(svgIcon('x'));
+    box.appendChild(input); box.appendChild(close);
+    host.appendChild(box);
+    input.focus();
+    var auto = new google.maps.places.Autocomplete(input, { fields: ['geometry', 'name', 'formatted_address', 'place_id'] });
+    auto.bindTo('bounds', map);
+    auto.addListener('place_changed', function () {
+      var found = auto.getPlace();
+      if (!found || !found.geometry || !found.geometry.location) return;
+      showPlace({ lat: found.geometry.location.lat(), lng: found.geometry.location.lng(), name: found.name || '', address: found.formatted_address || found.name || '' });
+      renderPlacesControl();
+    });
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); if (e.key === 'Escape') renderPlacesControl(); });
+    close.addEventListener('click', function () { clearPlace(); renderPlacesControl(); });
+  });
+}
+
+function showPlace(info) {
+  place.data = info;
+  var star = '<circle cx="15" cy="15" r="7" fill="white"/><text x="15" y="19" text-anchor="middle" font-size="10" fill="#8B5CF6">&#9733;</text>';
+  if (!place.marker) {
+    place.marker = new google.maps.Marker({ map: map, zIndex: 9000, icon: simplePin('#8B5CF6', 36, 46, star) });
+    place.marker.addListener('click', function () { if (place.data) showPlaceCard(); });
+  }
+  place.marker.setPosition({ lat: info.lat, lng: info.lng });
+  place.marker.setTitle(info.name);
+  map.panTo({ lat: info.lat, lng: info.lng });
+  map.setZoom(16);
+  showPlaceCard();
+}
+
+function showPlaceCard() {
+  var info = place.data;
+  openCard('place', { lat: info.lat, lng: info.lng }, placeCard(
+    info, '#8B5CF6', 'Pin Location',
+    function () { send({ type: 'place-action', action: 'pin', lat: info.lat, lng: info.lng, name: info.name, address: info.address }); },
+    function () { closeCard('place'); send({ type: 'place-action', action: 'directions', lat: info.lat, lng: info.lng, name: info.name, address: info.address }); },
+    function () { closeCard('place'); }
+  ));
+}
+
+function clearPlace() {
+  closeCard('place');
+  if (place.marker) { place.marker.setMap(null); place.marker = null; }
+  place.data = null;
+}
+
+/* ===================================================================== */
+/* Floating Cities control and the guide                                  */
+/* ===================================================================== */
+
+function renderCities(next) {
+  var host = document.getElementById('cities');
+  var cities = next.cities;
+  if (!cities) { host.hidden = true; return; }
+  host.hidden = false;
+  host.textContent = '';
+  var button = el('button', 'pill');
+  if (cities.count > 0) {
+    button.appendChild(svgIcon('map'));
+    button.appendChild(el('span', null, 'Cities'));
+    button.appendChild(el('span', 'count', String(cities.count > 99 ? '99+' : cities.count)));
+    if (cities.unread > 0) button.appendChild(el('span', 'count danger', String(cities.unread > 99 ? '99+' : cities.unread)));
+    var chevron = svgIcon('chevronRight'); chevron.style.color = '#FB923C'; button.appendChild(chevron);
+  } else {
+    button.appendChild(svgIcon('plus'));
+    button.appendChild(el('span', null, 'Add City'));
+  }
+  button.addEventListener('click', function () { send({ type: 'cities-open' }); });
+  host.appendChild(button);
+  if (cities.selectedName) {
+    var chip = el('div', 'pill small');
+    chip.title = cities.selectedName;
+    chip.appendChild(svgIcon('pin'));
+    chip.appendChild(el('span', 'truncate', cities.selectedName));
+    chip.appendChild(el('span', 'count small', String(cities.selectedCount)));
+    host.appendChild(chip);
+  }
+}
+
+function renderGuide(next) {
+  var host = document.getElementById('guide');
+  var guide = next.guide || { visible: true, collapsed: false };
+  if (!guide.visible) { host.hidden = true; host.textContent = ''; return; }
+  var changed = host.hidden || guideState.collapsed !== guide.collapsed || host.childNodes.length === 0;
+  guideState = guide;
+  if (!changed) return;
+  host.hidden = false;
+  host.textContent = '';
+  var head = el('div', guide.collapsed ? 'head' : 'head open');
+  var toggle = el('button', 'toggle');
+  toggle.appendChild(svgIcon('help', 'help'));
+  toggle.appendChild(el('span', null, 'How to Use the Map Module'));
+  toggle.appendChild(svgIcon(guide.collapsed ? 'chevronDown' : 'chevronUp', 'chev'));
+  toggle.addEventListener('click', function () { send({ type: 'guide', collapsed: !guideState.collapsed, dismissed: false }); });
+  var dismiss = el('button', 'dismiss'); dismiss.title = 'Close — reopen it any time from How To Use Map';
+  dismiss.appendChild(svgIcon('x'));
+  dismiss.addEventListener('click', function () { send({ type: 'guide', collapsed: guideState.collapsed, dismissed: true }); });
+  head.appendChild(toggle); head.appendChild(dismiss);
+  host.appendChild(head);
+  if (!guide.collapsed) {
+    var list = el('ol');
+    GUIDE_STEPS.forEach(function (step, i) {
+      var li = el('li');
+      li.appendChild(el('span', 'n', String(i + 1)));
+      li.appendChild(document.createTextNode(step));
+      list.appendChild(li);
+    });
+    host.appendChild(list);
+  }
+}
+
+/* ===================================================================== */
+/* Scene                                                                  */
+/* ===================================================================== */
+
+function render(next) {
+  var wasPinMode = scene && scene.pinMode;
+  scene = next;
+  document.body.classList.toggle('pin-mode', !!next.pinMode);
+  if (wasPinMode && !next.pinMode) clearPreview();
+  renderMarkers(next);
+  renderZone(next);
+  renderDrafts(next);
+  renderCities(next);
+  renderGuide(next);
+}
+
+/* ===================================================================== */
+/* Camera                                                                  */
+/* ===================================================================== */
+
+function camera(command) {
+  switch (command.op) {
+    case 'pan':
+      if (command.zoom !== undefined && command.zoom !== null) map.setZoom(command.zoom);
+      map.panTo({ lat: command.lat, lng: command.lng });
+      break;
+    case 'fit': {
+      var bounds = new google.maps.LatLngBounds();
+      (command.points || []).forEach(function (p) { bounds.extend(p); });
+      if (!command.points || !command.points.length) return;
+      map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
+      if (command.points.length === 1) setTimeout(function () { map.setZoom(command.singleZoom || 15); }, 300);
+      break;
+    }
+    case 'fitCircle': {
+      var circle = new google.maps.Circle({ center: { lat: command.lat, lng: command.lng }, radius: Number(command.radiusMiles) * MILES_TO_METERS });
+      map.fitBounds(circle.getBounds());
+      break;
+    }
+    case 'focus': {
+      var p = positionOf(command.id);
+      if (!p) {
+        /* The scene that brings this pin back (a cleared filter) may still
+           be on its way; try again shortly rather than drop the request. */
+        var tries = (command.tries || 0) + 1;
+        if (tries <= 10) setTimeout(function () { camera(Object.assign({}, command, { tries: tries })); }, 120);
+        return;
+      }
+      map.panTo(p);
+      map.setZoom(command.zoom || 16);
+      google.maps.event.addListenerOnce(map, 'idle', function () { recluster(); openLocationCard(command.id); });
+      break;
+    }
+  }
+}
+
+/* ===================================================================== */
+/* Requests: Google's services, answered by id                            */
+/* ===================================================================== */
+
+function reply(id, ok, body) {
+  send(Object.assign({ type: 'reply', id: id, ok: !!ok }, body || {}));
+}
+
+function reverseGeocode(lat, lng, done) {
+  if (!geocoder) { done(null); return; }
+  geocoder.geocode({ location: { lat: lat, lng: lng } }, function (results, status) {
+    done(status === 'OK' && results && results.length ? results[0] : null);
+  });
+}
+
+function boundsOf(b) {
+  return new google.maps.LatLngBounds({ lat: b.south, lng: b.west }, { lat: b.north, lng: b.east });
+}
+
+var autocompleteService = null;
+var placesService = null;
+
+function request(q) {
+  try {
+    switch (q.op) {
+      case 'reverseGeocode':
+        reverseGeocode(q.lat, q.lng, function (r) {
+          if (!r) { reply(q.id, false); return; }
+          reply(q.id, true, {
+            address: r.formatted_address || '',
+            components: (r.address_components || []).map(function (c) { return { long_name: c.long_name, types: c.types }; })
+          });
         });
-        map.addListener('click', function (e) {
-            if (!e.latLng) { return; }
-            var p = e.latLng.toJSON();
-            send({ type: 'map-click', lat: p.lat, lng: p.lng });
+        break;
+      case 'geocode': {
+        var geo = { address: q.query };
+        if (q.bounds) geo.bounds = boundsOf(q.bounds);
+        geocoder.geocode(geo, function (results, status) {
+          if (status === 'OK' && results && results.length) {
+            var loc = results[0].geometry.location;
+            reply(q.id, true, { lat: loc.lat(), lng: loc.lng(), address: results[0].formatted_address || '', status: status });
+          } else {
+            reply(q.id, false, { status: status });
+          }
         });
-        send({ type: 'map-ready' });
-        if (pendingPins !== null) {
-            var pins = pendingPins;
-            pendingPins = null;
-            window.zillitMap.setPins(pins);
-        }
-        if (pendingCenter !== null) {
-            var c = pendingCenter;
-            pendingCenter = null;
-            window.zillitMap.center(c.lat, c.lng, c.zoom);
-        }
-    };
+        break;
+      }
+      case 'predictions': {
+        autocompleteService = autocompleteService || new google.maps.places.AutocompleteService();
+        var ask = { input: q.input };
+        if (q.types && q.types.length) ask.types = q.types;
+        if (q.bounds) ask.bounds = boundsOf(q.bounds);
+        if (q.biasLat !== undefined) { ask.location = new google.maps.LatLng(q.biasLat, q.biasLng); ask.radius = q.biasRadius; }
+        if (q.strict && (ask.bounds || ask.location)) ask.strictBounds = true;
+        var answer = function (predictions, status, retried) {
+          if (status === 'INVALID_REQUEST' && ask.types && !retried) {
+            delete ask.types;
+            autocompleteService.getPlacePredictions(ask, function (p, s) { answer(p, s, true); });
+            return;
+          }
+          var ok = status === 'OK' || status === 'ZERO_RESULTS';
+          reply(q.id, ok, {
+            items: (predictions || []).map(function (p) {
+              var f = p.structured_formatting || {};
+              return { placeId: p.place_id, description: p.description, main: f.main_text || p.description, secondary: f.secondary_text || '' };
+            })
+          });
+        };
+        autocompleteService.getPlacePredictions(ask, function (p, s) { answer(p, s, false); });
+        break;
+      }
+      case 'details':
+        placesService = placesService || new google.maps.places.PlacesService(document.createElement('div'));
+        placesService.getDetails({ placeId: q.placeId, fields: ['geometry', 'name', 'formatted_address'] }, function (r, status) {
+          if (status !== 'OK' || !r || !r.geometry || !r.geometry.location) { reply(q.id, false); return; }
+          reply(q.id, true, { name: r.name || '', address: r.formatted_address || r.name || '', lat: r.geometry.location.lat(), lng: r.geometry.location.lng() });
+        });
+        break;
+      case 'cityBounds':
+        geocoder.geocode({ location: { lat: q.lat, lng: q.lng } }, function (results, status) {
+          if (status !== 'OK' || !results || !results.length) { reply(q.id, false); return; }
+          var preferred = ['locality', 'postal_town', 'administrative_area_level_3', 'administrative_area_level_2', 'administrative_area_level_1'];
+          var match = null;
+          for (var i = 0; i < preferred.length && !match; i++) {
+            match = results.find(function (r) { return r.types && r.types.indexOf(preferred[i]) >= 0 && r.geometry && (r.geometry.bounds || r.geometry.viewport); });
+          }
+          var box = match && (match.geometry.bounds || match.geometry.viewport);
+          if (!box) { reply(q.id, false); return; }
+          var ne = box.getNorthEast(), sw = box.getSouthWest();
+          reply(q.id, true, { north: ne.lat(), east: ne.lng(), south: sw.lat(), west: sw.lng() });
+        });
+        break;
+      case 'currentPosition':
+        if (!navigator.geolocation) { reply(q.id, false); break; }
+        navigator.geolocation.getCurrentPosition(
+          function (pos) { reply(q.id, true, { lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+          function () { reply(q.id, false); },
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+        break;
+      case 'route': {
+        var service = new google.maps.DirectionsService();
+        service.route({ origin: q.origin, destination: q.destination, travelMode: google.maps.TravelMode.DRIVING }, function (result, status) {
+          if (status !== 'OK' || !result || !result.routes || !result.routes.length) {
+            if (route.renderer) route.renderer.setMap(null);
+            reply(q.id, false, { status: status });
+            return;
+          }
+          if (!route.renderer) {
+            route.renderer = new google.maps.DirectionsRenderer({ polylineOptions: { strokeColor: '#2E86C1', strokeWeight: 5, strokeOpacity: 0.8 }, suppressMarkers: false });
+          }
+          route.renderer.setMap(map);
+          route.renderer.setDirections(result);
+          var leg = result.routes[0].legs[0];
+          reply(q.id, true, {
+            distanceText: leg.distance ? leg.distance.text : '', distanceMeters: leg.distance ? leg.distance.value : 0,
+            durationText: leg.duration ? leg.duration.text : '', startAddress: leg.start_address || '', endAddress: leg.end_address || ''
+          });
+        });
+        break;
+      }
+      default:
+        reply(q.id, false, { status: 'UNKNOWN_OP' });
+    }
+  } catch (err) {
+    reply(q.id, false, { status: 'ERROR', message: String(err && err.message || err) });
+  }
+}
 
-    window.zillitMap = {
-        /* Kotlin hands the decrypted key down; the page injects Google's
-           script itself. Idempotent — a second boot is a no-op. */
-        boot: function (key) {
-            if (booted) { return; }
-            booted = true;
-            var tag = document.createElement('script');
-            tag.src = 'https://maps.googleapis.com/maps/api/js?key='
-                + encodeURIComponent(key) + '&v=weekly&callback=__zmInit';
-            tag.onerror = function () {
-                send({ type: 'error', message: 'The Google Maps script could not load.' });
-            };
-            document.head.appendChild(tag);
-        },
+/* ===================================================================== */
+/* Boot                                                                    */
+/* ===================================================================== */
 
-        /* The whole marker set as one JSON string: clear, then redraw.
-           Zones become circles (GoogleMapComponent.jsx:1007-1023), pins
-           become markers labelled with their type (:1026-1067). */
-        setPins: function (jsonText) {
-            if (!map) { pendingPins = jsonText; return; }
-            drawn.forEach(function (o) { o.setMap(null); });
-            drawn = [];
-            JSON.parse(jsonText).forEach(function (pin) {
-                if (pin.isZone) {
-                    var circle = new google.maps.Circle({
-                        map: map,
-                        center: { lat: pin.lat, lng: pin.lng },
-                        radius: Number(pin.radiusMiles) * MILES_TO_METERS,
-                        strokeColor: '#2563EB',
-                        strokeOpacity: 0.9,
-                        strokeWeight: 2,
-                        fillColor: '#2563EB',
-                        fillOpacity: 0.12
-                    });
-                    /* The web routes a circle click to the map-click path
-                       (GoogleMapComponent.jsx:1011) — a zone is placeable-on. */
-                    circle.addListener('click', function (e) {
-                        if (!e.latLng) { return; }
-                        var p = e.latLng.toJSON();
-                        send({ type: 'map-click', lat: p.lat, lng: p.lng });
-                    });
-                    drawn.push(circle);
-                } else {
-                    var marker = new google.maps.Marker({
-                        map: map,
-                        position: { lat: pin.lat, lng: pin.lng },
-                        title: pin.name,
-                        label: pin.label
-                            ? { text: pin.label, fontSize: '11px', fontWeight: '600' }
-                            : null
-                    });
-                    marker.addListener('click', function () {
-                        send({ type: 'marker-click', id: pin.id });
-                    });
-                    drawn.push(marker);
-                }
-            });
-        },
+window.gm_authFailure = function () { send({ type: 'auth-failed' }); };
 
-        /* Pan-and-zoom, as the web does on selection
-           (GoogleMapComponent.jsx:587-594). */
-        center: function (lat, lng, zoom) {
-            if (!map) { pendingCenter = { lat: lat, lng: lng, zoom: zoom }; return; }
-            map.setZoom(zoom);
-            map.panTo({ lat: lat, lng: lng });
-        }
-    };
+window.__zmInit = function () {
+  map = new google.maps.Map(document.getElementById('map'), {
+    center: FALLBACK_CENTER,
+    zoom: FALLBACK_ZOOM,
+    clickableIcons: false,
+    zoomControl: true,
+    zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
+    streetViewControl: false,
+    mapTypeControl: true,
+    mapTypeControlOptions: { position: google.maps.ControlPosition.TOP_RIGHT },
+    fullscreenControl: false,
+    styles: [{ featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] }]
+  });
+  geocoder = new google.maps.Geocoder();
+  defineOverlay();
 
-    /* The shell is up and waiting for its key. */
-    send({ type: 'ready' });
+  map.addListener('click', function (e) {
+    unspiderfy();
+    closeCard('selected'); closeCard('zone');
+    if (!e.latLng) return;
+    if (scene && scene.pinMode) { dropPreview(e.latLng.lat(), e.latLng.lng()); return; }
+    /* The zone form's centre moves where the map is clicked, as its mini
+       map does on the web. */
+    if (scene && scene.draftZone) send({ type: 'draft-zone-moved', lat: e.latLng.lat(), lng: e.latLng.lng() });
+  });
+  map.addListener('zoom_changed', function () { unspiderfy(); });
+  map.addListener('idle', recluster);
+
+  renderPlacesControl();
+  send({ type: 'map-ready' });
+
+  if (pending.theme) { applyTheme(pending.theme); pending.theme = null; }
+  if (pending.scene) { render(pending.scene); pending.scene = null; }
+  pending.camera.forEach(camera);
+  pending.camera = [];
+};
+
+window.zillitMap = {
+  boot: function (key) {
+    if (booted) return;
+    booted = true;
+    var tag = document.createElement('script');
+    tag.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) +
+      '&libraries=places,geometry&v=weekly&callback=__zmInit';
+    tag.onerror = function () { send({ type: 'error', message: 'The Google Maps script could not load.' }); };
+    document.head.appendChild(tag);
+  },
+  setTheme: function (text) {
+    var theme = JSON.parse(text);
+    applyTheme(theme);
+    if (!map) pending.theme = theme;
+  },
+  render: function (text) {
+    var next = JSON.parse(text);
+    if (!map) { pending.scene = next; return; }
+    render(next);
+  },
+  camera: function (text) {
+    var command = JSON.parse(text);
+    if (!map) { pending.camera = [command]; return; }
+    camera(command);
+  },
+  clear: function (text) {
+    var what = JSON.parse(text);
+    if (!map) return;
+    if (what.preview) clearPreview();
+    if (what.place) clearPlace();
+    if (what.route && route.renderer) route.renderer.setMap(null);
+  },
+  request: function (text) {
+    var q = JSON.parse(text);
+    if (!map) { reply(q.id, false, { status: 'NOT_READY' }); return; }
+    request(q);
+  }
+};
+
+send({ type: 'ready' });
 </script>
 </body>
 </html>

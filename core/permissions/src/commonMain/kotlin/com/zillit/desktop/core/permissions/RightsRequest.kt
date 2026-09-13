@@ -3,7 +3,10 @@ package com.zillit.desktop.core.permissions
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Which right a person is asking their admins for.
@@ -130,6 +133,23 @@ class RightsRequestBus {
     )
 
     val requests: Flow<RightsRequest> = pending.asSharedFlow()
+
+    private val _showing = MutableStateFlow(false)
+
+    /**
+     * Whether the frame has a rights dialog (or its outcome) on screen.
+     *
+     * A tool that hosts a heavyweight surface — an embedded Chromium map — hides
+     * it while this is true: that view paints above every Compose pixel, so the
+     * frame's dialog floated over the tool would simply not be seen, and the
+     * person who pressed the control would be left with nothing happening.
+     */
+    val showing: StateFlow<Boolean> = _showing.asStateFlow()
+
+    /** Set by the frame's rights surface as its dialogs open and close. */
+    fun setShowing(value: Boolean) {
+        _showing.value = value
+    }
 
     fun ask(request: RightsRequest) {
         pending.tryEmit(request)

@@ -2,9 +2,7 @@ package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.feature.maps.data.MapCanvasWire
-import com.zillit.desktop.feature.maps.domain.MapCanvasEvent
 import com.zillit.desktop.feature.maps.domain.MapCanvasHost
-import com.zillit.desktop.feature.maps.domain.MapPinMarker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +16,8 @@ import kotlinx.coroutines.swing.Swing
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.cef.CefClient
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefRendering
@@ -27,17 +27,18 @@ import javax.swing.JWindow
 import javax.swing.SwingUtilities
 
 /**
- * The Maps tool's canvas: Google's Maps JS inside embedded Chromium.
+ * The Map tool's canvas: Google's Maps JS inside embedded Chromium.
  *
  * The JVM has no map widget, so the map is the same one the web client runs —
  * `maps.googleapis.com/maps/api/js` — hosted by the JetBrains Runtime's JCEF
  * (see [KcefRuntime], shared with the call engine; each engine holds its own
  * `CefClient` and browser, only the process-wide `CefApp` is common).
  *
- * Kotlin drives the page with `zillitMap.*` calls and hears back over the CEF
- * message router as one-line JSON; both directions are the [MapCanvasWire]
- * contract, where all the parseable logic lives so this class stays a
- * transport — the same split the call engine makes with `EngineBridge`.
+ * A transport and nothing more: the tool says what to draw with
+ * `zillitMap.*` scripts and hears the page's one-line JSON back, and all of
+ * that — scene, cards, requests, replay — lives in the maps module's
+ * `MapCanvasClient`, where it can be tested. The one thing kept here is the
+ * key.
  *
  * ## How the key travels
  *
@@ -50,7 +51,7 @@ import javax.swing.SwingUtilities
  * Lifecycle: nothing starts until [open] — the tool is rarely the first thing
  * used, and Chromium may already be up for calling. The browser then lives for
  * the process, parked in a hidden holder window between openings of the tool
- * (the call engine's pattern), so reopening the Maps tool is instant.
+ * (the call engine's pattern), so reopening the Map tool is instant.
  */
 class KcefMapEngine(
     /** The decrypted Google Maps JS key, or null when the production has none. */
@@ -58,26 +59,13 @@ class KcefMapEngine(
     private val scope: CoroutineScope,
 ) : MapCanvasHost {
 
-    private val _events = MutableSharedFlow<MapCanvasEvent>(extraBufferCapacity = 32)
-    override val events: Flow<MapCanvasEvent> = _events.asSharedFlow()
+    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = MESSAGE_BUFFER)
+    override val messages: Flow<String> = _messages.asSharedFlow()
 
     private val initLock = Mutex()
     private var client: CefClient? = null
     private var browser: CefBrowser? = null
     private var holder: JWindow? = null
-
-    /**
-     * The last pins and camera pushed down, replayed on the page's map-ready —
-     * the tool's ViewModel may have pushed both while Chromium was still
-     * coming up, and a page rebuilt later must not open empty.
-     */
-    @Volatile
-    private var lastPins: List<MapPinMarker> = emptyList()
-
-    @Volatile
-    private var lastCenter: Center? = null
-
-    private data class Center(val lat: Double, val lng: Double, val zoom: Int)
 
     private val _surface = MutableStateFlow<Component?>(null)
 
@@ -93,20 +81,24 @@ class KcefMapEngine(
         scope.launch { prepare() }
     }
 
+    override fun execute(script: String) {
+        browser?.let { run(it, script) }
+    }
+
     private suspend fun prepare(): Boolean = initLock.withLock {
         if (browser != null) return@withLock true
         KcefRuntime.start()
         val cefClient = client ?: KcefRuntime.client()?.also { client = it }
         if (cefClient == null) {
             ZillitLog.w(TAG) { "map canvas unavailable (${KcefRuntime.failure})" }
-            _events.tryEmit(MapCanvasEvent.Failed(unavailableReason()))
+            fail(unavailableReason())
             return@withLock false
         }
         val page = withContext(Dispatchers.IO) { runCatching { extractPage() } }
             .onFailure { thrown -> ZillitLog.w(TAG) { "map page not extracted: ${thrown.message}" } }
             .getOrNull()
         if (page == null) {
-            _events.tryEmit(MapCanvasEvent.Failed("The map page could not be prepared."))
+            fail("The map page could not be prepared.")
             return@withLock false
         }
         // On the EDT: this builds AWT components, and JCEF is unforgiving
@@ -125,6 +117,11 @@ class KcefMapEngine(
         is KcefRuntime.Failure.Broken ->
             "The embedded browser could not start (${failure.reason})."
         null -> "The embedded browser is unavailable."
+    }
+
+    /** The host's own failures travel as the page's do, so the tool reads one stream. */
+    private fun fail(message: String) {
+        _messages.tryEmit(buildJsonObject { put("type", "error"); put("message", message) }.toString())
     }
 
     private fun buildBrowser(cefClient: CefClient, page: File) {
@@ -180,7 +177,10 @@ class KcefMapEngine(
     /** Takes the component back when the tool's pane leaves the screen. */
     fun releaseSurface() {
         val component = _surface.value ?: return
-        SwingUtilities.invokeLater { hold(component) }
+        SwingUtilities.invokeLater {
+            component.isVisible = true
+            hold(component)
+        }
     }
 
     private fun onPageMessage(message: String) {
@@ -189,11 +189,7 @@ class KcefMapEngine(
             boot()
             return
         }
-        MapCanvasWire.parse(message)?.let { event ->
-            if (event is MapCanvasEvent.Ready) replayState()
-            if (event is MapCanvasEvent.Failed) ZillitLog.w(TAG) { "map page: ${event.message}" }
-            _events.tryEmit(event)
-        }
+        _messages.tryEmit(message)
     }
 
     /**
@@ -209,34 +205,11 @@ class KcefMapEngine(
             val key = runCatching { googleMapsKey() }.getOrNull()
             if (key.isNullOrBlank()) {
                 ZillitLog.w(TAG) { "no Google Maps key in remote config; map stays blank" }
-                _events.tryEmit(
-                    MapCanvasEvent.Failed("This project has no Google Maps key, so the map cannot load."),
-                )
+                fail("This project has no Google Maps key, so the map cannot load.")
                 return@launch
             }
             run(target, MapCanvasWire.bootScript(key))
         }
-    }
-
-    /**
-     * Restates what Kotlin knows on the page's map-ready: everything told to
-     * a page before its map existed — or to a previous page — is replayed so
-     * the map never opens empty for whatever was already loaded.
-     */
-    private fun replayState() {
-        val target = browser ?: return
-        if (lastPins.isNotEmpty()) run(target, MapCanvasWire.pinsScript(lastPins))
-        lastCenter?.let { c -> run(target, MapCanvasWire.centerScript(c.lat, c.lng, c.zoom)) }
-    }
-
-    override fun setPins(pins: List<MapPinMarker>) {
-        lastPins = pins
-        browser?.let { run(it, MapCanvasWire.pinsScript(pins)) }
-    }
-
-    override fun center(lat: Double, lng: Double, zoom: Int) {
-        lastCenter = Center(lat, lng, zoom)
-        browser?.let { run(it, MapCanvasWire.centerScript(lat, lng, zoom)) }
     }
 
     private fun run(target: CefBrowser, script: String) {
@@ -260,6 +233,9 @@ class KcefMapEngine(
 
     private companion object {
         const val TAG = "KcefMapEngine"
+
+        /** Replies and events arrive in bursts (a scene's worth of geocodes); none may be lost. */
+        const val MESSAGE_BUFFER = 256
 
         /** Far enough out that no arrangement of displays reaches it. */
         const val HOLDER_OFFSCREEN = -8_000

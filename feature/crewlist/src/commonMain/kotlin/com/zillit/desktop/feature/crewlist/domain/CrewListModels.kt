@@ -1,15 +1,14 @@
 package com.zillit.desktop.feature.crewlist.domain
 
-import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.serialization.json.JsonObject
 
 /**
- * The Crew List: the production's roster grouped Unit → Department → People,
- * and one act — generating it as a PDF the backend writes into project
- * storage. The desktop ships the phones' surface: a read-only roster and the
- * generate dialog; the web's in-browser header designer stays where it is.
+ * The Crew List (`generate_crew_list_tool`, web `/film-tools/crewlist` →
+ * `CrewListCustom.jsx`): the production's roster grouped Unit → Department →
+ * People; per-member phone and email edits that apply to the document only; a
+ * designed letterhead; and the generated PDF, viewed, published to Info or
+ * filed in Document Distribution.
  */
 data class CrewUnit(
     /** Usually a label key — translate before display. */
@@ -28,12 +27,49 @@ data class CrewMember(
     val fullName: String,
     /** A label key — translate before display and search. */
     val designationName: String = "",
+    val departmentName: String = "",
+    /** The row's own unit — what the profile drawer's Unit line reads. */
+    val unitName: String = "",
+    /** The local number; the dial code is [countryCode]. */
     val phone: String = "",
     val countryCode: String = "",
-    /** The crew-list row's own email — not the profile store's. */
+    /** `primary_email` — the member's own address. */
     val primaryEmail: String = "",
+    /**
+     * `email` — for crew on Zillit, their project mailbox (sent only when they
+     * consented; the backend blanks it otherwise). For external contacts, the
+     * address typed into the Add External User form.
+     */
+    val email: String = "",
     /** True marks a contact who is not on Zillit. */
     val isExternal: Boolean = false,
+    /** As the server phrases it; shown verbatim unless it is an epoch. */
+    val joiningDate: String = "",
+    val picture: CrewPicture? = null,
+) {
+    /**
+     * PROFILE. External contacts only ever have the address they were added
+     * with, which the form writes to `email` — so for them that IS the profile
+     * address.
+     */
+    val profileEmail: String
+        get() = if (isExternal) primaryEmail.ifBlank { email } else primaryEmail
+
+    /**
+     * PROJECT — the Zillit mailbox. Always empty for external contacts, even
+     * when the API sends something: under this label it would claim a mailbox
+     * they do not have.
+     */
+    val projectEmail: String
+        get() = if (isExternal) "" else email
+}
+
+/** A stored profile picture — a raw S3 key, signed and fetched by the host. */
+data class CrewPicture(
+    val media: String,
+    val thumbnail: String = "",
+    val bucket: String = "",
+    val region: String = "",
 )
 
 /**
@@ -45,59 +81,89 @@ data class CrewListPdf(
     val bucket: String = "",
     val region: String = "",
     val name: String = "",
-)
+    val contentSubtype: String = "pdf",
+    val thumbnail: String = "",
+    val fileSize: String = "",
+    /**
+     * The answer's `data` object, untouched. Publishing to Info forwards it as
+     * the post's attachment exactly as the web does, keys the desktop does not
+     * model included.
+     */
+    val attachment: JsonObject = JsonObject(emptyMap()),
+) {
+    /** `Crew List.pdf` — with an extension, as the library refuses a bare name. */
+    val fileName: String
+        get() = name.ifBlank { DEFAULT_NAME }.let { if (it.contains('.')) it else "$it.pdf" }
+
+    companion object {
+        const val DEFAULT_NAME = "Crew List.pdf"
+    }
+}
 
 /**
- * Rights from `generate_crew_list_tool`: `view_access` opens the tool and
- * (as on Android) allows generating; `posting_access` is the publish right,
- * kept on the viewer for the publish acts as they arrive.
+ * Everything the crew list can do, and who may. Four rights rows and two
+ * facts about the person and the production feed it:
+ *
+ * - `generate_crew_list_tool` — view opens the tool; posting is editing the
+ *   document and publishing it.
+ * - `info_tool` posting — publishing lands on the Info board, so it is asked too.
+ * - `document_distribution_tool` posting, or being an admin — filing the PDF in
+ *   the library (the web's `useDistributeToDocDist`).
+ * - `external_users_tool` view and posting — adding a contact from here.
+ * - administrator — the department order and the company details.
+ * - an `other` production is a Staff List, with no unit bands.
  */
 data class CrewListViewer(
     val canView: Boolean = true,
     val canPost: Boolean = false,
+    val canPostInfo: Boolean = false,
+    val canDistribute: Boolean = false,
+    val canAddExternalUser: Boolean = false,
     val isAdmin: Boolean = false,
+    val isOtherProject: Boolean = false,
     val ready: Boolean = false,
 ) {
     val isBlocked: Boolean get() = ready && !canView && !isAdmin
     val mayGenerate: Boolean get() = isAdmin || canView
 
+    /** "Crew List", or "Staff List" on a non-production workspace. */
+    val toolName: String get() = if (isOtherProject) STAFF_LIST else CREW_LIST
+
     companion object {
         const val TOOL_IDENTIFIER = "generate_crew_list_tool"
+        const val INFO_TOOL = "info_tool"
+        const val DOC_DISTRIBUTION_TOOL = "document_distribution_tool"
+        const val EXTERNAL_USERS_TOOL = "external_users_tool"
+        const val CREW_LIST = "Crew List"
+        const val STAFF_LIST = "Staff List"
 
-        fun from(permissions: ProjectPermissions): CrewListViewer {
-            if (permissions.tools.isEmpty()) return CrewListViewer()
+        fun from(permissions: ProjectPermissions, isOtherProject: Boolean = false): CrewListViewer {
+            if (permissions.tools.isEmpty()) return CrewListViewer(isOtherProject = isOtherProject)
             return CrewListViewer(
                 canView = permissions.canView(TOOL_IDENTIFIER),
                 canPost = permissions.canPost(TOOL_IDENTIFIER),
+                canPostInfo = permissions.canPost(INFO_TOOL),
+                canDistribute = permissions.canPost(DOC_DISTRIBUTION_TOOL) || permissions.isAdmin,
+                canAddExternalUser = permissions.canView(EXTERNAL_USERS_TOOL) &&
+                    permissions.canPost(EXTERNAL_USERS_TOOL),
                 isAdmin = permissions.isAdmin,
+                isOtherProject = isOtherProject,
                 ready = true,
             )
         }
     }
 }
 
-interface CrewListRepository {
-
+/** What every render of the document is made from — preview, PDF and publish alike. */
+data class CrewDocumentRequest(
+    val layout: HeaderLayout = HeaderLayout(),
+    val overrides: Map<String, MemberOverride> = emptyMap(),
+    val hideInternalLines: Boolean = false,
+    /** Only the PDF asks; the previews always show the label. */
+    val hideExternalLabel: Boolean? = null,
     /**
-     * A pulse per socket frame saying a department was reordered elsewhere
-     * — the wire's `department:reordered`, whose web handler refetches the
-     * roster (`NewCrewList.jsx:244`). The ViewModel answers with a roster
-     * reload. Empty by default: tests, and hosts without a socket.
+     * The Design canvas's render: all three header sections as separate
+     * stacked blocks, so they can be regrouped in place.
      */
-    val refreshes: Flow<Unit> get() = emptyFlow()
-
-    /** `GET crewlist/list` on the units host — the grouped roster. */
-    suspend fun roster(): ZillitResult<List<CrewUnit>>
-
-    /**
-     * `POST crewlist` — the backend renders and stores the PDF.
-     * [hideExternalLabel] is the dialog's one question: whether the
-     * "Not on Zillit" tag prints.
-     */
-    suspend fun generate(hideExternalLabel: Boolean): ZillitResult<CrewListPdf>
-}
-
-/** Fetches the stored PDF and hands it to the OS — Downloads, then open. */
-fun interface CrewListTransfer {
-    suspend fun open(pdf: CrewListPdf): ZillitResult<Unit>
-}
+    val stacked: Boolean = false,
+)

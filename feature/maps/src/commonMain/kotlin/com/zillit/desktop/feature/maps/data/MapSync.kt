@@ -1,81 +1,110 @@
 package com.zillit.desktop.feature.maps.data
 
 import com.zillit.desktop.core.socket.SocketEventName
+import com.zillit.desktop.feature.maps.domain.MapList
+import com.zillit.desktop.feature.maps.domain.MapSyncEvent
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-
-/** The pins themselves: added, moved or removed elsewhere. */
-val MAP_LOCATION_EVENTS: List<SocketEventName> = listOf(
-    SocketEventName("map:location:added"),
-    SocketEventName("map:location:updated"),
-    SocketEventName("map:location:deleted"),
-)
+import kotlinx.serialization.json.contentOrNull
 
 /**
- * The city list and its order.
- *
- * Two spellings, both live: the bare names are the original map's and the
- * `map:`-prefixed ones are what Android files under "New Map module socket
- * events". Both phones subscribe to both sets, and iOS answers all eight with
- * the one notification, so both are here.
+ * The wire events behind the web map module's `useMapSocket` — the names in
+ * `socket/listenerSocket.js`, not the `map_city_added`-style aliases the web
+ * re-emits them under.
  */
-val MAP_CITY_EVENTS: List<SocketEventName> = listOf(
-    "city:added", "city:updated", "city:deleted", "city:reordered",
-    "map:city:added", "map:city:updated", "map:city:deleted", "map:city:reordered",
-).map(::SocketEventName)
+internal object MapWireEvents {
+    const val CITY_ADDED = "map:city:added"
+    const val CITY_UPDATED = "map:city:updated"
+    const val CITY_DELETED = "map:city:deleted"
+    const val CITY_REORDERED = "map:city:reordered"
+    const val TYPE_ADDED = "map:locationType:added"
+    const val TYPE_UPDATED = "map:locationType:updated"
+    const val TYPE_DELETED = "map:locationType:deleted"
+    const val PINNED_ADDED = "map:pinnedLocation:added"
+    const val PINNED_UPDATED = "map:pinnedLocation:updated"
+    const val PINNED_DELETED = "map:pinnedLocation:deleted"
+    const val LOCATION_ADDED = "map:location:added"
+    const val LOCATION_UPDATED = "map:location:updated"
+    const val LOCATION_DELETED = "map:location:deleted"
+
+    /**
+     * The original map's bare city names. The web module no longer listens to
+     * them, but both phones still do and a server that sends them should not
+     * leave the strip stale — they carry no record, so they refetch.
+     */
+    val LEGACY_CITY = listOf("city:added", "city:updated", "city:deleted", "city:reordered")
+}
+
+/** Everything the map tool listens on. */
+val MAP_SYNC_EVENTS: List<SocketEventName> = listOf(
+    MapWireEvents.CITY_ADDED, MapWireEvents.CITY_UPDATED, MapWireEvents.CITY_DELETED, MapWireEvents.CITY_REORDERED,
+    MapWireEvents.TYPE_ADDED, MapWireEvents.TYPE_UPDATED, MapWireEvents.TYPE_DELETED,
+    MapWireEvents.PINNED_ADDED, MapWireEvents.PINNED_UPDATED, MapWireEvents.PINNED_DELETED,
+    MapWireEvents.LOCATION_ADDED, MapWireEvents.LOCATION_UPDATED, MapWireEvents.LOCATION_DELETED,
+).map(::SocketEventName) + MapWireEvents.LEGACY_CITY.map(::SocketEventName)
 
 /**
- * Everything the map tool listens on.
+ * One frame, as the change it describes — or null for a frame this client
+ * should not act on.
  *
- * The location three are the WIRE events behind the web map page's handlers.
- * On the wire
- * they are colon-delimited (`listenerSocket.js:2558-2566` subscribes
- * `map:location:added/updated/deleted` and re-emits them internally as
- * `map_location_*`, which is what `MapPage.jsx:73,100,126` consumes).
- * All splice the locations / studio-zones lists in place; this client's
- * equivalent is one targeted re-list, which is also what the web's own
- * edit path does — there is no `/map/{id}` read route.
- *
- * The location-type and pinned families (`map:locationType:*`,
- * `map:pinnedLocation:*`) are NOT here: only the recce picker's map-module
- * listens to those (`components/map-module/socket/useMapSocket.js`), not the
- * map tool.
- *
- * The city family was excluded on the same authority until 2026-09-09. That
- * was wrong for this client: the desktop map tool owns the city list and its
- * ordering ([MapEvent.MoveCity]), and iOS names its own handler for exactly
- * that surface — `.updateMapToolCityPriorityObserver`
- * (`ProjectObserver.swift:7154,7200`).
+ * The web's `shouldProcessEvent`: a frame must name THIS production, and one
+ * from this very device is skipped (its own write already updated the
+ * screen). With no production known locally the project test cannot be made
+ * and the frame passes; with no device id, the splice is idempotent anyway.
  */
-val MAP_SYNC_EVENTS: List<SocketEventName> = MAP_LOCATION_EVENTS + MAP_CITY_EVENTS
+@Suppress("CyclomaticComplexMethod") // One branch per wire event.
+internal fun mapSyncEvent(
+    event: String,
+    payload: JsonElement?,
+    projectId: String?,
+    deviceId: String?,
+): MapSyncEvent? {
+    if (event in MapWireEvents.LEGACY_CITY) return MapSyncEvent.Refetch(MapList.Cities)
+    val frame = payload as? JsonObject ?: return null
+    if (!projectId.isNullOrBlank() && frame.text("project_id", "projectId") != projectId) return null
+    val sender = frame.text("device_id", "deviceId")
+    if (!deviceId.isNullOrBlank() && sender.isNotBlank() && sender == deviceId) return null
 
-/**
- * What a map frame asks the screen to re-read.
- *
- * A pin change re-lists the pins, which is cheap and already what the edit
- * path does. A city change has to re-read the city strip as well — its
- * ordering is the whole point of `:reordered`, and pins are filtered by the
- * selected city, so reloading only the pins would leave a renamed or removed
- * city on screen.
- */
-enum class MapRefresh {
-    Pins,
-    Cities,
+    val entity = frame.firstOf("entity_data", "map_location", "location_data") as? JsonObject
+    return when (event) {
+        MapWireEvents.CITY_ADDED, MapWireEvents.CITY_UPDATED -> parseCity(entity)
+            ?.let { MapSyncEvent.CityUpserted(it, isNew = event == MapWireEvents.CITY_ADDED) }
+            ?: MapSyncEvent.Refetch(MapList.Cities)
+        MapWireEvents.CITY_DELETED -> entity?.text("_id", "id")?.takeIf { it.isNotBlank() }
+            ?.let { MapSyncEvent.CityDeleted(it) }
+            ?: MapSyncEvent.Refetch(MapList.Cities)
+        MapWireEvents.CITY_REORDERED -> MapSyncEvent.CitiesReordered
+
+        MapWireEvents.TYPE_ADDED, MapWireEvents.TYPE_UPDATED -> parseType(entity)
+            ?.let { MapSyncEvent.TypeUpserted(it, isNew = event == MapWireEvents.TYPE_ADDED) }
+            ?: MapSyncEvent.Refetch(MapList.Types)
+        MapWireEvents.TYPE_DELETED -> entity?.text("_id", "id")?.takeIf { it.isNotBlank() }
+            ?.let { MapSyncEvent.TypeDeleted(it) }
+            ?: MapSyncEvent.Refetch(MapList.Types)
+
+        MapWireEvents.PINNED_ADDED, MapWireEvents.PINNED_UPDATED, MapWireEvents.PINNED_DELETED ->
+            locationChange(event, entity, zoneByDefault = true)
+        MapWireEvents.LOCATION_ADDED, MapWireEvents.LOCATION_UPDATED, MapWireEvents.LOCATION_DELETED ->
+            locationChange(event, entity, zoneByDefault = false)
+        else -> null
+    }
 }
 
 /**
- * The web's guard, made lenient: every handler checks
- * `data?.project_id == projectDetails?.project_id` before touching state.
- * A frame that names no project passes — dropping it would eat a refresh —
- * and only a frame that names ANOTHER project is ignored.
+ * A location or zone frame. `is_studio_zone` decides the list; a pinned-
+ * location frame that does not say is a zone (`?? true`), a location frame a
+ * location (`?? false`) — the web's defaults.
  */
-internal fun JsonElement?.matchesProject(here: String?): Boolean {
-    if (here.isNullOrBlank()) return true
-    val incoming = (this as? JsonObject)
-        ?.let { frame -> frame["project_id"] ?: frame["projectId"] }
-        ?.let { value -> (value as? JsonPrimitive)?.content }
-        ?.takeIf { it.isNotBlank() }
-        ?: return true
-    return incoming == here
+private fun locationChange(event: String, entity: JsonObject?, zoneByDefault: Boolean): MapSyncEvent {
+    entity ?: return MapSyncEvent.Refetch(MapList.Locations)
+    val isZone = (entity["is_studio_zone"] as? JsonPrimitive)?.contentOrNull
+        ?.equals("true", ignoreCase = true)
+        ?: zoneByDefault
+    if (event.endsWith(":deleted")) {
+        val id = entity.text("_id", "id").takeIf { it.isNotBlank() } ?: return MapSyncEvent.Refetch(MapList.Locations)
+        return MapSyncEvent.LocationDeleted(id = id, cityId = entity.text("city_id", "cityId"), isStudioZone = isZone)
+    }
+    val location = parseLocation(entity)?.copy(isStudioZone = isZone) ?: return MapSyncEvent.Refetch(MapList.Locations)
+    return MapSyncEvent.LocationUpserted(location, isNew = event.endsWith(":added"))
 }

@@ -236,7 +236,6 @@ import com.zillit.desktop.feature.boxschedule.ui.BOX_SCHEDULE_PATH
 import com.zillit.desktop.feature.boxschedule.ui.BoxScheduleToolProvider
 import com.zillit.desktop.feature.boxschedule.ui.BoxScheduleViewModel
 import com.zillit.desktop.feature.boxschedule.ui.PRE_PRODUCTION_PATH
-import com.zillit.desktop.feature.maps.data.MapRepositoryImpl
 import com.zillit.desktop.feature.maps.ui.MapToolProvider
 import com.zillit.desktop.feature.pagedistribution.domain.DistributionTool
 import com.zillit.desktop.feature.pagedistribution.ui.DistributionToolProvider
@@ -2816,20 +2815,7 @@ private fun rememberAppViewModels(
             catering = ready?.cateringFeed(permissions),
             accounts = ready?.accountsFeed(permissions),
             boxSchedule = ready?.buildBoxSchedule(permissions),
-            maps = ready?.let { graph ->
-                MapViewModel(
-                    repository = MapRepositoryImpl(
-                        graph.apiClient,
-                        graph.config,
-                        bus = graph.socketEvents,
-                        currentProjectId = {
-                            graph.projectContext?.context?.value?.project?.projectId
-                        },
-                    ),
-                    resolveViewer = { graph.mapViewer(permissions()) },
-                    canvas = graph.mapCanvas,
-                )
-            },
+            maps = ready?.buildMaps(permissions),
             recce = ready?.buildRecce(permissions),
             externalUsers = ready?.buildExternalUsers(permissions),
             distribution = ready?.buildDistributionList(permissions),
@@ -3004,12 +2990,8 @@ private fun buildRegistry(
     val preProduction = viewModels.boxSchedule?.let {
         BoxScheduleToolProvider(it, PRE_PRODUCTION_PATH, onJoinCall = joinDiaryCall, loadAvatar = diaryFaces)
     }
-    val maps = viewModels.maps?.let {
-        MapToolProvider(
-            it,
-            onOpenUrl = ::openInBrowser,
-            canvas = (graph as? AppGraph.Ready)?.let(::mapCanvasSurface),
-        )
+    val maps = viewModels.maps?.let { vm ->
+        (graph as? AppGraph.Ready)?.mapToolProvider(vm) ?: MapToolProvider(vm, onOpenUrl = ::openInBrowser)
     }
     val recce = viewModels.recce?.let { RecceToolProvider(it, onOpenUrl = ::openInBrowser) }
     val externalUsers = viewModels.externalUsers?.let {
@@ -3018,8 +3000,9 @@ private fun buildRegistry(
     val distributionList = viewModels.distribution?.let {
         com.zillit.desktop.feature.distribution.ui.DistributionToolProvider(it)
     }
-    val crewList = viewModels.crewList?.let {
-        CrewListToolProvider(it, onOpenWidget = { openWidget(ZillitWidget.Crew) })
+    val crewList = viewModels.crewList?.let { vm ->
+        (graph as? AppGraph.Ready)?.crewListProvider(vm, viewModels, onOpenWidget = { openWidget(ZillitWidget.Crew) })
+            ?: CrewListToolProvider(vm, onOpenWidget = { openWidget(ZillitWidget.Crew) })
     }
     val assetRegister = viewModels.assetRegister?.let {
         com.zillit.desktop.feature.assetreport.ui.AssetToolProvider(it)

@@ -1,437 +1,393 @@
-@file:Suppress("TooManyFunctions") // One handler per user act.
-
 package com.zillit.desktop.feature.maps.ui
 
-import com.zillit.desktop.core.localization.localised
-import com.zillit.desktop.core.common.ZillitResult
+import androidx.lifecycle.viewModelScope
 import com.zillit.desktop.core.mvvm.ZillitViewModel
-import com.zillit.desktop.feature.maps.data.MapRefresh
-import com.zillit.desktop.feature.maps.domain.Geo
-import com.zillit.desktop.feature.maps.domain.LocationDraft
+import com.zillit.desktop.core.permissions.RightsRequestBus
+import com.zillit.desktop.feature.maps.data.MapCanvasClient
+import com.zillit.desktop.feature.maps.domain.BoundaryChoice
+import com.zillit.desktop.feature.maps.domain.CanvasTheme
 import com.zillit.desktop.feature.maps.domain.MapCanvasEvent
 import com.zillit.desktop.feature.maps.domain.MapCanvasHost
-import com.zillit.desktop.feature.maps.domain.MapPinMarker
+import com.zillit.desktop.feature.maps.domain.MapHost
+import com.zillit.desktop.feature.maps.domain.MapList
 import com.zillit.desktop.feature.maps.domain.MapRepository
+import com.zillit.desktop.feature.maps.domain.MapSyncEvent
 import com.zillit.desktop.feature.maps.domain.MapViewer
-import com.zillit.desktop.feature.maps.domain.ZoneDraft
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.conflate
+import com.zillit.desktop.feature.maps.domain.MarkerActionKind
+import com.zillit.desktop.feature.maps.domain.SceneGuide
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 /**
- * The map tool: cities, typed pins, studio zones — drawn on the host's map
- * canvas when one is provided, and always editable as a typed list.
+ * The map tool — the web's `/film-tools/map` (`components/map-module`):
+ * cities, typed pins and studio zones on a live Google map, with the panels,
+ * forms and boundary rules around it.
+ *
+ * This class wires; the work is in one controller per area of the tool
+ * (`CityController`, `LocationController`, `ZoneController`,
+ * `TypeController`, `PinController`, `DirectionsController`), which share
+ * the state through a [MapStore].
  */
 class MapViewModel(
     private val repository: MapRepository,
     private val resolveViewer: () -> MapViewer,
     /** The map surface, or null on hosts without one (tests, no browser). */
-    private val canvas: MapCanvasHost? = null,
+    canvas: MapCanvasHost? = null,
+    private val host: MapHost = MapHost(),
+    private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<MapUiState, MapEvent, MapEffect>(MapUiState()) {
 
-    fun start() {
-        setState { copy(viewer = resolveViewer()) }
-        refresh()
-        listenOnce()
-        listenCanvasOnce()
+    private val canvasClient = MapCanvasClient(canvas, viewModelScope)
+
+    private val store: MapStore = object : MapStore {
+        override val state: MapUiState get() = currentState
+        override val repository: MapRepository get() = this@MapViewModel.repository
+        override val canvas: MapCanvasClient get() = canvasClient
+        override val host: MapHost get() = this@MapViewModel.host
+        override val rights: RightsRequestBus? get() = this@MapViewModel.rights
+        override val hooks: MapHooks get() = this@MapViewModel.hooks
+
+        override fun update(reducer: MapUiState.() -> MapUiState) = setState(reducer)
+        override fun effect(effect: MapEffect) = sendEffect(effect)
+        override fun spawn(block: suspend CoroutineScope.() -> Unit): Job = launch(block)
     }
 
-    /**
-     * Re-lists the pins when the socket says another client added, edited,
-     * or removed one — the web's `map_location_*` handlers splice in place;
-     * this client's edit path already re-lists, so the sync does too.
-     * Guarded so a second start (the window reopening) does not stack
-     * collectors; `conflate()` folds a burst into one re-list.
-     */
-    private fun listenOnce() {
-        if (listening) return
-        listening = true
-        launch {
-            repository.refreshes.conflate().collect { kind ->
-                // A city event moves the strip the pins are filtered by, so
-                // that one re-reads everything; a pin event re-lists pins.
-                if (kind == MapRefresh.Cities) refresh() else loadPins()
-            }
+    private val cities = CityController(store)
+    private val locations = LocationController(store)
+    private val zones = ZoneController(store)
+    private val types = TypeController(store)
+    private val pins = PinController(store, cities, locations)
+    private val directions = DirectionsController(store)
+
+    private val hooks = object : MapHooks {
+        override fun reloadCities() = cities.load()
+        override fun reloadLocations() {
+            currentState.selectedCityId?.let(locations::load)
+        }
+        override fun reloadZones() {
+            currentState.selectedCityId?.let(zones::load)
+        }
+        override fun selectCity(cityId: String) = this@MapViewModel.selectCity(cityId)
+        override fun closeAllPanels() = setState {
+            copy(panels = emptyList(), locationForm = null, zoneForm = null, listView = null)
         }
     }
 
     private var listening = false
 
-    /**
-     * The canvas's clicks, folded back into the same acts the list performs:
-     * a marker opens that pin's editor (the web opens its info card,
-     * `GoogleMapComponent.jsx:1049`), an empty-map click proposes a new pin
-     * at that point (`GoogleMapComponent.jsx:532`), and a failure becomes a
-     * readable error instead of a silently grey map.
-     */
-    private fun listenCanvasOnce() {
-        val host = canvas ?: return
-        if (canvasListening) return
-        canvasListening = true
+    init {
+        cities.pendingPinReady = { pin -> locations.openNew(FormOrigin.Map, point = pin.point, name = pin.name) }
+        types.createdForForm = { name -> locations.pickType(name) }
+    }
+
+    /** Called each time the tool's window composes; the web refetches on every mount. */
+    fun start() {
+        setState { copy(viewer = resolveViewer()) }
+        canvasClient.start()
+        listenOnce()
+        cities.load()
+        types.reload()
+        currentState.selectedCityId?.let { cityId ->
+            locations.load(cityId)
+            zones.load(cityId)
+        }
+    }
+
+    /** The app's colours, for the cards the map page draws itself. */
+    fun useTheme(theme: CanvasTheme) = canvasClient.theme(theme)
+
+    private fun listenOnce() {
+        if (listening) return
+        listening = true
         launch {
-            host.events.collect { event ->
-                when (event) {
-                    MapCanvasEvent.Ready -> {
-                        pushPins()
-                        centerOnCity()
-                    }
-                    is MapCanvasEvent.MarkerClicked -> openPin(event.id)
-                    is MapCanvasEvent.MapClicked -> proposePin(event.lat, event.lng)
-                    is MapCanvasEvent.Failed -> setState { copy(canvasError = event.message) }
-                }
+            state.map { it.toScene() }.distinctUntilChanged().collect { canvasClient.render(it) }
+        }
+        launch { canvasClient.events.collect(::onCanvas) }
+        launch { repository.sync.collect(::onSync) }
+        rights?.let { bus -> launch { bus.showing.collect { open -> setState { copy(frameDialogOpen = open) } } } }
+        launch {
+            host.badges.cityUnread.collect { unread ->
+                setState { copy(cityUnread = unread) }
+                // ZL-19984: a badge for the city already on screen is read at once.
+                currentState.selectedCityId?.takeIf { (unread[it] ?: 0) > 0 }?.let(host.badges::markCityRead)
             }
         }
     }
 
-    private var canvasListening = false
-
-    @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
+    @Suppress("CyclomaticComplexMethod") // Event fan-out: one line per area.
     override fun onEvent(event: MapEvent) {
         when (event) {
-            MapEvent.Refresh -> refresh()
-            is MapEvent.SelectCity -> {
-                setState { copy(selectedCityId = event.cityId) }
-                loadPins()
-                centerOnCity()
+            is MapEvent.Toolbar -> onToolbar(event)
+            is MapEvent.Bars -> onBars(event)
+            is MapEvent.Directions -> directions.onEvent(event)
+            is MapEvent.Cities -> cities.onEvent(event)
+            is MapEvent.LocationForm -> when (event) {
+                MapEvent.LocationForm.NewType -> types.openDialog(currentState.locationForm?.typeSearch.orEmpty())
+                else -> locations.onFormEvent(event)
             }
-            is MapEvent.FilterType -> {
-                setState { copy(typeFilter = event.type) }
-                pushPins()
+            is MapEvent.Locations -> when (event) {
+                is MapEvent.Locations.Share -> directions.shareLocation(currentState.location(event.locationId))
+                is MapEvent.Locations.Directions -> currentState.location(event.locationId)?.let(directions::startTo)
+                else -> locations.onListEvent(event)
             }
-            is MapEvent.NewPin -> setState {
-                copy(
-                    pinEditor = PinEditor(
-                        isZone = event.isZone,
-                        cityId = selectedCityId ?: cities.firstOrNull()?.id.orEmpty(),
-                        type = types.firstOrNull()?.name.orEmpty(),
-                        latText = selectedCity?.lat?.toString().orEmpty(),
-                        lngText = selectedCity?.lng?.toString().orEmpty(),
-                        name = if (event.isZone) "${selectedCity?.name.orEmpty()} Zone".trim() else "",
-                    ),
-                )
-            }
-            is MapEvent.EditPin -> openPin(event.id)
-            is MapEvent.PinChanged -> setState {
-                copy(
-                    pinEditor = pinEditor?.copy(
-                        cityId = event.cityId ?: pinEditor.cityId,
-                        name = event.name ?: pinEditor.name,
-                        type = event.type ?: pinEditor.type,
-                        subTypes = event.toggleSubType?.let { sub ->
-                            if (sub in pinEditor.subTypes) pinEditor.subTypes - sub else pinEditor.subTypes + sub
-                        } ?: pinEditor.subTypes,
-                        description = event.description ?: pinEditor.description,
-                        address = event.address ?: pinEditor.address,
-                        sceneNumber = event.sceneNumber ?: pinEditor.sceneNumber,
-                        latText = event.latText ?: pinEditor.latText,
-                        lngText = event.lngText ?: pinEditor.lngText,
-                        radiusText = event.radiusText ?: pinEditor.radiusText,
-                    ),
-                )
-            }
-            MapEvent.SavePin -> savePin()
-            MapEvent.ClosePin -> setState { copy(pinEditor = null) }
-            is MapEvent.DeletePin -> run({ repository.delete(event.id) }, "Removed")
-            is MapEvent.OpenInMaps -> state.value.pins.firstOrNull { it.id == event.id }?.mapsUrl
-                ?.let { sendEffect(MapEffect.OpenUrl(it)) }
-                ?: sendEffect(MapEffect.Notice("This location has no coordinates"))
-            MapEvent.NewCity -> setState { copy(cityEditor = CityEditor()) }
-            is MapEvent.CityChanged -> setState {
-                copy(
-                    cityEditor = cityEditor?.copy(
-                        name = event.name ?: cityEditor.name,
-                        description = event.description ?: cityEditor.description,
-                        latText = event.latText ?: cityEditor.latText,
-                        lngText = event.lngText ?: cityEditor.lngText,
-                        radiusText = event.radiusText ?: cityEditor.radiusText,
-                    ),
-                )
-            }
-            MapEvent.SaveCity -> saveCity()
-            MapEvent.CloseCity -> setState { copy(cityEditor = null) }
-            is MapEvent.DeleteCity -> run({ repository.deleteCity(event.id) }, "City removed")
-            is MapEvent.MoveCity -> moveCity(event.cityId, event.up)
-            MapEvent.DismissError -> setState { copy(error = null) }
+            is MapEvent.Zones -> zones.onEvent(event)
+            is MapEvent.Types -> types.onEvent(event)
+            is MapEvent.Dialogs -> onDialog(event)
         }
     }
 
-    private fun refresh() {
-        setState { copy(loading = true) }
-        launch {
-            coroutineScope {
-                val cities = async { repository.cities() }
-                val types = async { repository.types() }
-                val cityList = cities.await().orError()
-                val typeList = types.await().orError()
-                setState {
-                    copy(
-                        cities = cityList ?: this.cities,
-                        types = typeList ?: this.types,
-                        selectedCityId = selectedCityId ?: cityList?.firstOrNull()?.id,
-                    )
+    // Selection ------------------------------------------------------------------
+
+    /**
+     * A city chosen — by hand, by the ladder, or after creating one. Mirrors the
+     * web's "reset all state when city changes": every mode and panel closes,
+     * the city's pins and zones are fetched, its badges read, and the camera
+     * goes to it.
+     */
+    private fun selectCity(cityId: String) {
+        val city = currentState.cities.firstOrNull { it.id == cityId } ?: return
+        if (currentState.selectedCityId != cityId) {
+            setState {
+                copy(
+                    selectedCityId = cityId,
+                    activeZoneId = null,
+                    search = null,
+                    filterOpen = false,
+                    typeFilters = emptySet(),
+                    pinMode = false,
+                    pendingMove = null,
+                    directions = null,
+                    panels = emptyList(),
+                    locationForm = null,
+                    zoneForm = null,
+                    zoneFilter = "",
+                    locations = emptyList(),
+                    zones = emptyList(),
+                    cityBounds = null,
+                )
+            }
+            canvasClient.clearPreview()
+            canvasClient.clearRoute()
+            locations.load(cityId)
+            zones.load(cityId)
+            val centre = city.panTarget
+            if (centre != null) {
+                launch {
+                    val bounds = canvasClient.cityBounds(centre)
+                    setState { if (selectedCityId == cityId) copy(cityBounds = bounds) else this }
                 }
             }
-            loadPins()
         }
+        launch { host.prefs.setLastVisitedCityId(cityId) }
+        host.badges.markCityRead(cityId)
+        city.panTarget?.let { canvasClient.panTo(it, CITY_ZOOM) }
     }
 
-    private fun loadPins() {
-        setState { copy(loading = true) }
-        launch {
-            val pins = repository.locations(state.value.selectedCityId).orError()
-            setState { copy(loading = false, pins = pins ?: this.pins) }
-            pushPins()
-        }
-    }
+    // Toolbar and bars -------------------------------------------------------------
 
-    /**
-     * The drawable pins, pushed whole — the canvas clears and redraws, so a
-     * removed pin disappears and a burst of refreshes converges. Zones ride
-     * along as circles; the type filter applies exactly as it does to the
-     * list, so the two views never disagree.
-     */
-    private fun pushPins() {
-        val host = canvas ?: return
-        val current = state.value
-        val markers = (current.zones + current.locations).mapNotNull { pin ->
-            val lat = pin.lat ?: return@mapNotNull null
-            val lng = pin.lng ?: return@mapNotNull null
-            MapPinMarker(
-                id = pin.id,
-                name = pin.name,
-                label = pin.type,
-                lat = lat,
-                lng = lng,
-                isZone = pin.isStudioZone,
-                radiusMiles = pin.radiusMiles,
+    @Suppress("CyclomaticComplexMethod") // One line per toolbar control.
+    private fun onToolbar(event: MapEvent.Toolbar) {
+        when (event) {
+            MapEvent.Toolbar.Back -> sendEffect(MapEffect.Leave)
+            MapEvent.Toolbar.FitAll -> fitAll()
+            MapEvent.Toolbar.ToggleSearch -> setState {
+                if (search != null) copy(search = null) else copy(search = SearchState(), filterOpen = false)
+            }
+            MapEvent.Toolbar.ToggleFilter -> setState {
+                if (filterOpen) copy(filterOpen = false) else copy(filterOpen = true, search = null)
+            }
+            MapEvent.Toolbar.TogglePinMode -> pins.togglePinMode()
+            MapEvent.Toolbar.ToggleListView -> togglePanelLike(
+                isOpen = currentState.listView != null,
+                open = { setState { copy(listView = ListViewState()) } },
+                close = { setState { copy(listView = null, panels = emptyList(), locationForm = null) } },
             )
+            MapEvent.Toolbar.ToggleZoneList -> togglePanelLike(
+                isOpen = currentState.topPanel == MapPanel.ZoneList,
+                open = {
+                    store.pushPanel(MapPanel.ZoneList)
+                    hooks.reloadZones()
+                },
+                close = { store.popPanel { it == MapPanel.ZoneList } },
+            )
+            MapEvent.Toolbar.ToggleTypes -> togglePanelLike(
+                isOpen = currentState.topPanel == MapPanel.Types,
+                open = { store.pushPanel(MapPanel.Types) },
+                close = { store.popPanel { it == MapPanel.Types } },
+            )
+            // Both flags clear: a guide brought back still collapsed would
+            // look like the button did nothing.
+            MapEvent.Toolbar.ShowGuide -> setState { copy(guide = SceneGuide(visible = true, collapsed = false)) }
         }
-        host.setPins(markers)
     }
 
-    /** Pans to the selected city — the web's default centre is the city's. */
-    private fun centerOnCity() {
-        val host = canvas ?: return
-        val city = state.value.selectedCity ?: return
-        val lat = city.lat ?: return
-        val lng = city.lng ?: return
-        host.center(lat, lng, CITY_ZOOM)
+    /** The toolbar's panels are mutually exclusive: opening one closes the rest. */
+    private inline fun togglePanelLike(isOpen: Boolean, open: () -> Unit, close: () -> Unit) {
+        if (isOpen) {
+            close()
+        } else {
+            hooks.closeAllPanels()
+            open()
+        }
+    }
+
+    /** "Fit All" — every pin the filter shows; one pin settles at street zoom. */
+    private fun fitAll() {
+        val points = currentState.filteredLocations.mapNotNull { it.point }
+        if (points.isEmpty()) {
+            store.notice("No locations to zoom to", NoticeTone.Info)
+            return
+        }
+        canvasClient.fitPoints(points)
+    }
+
+    private fun onBars(event: MapEvent.Bars) {
+        when (event) {
+            is MapEvent.Bars.SearchQuery -> setState { copy(search = SearchState(event.query)) }
+            is MapEvent.Bars.SearchPick -> pickSearchResult(event.locationId)
+            is MapEvent.Bars.ToggleTypeFilter -> setState {
+                copy(typeFilters = if (event.type in typeFilters) typeFilters - event.type else typeFilters + event.type)
+            }
+            MapEvent.Bars.ClearTypeFilters -> setState { copy(typeFilters = emptySet()) }
+            MapEvent.Bars.ExitPinMode -> pins.exitPinMode()
+            MapEvent.Bars.DismissCanvasError -> setState { copy(canvasError = null) }
+        }
     }
 
     /**
-     * An empty-map click proposes a pin there: the editor opens prefilled
-     * with the clicked coordinates, as the web opens its location form at
-     * the click (`GoogleMapComponent.jsx:532-565`). Ignored while an editor
-     * is already open (`:536` — click disabled when the form is up) and for
-     * viewers who cannot post.
+     * A search result: a type filter that would hide it is cleared so the pin
+     * is there to see, then the camera goes to it and its card opens.
      */
-    private fun proposePin(lat: Double, lng: Double) {
-        val current = state.value
-        if (!current.viewer.mayEdit) return
-        if (current.pinEditor != null || current.cityEditor != null) return
+    private fun pickSearchResult(locationId: String) {
+        val location = currentState.location(locationId) ?: return
+        if (location.point == null) return
         setState {
             copy(
-                pinEditor = PinEditor(
-                    cityId = selectedCityId ?: cities.firstOrNull()?.id.orEmpty(),
-                    type = types.firstOrNull()?.name.orEmpty(),
-                    latText = lat.toString(),
-                    lngText = lng.toString(),
-                ),
+                search = null,
+                typeFilters = if (typeFilters.isNotEmpty() && location.type !in typeFilters) emptySet() else typeFilters,
             )
         }
+        canvasClient.focusMarker(locationId, SEARCH_ZOOM)
     }
 
-    private fun <T> ZillitResult<T>.orError(): T? = when (this) {
-        is ZillitResult.Success -> data
-        is ZillitResult.Failure -> {
-            val message = this.error.localised()
-            setState { copy(error = message) }
-            null
+    // Dialogs ------------------------------------------------------------------------
+
+    private fun onDialog(event: MapEvent.Dialogs) {
+        when (event) {
+            is MapEvent.Dialogs.Boundary -> pins.answer(event.choice)
+            MapEvent.Dialogs.Confirm -> confirm()
+            MapEvent.Dialogs.Dismiss -> when (val open = currentState.dialog) {
+                is MapDialog.Boundary -> pins.answer(BoundaryChoice.Cancel)
+                is MapDialog.AddCity -> cities.onEvent(MapEvent.Cities.AddCancel)
+                // A confirmed action runs to its end; the dialog closes with it.
+                is MapDialog.Confirm -> if (!open.busy) closeDialog()
+                else -> closeDialog()
+            }
+            else -> directions.onShareEvent(event)
         }
     }
 
-    /**
-     * Moves one city and sends the whole arrangement.
-     *
-     * The new order shows immediately and is corrected by the reload the
-     * service's answer triggers: a list that lurches back on every click
-     * would be unusable for arranging anything.
-     */
-    private fun moveCity(cityId: String, up: Boolean) {
-        val current = currentState.cities
-        val index = current.indexOfFirst { it.id == cityId }
-        val target = if (up) index - 1 else index + 1
-        if (index < 0 || target !in current.indices) return
+    private fun closeDialog() = setState { copy(dialog = null) }
 
-        val reordered = current.toMutableList().apply { add(target, removeAt(index)) }
-        setState { copy(cities = reordered) }
-        run({ repository.reorderCities(reordered.map { it.id }) }, "Order saved")
+    private fun confirm() {
+        val dialog = currentState.dialog as? MapDialog.Confirm ?: return
+        if (dialog.busy) return
+        setState { copy(dialog = dialog.copy(busy = true)) }
+        val done = { setState { if (this.dialog is MapDialog.Confirm) copy(dialog = null) else this } }
+        when (val action = dialog.action) {
+            is ConfirmAction.DeleteCity -> cities.delete(action.id, done)
+            is ConfirmAction.DeleteZone -> zones.delete(action.id, done)
+            is ConfirmAction.DeleteLocation -> locations.delete(action.id, done)
+            is ConfirmAction.DeleteType -> types.delete(action.id, done)
+            is ConfirmAction.UpdateType -> types.update(action.id, action.form, done)
+        }
     }
 
-    private fun run(block: suspend () -> ZillitResult<Unit>, notice: String) {
-        setState { copy(busy = true) }
-        launch {
-            when (val result = block()) {
-                is ZillitResult.Success -> {
-                    setState { copy(busy = false) }
-                    sendEffect(MapEffect.Notice(notice))
-                    loadPins()
-                }
-                is ZillitResult.Failure -> setState { copy(busy = false, error = result.error.localised()) }
+    // The map page ---------------------------------------------------------------------
+
+    @Suppress("CyclomaticComplexMethod") // One line per page event.
+    private fun onCanvas(event: MapCanvasEvent) {
+        when (event) {
+            MapCanvasEvent.Ready -> setState { copy(canvasError = null) }
+            is MapCanvasEvent.Failed -> setState { copy(canvasError = event.message) }
+            is MapCanvasEvent.MarkerAction -> onMarkerAction(event)
+            is MapCanvasEvent.ZoneEdit -> store.withPost {
+                hooks.closeAllPanels()
+                zones.openForm(event.id)
+            }
+            is MapCanvasEvent.PreviewAdd -> pins.addAt(event.point, event.name, fromPlace = false)
+            is MapCanvasEvent.PlacePin -> pins.addAt(event.point, event.name, fromPlace = true)
+            is MapCanvasEvent.PlaceDirections -> directions.startTo(event.point, event.name, event.address)
+            is MapCanvasEvent.MarkerDragged -> pins.moved(event.id, event.point)
+            is MapCanvasEvent.DraftZoneMoved -> zones.draftMoved(event.point)
+            is MapCanvasEvent.DraftPinMoved -> locations.draftMoved(event.point)
+            MapCanvasEvent.CitiesOpen -> cities.onEvent(MapEvent.Cities.Open)
+            is MapCanvasEvent.Guide -> setState {
+                copy(guide = SceneGuide(visible = !event.dismissed, collapsed = event.collapsed))
             }
         }
     }
 
-    private fun openPin(id: String) {
-        val pin = state.value.pins.firstOrNull { it.id == id } ?: return
-        // Selecting a pin — from the list or its marker — recentres the map
-        // on it, as the web pans on a coordinate change
-        // (`GoogleMapComponent.jsx:587-594`, zoom 15).
-        pin.lat?.let { lat -> pin.lng?.let { lng -> canvas?.center(lat, lng, PIN_ZOOM) } }
-        setState {
-            copy(
-                pinEditor = PinEditor(
-                    locationId = pin.id,
-                    isZone = pin.isStudioZone,
-                    cityId = pin.cityId.ifBlank { selectedCityId.orEmpty() },
-                    name = pin.name,
-                    type = pin.type,
-                    subTypes = pin.subTypes.toSet(),
-                    description = pin.description,
-                    address = pin.address,
-                    sceneNumber = pin.sceneNumber,
-                    latText = pin.lat?.toString().orEmpty(),
-                    lngText = pin.lng?.toString().orEmpty(),
-                    radiusText = pin.radiusMiles.takeIf { it > 0 }?.toString() ?: "30",
-                ),
-            )
+    private fun onMarkerAction(event: MapCanvasEvent.MarkerAction) {
+        val location = currentState.location(event.id) ?: return
+        when (event.action) {
+            MarkerActionKind.Edit -> store.withPost {
+                hooks.closeAllPanels()
+                locations.openEdit(location.id)
+            }
+            MarkerActionKind.Share -> directions.shareLocation(location)
+            // "View" opens the full details — beside the list of every
+            // location, which is where the web's View takes you.
+            MarkerActionKind.View -> {
+                hooks.closeAllPanels()
+                setState { copy(listView = ListViewState()) }
+                store.pushPanel(MapPanel.LocationDetail(location.id))
+            }
+            MarkerActionKind.Directions -> directions.startTo(location)
         }
     }
 
-    private fun savePin() {
-        val editor = state.value.pinEditor ?: return
-        val point = editor.validPoint() ?: run {
-            setState { copy(error = "A name, a city, and valid coordinates are needed") }
-            return
-        }
-        outsideCityZone(editor, point)?.let { message ->
-            setState { copy(error = message) }
-            return
-        }
-        if (!editor.isZone && editor.address.isBlank()) {
-            setState { copy(error = "An address is required") }
-            return
-        }
-        setState { copy(pinEditor = pinEditor?.copy(saving = true)) }
-        launch {
-            when (val result = writePin(editor, point)) {
-                is ZillitResult.Success -> {
-                    setState { copy(pinEditor = null) }
-                    sendEffect(MapEffect.Notice(if (editor.isZone) "Zone saved" else "Location saved"))
-                    loadPins()
-                }
-                is ZillitResult.Failure -> setState {
-                    copy(pinEditor = pinEditor?.copy(saving = false), error = result.error.localised())
+    // Other clients ----------------------------------------------------------------------
+
+    private fun onSync(event: MapSyncEvent) {
+        when (event) {
+            MapSyncEvent.CitiesReordered -> cities.load()
+            is MapSyncEvent.Refetch -> when (event.what) {
+                MapList.Cities -> cities.load()
+                MapList.Types -> types.reload()
+                MapList.Locations -> {
+                    hooks.reloadLocations()
+                    hooks.reloadZones()
                 }
             }
-        }
-    }
-
-    /** Parsed, range-checked coordinates — or null when the form is not saveable. */
-    private fun PinEditor.validPoint(): Pair<Double, Double>? {
-        val lat = latText.trim().toDoubleOrNull() ?: return null
-        val lng = lngText.trim().toDoubleOrNull() ?: return null
-        val inRange = lat in -MAX_LAT..MAX_LAT && lng in -MAX_LNG..MAX_LNG
-        return if (name.isNotBlank() && cityId.isNotBlank() && inRange) lat to lng else null
-    }
-
-    /**
-     * The web's containment check: a location must sit inside its city's
-     * zone when the city has one. Zones themselves are exempt.
-     */
-    private fun outsideCityZone(editor: PinEditor, point: Pair<Double, Double>): String? {
-        val city = state.value.cities.firstOrNull { it.id == editor.cityId }
-        val centreLat = city?.lat
-        val centreLng = city?.lng
-        val hasZone = city != null && city.radiusMiles > 0
-        val hasCentre = centreLat != null && centreLng != null
-        val applies = !editor.isZone && hasZone && hasCentre
-        if (!applies) return null
-        checkNotNull(city)
-        val inside = Geo.within(
-            point.first, point.second,
-            checkNotNull(centreLat), checkNotNull(centreLng),
-            city.radiusMiles,
-        )
-        return if (inside) {
-            null
-        } else {
-            "Those coordinates fall outside ${city.name}'s ${city.radiusMiles.toInt()}-mile zone"
-        }
-    }
-
-    private suspend fun writePin(editor: PinEditor, point: Pair<Double, Double>): ZillitResult<Unit> {
-        val (lat, lng) = point
-        return if (editor.isZone) {
-            val radius = editor.radiusText.trim().toDoubleOrNull() ?: Geo.ZONE_RADII.first()
-            val draft = ZoneDraft(editor.cityId, editor.name, lat, lng, radius)
-            if (editor.locationId == null) {
-                repository.createZone(draft)
-            } else {
-                repository.updateZone(editor.locationId, draft)
-            }
-        } else {
-            val draft = LocationDraft(
-                cityId = editor.cityId,
-                name = editor.name,
-                type = editor.type,
-                subTypes = editor.subTypes.toList(),
-                description = editor.description,
-                address = editor.address,
-                sceneNumber = editor.sceneNumber,
-                lat = lat,
-                lng = lng,
-            )
-            if (editor.locationId == null) {
-                repository.createLocation(draft)
-            } else {
-                repository.updateLocation(editor.locationId, draft)
-            }
-        }
-    }
-
-    private fun saveCity() {
-        val editor = state.value.cityEditor ?: return
-        val lat = editor.latText.trim().toDoubleOrNull()
-        val lng = editor.lngText.trim().toDoubleOrNull()
-        if (editor.name.isBlank() || lat == null || lng == null) {
-            setState { copy(error = "A city needs a name and coordinates") }
-            return
-        }
-        setState { copy(cityEditor = cityEditor?.copy(saving = true)) }
-        launch {
-            val radius = editor.radiusText.trim().toDoubleOrNull() ?: 0.0
-            when (val result = repository.createCity(editor.name.trim(), editor.description, lat, lng, radius)) {
-                is ZillitResult.Success -> {
-                    setState { copy(cityEditor = null) }
-                    sendEffect(MapEffect.Notice("City added"))
-                    refresh()
-                }
-                is ZillitResult.Failure -> setState {
-                    copy(cityEditor = cityEditor?.copy(saving = false), error = result.error.localised())
+            is MapSyncEvent.CityDeleted -> {
+                val wasSelected = currentState.selectedCityId == event.id
+                setState { applySync(event) }
+                // The city on screen is gone: the ladder picks another.
+                if (wasSelected) {
+                    setState { copy(selectedCityId = null, locations = emptyList(), zones = emptyList(), activeZoneId = null) }
+                    cities.load()
                 }
             }
+            is MapSyncEvent.LocationUpserted, is MapSyncEvent.LocationDeleted -> {
+                val before = currentState.activeZone
+                setState { applySync(event) }
+                launch {
+                    zones.reconcileActive()
+                    zones.refit(before, currentState.activeZone)
+                }
+            }
+            else -> setState { applySync(event) }
         }
     }
 
     private companion object {
-        const val MAX_LAT = 90.0
-        const val MAX_LNG = 180.0
+        /** The web's zoom on selecting a city. */
+        const val CITY_ZOOM = 13
 
-        /** The web's zoom on selecting a point (`GoogleMapComponent.jsx:589`). */
-        const val PIN_ZOOM = 15
-
-        /** Wide enough to see a city's pins together; the web starts at the city too. */
-        const val CITY_ZOOM = 11
+        /** The web's zoom on a search result. */
+        const val SEARCH_ZOOM = 16
     }
 }

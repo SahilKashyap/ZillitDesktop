@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.crewlist.ui
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -7,9 +9,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
+import com.zillit.desktop.core.designsystem.component.ZillitToast
+import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
@@ -20,12 +24,18 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 class CrewListToolProvider(
     private val viewModel: CrewListViewModel,
     /**
-     * The Crew List widget's shape: contact details under the name instead of
-     * in their own columns. Both copies share this one [CrewListViewModel].
+     * The Crew List widget's shape: the roster, its search and the PDF only.
+     * Both copies share one [CrewListViewModel] when the widget shows the open
+     * production.
      */
     private val compact: Boolean = false,
     /** Opens the Crew List widget — the tool's own way to it, as Drive has. */
     private val onOpenWidget: (() -> Unit)? = null,
+    /**
+     * The app's parts the screen borrows, built per window: the call, chat and
+     * mail actions need that window's navigator.
+     */
+    private val slots: (WindowNavigator) -> CrewListSlots = { CrewListSlots() },
 ) : ToolProvider {
 
     override val path: String = CREW_LIST_PATH
@@ -37,28 +47,43 @@ class CrewListToolProvider(
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         val state by viewModel.state.collectAsState()
-        var notice by remember { mutableStateOf<String?>(null) }
+        val prompting by viewModel.framePrompting.collectAsState()
+        var toast by remember { mutableStateOf<CrewListEffect.Toast?>(null) }
+        val windowSlots = remember(navigator) { slots(navigator) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {
-                    is CrewListEffect.Notice -> notice = effect.text
+                    is CrewListEffect.Toast -> toast = effect
                 }
             }
         }
 
-        CrewListScreen(
-            state = state,
-            visibleUnits = viewModel::visibleUnits,
-            onEvent = viewModel::onEvent,
-            compact = compact,
-            onOpenWidget = onOpenWidget,
-        )
-        ZillitErrorToast(message = notice ?: state.error, onDismiss = {
-            notice = null
-            viewModel.onEvent(CrewListEvent.DismissError)
-        })
+        Box(Modifier.fillMaxSize()) {
+            CrewListScreen(
+                state = state,
+                visibleUnits = viewModel::visibleUnits,
+                onEvent = viewModel::onEvent,
+                compact = compact,
+                onOpenWidget = onOpenWidget,
+                slots = if (compact) CrewListSlots(faces = windowSlots.faces) else windowSlots,
+                // The toast sits at the foot of the tool, where the canvas reaches.
+                canvasCovered = prompting || toast != null || state.error != null,
+            )
+            val shown = toast
+            ZillitToast(
+                message = shown?.text ?: state.error,
+                tone = if (shown == null || shown.tone == CrewListEffect.Tone.Error) {
+                    ZillitToastTone.Danger
+                } else {
+                    ZillitToastTone.Success
+                },
+                onDismiss = {
+                    if (shown != null) toast = null else viewModel.onEvent(CrewListEvent.Sheet.DismissError)
+                },
+            )
+        }
     }
 
     companion object {

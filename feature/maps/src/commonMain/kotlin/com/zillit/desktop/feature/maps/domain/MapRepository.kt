@@ -1,54 +1,76 @@
 package com.zillit.desktop.feature.maps.domain
 
-import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.feature.maps.data.MapRefresh
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
-/** The map service (`mapapi`), routes under `/api/v2`. */
+/**
+ * The map service — `/api/v2/city`, `/api/v2/location-type`, `/api/v2/map`.
+ *
+ * Every write answers with the server's message (a key, translated where it is
+ * shown), because the web's success toasts say what the server said and only
+ * fall back to their own wording when it said nothing.
+ */
+@Suppress("TooManyFunctions") // One suspend fun per server route.
 interface MapRepository {
 
     /**
-     * A pulse per socket frame saying another client changed a location or
-     * zone — the web's `map_location_added/updated/deleted` handlers
-     * (`MapPage.jsx:73,100,126`). The ViewModel answers with a re-list.
-     * Empty by default: tests, and hosts without a socket.
+     * What other clients changed, as the web's `useMapSocket` hears it —
+     * already filtered to this production and away from this device. Empty
+     * by default: tests, and hosts without a socket.
      */
-    val refreshes: Flow<MapRefresh> get() = emptyFlow()
+    val sync: Flow<MapSyncEvent> get() = emptyFlow()
 
     suspend fun cities(): ZillitResult<List<MapCity>>
-    suspend fun createCity(
-        name: String,
-        description: String,
-        lat: Double,
-        lng: Double,
-        radiusMiles: Double,
-    ): ZillitResult<Unit>
-    suspend fun deleteCity(id: String): ZillitResult<Unit>
 
-    /**
-     * Sets the order cities are listed in
-     * (`PUT /v2/city/reorder-cities` with `{newOrder}`).
-     *
-     * The whole list is sent, in the order it should read — the service takes
-     * an arrangement, not a move.
-     */
-    suspend fun reorderCities(cityIds: List<String>): ZillitResult<Unit> =
-        ZillitResult.Failure(ZillitError.Unknown("reordering cities is not wired"))
+    /** Creates a city; the created record rides back when the server sends one. */
+    suspend fun createCity(draft: CityDraft): ZillitResult<CityWrite>
+
+    suspend fun deleteCity(id: String): ZillitResult<String?>
+
+    /** `PUT /city/reorder-cities` with `{newOrder}` — the whole arrangement, not a move. */
+    suspend fun reorderCities(cityIds: List<String>): ZillitResult<String?>
 
     suspend fun types(): ZillitResult<List<LocationType>>
-    suspend fun createType(name: String, icon: String, subTypes: List<String>): ZillitResult<Unit>
-    suspend fun deleteType(id: String): ZillitResult<Unit>
+    suspend fun createType(draft: TypeDraft): ZillitResult<String?>
+    suspend fun updateType(id: String, draft: TypeDraft): ZillitResult<String?>
+    suspend fun deleteType(id: String): ZillitResult<String?>
 
-    /**
-     * Locations AND studio zones for a city, mixed on the wire and split by
-     * `is_studio_zone`. Null city means everything.
-     */
-    suspend fun locations(cityId: String?): ZillitResult<List<MapLocation>>
-    suspend fun createLocation(draft: LocationDraft): ZillitResult<Unit>
-    suspend fun updateLocation(id: String, draft: LocationDraft): ZillitResult<Unit>
-    suspend fun createZone(draft: ZoneDraft): ZillitResult<Unit>
-    suspend fun updateZone(id: String, draft: ZoneDraft): ZillitResult<Unit>
-    suspend fun delete(id: String): ZillitResult<Unit>
+    /** `GET /map?cityId=` — the city's locations (studio zones come separately). */
+    suspend fun locations(cityId: String): ZillitResult<List<MapLocation>>
+
+    /** `GET /map/studio-zones?cityId=` — a city's zones, or every zone with no city. */
+    suspend fun studioZones(cityId: String?): ZillitResult<List<MapLocation>>
+
+    suspend fun createLocation(draft: LocationDraft): ZillitResult<String?>
+    suspend fun updateLocation(id: String, draft: LocationDraft): ZillitResult<String?>
+    suspend fun createZone(draft: ZoneDraft): ZillitResult<String?>
+    suspend fun updateZone(id: String, draft: ZoneDraft): ZillitResult<String?>
+
+    /** Locations and zones share the route. */
+    suspend fun deleteLocation(id: String): ZillitResult<String?>
 }
+
+/** A city write's answer: the server's message and, when it sent one, the city. */
+data class CityWrite(val message: String?, val city: MapCity?)
+
+/** What another client changed. */
+sealed interface MapSyncEvent {
+    data class CityUpserted(val city: MapCity, val isNew: Boolean) : MapSyncEvent
+    data class CityDeleted(val id: String) : MapSyncEvent
+
+    /** `map:city:reordered` carries no list; the web refetches. */
+    data object CitiesReordered : MapSyncEvent
+
+    data class TypeUpserted(val type: LocationType, val isNew: Boolean) : MapSyncEvent
+    data class TypeDeleted(val id: String) : MapSyncEvent
+
+    /** A location or a zone — [location.isStudioZone] says which list it belongs in. */
+    data class LocationUpserted(val location: MapLocation, val isNew: Boolean) : MapSyncEvent
+    data class LocationDeleted(val id: String, val cityId: String, val isStudioZone: Boolean) : MapSyncEvent
+
+    /** A frame that named what changed but carried no record — refetch that list. */
+    data class Refetch(val what: MapList) : MapSyncEvent
+}
+
+enum class MapList { Cities, Types, Locations }

@@ -96,6 +96,16 @@ fun ExternalUsersScreen(
     }
 }
 
+/**
+ * The Add / Edit User form on its own, for another tool that adds a contact
+ * in place — the Crew List's Add External User, which the web mounts from the
+ * same modal. Draws nothing until [ExternalUsersEvent.New] opens a draft.
+ */
+@Composable
+fun ExternalUserFormDialog(state: ExternalUsersUiState, onEvent: (ExternalUsersEvent) -> Unit) {
+    state.editing?.let { editing -> UserFormDialog(editing, state, onEvent) }
+}
+
 @Composable
 private fun Roster(state: ExternalUsersUiState, onEvent: (ExternalUsersEvent) -> Unit) {
     Column(

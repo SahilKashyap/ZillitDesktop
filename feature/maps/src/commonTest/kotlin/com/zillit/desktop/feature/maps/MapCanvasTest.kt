@@ -1,260 +1,127 @@
 package com.zillit.desktop.feature.maps
 
-import com.zillit.desktop.feature.maps.data.MapRefresh
-import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.maps.data.MapCanvasClient
 import com.zillit.desktop.feature.maps.data.MapCanvasWire
-import com.zillit.desktop.feature.maps.domain.LocationDraft
-import com.zillit.desktop.feature.maps.domain.LocationType
+import com.zillit.desktop.feature.maps.domain.GeocodeOutcome
+import com.zillit.desktop.feature.maps.domain.LatLng
 import com.zillit.desktop.feature.maps.domain.MapCanvasEvent
 import com.zillit.desktop.feature.maps.domain.MapCanvasHost
-import com.zillit.desktop.feature.maps.domain.MapCity
-import com.zillit.desktop.feature.maps.domain.MapLocation
-import com.zillit.desktop.feature.maps.domain.MapPinMarker
-import com.zillit.desktop.feature.maps.domain.MapRepository
-import com.zillit.desktop.feature.maps.domain.MapViewer
-import com.zillit.desktop.feature.maps.domain.ZoneDraft
-import com.zillit.desktop.feature.maps.ui.MapEvent
-import com.zillit.desktop.feature.maps.ui.MapViewModel
-import kotlinx.coroutines.Dispatchers
+import com.zillit.desktop.feature.maps.domain.MapScene
+import com.zillit.desktop.feature.maps.domain.MarkerActionKind
+import com.zillit.desktop.feature.maps.domain.PlaceKind
+import com.zillit.desktop.feature.maps.domain.SceneMarker
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/**
- * The canvas seam: the ViewModel pushes drawable pins on every (re)load, and
- * folds the canvas's clicks back into the same acts the list performs — the
- * behaviours the web's map page has (`GoogleMapComponent.jsx:532` map click,
- * `:1049` marker click, `:587-594` recentre on selection).
- */
+/** The page's wire and the client that speaks it. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MapCanvasTest {
 
-    private val dispatcher = StandardTestDispatcher()
-
-    @BeforeTest fun setUp() = Dispatchers.setMain(dispatcher)
-
-    @AfterTest fun tearDown() = Dispatchers.resetMain()
-
-    private class FakeCanvas : MapCanvasHost {
-        override val events = MutableSharedFlow<MapCanvasEvent>()
-        val pinPushes = mutableListOf<List<MapPinMarker>>()
-        val centers = mutableListOf<Triple<Double, Double, Int>>()
-
-        override fun setPins(pins: List<MapPinMarker>) {
-            pinPushes += pins
-        }
-
-        override fun center(lat: Double, lng: Double, zoom: Int) {
-            centers += Triple(lat, lng, zoom)
-        }
-    }
-
-    private class FakeRepository(
-        private val pins: List<MapLocation>,
-        override val refreshes: Flow<MapRefresh> = MutableSharedFlow(),
-    ) : MapRepository {
-        override suspend fun cities() = ZillitResult.Success(
-            listOf(MapCity("c1", "Goa", "", CITY_LAT, CITY_LNG, 0.0, pins.size)),
-        )
-        override suspend fun createCity(
-            name: String, description: String, lat: Double, lng: Double, radiusMiles: Double,
-        ) = ZillitResult.Success(Unit)
-        override suspend fun deleteCity(id: String) = ZillitResult.Success(Unit)
-        override suspend fun types() = ZillitResult.Success(
-            listOf(LocationType("t1", "Hotel", "", emptyList(), true)),
-        )
-        override suspend fun createType(name: String, icon: String, subTypes: List<String>) =
-            ZillitResult.Success(Unit)
-        override suspend fun deleteType(id: String) = ZillitResult.Success(Unit)
-        override suspend fun locations(cityId: String?) = ZillitResult.Success(pins)
-        override suspend fun createLocation(draft: LocationDraft) = ZillitResult.Success(Unit)
-        override suspend fun updateLocation(id: String, draft: LocationDraft) = ZillitResult.Success(Unit)
-        override suspend fun createZone(draft: ZoneDraft) = ZillitResult.Success(Unit)
-        override suspend fun updateZone(id: String, draft: ZoneDraft) = ZillitResult.Success(Unit)
-        override suspend fun delete(id: String) = ZillitResult.Success(Unit)
-    }
-
-    private fun pin(id: String, lat: Double? = PIN_LAT, lng: Double? = PIN_LNG, zone: Boolean = false) =
-        MapLocation(
-            id = id, cityId = "c1", name = "Pin $id", type = "Hotel", subTypes = emptyList(),
-            description = "", address = "Somewhere", sceneNumber = "", lat = lat, lng = lng,
-            isStudioZone = zone, radiusMiles = if (zone) 30.0 else 0.0,
-            centerPointType = "", attachmentNames = emptyList(),
-        )
-
-    private fun model(
-        canvas: FakeCanvas,
-        pins: List<MapLocation>,
-        refreshes: Flow<MapRefresh> = MutableSharedFlow(),
-        viewer: MapViewer = MapViewer(canPost = true, ready = true),
-    ) = MapViewModel(FakeRepository(pins, refreshes), resolveViewer = { viewer }, canvas = canvas)
-
     @Test
-    fun `pins are pushed to the canvas on load and on refresh, coordinate-less ones dropped`() =
-        runTest(dispatcher) {
-            val canvas = FakeCanvas()
-            val refreshes = MutableSharedFlow<MapRefresh>()
-            val model = model(canvas, listOf(pin("p1"), pin("p2", lat = null), pin("z1", zone = true)), refreshes)
-
-            model.start()
-            runCurrent()
-
-            assertTrue(canvas.pinPushes.isNotEmpty(), "load pushes the pins")
-            val drawn = canvas.pinPushes.last()
-            assertEquals(listOf("z1", "p1"), drawn.map { it.id }, "zones first, the coordinate-less pin dropped")
-            assertTrue(drawn.first { it.id == "z1" }.isZone)
-            assertEquals(30.0, drawn.first { it.id == "z1" }.radiusMiles)
-
-            val before = canvas.pinPushes.size
-            refreshes.emit(MapRefresh.Pins)
-            runCurrent()
-            assertTrue(canvas.pinPushes.size > before, "a socket refresh re-pushes the pins")
-        }
-
-    @Test
-    fun `a marker click opens that pin's editor and recentres on it`() = runTest(dispatcher) {
-        val canvas = FakeCanvas()
-        val model = model(canvas, listOf(pin("p1")))
-        model.start()
-        runCurrent()
-
-        canvas.events.emit(MapCanvasEvent.MarkerClicked("p1"))
-        runCurrent()
-
-        assertEquals("p1", model.state.value.pinEditor?.locationId, "the marker's pin is open")
-        assertEquals(Triple(PIN_LAT, PIN_LNG, PIN_ZOOM), canvas.centers.last(), "recentred on the pin")
-    }
-
-    @Test
-    fun `selecting a pin from the list recentres the map the same way`() = runTest(dispatcher) {
-        val canvas = FakeCanvas()
-        val model = model(canvas, listOf(pin("p1")))
-        model.start()
-        runCurrent()
-
-        model.onEvent(MapEvent.EditPin("p1"))
-        runCurrent()
-
-        assertEquals(Triple(PIN_LAT, PIN_LNG, PIN_ZOOM), canvas.centers.last())
-    }
-
-    @Test
-    fun `a map click proposes a prefilled pin, once, and only for posters`() = runTest(dispatcher) {
-        val canvas = FakeCanvas()
-        val model = model(canvas, listOf(pin("p1")))
-        model.start()
-        runCurrent()
-
-        canvas.events.emit(MapCanvasEvent.MapClicked(1.25, 2.5))
-        runCurrent()
-        val editor = model.state.value.pinEditor
-        assertEquals("1.25", editor?.latText)
-        assertEquals("2.5", editor?.lngText)
-        assertNull(editor?.locationId, "a proposal is a new pin")
-        assertEquals("c1", editor?.cityId, "prefilled with the selected city")
-
-        // The web disables map clicks while its form is open (:536).
-        canvas.events.emit(MapCanvasEvent.MapClicked(9.0, 9.0))
-        runCurrent()
-        assertEquals("1.25", model.state.value.pinEditor?.latText, "an open editor is not replaced")
-
-        val viewerOnly = FakeCanvas()
-        val watching = model(viewerOnly, listOf(pin("p1")), viewer = MapViewer(ready = true))
-        watching.start()
-        runCurrent()
-        viewerOnly.events.emit(MapCanvasEvent.MapClicked(1.0, 1.0))
-        runCurrent()
-        assertNull(watching.state.value.pinEditor, "a viewer without posting rights proposes nothing")
-    }
-
-    @Test
-    fun `canvas ready replays the pins and centres on the city, a failure reads as text`() =
-        runTest(dispatcher) {
-            val canvas = FakeCanvas()
-            val model = model(canvas, listOf(pin("p1")))
-            model.start()
-            runCurrent()
-
-            val before = canvas.pinPushes.size
-            canvas.events.emit(MapCanvasEvent.Ready)
-            runCurrent()
-            assertTrue(canvas.pinPushes.size > before, "ready re-pushes what is loaded")
-            assertEquals(Triple(CITY_LAT, CITY_LNG, CITY_ZOOM), canvas.centers.last())
-
-            canvas.events.emit(MapCanvasEvent.Failed("Google rejected the key"))
-            runCurrent()
-            assertEquals("Google rejected the key", model.state.value.canvasError)
-        }
-
-    @Test
-    fun `the wire decodes page events and refuses what it does not know`() {
-        assertIs<MapCanvasEvent.Ready>(MapCanvasWire.parse("""{"type":"map-ready"}"""))
+    fun `page events decode, and junk decodes to nothing`() {
+        assertEquals(MapCanvasEvent.Ready, MapCanvasWire.parseEvent("""{"type":"map-ready"}"""))
         assertEquals(
-            MapCanvasEvent.MarkerClicked("abc"),
-            MapCanvasWire.parse("""{"type":"marker-click","id":"abc"}"""),
+            MapCanvasEvent.MarkerAction(MarkerActionKind.Directions, "l1"),
+            MapCanvasWire.parseEvent("""{"type":"marker-action","action":"directions","id":"l1"}"""),
         )
         assertEquals(
-            MapCanvasEvent.MapClicked(1.5, -2.25),
-            MapCanvasWire.parse("""{"type":"map-click","lat":1.5,"lng":-2.25}"""),
+            MapCanvasEvent.PreviewAdd(LatLng(1.5, -2.25), "Andheri", "Andheri West"),
+            MapCanvasWire.parseEvent("""{"type":"preview-action","action":"add","lat":1.5,"lng":-2.25,"name":"Andheri","address":"Andheri West"}"""),
         )
-        assertIs<MapCanvasEvent.Failed>(MapCanvasWire.parse("""{"type":"auth-failed"}"""))
         assertEquals(
-            MapCanvasEvent.Failed("boom"),
-            MapCanvasWire.parse("""{"type":"error","message":"boom"}"""),
+            MapCanvasEvent.MarkerDragged("l1", LatLng(3.0, 4.0)),
+            MapCanvasWire.parseEvent("""{"type":"marker-dragged","id":"l1","lat":3,"lng":4}"""),
         )
+        assertIs<MapCanvasEvent.Failed>(MapCanvasWire.parseEvent("""{"type":"auth-failed"}"""))
+        assertEquals(MapCanvasEvent.Guide(collapsed = true, dismissed = false), MapCanvasWire.parseEvent("""{"type":"guide","collapsed":true}"""))
+        assertNull(MapCanvasWire.parseEvent("""{"type":"ready"}"""))
+        assertNull(MapCanvasWire.parseEvent("not json"))
+        assertNull(MapCanvasWire.parseEvent("""{"type":"marker-dragged","id":"l1"}"""))
         assertTrue(MapCanvasWire.isPageReady("""{"type":"ready"}"""))
-        assertNull(MapCanvasWire.parse("""{"type":"ready"}"""), "the shell announcement is not an event")
-        assertNull(MapCanvasWire.parse("not json"))
-        assertNull(MapCanvasWire.parse("""{"type":"mystery"}"""))
     }
 
     @Test
-    fun `scripts quote their payloads so a hostile name cannot escape`() {
-        val marker = MapPinMarker(
-            id = "p1", name = """He said "hi", didn't he?""", label = "Hotel",
-            lat = 1.0, lng = 2.0,
-        )
-        val script = MapCanvasWire.pinsScript(listOf(marker))
-        assertTrue(script.startsWith("zillitMap.setPins(\""), "the payload rides as one JSON string")
-        assertTrue(script.endsWith(")"))
-
-        // Undo the page's side of the contract: the argument is one JS/JSON
-        // string literal whose content is the pin array — the name must
-        // round-trip intact through both layers of encoding.
-        val literal = script.removePrefix("zillitMap.setPins(").removeSuffix(")")
-        val payload = Json.decodeFromString(JsonPrimitive.serializer(), literal).content
-        val name = (Json.parseToJsonElement(payload) as JsonArray)
-            .let { it[0] as JsonObject }
-            .let { (it["name"] as JsonPrimitive).content }
-        assertEquals(marker.name, name)
-
-        assertEquals("zillitMap.center(1.5, -2.0, 15)", MapCanvasWire.centerScript(1.5, -2.0, 15))
-        val boot = MapCanvasWire.bootScript("""k"ey""")
-        assertTrue(boot.startsWith("zillitMap.boot(\""), "the key rides as one JSON string")
+    fun `every payload crosses as one quoted string`() {
+        val scene = MapScene(markers = listOf(SceneMarker("x", "It's \"quoted\" </script>", "Hotel", "H", "#8E44AD", LatLng(1.0, 2.0))))
+        val script = MapCanvasWire.renderScript(scene)
+        assertTrue(script.startsWith("zillitMap.render(\""))
+        assertTrue(script.endsWith("\")"))
+        val inner = Json.parseToJsonElement(script.removePrefix("zillitMap.render(").removeSuffix(")")).jsonPrimitive.content
+        val decoded = Json.parseToJsonElement(inner).jsonObject
+        assertEquals("It's \"quoted\" </script>", decoded["markers"]!!.let { (it as kotlinx.serialization.json.JsonArray)[0].jsonObject["name"]!!.jsonPrimitive.content })
+        assertEquals("null", decoded["zone"].toString())
+        assertEquals("zillitMap.boot(\"k\\\"ey\")", MapCanvasWire.bootScript("k\"ey"))
     }
 
-    private companion object {
-        const val CITY_LAT = 15.29
-        const val CITY_LNG = 74.12
-        const val PIN_LAT = 15.3
-        const val PIN_LNG = 74.15
-        const val PIN_ZOOM = 15
-        const val CITY_ZOOM = 11
+    private class FakeHost : MapCanvasHost {
+        override val messages = MutableSharedFlow<String>(extraBufferCapacity = 16)
+        val scripts = mutableListOf<String>()
+        override fun execute(script: String) {
+            scripts += script
+        }
+    }
+
+    private fun requestId(script: String): Int {
+        val payload = Json.parseToJsonElement(script.removePrefix("zillitMap.request(").removeSuffix(")")).jsonPrimitive.content
+        return Json.parseToJsonElement(payload).jsonObject["id"]!!.jsonPrimitive.content.toInt()
+    }
+
+    @Test
+    fun `a request is answered by the reply with its id`() = runTest {
+        val host = FakeHost()
+        val client = MapCanvasClient(host, backgroundScope)
+        client.start()
+        runCurrent()
+        val answer = async { client.geocode("MG Road & Ring Road, Pune", null) }
+        runCurrent()
+        val id = requestId(host.scripts.last { it.startsWith("zillitMap.request") })
+        host.messages.emit("""{"type":"reply","id":${id + 1},"ok":true,"lat":9,"lng":9}""")
+        host.messages.emit("""{"type":"reply","id":$id,"ok":true,"lat":18.5,"lng":73.8,"address":"MG Rd, Pune"}""")
+        runCurrent()
+        assertEquals(GeocodeOutcome.Found(LatLng(18.5, 73.8), "MG Rd, Pune"), answer.await())
+    }
+
+    @Test
+    fun `a page that never answers times out to nothing`() = runTest {
+        val host = FakeHost()
+        val client = MapCanvasClient(host, backgroundScope)
+        client.start()
+        val answer = async { client.predictions("Andheri", PlaceKind.Any) }
+        runCurrent()
+        advanceTimeBy(13_000)
+        runCurrent()
+        assertNull(answer.await())
+        assertEquals(emptyList(), client.predictions("", PlaceKind.Any))
+    }
+
+    @Test
+    fun `a page that loads late gets the scene, theme and camera again`() = runTest {
+        val host = FakeHost()
+        val client = MapCanvasClient(host, backgroundScope)
+        client.start()
+        runCurrent()
+        client.render(MapScene(pinMode = true))
+        client.panTo(LatLng(19.0, 72.8), 13)
+        host.scripts.clear()
+        host.messages.emit("""{"type":"map-ready"}""")
+        runCurrent()
+        assertTrue(host.scripts.any { it.startsWith("zillitMap.render(") })
+        assertTrue(host.scripts.any { it.startsWith("zillitMap.camera(") })
+        // An unchanged scene is not restated.
+        host.scripts.clear()
+        client.render(MapScene(pinMode = true))
+        assertTrue(host.scripts.isEmpty())
     }
 }

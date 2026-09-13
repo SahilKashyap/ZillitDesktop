@@ -5,33 +5,41 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
-import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.ApiEnvelope
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
-import com.zillit.desktop.feature.crewlist.domain.CrewDepartment
+import com.zillit.desktop.feature.crewlist.domain.CompanyDetails
+import com.zillit.desktop.feature.crewlist.domain.CompanyLogo
+import com.zillit.desktop.feature.crewlist.domain.CrewDocumentRequest
 import com.zillit.desktop.feature.crewlist.domain.CrewListPdf
 import com.zillit.desktop.feature.crewlist.domain.CrewListRepository
-import com.zillit.desktop.feature.crewlist.domain.CrewMember
 import com.zillit.desktop.feature.crewlist.domain.CrewUnit
+import com.zillit.desktop.feature.crewlist.domain.OrderedPerson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 
 /**
- * `crewlist` on the units host (web `unitApi.js:9-66`, Android
- * `ApiUrl.kt:195-196`): the roster at `crewlist/list`, the PDF at a bare
- * `POST crewlist` whose answer is the stored file's S3 identity.
+ * `crewlist` on the units host (web `unitApi.js`, Android `ApiUrl.kt:200-201`)
+ * — the roster, the PDF, its HTML twin — plus the Info post and the
+ * production record the letterhead reads (`CrewListCustom.jsx`,
+ * `CompanyDetails.jsx`).
  */
+@Suppress("LongParameterList") // A repository's seams: each is one thing the host owns.
 class CrewListRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
@@ -43,7 +51,22 @@ class CrewListRepositoryImpl(
      * is open on — the Crew List widget showing another production.
      */
     private val callOptions: () -> CallOptions = { CallOptions() },
+    /**
+     * A signed POST read raw: `crewlist/html` answers `text/html`, which the
+     * envelope client cannot read.
+     */
+    private val rawPost: suspend (url: String, body: JsonObject) -> ZillitResult<ByteArray> =
+        { _, _ -> ZillitResult.Failure(ZillitError.Storage(userMessage = "The preview is unavailable here.")) },
+    /** The Info board's unit — the `info_tool` row of the tools grid. */
+    private val infoUnitId: () -> String? = { null },
+    /** The boards' cipher: a post's `message` travels encrypted. */
+    private val encrypt: (String) -> ZillitResult<String> = { ZillitResult.Success(it) },
+    private val nowMillis: () -> Long = { 0L },
+    private val newId: () -> String = { nowMillis().toString() },
 ) : CrewListRepository {
+
+    private val units get() = config.apiV2(ZillitService.Units)
+    private val core get() = config.apiV2(ZillitService.Core)
 
     /**
      * See [CrewListRepository.refreshes]. Another production's frame is
@@ -58,109 +81,152 @@ class CrewListRepositoryImpl(
     override suspend fun roster(): ZillitResult<List<CrewUnit>> =
         apiClient.request(
             verb = HttpVerb.Get,
-            url = "${config.apiV2(ZillitService.Units)}crewlist/list",
+            url = "${units}crewlist/list",
             serializer = ListSerializer(UnitDto.serializer()),
             module = RequestModule.ProjectUser,
             options = callOptions(),
         ).map { rows -> rows.map { it.toModel() } }
 
-    override suspend fun generate(hideExternalLabel: Boolean): ZillitResult<CrewListPdf> =
-        apiClient.envelope(
-            verb = HttpVerb.Post,
-            url = "${config.apiV2(ZillitService.Units)}crewlist",
-            module = RequestModule.ProjectUser,
-            options = callOptions(),
-            // The phones' whole body. The web adds its header-designer keys;
-            // omitted they render the default letterhead, which is exactly
-            // the phones' output.
-            body = buildJsonObject { put("hide_external_label", hideExternalLabel) },
-        ).let { outcome ->
-            when (outcome) {
-                is ZillitResult.Failure -> outcome
-                is ZillitResult.Success -> {
-                    val pdf = (outcome.data.data as? JsonObject)
-                        ?.let { json.decodeFromJsonElement(PdfDto.serializer(), it) }
-                        ?.toModel()
-                    if (outcome.data.status != 0 && pdf != null && pdf.media.isNotBlank()) {
-                        ZillitResult.Success(pdf)
-                    } else {
-                        ZillitResult.Failure(
-                            ZillitError.Validation(outcome.data.message ?: "The server answered no PDF."),
-                        )
-                    }
+    override suspend fun generate(request: CrewDocumentRequest): ZillitResult<CrewListPdf> =
+        when (
+            val outcome = apiClient.envelope(
+                verb = HttpVerb.Post,
+                url = "${units}crewlist",
+                module = RequestModule.ProjectUser,
+                options = callOptions(),
+                body = request.toBody(),
+            )
+        ) {
+            is ZillitResult.Failure -> outcome
+            is ZillitResult.Success -> {
+                val pdf = (outcome.data.data as? JsonObject)?.toPdf()
+                if (outcome.data.status != REFUSED && pdf != null && pdf.media.isNotBlank()) {
+                    ZillitResult.Success(pdf)
+                } else {
+                    ZillitResult.Failure(ZillitError.Validation(outcome.data.refusal("The server answered no PDF.")))
                 }
             }
         }
 
-    private companion object {
-        val json = kotlinx.serialization.json.Json {
-            ignoreUnknownKeys = true
-            isLenient = true
-            coerceInputValues = true
+    override suspend fun previewHtml(request: CrewDocumentRequest): ZillitResult<String> =
+        rawPost("${units}crewlist/html", request.toBody()).map { bytes -> bytes.decodeToString() }
+
+    override suspend fun publishToInfo(pdf: CrewListPdf, caption: String): ZillitResult<Unit> {
+        val unitId = infoUnitId()?.takeIf { it.isNotBlank() }
+            ?: return ZillitResult.Failure(ZillitError.Validation("Info is not switched on for this production."))
+        val message = when (val sealed = encrypt(caption)) {
+            is ZillitResult.Failure -> return sealed
+            is ZillitResult.Success -> sealed.data
         }
+        val now = nowMillis()
+        val body = buildJsonObject {
+            put("unit_id", unitId)
+            put("message", message)
+            put("pinned", now)
+            put("message_translation", "")
+            put("message_type", DOCUMENT)
+            put("message_group", now)
+            putJsonObject("location") {
+                put("lat", 0)
+                put("long", 0)
+            }
+            put("unique_id", newId())
+            put("comments", buildJsonArray { })
+            put("attachment", pdf.attachment.withoutNulls())
+        }
+        return apiClient.envelope(
+            verb = HttpVerb.Post,
+            url = "${units}info/chat",
+            module = RequestModule.ProjectUser,
+            options = callOptions(),
+            body = body,
+        ).accepted("The crew list could not be published.")
+    }
+
+    override suspend fun companyDetails(): ZillitResult<CompanyDetails> {
+        val project = currentProjectId()?.takeIf { it.isNotBlank() }
+            ?: return ZillitResult.Failure(ZillitError.Validation("No production is open."))
+        return apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${core}project/$project",
+            serializer = JsonElement.serializer(),
+            module = RequestModule.ProjectUser,
+        ).map { record -> ((record as? JsonObject) ?: JsonObject(emptyMap())).toCompanyDetails() }
+    }
+
+    override suspend fun saveCompanyDetails(
+        details: CompanyDetails,
+        newLogo: CompanyLogo?,
+        removeLogo: Boolean,
+    ): ZillitResult<Unit> {
+        if (removeLogo && newLogo == null) {
+            val removed = apiClient.envelope(
+                verb = HttpVerb.Delete,
+                url = "${core}project/company-logo",
+                module = RequestModule.ProjectUser,
+            ).accepted("The logo could not be removed.")
+            if (removed is ZillitResult.Failure) return removed
+        }
+        return apiClient.envelope(
+            verb = HttpVerb.Patch,
+            url = "${core}project",
+            module = RequestModule.ProjectUser,
+            body = details.toPatchBody(newLogo),
+        ).accepted("The company details could not be saved.")
+    }
+
+    override suspend fun departmentPeople(departmentId: String): ZillitResult<List<OrderedPerson>> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${core}project/users",
+            serializer = JsonElement.serializer(),
+            module = RequestModule.ProjectUser,
+            queryParameters = mapOf("reorder" to "true", "departmentId" to departmentId),
+            // An editor's read: a saved-but-stale order must never come back from disk.
+            options = CallOptions(readCache = false),
+        ).map { data -> (data as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.toOrderedPerson() } }
+
+    override suspend fun reorderPeople(userIds: List<String>): ZillitResult<String> =
+        when (
+            val outcome = apiClient.envelope(
+                verb = HttpVerb.Put,
+                url = "${core}user/reorder-users",
+                module = RequestModule.ProjectUser,
+                body = buildJsonObject {
+                    put("newOrder", buildJsonArray { userIds.forEach { add(JsonPrimitive(it)) } })
+                },
+            )
+        ) {
+            is ZillitResult.Failure -> outcome
+            is ZillitResult.Success ->
+                if (outcome.data.status == REFUSED) {
+                    ZillitResult.Failure(ZillitError.Validation(outcome.data.refusal("The order could not be saved.")))
+                } else {
+                    ZillitResult.Success(outcome.data.message.orEmpty())
+                }
+        }
+
+    /** `{status: 0, message}` on a 200 is how these routes refuse — never a success. */
+    private fun ZillitResult<ApiEnvelope>.accepted(fallback: String): ZillitResult<Unit> = when (this) {
+        is ZillitResult.Failure -> this
+        is ZillitResult.Success ->
+            if (data.status == REFUSED) {
+                ZillitResult.Failure(ZillitError.Validation(data.refusal(fallback)))
+            } else {
+                ZillitResult.Success(Unit)
+            }
+    }
+
+    private fun ApiEnvelope.refusal(fallback: String): String = message?.takeIf { it.isNotBlank() } ?: fallback
+
+    private companion object {
+        const val REFUSED = 0
+        const val DOCUMENT = "document"
     }
 }
 
-@Serializable
-internal data class UnitDto(
-    @SerialName("unit_name") val unitName: String? = null,
-    @SerialName("departments") val departments: List<DepartmentDto>? = null,
-) {
-    fun toModel() = CrewUnit(
-        unitName = unitName.orEmpty(),
-        departments = departments.orEmpty().map { it.toModel() },
-    )
-}
-
-@Serializable
-internal data class DepartmentDto(
-    @SerialName("department_name") val departmentName: String? = null,
-    @SerialName("users") val users: List<MemberDto>? = null,
-) {
-    fun toModel() = CrewDepartment(
-        departmentName = departmentName.orEmpty(),
-        members = users.orEmpty().mapNotNull { it.toModel() },
-    )
-}
-
-@Serializable
-internal data class MemberDto(
-    @SerialName("user_id") val userId: String? = null,
-    @SerialName("full_name") val fullName: String? = null,
-    @SerialName("designation_name") val designationName: String? = null,
-    @SerialName("phone") val phone: String? = null,
-    @SerialName("country_code") val countryCode: String? = null,
-    @SerialName("primary_email") val primaryEmail: String? = null,
-    @SerialName("email") val email: String? = null,
-    @SerialName("is_external_user") val isExternal: Boolean? = null,
-) {
-    fun toModel(): CrewMember? {
-        val id = userId ?: return null
-        return CrewMember(
-            userId = id,
-            fullName = fullName.orEmpty(),
-            designationName = designationName.orEmpty(),
-            phone = phone.orEmpty(),
-            countryCode = countryCode.orEmpty(),
-            primaryEmail = primaryEmail ?: email.orEmpty(),
-            isExternal = isExternal == true,
-        )
-    }
-}
-
-@Serializable
-internal data class PdfDto(
-    @SerialName("media") val media: String? = null,
-    @SerialName("bucket") val bucket: String? = null,
-    @SerialName("region") val region: String? = null,
-    @SerialName("name") val name: String? = null,
-    @SerialName("original_name") val originalName: String? = null,
-) {
-    fun toModel() = CrewListPdf(
-        media = media.orEmpty(),
-        bucket = bucket.orEmpty(),
-        region = region.orEmpty(),
-        // The web's derivation: `original_name || name || 'Crew List.pdf'`.
-        name = originalName ?: name ?: "Crew List.pdf",
-    )
-}
+/**
+ * The generate answer, forwarded as the post's attachment — without its null
+ * keys, which the request signature refuses.
+ */
+private fun JsonObject.withoutNulls(): JsonObject = JsonObject(filterValues { it !is JsonNull })

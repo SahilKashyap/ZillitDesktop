@@ -68,6 +68,11 @@ internal fun RightsRequestSurface(ready: AppGraph.Ready, bus: RightsRequestBus) 
 
     LaunchedEffect(bus) { bus.requests.collect { asking = it } }
 
+    // Tools hosting a heavyweight browser view step aside while any of this is
+    // on screen; otherwise the view paints straight over it.
+    val onScreen = asking != null || choosing != null || notice != null
+    LaunchedEffect(bus, onScreen) { bus.setShowing(onScreen) }
+
     val approvers = remember(asking, choosing) { ready.rightsApprovers() }
 
     asking?.let { request ->
