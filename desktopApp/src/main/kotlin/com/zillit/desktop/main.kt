@@ -1620,6 +1620,19 @@ private fun buildMailbox(ready: AppGraph.Ready): EmailViewModel {
 
     val mailbox = Mailbox(ready.emailRepository, cache)
 
+    // The ledger's email rows carry the mailbox address (`level_1`), so the
+    // reads are scoped to this person's own mailbox — the profile names it.
+    val ledger = MailLedger(
+        store = ready.badgeStore,
+        mailboxAddress = MailboxAddress(
+            projectId = { ready.projectContext?.context?.value?.project?.projectId },
+            fetch = {
+                com.zillit.desktop.feature.email.data.MailboxCredentialsRepositoryImpl(ready.apiClient, ready.config)
+                    .credentials()
+            },
+        )::invoke,
+    )
+
     return EmailViewModel(
         mailbox = mailbox,
         repository = ready.emailRepository,
@@ -1627,12 +1640,15 @@ private fun buildMailbox(ready: AppGraph.Ready): EmailViewModel {
         folderEditor = FolderEditor(ready.folderRepository),
         search = MailSearch { mailbox.cachedMessages() },
         nowMillis = System::currentTimeMillis,
-        // The badge ledger's read, alongside the mailbox's own — one email,
-        // one record, referenced by id.
+        // The badge ledger's reads, alongside the mailbox's own. A row is
+        // keyed by folder and uid (see `LedgerRead.Mail`); the server is still
+        // told by message id, as the web and iOS tell it.
         badges = com.zillit.desktop.feature.email.ui.MailBadges(
-            onMessageRead = { messageId ->
-                emitSegmentRead(ready, segment = "email_label", module = "email_label", referenceId = messageId)
+            onMessageRead = { read ->
+                ledger.read(read)
+                emitSegmentRead(ready, segment = "email_label", module = "email_label", referenceId = read.messageId)
             },
+            onFolderSynced = { sync -> ledger.synced(sync) },
             // Per-folder unread from the badge ledger — the unit is the folder.
             folderBadges = { sectionSplit(ready, "email_label", "unit") },
         ),
