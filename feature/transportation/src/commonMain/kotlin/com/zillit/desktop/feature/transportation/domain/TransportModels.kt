@@ -66,6 +66,8 @@ data class VehicleDraft(
         name.length > NAME_MAX -> "The brand name is at most $NAME_MAX characters"
         number.isBlank() -> "A vehicle number is required"
         number.length > NAME_MAX -> "The vehicle number is at most $NAME_MAX characters"
+        // The service refuses an empty type (406 `"vehicle_type" is not allowed to be empty`).
+        type.isBlank() -> "Pick a vehicle type"
         seats < SEATS_MIN || seats > SEATS_MAX -> "Seats must be between $SEATS_MIN and $SEATS_MAX"
         ownerName.length > OWNER_MAX -> "The owner name is at most $OWNER_MAX characters"
         ownerContact.isNotBlank() && ownerContact.length !in CONTACT_RANGE -> "The contact number is 5 to 20 characters"

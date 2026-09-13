@@ -174,8 +174,10 @@ private fun SizePicker(
             entries = FONT_SIZES.map { px ->
                 ZillitMenuEntry.Action(
                     label = if (px == DEFAULT_SIZE) "$px (default)" else "$px",
-                    // The chosen size wears the accent tile; the rest sit bare.
-                    icon = if (px == current) ZillitIcons.Check else null,
+                    // The chosen size wears the check tile; the rest sit bare.
+                    // No mark means the default size, so that row is the
+                    // chosen one until a size is picked.
+                    icon = if (px == (current ?: DEFAULT_SIZE)) ZillitIcons.Check else null,
                     tone = ZillitMenuTone.Primary,
                 ) {
                     // The default size is the absence of a mark, so the

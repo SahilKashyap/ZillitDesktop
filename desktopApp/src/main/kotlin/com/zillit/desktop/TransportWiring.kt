@@ -44,6 +44,7 @@ internal fun AppGraph.Ready.buildTransport(permissions: () -> ProjectPermissions
             config,
             bus = socketEvents,
             currentProjectId = { projectContext?.context?.value?.project?.projectId },
+            nowMs = System::currentTimeMillis,
         ),
         resolveViewer = {
             TransportViewer.from(permissions(), projectContext?.context?.value?.profile?.userId.orEmpty())

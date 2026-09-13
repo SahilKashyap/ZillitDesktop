@@ -1,9 +1,19 @@
 package com.zillit.desktop.feature.home.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
+import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
+import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -882,23 +892,27 @@ private fun Composer(
     val colors = ZillitTheme.colors
     val draft = state.draft
 
-    // The bar spans the window; what is *in* it lines up with the board's
-    // column above. A full-width composer under a centred column reads as two
-    // screens stacked, and the send button ends up nowhere near the posts it
-    // is adding to.
+    // The bar spans the window on the canvas, and what is *in* it lines up
+    // with the board's column above. A full-width composer under a centred
+    // column reads as two screens stacked, and the send button ends up
+    // nowhere near the posts it is adding to.
     Column(
-        modifier = Modifier.fillMaxWidth().background(colors.surface),
+        modifier = Modifier.fillMaxWidth().background(colors.canvas),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-    // The theme's own surface under a hairline, not the web's fixed gray:
-    // the bar follows light and dark, and the pill field plus one orange
-    // send button carry the hierarchy.
-    Box(Modifier.fillMaxWidth().height(HAIRLINE).background(colors.border))
+    // A raised card rather than a full-width slab under a hairline: the
+    // composer is one more card in the column, floating just above the last
+    // post, and the field's focus ring is the only line that lights up.
     Column(
         modifier = Modifier
             .widthIn(max = BOARD_COLUMN_WIDTH)
             .fillMaxWidth()
-            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
+            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.md)
+            .shadow(COMPOSER_ELEVATION, RoundedCornerShape(COMPOSER_CARD_RADIUS))
+            .clip(RoundedCornerShape(COMPOSER_CARD_RADIUS))
+            .background(colors.surface)
+            .border(HAIRLINE, colors.border, RoundedCornerShape(COMPOSER_CARD_RADIUS))
+            .padding(ZillitTheme.spacing.sm),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         state.replyTo?.let { parent ->
@@ -969,7 +983,7 @@ private fun ComposerInput(
             // Centred on the field, not bottom-hung: with the pill at its
             // one-line height the icons and send sit on its midline.
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
         ) {
             // Replies are text on this endpoint; hiding the paperclip says so
             // more honestly than a click that does nothing.
@@ -985,6 +999,7 @@ private fun ComposerInput(
                 enabled = !state.isSending,
                 onPick = { emoji -> onEvent(HomeFeedEvent.DraftChanged(draft.text + emoji)) },
             )
+            Spacer(Modifier.width(ZillitTheme.spacing.xs))
             ZillitTextField(
                 value = draft.text,
                 onValueChange = { onEvent(HomeFeedEvent.DraftChanged(it)) },
@@ -992,11 +1007,23 @@ private fun ComposerInput(
                     state.editing != null -> "Rewrite the reply…"
                     state.replyTo != null -> "Write a reply…"
                     draft.media != null -> "Add a caption…"
-                    else -> "Type your message here..."
+                    else -> "Write to the board…"
                 },
                 shape = RoundedCornerShape(COMPOSER_RADIUS),
+                containerColor = ZillitTheme.colors.surfaceSunken,
                 singleLine = false,
                 errorText = if (draft.isOverLimit) "Too long by ${-draft.remaining}" else null,
+                // The send lives *inside* the pill, on its trailing edge — the
+                // one filled control on the bar, and it reads as part of the
+                // thing it sends rather than a button that happens to sit
+                // beside it. The mode it acts in is already announced by the
+                // reply and edit bars above.
+                trailingContent = {
+                    SendButton(state) {
+                        onEvent(HomeFeedEvent.Send)
+                        fieldFocus.requestFocus()
+                    }
+                },
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = COMPOSER_MIN_HEIGHT)
@@ -1008,25 +1035,25 @@ private fun ComposerInput(
                         } || handleComposerKey(event, draft.canSend, onEvent)
                     },
             )
-            // One filled control on the bar — the send. The mode it acts in
-            // is already announced by the reply and edit bars above.
-            ZillitIconButton(
-                icon = ZillitIcons.Send,
-                contentDescription = when {
-                    state.editing != null -> "Save"
-                    state.replyTo != null -> "Send the reply"
-                    else -> "Post"
-                },
-                onClick = {
-                    onEvent(HomeFeedEvent.Send)
-                    fieldFocus.requestFocus()
-                },
-                enabled = draft.canSend && !state.isSending,
-                filled = true,
-                size = SEND_BUTTON,
-            )
         }
 
+}
+
+/** The filled send, named for the mode the composer is in. */
+@Composable
+private fun SendButton(state: HomeFeedUiState, onClick: () -> Unit) {
+    ZillitIconButton(
+        icon = ZillitIcons.Send,
+        contentDescription = when {
+            state.editing != null -> "Save"
+            state.replyTo != null -> "Send the reply"
+            else -> "Post"
+        },
+        onClick = onClick,
+        enabled = state.draft.canSend && !state.isSending,
+        filled = true,
+        size = SEND_BUTTON,
+    )
 }
 
 /**
@@ -1445,28 +1472,26 @@ private fun PinnedBanner(
     // Which of several is shown; a pin added or removed starts over at the newest.
     var index by remember(pinned.map { it.id }) { mutableStateOf(0) }
     val shown = pinned[index.coerceIn(0, pinned.lastIndex)]
+    // A soft accent card on the column's own edges, not a full-width strip:
+    // it belongs to the board it floats over, and lines up with the cards.
+    Box(
+        modifier = Modifier.fillMaxWidth().background(ZillitTheme.colors.canvas),
+        contentAlignment = Alignment.Center,
+    ) {
     Row(
         modifier = Modifier
+            .widthIn(max = BOARD_COLUMN_WIDTH)
             .fillMaxWidth()
-            .background(ZillitTheme.colors.surface)
+            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm)
+            .clip(ZillitTheme.shapes.large)
+            .background(ZillitTheme.colors.accentSoft)
+            .border(HAIRLINE, ZillitTheme.colors.accent.copy(alpha = PINNED_RING_ALPHA), ZillitTheme.shapes.large)
             .clickable { onEvent(HomeFeedEvent.JumpToPost(shown.id)) }
-            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.xs),
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        Box(
-            Modifier
-                .width(PINNED_BAR_WIDTH)
-                .height(PINNED_BAR_HEIGHT)
-                .clip(ZillitTheme.shapes.pill)
-                .background(ZillitTheme.colors.accent),
-        )
-        ZillitIcon(
-            icon = ZillitIcons.Pin,
-            contentDescription = null,
-            tint = ZillitTheme.colors.accent,
-            size = PIN_GLYPH,
-        )
+        PinWell()
         Column(Modifier.weight(1f)) {
             ZillitText(
                 text = if (pinned.size > 1) "Pinned · ${index + 1} of ${pinned.size}" else "Pinned",
@@ -1493,31 +1518,62 @@ private fun PinnedBanner(
             )
         }
     }
-    Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
+    }
 }
 
+/** The banner's glyph: a pin on a filled accent disc. */
+@Composable
+private fun PinWell() {
+    Box(
+        modifier = Modifier
+            .size(PINNED_WELL)
+            .clip(CircleShape)
+            .background(ZillitTheme.colors.accent),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitIcon(
+            icon = ZillitIcons.Pin,
+            contentDescription = null,
+            tint = ZillitTheme.colors.textOnAccent,
+            size = PIN_GLYPH,
+        )
+    }
+}
+
+/** The call sheet's board / history switch, on the column's edges like everything else. */
 @Composable
 private fun HistoryToggle(isHistory: Boolean, onEvent: (HomeFeedEvent) -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxWidth().background(ZillitTheme.colors.canvas),
+        contentAlignment = Alignment.Center,
+    ) {
     Row(
         modifier = Modifier
+            .widthIn(max = BOARD_COLUMN_WIDTH)
             .fillMaxWidth()
-            .background(ZillitTheme.colors.surfaceSunken)
-            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.xs),
+            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
+        ZillitIcon(
+            icon = ZillitIcons.Clock,
+            contentDescription = null,
+            tint = ZillitTheme.colors.textMuted,
+            size = TAB_ICON,
+        )
         ZillitText(
-            text = if (isHistory) "Showing published history" else "Call sheet",
+            text = if (isHistory) "Showing published history" else "Live call sheet",
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
             modifier = Modifier.weight(1f),
         )
-        ZillitText(
+        ZillitButton(
             text = if (isHistory) "Back to board" else "History",
-            style = ZillitTheme.typography.button,
-            color = ZillitTheme.colors.accent,
-            modifier = Modifier.clickable { onEvent(HomeFeedEvent.ShowHistory(!isHistory)) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            onClick = { onEvent(HomeFeedEvent.ShowHistory(!isHistory)) },
         )
+    }
     }
 }
 
@@ -1530,18 +1586,27 @@ private fun UnitTabs(
     val colors = ZillitTheme.colors
     val selected = state.selectedUnit
 
+    Column(Modifier.fillMaxWidth().background(colors.surface)) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.surface)
             .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
+    // A segmented control: the units sit in one sunken track and the open
+    // one is the raised pill, so the strip reads as one switch with several
+    // positions rather than a row of unrelated buttons.
+    // The track wraps its tabs and scrolls past the box's width; the box
+    // takes the rest of the strip so the search button stays on the edge.
+    Box(Modifier.weight(1f)) {
     Row(
         modifier = Modifier
-            .weight(1f)
-            .zillitHorizontalScroll(),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            .zillitHorizontalScroll()
+            .clip(ZillitTheme.shapes.pill)
+            .background(colors.surfaceSunken)
+            .padding(TAB_TRACK_INSET),
+        horizontalArrangement = Arrangement.spacedBy(TAB_TRACK_INSET),
     ) {
         state.tabs.forEach { unit ->
             UnitTab(
@@ -1552,13 +1617,16 @@ private fun UnitTabs(
             )
         }
     }
+    }
 
     // In the tab strip, not the composer: find works in history and on
     // read-only boards too, where the composer has other rules.
     if (selected != null && selected.kind != HomeUnitKind.Calendar) {
+        val searching = state.searchQuery != null
         ZillitIconButton(
             icon = ZillitIcons.Search,
             contentDescription = "Search this board",
+            tint = if (searching) colors.accent else null,
             onClick = {
                 onEvent(
                     if (state.searchQuery == null) {
@@ -1571,18 +1639,41 @@ private fun UnitTabs(
         )
     }
     }
+    Box(Modifier.fillMaxWidth().height(HAIRLINE).background(colors.border))
+    }
 }
 
 /** One unit's tab: kind glyph, name, and — when it has any — its unread. */
 @Composable
 private fun UnitTab(unit: HomeUnit, isActive: Boolean, unread: Int, onClick: () -> Unit) {
     val colors = ZillitTheme.colors
+    val hoverSource = remember { MutableInteractionSource() }
+    val hovered by hoverSource.collectIsHoveredAsState()
+    // The pill slides its colour rather than snapping: a switch that
+    // animates reads as one control moving, not two buttons swapping.
+    val background by animateColorAsState(
+        when {
+            isActive -> colors.surface
+            hovered -> colors.surfaceHover
+            else -> Color.Transparent
+        },
+        animationSpec = tween(MOTION_MILLIS),
+        label = "unitTab",
+    )
+    val foreground by animateColorAsState(
+        if (isActive) colors.accentText else colors.textSecondary,
+        animationSpec = tween(MOTION_MILLIS),
+        label = "unitTabText",
+    )
+    val elevation by animateDpAsState(if (isActive) TAB_ELEVATION else 0.dp, label = "unitTabShadow")
     Row(
         modifier = Modifier
-            .clip(ZillitTheme.shapes.medium)
-            .background(if (isActive) colors.accentSoft else colors.surface)
+            .shadow(elevation, ZillitTheme.shapes.pill)
+            .clip(ZillitTheme.shapes.pill)
+            .background(background)
+            .hoverable(hoverSource)
             .clickable(onClick = onClick)
-            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs + ZillitTheme.spacing.xxs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
@@ -1591,13 +1682,13 @@ private fun UnitTab(unit: HomeUnit, isActive: Boolean, unread: Int, onClick: () 
         ZillitIcon(
             icon = unit.kind.icon(),
             contentDescription = null,
-            tint = if (isActive) colors.accentText else colors.textMuted,
+            tint = if (isActive) colors.accent else colors.textMuted,
             size = TAB_ICON,
         )
         ZillitText(
             text = unit.label,
             style = ZillitTheme.typography.label,
-            color = if (isActive) colors.accentText else colors.textSecondary,
+            color = foreground,
             maxLines = 1,
         )
         // The web badges each unit tab the same way; an open tab's count
@@ -1621,8 +1712,8 @@ private fun BoardSearchBar(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> U
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(ZillitTheme.colors.surfaceSunken)
-            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.xs),
+            .background(ZillitTheme.colors.surface)
+            .padding(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
@@ -1630,6 +1721,9 @@ private fun BoardSearchBar(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> U
             value = state.searchQuery.orEmpty(),
             onValueChange = { onEvent(HomeFeedEvent.SearchChanged(it)) },
             placeholder = "Search this board…",
+            leadingIcon = ZillitIcons.Search,
+            shape = ZillitTheme.shapes.pill,
+            containerColor = ZillitTheme.colors.surfaceSunken,
             modifier = Modifier.weight(1f),
         )
         ZillitText(
@@ -1659,6 +1753,7 @@ private fun BoardSearchBar(state: HomeFeedUiState, onEvent: (HomeFeedEvent) -> U
             onClick = { onEvent(HomeFeedEvent.CloseSearch) },
         )
     }
+    Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
 }
 
 @Composable
@@ -1691,7 +1786,7 @@ private fun NoticeBoard(
     ZillitLazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(PAGE_PADDING),
+        contentPadding = PaddingValues(horizontal = PAGE_PADDING, vertical = ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         items(rows, key = { row -> rowKey(row) }) { row ->
@@ -1732,22 +1827,37 @@ private fun NoticeBoard(
  */
 @Composable
 private fun NoPostingRightsRow(unit: HomeUnit, onEvent: (HomeFeedEvent) -> Unit) {
+    Box(Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.sm), contentAlignment = Alignment.Center) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = ZillitTheme.spacing.sm),
+        modifier = Modifier
+            .widthIn(max = BUBBLE_MAX_WIDTH)
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.large)
+            .background(ZillitTheme.colors.surfaceSunken)
+            .border(HAIRLINE, ZillitTheme.colors.border, ZillitTheme.shapes.large)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        ZillitIcon(
+            icon = ZillitIcons.Lock,
+            contentDescription = null,
+            tint = ZillitTheme.colors.textMuted,
+            size = TAB_ICON,
+        )
         ZillitText(
             text = "You do not have posting rights for ${unit.label}.",
             style = ZillitTheme.typography.labelSmall,
             color = ZillitTheme.colors.textMuted,
+            modifier = Modifier.weight(1f),
         )
         ZillitButton(
             text = "Ask an admin",
             onClick = { onEvent(HomeFeedEvent.RequestPostingRights) },
-            variant = ButtonVariant.Tertiary,
+            variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
         )
+    }
     }
 }
 
@@ -1759,8 +1869,8 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
     val failed = notice.sendState == NoticeSendState.Failed
     val ringColor = when {
         failed -> colors.danger
-        notice.isPinned -> colors.accent
-        else -> Color.Transparent
+        notice.isPinned -> colors.accent.copy(alpha = PINNED_RING_ALPHA)
+        else -> colors.border
     }
     val ringWidth = if (notice.isPinned && !failed) PINNED_RING else HAIRLINE
     var confirmingDelete by remember(notice.id) { mutableStateOf(false) }
@@ -1777,6 +1887,14 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
     var menuOpen by remember(notice.id) { mutableStateOf(false) }
     val hoverSource = remember { MutableInteractionSource() }
     val hovered by hoverSource.collectIsHoveredAsState()
+    // The card lifts a little under the pointer and settles back — the one
+    // motion cue that says "this is a thing you can act on" without adding
+    // a control to every post.
+    val elevation by animateDpAsState(
+        if (hovered || menuOpen) BUBBLE_ELEVATION_HOVER else BUBBLE_ELEVATION,
+        animationSpec = tween(MOTION_MILLIS),
+        label = "noticeLift",
+    )
     NoticeContextMenu(items = menuItems) {
     Box(
         modifier = Modifier
@@ -1792,7 +1910,7 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
             // card is exactly the column width and their edges line up.
             .widthIn(min = BUBBLE_MIN_WIDTH, max = BUBBLE_MAX_WIDTH)
             .fillMaxWidth()
-            .shadow(BUBBLE_ELEVATION, bubbleShape)
+            .shadow(elevation, bubbleShape, ambientColor = colors.windowShadow, spotColor = colors.windowShadow)
             .clip(bubbleShape)
             .background(colors.noticeBubble)
             // Pinned wears an accent ring, not an accent fill. A filled card
@@ -1805,17 +1923,25 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
             // the more urgent thing to notice, and two rings would be one ring
             // too many to read at a glance.
             .border(width = ringWidth, color = ringColor, shape = bubbleShape)
-            .padding(ZillitTheme.spacing.md),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
         NoticeHeader(notice, ui)
 
+        // The body and the attachment hang from the header's text edge, not
+        // the avatar's, so the card reads as one line of speech under a name.
+        // A system row names nobody and draws no avatar, so nothing to hang from.
+        val indent = if (notice.authorId != null) HEADER_AVATAR + ZillitTheme.spacing.sm else 0.dp
+        Column(
+            modifier = Modifier.padding(start = indent),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
         NoticeAttachment(notice.id, notice.kind, notice.attachment, notice.location, ui)
 
         if (notice.showsBody) {
             ZillitText(
                 text = highlighted(notice.body, ui.highlightQuery, ui.crewNames),
-                style = ZillitTheme.typography.bodyMedium,
+                style = ZillitTheme.typography.bodyLarge,
                 color = if (pending) ZillitTheme.colors.textMuted else ZillitTheme.colors.textPrimary,
             )
         }
@@ -1834,6 +1960,7 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
         }
 
         NoticeThread(notice, ui)
+        }
     }
     // The kebab, over the card's top-right on hover or while the menu is
     // up — held open by the menu so it does not vanish under the pointer.
@@ -1847,12 +1974,17 @@ private fun NoticeCard(notice: Notice, ui: BoardUi) {
     // long-press menu worked from the same spot while a click did nothing.
     // Faded rather than removed, the button is there to take the press. It
     // opens on the press and swallows the release, so nothing underneath
-    // sees a click.
+    // sees a click. The fade is animated, but it is still only an alpha.
+    val kebabAlpha by animateFloatAsState(
+        if (hovered || menuOpen) 1f else 0f,
+        animationSpec = tween(MOTION_MILLIS),
+        label = "kebab",
+    )
     Box(
         Modifier
             .align(Alignment.TopEnd)
-            .padding(ZillitTheme.spacing.xs)
-            .alpha(if (hovered || menuOpen) 1f else 0f),
+            .padding(ZillitTheme.spacing.sm)
+            .alpha(kebabAlpha),
     ) {
         KebabButton(onPress = { menuOpen = true })
         NoticeActionsMenu(open = menuOpen, items = menuItems, onDismiss = { menuOpen = false })
@@ -2189,53 +2321,119 @@ private fun DeleteConfirmRow(prompt: String, onConfirm: () -> Unit, onDismiss: (
 @Composable
 private fun NoticeThread(notice: Notice, ui: BoardUi) {
     // Replies live inside the parent's bubble, as on the web — a thread is
-    // read in the context of what it answers.
-    notice.comments.forEach { comment ->
-        CommentBubble(parentId = notice.id, comment = comment, ui = ui)
+    // read in the context of what it answers. A rail down the left binds
+    // them to it, the way every threaded reader draws a thread.
+    if (notice.comments.isNotEmpty()) {
+        // A wash of the page's ink rather than the border token: the border
+        // vanishes against the dark bubble, and the rail has to show on both.
+        val rail = ZillitTheme.colors.textMuted.copy(alpha = THREAD_RAIL_ALPHA)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .drawBehind {
+                    drawRoundRect(
+                        color = rail,
+                        topLeft = Offset.Zero,
+                        size = Size(THREAD_RAIL.toPx(), size.height),
+                        cornerRadius = CornerRadius(THREAD_RAIL.toPx() / 2),
+                    )
+                }
+                .padding(start = THREAD_RAIL + ZillitTheme.spacing.md),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            notice.comments.forEach { comment ->
+                CommentBubble(parentId = notice.id, comment = comment, ui = ui)
+            }
+        }
     }
 
-    if (notice.sendState == NoticeSendState.Sent && ui.canReply) {
-        ZillitText(
-            text = "Reply",
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.accentText,
-            modifier = Modifier.clickable { ui.onEvent(HomeFeedEvent.StartReply(notice.id)) },
-        )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        if (notice.sendState == NoticeSendState.Sent && ui.canReply) {
+            ActionPill(
+                label = "Reply",
+                icon = ZillitIcons.Reply,
+                tint = ZillitTheme.colors.accentText,
+                background = ZillitTheme.colors.accentSoft,
+                onClick = { ui.onEvent(HomeFeedEvent.StartReply(notice.id)) },
+            )
+        }
+        val count = notice.commentCount
+        if (count > 0) {
+            ZillitText(
+                text = if (count == 1) "1 reply" else "$count replies",
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+        if (notice.sendState == NoticeSendState.Failed) {
+            ActionPill(
+                label = "Try again",
+                icon = ZillitIcons.Reload,
+                tint = ZillitTheme.colors.danger,
+                background = ZillitTheme.colors.dangerSoft,
+                onClick = { notice.localId?.let { ui.onEvent(HomeFeedEvent.Retry(it)) } },
+            )
+        }
     }
+}
 
-    if (notice.sendState == NoticeSendState.Failed) {
-        ZillitText(
-            text = "Try again",
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.danger,
-            modifier = Modifier.clickable {
-                notice.localId?.let { ui.onEvent(HomeFeedEvent.Retry(it)) }
-            },
-        )
+/** A small soft-filled pill with a glyph — the card's one inline action. */
+@Composable
+private fun ActionPill(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    background: Color,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(ZillitTheme.shapes.pill)
+            .background(background)
+            .clickable(onClick = onClick)
+            .padding(horizontal = ZillitTheme.spacing.sm + ZillitTheme.spacing.xxs, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitIcon(icon = icon, contentDescription = null, tint = tint, size = PIN_GLYPH)
+        ZillitText(text = label, style = ZillitTheme.typography.labelSmall, color = tint)
     }
 }
 
 /**
  * The day divider between runs of posts.
  *
- * A centred pill rather than a full-width rule: on a tinted board a rule reads
- * as another card edge.
+ * A centred pill on a faint rule that stops short of the column's edges:
+ * the rule says "a day ends here", the pill says which, and neither is
+ * heavy enough to read as another card edge.
  */
 @Composable
 private fun DateSeparator(label: String) {
     Box(
-        modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm),
+        modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xs),
         contentAlignment = Alignment.Center,
     ) {
-        ZillitText(
-            text = label,
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textMuted,
-            modifier = Modifier
-                .clip(ZillitTheme.shapes.pill)
-                .background(ZillitTheme.colors.surfaceSunken)
-                .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xxs),
-        )
+        Row(
+            modifier = Modifier.widthIn(max = BUBBLE_MAX_WIDTH).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            Box(Modifier.weight(1f).height(HAIRLINE).background(ZillitTheme.colors.border))
+            ZillitText(
+                text = label,
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textSecondary,
+                modifier = Modifier
+                    .clip(ZillitTheme.shapes.pill)
+                    .background(ZillitTheme.colors.surface)
+                    .border(HAIRLINE, ZillitTheme.colors.border, ZillitTheme.shapes.pill)
+                    .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+            )
+            Box(Modifier.weight(1f).height(HAIRLINE).background(ZillitTheme.colors.border))
+        }
     }
 }
 
@@ -2264,15 +2462,17 @@ private fun BoardArea(
 ) {
     val unit = state.selectedUnit
     when {
-        state.isLoadingUnits -> Centred("Loading…")
+        state.isLoadingUnits -> Loading("Loading…")
 
         // Full-screen only when there is nothing else to show — an action
         // error over a loaded board is the popup's job, and replacing the
         // board with it was how a failed delete used to blank the feed.
         state.error != null && state.notices.isEmpty() -> Centred(state.error)
 
-        unit == null -> Centred(
-            "No units are shared with you in this project yet.",
+        unit == null -> Empty(
+            title = "No units yet",
+            message = "No units are shared with you in this project yet.",
+            icon = ZillitIcons.Users,
         )
 
         // The calendar unit renders the real calendar when the host supplies
@@ -2280,9 +2480,17 @@ private fun BoardArea(
         unit.kind == HomeUnitKind.Calendar ->
             calendar?.invoke() ?: CalendarPlaceholder(unit)
 
-        state.isLoadingNotices && state.notices.isEmpty() -> Centred("Loading posts…")
+        state.isLoadingNotices && state.notices.isEmpty() -> Loading("Loading posts…")
 
-        state.notices.isEmpty() -> Centred("Nothing has been posted to ${unit.label} yet.")
+        state.notices.isEmpty() -> Empty(
+            title = "Nothing posted yet",
+            message = if (unit.canPost) {
+                "Be the first to post to ${unit.label}."
+            } else {
+                "Nothing has been posted to ${unit.label} yet."
+            },
+            icon = ZillitIcons.Chat,
+        )
 
         else -> NoticeBoard(
             rows = state.rows,
@@ -2320,6 +2528,8 @@ private fun BoardArea(
 @Composable
 private fun NoticeHeader(notice: Notice, ui: BoardUi) {
     Row(
+        // Room on the right for the kebab that floats over the corner.
+        modifier = Modifier.padding(end = KEBAB_SIZE),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
@@ -2334,27 +2544,24 @@ private fun NoticeHeader(notice: Notice, ui: BoardUi) {
                 image = rememberAvatarBitmap(authorId, ui.loadAvatar),
             )
         }
+        // Name in the page's ink, time beside it in the margin's grey: who
+        // and when read as one line, and the orange is saved for what is
+        // actually accent-worthy — a mention, a pin, the reply link.
         if (author.isNotBlank()) {
             ZillitText(
                 text = author,
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.accentText,
+                style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold),
+                color = ZillitTheme.colors.textPrimary,
                 maxLines = 1,
                 modifier = Modifier.weight(1f, fill = false),
             )
         }
-        if (notice.isPinned) {
-            ZillitIcon(
-                icon = ZillitIcons.Pin,
-                contentDescription = "Pinned",
-                // Accent, matching the ring the card usually wears — and still
-                // accent on a post that failed to send, where the ring has
-                // turned red. The glyph says "pinned"; the ring says "look at
-                // this one", and on that card those are two different facts.
-                tint = ZillitTheme.colors.accent,
-                size = PIN_GLYPH,
-            )
-        }
+        ZillitText(
+            text = notice.createdAtMillis.toClockTime(),
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.textMuted,
+        )
+        if (notice.isPinned) PinnedChip()
         when (notice.sendState) {
             // The tag narrates the send: percent while the file's bytes move,
             // "Processing" while the server writes the post, plain "Sending"
@@ -2377,6 +2584,36 @@ private fun NoticeHeader(notice: Notice, ui: BoardUi) {
 }
 
 /**
+ * "Pinned", as a soft accent chip in the header. Accent, matching the ring
+ * the card usually wears — and still accent on a post that failed to send,
+ * where the ring has turned red. The chip says "pinned"; the ring says
+ * "look at this one", and on that card those are two different facts.
+ */
+@Composable
+private fun PinnedChip() {
+    Row(
+        modifier = Modifier
+            .clip(ZillitTheme.shapes.pill)
+            .background(ZillitTheme.colors.accentSoft)
+            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitIcon(
+            icon = ZillitIcons.Pin,
+            contentDescription = "Pinned",
+            tint = ZillitTheme.colors.accent,
+            size = PIN_GLYPH,
+        )
+        ZillitText(
+            text = "Pinned",
+            style = ZillitTheme.typography.labelSmall,
+            color = ZillitTheme.colors.accentText,
+        )
+    }
+}
+
+/**
  * One reply, nested inside its parent's bubble.
  *
  * A darker inset rather than its own free-standing bubble: the web renders
@@ -2393,45 +2630,48 @@ private fun CommentBubble(parentId: String, comment: NoticeComment, ui: BoardUi)
             confirmingDelete = true
         },
     ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(ZillitTheme.shapes.medium)
-            // A wash of the page's own ink, so a reply is recessed into the
-            // card in either theme. A flat black at 25% did that on the dark
-            // bubble and turned into a grey slab once the card went white.
-            .background(ZillitTheme.colors.textPrimary.copy(alpha = COMMENT_INSET_ALPHA))
-            .padding(ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+    // A row on the thread's rail, not a slab: a small avatar, the name and
+    // time on one line, the words under them. The grey inset it replaced
+    // read as a second card inside the first.
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        CommentHeader(comment, ui)
-
-        NoticeAttachment(parentId, comment.kind, comment.attachment, comment.location, ui)
-
-        if (comment.showsBody) {
-            ZillitText(
-                text = highlighted(comment.body, ui.highlightQuery, ui.crewNames),
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.textPrimary,
+        val author = ui.resolveAuthor(comment.authorId).orEmpty()
+        comment.authorId?.let { authorId ->
+            ZillitAvatar(
+                name = author,
+                size = COMMENT_AVATAR,
+                image = rememberAvatarBitmap(authorId, ui.loadAvatar),
             )
         }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+        ) {
+            CommentHeader(author, comment)
 
-        if (comment.isEdited) {
-            ZillitText(
-                text = "Edited",
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.danger,
-            )
-        }
+            NoticeAttachment(parentId, comment.kind, comment.attachment, comment.location, ui)
 
-        if (canAct) {
-            CommentActions(
-                parentId = parentId,
-                comment = comment,
-                confirmingDelete = confirmingDelete,
-                onConfirmingChange = { confirmingDelete = it },
-                onEvent = ui.onEvent,
-            )
+            if (comment.showsBody) {
+                ZillitText(
+                    text = highlighted(comment.body, ui.highlightQuery, ui.crewNames),
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = ZillitTheme.colors.textPrimary,
+                )
+            }
+
+            if (comment.isEdited) EditedMark()
+
+            if (canAct) {
+                CommentActions(
+                    parentId = parentId,
+                    comment = comment,
+                    confirmingDelete = confirmingDelete,
+                    onConfirmingChange = { confirmingDelete = it },
+                    onEvent = ui.onEvent,
+                )
+            }
         }
     }
     }
@@ -2468,23 +2708,24 @@ private fun commentMenuItems(
     }
 }
 
-/** The reply's first line: who wrote it, and when. */
+/** The reply's first line: who wrote it, and when — the post header's shape, one size down. */
 @Composable
-private fun CommentHeader(comment: NoticeComment, ui: BoardUi) {
+private fun CommentHeader(author: String, comment: NoticeComment) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitText(
-            // Blank when the crew list cannot place them — a nameless line
-            // over the reply, not a reply from "Unknown".
-            text = ui.resolveAuthor(comment.authorId).orEmpty(),
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.accentText,
-            maxLines = 1,
-            modifier = Modifier.weight(1f, fill = false),
-        )
+        // Blank when the crew list cannot place them — a nameless line
+        // over the reply, not a reply from "Unknown".
+        if (author.isNotBlank()) {
+            ZillitText(
+                text = author,
+                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = ZillitTheme.colors.textPrimary,
+                maxLines = 1,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+        }
         ZillitText(
             text = comment.createdAtMillis.toClockTime(),
             style = ZillitTheme.typography.labelSmall,
@@ -2541,40 +2782,44 @@ private fun CommentActions(
 }
 
 /**
- * The bubble's bottom line: file size on the left, time on the right —
- * the web's footer, field for field. "Edited" sits with the size, in red,
- * as it does there.
+ * The bubble's metadata line: the file's size and whether the post was
+ * edited — the web's footer fields, minus the time, which moved up beside
+ * the author's name. Nothing to say, and the line is not drawn.
  */
 @Composable
 private fun NoticeFooter(notice: Notice) {
+    val size = notice.attachment?.sizeBytes?.let(::formatFileSize).orEmpty()
+    // Pictures and videos render as the media itself, so the size has nowhere
+    // else to go; every other kind is a chip that already prints it. A shared
+    // location's picture is a map this app fetched — its byte count says
+    // nothing about the place, so it is not printed either.
+    val showsSize = size.isNotEmpty() && notice.kind in SIZED_IN_FOOTER && notice.location == null
+    if (!showsSize && !notice.isEdited) return
     Row(
-        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            val size = notice.attachment?.sizeBytes?.let(::formatFileSize).orEmpty()
-            if (size.isNotEmpty() && notice.kind != NoticeKind.Text) {
-                ZillitText(
-                    text = size,
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                )
-            }
-            if (notice.isEdited) {
-                ZillitText(
-                    text = "Edited",
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.danger,
-                )
-            }
+        if (showsSize) {
+            ZillitText(
+                text = size,
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+            )
         }
-        ZillitText(
-            text = notice.createdAtMillis.toClockTime(),
-            style = ZillitTheme.typography.labelSmall,
-            color = ZillitTheme.colors.textMuted,
-        )
+        if (notice.isEdited) {
+            EditedMark()
+        }
     }
+}
+
+/** "Edited", in the margin's grey — a fact about the post, not a warning. */
+@Composable
+private fun EditedMark() {
+    ZillitText(
+        text = "Edited",
+        style = ZillitTheme.typography.labelSmall,
+        color = ZillitTheme.colors.textMuted,
+    )
 }
 
 /**
@@ -2624,12 +2869,42 @@ private fun Centred(text: String) {
     }
 }
 
+/** A spinner over a line — the board is on its way, not empty. */
+@Composable
+private fun Loading(text: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        ) {
+            ZillitSpinner()
+            ZillitText(
+                text = text,
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+    }
+}
+
+/** The design system's empty state, centred in the board's space. */
+@Composable
+private fun Empty(title: String, message: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        ZillitEmptyState(
+            title = title,
+            message = message,
+            icon = icon,
+            modifier = Modifier.widthIn(max = MESSAGE_WIDTH),
+        )
+    }
+}
+
 // The find highlight: amber, matching the web's yellow mark on dark bubbles.
 // Shared with the tools grid so a search mark means one thing across the app;
 // it is always drawn with an explicit black foreground, which is why a fixed
 // colour is safe in both themes.
 internal val HIGHLIGHT = Color(0xFFFFC94D)
-private const val COMMENT_INSET_ALPHA = 0.07f
 
 /** Both phones' delete confirmation, word for word (`DeleteConfirmPop`, `are_you_sure_delete`). */
 private const val DELETE_PROMPT = "Are you sure you want to delete?"
@@ -2638,10 +2913,32 @@ private val FORWARD_PICKER_WIDTH = 340.dp
 private val CALL_SHEET_PROMPT_WIDTH = 440.dp
 private val READ_BY_LIST_HEIGHT = 320.dp
 private val COMPOSER_RADIUS = 22.dp
-private val HEADER_AVATAR = 26.dp
-private val SEND_BUTTON = 40.dp
+private val COMPOSER_CARD_RADIUS = 20.dp
+private val COMPOSER_ELEVATION = 4.dp
+private val HEADER_AVATAR = 32.dp
+private val COMMENT_AVATAR = 22.dp
+private val SEND_BUTTON = 32.dp
 private val MENTION_AVATAR = 24.dp
-private val BUBBLE_ELEVATION = 2.dp
+
+/** Resting and hovered card lift — the difference is the motion cue. */
+private val BUBBLE_ELEVATION = 1.dp
+private val BUBBLE_ELEVATION_HOVER = 6.dp
+
+/** One duration for every hover and selection fade on the board. */
+private const val MOTION_MILLIS = 160
+
+/** The thread rail's width and the pinned ring's softness. */
+private val THREAD_RAIL = 2.dp
+private const val THREAD_RAIL_ALPHA = 0.45f
+
+/** The kinds whose size prints under the post — see [NoticeFooter]. */
+private val SIZED_IN_FOOTER = setOf(NoticeKind.Image, NoticeKind.Video)
+private const val PINNED_RING_ALPHA = 0.55f
+
+/** The segmented tab track: its inset, and the raised pill's lift. */
+private val TAB_TRACK_INSET = 3.dp
+private val TAB_ELEVATION = 1.dp
+private val PINNED_WELL = 28.dp
 private val DROP_RING = 2.dp
 private val DROP_ICON = 32.dp
 private const val DROP_SCRIM_ALPHA = 0.12f
@@ -2662,13 +2959,11 @@ private val BUBBLE_MAX_WIDTH = 660.dp
 /** Holds the shape of a two-word post, and stops a narrow window collapsing it. */
 private val BUBBLE_MIN_WIDTH = 280.dp
 
-private val BUBBLE_RADIUS = 16.dp
+private val BUBBLE_RADIUS = 18.dp
 
 /** Thicker than a hairline so the ring reads as deliberate, not as a seam. */
 private val PINNED_RING = 2.dp
 private val PIN_GLYPH = 13.dp
-private val PINNED_BAR_WIDTH = 3.dp
-private val PINNED_BAR_HEIGHT = 28.dp
 
 
 private val PAGE_PADDING = 20.dp

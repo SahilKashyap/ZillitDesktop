@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.email.data.Mailbox
+import com.zillit.desktop.feature.email.data.SyncedPage
 import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.DeleteIntent
 import com.zillit.desktop.feature.email.domain.DraftRepository
@@ -223,24 +224,6 @@ sealed interface EmailEffect {
  * visited before renders immediately. Composing lives in [ComposeViewModel] —
  * this class is already the busiest thing in the module.
  */
-/**
- * The badge ledger's two hooks for mail, gathered because they travel
- * together and neither belongs to the mailbox: the mailbox's own markRead is
- * IMAP state, not the badge ledger, and the two clear independently.
- */
-class MailBadges(
-    /**
-     * Told when a message is opened for reading. Hosts hang the badge-service
-     * read here (`notification:read`, segment `email_label`, reference id).
-     */
-    val onMessageRead: suspend (String) -> Unit = {},
-    /**
-     * Unread per folder from the badge service (`?section=email_label&group=unit`).
-     * Null answers a failed ask; empty leaves the folder list on its IMAP counts.
-     */
-    val folderBadges: suspend () -> Map<String, Int>? = { emptyMap() },
-)
-
 class EmailViewModel(
     private val mailbox: Mailbox,
     private val repository: EmailRepository,
@@ -371,10 +354,14 @@ class EmailViewModel(
             )
         }
 
+        // Stamped before the uid list is asked for, so a mail that lands
+        // mid-sync — and so is missing from that list — is not taken as gone.
+        val listedAt = nowMillis()
         launchResult(
             block = { mailbox.syncNext(folder.name) },
             onSuccess = { page ->
                 inFlight--
+                reconcileBadges(folder.name, page, listedAt)
                 // Guard against a slow folder the user has already left.
                 if (currentState.selectedFolderName == folder.name) {
                     setState {
@@ -423,9 +410,7 @@ class EmailViewModel(
         when (event) {
             EmailRealtimeEvent.FoldersChanged -> refreshFolders()
 
-            is EmailRealtimeEvent.ReadChanged -> setState {
-                copy(messages = messages.map { if (it.uid == event.uid) it.copy(isRead = true) else it })
-            }
+            is EmailRealtimeEvent.ReadChanged -> onReadElsewhere(event.uid)
 
             EmailRealtimeEvent.DraftsChanged -> if (currentState.isViewingDrafts) loadDrafts()
 
@@ -439,6 +424,45 @@ class EmailViewModel(
                     requestSync(open)
                 }
             }
+        }
+    }
+
+    /**
+     * `email:read` — this mail was opened on another of this person's
+     * devices. The row, the cache and the badge ledger all learn it, as they
+     * would for a click here; the web does the same in its `email_read`
+     * listener. A uid outside the open folder waits for that folder's sync.
+     */
+    private fun onReadElsewhere(uid: Int) {
+        val folder = currentState.selectedFolder ?: return
+        val message = currentState.messages.firstOrNull { it.uid == uid } ?: return
+        if (!message.isRead) mailbox.markRead(folder.name, message.id)
+        setState {
+            copy(messages = messages.map { if (it.uid == uid) it.copy(isRead = true) else it })
+        }
+        launch {
+            badges.onMessageRead(MailRead(folder.name, uid, message.id))
+            badges.folderBadges()?.let { split -> setState { copy(folderBadges = split) } }
+        }
+    }
+
+    /**
+     * Squares the badge ledger with what the server just said the folder
+     * holds, then redraws the folder counts from it. Off the sync's own path
+     * so a slow ledger never holds the list back.
+     */
+    private fun reconcileBadges(folderName: String, page: SyncedPage, listedAt: Long) {
+        launch {
+            badges.onFolderSynced(
+                MailFolderSync(
+                    folderName = folderName,
+                    serverUids = page.serverUids,
+                    messages = page.messages,
+                    complete = page.complete,
+                    listedAt = listedAt,
+                ),
+            )
+            badges.folderBadges()?.let { split -> setState { copy(folderBadges = split) } }
         }
     }
 
@@ -734,13 +758,14 @@ class EmailViewModel(
         if (state.selectedMessageId == messageId && state.thread.isNotEmpty()) return
 
         val folder = state.selectedFolder ?: return
-        val wasUnread = state.messages.firstOrNull { it.id == messageId }?.isRead == false
+        val opened = state.messages.firstOrNull { it.id == messageId }
         mailbox.markRead(folder.name, messageId)
         // Only mail that was unread has a badge record to clear — an emit per
         // click on already-read mail cost a settle wait and three requests.
-        if (wasUnread) {
+        // (Mail read elsewhere but still badged is the folder sync's job.)
+        if (opened != null && !opened.isRead) {
             launch {
-                badges.onMessageRead(messageId)
+                badges.onMessageRead(MailRead(folder.name, opened.uid, messageId))
                 badges.folderBadges()?.let { split -> setState { copy(folderBadges = split) } }
             }
         }

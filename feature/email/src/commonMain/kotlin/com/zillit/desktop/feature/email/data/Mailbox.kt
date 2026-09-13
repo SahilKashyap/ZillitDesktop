@@ -18,6 +18,14 @@ import com.zillit.desktop.feature.email.domain.MailboxCache
 data class SyncedPage(
     val messages: List<EmailSummary>,
     val hasMore: Boolean,
+    /**
+     * Every uid the server listed for the folder — the whole folder, not the
+     * page. What the badge ledger is reconciled against: a uid it still
+     * badges that is not here has left the folder.
+     */
+    val serverUids: Set<Int> = emptySet(),
+    /** Whether every listed uid is now held locally. */
+    val complete: Boolean = false,
 )
 
 /**
@@ -77,7 +85,9 @@ class Mailbox(
         if (batch.isEmpty()) {
             // Nothing new, but mail may still have been deleted elsewhere.
             if (stale.isNotEmpty()) cache.saveMessages(folderName, emptyList(), dropUids = stale)
-            return ZillitResult.Success(SyncedPage(cache.messages(folderName), hasMore = false))
+            return ZillitResult.Success(
+                SyncedPage(cache.messages(folderName), hasMore = false, serverUids = serverUids.toSet(), complete = true),
+            )
         }
 
         return when (val page = repository.index(folderName, batch)) {
@@ -87,14 +97,16 @@ class Mailbox(
                 if (page.data.size < batch.size) {
                     ZillitLog.w(TAG) { "asked for ${batch.size} messages, got ${page.data.size}" }
                 }
+                val complete = EmailSync.isComplete(serverUids, cache.cachedUids(folderName))
                 ZillitResult.Success(
                     SyncedPage(
                         messages = cache.messages(folderName),
                         // Recomputed against what actually landed: a batch the
                         // server could not fully answer must not be retried
                         // forever, and those uids are simply skipped.
-                        hasMore = !EmailSync.isComplete(serverUids, cache.cachedUids(folderName)) &&
-                            page.data.isNotEmpty(),
+                        hasMore = !complete && page.data.isNotEmpty(),
+                        serverUids = serverUids.toSet(),
+                        complete = complete,
                     ),
                 )
             }

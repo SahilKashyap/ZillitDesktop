@@ -67,7 +67,105 @@ sealed interface LedgerRead {
         override fun matches(row: NotificationRecord): Boolean =
             row.tool == NotificationRecord.CALENDAR_TOOL && (row.calendarEnd ?: Long.MAX_VALUE) < nowMillis
     }
+
+    /**
+     * One mail opened — the phones' email read (Android `EmailInbox`
+     * Subtract then `markReadCommon(unit, referenceId)` 5797-5834, iOS
+     * `updateMarkReadBySectionUnitAndReferenceIds`): an `email_label` row
+     * filed under the folder (`unit`) whose `reference_id` is the mail's
+     * IMAP uid — or, from the older writers, its message id.
+     *
+     * Uids restart at 1 in every folder and every mailbox, so the folder is
+     * part of the key and so is the mailbox (`level_1`, ZL-21025): a row
+     * tagged with another mailbox's address is never this read's. An
+     * untagged row, or an unknown own address, fails open the way the phones
+     * do — a read must never leave its own badge stuck.
+     */
+    data class Mail(
+        val folder: String,
+        val uid: Int,
+        val messageId: String = "",
+        val mailbox: String? = null,
+    ) : LedgerRead {
+        override fun matches(row: NotificationRecord): Boolean =
+            row.isMailIn(folder, mailbox) &&
+                (row.referenceId == uid.toString() || (messageId.isNotBlank() && row.namesMessage(messageId)))
+    }
+
+    /**
+     * A folder synced against the mail server — retires rows that no longer
+     * describe unread mail. See [MailFolderState].
+     */
+    data class MailFolder(val state: MailFolderState) : LedgerRead {
+        override fun matches(row: NotificationRecord): Boolean =
+            row.isMailIn(state.folder, state.mailbox) && state.retires(row)
+    }
 }
+
+/**
+ * A folder as the mail server just reported it, in the ledger's terms.
+ *
+ * Android ZL-21196 (`clearBadgesForDepartedEmails`): `get-folder-uids` is the
+ * folder's complete list, so a uid the ledger holds that the server no longer
+ * lists has left the folder — moved by a rule or from another device, or
+ * deleted — and its badge goes with it. The web goes further and takes the
+ * badge rows as the read state (`updateEmailReadStatusInDb`); here it runs
+ * the sane way round: mail the mailbox reports read is not unread mail,
+ * whatever the ledger says. Both rules are what keeps the Email badge equal
+ * to the unread mail the desktop can actually show.
+ */
+data class MailFolderState(
+    val folder: String,
+    /** Every uid the folder holds — the server's complete list. */
+    val uids: Set<Int>,
+    /** Uids the mailbox reports read. */
+    val readUids: Set<Int> = emptySet(),
+    /** Message ids the mailbox reports read — rows from older writers key by these. */
+    val readMessageIds: Set<String> = emptySet(),
+    /** Message ids of every mail held for the folder; trusted only when [complete]. */
+    val messageIds: Set<String> = emptySet(),
+    /** Whether every uid the server lists is held locally. */
+    val complete: Boolean = false,
+    /**
+     * When the uid list was asked for. A row written after that describes
+     * mail the list could not have contained yet — a mail landing during a
+     * sync — so it is not judged departed; the sync its arrival triggers
+     * will. [ARRIVAL_GRACE_MILLIS] covers the clocks disagreeing.
+     */
+    val listedAt: Long = Long.MAX_VALUE,
+    /** This mailbox's address, as the rows carry it in `level_1`; null when unknown. */
+    val mailbox: String? = null,
+) {
+    /** Whether one row, already known to be this folder's, is no longer a badge. */
+    fun retires(row: NotificationRecord): Boolean {
+        val key = row.referenceId
+        if (key.isBlank()) return false
+        val uid = key.toIntOrNull()
+        val settled = row.created < listedAt - ARRIVAL_GRACE_MILLIS
+        return when {
+            uid != null -> uid in readUids || (settled && uid !in uids)
+            key in readMessageIds -> true
+            else -> settled && complete && key !in messageIds
+        }
+    }
+
+    companion object {
+        const val ARRIVAL_GRACE_MILLIS = 2 * 60 * 1000L
+    }
+}
+
+/**
+ * Whether a row is an email row of one folder in one mailbox. The folder
+ * compares case-insensitively — `INBOX` is by RFC 3501, and the service has
+ * spelled the others both ways; the mailbox likewise (an address).
+ */
+private fun NotificationRecord.isMailIn(folder: String, mailbox: String?): Boolean =
+    section == BadgeSections.EMAIL &&
+        unit.trim().equals(folder.trim(), ignoreCase = true) &&
+        (level1.isBlank() || mailbox.isNullOrBlank() || level1.trim().equals(mailbox.trim(), ignoreCase = true))
+
+private fun NotificationRecord.namesMessage(messageId: String): Boolean =
+    referenceId == messageId || id == messageId || mongoId == messageId
 
 /**
  * The `notification:silent` instruction — what another device, or the

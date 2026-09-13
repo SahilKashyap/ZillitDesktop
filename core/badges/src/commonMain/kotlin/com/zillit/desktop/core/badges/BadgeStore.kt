@@ -127,10 +127,15 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
         publish()
     }
 
-    /** A read made here, or relayed from another of this person's devices. */
-    suspend fun markRead(read: LedgerRead) = lock.withLock {
-        flip(rows.values.filter { !it.messageRead && read.matches(it) }.map { it.id })
+    /**
+     * A read made here, or relayed from another of this person's devices.
+     * Answers how many rows it turned — the line that says a badge moved.
+     */
+    suspend fun markRead(read: LedgerRead): Int = lock.withLock {
+        val ids = rows.values.filter { !it.messageRead && read.matches(it) }.map { it.id }
+        flip(ids)
         publish()
+        ids.size
     }
 
     /** `badges:cleared:user` — every row of one production is gone. */
@@ -151,6 +156,10 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
 
     /** One screen's split of the open production's rows. */
     fun split(query: BadgeDrilldownQuery): Map<String, Int> = splitBadges(rows.values.toList(), query)
+
+    /** The open production's rows of one section that still count — what a badge is made of. */
+    fun unreadRows(section: String): List<NotificationRecord> =
+        rows.values.filter { it.section == section && it.counts }
 
     /**
      * The open production's rows of one section, as wire rows — what the

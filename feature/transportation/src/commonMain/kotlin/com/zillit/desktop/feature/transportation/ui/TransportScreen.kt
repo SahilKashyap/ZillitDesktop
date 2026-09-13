@@ -41,6 +41,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
+import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitLazyVerticalGrid
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
@@ -117,16 +118,6 @@ fun TransportScreen(state: TransportUiState, onEvent: (TransportEvent) -> Unit, 
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
             ) {
                 if (state.viewer.isBlocked) ZillitNotice(text = "You do not have access to the Transportation tool.")
-                state.error?.let { message ->
-                    ZillitNotice(
-                        text = message,
-                        tone = StatusTone.Rejected,
-                        action = {
-                            ZillitButton(text = "Dismiss", onClick = { onEvent(TransportEvent.DismissError) },
-                                variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
-                        },
-                    )
-                }
                 when (state.section) {
                     TransportSection.Requests -> RequestsSection(state, onEvent)
                     TransportSection.Vehicles -> VehiclesSection(state, onEvent)
@@ -138,6 +129,10 @@ fun TransportScreen(state: TransportUiState, onEvent: (TransportEvent) -> Unit, 
             }
         }
         TransportDialogs(state, onEvent, openLink)
+        // Above the dialogs, not behind them: most refusals are raised from
+        // a form, and a banner on the page under a modal is a refusal nobody
+        // sees — an Approve that silently did nothing.
+        ZillitErrorToast(message = state.error, onDismiss = { onEvent(TransportEvent.DismissError) })
     }
 }
 

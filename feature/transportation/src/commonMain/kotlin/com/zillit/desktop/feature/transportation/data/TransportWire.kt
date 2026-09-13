@@ -150,7 +150,12 @@ private fun placeWire(place: GeoPlace): JsonObject = buildJsonObject {
  * on a draft is stamped "now" as the web does (ZL-17606). Absent keys stay
  * absent (`undefined`), never null.
  */
-internal fun permanentWire(draft: PermanentDraft, id: String?, status: PermanentStatus?): JsonObject = buildJsonObject {
+internal fun permanentWire(
+    draft: PermanentDraft,
+    id: String?,
+    status: PermanentStatus?,
+    nowMs: Long = 0L,
+): JsonObject = buildJsonObject {
     if (id != null) put("tripRequestId", id)
     put(
         "passengers",
@@ -171,7 +176,9 @@ internal fun permanentWire(draft: PermanentDraft, id: String?, status: Permanent
         status?.wire ?: if (draft.asDraft) PermanentStatus.Draft.wire else PermanentStatus.Permanent.wire)
     draft.vehicleId?.let { put("vehicle_id", it) }
     draft.driverId?.let { put("driver_id", it) }
-    if (draft.startMs > 0L) put("start_time", draft.startMs)
+    // ZL-17606: a draft saved without a date carries "now" so the service does not refuse it.
+    val start = if (draft.startMs > 0L) draft.startMs else if (draft.asDraft && nowMs > 0L) nowMs else 0L
+    if (start > 0L) put("start_time", start)
     if (draft.endMs > 0L) put("end_time", draft.endMs)
     put("cc_users", buildJsonArray { draft.ccUsers.forEach { add(JsonPrimitive(it)) } })
     put("full_day_trip", draft.fullDay)

@@ -260,10 +260,11 @@ class TransportViewModel(
                 val designationList = designations.await().orError()
                 val vehicleList = vehicles.await().orError()
                 val typeList = types.await().orError()
-                // Failing soft: an unreadable coordinator list must not empty
-                // the picker, so the last known set stands. The rights list
-                // and the dialling codes are the same bargain, quietly.
-                val coordinatorList = coordinators.await().orError()
+                // Failing soft AND quietly: `posting-rights-users` answers 404
+                // on dev, so an error banner here would greet every open of
+                // the tool. The last known set stands; the rights list and
+                // the dialling codes make the same bargain.
+                val coordinatorList = (coordinators.await() as? ZillitResult.Success)?.data
                 val viewerIds = (viewers.await() as? ZillitResult.Success)?.data
                 val countryList = countries.await()
                 setState {
@@ -275,7 +276,8 @@ class TransportViewModel(
                         viewingRightIds = viewerIds ?: viewingRightIds,
                         countries = countryList.ifEmpty { this.countries },
                         vehicles = vehicleList ?: this.vehicles,
-                        vehicleTypes = typeList ?: vehicleTypes,
+                        // The web's own type list stands in when the preset answers nothing.
+                        vehicleTypes = typeList?.ifEmpty { null } ?: vehicleTypes.ifEmpty { DEFAULT_VEHICLE_TYPES },
                     )
                 }
             }
@@ -330,13 +332,17 @@ class TransportViewModel(
      * The licence-change queue.
      *
      * Only a coordinator can answer one, so only a coordinator is asked for
-     * the list. A failure costs the queue, never the screen — the same
-     * bargain the crew and vehicle reloads make.
+     * the list. A failure costs the queue and nothing else — not even a
+     * banner: the dev server routes `driver/change-requests` as
+     * `driver/:id` and answers 500 ("Cast to ObjectId failed for value
+     * 'change-requests'"), and the web never calls it (its tile is
+     * commented out), so a loud failure here would fire on every crew
+     * reload for a queue nobody can see anyway.
      */
     private fun loadLicenceRequests() {
         if (!currentState.viewer.isCoordinator) return
         launch {
-            repository.licenceRequests().orError()?.let { rows ->
+            (repository.licenceRequests() as? ZillitResult.Success)?.data?.let { rows ->
                 setState { copy(licenceRequests = rows.filter { it.verified == null }) }
             }
         }
@@ -1114,6 +1120,9 @@ class TransportViewModel(
         }
     }
 }
+
+/** The types the web's `getVehicleImage` knows — the fallback when `vehicle-types` answers nothing. */
+private val DEFAULT_VEHICLE_TYPES = listOf("Car", "SUV", "Minivan", "Minibus", "Bus", "Vanity Van")
 
 /** A stored file's bytes, from what was picked this session — the UI's first stop before the store. */
 fun TransportUiState.localBytes(media: StoredMedia): ByteArray? = localMedia[media.media]

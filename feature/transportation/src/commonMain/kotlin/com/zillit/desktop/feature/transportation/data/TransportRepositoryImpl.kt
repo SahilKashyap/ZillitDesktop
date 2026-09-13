@@ -54,6 +54,8 @@ class TransportRepositoryImpl(
     /** Null keeps the tool socket-less — tests, and hosts without a bus. */
     private val bus: SocketEventBus? = null,
     private val currentProjectId: () -> String? = { null },
+    /** For the date a draft is stamped with when it has none (ZL-17606). */
+    private val nowMs: () -> Long = { 0L },
 ) : TransportRepository {
 
     private val base = config.apiV2(ZillitService.Transportation).trimEnd('/') + "/transportation"
@@ -82,10 +84,28 @@ class TransportRepositoryImpl(
             (data as? JsonArray).items().mapNotNull { parseVehicle(it as? JsonObject) }.filter { it.isLive }
         }
 
+    /**
+     * The web reads `data.vehicle_type` as a string array. Read leniently —
+     * the list under either spelling, or `data` itself, each entry a string
+     * or an object naming itself — because a form whose type select is
+     * empty cannot add a vehicle at all.
+     */
     override suspend fun vehicleTypes(): ZillitResult<List<String>> =
         get("$base/vehicle/vehicle-types").mapData { data ->
-            ((data as? JsonObject)?.get("vehicle_type") as? JsonArray).items()
-                .mapNotNull { (it as? JsonPrimitive)?.content }
+            val list = (data as? JsonObject)?.let { it["vehicle_type"] ?: it["vehicle_types"] ?: it["types"] } ?: data
+            val entries: List<JsonElement> = when (list) {
+                is JsonArray -> list.toList()
+                // A map of type → label reads by its values.
+                is JsonObject -> list.values.toList()
+                else -> emptyList()
+            }
+            entries.mapNotNull { entry ->
+                when (entry) {
+                    is JsonPrimitive -> entry.content
+                    is JsonObject -> entry.text("vehicle_type", "name", "type", "label")
+                    else -> null
+                }?.takeIf { it.isNotBlank() }
+            }
         }
 
     override suspend fun addVehicle(draft: VehicleDraft): ZillitResult<Vehicle?> =
@@ -239,11 +259,11 @@ class TransportRepositoryImpl(
         }
 
     override suspend fun createPermanent(draft: PermanentDraft): ZillitResult<Unit> =
-        write(HttpVerb.Post, "$base/request/permanent-trip", permanentWire(draft, id = null, status = null))
+        write(HttpVerb.Post, "$base/request/permanent-trip", permanentWire(draft, id = null, status = null, nowMs()))
 
     override suspend fun updatePermanent(id: String, draft: PermanentDraft,
         status: PermanentStatus): ZillitResult<Unit> =
-        write(HttpVerb.Put, "$base/request/permanent-trip", permanentWire(draft, id = id, status = status))
+        write(HttpVerb.Put, "$base/request/permanent-trip", permanentWire(draft, id = id, status = status, nowMs()))
 
     override suspend fun unassignPermanent(trip: PermanentTrip): ZillitResult<Unit> =
         write(
