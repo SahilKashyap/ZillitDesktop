@@ -165,6 +165,68 @@ class LiveKitApi(
     suspend fun hangup(callId: String, projectId: String?, userId: String?): ZillitResult<Unit> =
         bare("$baseUrl/v1/calls/${callId.encoded()}/hangup", projectId, userId)
 
+    /** `POST /v1/calls/{id}/react` — the socket-down way to throw an emoji; the server floats it back. */
+    suspend fun react(callId: String, emoji: String, projectId: String?, userId: String?): ZillitResult<Unit> =
+        http.call(
+            HttpVerb.Post,
+            "$baseUrl/v1/calls/${callId.encoded()}/react",
+            buildJsonObject { put("emoji", JsonPrimitive(emoji)) },
+            projectId,
+            userId,
+        ).map { }
+
+    /** `POST /v1/calls/{id}/hold` and `/resume` — the socket-down twins of `holdCall` / `resumeCall`. */
+    suspend fun hold(callId: String, on: Boolean, projectId: String?, userId: String?): ZillitResult<Unit> =
+        bare("$baseUrl/v1/calls/${callId.encoded()}/${if (on) "hold" else "resume"}", projectId, userId)
+
+    /**
+     * `POST /v1/livekit/mute` — the host has the SFU mute someone's
+     * microphone or camera (`source`). Server-enforced; the room's own
+     * TrackMuted then tells everyone, so nothing is patched locally.
+     */
+    @Suppress("LongParameterList") // One parameter per field the endpoint takes.
+    suspend fun mute(
+        callId: String,
+        targetUserId: String,
+        source: String,
+        byIdentity: String,
+        projectId: String?,
+        userId: String?,
+    ): ZillitResult<Unit> = http.call(
+        HttpVerb.Post,
+        "$baseUrl/v1/livekit/mute",
+        buildJsonObject {
+            put("callId", JsonPrimitive(callId))
+            put("targetUserId", JsonPrimitive(targetUserId))
+            put("source", JsonPrimitive(source))
+            put("byIdentity", JsonPrimitive(byIdentity))
+        },
+        projectId,
+        userId,
+    ).map { }
+
+    /**
+     * `POST /v1/livekit/recording/mark-started|mark-stopped` — the client
+     * records; the server only tracks who, broadcasting `recordingBy` in the
+     * room's metadata so everyone sees the REC pill. A second starter is
+     * refused 409 `already_recording`, which is the failure the caller reads.
+     */
+    suspend fun markRecording(
+        callId: String,
+        userId: String,
+        on: Boolean,
+        projectId: String?,
+    ): ZillitResult<Unit> = http.call(
+        HttpVerb.Post,
+        "$baseUrl/v1/livekit/recording/${if (on) "mark-started" else "mark-stopped"}",
+        buildJsonObject {
+            put("callId", JsonPrimitive(callId))
+            put("userId", JsonPrimitive(userId))
+        },
+        projectId,
+        userId,
+    ).map { }
+
     /** `POST /v1/region/warm` — pre-picks the media region for this device; fire and forget. */
     suspend fun warmRegion(projectId: String?, userId: String?): ZillitResult<Unit> =
         bare("$baseUrl/v1/region/warm", projectId, userId)
@@ -221,8 +283,6 @@ class LiveKitApi(
         const val HEX_MASK = 0xF
     }
 }
-
-private fun JsonObject.bool(key: String): Boolean? = (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
 
 private const val ERROR_BODY_EXCERPT = 300
 

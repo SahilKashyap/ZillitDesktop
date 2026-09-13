@@ -21,6 +21,8 @@ import com.zillit.desktop.feature.maps.domain.SharePerson
 import com.zillit.desktop.feature.maps.domain.buildBoundaryPrompt
 import com.zillit.desktop.feature.maps.ui.AddCityState
 import com.zillit.desktop.feature.maps.ui.AddressPick
+import com.zillit.desktop.feature.maps.ui.CitiesPanelState
+import com.zillit.desktop.feature.maps.ui.CurrentPlace
 import com.zillit.desktop.feature.maps.ui.ConfirmAction
 import com.zillit.desktop.feature.maps.ui.DirectionsState
 import com.zillit.desktop.feature.maps.ui.ListViewState
@@ -116,6 +118,28 @@ class MapScreenRenderTest {
 
         click("Goa")
         assertTrue(MapEvent.Cities.Select("goa") in events, events.toString())
+
+        click("Add Another City")
+        assertTrue(MapEvent.Cities.Add in events, events.toString())
+    }
+
+    @Test
+    fun `the Current Location card offers where this machine is, unless that city exists`() = runComposeUiTest {
+        val events = mutableListOf<MapEvent>()
+        val hyderabad = CurrentPlace("Hyderabad", "Banjara Hills, Hyderabad, Telangana", LatLng(17.4, 78.4))
+        val here = CitiesPanelState(currentPlace = hyderabad)
+        val set = open(base.copy(panels = listOf(MapPanel.Cities), citiesPanel = here), events)
+        shows("Current Location", "Hyderabad", "Banjara Hills")
+
+        click("Add")
+        assertTrue(MapEvent.Cities.AddCurrentPlace in events, events.toString())
+
+        val pune = here.copy(currentPlace = hyderabad.copy(name = "Pune"))
+        set(base.copy(panels = listOf(MapPanel.Cities), citiesPanel = pune))
+        assertTrue(
+            onAllNodesWithText("Current Location", substring = true).fetchSemanticsNodes().isEmpty(),
+            "a city already added is not offered",
+        )
     }
 
     @Test

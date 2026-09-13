@@ -37,7 +37,6 @@ import org.cef.handler.CefLoadHandler
 import org.cef.handler.CefLoadHandlerAdapter
 import java.awt.Component
 import java.awt.Dimension
-import java.awt.event.HierarchyEvent
 import java.io.File
 import javax.swing.JWindow
 import javax.swing.SwingUtilities
@@ -48,16 +47,28 @@ import javax.swing.Timer
  * Chromium, the arranger's grips working in the page, and every change it
  * reports carried back over `window.cefQuery` ([KcefPage.messageRouter]).
  *
- * One browser per opening of the dialog, closed with it. While something is
- * drawn over the canvas the browser's component is hidden rather than removed:
- * a JCEF component that loses its parent stops being a browser.
+ * One browser per opening of the dialog, closed with it. Its component lives
+ * in a parking window of its own for the whole of that time — the map and
+ * call engines' trick, for the same reasons: JCEF only creates the native
+ * browser from a realised AWT peer, and a component with no parent at all
+ * stops being a browser. The pane borrows the component while it has a page
+ * to show and nothing is drawn over it, and hands it back to the parking
+ * window otherwise. Two things make that borrowing, not hiding:
  *
- * The first page loads out of sight. A starting browser is a blank white box
- * for seconds, so its component waits in an invisible window — the map and
- * call engines' trick: JCEF only creates the native browser from a realised
- * AWT peer — while the dialog keeps its document skeleton up, and is handed to
- * the pane once that page is in. The holder goes the moment the pane takes the
- * component, so nothing is left to keep the process alive at quit.
+ *  - A cold browser is a blank white box for seconds. The first page loads
+ *    while parked, behind the dialog's document skeleton, and the pane takes
+ *    the component once that page is in (or after a timeout, so a page that
+ *    never reports in still shows).
+ *  - A hidden heavyweight still occludes: with its child invisible the interop
+ *    island stays and paints a blank grey block exactly where the drawer or
+ *    dialog over it should be ([KcefMapEngine] found the same). So while
+ *    obscured the `SwingPanel` leaves the tree and the browser goes back to
+ *    the parking window, its page untouched.
+ *
+ * The parking window is never disposed while the browser lives — moving the
+ * component out and then closing the window that created the native view
+ * leaves the view orphaned in a window nobody sees. It goes with the browser,
+ * in [CrewCanvasSession.close].
  *
  * Documents arrive as HTML strings and are written to `~/.zillit/crewlist/`
  * for Chromium to load as files, the way the map and call pages load theirs.
@@ -94,11 +105,15 @@ private fun CrewCanvasPane(
                 modifier = Modifier.align(Alignment.Center).padding(24.dp),
             )
             surface == null -> if (document != null) placeholder()
-            else -> SwingPanel(
-                factory = { surface },
-                update = { it.isVisible = !obscured },
-                modifier = Modifier.fillMaxSize(),
-            )
+            // Out of the tree while covered, not merely hidden — see the class note.
+            obscured -> Unit
+            else -> {
+                DisposableEffect(surface) {
+                    session.claimSurface()
+                    onDispose { session.releaseSurface() }
+                }
+                SwingPanel(factory = { surface }, modifier = Modifier.fillMaxSize())
+            }
         }
     }
 }
@@ -127,6 +142,9 @@ private class CrewCanvasSession {
     // Touched on the EDT only.
     private var holder: JWindow? = null
     private var revealTimer: Timer? = null
+
+    /** Panes showing the component right now — on the EDT only. */
+    private var claims = 0
 
     @Volatile
     private var created = false
@@ -212,18 +230,15 @@ private class CrewCanvasSession {
     }
 
     /**
-     * Keeps the new browser's component in a window nobody sees until its first
-     * page is in. The pane taking the component is the holder's cue to go.
+     * Puts the component in the parking window — made on first use, kept until
+     * [close]. Invisible (opacity 0, and far enough out that no arrangement of
+     * displays reaches it), sized to the pane so the page lays out once.
      */
     private fun park(surface: Component) {
-        val window = JWindow().apply {
-            focusableWindowState = false
-            runCatching { opacity = 0f }
-        }
-        holder = window
-        surface.addHierarchyListener { event ->
-            val moved = (event.changeFlags and HierarchyEvent.PARENT_CHANGED.toLong()) != 0L
-            if (moved && SwingUtilities.getWindowAncestor(surface) !== window) releaseHolder()
+        val window = holder ?: JWindow().also { window ->
+            window.focusableWindowState = false
+            runCatching { window.opacity = 0f }
+            holder = window
         }
         window.contentPane.add(surface)
         window.isVisible = true
@@ -247,10 +262,26 @@ private class CrewCanvasSession {
         if (component.value == null) component.value = made.uiComponent
     }
 
-    private fun releaseHolder() {
-        val window = holder ?: return
-        holder = null
-        SwingUtilities.invokeLater { window.dispose() }
+    /** A pane has put the component on screen. */
+    fun claimSurface() {
+        SwingUtilities.invokeLater { claims++ }
+    }
+
+    /**
+     * Takes the component back when the pane leaves the tree — covered, or the
+     * dialog closing. Parked only if no pane is showing it by the time this
+     * runs: a pane can leave and return within a frame, and the returning one
+     * must not have its browser pulled out from under it.
+     */
+    fun releaseSurface() {
+        SwingUtilities.invokeLater {
+            claims = (claims - 1).coerceAtLeast(0)
+            if (claims > 0 || closed) return@invokeLater
+            component.value?.let { surface ->
+                surface.isVisible = true
+                park(surface)
+            }
+        }
     }
 
     fun close() {
@@ -264,7 +295,10 @@ private class CrewCanvasSession {
         component.value = null
         runCatching { openBrowser?.close(true) }
         runCatching { openClient?.dispose() }
-        releaseHolder()
+        // After the browser: the window that hosted its native view goes last.
+        val window = holder
+        holder = null
+        if (window != null) SwingUtilities.invokeLater { window.dispose() }
         val files = synchronized(written) { written.toList().also { written.clear() } }
         files.forEach { runCatching { it.delete() } }
     }

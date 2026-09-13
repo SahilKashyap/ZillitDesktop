@@ -19,6 +19,7 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.callsheet.data.CallSheetRepositoryImpl
 import com.zillit.desktop.feature.callsheet.domain.CallSheetRepository
 import com.zillit.desktop.feature.callsheet.domain.CallSheetStatus
+import com.zillit.desktop.feature.callsheet.domain.SheetQuery
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.ui.ChatEvent
 import com.zillit.desktop.feature.chat.ui.ChatViewModel
@@ -231,11 +232,12 @@ internal fun AppGraph.Ready.productionReportDelivery(): ReportDelivery = object 
 internal fun productionReportCallSheets(
     callSheets: CallSheetRepository,
 ): PublishedCallSheetLookup = PublishedCallSheetLookup { projectId ->
-    val published = when (val sheets = callSheets.sheets(projectId, listOf(CallSheetStatus.Published))) {
+    val query = SheetQuery(projectId = projectId, statuses = listOf(CallSheetStatus.Published))
+    val published = when (val sheets = callSheets.sheets(query)) {
         is ZillitResult.Failure -> return@PublishedCallSheetLookup null
         is ZillitResult.Success -> sheets.data
     }
-    val newest = published.maxByOrNull { it.publishedAt.ifBlank { it.updatedAt } }
+    val newest = published.maxByOrNull { it.publishedOn ?: it.updatedOn ?: 0L }
         ?: return@PublishedCallSheetLookup null
     when (val detail = callSheets.sheet(newest.id)) {
         is ZillitResult.Failure -> null

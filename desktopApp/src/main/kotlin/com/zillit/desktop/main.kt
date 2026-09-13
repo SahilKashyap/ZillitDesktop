@@ -220,11 +220,6 @@ import com.zillit.desktop.feature.budget.ui.MAIN_BUDGET_PATH
 import com.zillit.desktop.feature.budgetbuilder.domain.BudgetBuilderViewer
 import com.zillit.desktop.feature.budgetbuilder.ui.BudgetBuilderToolProvider
 import com.zillit.desktop.feature.budgetbuilder.ui.BudgetBuilderViewModel
-import com.zillit.desktop.feature.callsheet.data.CallSheetRepositoryImpl
-import com.zillit.desktop.feature.callsheet.domain.CallSheetViewer
-import com.zillit.desktop.feature.callsheet.domain.CompanySeed
-import com.zillit.desktop.feature.callsheet.domain.SheetMember
-import com.zillit.desktop.feature.callsheet.ui.CallSheetToolProvider
 import com.zillit.desktop.feature.callsheet.ui.CallSheetViewModel
 import com.zillit.desktop.feature.esignature.data.EsignRepositoryImpl
 import com.zillit.desktop.feature.esignature.domain.EsignViewer
@@ -248,9 +243,6 @@ import com.zillit.desktop.feature.invoices.ui.InvoicesViewModel
 import com.zillit.desktop.feature.draft.ui.DRAFT_PATH
 import com.zillit.desktop.feature.draft.ui.DraftToolProvider
 import com.zillit.desktop.feature.draft.ui.DraftViewModel
-import com.zillit.desktop.feature.transportation.data.TransportRepositoryImpl
-import com.zillit.desktop.feature.transportation.domain.TransportViewer
-import com.zillit.desktop.feature.transportation.ui.TransportToolProvider
 import com.zillit.desktop.feature.transportation.ui.TransportViewModel
 import com.zillit.desktop.feature.recce.ui.RecceViewModel
 import com.zillit.desktop.feature.maps.ui.MapViewModel
@@ -2259,30 +2251,6 @@ private fun AppGraph.Ready.driveViewer(permissions: ProjectPermissions): DriveVi
     )
 }
 
-private fun AppGraph.Ready.callSheetViewer(permissions: ProjectPermissions): CallSheetViewer {
-    val context = projectContext?.context?.value
-    val me = context?.user(context.profile?.userId)
-    return CallSheetViewer.from(
-        permissions = permissions,
-        userId = context?.profile?.userId.orEmpty(),
-        displayName = context?.profile?.fullName.orEmpty(),
-        // From the crew list, not the profile — the profile carries neither
-        // department nor designation.
-        designation = me?.designation.orEmpty(),
-    )
-}
-
-/** The crew as the call sheet's employee sections and pickers need them. */
-private fun AppGraph.Ready.sheetMembers(): List<SheetMember> =
-    projectContext?.context?.value?.users.orEmpty().map { user ->
-        SheetMember(
-            userId = user.userId,
-            fullName = user.fullName,
-            department = user.department.orEmpty(),
-            designation = user.designation.orEmpty(),
-        )
-    }
-
 /**
  * Today, in the machine's own zone.
  *
@@ -2585,6 +2553,7 @@ private fun rememberAppViewModels(
                     // Null in a dev run: the helper only exists in a packaged
                     // bundle, and without it Share sends the whole screen.
                     screenSources = macCaptureHelper()?.let(::MacScreenSources),
+                    copyToClipboard = { com.zillit.desktop.core.designsystem.component.copyTextToClipboard(it) },
                 )
             },
             cashExpenses = ready?.let { graph ->
@@ -2711,6 +2680,7 @@ private fun rememberAppViewModels(
                         config = graph.config,
                         today = { esignToday() },
                         bus = graph.socketEvents,
+                        rawGet = graph.esignRawGet(),
                     ),
                     transfer = graph.esignTransfer(),
                     pdf = esignPdf(),
@@ -2723,42 +2693,13 @@ private fun rememberAppViewModels(
                     },
                     signerOptions = { graph.esignSignerOptions() },
                     newId = { UUID.randomUUID().toString() },
+                    currentUserEmail = {
+                        graph.projectContext?.context?.value?.profile?.email.orEmpty()
+                    },
                     rights = graph.rightsRequests,
                 )
             },
-            callSheet = ready?.let { graph ->
-                CallSheetViewModel(
-                    repository = CallSheetRepositoryImpl(
-                        graph.apiClient,
-                        graph.config,
-                        bus = graph.socketEvents,
-                        currentProjectId = {
-                            graph.projectContext?.context?.value?.project?.projectId
-                        },
-                    ),
-                    delivery = graph.callSheetDelivery(),
-                    resolveViewer = { graph.callSheetViewer(permissions()) },
-                    projectId = {
-                        graph.projectContext?.context?.value?.project?.projectId
-                    },
-                    membersProvider = { graph.sheetMembers() },
-                    companySeed = {
-                        val project = graph.projectContext?.context?.value?.project
-                        CompanySeed(
-                            projectName = project?.name.orEmpty(),
-                            companyName = project?.companyName.orEmpty(),
-                        )
-                    },
-                    // Local MIDNIGHT, not the current instant: the web sends
-                    // start-of-day, and the server's renderer prints whatever
-                    // calendar day the epoch lands on in ITS zone — an
-                    // afternoon epoch drifts a day east of the dateline.
-                    todayMs = {
-                        val zone = kotlinx.datetime.TimeZone.currentSystemDefault()
-                        today().atStartOfDayIn(zone).toEpochMilliseconds()
-                    },
-                )
-            },
+            callSheet = ready?.buildCallSheet(permissions),
             productionReport = ready?.buildReport(ReportKind.Production, permissions, ::today),
             productionReportChat = ready?.productionReportChatFeed(permissions),
             adReport = ready?.buildReport(ReportKind.Ad, permissions, ::today),
@@ -2839,26 +2780,7 @@ private fun rememberAppViewModels(
                     projectId = { graph.projectContext?.context?.value?.project?.projectId },
                 )
             },
-            transport = ready?.let { graph ->
-                TransportViewModel(
-                    repository = TransportRepositoryImpl(
-                        graph.apiClient,
-                        graph.config,
-                        bus = graph.socketEvents,
-                        currentProjectId = {
-                            graph.projectContext?.context?.value?.project?.projectId
-                        },
-                    ),
-                    resolveViewer = {
-                        TransportViewer.from(permissions(),
-                            graph.projectContext?.context?.value?.profile?.userId.orEmpty())
-                    },
-                    nowMillis = System::currentTimeMillis,
-                    // The web's `notification:read` for a request segment, module `transportation_label`.
-                    onSegmentViewed = { segment -> emitSegmentRead(graph, segment = segment,
-                        module = "transportation_label") },
-                )
-            },
+            transport = ready?.buildTransport(permissions),
             scheduleDistribution = ready?.buildDistribution(DistributionTool.ScheduleDistribution, permissions),
             scriptDistribution = ready?.buildDistribution(DistributionTool.ScriptDistribution, permissions),
             scheduleDod = ready?.buildDistribution(DistributionTool.ScheduleDod, permissions),
@@ -2868,6 +2790,7 @@ private fun rememberAppViewModels(
                     viewer = { graph.docDistViewer(permissions()) },
                     today = ::today,
                     rights = graph.rightsRequests,
+                    host = AppDocDistHost(graph.signatureRepository),
                 )
             },
             drive = ready?.let { graph ->
@@ -3007,7 +2930,7 @@ private fun buildRegistry(
     val assetRegister = viewModels.assetRegister?.let {
         com.zillit.desktop.feature.assetreport.ui.AssetToolProvider(it)
     }
-    val transport = viewModels.transport?.let { TransportToolProvider(it) }
+    val transport = viewModels.transport?.let { (graph as? AppGraph.Ready)?.transportProvider(it, viewModels) }
     val draft = viewModels.draft?.let { DraftToolProvider(it) }
     val location = viewModels.location?.let { vm -> (graph as? AppGraph.Ready)?.locationProvider(vm, scope) }
     val continuity = viewModels.continuity?.let { vm ->
@@ -3337,11 +3260,11 @@ private fun buildRegistry(
         }
     }
     val esignature = viewModels.esignature?.let { vm ->
-        EsignToolProvider(vm) { onPicked ->
-            scope.launch { onPicked(pickPdf()) }
+        EsignToolProvider(vm) { kind, onPicked ->
+            scope.launch { onPicked(pickEsignFile(kind)) }
         }
     }
-    val callSheet = viewModels.callSheet?.let { CallSheetToolProvider(it) }
+    val callSheet = viewModels.callSheet?.let { callSheetToolProvider(it, graph, chatViewModel) }
     val sides = viewModels.sides?.let { vm ->
         SidesToolProvider(
             viewModel = vm,

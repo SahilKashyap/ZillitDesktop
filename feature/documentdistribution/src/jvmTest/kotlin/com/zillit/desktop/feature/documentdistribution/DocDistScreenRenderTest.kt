@@ -2,7 +2,9 @@ package com.zillit.desktop.feature.documentdistribution
 
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.test.ExperimentalTestApi
-import com.zillit.desktop.feature.documentdistribution.ui.pages.FOLDER_TABLE_TAG
+import com.zillit.desktop.feature.documentdistribution.ui.pages.LIBRARY_LISTING_TAG
+import com.zillit.desktop.feature.documentdistribution.domain.ListUsed
+import com.zillit.desktop.feature.documentdistribution.domain.SentAttachment
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
@@ -27,6 +29,9 @@ import com.zillit.desktop.feature.documentdistribution.domain.LibraryDocument
 import com.zillit.desktop.feature.documentdistribution.domain.LibraryFolder
 import com.zillit.desktop.feature.documentdistribution.domain.MediaKind
 import com.zillit.desktop.feature.documentdistribution.domain.OpenState
+import com.zillit.desktop.feature.documentdistribution.domain.RecipientStatus
+import com.zillit.desktop.feature.documentdistribution.ui.ComposerStage
+import com.zillit.desktop.feature.documentdistribution.ui.HistoryDetailState
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.ui.ComposerState
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistDestination
@@ -103,8 +108,8 @@ class DocDistScreenRenderTest {
                     DeliveryStatus(Recipient("grace@x.co", "Grace Hopper"), "u-2", OpenState.NotOpened),
                     DeliveryStatus(Recipient("alan@x.co"), "u-3", OpenState.Unknown),
                 ),
-                attachmentNames = listOf("Call Sheet Day 12.pdf"),
-                listsUsed = listOf("Full unit"),
+                attachments = listOf(SentAttachment(documentId = "doc-1", name = "Call Sheet Day 12.pdf")),
+                listsUsed = listOf(ListUsed("l1", "Full unit", listOf("ada@x.co"))),
             ),
         ),
         lists = listOf(
@@ -169,11 +174,12 @@ class DocDistScreenRenderTest {
             }
             // The flip QA asked for on the phones: the controls stay, so
             // somebody who cannot send can still find out why and fix it.
-            onNodeWithText("New folder").assertExists()
-            onNodeWithText("Distribute").assertExists()
+            onNodeWithText("Create folder").assertExists()
+            onNodeWithText("Actions").assertExists()
 
-            onNodeWithText("Distribute").performClick()
-            onNodeWithText("New folder").performClick()
+            onNodeWithText("Actions").performClick()
+            onNodeWithText("Share documents").performClick()
+            onNodeWithText("Create folder").performClick()
         }
 
         // Neither press reached the action it names.
@@ -218,7 +224,8 @@ class DocDistScreenRenderTest {
                 }
             }
             onNodeWithText("2 selected").assertIsDisplayed()
-            onNodeWithText("Distribute").performClick()
+            onNodeWithText("Actions").performClick()
+            onNodeWithText("Share documents").performClick()
         }
         assertTrue(composed)
     }
@@ -247,27 +254,37 @@ class DocDistScreenRenderTest {
     }
 
     @Test
-    fun `history distinguishes no read receipt from not opened`() {
-        // The third recipient sits ~17px below the 768px default window, so the
-        // pill renders but is clipped and assertIsDisplayed fails. How far down
-        // the row lands depends on the host's font metrics — it fits on macOS and
-        // not on Windows — so the window is sized here rather than left to chance.
+    fun `history detail shows each copy's delivery, not just whether it was opened`() {
+        val base = state(DocDistDestination.History)
+        val sent = base.history.first().let { d ->
+            d.copy(
+                recipients = listOf(
+                    d.recipients[0].copy(status = RecipientStatus.Opened),
+                    d.recipients[1].copy(status = RecipientStatus.Accepted),
+                    d.recipients[2].copy(status = RecipientStatus.Pending),
+                ),
+            )
+        }
         runSkikoComposeUiTest(size = Size(1280f, 1000f)) {
             setContent {
                 ZillitTheme(darkTheme = false) {
                     DocDistScreen(
-                        state = state(DocDistDestination.History)
-                            .copy(expandedDistributionId = "d1"),
+                        state = base.copy(
+                            history = listOf(sent),
+                            expandedDistributionId = "d1",
+                            historyDetail = HistoryDetailState(id = "d1", distribution = sent, loading = false),
+                        ),
                         onEvent = {},
                     )
                 }
             }
-            onNodeWithText("Opened").assertIsDisplayed()
-            onNodeWithText("Not opened").assertIsDisplayed()
-            // The third recipient has no evidence either way. Reporting that as
-            // "not opened" is what sends a coordinator chasing someone who read
-            // it with images off.
-            onNodeWithText("No read receipt").assertIsDisplayed()
+            // A delivered-but-unread copy is "Delivered", never "not opened":
+            // no evidence is not the same news, and a coordinator chasing
+            // someone who read it with images off is the cost of conflating them.
+            onAllNodesWithText("Opened").assertCountEquals(2)
+            onAllNodesWithText("Delivered").assertCountEquals(2)
+            onAllNodesWithText("Sending").assertCountEquals(2)
+            onNodeWithText("Call Sheet Day 12.pdf").assertIsDisplayed()
         }
     }
 
@@ -289,10 +306,11 @@ class DocDistScreenRenderTest {
                     )
                 }
             }
-            onNodeWithText("Distribute documents").assertIsDisplayed()
-            // The spreadsheet says why it has no checkbox, rather than showing
-            // an unticked one that reads as a choice the sender made.
-            onNodeWithText("Cannot be watermarked").assertIsDisplayed()
+            // Twice: the toolbar's button and the dialog's title.
+            onAllNodesWithText("Compose email").assertCountEquals(2)
+            // One stamped pill: the PDF. The spreadsheet's toggle is disabled
+            // rather than unticked, so it never reads as a choice the sender made.
+            onAllNodesWithText("watermarked").assertCountEquals(1)
         }
     }
 
@@ -321,6 +339,7 @@ class DocDistScreenRenderTest {
                                 watermarked = many.map { it.id }.toSet(),
                                 to = listOf(Recipient("ada@x.co", "Ada Lovelace")),
                                 subject = "Call sheets",
+                                stage = ComposerStage.Preview,
                             ),
                         ),
                         onEvent = {},
@@ -367,7 +386,7 @@ class DocDistScreenRenderTest {
             // Reachable, not merely present: a bounded list composes only
             // what is on screen, so the twentieth folder proves itself by
             // being scrolled to.
-            onNode(hasScrollAction() and hasAnyAncestor(hasTestTag(FOLDER_TABLE_TAG)))
+            onNode(hasScrollAction() and hasAnyAncestor(hasTestTag(LIBRARY_LISTING_TAG)))
                 .performScrollToNode(hasText("Folder 20"))
             onNodeWithText("Folder 20").assertIsDisplayed()
         }

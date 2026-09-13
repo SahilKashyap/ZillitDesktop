@@ -950,6 +950,53 @@ object ZillitIcons {
         moveTo(19.5f, 5.5f); lineTo(18f, 7f)
     }
 
+    // -- menu actions --------------------------------------------------------
+
+    /** An arrow curling back to the left — Reply. */
+    val Reply: ImageVector = stroked("Reply") {
+        moveTo(9f, 7f); lineTo(4f, 12f); lineTo(9f, 17f)
+        moveTo(4f, 12f); lineTo(14f, 12f)
+        curveTo(17.3f, 12f, 20f, 14.7f, 20f, 18f)
+        lineTo(20f, 19f)
+    }
+
+    /** The same arrow curling forward — Forward. */
+    val Forward: ImageVector = stroked("Forward") {
+        moveTo(15f, 7f); lineTo(20f, 12f); lineTo(15f, 17f)
+        moveTo(20f, 12f); lineTo(10f, 12f)
+        curveTo(6.7f, 12f, 4f, 14.7f, 4f, 18f)
+        lineTo(4f, 19f)
+    }
+
+    /** Two overlapping sheets — Copy. */
+    val Copy: ImageVector = stroked("Copy") {
+        roundedRect(9f, 9f, 20f, 20f, 2f)
+        moveTo(5f, 15f)
+        curveTo(4.4f, 15f, 4f, 14.6f, 4f, 14f)
+        lineTo(4f, 6f)
+        curveTo(4f, 4.9f, 4.9f, 4f, 6f, 4f)
+        lineTo(14f, 4f)
+        curveTo(14.6f, 4f, 15f, 4.4f, 15f, 5f)
+    }
+
+    /** A tabbed folder — Move to, a mailbox. */
+    val Folder: ImageVector = stroked("Folder") {
+        moveTo(3f, 7f)
+        curveTo(3f, 5.9f, 3.9f, 5f, 5f, 5f)
+        lineTo(9.5f, 5f); lineTo(11.5f, 7.5f); lineTo(19f, 7.5f)
+        curveTo(20.1f, 7.5f, 21f, 8.4f, 21f, 9.5f)
+        lineTo(21f, 17f)
+        curveTo(21f, 18.1f, 20.1f, 19f, 19f, 19f)
+        lineTo(5f, 19f)
+        curveTo(3.9f, 19f, 3f, 18.1f, 3f, 17f)
+        close()
+    }
+
+    /** A bare dash — none, clear, no signature. */
+    val Minus: ImageVector = stroked("Minus") {
+        moveTo(5f, 12f); lineTo(19f, 12f)
+    }
+
     /** A closed rectangle with round corners, drawn clockwise from the top-left edge. */
     private fun PathBuilder.roundedRect(left: Float, top: Float, right: Float, bottom: Float, radius: Float) {
         moveTo(left + radius, top)

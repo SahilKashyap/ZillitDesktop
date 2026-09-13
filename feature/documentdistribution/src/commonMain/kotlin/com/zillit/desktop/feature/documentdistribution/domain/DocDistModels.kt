@@ -54,6 +54,8 @@ data class LibraryFolder(
      * made. Set by hand at creation, and blank on folders that never got one.
      */
     val folderDate: String = "",
+    /** "What this folder contains" — free text, shown beside the name. */
+    val description: String = "",
 )
 
 /**
@@ -82,10 +84,53 @@ data class LibraryDocument(
      * *document*, not the project: `attachment != null` means S3.
      */
     val storage: DocumentStorage? = null,
+    /**
+     * A one-shot composer upload rather than a catalogued document.
+     *
+     * Sent as `ephemeral_attachment_ids` instead of `attachment_ids`, and
+     * deleted from the server when removed from the composer — unless
+     * [reused], which marks a row borrowed from a past send whose bytes still
+     * belong to that send's history (ZL-19495).
+     */
+    val isEphemeral: Boolean = false,
+    val reused: Boolean = false,
 ) {
-    /** Whether the watermark pipeline can stamp this — PDFs and raster images. */
-    val isWatermarkable: Boolean
-        get() = mediaKind == MediaKind.Pdf || mediaKind == MediaKind.Image
+    /**
+     * Whether the server's stamping pipeline can watermark this.
+     *
+     * The server rule, not a media-kind guess: PDF plus the bitmap formats
+     * `sharp` handles (JPEG, PNG, WEBP). A GIF is an image but cannot be
+     * stamped, and offering the toggle on it produces a send-time refusal.
+     */
+    val isWatermarkable: Boolean get() = canWatermark(contentType, name)
+}
+
+/**
+ * The server's `isWatermarkable`, mirrored: PDF, JPG, PNG, WEBP. Falls back
+ * to the extension when the record carries no MIME (a duplicated attachment).
+ */
+fun canWatermark(contentType: String?, fileName: String? = null): Boolean {
+    val mime = contentType.orEmpty().lowercase().substringBefore(';').trim()
+    if (mime.isNotEmpty()) return mime in WATERMARKABLE_MIMES
+    val ext = fileName.orEmpty().substringAfterLast('.', "").lowercase()
+    return ext in WATERMARKABLE_EXTENSIONS
+}
+
+private val WATERMARKABLE_MIMES = setOf("application/pdf", "image/jpeg", "image/jpg", "image/png", "image/webp")
+private val WATERMARKABLE_EXTENSIONS = setOf("pdf", "jpg", "jpeg", "png", "webp")
+
+const val WATERMARK_SUPPORTED_LABEL = "PDF, JPG, PNG, WEBP"
+
+/** A file read off this machine — picked in a dialog or dropped on the window. */
+class LocalFile(
+    val name: String,
+    val contentType: String,
+    val bytes: ByteArray,
+) {
+    val sizeBytes: Long get() = bytes.size.toLong()
+
+    /** Never prints the bytes. */
+    override fun toString(): String = "LocalFile(name=$name, type=$contentType, size=${bytes.size})"
 }
 
 /**
@@ -120,14 +165,26 @@ data class DistributionList(
     val id: String,
     val name: String,
     val recipients: List<Recipient> = emptyList(),
+    val description: String = "",
+    /** `updated` on the wire — the "Last updated on" column. */
+    val updatedAt: Long? = null,
 )
+
+/** A distribution list a contact belongs to, as the address book names it. */
+data class ContactListRef(val id: String, val name: String)
 
 /** The implicit address book: everyone ever sent to on this production. */
 data class Contact(
     val email: String,
     val name: String = "",
     val jobTitle: String = "",
-)
+    /** The lists this address is on — the server joins them for the address book. */
+    val lists: List<ContactListRef> = emptyList(),
+    /** How many sends and lists have used this address. */
+    val usageCount: Int = 0,
+) {
+    val displayName: String get() = name.ifBlank { email }
+}
 
 /** A reusable subject + body. Body is HTML, as the composer's editor produces. */
 data class EmailTemplate(
@@ -135,6 +192,7 @@ data class EmailTemplate(
     val name: String,
     val subject: String = "",
     val bodyHtml: String = "",
+    val description: String = "",
 )
 
 /**
@@ -152,6 +210,32 @@ enum class OpenState {
     Unknown,
 }
 
+/**
+ * The mail service's word on one copy — the web's `STATUS_META` vocabulary.
+ *
+ * [Opened] is a subset of delivered: an opened copy was accepted first, which
+ * is why the History legend counts it under "Delivered" too.
+ */
+enum class RecipientStatus(val wire: String, val label: String) {
+    Pending("pending", "Sending"),
+    Accepted("accepted", "Delivered"),
+    Opened("opened", "Opened"),
+    Rejected("rejected", "Rejected"),
+    Bounced("bounced", "Bounced"),
+    Failed("failed", "Failed"),
+    ;
+
+    val isFailure: Boolean get() = this == Rejected || this == Bounced || this == Failed
+
+    companion object {
+        fun from(wire: String?): RecipientStatus =
+            entries.firstOrNull { it.wire == wire?.lowercase() } ?: Pending
+    }
+}
+
+/** Which address line a recipient was on. */
+enum class RecipientKind(val label: String) { To("To"), Cc("Cc"), Bcc("Bcc") }
+
 /** One row of a sent distribution's per-recipient status. */
 data class DeliveryStatus(
     val recipient: Recipient,
@@ -160,7 +244,43 @@ data class DeliveryStatus(
     val state: OpenState = OpenState.Unknown,
     val openedAt: Long? = null,
     val openCount: Int = 0,
+    val status: RecipientStatus = RecipientStatus.Pending,
+    val kind: RecipientKind = RecipientKind.To,
 )
+
+/** Whether the mail service accepted the send as a whole. */
+enum class SendStatus(val wire: String, val label: String) {
+    Sent("sent", "Sent"),
+    Queued("queued", "Queued"),
+    Failed("failed", "Failed"),
+    Unknown("", ""),
+    ;
+
+    companion object {
+        fun from(wire: String?): SendStatus =
+            entries.firstOrNull { it.wire.isNotEmpty() && it.wire == wire?.lowercase() } ?: Unknown
+    }
+}
+
+/** An attachment as a past send recorded it — enough to list, and to re-hydrate on Duplicate. */
+data class SentAttachment(
+    val documentId: String,
+    val name: String,
+    val sizeBytes: Long = 0,
+    val contentType: String? = null,
+    /** `ephemeral` for a device upload; anything else is a library document. */
+    val source: String = "",
+    val watermarked: Boolean = false,
+) {
+    val isEphemeral: Boolean get() = source.equals("ephemeral", ignoreCase = true)
+}
+
+/**
+ * A list that fed a send, snapshotted at send time (ZL-20299) — the name
+ * survives the list being renamed or deleted, and [emails] says which
+ * recipients it contributed so History can tag them.
+ */
+data class ListUsed(val id: String, val name: String, val emails: List<String> = emptyList())
 
 /** A send, as it appears in History. */
 data class Distribution(
@@ -170,16 +290,57 @@ data class Distribution(
     val sentByName: String = "",
     /** Who sent it, as the server keys senders — the History "Sent by" filter matches on this, not the name. */
     val senderId: String = "",
+    /** Every copy, To then Cc then Bcc — see [DeliveryStatus.kind]. */
     val recipients: List<DeliveryStatus> = emptyList(),
-    val attachmentNames: List<String> = emptyList(),
-    /** Names of the lists that fed this send, for the History row's subtitle. */
-    val listsUsed: List<String> = emptyList(),
+    val attachments: List<SentAttachment> = emptyList(),
+    val listsUsed: List<ListUsed> = emptyList(),
+    val status: SendStatus = SendStatus.Unknown,
+    val bodyHtml: String = "",
+    /** The mail service's reason when the send failed, when it gave one. */
+    val error: String? = null,
+    /** The stamp the sender configured, restored on Duplicate. */
+    val watermark: WatermarkStyle? = null,
 ) {
-    val openedCount: Int get() = recipients.count { it.state == OpenState.Opened }
+    val attachmentNames: List<String> get() = attachments.map { it.name }
+
+    val openedCount: Int
+        get() = recipients.count { it.status == RecipientStatus.Opened || it.state == OpenState.Opened }
 
     /** "3 of 12 opened" — the History row's headline figure. */
     val openSummary: String get() = "$openedCount of ${recipients.size} opened"
+
+    /** Accepted plus opened — opening implies delivery. */
+    val deliveredCount: Int
+        get() = recipients.count { it.status == RecipientStatus.Accepted || it.status == RecipientStatus.Opened }
+
+    val failedCount: Int get() = recipients.count { it.status.isFailure }
+
+    fun recipientsOf(kind: RecipientKind): List<DeliveryStatus> = recipients.filter { it.kind == kind }
+
+    /** The To / Cc / Bcc lists flattened and de-duplicated by address, for "save as list" and CSV. */
+    val uniqueRecipients: List<Recipient>
+        get() = recipients.map { it.recipient }.distinctBy { it.email.lowercase() }
+
+    /** Which list added an address, by lowercased email. */
+    val listNameByEmail: Map<String, String>
+        get() = buildMap {
+            listsUsed.forEach { used ->
+                used.emails.forEach { email ->
+                    val key = email.trim().lowercase()
+                    if (key.isNotEmpty() && key !in this) put(key, used.name)
+                }
+            }
+        }
+
+    /** The status tally the History detail's donut is drawn from. */
+    fun tally(): Map<RecipientStatus, Int> = recipients.groupingBy { it.status }.eachCount()
 }
+
+/** One page of History, with the server's full count so the header can say how many exist. */
+data class HistoryPage(val rows: List<Distribution>, val total: Int)
+
+/** A signature the mail service holds for this person, as the composer appends it. */
+data class DocDistSignature(val id: String, val title: String, val bodyHtml: String, val useForNew: Boolean = false)
 
 /**
  * A publishing target — where a document can be pushed *inside* the app rather

@@ -15,6 +15,15 @@ import com.zillit.desktop.feature.documentdistribution.domain.OpenState
 import com.zillit.desktop.feature.documentdistribution.domain.PublicationCategory
 import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
+import com.zillit.desktop.feature.documentdistribution.domain.ContactListRef
+import com.zillit.desktop.feature.documentdistribution.domain.ListUsed
+import com.zillit.desktop.feature.documentdistribution.domain.RecipientKind
+import com.zillit.desktop.feature.documentdistribution.domain.RecipientStatus
+import com.zillit.desktop.feature.documentdistribution.domain.SendStatus
+import com.zillit.desktop.feature.documentdistribution.domain.SentAttachment
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkLine
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSize
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -58,6 +67,7 @@ internal data class FolderDto(
      * every row (verified live 2026-08-11).
      */
     @SerialName("folder_date") val folderDate: String? = null,
+    @SerialName("description") val description: String? = null,
 ) {
     fun toDomain(): LibraryFolder? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -66,6 +76,7 @@ internal data class FolderDto(
             name = name.orEmpty().ifBlank { "Untitled folder" },
             parentId = parentId?.takeIf { it.isNotBlank() },
             folderDate = folderDate.orEmpty().take(ISO_DATE_LENGTH),
+            description = description.orEmpty(),
         )
     }
 }
@@ -88,6 +99,8 @@ internal data class DocumentDto(
     @SerialName("file_size") val fileSize: Long? = null,
     @SerialName("document_date") val documentDate: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
+    /** `created` — epoch ms or ISO; the from-s3 rows carry this rather than `created_at`. */
+    @SerialName("created") val created: JsonPrimitive? = null,
     @SerialName("media") val media: String? = null,
     /**
      * The S3 object, when there is one.
@@ -97,11 +110,12 @@ internal data class DocumentDto(
      */
     @SerialName("attachment") val attachment: AttachmentStorageDto? = null,
 ) {
-    fun toDomain(): LibraryDocument? {
+    fun toDomain(ephemeral: Boolean = false): LibraryDocument? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
         val fileName = listOf(originalName, name)
             .firstOrNull { !it.isNullOrBlank() } ?: "Untitled"
         return LibraryDocument(
+            isEphemeral = ephemeral,
             id = identifier,
             name = fileName,
             folderId = folderId?.takeIf { it.isNotBlank() },
@@ -112,7 +126,7 @@ internal data class DocumentDto(
             // carry a full ISO timestamp, and an ungrouped `2026-08-11T09:00Z`
             // bucket beside `2026-08-11` splits one day into two headings.
             documentDate = documentDate.orEmpty().take(ISO_DATE_LENGTH),
-            createdAt = createdAt.toEpochMillisOrNull(),
+            createdAt = createdAt.toEpochMillisOrNull() ?: created?.content.toEpochMillisOrNull(),
             storage = attachment?.toDomain() ?: media?.takeIf { it.isNotBlank() }
                 ?.let { DocumentStorage(key = it, bucket = "", region = "") },
         )
@@ -171,15 +185,20 @@ internal data class RecipientDto(
     @SerialName("opened") val opened: Boolean? = null,
     @SerialName("opened_at") val openedAt: String? = null,
     @SerialName("open_count") val openCount: Int? = null,
+    /** The mail service's verdict — `pending|accepted|opened|rejected|bounced|failed`. */
+    @SerialName("status") val status: String? = null,
+    @SerialName("designation") val designation: String? = null,
 ) {
     fun toRecipient(): Recipient? {
         val address = email?.takeIf { it.isNotBlank() } ?: return null
-        return Recipient(email = address, name = name.orEmpty(), jobTitle = job.orEmpty())
+        return Recipient(email = address, name = name.orEmpty(), jobTitle = (job ?: designation).orEmpty())
     }
 
-    fun toDelivery(): DeliveryStatus? = toRecipient()?.let { recipient ->
+    fun toDelivery(kind: RecipientKind = RecipientKind.To): DeliveryStatus? = toRecipient()?.let { recipient ->
         DeliveryStatus(
             recipient = recipient,
+            kind = kind,
+            status = RecipientStatus.from(status),
             uniqueId = uniqueId?.takeIf { it.isNotBlank() },
             // An absent `opened` is genuinely unknown rather than "no": the
             // field is only written once the tracking pixel has been asked
@@ -200,7 +219,9 @@ internal data class RecipientDto(
 internal data class PresetDto(
     @SerialName("_id") val id: String? = null,
     @SerialName("name") val name: String? = null,
+    @SerialName("description") val description: String? = null,
     @SerialName("recipients") val recipients: List<RecipientDto> = emptyList(),
+    @SerialName("updated") val updated: JsonPrimitive? = null,
 ) {
     fun toDomain(): DistributionList? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -208,7 +229,21 @@ internal data class PresetDto(
             id = identifier,
             name = name.orEmpty().ifBlank { "Untitled list" },
             recipients = recipients.mapNotNull { it.toRecipient() },
+            description = description.orEmpty(),
+            updatedAt = updated?.content.toEpochMillisOrNull(),
         )
+    }
+}
+
+@Serializable
+internal data class ContactListRefDto(
+    @SerialName("id") val id: String? = null,
+    @SerialName("_id") val underscoreId: String? = null,
+    @SerialName("name") val name: String? = null,
+) {
+    fun toDomain(): ContactListRef? {
+        val key = (id ?: underscoreId)?.takeIf { it.isNotBlank() } ?: return null
+        return ContactListRef(key, name.orEmpty())
     }
 }
 
@@ -217,10 +252,19 @@ internal data class ContactDto(
     @SerialName("email") val email: String? = null,
     @SerialName("name") val name: String? = null,
     @SerialName("job") val job: String? = null,
+    /** The lists this address is on, joined by the server for the address book. */
+    @SerialName("lists") val lists: List<ContactListRefDto> = emptyList(),
+    @SerialName("usage_count") val usageCount: Int? = null,
 ) {
     fun toDomain(): Contact? {
         val address = email?.takeIf { it.isNotBlank() } ?: return null
-        return Contact(email = address, name = name.orEmpty(), jobTitle = job.orEmpty())
+        return Contact(
+            email = address,
+            name = name.orEmpty(),
+            jobTitle = job.orEmpty(),
+            lists = lists.mapNotNull { it.toDomain() },
+            usageCount = usageCount ?: 0,
+        )
     }
 }
 
@@ -230,6 +274,7 @@ internal data class TemplateDto(
     @SerialName("name") val name: String? = null,
     @SerialName("subject") val subject: String? = null,
     @SerialName("body") val body: String? = null,
+    @SerialName("description") val description: String? = null,
 ) {
     fun toDomain(): EmailTemplate? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -238,6 +283,7 @@ internal data class TemplateDto(
             name = name.orEmpty().ifBlank { "Untitled template" },
             subject = subject.orEmpty(),
             bodyHtml = body.orEmpty(),
+            description = description.orEmpty(),
         )
     }
 }
@@ -245,12 +291,60 @@ internal data class TemplateDto(
 @Serializable
 internal data class AttachmentSummaryDto(
     @SerialName("name") val name: String? = null,
-)
+    @SerialName("original_name") val originalName: String? = null,
+    @SerialName("document_id") val documentId: String? = null,
+    @SerialName("_id") val id: String? = null,
+    @SerialName("file_size") val fileSize: JsonPrimitive? = null,
+    @SerialName("content_type") val contentType: String? = null,
+    @SerialName("source") val source: String? = null,
+    @SerialName("watermarked") val watermarked: Boolean? = null,
+) {
+    fun toDomain(): SentAttachment? {
+        val label = (originalName ?: name)?.takeIf { it.isNotBlank() } ?: return null
+        return SentAttachment(
+            documentId = (documentId ?: id).orEmpty(),
+            name = label,
+            sizeBytes = fileSize?.content?.toLongOrNull() ?: 0,
+            contentType = contentType,
+            source = source.orEmpty(),
+            watermarked = watermarked == true,
+        )
+    }
+}
 
 @Serializable
 internal data class PresetUsedDto(
+    @SerialName("preset_id") val presetId: String? = null,
     @SerialName("name") val name: String? = null,
-)
+    @SerialName("emails") val emails: List<String> = emptyList(),
+) {
+    fun toDomain(): ListUsed? {
+        val label = name?.takeIf { it.isNotBlank() } ?: return null
+        return ListUsed(id = presetId.orEmpty(), name = label, emails = emails)
+    }
+}
+
+/** The stamp a send was configured with, as `watermark_config` stores it. */
+@Serializable
+internal data class WatermarkConfigDto(
+    @SerialName("line1") val line1: String? = null,
+    @SerialName("line1Custom") val line1Custom: String? = null,
+    @SerialName("line2") val line2: String? = null,
+    @SerialName("line2Custom") val line2Custom: String? = null,
+    @SerialName("size") val size: String? = null,
+    @SerialName("color") val color: String? = null,
+    @SerialName("opacity") val opacity: Double? = null,
+) {
+    fun toDomain(): WatermarkStyle = WatermarkStyle(
+        line1 = line1?.let(WatermarkLine::from) ?: WatermarkLine.RecipientName,
+        line1Custom = line1Custom.orEmpty(),
+        line2 = line2?.let(WatermarkLine::from) ?: WatermarkLine.None,
+        line2Custom = line2Custom.orEmpty(),
+        size = WatermarkSize.from(size),
+        color = color?.takeIf { it.isNotBlank() } ?: WatermarkStyle.DEFAULT_COLOR,
+        opacity = opacity ?: WatermarkStyle.DEFAULT_OPACITY,
+    )
+}
 
 @Serializable
 internal data class DistributionDto(
@@ -273,8 +367,14 @@ internal data class DistributionDto(
     @SerialName("sent_by") val sentBy: JsonElement? = null,
     @SerialName("sender") val sender: JsonElement? = null,
     @SerialName("recipients") val recipients: List<RecipientDto> = emptyList(),
+    @SerialName("cc") val cc: List<RecipientDto> = emptyList(),
+    @SerialName("bcc") val bcc: List<RecipientDto> = emptyList(),
     @SerialName("attachments") val attachments: List<AttachmentSummaryDto> = emptyList(),
     @SerialName("presets_used") val presetsUsed: List<PresetUsedDto> = emptyList(),
+    @SerialName("status") val status: String? = null,
+    @SerialName("body") val body: String? = null,
+    @SerialName("error") val error: String? = null,
+    @SerialName("watermark_config") val watermarkConfig: WatermarkConfigDto? = null,
 ) {
     fun toDomain(): Distribution? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -284,9 +384,17 @@ internal data class DistributionDto(
             sentAt = created?.content.toEpochMillisOrNull(),
             sentByName = sentByName.orEmpty().ifBlank { readSender()?.name.orEmpty() },
             senderId = readSender()?.id.orEmpty(),
-            recipients = recipients.mapNotNull { it.toDelivery() },
-            attachmentNames = attachments.mapNotNull { it.name?.takeIf(String::isNotBlank) },
-            listsUsed = presetsUsed.mapNotNull { it.name?.takeIf(String::isNotBlank) },
+            recipients = recipients.mapNotNull { it.toDelivery(RecipientKind.To) } +
+                cc.mapNotNull { it.toDelivery(RecipientKind.Cc) } +
+                bcc.mapNotNull { it.toDelivery(RecipientKind.Bcc) },
+            attachments = attachments.mapNotNull { it.toDomain() },
+            listsUsed = presetsUsed.mapNotNull { it.toDomain() },
+            status = SendStatus.from(status),
+            bodyHtml = body.orEmpty(),
+            // `smtp_not_configured` is the dev server's standing complaint,
+            // not a failure of this send — the web hides it too.
+            error = error?.takeIf { it.isNotBlank() && it != "smtp_not_configured" },
+            watermark = watermarkConfig?.toDomain(),
         )
     }
 }
@@ -341,6 +449,12 @@ internal data class PublishedFileDto(
     }
 }
 
+/** `POST /attachments/by-ids` — `{ attachments: [...] }`, document-shaped rows. */
+@Serializable
+internal data class EphemeralListDto(
+    @SerialName("attachments") val attachments: List<DocumentDto> = emptyList(),
+)
+
 /** The open-status reply from the **email** service, not this one. */
 @Serializable
 internal data class OpenStatusDto(
@@ -387,18 +501,18 @@ private const val ISO_DATE_LENGTH = 10
  * same serializers.
  */
 internal fun decodeLibraryPage(json: String): LibraryPage =
-    docDistWireJson.decodeFromString(DocumentPageDto.serializer(), json).toDomain()
+    docDistJson.decodeFromString(DocumentPageDto.serializer(), json).toDomain()
 
 internal fun decodeFolders(json: String): List<LibraryFolder> =
-    docDistWireJson.decodeFromString(ListSerializer(FolderDto.serializer()), json)
+    docDistJson.decodeFromString(ListSerializer(FolderDto.serializer()), json)
         .mapNotNull { it.toDomain() }
 
 internal fun decodeDistributions(json: String): List<Distribution> =
-    docDistWireJson.decodeFromString(ListSerializer(DistributionDto.serializer()), json)
+    docDistJson.decodeFromString(ListSerializer(DistributionDto.serializer()), json)
         .mapNotNull { it.toDomain() }
 
 /** Matches `HttpClientFactory.json` — lenient about keys this client does not read. */
-private val docDistWireJson = Json { ignoreUnknownKeys = true }
+internal val docDistJson = Json { ignoreUnknownKeys = true }
 
 /**
  * The web's `historySenders.readSender`, key for key: `created_by` wins

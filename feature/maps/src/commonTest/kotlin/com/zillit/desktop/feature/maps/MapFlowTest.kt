@@ -11,6 +11,7 @@ import com.zillit.desktop.feature.maps.domain.LocationType
 import com.zillit.desktop.feature.maps.domain.MapAttachment
 import com.zillit.desktop.feature.maps.domain.MapCity
 import com.zillit.desktop.feature.maps.domain.MapHost
+import com.zillit.desktop.feature.maps.domain.MapLocator
 import com.zillit.desktop.feature.maps.domain.MapLocation
 import com.zillit.desktop.feature.maps.domain.MapPrefs
 import com.zillit.desktop.feature.maps.domain.MapSyncEvent
@@ -104,10 +105,17 @@ class MapFlowTest {
         val photos: FakePhotos = FakePhotos(),
         share: FakeShare? = null,
         rights: RightsRequestBus? = null,
+        locator: MapLocator? = null,
     ) {
         val canvas = FakeCanvasHost()
         val effects = mutableListOf<MapEffect>()
-        val vm = MapViewModel(repo, { viewer }, canvas, MapHost(photos = photos, share = share, prefs = prefs), rights)
+        val vm = MapViewModel(
+            repo,
+            { viewer },
+            canvas,
+            MapHost(photos = photos, share = share, prefs = prefs, locator = locator),
+            rights,
+        )
 
         val state get() = vm.currentState
         val notices: List<String> get() = effects.filterIsInstance<MapEffect.Notice>().map { it.message }
@@ -547,6 +555,46 @@ class MapFlowTest {
         assertEquals(listOf("goa", "mumbai", "pune"), repo.reordered)
         assertEquals(listOf("mumbai", "pune", "goa"), tool.state.cities.map { it.id })
         assertEquals(NoticeTone.Error, tool.effects.filterIsInstance<MapEffect.Notice>().last().tone)
+    }
+
+    @Test
+    fun `the Cities panel offers where this machine is, once, and Add City opens filled in`() = runTest(dispatcher) {
+        val repo = FakeMapRepository(cityList = mutableListOf(mumbai))
+        val here = LatLng(18.52, 73.85)
+        var asked = 0
+        val locator = object : MapLocator {
+            override suspend fun locate(): LatLng? {
+                asked++
+                return here
+            }
+        }
+        val tool = open(Tool(repo, locator = locator).also { it.canvas.geocodedCity = "Pune" })
+
+        send(tool, MapEvent.Cities.Open)
+        val place = assertNotNull(tool.state.citiesPanel.currentPlace)
+        assertEquals("Pune", place.name)
+        assertEquals(here, place.point)
+        // The page refused (no prompt to grant), so the host answered — and is not asked again.
+        assertEquals(1, asked)
+        assertEquals(1, tool.canvas.scripts.count { "currentPosition" in it })
+
+        send(tool, MapEvent.Cities.Close, MapEvent.Cities.Open)
+        assertEquals(1, asked)
+
+        send(tool, MapEvent.Cities.AddCurrentPlace)
+        val add = assertIs<MapDialog.AddCity>(tool.state.dialog).state
+        assertEquals("Pune", add.name)
+        assertEquals(here, add.point)
+        assertTrue(add.prefilled)
+    }
+
+    @Test
+    fun `with no city yet the map opens where this machine is`() = runTest(dispatcher) {
+        val locator = object : MapLocator {
+            override suspend fun locate() = LatLng(51.5, -0.12)
+        }
+        val tool = open(Tool(FakeMapRepository(), locator = locator))
+        assertEquals(51.5, tool.canvas.lastCameraLat())
     }
 
     // Finding and sharing ----------------------------------------------------------------------

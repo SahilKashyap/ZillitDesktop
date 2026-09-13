@@ -1,6 +1,10 @@
 package com.zillit.desktop.feature.email.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -15,20 +19,25 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
+import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
+import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
+import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -174,37 +183,30 @@ private fun SignatureMenu(state: ComposeUiState, onEvent: (ComposeEvent) -> Unit
             variant = ButtonVariant.Tertiary,
             onClick = { open = true },
         )
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(
-                text = { ZillitText("No signature", style = ZillitTheme.typography.bodyMedium) },
-                onClick = {
-                    open = false
-                    onEvent(ComposeEvent.SignatureChosen(null))
-                },
-            )
-            state.signatures.forEach { signature ->
-                DropdownMenuItem(
-                    text = { ZillitText(signature.title, style = ZillitTheme.typography.bodyMedium) },
-                    onClick = {
-                        open = false
-                        onEvent(ComposeEvent.SignatureChosen(signature))
+        ZillitActionMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            entries = buildList {
+                add(
+                    ZillitMenuEntry.Action("No signature", ZillitIcons.Minus) {
+                        onEvent(ComposeEvent.SignatureChosen(null))
                     },
                 )
-            }
-            DropdownMenuItem(
-                text = {
-                    ZillitText(
-                        text = "Manage signatures…",
-                        style = ZillitTheme.typography.bodyMedium,
-                        color = ZillitTheme.colors.textMuted,
+                state.signatures.forEach { signature ->
+                    add(
+                        ZillitMenuEntry.Action(signature.title, ZillitIcons.Edit, ZillitMenuTone.Primary) {
+                            onEvent(ComposeEvent.SignatureChosen(signature))
+                        },
                     )
-                },
-                onClick = {
-                    open = false
-                    onEvent(ComposeEvent.ManageSignatures)
-                },
-            )
-        }
+                }
+                add(ZillitMenuEntry.Divider)
+                add(
+                    ZillitMenuEntry.Action("Manage signatures…", ZillitIcons.Settings) {
+                        onEvent(ComposeEvent.ManageSignatures)
+                    },
+                )
+            },
+        )
     }
 }
 
@@ -398,17 +400,16 @@ private fun RecipientField(
                 },
         )
 
-        DropdownMenu(
+        ZillitMenuSurface(
             expanded = suggestions.isNotEmpty(),
             // Dismissing must not steal focus back from the field.
             onDismissRequest = { onEvent(ComposeEvent.FocusChanged(null)) },
             properties = PopupProperties(focusable = false),
         ) {
-            suggestions.forEach { contact ->
-                DropdownMenuItem(
-                    text = { SuggestionRow(contact) },
-                    onClick = { onEvent(ComposeEvent.ContactPicked(contact)) },
-                )
+            Column(Modifier.padding(horizontal = SUGGESTION_INSET)) {
+                suggestions.forEach { contact ->
+                    SuggestionRow(contact) { onEvent(ComposeEvent.ContactPicked(contact)) }
+                }
             }
         }
     }
@@ -419,7 +420,27 @@ private fun RecipientField(
  * same name.
  */
 @Composable
-private fun SuggestionRow(contact: EmailContact) {
+private fun SuggestionRow(contact: EmailContact, onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.large)
+            .background(if (hovered) ZillitTheme.colors.accentSoft else Color.Transparent)
+            .hoverable(source)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            .padding(horizontal = SUGGESTION_PADDING_X, vertical = SUGGESTION_PADDING_Y),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitAvatar(name = contact.label, size = SUGGESTION_AVATAR)
+        SuggestionText(contact)
+    }
+}
+
+@Composable
+private fun SuggestionText(contact: EmailContact) {
     Column {
         ZillitText(text = contact.label, style = ZillitTheme.typography.bodyMedium)
 
@@ -441,3 +462,7 @@ private fun SuggestionRow(contact: EmailContact) {
 }
 
 private const val SIGNATURE_PREVIEW_LINES = 4
+private val SUGGESTION_INSET = 6.dp
+private val SUGGESTION_PADDING_X = 10.dp
+private val SUGGESTION_PADDING_Y = 6.dp
+private val SUGGESTION_AVATAR = 28.dp

@@ -34,6 +34,16 @@ internal object TransportClock {
         return "${d.year}-${d.monthNumber.pad()}-${d.dayOfMonth.pad()}"
     }
 
+    /** "08:30" — what the time field shows for a stored pickup. */
+    fun hm(epochMs: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
+        if (epochMs <= 0) return ""
+        val t = Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(zone)
+        return "${t.hour.pad()}:${t.minute.pad()}"
+    }
+
+    /** Today, as the date fields spell it. */
+    fun today(nowMs: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String = ymd(nowMs, zone)
+
     /** "Aug 20, 2026 08:30" */
     fun dateTime(epochMs: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
         if (epochMs <= 0) return "—"

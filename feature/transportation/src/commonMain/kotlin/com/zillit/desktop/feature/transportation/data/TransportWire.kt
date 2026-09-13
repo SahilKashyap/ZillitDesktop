@@ -1,11 +1,15 @@
+@file:Suppress("TooManyFunctions") // One body builder and one parser per record type.
+
 package com.zillit.desktop.feature.transportation.data
 
 import com.zillit.desktop.feature.transportation.domain.AllocationType
+import com.zillit.desktop.feature.transportation.domain.DriverDetailsUpdate
 import com.zillit.desktop.feature.transportation.domain.GeoPlace
 import com.zillit.desktop.feature.transportation.domain.PermanentDraft
 import com.zillit.desktop.feature.transportation.domain.PermanentPassenger
 import com.zillit.desktop.feature.transportation.domain.PermanentStatus
 import com.zillit.desktop.feature.transportation.domain.PermanentTrip
+import com.zillit.desktop.feature.transportation.domain.StoredMedia
 import com.zillit.desktop.feature.transportation.domain.TransportUser
 import com.zillit.desktop.feature.transportation.domain.TripAction
 import com.zillit.desktop.feature.transportation.domain.TripDraft
@@ -15,8 +19,6 @@ import com.zillit.desktop.feature.transportation.domain.TripStatus
 import com.zillit.desktop.feature.transportation.domain.TripUpdate
 import com.zillit.desktop.feature.transportation.domain.Vehicle
 import com.zillit.desktop.feature.transportation.domain.VehicleDraft
-import com.zillit.desktop.feature.transportation.domain.LicenceRequest
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -41,8 +43,52 @@ internal fun vehicleWire(draft: VehicleDraft, id: String?): JsonObject = buildJs
     put("owner_contact_number", draft.ownerContact.trim())
     put("owner_address", draft.ownerAddress.trim())
     put("country_code", draft.countryCode.trim())
-    put("attachment", buildJsonArray { })
+    put("attachment", mediaListWire(draft.attachments))
     if (id != null) put("vehicleId", id)
+}
+
+/**
+ * `POST driver/temporary-driver-vehicle` — the vehicle body plus the flags
+ * that make its owner a temporary driver (`VehicleForm.jsx:213-218`).
+ */
+internal fun tempDriverVehicleWire(userId: String, draft: VehicleDraft): JsonObject = buildJsonObject {
+    put("user_id", userId)
+    put("is_private", true)
+    put("is_temp_driver", true)
+    vehicleWire(draft, id = null).forEach { (key, value) -> put(key, value) }
+}
+
+/**
+ * `PUT driver/update-details` — only the keys that were set
+ * (`FillInDetailsModal.jsx:handleUpdateDetails`). The web sends
+ * `license_picture` and `documents` whenever the form is saved by a driver,
+ * which is why both are lists here rather than "add one".
+ */
+internal fun driverDetailsWire(update: DriverDetailsUpdate): JsonObject = buildJsonObject {
+    put("user_id", update.userId)
+    update.address?.let { put("address", it.trim()) }
+    update.phone?.let { put("phone", it.trim()) }
+    update.countryCode?.let { put("country_code", it.trim()) }
+    update.vehicleId?.let { put("vehicle_id", it) }
+    update.isTripAssigned?.let { put("is_trip_assigned", it) }
+    update.isTempDriver?.let { put("is_temp_driver", it) }
+    update.licencePictures?.let { put("license_picture", mediaListWire(it)) }
+    update.documents?.let { put("documents", mediaListWire(it)) }
+}
+
+internal fun mediaListWire(items: List<StoredMedia>): JsonArray =
+    buildJsonArray { items.forEach { add(mediaWire(it)) } }
+
+/** A stored file as every transport record spells one. */
+internal fun mediaWire(media: StoredMedia): JsonObject = buildJsonObject {
+    put("media", media.media)
+    put("thumbnail", media.thumbnail)
+    put("bucket", media.bucket)
+    put("region", media.region)
+    put("caption", media.caption)
+    put("content_type", media.contentType)
+    put("content_subtype", media.contentSubtype)
+    put("name", media.name)
 }
 
 /**
@@ -64,7 +110,8 @@ internal fun tripWire(draft: TripDraft, coordinator: Boolean): JsonObject = buil
 /**
  * `PUT request` — passengers sorted by pickup, `trip_status` only when the
  * action moves state, `start_time`/`end_time` stamped by start/end, and
- * vehicle/driver only when they CHANGED.
+ * vehicle/driver only when they CHANGED. The driver's last location rides
+ * along untouched, as the web sends it back (`TripDetailsModal.jsx:160`).
  */
 internal fun tripUpdateWire(update: TripUpdate, nowMs: Long): JsonObject = buildJsonObject {
     put("tripRequestId", update.tripId)
@@ -76,6 +123,7 @@ internal fun tripUpdateWire(update: TripUpdate, nowMs: Long): JsonObject = build
     )
     put("cc_users", buildJsonArray { update.ccUsers.forEach { add(JsonPrimitive(it)) } })
     update.action.wireStatus?.let { put("trip_status", it) }
+    update.current.driverLocation?.let { put("driver_location", placeWire(it)) }
     if (update.vehicleId != update.current.vehicleId) update.vehicleId?.let { put("vehicle_id", it) }
     if (update.driverId != update.current.driverId) update.driverId?.let { put("driver_id", it) }
 }
@@ -148,6 +196,7 @@ internal fun parseVehicle(obj: JsonObject?): Vehicle? {
         driverId = obj.text("driver_id").takeIf { it.isNotBlank() },
         isPrivate = obj.bool("is_private"),
         deletedMs = obj.long("deleted") ?: 0L,
+        attachments = obj.mediaList("attachment"),
     )
 }
 
@@ -169,8 +218,39 @@ internal fun parseUser(obj: JsonObject?): TransportUser? {
         isTripAssigned = obj.bool("is_trip_assigned"),
         permanentTrip = obj.bool("permanent_trip"),
         fullDayTrip = obj.bool("full_day_trip"),
+        countryCode = obj.text("country_code"),
+        address = obj.text("address"),
+        deviceId = obj.text("device_id"),
+        avatar = parseMedia(obj["profile_picture"] as? JsonObject),
+        licencePictures = obj.mediaList("license_picture"),
+        documents = obj.mediaList("documents"),
+        tripReminderMessage = obj.text("trip_reminder_message"),
+        licenceVerified = obj.bool("is_licence_verified"),
+        lastLocation = (obj["last_location"] as? JsonObject)?.let(::parsePlace)?.takeIf { place ->
+            // `{lat: 0, long: 0}` is the service's "never reported", not the Gulf of Guinea.
+            place.hasCoordinates && (place.lat != 0.0 || place.long != 0.0)
+        },
     )
 }
+
+/** A stored file; a row with no `media` key is nothing to fetch and is dropped. */
+internal fun parseMedia(obj: JsonObject?): StoredMedia? {
+    if (obj == null) return null
+    val media = obj.text("media").takeIf { it.isNotBlank() } ?: return null
+    return StoredMedia(
+        media = media,
+        thumbnail = obj.text("thumbnail"),
+        bucket = obj.text("bucket"),
+        region = obj.text("region"),
+        caption = obj.text("caption"),
+        contentType = obj.text("content_type"),
+        contentSubtype = obj.text("content_subtype"),
+        name = obj.text("name"),
+    )
+}
+
+private fun JsonObject.mediaList(name: String): List<StoredMedia> =
+    (this[name] as? JsonArray).items().mapNotNull { parseMedia(it as? JsonObject) }
 
 internal fun parseTrip(obj: JsonObject?): TripRequest? {
     if (obj == null) return null
@@ -188,6 +268,7 @@ internal fun parseTrip(obj: JsonObject?): TripRequest? {
         startMs = obj.long("start_time") ?: 0L,
         endMs = obj.long("end_time") ?: 0L,
         createdMs = obj.long("created") ?: 0L,
+        driverLocation = (obj["driver_location"] as? JsonObject)?.let(::parsePlace)?.takeIf { it.hasCoordinates },
     )
 }
 

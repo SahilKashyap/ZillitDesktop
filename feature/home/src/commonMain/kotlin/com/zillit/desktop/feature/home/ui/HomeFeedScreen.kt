@@ -53,6 +53,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
+import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -103,8 +104,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.ui.input.pointer.pointerInput
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
+import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.core.designsystem.component.copyTextToClipboard
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1166,7 +1168,7 @@ private fun TypedLocationButton(enabled: Boolean, onEvent: (HomeFeedEvent) -> Un
             onClick = { open = true; input = "" },
             enabled = enabled,
         )
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        ZillitMenuSurface(expanded = open, onDismissRequest = { open = false }) {
             Column(
                 modifier = Modifier
                     .width(LOCATION_PICKER_WIDTH)
@@ -1228,7 +1230,7 @@ private fun EmojiButton(
             onClick = { onOpenChange(true) },
             enabled = enabled,
         )
-        DropdownMenu(expanded = open, onDismissRequest = { onOpenChange(false) }) {
+        ZillitMenuSurface(expanded = open, onDismissRequest = { onOpenChange(false) }) {
             ZillitEmojiPicker(
                 // Appended rather than inserted at the cursor: the field's API
                 // is a plain String, and rebuilding it on TextFieldValue for
@@ -1899,17 +1901,11 @@ private fun KebabButton(onPress: () -> Unit) {
  */
 @Composable
 private fun NoticeActionsMenu(open: Boolean, items: () -> List<NoticeMenuItem>, onDismiss: () -> Unit) {
-    androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = onDismiss) {
-        items().forEach { item ->
-            androidx.compose.material3.DropdownMenuItem(
-                text = { ZillitText(text = item.label, style = ZillitTheme.typography.bodyMedium) },
-                onClick = {
-                    onDismiss()
-                    item.onClick()
-                },
-            )
-        }
-    }
+    ZillitActionMenu(
+        expanded = open,
+        onDismissRequest = onDismiss,
+        entries = items().map { it.asEntry() },
+    )
 }
 
 /**
@@ -1968,30 +1964,38 @@ private fun noticeMenuItems(
 /** Reply, and — for a picture — the pen editor's Image Reply, posting rights required. */
 private fun replyItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buildList {
     if (!ui.canReply) return@buildList
-    add(NoticeMenuItem("Reply") { ui.onEvent(HomeFeedEvent.StartReply(notice.id)) })
+    add(
+        NoticeMenuItem("Reply", ZillitIcons.Reply, ZillitMenuTone.Primary) {
+            ui.onEvent(HomeFeedEvent.StartReply(notice.id))
+        },
+    )
     // Android `Home.kt:1339`: pictures only.
     if (notice.kind == NoticeKind.Image && notice.attachment != null) {
-        add(NoticeMenuItem("Image Reply") { ui.onImageReply(notice) })
+        add(NoticeMenuItem("Image Reply", ZillitIcons.Photo, ZillitMenuTone.Primary) { ui.onImageReply(notice) })
     }
 }
 
 /** Copy on any words (iOS), Download on any file — gated by the model on `download_access`. */
 private fun fileItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buildList {
     if (notice.body.isNotBlank()) {
-        add(NoticeMenuItem("Copy") { copyTextToClipboard(notice.body) })
+        add(NoticeMenuItem("Copy", ZillitIcons.Copy) { copyTextToClipboard(notice.body) })
     }
     val file = notice.attachment ?: return@buildList
     val isFile = notice.kind != NoticeKind.Text && notice.kind != NoticeKind.Location
     if (isFile && notice.sendState == NoticeSendState.Sent) {
         add(
-            NoticeMenuItem("Download") {
+            NoticeMenuItem("Download", ZillitIcons.Download) {
                 ui.onEvent(HomeFeedEvent.OpenAttachment(notice.id, file, download = true))
             },
         )
         // The call sheet's hand-off to the library — non-text posts, with
         // rights on the Distribution tool (Android `Home.kt:1349`, `:2171`).
         if (ui.isCallSheet && ui.canPublishToDistribution) {
-            add(NoticeMenuItem("Publish to Doc Distribution") { ui.onEvent(HomeFeedEvent.StartPublish(notice.id)) })
+            add(
+                NoticeMenuItem("Publish to Doc Distribution", ZillitIcons.Upload, ZillitMenuTone.Info) {
+                    ui.onEvent(HomeFeedEvent.StartPublish(notice.id))
+                },
+            )
         }
     }
 }
@@ -2009,13 +2013,13 @@ private fun fileItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = build
  */
 private fun boardItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buildList {
     if (!ui.isCallSheet && ui.canReply) {
-        add(NoticeMenuItem("Forward…") { ui.onEvent(HomeFeedEvent.StartForward(notice.id)) })
+        add(NoticeMenuItem("Forward…", ZillitIcons.Forward) { ui.onEvent(HomeFeedEvent.StartForward(notice.id)) })
     }
-    add(NoticeMenuItem("Read by…") { ui.onEvent(HomeFeedEvent.ShowReadBy(notice.id)) })
-    add(NoticeMenuItem("Gallery") { ui.onEvent(HomeFeedEvent.ShowLibrary) })
+    add(NoticeMenuItem("Read by…", ZillitIcons.Eye) { ui.onEvent(HomeFeedEvent.ShowReadBy(notice.id)) })
+    add(NoticeMenuItem("Gallery", ZillitIcons.Grid) { ui.onEvent(HomeFeedEvent.ShowLibrary) })
     if (ui.canPin(notice)) {
         add(
-            NoticeMenuItem(if (notice.isPinned) "Unpin" else "Pin") {
+            NoticeMenuItem(if (notice.isPinned) "Unpin" else "Pin", ZillitIcons.Pin, ZillitMenuTone.Info) {
                 ui.onEvent(HomeFeedEvent.TogglePin(notice.id))
             },
         )
@@ -2031,10 +2035,10 @@ private fun boardItems(notice: Notice, ui: BoardUi): List<NoticeMenuItem> = buil
  */
 private fun ownerItems(notice: Notice, ui: BoardUi, onArmDelete: () -> Unit): List<NoticeMenuItem> = buildList {
     if (notice.body.isNotBlank() && ui.canEditNotice(notice)) {
-        add(NoticeMenuItem("Edit") { ui.onEvent(HomeFeedEvent.StartEditNotice(notice.id)) })
+        add(NoticeMenuItem("Edit", ZillitIcons.Edit) { ui.onEvent(HomeFeedEvent.StartEditNotice(notice.id)) })
     }
     if (ui.canActOnNotice(notice)) {
-        add(NoticeMenuItem("Delete") { onArmDelete() })
+        add(NoticeMenuItem("Delete", ZillitIcons.Trash, ZillitMenuTone.Danger) { onArmDelete() })
     }
 }
 
@@ -2446,20 +2450,20 @@ private fun commentMenuItems(
 ): () -> List<NoticeMenuItem> = {
     buildList {
         if (comment.body.isNotBlank()) {
-            add(NoticeMenuItem("Copy") { copyTextToClipboard(comment.body) })
+            add(NoticeMenuItem("Copy", ZillitIcons.Copy) { copyTextToClipboard(comment.body) })
         }
         // A reply has its own receipts — Android's `Read By User` on the
         // comment menu, the same route with the reply's id.
-        add(NoticeMenuItem("Read by…") { onEvent(HomeFeedEvent.ShowReadBy(parentId, comment.id)) })
+        add(NoticeMenuItem("Read by…", ZillitIcons.Eye) { onEvent(HomeFeedEvent.ShowReadBy(parentId, comment.id)) })
         if (canAct) {
             if (comment.kind == NoticeKind.Text) {
                 add(
-                    NoticeMenuItem("Edit reply") {
+                    NoticeMenuItem("Edit reply", ZillitIcons.Edit) {
                         onEvent(HomeFeedEvent.StartEditComment(parentId, comment.id))
                     },
                 )
             }
-            add(NoticeMenuItem("Delete reply") { onArmDelete() })
+            add(NoticeMenuItem("Delete reply", ZillitIcons.Trash, ZillitMenuTone.Danger) { onArmDelete() })
         }
     }
 }

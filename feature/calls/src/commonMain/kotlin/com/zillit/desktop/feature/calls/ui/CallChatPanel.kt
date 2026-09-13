@@ -48,6 +48,12 @@ fun CallChatPanel(
     lines: List<CallChatLine>,
     onSend: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Why this user cannot write — the host turned chat off, or blocked
+     * them — shown in the composer's place. Null when they can. The web's
+     * `ChatPanel` does the same: reading stays, sending goes.
+     */
+    lockedReason: String? = null,
 ) {
     val colors = ZillitTheme.colors
     var draft by remember { mutableStateOf("") }
@@ -97,10 +103,19 @@ fun CallChatPanel(
             }
         }
 
-        Composer(draft = draft, onDraft = { draft = it }, onSend = {
-            onSend(draft)
-            draft = ""
-        })
+        if (lockedReason != null) {
+            ZillitText(
+                text = lockedReason,
+                style = ZillitTheme.typography.labelSmall,
+                color = colors.textMuted,
+                modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm),
+            )
+        } else {
+            Composer(draft = draft, onDraft = { draft = it }, onSend = {
+                onSend(draft)
+                draft = ""
+            })
+        }
     }
 }
 

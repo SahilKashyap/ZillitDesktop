@@ -32,6 +32,11 @@
     var desiredCam = false;
     var chosenMic = '';
     var screenPub = null;
+    /** People muted for me alone (bare user ids) — kept across a hold so resume does not unmute them. */
+    var deafened = {};
+    var hidden = {};
+    var onHold = false;
+    var mediaBeforeHold = { mic: true, cam: false };
 
     function send(event) {
         try {
@@ -139,6 +144,54 @@
             if (pub.isSubscribed && pub.track) { attachRemote(p, pub); }
         });
         reportMuted(p);
+        reportHand(p);
+        reportQuality(p);
+        applyLocalSubscriptions(p);
+    }
+
+    /**
+     * A hand is a participant attribute — a raise timestamp, or "" for down
+     * — which LiveKit replays to late joiners, as the web sets it. The
+     * legacy `{t:"hand"}` data message is honoured too, for a peer on an
+     * older bundle.
+     */
+    function reportHand(p) {
+        var ts = Number(p.attributes && p.attributes.hand);
+        send({ type: 'peer-hand', userId: userIdOf(p.identity), raised: isFinite(ts) && ts > 0 });
+    }
+
+    /**
+     * The SFU's verdict on how well a participant reaches it, on the Agora
+     * 0..6 scale the Kotlin side folds: 1 excellent, 2 good, 3 poor, 6 lost.
+     */
+    function reportQuality(p) {
+        var Q = LK.ConnectionQuality;
+        var q = p.connectionQuality;
+        var n = q === Q.Excellent ? 1 : q === Q.Good ? 2 : q === Q.Poor ? 3 : q === Q.Lost ? 6 : 0;
+        if (!n) { return; }
+        var uid = room && p === room.localParticipant ? uidOf(userIdOf(identity)) : uidOf(userIdOf(p.identity));
+        send({ type: 'network', uid: uid, tx: n, rx: n });
+    }
+
+    /** Who the room's metadata credits with recording; blank is nobody. */
+    function reportRecording(md) {
+        var by = '';
+        try { by = String((JSON.parse(md || '{}') || {}).recordingBy || ''); } catch (e) { by = ''; }
+        send({ type: 'lk-recording', by: userIdOf(by) });
+    }
+
+    function subscribeSource(p, source, on) {
+        var pub = p.getTrackPublication(source);
+        if (pub && pub.setSubscribed) {
+            try { pub.setSubscribed(on); } catch (e) { warn('subscribe', e); }
+        }
+    }
+
+    /** Re-asserts my own mutes and hides on one peer — after they (re)join, or a device switch. */
+    function applyLocalSubscriptions(p) {
+        var user = userIdOf(p.identity);
+        if (deafened[user] || onHold) { subscribeSource(p, LK.Track.Source.Microphone, false); }
+        if (hidden[user]) { subscribeSource(p, LK.Track.Source.Camera, false); }
     }
 
     function reportMuted(p) {
@@ -166,8 +219,21 @@
             reportMuted(p);
         });
         r.on(E.TrackUnsubscribed, function (track, pub, p) { detachRemote(p, pub); reportMuted(p); });
-        r.on(E.TrackMuted, function (pub, p) { if (p !== r.localParticipant) { reportMuted(p); } });
-        r.on(E.TrackUnmuted, function (pub, p) { if (p !== r.localParticipant) { reportMuted(p); } });
+        // Our own microphone muted by the SFU (the host's "mute everyone")
+        // is reported so the button follows; a peer's is their tile.
+        r.on(E.TrackMuted, function (pub, p) {
+            if (p !== r.localParticipant) { reportMuted(p); return; }
+            if (pub.source === LK.Track.Source.Microphone) { send({ type: 'self-audio', muted: true }); }
+        });
+        r.on(E.TrackUnmuted, function (pub, p) {
+            if (p !== r.localParticipant) { reportMuted(p); return; }
+            if (pub.source === LK.Track.Source.Microphone) { send({ type: 'self-audio', muted: false }); }
+        });
+        r.on(E.ParticipantAttributesChanged, function (changed, p) {
+            if (p !== r.localParticipant) { reportHand(p); }
+        });
+        r.on(E.ConnectionQualityChanged, function (q, p) { reportQuality(p); });
+        r.on(E.RoomMetadataChanged, function (md) { reportRecording(md); });
         r.on(E.ActiveSpeakersChanged, function (speakers) {
             var uids = [];
             speakers.forEach(function (p) { if (p !== r.localParticipant) { uids.push(uidOf(userIdOf(p.identity))); } });
@@ -193,7 +259,24 @@
             if (!participant) { return; }
             var msg;
             try { msg = JSON.parse(new TextDecoder().decode(payload)); } catch (e) { return; }
-            if (!msg || (msg.t !== 'chat' && msg.t !== 'del')) { return; }
+            if (!msg) { return; }
+            // The legacy hand-raise packet, from a peer on a pre-attributes bundle.
+            if (msg.t === 'hand') {
+                send({ type: 'peer-hand', userId: userIdOf(participant.identity), raised: !!msg.raised });
+                return;
+            }
+            // The host muted us: the SFU's mute says nothing about who.
+            if (msg.t === 'muted') {
+                if (msg.target === userIdOf(identity)) {
+                    var by = msg.byName || 'The host';
+                    send({
+                        type: 'notice',
+                        message: msg.source === 'camera' ? by + ' turned off your camera' : 'You were muted by ' + by,
+                    });
+                }
+                return;
+            }
+            if (msg.t !== 'chat' && msg.t !== 'del') { return; }
             send({
                 type: 'lk-chat',
                 from: userIdOf(participant.identity),
@@ -236,8 +319,14 @@
                 wire(r);
                 await r.connect(url, token);
                 if (gen !== joinGeneration) { await r.disconnect(); return; }
+                onHold = false;
                 r.remoteParticipants.forEach(function (p) { peerJoined(p); });
                 send({ type: 'joined', channel: identity, uid: uidOf(userIdOf(identity)) });
+                // Hands and the recorder as they stand: the room replays neither as events.
+                if (r.metadata) { reportRecording(r.metadata); }
+                // A stale hand from a previous session on this device would
+                // otherwise stay up; an explicit "" forces the change through.
+                r.localParticipant.setAttributes({ hand: '' }).catch(function () { /* no grant */ });
                 try {
                     await r.localParticipant.setMicrophoneEnabled(true, chosenMic ? { deviceId: chosenMic } : undefined);
                 } catch (e) { warn('microphone', e); }
@@ -261,6 +350,9 @@
             room = null;
             joinGeneration++;
             screenPub = null;
+            onHold = false;
+            deafened = {};
+            hidden = {};
             if (window.zillitCall) {
                 if (window.zillitCall.clearLocalPreview) { window.zillitCall.clearLocalPreview(); }
             }
@@ -347,8 +439,63 @@
 
         setHand(raised) {
             if (!room) { return; }
-            // The web sets a participant attribute; every LiveKit client reads it.
+            // The web sets a participant attribute; every LiveKit client reads
+            // it. The legacy data message goes too, for a peer on an older bundle.
             room.localParticipant.setAttributes({ hand: raised ? String(Date.now()) : '' }).catch(function () { /* no grant */ });
+            var packet = JSON.stringify({ t: 'hand', raised: !!raised });
+            room.localParticipant.publishData(new TextEncoder().encode(packet), { reliable: true })
+                .catch(function () { /* no grant */ });
+        },
+
+        /**
+         * Hold: the room stays connected, but nothing is sent (mic and
+         * camera off) and nothing heard (every remote microphone
+         * unsubscribed). Resume restores what was on before the hold — never
+         * a live microphone the user had not asked for — and skips anyone
+         * muted for me before it.
+         */
+        async setHold(on) {
+            if (!room || onHold === !!on) { return; }
+            onHold = !!on;
+            var p = room.localParticipant;
+            if (on) {
+                var mic = p.getTrackPublication(LK.Track.Source.Microphone);
+                var cam = p.getTrackPublication(LK.Track.Source.Camera);
+                mediaBeforeHold = { mic: !!mic && !mic.isMuted, cam: !!cam && !cam.isMuted };
+                try { await p.setMicrophoneEnabled(false); } catch (e) { warn('hold', e); }
+                try { await p.setCameraEnabled(false); } catch (e) { warn('hold', e); }
+            } else {
+                if (mediaBeforeHold.mic) { try { await p.setMicrophoneEnabled(true); } catch (e) { warn('resume', e); } }
+                if (mediaBeforeHold.cam) { try { await p.setCameraEnabled(true); } catch (e) { warn('resume', e); } }
+            }
+            desiredMic = on ? false : mediaBeforeHold.mic;
+            desiredCam = on ? false : mediaBeforeHold.cam;
+            room.remoteParticipants.forEach(function (peer) {
+                if (!on && deafened[userIdOf(peer.identity)]) { return; }
+                subscribeSource(peer, LK.Track.Source.Microphone, !on);
+            });
+            showLocalPreview();
+        },
+
+        /** "Mute for myself" / "don't watch": only this client stops receiving; nobody is told. */
+        setPeerSubscribed(userId, video, on) {
+            var table = video ? hidden : deafened;
+            if (on) { delete table[userId]; } else { table[userId] = true; }
+            if (!room) { return; }
+            var source = video ? LK.Track.Source.Camera : LK.Track.Source.Microphone;
+            room.remoteParticipants.forEach(function (peer) {
+                if (userIdOf(peer.identity) === userId) { subscribeSource(peer, source, !!on); }
+            });
+        },
+
+        /** Who muted whom — the web's `{t:"muted"}` packet, so the target sees a name. */
+        announceHostMute(targetUserId, camera, byName) {
+            if (!room) { return; }
+            var packet = JSON.stringify({
+                t: 'muted', target: targetUserId, source: camera ? 'camera' : 'microphone', byName: byName,
+            });
+            room.localParticipant.publishData(new TextEncoder().encode(packet), { reliable: true })
+                .catch(function (e) { warn('announceHostMute', e); });
         },
 
         getLocalAudioTrack() {

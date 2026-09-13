@@ -287,7 +287,7 @@ private fun DetailRow(icon: ImageVector, label: String, last: Boolean, value: @C
 @Composable
 private fun DetailValue(text: String) {
     ZillitText(
-        text = text,
+        text = text.breakable(),
         style = ZillitTheme.typography.bodyMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
         color = ZillitTheme.colors.textPrimary,
         textAlign = TextAlign.End,
@@ -300,7 +300,7 @@ private fun LinkValue(text: String, enabled: Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     ZillitText(
-        text = text,
+        text = text.breakable(),
         style = ZillitTheme.typography.bodyMedium.copy(
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
@@ -326,6 +326,15 @@ internal fun joiningDate(raw: String): String {
     val millis = if (number < EPOCH_SECONDS_LIMIT) number * MILLIS_PER_SECOND else number
     return EpochDate.date(millis).ifBlank { trimmed }
 }
+
+/**
+ * A long address has no space to wrap at, so a narrow row would break it
+ * mid-word; a zero-width break opportunity after each `@` and `.` lets it
+ * wrap where the eye expects, and nothing else changes — the glyph is unseen
+ * and never copied into a call or a mail (the drawer dials and mails the
+ * member's own strings, not this one).
+ */
+private fun String.breakable(): String = replace("@", "@\u200B").replace(".", ".\u200B")
 
 /** The action buttons rise a little under the pointer. */
 private fun lift(hovered: Boolean) = if (hovered) 10.dp else 6.dp

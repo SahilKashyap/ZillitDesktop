@@ -35,6 +35,7 @@ internal class CityController(private val store: MapStore) {
             MapEvent.Cities.Open -> {
                 store.hooks.closeAllPanels()
                 store.pushPanel(MapPanel.Cities)
+                suggestCurrentPlace()
             }
             MapEvent.Cities.Close -> close()
             is MapEvent.Cities.Search -> search(event.text)
@@ -44,6 +45,7 @@ internal class CityController(private val store: MapStore) {
                 close()
             }
             MapEvent.Cities.Add -> store.withPost { openAdd(AddCityState()) }
+            MapEvent.Cities.AddCurrentPlace -> addCurrentPlace()
             is MapEvent.Cities.Delete -> store.withPost { askDelete(event.cityId) }
             is MapEvent.Cities.Reorder -> reorder(event.cityIds)
             is MapEvent.Cities.AddQuery -> addQuery(event.text)
@@ -80,8 +82,54 @@ internal class CityController(private val store: MapStore) {
         val current = store.state.selectedCityId
         if (current != null && cities.any { it.id == current }) return
         if (current != null) store.update { copy(selectedCityId = null, locations = emptyList(), zones = emptyList()) }
-        val target = pickAutoCity(cities, store.host.prefs.lastVisitedCityId()) ?: return
+        val target = pickAutoCity(cities, store.host.prefs.lastVisitedCityId())
+        if (target == null) {
+            centreOnHere()
+            return
+        }
         store.hooks.selectCity(target.id)
+    }
+
+    /**
+     * No city to open: the map starts where this machine is, as the web's map
+     * does before its first city ("Locating you…"), rather than on Los Angeles.
+     */
+    private fun centreOnHere() {
+        store.spawn {
+            val here = store.position.current() ?: return@spawn
+            if (store.state.selectedCityId == null) store.canvas.panTo(here, HERE_ZOOM)
+        }
+    }
+
+    // Current Location ----------------------------------------------------------
+
+    private var locating = false
+
+    /**
+     * The Cities panel's Current Location card (`Sidebar.jsx`): this machine's
+     * position, named by the city Google files it under. Resolved once per
+     * session, the first time the panel opens; the card shows only while no
+     * city of that name exists.
+     */
+    private fun suggestCurrentPlace() {
+        if (locating || store.state.citiesPanel.currentPlace != null) return
+        locating = true
+        store.spawn {
+            val here = store.position.current() ?: return@spawn
+            val place = store.canvas.reverseGeocode(here) ?: return@spawn
+            store.update {
+                copy(citiesPanel = citiesPanel.copy(currentPlace = CurrentPlace(place.cityName, place.address, here)))
+            }
+        }
+    }
+
+    private fun addCurrentPlace() {
+        val place = store.state.citiesPanel.currentPlace ?: return
+        store.withPost {
+            openAdd(
+                AddCityState(name = place.name, description = place.description, point = place.point, prefilled = true),
+            )
+        }
     }
 
     private fun close() = store.popPanel { it == MapPanel.Cities }
@@ -273,5 +321,8 @@ internal class CityController(private val store: MapStore) {
 
     private companion object {
         const val SEARCH_DEBOUNCE_MS = 250L
+
+        /** The web's zoom on a resolved browser position. */
+        const val HERE_ZOOM = 12
     }
 }

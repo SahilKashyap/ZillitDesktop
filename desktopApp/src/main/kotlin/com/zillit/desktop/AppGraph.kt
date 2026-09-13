@@ -1451,6 +1451,8 @@ sealed interface AppGraph {
             @Suppress("ForbiddenMethodCall")
             val hasApiKeys = config.headerKey != null || runBlocking { apiKeySetup.isConfigured() }
 
+            val noticeMedia = S3NoticeMediaSource(storageClient, credentials = { awsKeyPair(remoteConfigRepository) })
+            val storageTarget = SuitableRegionSource(apiClient, config)
             return Ready(
                 sessionExpired = sessionExpired.asSharedFlow(),
                 config = config,
@@ -1480,13 +1482,10 @@ sealed interface AppGraph {
                 folderRepository = FolderRepositoryImpl(apiClient, config),
                 attachmentUploader = attachmentUploader,
                 uploaderForProject = uploaderForProject,
-                noticeMedia = S3NoticeMediaSource(
-                    httpClient = storageClient,
-                    credentials = { awsKeyPair(remoteConfigRepository) },
-                ),
+                noticeMedia = noticeMedia,
                 // The production's storage region and bucket — what profile
                 // pictures (stored as bare keys) are fetched against.
-                storageTarget = SuitableRegionSource(apiClient, config),
+                storageTarget = storageTarget,
 
                 projectContext = projectContext,
                 projectCache = projectCache,
@@ -1540,6 +1539,13 @@ sealed interface AppGraph {
                             key = storage.key,
                         )
                     },
+                    // Uploads, the signed fetch behind the preview, and the
+                    // stamping routes that answer a file — see DocDistWiring.
+                    transfer = docDistTransfer(
+                        storageClient, headerProvider, remoteConfigRepository, storageTarget, noticeMedia,
+                    ),
+                    isS3Storage = { projectContext.docDistUsesS3() },
+                    newUniqueId = { java.util.UUID.randomUUID().toString() },
                 ),
                 driveRepository = DriveRepositoryImpl(
                     apiClient = apiClient,
@@ -1748,6 +1754,11 @@ private fun buildCallCoordinator(
     line3: LiveKitLine?,
 ): CallCoordinator = CallCoordinator(
     line3 = line3,
+    // The web deployment's origin, for Line 3's invite link: the same
+    // deployment the Budget Builder page is loaded from, so one key names it.
+    webOrigin = {
+        config.services[ZillitService.BudgetBuilderWeb]?.trim()?.trimEnd('/')?.takeIf { it.isNotBlank() }
+    },
     api = callApi,
     bus = socketEvents,
     engine = engine,

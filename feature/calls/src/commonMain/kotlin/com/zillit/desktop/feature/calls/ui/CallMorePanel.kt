@@ -19,6 +19,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.calls.domain.CallProvider
 
 /**
  * The ⋮ menu's rows — the web's settings menu (`CallRoom.tsx:1726-1826`),
@@ -48,18 +49,28 @@ fun CallMorePanel(state: CallUiState, onEvent: (CallEvent) -> Unit, modifier: Mo
             color = CallPalette.text,
             modifier = Modifier.padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
         )
+        val line3 = state.session?.provider == CallProvider.LiveKit
+        // Hold first, and always offered on Line 3: the one row here you may
+        // need in a hurry, and never host-restricted (`CallRoom.tsx:1762-1770`).
+        if (line3) {
+            MoreRow(
+                if (state.onHold) ZillitIcons.Play else ZillitIcons.Pause,
+                if (state.onHold) "Resume call" else "Hold call",
+            ) { pick(CallEvent.ToggleHold) }
+        }
         // One recording per call is the rule every platform enforces; while
         // somebody else holds it the row says so. Never on a support call.
         if (state.session?.is247Call != true) {
-            val recordLabel = when {
-                state.recording -> "Stop recording"
-                state.recordedBy.isNotBlank() -> "${state.recordedBy} is recording"
-                else -> "Start recording"
-            }
-            MoreRow(ZillitIcons.Record, recordLabel, enabled = state.recording || state.recordedBy.isBlank()) {
-                pick(CallEvent.ToggleRecording)
-            }
+            RecordingRow(state, pick)
             MoreRow(ZillitIcons.UserPlus, "Add people") { pick(CallEvent.ToggleAddPeople) }
+        }
+        if (state.inviteLinkOffered) {
+            MoreRow(ZillitIcons.Link, "Copy invite link") { pick(CallEvent.CopyInviteLink) }
+        }
+        if (line3 && state.isHost) {
+            MoreRow(ZillitIcons.Shield, if (state.line3.policy.on) "Host controls · on" else "Host controls") {
+                pick(CallEvent.ToggleHostControls)
+            }
         }
         if (state.pipOpen) {
             MoreRow(ZillitIcons.Minimize, "Picture-in-picture") { pick(CallEvent.ToggleCallCompact) }
@@ -69,6 +80,22 @@ fun CallMorePanel(state: CallUiState, onEvent: (CallEvent) -> Unit, modifier: Mo
             MoreRow(ZillitIcons.Minimize, "Minimise call") { pick(CallEvent.ToggleStage) }
         }
     }
+}
+
+/** Record, stop, or who holds it — and "off" under a host policy, where pressing explains. */
+@Composable
+private fun RecordingRow(state: CallUiState, pick: (CallEvent) -> Unit) {
+    val label = when {
+        state.recordingLocked -> "Recording is off"
+        state.recording -> "Stop recording"
+        state.recordedBy.isNotBlank() -> "${state.recordedBy} is recording"
+        else -> "Start recording"
+    }
+    MoreRow(
+        ZillitIcons.Record,
+        label,
+        enabled = !state.recordingLocked && (state.recording || state.recordedBy.isBlank()),
+    ) { pick(CallEvent.ToggleRecording) }
 }
 
 @Composable

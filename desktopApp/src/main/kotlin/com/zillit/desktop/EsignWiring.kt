@@ -1,6 +1,30 @@
 package com.zillit.desktop
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.network.HttpClientFactory
+import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
+import com.zillit.desktop.feature.esignature.ui.EsignPickKind
+import io.ktor.client.request.accept
+import io.ktor.client.request.get
+import io.ktor.client.statement.readRawBytes
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.awt.Color
+import java.awt.FileDialog
+import java.awt.Font
+import java.awt.Frame
+import java.awt.GraphicsEnvironment
+import java.awt.RenderingHints
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
+import javax.imageio.ImageIO
 import com.zillit.desktop.feature.email.data.AwsCredentials
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.esignature.domain.EsignFileTransfer
@@ -63,8 +87,48 @@ internal fun AppGraph.Ready.esignTransfer(): EsignFileTransfer {
                 ),
                 preview = false,
             )
+
+        /** A finished file lands in Downloads and opens, as every other export does. */
+        override suspend fun land(fileName: String, bytes: ByteArray): ZillitResult<Unit> =
+            when (val saved = DownloadsAttachmentStore().save(fileName, bytes)) {
+                is ZillitResult.Failure -> saved
+                is ZillitResult.Success -> {
+                    openSavedFile(saved.data)
+                    ZillitResult.Success(Unit)
+                }
+            }
     }
 }
+
+/**
+ * A signed GET read as bytes — the audit-trail PDF answers `application/pdf`,
+ * which the envelope client cannot read. A JSON body is the service
+ * declining; its message is surfaced.
+ */
+internal fun AppGraph.Ready.esignRawGet(): suspend (String) -> ZillitResult<ByteArray> = { url ->
+    runCatching {
+        val headers = headerProvider.headersFor(RequestModule.ProjectUser, null, null, null)
+        val response = httpClient.get(url) {
+            headers.forEach { (name, value) -> this.headers.append(name, value) }
+            accept(ContentType.Application.Pdf)
+        }
+        val bytes = response.readRawBytes()
+        val isJson = response.contentType()?.match(ContentType.Application.Json) == true
+        if (isJson || !response.status.isSuccess()) {
+            error(esignDeclineMessage(bytes) ?: "The audit trail could not be fetched (${response.status.value}).")
+        }
+        bytes
+    }.fold(
+        onSuccess = { ZillitResult.Success(it) },
+        onFailure = {
+            ZillitResult.Failure(ZillitError.Validation(it.message ?: "The audit trail could not be fetched."))
+        },
+    )
+}
+
+private fun esignDeclineMessage(bytes: ByteArray): String? = runCatching {
+    HttpClientFactory.json.parseToJsonElement(bytes.decodeToString()).jsonObject["message"]?.jsonPrimitive?.content
+}.getOrNull()?.takeIf { it.isNotBlank() }
 
 /** The documents tool's PDF work, behind E-Signature's narrower interface. */
 internal fun esignPdf(): EsignPdf = object : EsignPdf {
@@ -96,7 +160,78 @@ internal fun esignPdf(): EsignPdf = object : EsignPdf {
         canvasWidth = width,
         canvasHeight = height,
     )
+
+    /**
+     * A typed name in a script face on a transparent canvas — the web's
+     * "Type" signature style. The faces are the ones macOS ships; each web
+     * key maps to the closest installed one, falling back to a serif italic
+     * so a missing font never blocks a signature.
+     */
+    override fun rasterizeText(text: String, fontKey: String, width: Int, height: Int): ZillitResult<ByteArray> =
+        runCatching {
+            val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
+            val g = image.createGraphics()
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+            g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON)
+            val installed = GraphicsEnvironment.getLocalGraphicsEnvironment().availableFontFamilyNames.toSet()
+            val family = SCRIPT_FACES[fontKey].orEmpty().firstOrNull { it in installed } ?: Font.SERIF
+            val style = if (family == Font.SERIF) Font.ITALIC else Font.PLAIN
+            var size = height * TYPED_SIZE_RATIO
+            var font = Font(family, style, size.toInt())
+            var metrics = g.getFontMetrics(font)
+            val maxWidth = width * TYPED_WIDTH_FRACTION
+            while (metrics.stringWidth(text) > maxWidth && size > MIN_TYPED_SIZE) {
+                size *= TYPED_SHRINK
+                font = Font(family, style, size.toInt())
+                metrics = g.getFontMetrics(font)
+            }
+            g.font = font
+            g.color = TYPED_INK
+            val x = (width - metrics.stringWidth(text)) / 2f
+            val y = height / 2f + (metrics.ascent - metrics.descent) / 2f
+            g.drawString(text, x, y)
+            g.dispose()
+            val out = ByteArrayOutputStream()
+            ImageIO.write(image, "png", out)
+            out.toByteArray()
+        }.fold(
+            onSuccess = { ZillitResult.Success(it) },
+            onFailure = { ZillitResult.Failure(ZillitError.Validation("The typed signature could not be rendered.")) },
+        )
 }
+
+/** The web's `SIGNATURE_FONTS`, each mapped to the nearest faces macOS installs. */
+private val SCRIPT_FACES: Map<String, List<String>> = mapOf(
+    "formal" to listOf("Snell Roundhand", "Apple Chancery", "Zapfino"),
+    "flowing" to listOf("Savoye LET", "Snell Roundhand", "Apple Chancery"),
+    "casual" to listOf("Bradley Hand", "Noteworthy", "Marker Felt"),
+    "slim" to listOf("Apple Chancery", "Snell Roundhand"),
+    "bold" to listOf("Brush Script MT", "Zapfino", "Snell Roundhand"),
+    "natural" to listOf("Noteworthy", "Bradley Hand", "Chalkboard"),
+)
+/** The same navy the drawn pad uses, so a typed mark matches a drawn one. */
+private val TYPED_INK = Color(0x16, 0x2A, 0x60)
+private const val TYPED_SIZE_RATIO = 0.42f
+private const val TYPED_WIDTH_FRACTION = 0.86f
+private const val TYPED_SHRINK = 0.92f
+private const val MIN_TYPED_SIZE = 18f
+
+/** The OS chooser for what E-Signature asks for: a PDF, a CSV, or an image. */
+internal suspend fun pickEsignFile(kind: EsignPickKind): Pair<String, ByteArray>? = when (kind) {
+    EsignPickKind.Pdf -> pickPdf()
+    EsignPickKind.Csv -> pickOne("Choose a CSV", listOf("csv", "txt", "tsv"))
+    EsignPickKind.Image -> pickOne("Choose an image", listOf("png", "jpg", "jpeg"))
+}
+
+private suspend fun pickOne(title: String, extensions: List<String>): Pair<String, ByteArray>? =
+    withContext(Dispatchers.IO) {
+        val dialog = FileDialog(null as Frame?, title, FileDialog.LOAD)
+        dialog.setFilenameFilter { _, name -> extensions.any { name.endsWith(".$it", ignoreCase = true) } }
+        dialog.isVisible = true
+        val file = dialog.files.orEmpty().firstOrNull { it.isFile } ?: return@withContext null
+        runCatching { file.name to file.readBytes() }.getOrNull()
+    }
 
 /**
  * The signer pool: the whole crew, plus the current user's own profile row.

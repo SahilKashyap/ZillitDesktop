@@ -4,15 +4,71 @@ import com.zillit.desktop.core.common.onSuccess
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.calls.data.CallApi
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitActiveCall
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
 import com.zillit.desktop.feature.calls.domain.CallMode
+import com.zillit.desktop.feature.calls.domain.CallType
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
+/** What pressing an ongoing call's button does — the web's `Line3CallJoinButton` states. */
+enum class OngoingVerb(val label: String) {
+    /** Not in it anywhere: join. */
+    Join("Join"),
+
+    /** In it on another device: joining here moves the call off that device. */
+    Switch("Switch here"),
+
+    /** It is the call open on this device: surface it, never re-join. */
+    Return("Return"),
+}
+
+/**
+ * A live Line 3 call the Calls tab offers a way into (`ActiveCallInfo` on
+ * the web's socket, drawn as the "Ongoing" rows and the per-row buttons).
+ */
+data class OngoingCall(
+    val callId: String,
+    val title: String,
+    val type: CallType,
+    val mode: CallMode,
+    val chatRoomId: String,
+    /** Who is in the room, named — the join-confirm sheet lists them. */
+    val inCall: List<Pair<String, String>>,
+    val verb: OngoingVerb,
+) {
+    val count: Int get() = inCall.size
+}
+
+/**
+ * Where the Ongoing rows come from and what their buttons do — the four
+ * seams as one object, so the host wires the socket's live list, the call
+ * open on this device, and the two verbs together or not at all.
+ */
+class OngoingCallsSource(
+    /** The calling socket's live list, never polled. */
+    val activeCalls: Flow<List<LiveKitActiveCall>>,
+    /** The call open on this device, so its row says Return. */
+    val liveCallId: Flow<String?>,
+    /** Joins or switches into an ongoing call; the host owns what that means. */
+    val onJoin: (OngoingCall) -> Unit,
+    /** Brings the call already open on this device back on screen. */
+    val onReturn: () -> Unit,
+)
+
 /** What the Calls tab is showing. */
 data class CallLogUiState(
     val entries: List<CallLogEntry> = emptyList(),
+    /**
+     * Live Line 3 calls this user may join — the web's `useActiveLine3Calls`:
+     * seeded and kept live off the calling socket, never polled.
+     */
+    val ongoing: List<OngoingCall> = emptyList(),
+    /** The ongoing call whose join-confirm sheet is open. */
+    val joinConfirm: OngoingCall? = null,
     val missedOnly: Boolean = false,
     val isLoading: Boolean = false,
     /** False once a page comes back short — the server has no more to give. */
@@ -53,6 +109,14 @@ sealed interface CallLogEvent {
     data class ShowDetail(val entry: CallLogEntry) : CallLogEvent
     data object CloseDetail : CallLogEvent
     data object DismissError : CallLogEvent
+
+    /**
+     * An ongoing call's button. Join and Switch ask first — who is in the
+     * call — as the web does; Return surfaces the call at once.
+     */
+    data class PressOngoing(val call: OngoingCall) : CallLogEvent
+    data object ConfirmJoinOngoing : CallLogEvent
+    data object CancelJoinOngoing : CallLogEvent
 }
 
 /**
@@ -76,10 +140,20 @@ class CallLogViewModel(
     private val projectId: String? = null,
     /** The reader's id ON [projectId]; project-scoped, so not the ambient one. */
     private val callerUserId: String = "",
+    /** The Ongoing rows — see [OngoingCall]. Null on a host without Line 3. */
+    private val ongoing: OngoingCallsSource? = null,
 ) : ZillitViewModel<CallLogUiState, CallLogEvent, Nothing>(CallLogUiState()) {
 
     init {
         launch { load(reset = true) }
+        ongoing?.let { source ->
+            launch {
+                combine(source.activeCalls, source.liveCallId) { calls, live -> calls to live }
+                    .collect { (calls, live) ->
+                        setState { copy(ongoing = ongoingCalls(calls, live, selfUserId().orEmpty(), projectId)) }
+                    }
+            }
+        }
     }
 
     override fun onEvent(event: CallLogEvent) {
@@ -90,16 +164,40 @@ class CallLogViewModel(
             CallLogEvent.LoadMore -> launch { load(reset = false) }
             is CallLogEvent.Redial -> onRedial(event.entry)
             is CallLogEvent.Search -> setState { copy(query = event.query) }
+            CallLogEvent.DeleteAll, CallLogEvent.CancelDeleteAll, CallLogEvent.ConfirmDeleteAll -> onDeleteEvent(event)
+            is CallLogEvent.ShowDetail -> setState { copy(detail = event.entry) }
+            CallLogEvent.CloseDetail -> setState { copy(detail = null) }
+            CallLogEvent.DismissError -> setState { copy(error = null) }
+            is CallLogEvent.PressOngoing, CallLogEvent.ConfirmJoinOngoing, CallLogEvent.CancelJoinOngoing ->
+                onOngoingEvent(event)
+        }
+    }
+
+    /** The trash: asks first, and only when there is something to wipe. */
+    private fun onDeleteEvent(event: CallLogEvent) {
+        when (event) {
             // Nothing to wipe is nothing to ask about — Android answers the
             // press with "There are no call records to delete." and stops.
             CallLogEvent.DeleteAll -> if (currentState.entries.isNotEmpty()) {
                 setState { copy(confirmingDelete = true) }
             }
-            CallLogEvent.CancelDeleteAll -> setState { copy(confirmingDelete = false) }
             CallLogEvent.ConfirmDeleteAll -> launch { deleteAll() }
-            is CallLogEvent.ShowDetail -> setState { copy(detail = event.entry) }
-            CallLogEvent.CloseDetail -> setState { copy(detail = null) }
-            CallLogEvent.DismissError -> setState { copy(error = null) }
+            else -> setState { copy(confirmingDelete = false) }
+        }
+    }
+
+    /** The Ongoing rows' buttons: Return at once, Join and Switch after the confirm. */
+    private fun onOngoingEvent(event: CallLogEvent) {
+        when (event) {
+            is CallLogEvent.PressOngoing -> when (event.call.verb) {
+                OngoingVerb.Return -> ongoing?.onReturn?.invoke()
+                OngoingVerb.Join, OngoingVerb.Switch -> setState { copy(joinConfirm = event.call) }
+            }
+            CallLogEvent.ConfirmJoinOngoing -> {
+                currentState.joinConfirm?.let { ongoing?.onJoin?.invoke(it) }
+                setState { copy(joinConfirm = null) }
+            }
+            else -> setState { copy(joinConfirm = null) }
         }
     }
 
@@ -183,6 +281,36 @@ class CallLogViewModel(
         const val PAGE_SIZE = 20
     }
 }
+
+/**
+ * The server's active list as the tab's rows.
+ *
+ * Filtered to this production, as the web's Ongoing tab is; the verb per
+ * row is the web's rule by call id — the call open here is Return, one we
+ * are in on another device is Switch here, anything else Join.
+ */
+fun ongoingCalls(
+    calls: List<LiveKitActiveCall>,
+    liveCallId: String?,
+    selfUserId: String,
+    projectId: String?,
+): List<OngoingCall> = calls
+    .filter { projectId.isNullOrBlank() || it.projectId.isBlank() || it.projectId == projectId }
+    .map { call ->
+        OngoingCall(
+            callId = call.callId,
+            title = call.title,
+            type = call.callType,
+            mode = call.callMode,
+            chatRoomId = call.chatRoomId,
+            inCall = call.inCallUsers,
+            verb = when {
+                call.callId == liveCallId -> OngoingVerb.Return
+                selfUserId.isNotBlank() && selfUserId in call.inCallUserIds -> OngoingVerb.Switch
+                else -> OngoingVerb.Join
+            },
+        )
+    }
 
 /**
  * The search box's rule — Android's `RecentMissedVM.searchList` (`:265-285`):

@@ -94,60 +94,7 @@ class DocDistSyncTest {
 
     // -- the view model ----------------------------------------------------
 
-    @Suppress("TooManyFunctions") // One override per repository operation.
-    private class FakeRepo(override val refreshes: Flow<DocDistRefresh>) : DocDistRepository {
-        var libraryLoads = 0
-        var historyLoads = 0
-        override suspend fun folders(): ZillitResult<List<LibraryFolder>> {
-            libraryLoads++
-            return ZillitResult.Success(emptyList())
-        }
-        override suspend fun createFolder(name: String, parentId: String?) = ZillitResult.Success(Unit)
-        override suspend fun renameFolder(folderId: String, name: String) = ZillitResult.Success(Unit)
-        override suspend fun deleteFolder(folderId: String) = ZillitResult.Success(Unit)
-        override suspend fun moveFolders(folderIds: List<String>, parentId: String?) =
-            ZillitResult.Success(Unit)
-        override suspend fun documents(query: LibraryQuery) =
-            ZillitResult.Success(LibraryPage(emptyList(), total = 0))
-        override suspend fun deleteDocument(documentId: String) = ZillitResult.Success(Unit)
-        override suspend fun moveDocuments(documentIds: List<String>, folderId: String?) =
-            ZillitResult.Success(Unit)
-        override suspend fun documentUrl(document: LibraryDocument) = ZillitResult.Success("url")
-        override suspend fun lists() = ZillitResult.Success(emptyList<DistributionList>())
-        override suspend fun createList(name: String, recipients: List<Recipient>) =
-            ZillitResult.Success(Unit)
-        override suspend fun updateList(listId: String, name: String, recipients: List<Recipient>) =
-            ZillitResult.Success(Unit)
-        override suspend fun deleteList(listId: String) = ZillitResult.Success(Unit)
-        override suspend fun contacts() = ZillitResult.Success(emptyList<Contact>())
-        override suspend fun saveContact(contact: Contact) = ZillitResult.Success(Unit)
-        override suspend fun deleteContact(email: String) = ZillitResult.Success(Unit)
-        override suspend fun templates() = ZillitResult.Success(emptyList<EmailTemplate>())
-        override suspend fun saveTemplate(template: EmailTemplate) = ZillitResult.Success(Unit)
-        override suspend fun deleteTemplate(templateId: String) = ZillitResult.Success(Unit)
-        override suspend fun send(distribution: NewDistribution) = ZillitResult.Success(Unit)
-        override suspend fun senders(): ZillitResult<List<DistributionSender>> =
-            ZillitResult.Success(emptyList())
-
-        override suspend fun history(
-            page: Int,
-            search: String,
-            senderIds: Set<String>,
-        ): ZillitResult<List<Distribution>> {
-            historyLoads++
-            return ZillitResult.Success(emptyList())
-        }
-        override suspend fun distribution(id: String): ZillitResult<Distribution> =
-            ZillitResult.Failure(ZillitError.Unknown("unused"))
-        override suspend fun openStatus(uniqueIds: List<String>) =
-            ZillitResult.Success(emptyMap<String, DeliveryStatus>())
-        override suspend fun publicationCategories() =
-            ZillitResult.Success(emptyList<PublicationCategory>())
-        override suspend fun publishedFiles(category: String) =
-            ZillitResult.Success(emptyList<PublishedFile>())
-        override suspend fun publish(category: String, draft: PublishDraft) =
-            ZillitResult.Success(Unit)
-    }
+    private class FakeRepo(refreshes: Flow<DocDistRefresh>) : FakeDocDistRepository(refreshes)
 
     @Test
     fun `a pulse reloads only the destination on screen`() = runTest(dispatcher) {

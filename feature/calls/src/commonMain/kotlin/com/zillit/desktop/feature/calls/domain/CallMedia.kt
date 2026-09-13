@@ -95,7 +95,10 @@ fun CallMedia.reduce(event: CallEngineEvent): CallMedia = when (event) {
     // keyed by uid — the coordinator folds them into the participant list.
     is CallEngineEvent.PeerHand -> this
     is CallEngineEvent.PeerRecording -> this
+    is CallEngineEvent.RecordingBy -> this
     is CallEngineEvent.RecordingSaved -> this
+    // Our own mute is the coordinator's flag, not a peer's media.
+    is CallEngineEvent.SelfMicMuted -> this
 }
 
 /** Upsert, never ignore: an event for an unseen uid creates that peer. */

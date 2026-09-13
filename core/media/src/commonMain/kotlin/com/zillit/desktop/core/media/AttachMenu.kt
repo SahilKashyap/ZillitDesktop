@@ -1,21 +1,14 @@
 package com.zillit.desktop.core.media
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
-import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 
 /**
@@ -48,32 +41,12 @@ fun AttachMenu(
             enabled = enabled && kinds.isNotEmpty(),
             onClick = { if (single != null) onPick(single) else open.value = true },
         )
-        DropdownMenu(expanded = open.value, onDismissRequest = { open.value = false }) {
-            kinds.forEach { kind ->
-                DropdownMenuItem(
-                    text = { AttachRow(kind) },
-                    onClick = {
-                        open.value = false
-                        onPick(kind)
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun AttachRow(kind: PreviewKind) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = kind.icon,
-            contentDescription = null,
-            tint = ZillitTheme.colors.textSecondary,
-            modifier = Modifier.size(MENU_ICON),
+        ZillitActionMenu(
+            expanded = open.value,
+            onDismissRequest = { open.value = false },
+            entries = kinds.map { kind ->
+                ZillitMenuEntry.Action(label = kind.label, icon = kind.icon) { onPick(kind) }
+            },
         )
-        androidx.compose.foundation.layout.Spacer(Modifier.size(ZillitTheme.spacing.sm))
-        ZillitText(text = kind.label, style = ZillitTheme.typography.bodyMedium)
     }
 }
-
-private val MENU_ICON = 18.dp

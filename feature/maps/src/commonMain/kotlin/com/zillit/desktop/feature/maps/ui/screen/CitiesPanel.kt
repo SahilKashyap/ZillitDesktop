@@ -24,23 +24,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.maps.domain.MapCity
+import com.zillit.desktop.feature.maps.ui.CurrentPlace
 import com.zillit.desktop.feature.maps.ui.MapEvent
 import com.zillit.desktop.feature.maps.ui.MapUiState
 
@@ -94,11 +99,18 @@ internal fun CitiesPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
             }
         }
         val filtered = state.cities.filter { it.name.contains(panel.search.trim(), ignoreCase = true) }
+        // Offered only while no city of that name exists (`suggestedPlace`).
+        val suggested = panel.currentPlace?.takeIf { place ->
+            state.cities.none { it.name.trim().equals(place.name.trim(), ignoreCase = true) }
+        }
         ZillitScrollColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PanelBodyPadding,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            if (suggested != null) {
+                CurrentPlaceCard(suggested, onAdd = { onEvent(MapEvent.Cities.AddCurrentPlace) })
+            }
             when {
                 state.citiesLoading && state.cities.isEmpty() -> LoadingBlock()
                 filtered.isEmpty() -> EmptyBlock(
@@ -120,6 +132,54 @@ internal fun CitiesPanel(state: MapUiState, onEvent: (MapEvent) -> Unit) {
                 else -> ReorderableCities(state, filtered, onEvent)
             }
         }
+    }
+}
+
+/**
+ * The Current Location card: where this machine is, as a city one tap away.
+ * The other half of the empty state (req C) — and above the list otherwise.
+ */
+@Composable
+private fun CurrentPlaceCard(place: CurrentPlace, onAdd: () -> Unit) {
+    val colors = ZillitTheme.colors
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(
+                Brush.linearGradient(listOf(softOf(MapColors.Info), colors.surface)),
+            )
+            .border(1.dp, MapColors.Info.copy(alpha = 0.35f), shape)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        IconChip(icon = MapIcons.Navigation, tint = Color.White, background = MapColors.Info, size = 36.dp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            ZillitText(
+                text = "CURRENT LOCATION",
+                style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp),
+                color = MapColors.Info,
+            )
+            ZillitText(
+                text = place.name,
+                style = labelBold(14.sp),
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (place.description.isNotBlank() && place.description != place.name) {
+                ZillitText(
+                    text = place.description,
+                    style = ZillitTheme.typography.bodySmall,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        ZillitButton(text = "Add", onClick = onAdd, leadingIcon = ZillitIcons.Add, size = ButtonSize.Small)
     }
 }
 

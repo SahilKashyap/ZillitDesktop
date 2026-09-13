@@ -63,58 +63,22 @@ class PublishFlowTest {
 
     @AfterTest fun tearDown() = Dispatchers.resetMain()
 
-    private class PublishRepo(override val refreshes: Flow<DocDistRefresh>) : DocDistRepository {
-        var libraryLoads = 0
-        var historyLoads = 0
+    private class PublishRepo(refreshes: Flow<DocDistRefresh>) : FakeDocDistRepository(refreshes) {
         val published = mutableListOf<Pair<String, PublishDraft>>()
         var live = listOf(PublishedFile(chatId = "c1", name = "Call Sheet Day 11.pdf"))
         var publishedFileReads = 0
         var publishFails = false
-        override suspend fun folders(): ZillitResult<List<LibraryFolder>> {
-            libraryLoads++
-            return ZillitResult.Success(emptyList())
-        }
-        override suspend fun createFolder(name: String, parentId: String?) = ZillitResult.Success(Unit)
-        override suspend fun renameFolder(folderId: String, name: String) = ZillitResult.Success(Unit)
-        override suspend fun deleteFolder(folderId: String) = ZillitResult.Success(Unit)
-        override suspend fun moveFolders(folderIds: List<String>, parentId: String?) =
-            ZillitResult.Success(Unit)
-        override suspend fun documents(query: LibraryQuery) =
-            ZillitResult.Success(LibraryPage(emptyList(), total = 0))
-        override suspend fun deleteDocument(documentId: String) = ZillitResult.Success(Unit)
-        override suspend fun moveDocuments(documentIds: List<String>, folderId: String?) =
-            ZillitResult.Success(Unit)
-        override suspend fun documentUrl(document: LibraryDocument) = ZillitResult.Success("url")
-        override suspend fun lists() = ZillitResult.Success(emptyList<DistributionList>())
-        override suspend fun createList(name: String, recipients: List<Recipient>) =
-            ZillitResult.Success(Unit)
-        override suspend fun updateList(listId: String, name: String, recipients: List<Recipient>) =
-            ZillitResult.Success(Unit)
-        override suspend fun deleteList(listId: String) = ZillitResult.Success(Unit)
-        override suspend fun contacts() = ZillitResult.Success(emptyList<Contact>())
-        override suspend fun saveContact(contact: Contact) = ZillitResult.Success(Unit)
-        override suspend fun deleteContact(email: String) = ZillitResult.Success(Unit)
-        override suspend fun templates() = ZillitResult.Success(emptyList<EmailTemplate>())
-        override suspend fun saveTemplate(template: EmailTemplate) = ZillitResult.Success(Unit)
-        override suspend fun deleteTemplate(templateId: String) = ZillitResult.Success(Unit)
-        override suspend fun send(distribution: NewDistribution) = ZillitResult.Success(Unit)
-        override suspend fun senders(): ZillitResult<List<DistributionSender>> =
-            ZillitResult.Success(emptyList())
-
-        override suspend fun history(
-            page: Int,
-            search: String,
-            senderIds: Set<String>,
-        ): ZillitResult<List<Distribution>> {
-            historyLoads++
-            return ZillitResult.Success(emptyList())
-        }
-        override suspend fun distribution(id: String): ZillitResult<Distribution> =
-            ZillitResult.Failure(ZillitError.Unknown("unused"))
-        override suspend fun openStatus(uniqueIds: List<String>) =
-            ZillitResult.Success(emptyMap<String, DeliveryStatus>())
-        override suspend fun publicationCategories() =
-            ZillitResult.Success(emptyList<PublicationCategory>())
+        // The library holds three documents, so a ticked id is a real row.
+        override suspend fun documents(query: LibraryQuery): ZillitResult<LibraryPage> = ZillitResult.Success(
+            LibraryPage(
+                listOf("d1", "d2", "d3").map { LibraryDocument(
+                    id = it,
+                    name = "$it.pdf",
+                    contentType = "application/pdf",
+                ) },
+                total = 3,
+            ),
+        )
         override suspend fun publishedFiles(category: String): ZillitResult<List<PublishedFile>> {
             publishedFileReads++
             return ZillitResult.Success(live)
@@ -125,7 +89,6 @@ class PublishFlowTest {
             return ZillitResult.Success(Unit)
         }
     }
-
 
     private fun granted(identifier: String) = ToolAccess(
         identifier = identifier,
@@ -163,7 +126,7 @@ class PublishFlowTest {
         val model = vm(repo)
         runCurrent()
 
-        model.onEvent(DocDistEvent.OpenPublish)
+        model.onEvent(DocDistEvent.OpenPublishSelection)
         runCurrent()
 
         assertNull(model.state.value.publish, "nothing to publish, nothing to open")
@@ -176,7 +139,7 @@ class PublishFlowTest {
         runCurrent()
 
         model.pick("d1", "d2")
-        model.onEvent(DocDistEvent.OpenPublish)
+        model.onEvent(DocDistEvent.OpenPublishSelection)
 
         assertEquals(listOf("d1", "d2"), model.state.value.publish?.draft?.documentIds)
         assertNull(model.state.value.publish?.target, "no destination is chosen for them")
@@ -189,7 +152,7 @@ class PublishFlowTest {
         runCurrent()
 
         model.pick("d1")
-        model.onEvent(DocDistEvent.OpenPublish)
+        model.onEvent(DocDistEvent.OpenPublishSelection)
         model.onEvent(DocDistEvent.ChoosePublishTarget("call_sheet_unit"))
         runCurrent()
 
@@ -205,7 +168,7 @@ class PublishFlowTest {
         runCurrent()
 
         model.pick("d1")
-        model.onEvent(DocDistEvent.OpenPublish)
+        model.onEvent(DocDistEvent.OpenPublishSelection)
         model.onEvent(DocDistEvent.ChoosePublishTarget("info"))
         runCurrent()
 
@@ -222,7 +185,7 @@ class PublishFlowTest {
         runCurrent()
 
         model.pick("d1")
-        model.onEvent(DocDistEvent.OpenPublish)
+        model.onEvent(DocDistEvent.OpenPublishSelection)
         model.onEvent(DocDistEvent.ChoosePublishTarget("call_sheet_unit"))
         runCurrent()
 
@@ -236,7 +199,7 @@ class PublishFlowTest {
         runCurrent()
 
         model.pick("d1")
-        model.onEvent(DocDistEvent.OpenPublish)
+        model.onEvent(DocDistEvent.OpenPublishSelection)
         model.onEvent(DocDistEvent.ChoosePublishTarget("schedule_page"))
         runCurrent()
         val withScene = model.state.value.publish!!.draft.copy(sceneNumber = "12A")
@@ -255,7 +218,7 @@ class PublishFlowTest {
         runCurrent()
 
         model.pick("d1")
-        model.onEvent(DocDistEvent.OpenPublish)
+        model.onEvent(DocDistEvent.OpenPublishSelection)
         model.onEvent(DocDistEvent.ChoosePublishTarget("schedule_dod"))
         runCurrent()
         val named = model.state.value.publish!!.draft.copy(name = "DOD v2")
@@ -278,7 +241,7 @@ class PublishFlowTest {
         runCurrent()
 
         model.pick("d1")
-        model.onEvent(DocDistEvent.OpenPublish)
+        model.onEvent(DocDistEvent.OpenPublishSelection)
         model.onEvent(DocDistEvent.ChoosePublishTarget("schedule_dod"))
         runCurrent()
         model.onEvent(DocDistEvent.ConfirmPublish)
@@ -295,7 +258,7 @@ class PublishFlowTest {
         runCurrent()
 
         model.pick("d1")
-        model.onEvent(DocDistEvent.OpenPublish)
+        model.onEvent(DocDistEvent.OpenPublishSelection)
         model.onEvent(DocDistEvent.ChoosePublishTarget("schedule_dod"))
         runCurrent()
         model.onEvent(
@@ -318,7 +281,7 @@ class PublishFlowTest {
         runCurrent()
 
         model.pick("d1")
-        model.onEvent(DocDistEvent.OpenPublish)
+        model.onEvent(DocDistEvent.OpenPublishSelection)
         model.onEvent(DocDistEvent.ChoosePublishTarget("call_sheet_unit"))
         runCurrent()
         model.onEvent(DocDistEvent.ToggleReplaceTarget("c1"))
@@ -344,7 +307,7 @@ class PublishFlowTest {
         runCurrent()
 
         model.pick("d1")
-        model.onEvent(DocDistEvent.OpenPublish)
+        model.onEvent(DocDistEvent.OpenPublishSelection)
         model.onEvent(DocDistEvent.ChoosePublishTarget("info"))
         runCurrent()
         model.onEvent(DocDistEvent.ConfirmPublish)
@@ -362,7 +325,7 @@ class PublishFlowTest {
         runCurrent()
 
         model.pick("d1")
-        model.onEvent(DocDistEvent.OpenPublish)
+        model.onEvent(DocDistEvent.OpenPublishSelection)
         model.onEvent(DocDistEvent.ClosePublish)
 
         assertNull(model.state.value.publish)

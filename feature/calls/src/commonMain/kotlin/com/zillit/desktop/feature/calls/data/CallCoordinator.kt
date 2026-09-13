@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.calls.data
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.onFailure
@@ -7,9 +8,13 @@ import com.zillit.desktop.core.common.onSuccess
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.ZillitSocketEvents
+import com.zillit.desktop.feature.calls.data.livekit.Line3CallState
+import com.zillit.desktop.feature.calls.data.livekit.Line3InCall
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitActiveCall
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitCallPolicy
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitDial
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitDismissal
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitGuest
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitLine
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitLineListener
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitRingWatch
@@ -138,6 +143,8 @@ class CallCoordinator(
      * hang-up on their own wire and reports back in the statuses above.
      */
     private val line3: LiveKitLine? = null,
+    /** The web deployment's origin, for Line 3's invite link. Null when unknown. */
+    private val webOrigin: () -> String? = { null },
 ) {
 
     private val _phase = MutableStateFlow(CallPhase.Idle)
@@ -170,15 +177,257 @@ class CallCoordinator(
     /** Reactions and lines, inbound and our own echoed back. Never persisted. */
     val inCallData: SharedFlow<InCallData> get() = inCall.data
 
-    /** Sends an emoji to everyone else on the call, and shows it here. */
-    fun sendReaction(emoji: String) = inCall.sendReaction(emoji)
-
-    /** Sends one ephemeral line to everyone else on the call. */
-    fun sendInCallMessage(text: String) = inCall.sendMessage(text)
-
     /** Things that went wrong without ending the call. */
     private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val notices: SharedFlow<String> = _notices.asSharedFlow()
+
+    /**
+     * Line 3's in-call extras — the host's policy, who we muted for
+     * ourselves, the guests at the door — and the verbs that move them. A
+     * collaborator for the reason [inCall] is: none of it touches the phase.
+     */
+    private val line3InCall = Line3InCall(
+        line = line3,
+        engine = engine,
+        scope = scope,
+        session = { _session.value },
+        selfName = selfName,
+        notice = { _notices.tryEmit(it) },
+        webOrigin = webOrigin,
+    )
+
+    /** Policy, local mutes, chat blocks and pending guests on a Line 3 call. */
+    val line3State: StateFlow<Line3CallState> get() = line3InCall.state
+
+    /** Whether this user holds the call's host controls — the original caller, on Line 3. */
+    val isHost: Boolean get() = line3InCall.isHost(_session.value)
+
+    /**
+     * Sends an emoji to everyone else on the call, and shows it here.
+     *
+     * On Line 3 the server floats it back to everyone, us included, and the
+     * float is drawn from that echo alone — so the sender sees exactly what
+     * the others see, and only once the server accepted it.
+     */
+    fun sendReaction(emoji: String) {
+        if (_session.value?.provider == CallProvider.LiveKit) {
+            if (line3InCall.reactionsRestricted) {
+                line3InCall.lockedNote("reactions")
+                return
+            }
+            line3InCall.react(emoji, now())
+            return
+        }
+        inCall.sendReaction(emoji)
+    }
+
+    /** Sends one ephemeral line to everyone else on the call. */
+    fun sendInCallMessage(text: String) {
+        if (_session.value?.provider == CallProvider.LiveKit) {
+            if (line3InCall.chatRestricted) {
+                line3InCall.lockedNote("chat")
+                return
+            }
+            if (line3InCall.selfChatBlocked()) {
+                _notices.tryEmit("The host blocked you from chat")
+                return
+            }
+        }
+        inCall.sendMessage(text)
+    }
+
+    // ── Line 3 in-call verbs ────────────────────────────────────────────
+
+    /** Our own leg is on hold: sending nothing, hearing nothing, still in the room. */
+    private val _onHold = MutableStateFlow(false)
+    val onHold: StateFlow<Boolean> = _onHold.asStateFlow()
+
+    /** Mic and camera as they stood when hold was pressed, so resume restores rather than switches on. */
+    private var mediaBeforeHold = false to false
+
+    /**
+     * Holds or resumes. The room stays connected — a hold is a state change,
+     * not a leave — and the server is told on the socket so everyone's
+     * roster badges us. Resume puts back exactly what was on before.
+     */
+    fun toggleHold() = applyHold(on = !_onHold.value, tellServer = true)
+
+    /**
+     * The local half of a hold, and the server half when it started here.
+     * A hold the server reported (`callHeld` for us, from another device)
+     * is only applied — echoing it back would be a second hold request.
+     */
+    private fun applyHold(on: Boolean, tellServer: Boolean) {
+        val current = _session.value ?: return
+        if (_phase.value != CallPhase.InCall || current.provider != CallProvider.LiveKit) return
+        if (_onHold.value == on) return
+        if (on) {
+            mediaBeforeHold = !_micMuted.value to _cameraOn.value
+            _micMuted.value = true
+            _cameraOn.value = false
+        } else {
+            _micMuted.value = !mediaBeforeHold.first
+            _cameraOn.value = mediaBeforeHold.second
+        }
+        _onHold.value = on
+        engine.setHold(on)
+        if (!tellServer) return
+        scope.launch {
+            line3?.hold(current.callUuid, on, current.projectId.takeIf(String::isNotBlank), current.selfUserId)
+        }
+    }
+
+    fun setListen(userId: String, listen: Boolean) = line3InCall.setListen(userId, listen)
+
+    fun setWatch(userId: String, watch: Boolean) = line3InCall.setWatch(userId, watch)
+
+    fun muteForEveryone(userId: String) = line3InCall.muteForEveryone(userId, camera = false)
+
+    fun stopCameraForEveryone(userId: String) = line3InCall.muteForEveryone(userId, camera = true)
+
+    fun removeFromCall(userId: String) = line3InCall.removeFromCall(userId)
+
+    fun blockChat(userId: String, blocked: Boolean) = line3InCall.blockChat(userId, blocked)
+
+    /** Retracts a mid-call invite that is still ringing; the row goes back to addable. */
+    fun cancelInvite(userId: String) {
+        val current = _session.value ?: return
+        line3InCall.cancelInvite(userId)
+        _session.value = current.copy(
+            participants = current.participants.filterNot { it.userId == userId && it.status == CallStatus.Ringing },
+        )
+    }
+
+    fun setCallPolicy(policy: LiveKitCallPolicy) = line3InCall.setCallPolicy(policy)
+
+    fun hostAction(action: String) = line3InCall.hostAction(action)
+
+    fun admitGuest(guestId: String) = line3InCall.admitGuest(guestId)
+
+    fun declineGuest(guestId: String) = line3InCall.declineGuest(guestId)
+
+    /** The web's invite link for the live Line 3 call, or null when there is none to give. */
+    fun inviteLink(): String? = line3InCall.inviteLink()
+
+    /**
+     * A second Line 3 ring while we are on a call — the web's compact
+     * "Decline / End & Accept" banner. Never auto-declined: the server rings
+     * busy devices on purpose, and the choice is the user's.
+     */
+    private val _secondCall = MutableStateFlow<CallSession?>(null)
+    val secondCall: StateFlow<CallSession?> = _secondCall.asStateFlow()
+    private var secondCallTimeout: Job? = null
+
+    /**
+     * One soft chime, once — the web's `guestChime`: a second ring over a
+     * live call, or a guest knocking. Never the ringtone over a live call.
+     */
+    private val _chimes = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
+    val chimes: SharedFlow<Unit> = _chimes.asSharedFlow()
+
+    fun declineSecondCall() {
+        val waiting = _secondCall.value ?: return
+        dismissSecondCall()
+        scope.launch { line3?.decline(waiting) }
+    }
+
+    /**
+     * Ends the call we are on, then answers the waiting one here. A real
+     * hang-up first, not a bare leave: the server must mark us gone before
+     * the new call starts, or the old call's `callEnded` — which names no
+     * call — lands on the one we are joining and ends it.
+     */
+    fun endAndAcceptSecondCall() {
+        val waiting = _secondCall.value ?: return
+        val current = _session.value ?: return
+        dismissSecondCall()
+        val wasInCall = _phase.value == CallPhase.InCall
+        _phase.value = CallPhase.Ending
+        scope.launch {
+            engine.leave()
+            if (current.provider == CallProvider.LiveKit) {
+                if (current.direction == CallDirection.Outgoing && !wasInCall) {
+                    line3?.cancel(current.callUuid, current.projectId.takeIf(String::isNotBlank), current.selfUserId)
+                } else {
+                    line3?.leave(current)
+                }
+            } else {
+                plane.announceSelf(current, CallStatus.Left)
+                sendFinalStatus(current, CallStatus.Left)
+            }
+            finish(current, CallEndReason.Hungup)
+            onInvite(waiting)
+            accept()
+        }
+    }
+
+    private fun dismissSecondCall() {
+        secondCallTimeout?.cancel()
+        secondCallTimeout = null
+        _secondCall.value = null
+    }
+
+    /** The server's list of live Line 3 calls this user may join, return to, or switch here. */
+    private val _activeCalls = MutableStateFlow<List<LiveKitActiveCall>>(emptyList())
+    val activeCalls: StateFlow<List<LiveKitActiveCall>> = _activeCalls.asStateFlow()
+
+    /**
+     * Joins a call already under way — the Calls tab's Join, or Switch here
+     * when we are in it on another device. Refused while any call is up: the
+     * tab shows Return for the one we are in, and two calls on one
+     * microphone is the bug placeCall refuses for the same reason.
+     */
+    fun joinActiveCall(callId: String) {
+        if (_phase.value != CallPhase.Idle) return
+        val line = line3 ?: return
+        val me = line.identityNow() ?: return
+        val info = _activeCalls.value.firstOrNull { it.callId == callId } ?: run {
+            _toasts.tryEmit("That call has ended")
+            return
+        }
+        val callerName = info.callerName.ifBlank { info.inCallUsers.firstOrNull()?.second.orEmpty() }
+        _phase.value = CallPhase.Outgoing
+        _session.value = CallSession(
+            callUuid = info.callId,
+            roomId = info.callId,
+            chatRoomId = info.chatRoomId,
+            projectId = info.projectId.ifBlank { me.projectId },
+            direction = CallDirection.Incoming,
+            provider = CallProvider.LiveKit,
+            mode = info.callMode,
+            type = info.callType,
+            hasVideo = info.callType == CallType.Video,
+            callerUserId = info.callerId,
+            callerName = callerName,
+            selfUserId = me.userId,
+            selfDeviceId = selfDeviceId().orEmpty(),
+            title = info.title,
+            participants = info.inCallUsers
+                .filter { (id, _) -> id != me.userId }
+                .map { (id, name) ->
+                    CallParticipant(
+                        userId = id,
+                        name = name,
+                        status = if (id == info.callerId) CallStatus.Caller else CallStatus.InCall,
+                    )
+                },
+        )
+        _cameraOn.value = info.callType == CallType.Video
+        scope.launch {
+            when (val joined = line.joinActive(info.callId, me)) {
+                is ZillitResult.Failure -> fail(joined.error.userMessage)
+                is ZillitResult.Success -> {
+                    val live = _session.value ?: return@launch
+                    if (live.callUuid != info.callId) return@launch
+                    val session = live.copy(livekitUrl = joined.data.url, livekitToken = joined.data.token)
+                    _session.value = session
+                    // Everyone was in before we arrived: no transition will move us.
+                    _phase.value = CallPhase.InCall
+                    joinMedia(session)
+                }
+            }
+        }
+    }
 
     private val _ended = MutableSharedFlow<CallEndEvent>(extraBufferCapacity = 4)
     val ended: SharedFlow<CallEndEvent> = _ended.asSharedFlow()
@@ -242,6 +491,9 @@ class CallCoordinator(
 
     /** Server truth for a Line 3 ring this device is showing — see [LiveKitRingWatch]. */
     private val line3Ring = LiveKitRingWatch()
+
+    /** Tells two echoed reactions in one millisecond apart; see the listener. */
+    private var reactionSequence = 0L
 
     /** Runs only while the media link is down; cancelled the moment it returns. */
     /** Ends a call the media stack never brought back. */
@@ -439,7 +691,7 @@ class CallCoordinator(
             // that matters on Agora behind a request that does nothing for it.
             // Both are scoped to the RINGING call's ids, never the live one's.
             if (invite.provider == CallProvider.LiveKit) {
-                scope.launch { line3?.decline(invite) }
+                offerSecondCall(invite)
                 return
             }
             scope.launch {
@@ -472,6 +724,25 @@ class CallCoordinator(
             watchPlane(invite)
         }
         startRingTimeout(CallTimeouts.INCOMING_MS) { incomingRangOut() }
+    }
+
+    /**
+     * A Line 3 ring while we are busy: shown as the second-call banner
+     * rather than declined for the user. One at a time, the way the web
+     * keeps one pending invite; the ring window is the server's, so a banner
+     * nobody answers simply goes away when it closes.
+     */
+    private fun offerSecondCall(invite: CallSession) {
+        val current = _session.value
+        if (current != null && invite.callUuid.matches(current)) return
+        if (_secondCall.value != null) return
+        _secondCall.value = invite
+        _chimes.tryEmit(Unit)
+        secondCallTimeout?.cancel()
+        secondCallTimeout = scope.launch {
+            delay(SECOND_CALL_BANNER_MILLIS)
+            if (_secondCall.value?.callUuid == invite.callUuid) _secondCall.value = null
+        }
     }
 
     /** The user pressed accept. */
@@ -630,6 +901,10 @@ class CallCoordinator(
      */
     fun toggleHand() {
         if (_phase.value != CallPhase.InCall) return
+        if (line3InCall.handsRestricted) {
+            line3InCall.lockedNote("raising hands")
+            return
+        }
         val raised = !_handRaised.value
         _handRaised.value = raised
         mirrorMediaState(mapOf("raise_hand" to raised))
@@ -650,8 +925,15 @@ class CallCoordinator(
     fun startScreenShare(sourceId: String? = null) {
         if (_phase.value != CallPhase.InCall) return
         if (_media.value.selfSharing) return
+        if (line3InCall.shareRestricted) {
+            line3InCall.lockedNote("screen sharing")
+            return
+        }
         scope.launch { engine.startScreenShare(sourceId) }
     }
+
+    /** Whether Present may be offered at all: the host may lock it for everyone but themselves. */
+    val screenShareRestricted: Boolean get() = line3InCall.shareRestricted
 
     fun stopScreenShare() {
         if (_media.value.selfSharing) scope.launch { engine.stopScreenShare() }
@@ -727,7 +1009,33 @@ class CallCoordinator(
     fun toggleRecording() {
         if (_phase.value != CallPhase.InCall) return
         val session = _session.value ?: return
-        recorder.toggle(session)
+        when {
+            session.provider != CallProvider.LiveKit -> recorder.toggle(session)
+            line3InCall.recordingRestricted -> line3InCall.lockedNote("call recording")
+            else -> recorder.toggle(session) { on -> markLine3Recording(session, on) }
+        }
+    }
+
+    /**
+     * Line 3's server-side mark, before the local recorder runs: the web's
+     * `setRecording`. A second recorder is refused 409 `already_recording`,
+     * and the local recorder must not start for a recording nobody else sees.
+     */
+    private suspend fun markLine3Recording(session: CallSession, on: Boolean): Boolean {
+        val line = line3 ?: return false
+        val me = line.identityNow() ?: return false
+        val outcome = line.markRecording(session.callUuid, on, me.copy(userId = session.selfUserId))
+        if (on && outcome is ZillitResult.Failure) {
+            val word = (outcome.error as? ZillitError.Http)?.serverMessage
+            _notices.tryEmit(
+                if (word == "already_recording") {
+                    "Someone is already recording this call"
+                } else {
+                    "Couldn't start recording"
+                },
+            )
+        }
+        return !on || outcome is ZillitResult.Success
     }
 
     fun toggleCamera() {
@@ -851,14 +1159,17 @@ class CallCoordinator(
         // was not carried — a redial rebuilds the request without it.
         val weAreAlsoTheCallee = current.is247Call ||
             (current.receiverUserId.isNotBlank() && current.receiverUserId == current.selfUserId)
-        if (change.userId == current.selfUserId && current.selfUserId.isNotBlank() &&
-            change.status == CallStatus.InCall &&
-            _phase.value == CallPhase.Outgoing && !weAreAlsoTheCallee
-        ) {
+        val ourOwnJoinEcho = change.userId == current.selfUserId && current.selfUserId.isNotBlank() &&
+            change.status == CallStatus.InCall
+        if (ourOwnJoinEcho && _phase.value == CallPhase.Outgoing && !weAreAlsoTheCallee) {
             ZillitLog.i(TAG) { "ignoring our own in_call while ${current.callUuid} is still ringing" }
             return
         }
+        applyRosterChange(current, change)
+    }
 
+    /** The row moves, and whatever the new status means for the call follows. */
+    private fun applyRosterChange(current: CallSession, change: CallStatusChange) {
         _session.value = current.copy(
             participants = current.participants.withStatus(change.userId, change.status),
         )
@@ -1147,6 +1458,9 @@ class CallCoordinator(
             is CallEngineEvent.PeerHand -> onPeerHand(event)
             is CallEngineEvent.ChatReceived -> onChatReceived(event)
             is CallEngineEvent.PeerRecording -> onPeerRecording(event)
+            is CallEngineEvent.RecordingBy -> onRecordingBy(event.userId)
+            // The SFU muted us (the host's "mute everyone"): the button follows.
+            is CallEngineEvent.SelfMicMuted -> if (_micMuted.value != event.muted) _micMuted.value = event.muted
             is CallEngineEvent.RecordingSaved -> onRecordingSaved(event)
             else -> Unit
         }
@@ -1208,6 +1522,7 @@ class CallCoordinator(
         // happened before we subscribed is invisible on the socket.
         if (current.provider == CallProvider.LiveKit) {
             line3?.refreshRoster(current.callUuid, current.callerUserId)
+            line3InCall.onJoined()
             return
         }
         scope.launch {
@@ -1484,7 +1799,10 @@ class CallCoordinator(
         line3Ring.reset()
         // A hand does not carry into the next call; neither does a recording.
         _handRaised.value = false
+        _onHold.value = false
         recorder.reset()
+        line3InCall.reset()
+        dismissSecondCall()
         // Reactions and lines never outlive the call that carried them.
         inCall.reset()
         _media.value = CallMedia()
@@ -1525,6 +1843,28 @@ class CallCoordinator(
         if (updated != current.participants) {
             _session.value = current.copy(participants = updated)
         }
+    }
+
+    /**
+     * Line 3's room metadata: who the server credits with recording. Our own
+     * name there is our own recorder, already shown as such; anyone else's
+     * is the banner, and blank clears it whoever held it.
+     */
+    private var roomRecorder = ""
+
+    private fun onRecordingBy(userId: String) {
+        val current = _session.value ?: return
+        if (userId.isBlank() || userId == current.selfUserId) {
+            if (roomRecorder.isNotBlank()) recorder.onRemoteFlag(roomRecorder, recording = false, name = "")
+            roomRecorder = ""
+            return
+        }
+        roomRecorder = userId
+        recorder.onRemoteFlag(
+            key = userId,
+            recording = true,
+            name = current.participants.firstOrNull { it.userId == userId }?.name.orEmpty(),
+        )
     }
 
     /** Somebody else started or stopped recording; the banner names them. */
@@ -1637,7 +1977,10 @@ class CallCoordinator(
     private inner class Line3Listener : LiveKitLineListener {
         override fun onInvite(session: CallSession) {
             line3Ring.reset()
-            onInvite(session.copy(selfDeviceId = selfDeviceId().orEmpty()))
+            // Qualified: the unqualified name is this listener's own method, and an
+            // incoming ring recursed into it until the stack ran out — every Line 3
+            // ring reaching this device died there, silently, in a launched coroutine.
+            this@CallCoordinator.onInvite(session.copy(selfDeviceId = selfDeviceId().orEmpty()))
         }
 
         override fun onRingState(
@@ -1663,15 +2006,139 @@ class CallCoordinator(
             applyStatusChange(CallStatusChange(roomId = callId, userId = userId, status = status))
         }
 
-        override fun onDismissed(callId: String, why: LiveKitDismissal) {
+        override fun onDismissed(callId: String, why: LiveKitDismissal, byName: String) {
+            // The banner's call, not ours: it just goes away.
+            _secondCall.value?.let { waiting ->
+                if (callId.matches(waiting)) {
+                    dismissSecondCall()
+                    if (why == LiveKitDismissal.Cancelled) _toasts.tryEmit("Missed call from ${waiting.callerName}")
+                    return
+                }
+            }
             val current = _session.value ?: return
             if (!callId.matches(current)) return
             val reason = when (why) {
                 LiveKitDismissal.HandledElsewhere -> CallEndReason.PickedElsewhere
                 LiveKitDismissal.Cancelled, LiveKitDismissal.Removed -> CallEndReason.RemoteEnded
             }
+            when {
+                // A cancel while this device was ringing is a missed call, named.
+                why == LiveKitDismissal.Cancelled && _phase.value == CallPhase.Incoming ->
+                    _toasts.tryEmit("Missed call from ${current.callerName.ifBlank { "someone" }}")
+                why == LiveKitDismissal.Removed ->
+                    _toasts.tryEmit(
+                        if (byName.isNotBlank()) {
+                            "$byName removed you from the call"
+                        } else {
+                            "You were removed from the call"
+                        },
+                    )
+            }
             scope.launch { engine.leave() }
             finish(current, reason)
+        }
+
+        override fun onUserState(callId: String, participant: CallParticipant) {
+            val current = _session.value ?: return
+            if (!callId.matches(current)) return
+            // A state-only delta must not lose the picture or the guest flag
+            // the roster snapshot carried; merge what the event knew.
+            _session.value = current.copy(
+                participants = current.participants.map { row ->
+                    if (row.userId != participant.userId) {
+                        row
+                    } else {
+                        row.copy(
+                            isGuest = row.isGuest || participant.isGuest,
+                            image = row.image.ifBlank { participant.image },
+                            name = row.name.ifBlank { participant.name },
+                        )
+                    }
+                },
+            )
+        }
+
+        override fun onReaction(callId: String, userId: String, emoji: String) {
+            val current = _session.value ?: return
+            if (!callId.matches(current)) return
+            val name = if (userId == current.selfUserId) {
+                selfName().orEmpty()
+            } else {
+                current.participants.firstOrNull { it.userId == userId }?.name.orEmpty()
+            }
+            val at = now()
+            inCall.receive(
+                InCallData(
+                    roomId = current.callUuid,
+                    kind = IN_CALL_KIND_REACTION,
+                    fromUserId = userId,
+                    name = name,
+                    emoji = emoji,
+                    // Never de-duped: two taps of the same face are two floats.
+                    id = "react-$userId-$at-${reactionSequence++}",
+                    atMillis = at,
+                ),
+            )
+        }
+
+        override fun onHeld(callId: String, userId: String, onHold: Boolean) {
+            val current = _session.value ?: return
+            if (!callId.matches(current)) return
+            if (userId == current.selfUserId) {
+                // The server is the authority: a hold from another of our
+                // devices lands here too, and a duplicate re-sets the flag.
+                applyHold(onHold, tellServer = false)
+                return
+            }
+            _session.value = current.copy(
+                participants = current.participants.map { row ->
+                    if (row.userId == userId) row.copy(onHold = onHold) else row
+                },
+            )
+        }
+
+        override fun onHandsLowered(callId: String, userIds: List<String>) {
+            val current = _session.value ?: return
+            if (!callId.matches(current) || userIds.isEmpty()) return
+            if (current.selfUserId in userIds && _handRaised.value) {
+                _handRaised.value = false
+                engine.setHandRaised(false)
+            }
+            _session.value = current.copy(
+                participants = current.participants.map { row ->
+                    if (row.userId in userIds) row.copy(handRaised = false) else row
+                },
+            )
+        }
+
+        override fun onChatBlock(callId: String, userId: String, blocked: Boolean) =
+            line3InCall.onChatBlock(callId, userId, blocked)
+
+        override fun onPolicy(callId: String, policy: LiveKitCallPolicy) = line3InCall.onPolicy(callId, policy)
+
+        override fun onHostAction(callId: String, action: String) {
+            val current = _session.value ?: return
+            if (!callId.matches(current) || _phase.value != CallPhase.InCall) return
+            when (action) {
+                // Cooperative: the host asked, this client complies, the user can undo.
+                Line3InCall.ACTION_MUTE_ALL -> if (!_micMuted.value) toggleMicrophone()
+                Line3InCall.ACTION_LOWER_HANDS -> if (_handRaised.value) toggleHand()
+                // No background effects on this client; nothing to clear.
+                else -> Unit
+            }
+        }
+
+        override fun onGuestKnocking(callId: String, guestId: String, name: String) {
+            val current = _session.value ?: return
+            if (!callId.matches(current)) return
+            line3InCall.onGuestKnocking(callId, name)
+            _chimes.tryEmit(Unit)
+        }
+
+        override fun onGuestList(callId: String, guests: List<LiveKitGuest>) = line3InCall.onGuestList(callId, guests)
+
+        override fun onNotice(text: String, warning: Boolean, sticky: Boolean) {
+            _toasts.tryEmit(text)
         }
 
         override fun onEnded(reason: String) {
@@ -1699,6 +2166,7 @@ class CallCoordinator(
          * `callCancelled` or `callHandledElsewhere` that should have.
          */
         override fun onActiveCalls(calls: List<LiveKitActiveCall>) {
+            _activeCalls.value = calls
             val current = _session.value ?: return
             if (current.provider != CallProvider.LiveKit || _phase.value != CallPhase.Incoming) return
             val verdict = line3Ring.judge(current.callUuid, current.selfUserId, calls) ?: return
@@ -1753,6 +2221,9 @@ class CallCoordinator(
         const val STATUS_ADD_IN_CALL = "add_in_call"
 
         const val RECONNECT_GRACE_MILLIS = 45_000L
+
+        /** How long the second-call banner stays up — the web's `Line2Presence` no-answer timeout. */
+        const val SECOND_CALL_BANNER_MILLIS = 45_000L
 
         /**
          * How long an apparently empty room gets to prove it.

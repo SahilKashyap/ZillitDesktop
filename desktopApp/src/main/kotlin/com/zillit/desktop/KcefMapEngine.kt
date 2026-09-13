@@ -174,10 +174,27 @@ class KcefMapEngine(
         runCatching { SwingUtilities.invokeLater { window.dispose() } }
     }
 
-    /** Takes the component back when the tool's pane leaves the screen. */
+    /** Panes showing the component right now — on the EDT only. */
+    private var claims = 0
+
+    /** A pane has put the component on screen. */
+    fun claimSurface() {
+        SwingUtilities.invokeLater { claims++ }
+    }
+
+    /**
+     * Takes the component back when the tool's pane leaves the screen.
+     *
+     * Parked only if no pane is showing it by the time this runs: a pane can
+     * leave and return within a frame (the map stepping aside for a dialog
+     * and coming straight back), and the returning pane must not have its
+     * browser pulled out from under it.
+     */
     fun releaseSurface() {
         val component = _surface.value ?: return
         SwingUtilities.invokeLater {
+            claims = (claims - 1).coerceAtLeast(0)
+            if (claims > 0) return@invokeLater
             component.isVisible = true
             hold(component)
         }

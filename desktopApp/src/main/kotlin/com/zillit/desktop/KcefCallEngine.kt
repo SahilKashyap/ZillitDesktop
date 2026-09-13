@@ -686,6 +686,20 @@ class KcefCallEngine(
         if (livekitActive) browser?.let { run(it, LiveKitScripts.setHandRaised(raised)) }
     }
 
+    // Line 3 only: the other lines have no hold, no per-peer subscription
+    // and no host mute to announce.
+    override fun setHold(on: Boolean) {
+        if (livekitActive) browser?.let { run(it, LiveKitScripts.setHold(on)) }
+    }
+
+    override fun setPeerSubscribed(userId: String, video: Boolean, on: Boolean) {
+        if (livekitActive) browser?.let { run(it, LiveKitScripts.setPeerSubscribed(userId, video, on)) }
+    }
+
+    override fun announceHostMute(targetUserId: String, camera: Boolean, byName: String) {
+        if (livekitActive) browser?.let { run(it, LiveKitScripts.announceHostMute(targetUserId, camera, byName)) }
+    }
+
     /**
      * Records the call's audio inside the page, which is the one place every
      * voice on either line actually flows through.

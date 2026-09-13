@@ -35,6 +35,11 @@ import com.zillit.desktop.feature.documentdistribution.domain.PublishTarget
 import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistTransfer
+import com.zillit.desktop.feature.documentdistribution.domain.HistoryPage
+import com.zillit.desktop.feature.documentdistribution.domain.LocalFile
+import com.zillit.desktop.feature.documentdistribution.domain.ZipRecipient
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -75,6 +80,17 @@ class DocDistRepositoryImpl(
      * cannot be opened, which is reported rather than guessed at.
      */
     private val presign: suspend (DocumentStorage) -> String? = { null },
+    /** The byte-level I/O: storage PUTs, signed fetches, the file-answering routes. */
+    private val transfer: DocDistTransfer = DocDistTransfer.None,
+    /**
+     * Whether the open production stores in S3 — anything but `LOCAL`.
+     *
+     * Decides the upload path: S3 productions PUT the bytes themselves and
+     * register the key; LOCAL ones multipart the bytes to the service.
+     */
+    private val isS3Storage: () -> Boolean = { true },
+    /** Injected for the storage key: common code has no UUID of its own. */
+    private val newUniqueId: () -> String = { "" },
 ) : DocDistRepository {
 
     /** See [DocDistRepository.refreshes] and [docDistRefreshes]. */
@@ -97,24 +113,32 @@ class DocDistRepositoryImpl(
         get("$base/folders", ListSerializer(FolderDto.serializer()))
             .map { rows -> rows.mapNotNull { it.toDomain() } }
 
-    override suspend fun createFolder(name: String, parentId: String?): ZillitResult<Unit> =
+    override suspend fun createFolder(
+        name: String,
+        parentId: String?,
+        description: String,
+        folderDate: String?,
+    ): ZillitResult<Unit> =
         post(
             "$base/folders",
             buildJsonObject {
                 put("name", JsonPrimitive(name.trim()))
+                put("description", JsonPrimitive(description.trim()))
                 // Explicitly null rather than omitted: null is what this
                 // service reads as "at the root", and an absent key files the
                 // folder under whatever it last had.
                 put("parent_id", parentId?.let(::JsonPrimitive) ?: kotlinx.serialization.json.JsonNull)
+                folderDate?.takeIf { it.isNotBlank() }?.let { put("folder_date", JsonPrimitive(it)) }
             },
         )
 
-    override suspend fun renameFolder(folderId: String, name: String): ZillitResult<Unit> =
+    override suspend fun updateFolder(folderId: String, name: String, description: String): ZillitResult<Unit> =
         put(
             "$base/folders",
             buildJsonObject {
                 put("folderId", JsonPrimitive(folderId))
                 put("name", JsonPrimitive(name.trim()))
+                put("description", JsonPrimitive(description.trim()))
             },
         )
 
@@ -148,6 +172,202 @@ class DocDistRepositoryImpl(
             query.documentDate?.takeIf { it.isNotBlank() }?.let { put("document_date", it) }
         },
     ).map { it.toDomain() }
+
+    override suspend fun documentsInFolders(folderIds: Collection<String>): ZillitResult<List<LibraryDocument>> {
+        val found = linkedMapOf<String, LibraryDocument>()
+        for (folderId in folderIds.distinct()) {
+            val page = get(
+                "$base/documents",
+                DocumentPageDto.serializer(),
+                mapOf("folder_id" to folderId, "page" to 0, "limit" to BULK_LIMIT),
+            )
+            when (page) {
+                is ZillitResult.Failure -> return page
+                is ZillitResult.Success -> page.data.toDomain().documents.forEach { found[it.id] = it }
+            }
+        }
+        return ZillitResult.Success(found.values.toList())
+    }
+
+    /** No `folder_id` at all: that is what this service reads as "every folder". */
+    override suspend fun allDocuments(): ZillitResult<List<LibraryDocument>> =
+        get("$base/documents", DocumentPageDto.serializer(), mapOf("page" to 0, "limit" to BULK_LIMIT))
+            .map { it.toDomain().documents }
+
+    override suspend fun documentsByIds(ids: List<String>): ZillitResult<List<LibraryDocument>> {
+        if (ids.isEmpty()) return ZillitResult.Success(emptyList())
+        return get("$base/documents", DocumentPageDto.serializer(), mapOf("ids" to ids.joinToString(",")))
+            .map { it.toDomain().documents }
+    }
+
+    override suspend fun ephemeralByIds(ids: List<String>): ZillitResult<List<LibraryDocument>> {
+        if (ids.isEmpty()) return ZillitResult.Success(emptyList())
+        return apiClient.request(
+            verb = HttpVerb.Post,
+            url = "$base/attachments/by-ids",
+            serializer = EphemeralListDto.serializer(),
+            module = RequestModule.ProjectUser,
+            body = buildJsonObject { put("ids", ids.toJsonArray()) },
+        ).map { dto -> dto.attachments.mapNotNull { it.toDomain(ephemeral = true) } }
+    }
+
+    /**
+     * S3 productions PUT the bytes under `document-distribution/{uuid}/{name}`
+     * — Android's key shape — and register the row with `from-s3`; LOCAL
+     * productions multipart the bytes to the service. Both answer the
+     * catalogued row.
+     */
+    override suspend fun uploadDocument(
+        file: LocalFile,
+        folderId: String?,
+        documentDate: String?,
+    ): ZillitResult<LibraryDocument> {
+        if (!isS3Storage()) {
+            val fields = buildMap {
+                folderId?.let { put("folder_id", it) }
+                documentDate?.let { put("document_date", it) }
+            }
+            return transfer.postMultipart("$base/documents", fields, file).flatMap { it.toDocument() }
+        }
+        val stored = transfer.putObject(storageKey("document-distribution", file.name), file.contentType, file.bytes)
+        val storage = when (stored) {
+            is ZillitResult.Failure -> return stored
+            is ZillitResult.Success -> stored.data
+        }
+        return apiClient.request(
+            verb = HttpVerb.Post,
+            url = "$base/documents/from-s3",
+            serializer = DocumentDto.serializer(),
+            module = RequestModule.ProjectUser,
+            body = buildJsonObject {
+                // `folder_id` must not lead: a leading JSON null trips the
+                // platform's body-hash builder (Android's note on the same body).
+                documentDate?.let { put("document_date", JsonPrimitive(it)) }
+                put("folder_id", folderId?.let(::JsonPrimitive) ?: kotlinx.serialization.json.JsonNull)
+                putStored(file, storage)
+            },
+        ).flatMap { dto ->
+            dto.toDomain()?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Serialization("registered document had no id"))
+        }
+    }
+
+    override suspend fun uploadEphemeral(file: LocalFile): ZillitResult<LibraryDocument> {
+        if (!isS3Storage()) {
+            return transfer.postMultipart("$base/attachments", emptyMap(), file).flatMap { it.toDocument(
+                ephemeral = true,
+            ) }
+        }
+        val stored = transfer.putObject(
+            storageKey("document-distribution/ephemeral", file.name),
+            file.contentType,
+            file.bytes,
+        )
+        val storage = when (stored) {
+            is ZillitResult.Failure -> return stored
+            is ZillitResult.Success -> stored.data
+        }
+        return apiClient.request(
+            verb = HttpVerb.Post,
+            url = "$base/attachments/from-s3",
+            serializer = DocumentDto.serializer(),
+            module = RequestModule.ProjectUser,
+            body = buildJsonObject { putStored(file, storage) },
+        ).flatMap { dto ->
+            dto.toDomain(ephemeral = true)?.let { ZillitResult.Success(it) }
+                ?: ZillitResult.Failure(ZillitError.Serialization("registered attachment had no id"))
+        }
+    }
+
+    private fun kotlinx.serialization.json.JsonObjectBuilder.putStored(file: LocalFile, storage: DocumentStorage) {
+        put("original_name", JsonPrimitive(file.name))
+        put("content_type", JsonPrimitive(file.contentType))
+        put("file_size", JsonPrimitive(file.sizeBytes))
+        put("media", JsonPrimitive(storage.key))
+        put("bucket", JsonPrimitive(storage.bucket))
+        put("region", JsonPrimitive(storage.region))
+        put("content_id", JsonPrimitive(storage.key))
+        put("thumbnail", JsonPrimitive(""))
+        put("width", JsonPrimitive(0))
+        put("height", JsonPrimitive(0))
+        put("media_type", JsonPrimitive(mediaTypeOf(file.contentType)))
+    }
+
+    /** `{prefix}/{uuid}/{name}` with the characters S3 keys dislike swapped out. */
+    private fun storageKey(prefix: String, name: String): String =
+        "$prefix/${newUniqueId()}/" + name.replace(UNSAFE_KEY_CHARS, "_")
+
+    private fun JsonElement.toDocument(ephemeral: Boolean = false): ZillitResult<LibraryDocument> =
+        runCatching { docDistJson.decodeFromJsonElement(DocumentDto.serializer(), this) }
+            .getOrNull()?.toDomain(ephemeral)
+            ?.let { ZillitResult.Success(it) }
+            ?: ZillitResult.Failure(ZillitError.Serialization("upload answered no document"))
+
+    override suspend fun deleteEphemeral(attachmentId: String): ZillitResult<Unit> =
+        delete("$base/attachments", buildJsonObject { put("attachmentId", JsonPrimitive(attachmentId)) })
+
+    /**
+     * S3 documents are read through the app's signed fetch; LOCAL ones
+     * through the service's `/raw` proxy, which needs the encrypted headers
+     * a browser cannot send — which is why the bytes come through here rather
+     * than a URL.
+     */
+    override suspend fun documentBytes(document: LibraryDocument): ZillitResult<ByteArray> {
+        val storage = document.storage
+        return if (storage != null && storage.bucket.isNotBlank()) {
+            transfer.fetchObject(storage)
+        } else {
+            val route = if (document.isEphemeral) "attachments" else "documents"
+            transfer.getBytes("$base/$route/${document.id}/raw")
+        }
+    }
+
+    override suspend fun watermarkedCopy(
+        documentId: String,
+        text: String,
+        style: WatermarkStyle,
+    ): ZillitResult<ByteArray> = transfer.postBytes(
+        "$base/documents/$documentId/watermarked",
+        buildJsonObject {
+            put("text", JsonPrimitive(text))
+            put("size", JsonPrimitive(style.size.wire))
+            put("color", JsonPrimitive(style.color))
+            put("opacity", JsonPrimitive(style.opacity))
+        },
+    )
+
+    override suspend fun watermarkedZip(
+        documentIds: List<String>,
+        recipients: List<ZipRecipient>,
+        style: WatermarkStyle,
+    ): ZillitResult<ByteArray> = transfer.postBytes(
+        "$base/documents/watermark-zip",
+        buildJsonObject {
+            put("documentIds", documentIds.toJsonArray())
+            put(
+                "recipients",
+                buildJsonArray {
+                    recipients.forEach { recipient ->
+                        add(
+                            buildJsonObject {
+                                put("name", JsonPrimitive(recipient.name))
+                                put("email", JsonPrimitive(recipient.email))
+                                put("watermarkText", JsonPrimitive(recipient.watermarkText))
+                            },
+                        )
+                    }
+                },
+            )
+            put(
+                "style",
+                buildJsonObject {
+                    put("size", JsonPrimitive(style.size.wire))
+                    put("color", JsonPrimitive(style.color))
+                    put("opacity", JsonPrimitive(style.opacity))
+                },
+            )
+        },
+    )
 
     override suspend fun deleteDocument(documentId: String): ZillitResult<Unit> =
         delete("$base/documents", buildJsonObject { put("documentId", JsonPrimitive(documentId)) })
@@ -212,29 +432,42 @@ class DocDistRepositoryImpl(
     override suspend fun createList(
         name: String,
         recipients: List<Recipient>,
-    ): ZillitResult<Unit> = post(
-        "$base/presets",
-        buildJsonObject {
+        description: String,
+    ): ZillitResult<DistributionList> = apiClient.request(
+        verb = HttpVerb.Post,
+        url = "$base/presets",
+        serializer = PresetDto.serializer(),
+        module = RequestModule.ProjectUser,
+        body = buildJsonObject {
             put("name", JsonPrimitive(name.trim()))
+            put("description", JsonPrimitive(description.trim()))
             put("recipients", recipients.toJsonArray())
         },
-    )
+    ).flatMap { dto ->
+        dto.toDomain()?.let { ZillitResult.Success(it) }
+            ?: ZillitResult.Failure(ZillitError.Serialization("created list had no id"))
+    }
 
     override suspend fun updateList(
         listId: String,
-        name: String,
+        name: String?,
         recipients: List<Recipient>,
+        description: String?,
     ): ZillitResult<Unit> = put(
         "$base/presets",
         buildJsonObject {
             put("presetId", JsonPrimitive(listId))
-            put("name", JsonPrimitive(name.trim()))
+            name?.let { put("name", JsonPrimitive(it.trim())) }
+            description?.let { put("description", JsonPrimitive(it.trim())) }
             put("recipients", recipients.toJsonArray())
         },
     )
 
     override suspend fun deleteList(listId: String): ZillitResult<Unit> =
         delete("$base/presets", buildJsonObject { put("presetId", JsonPrimitive(listId)) })
+
+    override suspend fun exportList(listId: String): ZillitResult<ByteArray> =
+        transfer.getBytes("$base/presets/$listId/export")
 
     // -- address book ------------------------------------------------------
 
@@ -340,19 +573,25 @@ class DocDistRepositoryImpl(
      * server that ignores the parameters would otherwise decode to nothing and
      * show an empty History with no error.
      */
-    override suspend fun history(page: Int, search: String, senderIds: Set<String>): ZillitResult<List<Distribution>> {
+    override suspend fun history(
+        page: Int,
+        search: String,
+        senderIds: Set<String>,
+        limit: Int,
+    ): ZillitResult<HistoryPage> {
         val query = buildMap<String, Any?> {
             put("page", page)
-            put("limit", HISTORY_PAGE)
+            put("limit", limit)
             search.trim().takeIf { it.isNotEmpty() }?.let { put("q", it) }
             senderParam(senderIds)?.let { put("sent_by", it) }
         }
         val paged = get("$base/distributions", DistributionPageDto.serializer(), query)
         if (paged is ZillitResult.Success) {
-            return ZillitResult.Success(paged.data.distributions.mapNotNull { it.toDomain() })
+            val rows = paged.data.distributions.mapNotNull { it.toDomain() }
+            return ZillitResult.Success(HistoryPage(rows, paged.data.total ?: rows.size))
         }
         return get("$base/distributions", ListSerializer(DistributionDto.serializer()), query)
-            .map { rows -> rows.mapNotNull { it.toDomain() } }
+            .map { rows -> rows.mapNotNull { it.toDomain() }.let { HistoryPage(it, it.size) } }
     }
 
     override suspend fun senders(): ZillitResult<List<DistributionSender>> =
@@ -479,11 +718,13 @@ class DocDistRepositoryImpl(
         /** `{ status: 0 }` — a business-rule rejection dressed as a 200. */
         const val REJECTED = 0
 
-        /** Matches the server's own default and cap behaviour. */
-        const val HISTORY_PAGE = 50
-
         /** What this service wants in `folder_id` to mean the library root. */
         const val ROOT_SENTINEL = "null"
+
+        /** One high-limit slice for the cross-folder actions and the picker — the web's choice. */
+        const val BULK_LIMIT = 1000
+
+        val UNSAFE_KEY_CHARS = Regex("[^A-Za-z0-9._-]")
     }
 }
 
@@ -532,6 +773,14 @@ private fun Map<String, WatermarkStyle>.toJsonObject(): JsonObject = buildJsonOb
             },
         )
     }
+}
+
+/** The `media_type` the server files an upload under, from its MIME. */
+private fun mediaTypeOf(contentType: String): String = when {
+    contentType.startsWith("image/", ignoreCase = true) -> "image"
+    contentType.startsWith("video/", ignoreCase = true) -> "video"
+    contentType.startsWith("audio/", ignoreCase = true) -> "audio"
+    else -> "document"
 }
 
 /** Unused today; kept beside its writer so the two shapes stay together. */

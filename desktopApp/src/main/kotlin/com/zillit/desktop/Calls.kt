@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.map
 import com.zillit.desktop.feature.calls.ui.CallEvent
 import com.zillit.desktop.feature.calls.ui.CallLogPane
 import com.zillit.desktop.feature.calls.ui.CallLogViewModel
+import com.zillit.desktop.feature.calls.ui.OngoingCallsSource
 import com.zillit.desktop.feature.calls.ui.CallOverlay
 import com.zillit.desktop.feature.calls.ui.displayTitle
 import com.zillit.desktop.feature.calls.domain.CallCrewEntry
@@ -262,6 +263,14 @@ internal fun CallLogTab(
             },
             projectId = otherProjectId,
             callerUserId = otherUserId,
+            // The web's Ongoing rows: the calling socket's live list, and
+            // which call is open here so its row says Return.
+            ongoing = OngoingCallsSource(
+                activeCalls = ready.callCoordinator.activeCalls,
+                liveCallId = ready.callCoordinator.session.map { it?.callUuid?.takeIf(String::isNotBlank) },
+                onJoin = { ongoing -> ready.callCoordinator.joinActiveCall(ongoing.callId) },
+                onReturn = { if (!calls.state.value.expanded) calls.onEvent(CallEvent.ToggleStage) },
+            ),
         )
     }
     // A call that just ended belongs in Recents now, not after the user

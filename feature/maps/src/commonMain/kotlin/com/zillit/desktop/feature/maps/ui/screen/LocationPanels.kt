@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -120,7 +121,10 @@ private fun BasicInformation(state: MapUiState, form: LocationFormState, onEvent
                     value = if (form.typeMenuOpen) form.typeSearch else form.type.ifBlank { form.typeSearch },
                     onValueChange = { onEvent(MapEvent.LocationForm.TypeSearch(it)) },
                     placeholder = "Search or select a type...",
-                    modifier = Modifier.weight(1f),
+                    // The web's `onFocus`: the list opens as soon as the field is entered.
+                    modifier = Modifier.weight(1f).onFocusChanged {
+                        if (it.isFocused && !form.typeMenuOpen) onEvent(MapEvent.LocationForm.TypeMenu(true))
+                    },
                     trailingContent = {
                         CardAction(
                             onClick = { onEvent(MapEvent.LocationForm.TypeMenu(!form.typeMenuOpen)) },

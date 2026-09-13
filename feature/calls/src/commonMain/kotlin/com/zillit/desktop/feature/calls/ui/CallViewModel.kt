@@ -7,6 +7,8 @@ import com.zillit.desktop.feature.calls.data.CallEndReason
 import com.zillit.desktop.feature.calls.data.IN_CALL_KIND_MESSAGE
 import com.zillit.desktop.feature.calls.data.IN_CALL_KIND_REACTION
 import com.zillit.desktop.feature.calls.data.InCallData
+import com.zillit.desktop.feature.calls.data.livekit.Line3CallState
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitCallPolicy
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallPhase
@@ -164,7 +166,34 @@ data class CallUiState(
     val chatOpen: Boolean = false,
     /** Lines that arrived while the panel was shut. */
     val chatUnread: Int = 0,
+    /** Line 3's extras: the host's policy, my local mutes, the guests at the door. */
+    val line3: Line3CallState = Line3CallState(),
+    /** Our own leg is on hold (Line 3). */
+    val onHold: Boolean = false,
+    /** We hold the host controls — the original caller, on Line 3. */
+    val isHost: Boolean = false,
+    /** The host-controls panel is open beside the picture. */
+    val hostControlsOpen: Boolean = false,
+    /** The admit-guests list is open. */
+    val guestsOpen: Boolean = false,
+    /** A second Line 3 ring while we are on a call — the Decline / End & Accept banner. */
+    val secondCall: CallSession? = null,
+    /** The roster row whose ⋮ menu is open, by user id. */
+    val rosterMenuFor: String = "",
 ) {
+    /** Line 3 only: which controls the host's policy has taken from this user. */
+    val handsLocked: Boolean get() = !isHost && line3.policy.handsOff
+    val shareLocked: Boolean get() = !isHost && line3.policy.shareLocked
+    val recordingLocked: Boolean get() = !isHost && line3.policy.recordingOff
+    val chatLocked: Boolean get() = !isHost && line3.policy.chatOff
+    val reactionsLocked: Boolean get() = line3.policy.reactionsOff
+    val selfChatBlocked: Boolean get() = session?.selfUserId?.let(line3::isChatBlocked) == true
+
+    /** Whether the invite link is offered: Line 3, a named call, link joining not switched off. */
+    val inviteLinkOffered: Boolean
+        get() = session?.provider == CallProvider.LiveKit && !session.callUuid.isNullOrBlank() &&
+            !line3.policy.linkOff
+
     val stage: CallStageKind get() = if (videoSeen) CallStageKind.Video else CallStageKind.Avatars
 
     /**
@@ -325,6 +354,46 @@ sealed interface CallEvent {
 
     /** One reaction's flight is over. */
     data class ExpireReaction(val key: String) : CallEvent
+
+    // ── Line 3 ──────────────────────────────────────────────────────────
+
+    /** Holds our own leg, or resumes it. */
+    data object ToggleHold : CallEvent
+
+    /** Stops or resumes hearing one person, for me alone. */
+    data class SetListen(val userId: String, val listen: Boolean) : CallEvent
+
+    /** Stops or resumes watching one person's camera, for me alone. */
+    data class SetWatch(val userId: String, val watch: Boolean) : CallEvent
+
+    /** Host: the SFU mutes their microphone for everyone. */
+    data class MuteForEveryone(val userId: String) : CallEvent
+
+    /** Host: the SFU stops their camera for everyone. */
+    data class StopCameraForEveryone(val userId: String) : CallEvent
+
+    data class RemoveFromCall(val userId: String) : CallEvent
+    data class BlockChat(val userId: String, val blocked: Boolean) : CallEvent
+
+    /** Retracts a still-ringing mid-call invite. */
+    data class CancelInvite(val userId: String) : CallEvent
+
+    data class SetCallPolicy(val policy: LiveKitCallPolicy) : CallEvent
+    data class HostAction(val action: String) : CallEvent
+    data class AdmitGuest(val guestId: String) : CallEvent
+    data class DeclineGuest(val guestId: String) : CallEvent
+    data object ToggleHostControls : CallEvent
+    data object ToggleGuests : CallEvent
+
+    /** Opens or closes one roster row's ⋮ menu; blank closes. */
+    data class ToggleRosterMenu(val userId: String) : CallEvent
+
+    /** Puts the invite link on the clipboard, and says so. */
+    data object CopyInviteLink : CallEvent
+
+    /** The second-call banner's two answers. */
+    data object DeclineSecondCall : CallEvent
+    data object EndAndAcceptSecondCall : CallEvent
 }
 
 class CallViewModel(
@@ -349,6 +418,8 @@ class CallViewModel(
      */
     private val nameDirectory: kotlinx.coroutines.flow.Flow<Map<String, String>> =
         kotlinx.coroutines.flow.flowOf(emptyMap()),
+    /** Where "Copy invite link" puts the link. Host-supplied; null on a host without a clipboard. */
+    private val copyToClipboard: ((String) -> Unit)? = null,
 ) : ZillitViewModel<CallUiState, CallEvent, Nothing>(CallUiState()) {
 
     init {
@@ -382,6 +453,11 @@ class CallViewModel(
         // folding it into the media projection would redraw the stage for it.
         launch { coordinator.devices.collect { list -> setState { copy(devices = list) } } }
         launch { coordinator.handRaised.collect { up -> setState { copy(handRaised = up) } } }
+        launch {
+            coordinator.line3State.collect { extras -> setState { copy(line3 = extras, isHost = coordinator.isHost) } }
+        }
+        launch { coordinator.onHold.collect { held -> setState { copy(onHold = held) } } }
+        launch { coordinator.secondCall.collect { waiting -> setState { copy(secondCall = waiting) } } }
         launch { coordinator.recording.collect { on -> setState { copy(recording = on) } } }
         launch { coordinator.recordedBy.collect { name -> setState { copy(recordedBy = name) } } }
         // The parting-notice bar doubles as the in-call toast: "recording
@@ -412,7 +488,7 @@ class CallViewModel(
                             cameraOn = inputs.cameraOn,
                             selfName = coordinator.selfDisplayName,
                             nameFor = { inputs.directory[it] },
-                        )
+                        ).copy(isHost = coordinator.isHost)
                     }
                 }
         }
@@ -670,7 +746,51 @@ class CallViewModel(
             is CallEvent.ExpireReaction -> setState {
                 copy(reactions = reactions.filterNot { it.key == event.key })
             }
+            else -> onLine3Event(event)
         }
+    }
+
+    /** Line 3's verbs — the web's host, hold, local-mute and guest controls — dispatched on their own. */
+    @Suppress("CyclomaticComplexMethod") // One branch per verb; see onEvent.
+    private fun onLine3Event(event: CallEvent) {
+        when (event) {
+            CallEvent.ToggleHold -> coordinator.toggleHold()
+            is CallEvent.SetListen -> coordinator.setListen(event.userId, event.listen)
+            is CallEvent.SetWatch -> coordinator.setWatch(event.userId, event.watch)
+            is CallEvent.MuteForEveryone -> coordinator.muteForEveryone(event.userId)
+            is CallEvent.StopCameraForEveryone -> coordinator.stopCameraForEveryone(event.userId)
+            is CallEvent.RemoveFromCall -> coordinator.removeFromCall(event.userId)
+            is CallEvent.BlockChat -> coordinator.blockChat(event.userId, event.blocked)
+            is CallEvent.CancelInvite -> coordinator.cancelInvite(event.userId)
+            is CallEvent.SetCallPolicy -> coordinator.setCallPolicy(event.policy)
+            is CallEvent.HostAction -> coordinator.hostAction(event.action)
+            is CallEvent.AdmitGuest -> coordinator.admitGuest(event.guestId)
+            is CallEvent.DeclineGuest -> coordinator.declineGuest(event.guestId)
+            CallEvent.ToggleHostControls -> setState { copy(hostControlsOpen = !hostControlsOpen) }
+            CallEvent.ToggleGuests -> setState { copy(guestsOpen = !guestsOpen) }
+            is CallEvent.ToggleRosterMenu -> setState {
+                copy(rosterMenuFor = if (rosterMenuFor == event.userId) "" else event.userId)
+            }
+            CallEvent.CopyInviteLink -> copyInviteLink()
+            CallEvent.DeclineSecondCall -> coordinator.declineSecondCall()
+            CallEvent.EndAndAcceptSecondCall -> coordinator.endAndAcceptSecondCall()
+            else -> Unit
+        }
+    }
+
+    /** The web's ⋮ row: the link on the clipboard and a line saying so — or the link itself, with no clipboard. */
+    private fun copyInviteLink() {
+        val link = coordinator.inviteLink() ?: run {
+            setState { copy(notice = "No invite link for this call") }
+            return
+        }
+        val clipboard = copyToClipboard
+        if (clipboard == null) {
+            setState { copy(endedNotice = link) }
+            return
+        }
+        clipboard(link)
+        setState { copy(endedNotice = "Invite link copied — anyone who opens it can join") }
     }
 
     private fun place(event: CallEvent.Place) = coordinator.placeCall(
@@ -723,6 +843,12 @@ class CallViewModel(
         chatOpen = false,
         chatUnread = 0,
         notice = null,
+        line3 = Line3CallState(),
+        onHold = false,
+        isHost = false,
+        hostControlsOpen = false,
+        guestsOpen = false,
+        rosterMenuFor = "",
     )
 
     /**

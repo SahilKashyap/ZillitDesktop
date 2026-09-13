@@ -60,13 +60,13 @@ internal class DirectionsController(private val store: MapStore) {
         store.update { copy(directions = directions?.reducer()) }
 
     /**
-     * Pickup from this machine's position. A desktop rarely has one; without
-     * it the pickup is left for the person to search, as the web does when
-     * location access is refused.
+     * Pickup from this machine's position — the page's fix, else the host's
+     * approximate one. Without either the pickup is left for the person to
+     * search, as the web does when location access is refused.
      */
     private fun useCurrentLocation(reportFailure: Boolean) {
         store.spawn {
-            val here = store.canvas.currentPosition()
+            val here = store.position.current()
             if (here == null) {
                 if (reportFailure) {
                     store.notice("Could not get your current location", NoticeTone.Error)

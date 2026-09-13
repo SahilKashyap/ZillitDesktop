@@ -58,11 +58,13 @@ class CallRecordingControl(
      * Refused while somebody else records: one recording per call is the rule
      * every platform enforces, and the banner already names the holder.
      */
-    fun toggle(session: CallSession) {
+    fun toggle(session: CallSession, mark: suspend (recording: Boolean) -> Boolean = { true }) {
         if (_recording.value) {
             _recording.value = false
             scope.launch {
                 engine.stopAudioRecording()
+                // Best effort, after the fact: leaving clears the mark server-side anyway.
+                mark(false)
                 plane.announceSelf(session, CallStatus.InCall, mapOf(FIELD_IS_RECORDING to false))
                 stampRoster(session, active = false)
             }
@@ -70,8 +72,13 @@ class CallRecordingControl(
         }
         if (_recordedBy.value.isNotBlank()) return
         scope.launch {
+            // The server's say-so first, where the line has one (Line 3's
+            // `mark-started`): a second recorder is refused there, and the
+            // local recorder must not run for a recording nobody else sees.
+            if (!mark(true)) return@launch
             if (!engine.startAudioRecording()) {
                 ZillitLog.w(TAG) { "recording refused: engine cannot record" }
+                mark(false)
                 return@launch
             }
             recordedSession = session

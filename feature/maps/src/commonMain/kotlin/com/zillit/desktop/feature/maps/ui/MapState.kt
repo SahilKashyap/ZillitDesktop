@@ -158,7 +158,12 @@ data class DirectionsState(
 data class CitiesPanelState(
     val search: String = "",
     val suggestions: List<PlacePrediction> = emptyList(),
+    /** Where this machine is, offered as a city to add — the web's Current Location card. */
+    val currentPlace: CurrentPlace? = null,
 )
+
+/** A place resolved from this machine's position: the city's name, its address, its point. */
+data class CurrentPlace(val name: String, val description: String, val point: LatLng)
 
 data class TypesPanelState(
     val filter: String = "",

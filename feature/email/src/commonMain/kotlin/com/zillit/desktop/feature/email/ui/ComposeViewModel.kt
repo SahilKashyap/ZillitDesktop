@@ -251,6 +251,20 @@ class ComposeViewModel(
     /** Null until the first autosave, then the draft this composer owns. */
     private var draftId: String? = editing?.id
 
+    /**
+     * This composer's `unique_id`, minted once and sent on every create.
+     *
+     * A create whose answer is lost — a slow link, a lid closed mid-save —
+     * leaves [draftId] null, and the next autosave creates again. Before the
+     * key that was the classic duplicate: the server had the first draft, and
+     * now made a second. With it the server answers the retry with the record
+     * it already holds, and [draftId] lands on the same one either way.
+     *
+     * A reopened draft never creates, so its key goes unused; a *different*
+     * message needs a different key, which a new composer gets by being new.
+     */
+    private val draftKey: String = deps.newDraftKey()
+
     /** True once sent or discarded, so a late autosave cannot resurrect it. */
     private var isSent = false
 
@@ -447,7 +461,7 @@ class ComposeViewModel(
 
         val existing = draftId
         val result = if (existing == null) {
-            deps.drafts.saveDraft(message).also { saved ->
+            deps.drafts.saveDraft(message, draftKey).also { saved ->
                 if (saved is ZillitResult.Success) draftId = saved.data.takeIf { it.isNotBlank() }
             }
         } else {

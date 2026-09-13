@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.TagTone
@@ -77,6 +78,10 @@ fun CallLogPane(
             ZillitNotice(text = message, tone = StatusTone.Rejected)
         }
 
+        // The web's Ongoing rows, above the history: a call you can walk
+        // into is the one thing on this tab that is happening now.
+        if (state.ongoing.isNotEmpty()) OngoingSection(state.ongoing, onEvent)
+
         val shown = state.entries.matchingCounterpart(state.query, nameFor)
         when {
             state.entries.isEmpty() && state.isLoading -> PaneNote("Loading calls…")
@@ -89,12 +94,29 @@ fun CallLogPane(
         }
     }
 
-    // Both overlays ride a window-level popup: this pane sits in the chat
-    // tool's 320dp column, and a shell composed in place would be clipped to
-    // it — a dialog wider than its host and a scrim over a third of the screen.
+    PaneOverlays(state, onEvent, nameFor, selfUserId)
+}
+
+/**
+ * The dialogs, riding a window-level popup: this pane sits in the chat
+ * tool's 320dp column, and a shell composed in place would be clipped to
+ * it — a dialog wider than its host and a scrim over a third of the screen.
+ */
+@Composable
+private fun PaneOverlays(
+    state: CallLogUiState,
+    onEvent: (CallLogEvent) -> Unit,
+    nameFor: (String) -> String?,
+    selfUserId: String?,
+) {
     if (state.confirmingDelete) {
         WindowOverlay(onDismiss = { onEvent(CallLogEvent.CancelDeleteAll) }) {
             DeleteAllDialog(onEvent)
+        }
+    }
+    state.joinConfirm?.let { call ->
+        WindowOverlay(onDismiss = { onEvent(CallLogEvent.CancelJoinOngoing) }) {
+            JoinOngoingDialog(call, selfUserId, onEvent)
         }
     }
     state.detail?.let { entry ->
@@ -138,6 +160,115 @@ private fun PaneHeader(state: CallLogUiState, onEvent: (CallLogEvent) -> Unit) {
             tint = ZillitTheme.colors.textMuted,
             size = HEADER_ICON,
         )
+    }
+}
+
+/** "Ongoing" — one row per live call, with the web's Join / Switch here / Return. */
+@Composable
+private fun OngoingSection(ongoing: List<OngoingCall>, onEvent: (CallLogEvent) -> Unit) {
+    val colors = ZillitTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        ZillitText(
+            text = "Ongoing",
+            style = ZillitTheme.typography.labelSmall,
+            color = colors.textMuted,
+            modifier = Modifier.padding(horizontal = ZillitTheme.spacing.sm),
+        )
+        ongoing.forEach { call ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(ROW_CORNER))
+                    .background(colors.successSoft)
+                    .padding(ZillitTheme.spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            ) {
+                ZillitAvatar(name = call.title, size = ROW_AVATAR)
+                Column(modifier = Modifier.weight(1f)) {
+                    ZillitText(
+                        text = call.title,
+                        style = ZillitTheme.typography.bodyMedium,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                    )
+                    ZillitText(
+                        text = "● Ongoing ${call.type.wire} call · ${call.count} in call",
+                        style = ZillitTheme.typography.labelSmall,
+                        color = colors.success,
+                        maxLines = 1,
+                    )
+                }
+                ZillitButton(
+                    text = call.verb.label,
+                    size = ButtonSize.Small,
+                    variant = if (call.verb == OngoingVerb.Return) ButtonVariant.Secondary else ButtonVariant.Primary,
+                    onClick = { onEvent(CallLogEvent.PressOngoing(call)) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The web's join confirm (`Line3CallJoinButton.jsx`, `JoinConfirmDialog`):
+ * who is already in, then the one button. A switch says why it is one.
+ */
+@Composable
+private fun JoinOngoingDialog(call: OngoingCall, selfUserId: String?, onEvent: (CallLogEvent) -> Unit) {
+    val switch = call.verb == OngoingVerb.Switch
+    ZillitDialogShell(
+        title = if (switch) "Switch to this call?" else "Join this call?",
+        icon = ZillitIcons.Phone,
+        onDismiss = { onEvent(CallLogEvent.CancelJoinOngoing) },
+        visible = true,
+        width = CONFIRM_WIDTH,
+        actions = {
+            ZillitButton(
+                text = "Cancel",
+                onClick = { onEvent(CallLogEvent.CancelJoinOngoing) },
+                variant = ButtonVariant.Tertiary,
+            )
+            ZillitButton(
+                text = if (switch) "Switch here" else "Join call",
+                onClick = { onEvent(CallLogEvent.ConfirmJoinOngoing) },
+            )
+        },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            ZillitText(
+                text = "${call.title} · ${call.count} in call",
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+            if (switch) {
+                ZillitText(
+                    text = "You're already in this call on another device.",
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textMuted,
+                )
+            }
+            if (call.inCall.isEmpty()) {
+                ZillitText(
+                    text = "No one has joined yet.",
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.textMuted,
+                )
+            }
+            call.inCall.forEach { (id, name) ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                ) {
+                    ZillitAvatar(name = name.ifBlank { "?" }, size = ROW_AVATAR)
+                    ZillitText(
+                        text = name.ifBlank { "Someone" } + if (id == selfUserId) " (you)" else "",
+                        style = ZillitTheme.typography.bodyMedium,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
     }
 }
 

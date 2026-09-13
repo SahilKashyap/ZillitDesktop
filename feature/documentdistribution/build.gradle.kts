@@ -17,6 +17,8 @@ kotlin {
             implementation(project(":core:localization"))
             implementation(project(":core:permissions"))
             implementation(project(":core:workspace"))
+            // `decodeImageBitmap`, for the in-app preview of an image document.
+            implementation(project(":core:media"))
             implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {

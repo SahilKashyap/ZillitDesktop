@@ -14,6 +14,8 @@ kotlin {
             // The pickup/drop-off fields are map pickers — the server refuses a
             // ride whose ends have no coordinates.
             implementation(project(":core:locationpicker"))
+            // Thumbnails of what was just picked decode locally; the store's copies come through the host.
+            implementation(project(":core:media"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:config"))
             implementation(project(":core:network"))

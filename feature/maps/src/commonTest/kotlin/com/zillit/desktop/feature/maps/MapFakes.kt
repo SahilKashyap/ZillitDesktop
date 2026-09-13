@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.double
@@ -116,6 +117,8 @@ internal class FakeMapRepository(
 internal class FakeCanvasHost(
     var geocodedAddress: String = "Somewhere Rd, Andheri West, Mumbai",
     var geocodedName: String = "Andheri West",
+    /** The locality the reverse geocode files the point under. */
+    var geocodedCity: String = "Mumbai",
     var placeAt: LatLng = LatLng(19.1, 72.85),
     var placeName: String = "Picked Place",
 ) : MapCanvasHost {
@@ -139,6 +142,12 @@ internal class FakeCanvasHost(
                             buildJsonObject {
                                 put("long_name", geocodedName)
                                 put("types", buildJsonArray { add(kotlinx.serialization.json.JsonPrimitive("sublocality_level_1")) })
+                            },
+                        )
+                        add(
+                            buildJsonObject {
+                                put("long_name", geocodedCity)
+                                put("types", buildJsonArray { add(JsonPrimitive("locality")) })
                             },
                         )
                     },

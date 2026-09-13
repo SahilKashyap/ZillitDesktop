@@ -48,6 +48,7 @@ class CallRinger(
     private enum class Sound(val resource: String) {
         Incoming("/callsounds/incoming.wav"),
         Outgoing("/callsounds/outgoing.wav"),
+        Chime("/callsounds/chime.wav"),
     }
 
     private var clip: Clip? = null
@@ -66,6 +67,23 @@ class CallRinger(
                 retune(if (wanted == Sound.Incoming && !ringEnabled()) null else wanted)
             }
         }
+        // The one-shot chime rides its own clip so it never interrupts a ring
+        // and needs no stop: a guest knocking, or a second call while on one.
+        scope.launch {
+            coordinator.chimes.collect { withContext(Dispatchers.IO) { playOnce(Sound.Chime) } }
+        }
+    }
+
+    private fun playOnce(sound: Sound) {
+        runCatching {
+            val stream = javaClass.getResourceAsStream(sound.resource) ?: error("missing ${sound.resource}")
+            val audio = AudioSystem.getAudioInputStream(BufferedInputStream(stream))
+            AudioSystem.getClip().apply {
+                open(audio)
+                addLineListener { event -> if (event.type == javax.sound.sampled.LineEvent.Type.STOP) close() }
+                start()
+            }
+        }.onFailure { t -> ZillitLog.w(TAG) { "chime unavailable: ${t::class.simpleName}" } }
     }
 
     private suspend fun retune(wanted: Sound?) = withContext(Dispatchers.IO) {

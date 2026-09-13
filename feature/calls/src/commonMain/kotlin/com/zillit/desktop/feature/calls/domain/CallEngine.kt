@@ -68,6 +68,20 @@ sealed interface CallEngineEvent {
     data class PeerRecording(val userId: String, val recording: Boolean) : CallEngineEvent
 
     /**
+     * Line 3: who the room's metadata credits with recording — the server's
+     * own broadcast, set when someone marks a recording and cleared when it
+     * stops or they leave. Blank is nobody.
+     */
+    data class RecordingBy(val userId: String) : CallEngineEvent
+
+    /**
+     * Our own microphone was muted or unmuted by the SFU rather than by us —
+     * the host's "mute everyone" on Line 3. The button must follow, or it
+     * lies and needs two presses to unmute.
+     */
+    data class SelfMicMuted(val muted: Boolean) : CallEngineEvent
+
+    /**
      * A finished local recording landed on disk.
      *
      * Carries its type and length as well as its path, because the file does
@@ -283,6 +297,26 @@ interface CallEngine {
      * the transport there, exactly as it is on the phones.
      */
     fun setHandRaised(raised: Boolean) {}
+
+    /**
+     * Line 3's hold: the room stays connected, but we send nothing (mic and
+     * camera off) and hear nothing (every remote microphone unsubscribed).
+     * Resume restores what was on before the hold, never more.
+     */
+    fun setHold(on: Boolean) {}
+
+    /**
+     * Stops or resumes receiving one person's microphone ([video] false) or
+     * camera ([video] true) — "mute for myself" and "don't watch". Only this
+     * client changes; they are never told.
+     */
+    fun setPeerSubscribed(userId: String, video: Boolean, on: Boolean) {}
+
+    /**
+     * Tells the room who muted [targetUserId] — the SFU's own mute carries
+     * no "by whom". Line 3's `{t:"muted"}` data packet.
+     */
+    fun announceHostMute(targetUserId: String, camera: Boolean, byName: String) {}
 
     /**
      * Starts recording the call's audio — every voice, ours included — on this

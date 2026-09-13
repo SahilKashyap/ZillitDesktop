@@ -53,18 +53,28 @@ class DraftRepositoryImpl(
                 .sortedByDescending { it.updatedAtMillis }
         }
 
-    override suspend fun saveDraft(message: OutgoingEmail): ZillitResult<String> =
+    override suspend fun saveDraft(message: OutgoingEmail, uniqueId: String): ZillitResult<String> =
         apiClient.request(
             verb = HttpVerb.Post,
             url = "${api}email-draft",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
-            body = jsonBody(message.toDraftPayload()),
+            // `unique_id` makes the create idempotent: the same key twice
+            // answers with the record the first one made, not a second one.
+            // The key goes only on a create — an update names its draft in
+            // the URL, and the server ignores a key on a PUT.
+            body = jsonBody(message.toDraftPayload(uniqueId)),
         ).map { payload ->
             // The id is what makes the next autosave an update rather than a
             // second draft, so a response without one is worth noticing.
-            val id = (payload as? JsonObject)?.let { it.str("_id") ?: it.str("id") }
+            val row = payload as? JsonObject
+            val id = row?.let { it.str("_id") ?: it.str("id") }
             if (id == null) ZillitLog.w(TAG) { "draft saved but the server returned no id" }
+            // A service without the idempotent create echoes no key. Worth a
+            // line in the log, because that service will still duplicate on
+            // a retry and nothing else would say so.
+            val echoed = row?.str("unique_id")
+            if (echoed != uniqueId) ZillitLog.w(TAG) { "draft create did not echo unique_id (got $echoed)" }
             id.orEmpty()
         }
 
@@ -95,9 +105,11 @@ class DraftRepositoryImpl(
  * The draft payload.
  *
  * Same shape as a send minus `email_draft_id` — the id goes in the URL on an
- * update, and a new draft does not have one yet.
+ * update, and a new draft does not have one yet. [uniqueId] is set on a create
+ * only; see [DraftRepository.saveDraft].
  */
-private fun OutgoingEmail.toDraftPayload(): JsonObject = buildJsonObject {
+private fun OutgoingEmail.toDraftPayload(uniqueId: String? = null): JsonObject = buildJsonObject {
+    if (uniqueId != null) put("unique_id", uniqueId)
     put("to", addressArray(to))
     put("cc", addressArray(cc))
     put("bcc", addressArray(bcc))

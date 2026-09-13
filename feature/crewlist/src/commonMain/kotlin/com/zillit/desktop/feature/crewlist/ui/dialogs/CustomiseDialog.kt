@@ -2,6 +2,10 @@ package com.zillit.desktop.feature.crewlist.ui.dialogs
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -35,11 +39,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -49,7 +55,6 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
-import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
@@ -546,36 +551,47 @@ private fun CanvasNotice(text: String, action: (@Composable RowScope.() -> Unit)
 /**
  * A document-shaped wait — header (logo and company lines), a centred title,
  * then crew rows — so the load reads as "building your document", not a bare
- * spinner, as the web's skeleton does.
+ * spinner, as the web's skeleton does. The page is white whatever the app's
+ * theme, so the bars pulse in the page's own grey, not the theme's.
  */
 @Composable
 private fun DocumentSkeleton() {
+    val transition = rememberInfiniteTransition(label = "documentSkeleton")
+    val alpha by transition.animateFloat(
+        initialValue = SKELETON_MIN_ALPHA,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(SKELETON_PULSE_MS), RepeatMode.Reverse),
+        label = "documentSkeletonAlpha",
+    )
+    val bar: @Composable (Modifier, Dp) -> Unit = { modifier, height ->
+        Box(modifier.height(height).alpha(alpha).clip(RoundedCornerShape(4.dp)).background(PAPER_SKELETON))
+    }
     Box(Modifier.fillMaxSize().background(crewPalette().paper), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.widthIn(max = 760.dp).fillMaxWidth().padding(horizontal = 40.dp, vertical = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
-                Box(
-                    Modifier
-                        .width(150.dp)
-                        .height(110.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(crewPalette().skeleton),
-                )
+                bar(Modifier.width(150.dp), 110.dp)
                 Column(Modifier.weight(1f).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     listOf(0.72f, 0.58f, 0.64f, 0.5f, 0.6f, 0.46f).forEach { share ->
-                        ZillitSkeletonBar(Modifier.fillMaxWidth(share))
+                        bar(Modifier.fillMaxWidth(share), 12.dp)
                     }
                 }
             }
             Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
-                ZillitSkeletonBar(Modifier.width(200.dp), height = 30.dp)
+                bar(Modifier.width(200.dp), 30.dp)
             }
-            repeat(7) { ZillitSkeletonBar(Modifier.fillMaxWidth(), height = 16.dp) }
+            repeat(SKELETON_ROWS) { bar(Modifier.fillMaxWidth(), 16.dp) }
         }
     }
 }
+
+/** The web skeleton's grey on its white page. */
+private val PAPER_SKELETON = Color(0xFFE6E8EC)
+private const val SKELETON_MIN_ALPHA = 0.45f
+private const val SKELETON_PULSE_MS = 900
+private const val SKELETON_ROWS = 7
 
 private val SIDEBAR_WIDTH = 250.dp
 private const val WIDTH_SHARE = 0.94f

@@ -78,6 +78,9 @@ class FakeMailServer(
     /** Ids handed out by `saveDraft`, in order. */
     var newDraftIds: MutableList<String> = mutableListOf("draft-1", "draft-2", "draft-3")
 
+    /** The `unique_id` of every create attempted, failed ones included. */
+    val savedDraftKeys = mutableListOf<String>()
+
     // -- EmailRepository ---------------------------------------------------
 
     override suspend fun folders(): ZillitResult<List<EmailFolder>> {
@@ -220,8 +223,9 @@ class FakeMailServer(
 
     override suspend fun drafts(beforeMillis: Long) = ZillitResult.Success(storedDrafts)
 
-    override suspend fun saveDraft(message: OutgoingEmail): ZillitResult<String> {
+    override suspend fun saveDraft(message: OutgoingEmail, uniqueId: String): ZillitResult<String> {
         draftGate?.await()
+        savedDraftKeys += uniqueId
         if (draftSaveFails) return ZillitResult.Failure(ZillitError.Http(500, "nope"))
         savedDrafts += message
         return ZillitResult.Success(newDraftIds.removeFirstOrNull() ?: "draft-x")

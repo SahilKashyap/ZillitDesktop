@@ -1,549 +1,195 @@
-@file:Suppress("TooManyFunctions") // One handler per user act.
-
 package com.zillit.desktop.feature.callsheet.ui
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.localization.localised
-import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.callsheet.domain.CallSheetDelivery
+import com.zillit.desktop.feature.callsheet.domain.CallSheetPublishing
 import com.zillit.desktop.feature.callsheet.domain.CallSheetRepository
-import com.zillit.desktop.feature.callsheet.domain.CallSheetStatus
-import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
+import com.zillit.desktop.feature.callsheet.domain.CallSheetViewer
 import com.zillit.desktop.feature.callsheet.domain.CompanySeed
-import com.zillit.desktop.feature.callsheet.domain.ComposeSheet
-import com.zillit.desktop.feature.callsheet.domain.InternalApprover
+import com.zillit.desktop.feature.callsheet.domain.SavedSignatureSource
+import com.zillit.desktop.feature.callsheet.domain.SheetBadgeSource
+import com.zillit.desktop.feature.callsheet.domain.SheetChatOpener
 import com.zillit.desktop.feature.callsheet.domain.SheetMember
-import com.zillit.desktop.feature.callsheet.domain.SheetPayload
-import com.zillit.desktop.feature.callsheet.domain.firstUntitledSystemCell
-import com.zillit.desktop.feature.callsheet.domain.normalised
-import com.zillit.desktop.feature.callsheet.domain.withAddedLine
-import com.zillit.desktop.feature.callsheet.domain.withValue
-import kotlinx.coroutines.flow.conflate
+import com.zillit.desktop.feature.callsheet.domain.SheetTime
+import com.zillit.desktop.feature.callsheet.domain.SheetWeatherSource
+import kotlinx.coroutines.Job
+
+/** One-shot feedback: the web's antd `message.success` / `message.error`. */
+sealed interface SheetEffect {
+    data class Toast(val message: String, val isError: Boolean = false) : SheetEffect
+}
+
+/** The host services a call sheet needs beyond its own service. */
+class SheetServices(
+    val delivery: CallSheetDelivery,
+    val publishing: CallSheetPublishing,
+    val badges: SheetBadgeSource = object : SheetBadgeSource {},
+    val chat: SheetChatOpener = SheetChatOpener { _, _ -> false },
+    val weather: SheetWeatherSource? = null,
+    val signatures: SavedSignatureSource? = null,
+    /** The open production's name and company, for Company Details. */
+    val company: () -> CompanySeed = { CompanySeed() },
+)
 
 /**
- * Call sheet creation and review.
- *
- * The lifecycle mirrors the web exactly: compose locally from the server
- * template, save as a draft (create once, revisions after), send for comments
- * or signature, approve by request id, publish, and fan the rendered PDF out
- * to the call-sheet home unit.
+ * What the controllers share: state, services and the ways to act. The
+ * ViewModel implements it; each controller owns one area of the web's
+ * `CallSheetApp` and its tabs.
+ */
+internal interface SheetContext {
+    val state: SheetUiState
+    val repository: CallSheetRepository
+    val services: SheetServices
+    val lists: ListsController
+    val editor: EditorController
+
+    fun update(reducer: SheetUiState.() -> SheetUiState)
+    fun launchWork(block: suspend () -> Unit): Job
+    fun toast(message: String, isError: Boolean = false)
+    fun projectId(): String?
+    fun members(): List<SheetMember>
+    fun viewer(): CallSheetViewer
+    fun now(): Long
+    fun todayMs(): Long = SheetTime.todayMidnight(now())
+}
+
+/** A failure's sentence, prefixed the way the web's toasts are. */
+internal fun ZillitError.withPrefix(prefix: String): String = "$prefix${localised()}"
+
+/**
+ * Call sheet creation and review — `/film-tools/call-sheet`.
  */
 class CallSheetViewModel(
     private val repository: CallSheetRepository,
-    private val delivery: CallSheetDelivery,
-    private val resolveViewer: () -> com.zillit.desktop.feature.callsheet.domain.CallSheetViewer,
-    private val projectId: () -> String?,
+    private val services: SheetServices,
+    private val resolveViewer: () -> CallSheetViewer,
+    private val projectIdProvider: () -> String?,
     private val membersProvider: () -> List<SheetMember>,
-    private val companySeed: () -> CompanySeed,
-    private val todayMs: () -> Long,
-) : ZillitViewModel<CallSheetUiState, CallSheetEvent, CallSheetEffect>(CallSheetUiState()) {
+    private val nowMillis: () -> Long,
+) : ZillitViewModel<SheetUiState, SheetEvent, SheetEffect>(SheetUiState()) {
 
-    fun start() {
-        val viewer = resolveViewer()
-        setState {
-            copy(
-                viewer = viewer,
-                members = membersProvider(),
-                destination = if (viewer.canAuthor) destination else CallSheetDestination.Approvals,
-            )
-        }
-        refresh()
-        listenOnce()
+    /** The tool window's "open this person's chat", attached while it is shown. */
+    private var chatTarget: SheetChatOpener? = null
+
+    /** A chat opener that goes through the window when one is attached, else the host's own. */
+    private val hostServices = SheetServices(
+        delivery = services.delivery,
+        publishing = services.publishing,
+        badges = services.badges,
+        chat = SheetChatOpener { userId, fullName -> (chatTarget ?: services.chat).openChat(userId, fullName) },
+        weather = services.weather,
+        signatures = services.signatures,
+        company = services.company,
+    )
+
+    private val context: SheetContext = object : SheetContext {
+        override val state: SheetUiState get() = currentState
+        override val repository: CallSheetRepository get() = this@CallSheetViewModel.repository
+        override val services: SheetServices get() = hostServices
+        override val lists: ListsController get() = this@CallSheetViewModel.lists
+        override val editor: EditorController get() = this@CallSheetViewModel.editor
+        override fun update(reducer: SheetUiState.() -> SheetUiState) = setState(reducer)
+        override fun launchWork(block: suspend () -> Unit): Job = launch { block() }
+        override fun toast(message: String, isError: Boolean) = sendEffect(SheetEffect.Toast(message, isError))
+        override fun projectId(): String? = projectIdProvider()?.takeIf { it.isNotBlank() }
+        override fun members(): List<SheetMember> = membersProvider().filter { it.isAccepted }
+        override fun viewer(): CallSheetViewer = resolveViewer()
+        override fun now(): Long = nowMillis()
     }
 
-    /**
-     * Reloads the open list when the socket says a sheet moved through the
-     * workflow on another client — the web's `handleSocketSheetUpdate`
-     * (`CallSheetApp.jsx:1631-1694`) reloads the lists the new status
-     * touches; this client's refresh already scopes to the open
-     * destination and bucket. Guarded so a second start (the window
-     * reopening) does not stack collectors; `conflate()` folds a burst
-     * into one reload.
-     */
-    private fun listenOnce() {
-        if (listening) return
-        listening = true
-        launch {
-            repository.refreshes.conflate().collect { refresh() }
-        }
+    private val lists = ListsController(context)
+    private val rows = RowActionsController(context)
+    private val editor = EditorController(context)
+    private val workflow = WorkflowController(context)
+    private val templates = TemplateController(context)
+    private val comments = CommentsController(context)
+    private val document = DocumentController(context)
+    private val permission = PermissionController(context)
+
+    init {
+        lists.onCommentEvent = comments::onSyncEvent
+        lists.onPermissionTab = permission::load
     }
 
-    private var listening = false
+    /** Called each time the tool's window is shown. */
+    fun start() = lists.start()
 
-    @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
-    override fun onEvent(event: CallSheetEvent) {
+    /** Routes "Chat with …" through the tool's window while it is open; null detaches. */
+    fun attachChat(opener: SheetChatOpener?) {
+        chatTarget = opener
+    }
+
+    override fun onEvent(event: SheetEvent) {
         when (event) {
-            is CallSheetEvent.Open -> {
-                setState { copy(destination = event.destination) }
-                refresh()
-            }
-            is CallSheetEvent.OpenBucket -> {
-                setState { copy(bucket = event.bucket) }
-                refresh()
-            }
-            CallSheetEvent.Refresh -> refresh()
-            CallSheetEvent.NewSheet -> composeNew()
-            is CallSheetEvent.EditSheet -> openForEdit(event.id)
-            is CallSheetEvent.ViewPdf -> openPdf(event.id, event.title)
-            CallSheetEvent.ClosePdf -> setState { copy(pdf = null) }
-            is CallSheetEvent.DeleteSheet -> delete(event.id)
-            is CallSheetEvent.NameChanged -> updateEditor { copy(name = event.name, dirty = true) }
-            is CallSheetEvent.SharedChanged -> updateEditor {
-                copy(
-                    payload = payload.copy(
-                        shared = payload.shared.copy(
-                            shootDayNumber = event.shootDayNumber ?: payload.shared.shootDayNumber,
-                            totalDays = event.totalDays ?: payload.shared.totalDays,
-                            dayType = event.dayType ?: payload.shared.dayType,
-                        ),
-                    ),
-                    dirty = true,
-                )
-            }
-            is CallSheetEvent.ValueChanged -> updateEditor {
-                copy(
-                    payload = payload.withValue(
-                        event.row,
-                        event.cell,
-                        event.line,
-                        event.column,
-                        event.value,
-                    ),
-                    dirty = true,
-                )
-            }
-            is CallSheetEvent.AddLine -> updateEditor {
-                copy(payload = payload.withAddedLine(event.row, event.cell), dirty = true)
-            }
-            CallSheetEvent.SaveDraft -> saveDraft()
-            CallSheetEvent.CloseEditor -> setState { copy(editor = null) }
-            is CallSheetEvent.OpenSend -> setState {
-                copy(
-                    send = SendDialog(
-                        sheetId = event.id,
-                        sheetName = event.name,
-                        selectedIds = (metadata.internalReceiverIds + viewer.userId).toSet(),
-                    ),
-                )
-            }
-            is CallSheetEvent.SendModeChanged -> setState {
-                copy(send = send?.copy(forComments = event.forComments))
-            }
-            is CallSheetEvent.ToggleReviewer -> setState {
-                copy(
-                    send = send?.copy(
-                        selectedIds = send.selectedIds.toggled(event.userId),
-                    ),
-                )
-            }
-            CallSheetEvent.ConfirmSend -> confirmSend()
-            CallSheetEvent.DismissSend -> setState { copy(send = null) }
-            is CallSheetEvent.Approve -> act(event.sheetId, approve = true, reason = "")
-            is CallSheetEvent.Reject -> act(event.sheetId, approve = false, reason = event.reason)
-            is CallSheetEvent.OpenPublish -> setState {
-                copy(publish = PublishDialog(sheetId = event.id, sheetName = event.name))
-            }
-            is CallSheetEvent.PublishOptionsChanged -> setState {
-                copy(
-                    publish = publish?.copy(
-                        continuation = event.continuation ?: publish.continuation,
-                        notes = event.notes ?: publish.notes,
-                    ),
-                )
-            }
-            CallSheetEvent.ConfirmPublish -> confirmPublish()
-            CallSheetEvent.DismissPublish -> setState { copy(publish = null) }
-            CallSheetEvent.DismissError -> setState { copy(error = null) }
+            is ListEvent -> onListEvent(event)
+            is PermissionEvent -> permission.onEvent(event)
+            is WorkflowEvent -> workflow.onEvent(event)
+            is DialogEvent -> onDialogEvent(event)
+            EditorEvent.SaveAsTemplate -> editor.guardTemplateSave { templates.saveAsTemplate() }
+            EditorEvent.UpdateTemplate -> editor.guardTemplateSave { templates.updateTemplate() }
+            EditorEvent.SendForSignature -> workflow.sendFromEditorForSignature()
+            EditorEvent.SendForComments -> workflow.openEditorComments()
+            is EditorEvent -> editor.onEvent(event)
+            is DocumentEvent -> document.onEvent(event)
         }
     }
 
-    private fun updateEditor(change: SheetEditor.() -> SheetEditor) {
-        setState { copy(editor = editor?.change()) }
-    }
-
-    private fun refresh() {
-        val project = projectId() ?: return
-        val me = state.value.viewer.userId
-        setState { copy(loading = true) }
-        launch {
-            when (state.value.destination) {
-                CallSheetDestination.Drafts -> load {
-                    repository.sheets(
-                        project,
-                        listOf(CallSheetStatus.Draft),
-                        createdById = me,
-                    )
-                        .also { result -> ifOk(result) { setState { copy(drafts = it) } } }
-                }
-                CallSheetDestination.Published -> load {
-                    repository.sheets(project, listOf(CallSheetStatus.Published))
-                        .also { result -> ifOk(result) { setState { copy(published = it) } } }
-                }
-                CallSheetDestination.Approvals -> loadApprovals(project, me)
-            }
-            setState { copy(loading = false) }
+    private fun onListEvent(event: ListEvent) {
+        when (event) {
+            is ListEvent.OpenTab, is ListEvent.OpenSection, is ListEvent.SetDraftChip,
+            is ListEvent.SetDraftsView, is ListEvent.SetApprovalsView, ListEvent.ToggleOlderPublished, ListEvent.Retry,
+            -> lists.onEvent(event)
+            is ListEvent.OpenComments -> comments.open(event.sheet, event.readOnly)
+            else -> rows.onEvent(event)
         }
     }
 
-    private suspend fun loadApprovals(project: String, me: String) {
-        when (state.value.bucket) {
-            ApprovalBucket.Sent -> load {
-                repository.sheets(project, IN_REVIEW, createdById = me)
-                    .also { result -> ifOk(result) { setState { copy(sent = it) } } }
-            }
-            ApprovalBucket.Received -> load {
-                // No project filter — the backend scopes by approver identity,
-                // and the client filters the review states.
-                repository.sheets(projectId = null, approverId = me)
-                    .also { result ->
-                        ifOk(result) { sheets ->
-                            setState {
-                                copy(received = sheets.filter { it.status.reviewInFlight })
-                            }
-                        }
-                    }
-            }
-            // Finalized is the publishing bucket, and it belongs to the people
-            // the sheet belongs to. Both phones scope it: the web only offers
-            // Publish when `createdById === currentUserId`, and Android's
-            // Finalized tab keeps the approved sheets "relevant to the user",
-            // filtered by their own approval requests. Unscoped, every author
-            // on the production could publish anyone's approved call sheet out
-            // to the whole crew.
-            ApprovalBucket.Finalized -> load {
-                val approved = listOf(CallSheetStatus.ApprovedForPublish)
-                val mine = repository.sheets(project, approved, createdById = me)
-                val toApprove = repository.sheets(project, approved, approverId = me)
-                combined(mine, toApprove).also { result ->
-                    ifOk(result) { setState { copy(finalized = it) } }
-                }
-            }
+    private fun onDialogEvent(event: DialogEvent) {
+        when (event) {
+            DialogEvent.Dismiss -> dismiss()
+            DialogEvent.Confirm -> confirm(secondary = false)
+            DialogEvent.ConfirmSecondary -> confirm(secondary = true)
+            is DialogEvent.EditDraftName, DialogEvent.ConfirmDraftName, is DialogEvent.FixMissingTitle ->
+                editor.onDialog(event)
+            is DialogEvent.CreateTemplate, is DialogEvent.PickTemplate, is DialogEvent.UseTemplate,
+            is DialogEvent.OpenSavedTemplate, is DialogEvent.DeleteSavedTemplate,
+            -> templates.onEvent(event)
+            else -> comments.onEvent(event)
         }
     }
 
-    /**
-     * Both scoped queries as one list, de-duplicated by sheet id.
-     *
-     * A sheet this person raised *and* approved comes back from both, and a
-     * failure on either side is the whole bucket's failure — a half-loaded
-     * publishing list is worse than an error.
-     */
-    private fun combined(
-        first: ZillitResult<List<CallSheetSummary>>,
-        second: ZillitResult<List<CallSheetSummary>>,
-    ): ZillitResult<List<CallSheetSummary>> = when {
-        first is ZillitResult.Failure -> first
-        second is ZillitResult.Failure -> second
-        else -> ZillitResult.Success(
-            ((first as ZillitResult.Success).data + (second as ZillitResult.Success).data)
-                .distinctBy { it.id },
-        )
-    }
-
-    private suspend fun <T> load(block: suspend () -> ZillitResult<T>) {
-        when (val result = block()) {
-            is ZillitResult.Success -> Unit
-            is ZillitResult.Failure -> setState { copy(error = result.error.localised()) }
-        }
-    }
-
-    private inline fun <T> ifOk(result: ZillitResult<T>, onOk: (T) -> Unit) {
-        if (result is ZillitResult.Success) onOk(result.data)
-    }
-
-    /** The web's `openNewEditor` — template + metadata + crew, no API writes. */
-    private fun composeNew() {
-        setState { copy(busy = true) }
-        launch {
-            val meta = when (val result = repository.metadata(projectId().orEmpty())) {
-                is ZillitResult.Success -> result.data
-                is ZillitResult.Failure -> state.value.metadata
-            }
-            val template = when (val result = repository.defaultTemplate()) {
-                is ZillitResult.Success -> result.data
-                is ZillitResult.Failure -> null
-            }
-            if (template == null) {
-                setState { copy(busy = false, error = "The call sheet template is unavailable") }
-                return@launch
-            }
-            val payload = ComposeSheet.newSheet(
-                template = template,
-                metadata = meta,
-                members = membersProvider(),
-                company = companySeed(),
-                todayMs = todayMs(),
-            )
-            setState {
-                copy(
-                    busy = false,
-                    metadata = meta,
-                    members = membersProvider(),
-                    editor = SheetEditor(
-                        name = "Call sheet — day ${payload.shared.shootDayNumber}",
-                        payload = payload,
-                    ),
-                )
-            }
-        }
-    }
-
-    private fun openForEdit(id: String) {
-        setState { copy(busy = true) }
-        launch {
-            when (val result = repository.sheet(id)) {
-                is ZillitResult.Success -> {
-                    val detail = result.data
-                    if (detail.summary.status.locked) {
-                        setState { copy(busy = false) }
-                        sendEffect(CallSheetEffect.Notice("A finalised sheet cannot be edited"))
-                    } else {
-                        setState {
-                            copy(
-                                busy = false,
-                                editor = SheetEditor(
-                                    sheetId = detail.summary.id,
-                                    name = detail.summary.name,
-                                    status = detail.summary.status,
-                                    payload = with(ComposeSheet) {
-                                        detail.payload.withoutApproverCells().normalised()
-                                    },
-                                ),
-                            )
-                        }
-                    }
-                }
-                is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = result.error.localised())
-                }
-            }
-        }
-    }
-
-    private fun saveDraft() {
-        val editor = state.value.editor ?: return
-        val untitled = editor.payload.firstUntitledSystemCell()
-        if (untitled != null) {
-            setState { copy(error = "Every default section needs a title before saving") }
+    /** Closes the dialog — never mid-call, except the thread, which has nothing to lose. */
+    private fun dismiss() {
+        val dialog = currentState.dialog
+        val sending = (dialog as? SheetDialog.ChatSend)?.sending == true ||
+            (dialog as? SheetDialog.AttachDocument)?.uploading == true ||
+            (dialog as? SheetDialog.Approve)?.uploading == true
+        if (sending || (currentState.busy && dialog !is SheetDialog.Comments)) return
+        val approve = dialog as? SheetDialog.Approve
+        if (approve?.savedPicker != null) {
+            setState { copy(dialog = approve.copy(savedPicker = null)) }
             return
         }
-        val project = projectId() ?: return
-        val viewer = state.value.viewer
-        updateEditor { copy(saving = true) }
-        launch {
-            // Counters ride along on every save; a failure here never blocks
-            // the sheet write — the web behaves the same.
-            repository.saveMetadata(
-                projectId = project,
-                totalDays = editor.payload.shared.totalDays,
-                currentShootDay = editor.payload.shared.shootDayNumber.toIntOrNull(),
-                finalApproverIds = editor.payload.shared.approverIds,
-            )
-            val payload = editor.payload.normalised()
-            val result = if (editor.sheetId == null) {
-                repository.create(project, editor.name, payload, viewer.displayName, viewer.userId)
-                    .let { created ->
-                        if (created is ZillitResult.Success) {
-                            updateEditor { copy(sheetId = created.data.id) }
-                        }
-                        created
-                    }
-            } else {
-                repository.saveRevision(
-                    editor.sheetId,
-                    editor.name,
-                    payload,
-                    viewer.displayName,
-                    viewer.userId,
-                )
-            }
-            when (result) {
-                is ZillitResult.Success -> {
-                    updateEditor { copy(saving = false, dirty = false) }
-                    sendEffect(CallSheetEffect.Notice("Saved"))
-                    refresh()
-                }
-                is ZillitResult.Failure -> {
-                    updateEditor { copy(saving = false) }
-                    setState { copy(error = result.error.localised()) }
-                }
-            }
+        val picker = dialog as? SheetDialog.SendPicker
+        if (picker?.pendingRemoval != null) {
+            setState { copy(dialog = picker.copy(pendingRemoval = null)) }
+            return
         }
+        comments.close()
+        setState { copy(dialog = null) }
     }
 
-    private fun confirmSend() {
-        val dialog = state.value.send ?: return
-        setState { copy(busy = true) }
-        launch {
-            val result = if (dialog.forComments) {
-                val members = state.value.members
-                val approvers = dialog.selectedIds.mapNotNull { id ->
-                    members.firstOrNull { it.userId == id }?.let {
-                        InternalApprover(it.userId, it.fullName, it.designation.ifBlank { "Member" })
-                    }
-                }
-                repository.saveMetadata(
-                    projectId = projectId().orEmpty(),
-                    totalDays = null,
-                    currentShootDay = null,
-                    finalApproverIds = null,
-                    internalReceiverIds = dialog.selectedIds.toList(),
-                )
-                repository.submitForInternalApproval(dialog.sheetId, approvers)
-            } else {
-                repository.submitForApproval(dialog.sheetId)
-            }
-            when (result) {
-                is ZillitResult.Success -> {
-                    setState { copy(busy = false, send = null) }
-                    sendEffect(CallSheetEffect.Notice("Sent for review"))
-                    refresh()
-                }
-                is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = result.error.localised())
-                }
-            }
+    private fun confirm(secondary: Boolean) {
+        val dialog = currentState.dialog as? SheetDialog.Confirm ?: return
+        setState { copy(dialog = null) }
+        when (val action = dialog.action) {
+            is ConfirmAction.DeleteSheet -> rows.delete(action.sheet)
+            is ConfirmAction.DeleteTemplate -> templates.delete(action.template)
+            ConfirmAction.NoApprovers -> Unit
+            is ConfirmAction.RestartReview -> editor.runSave(action.then)
+            ConfirmAction.LeaveEditor -> if (secondary) editor.saveAndLeave() else editor.discardAndLeave()
         }
-    }
-
-    /**
-     * Approve or reject — resolved to MY pending request id from the sheet
-     * detail, matched by assignee id. The web matches by display name and
-     * desynchronises on shared names; this does not.
-     */
-    private fun act(sheetId: String, approve: Boolean, reason: String) {
-        setState { copy(busy = true) }
-        launch {
-            val detail = when (val result = repository.sheet(sheetId)) {
-                is ZillitResult.Success -> result.data
-                is ZillitResult.Failure -> {
-                    setState { copy(busy = false, error = result.error.localised()) }
-                    return@launch
-                }
-            }
-            val me = state.value.viewer.userId
-            val finalStage = detail.summary.status == CallSheetStatus.PendingApproval
-            val mine = detail.approvals.firstOrNull { request ->
-                request.isPending && request.assigneeId == me &&
-                    (!finalStage || request.isFinalStage)
-            }
-            if (mine == null) {
-                setState { copy(busy = false) }
-                sendEffect(CallSheetEffect.Notice("No pending review names you on this sheet"))
-                return@launch
-            }
-            val result = if (approve) {
-                repository.approve(mine.id, withoutSignature = true)
-            } else {
-                repository.reject(mine.id, reason)
-            }
-            when (result) {
-                is ZillitResult.Success -> {
-                    setState { copy(busy = false) }
-                    sendEffect(
-                        CallSheetEffect.Notice(if (approve) "Approved" else "Rejected"),
-                    )
-                    refresh()
-                }
-                is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = result.error.localised())
-                }
-            }
-        }
-    }
-
-    private fun confirmPublish() {
-        val dialog = state.value.publish ?: return
-        val viewer = state.value.viewer
-        setState { copy(busy = true) }
-        launch {
-            val published = repository.publish(
-                id = dialog.sheetId,
-                publishedBy = viewer.displayName,
-                publishedById = viewer.userId,
-                continuation = dialog.continuation,
-                notes = dialog.notes,
-            )
-            when (published) {
-                is ZillitResult.Success -> {
-                    distribute(dialog)
-                    setState { copy(busy = false, publish = null) }
-                    sendEffect(CallSheetEffect.Notice("Published"))
-                    refresh()
-                }
-                is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = published.error.localised())
-                }
-            }
-        }
-    }
-
-    /** Best-effort, like the web: a failed fan-out never unpublishes. */
-    private suspend fun distribute(dialog: PublishDialog) {
-        val pdf = repository.sheet(dialog.sheetId).let { detail ->
-            if (detail !is ZillitResult.Success) return
-            when (val bytes = delivery.pdf(dialog.sheetId)) {
-                is ZillitResult.Success -> detail.data.summary.serialNo to bytes.data
-                is ZillitResult.Failure -> return
-            }
-        }
-        delivery.distribute(
-            sheetId = dialog.sheetId,
-            serialNo = pdf.first,
-            pdf = pdf.second,
-            replacePrevious = !dialog.continuation,
-        )
-    }
-
-    private fun openPdf(id: String, title: String) {
-        setState { copy(pdf = SheetPdfView(sheetId = id, title = title)) }
-        launch {
-            when (val bytes = delivery.pdf(id)) {
-                is ZillitResult.Success -> {
-                    val pages = delivery.renderPages(bytes.data, PDF_RENDER_WIDTH)
-                    when (pages) {
-                        is ZillitResult.Success -> setState {
-                            copy(pdf = pdf?.copy(loading = false, pages = pages.data))
-                        }
-                        is ZillitResult.Failure -> setState {
-                            copy(pdf = null, error = pages.error.localised())
-                        }
-                    }
-                }
-                is ZillitResult.Failure -> setState {
-                    copy(pdf = null, error = bytes.error.localised())
-                }
-            }
-        }
-    }
-
-    private fun delete(id: String) {
-        setState { copy(busy = true) }
-        launch {
-            when (val result = repository.delete(id)) {
-                is ZillitResult.Success -> {
-                    setState { copy(busy = false) }
-                    sendEffect(CallSheetEffect.Notice("Deleted"))
-                    refresh()
-                }
-                is ZillitResult.Failure -> setState {
-                    copy(busy = false, error = result.error.localised())
-                }
-            }
-        }
-    }
-
-    private fun Set<String>.toggled(id: String): Set<String> =
-        if (id in this) this - id else this + id
-
-    private companion object {
-        val IN_REVIEW = listOf(
-            CallSheetStatus.PendingInternalApproval,
-            CallSheetStatus.InternalApproved,
-            CallSheetStatus.PendingApproval,
-            CallSheetStatus.ApprovalRejected,
-            CallSheetStatus.ApprovedForPublish,
-        )
-        const val PDF_RENDER_WIDTH = 1000
     }
 }

@@ -36,6 +36,7 @@ import com.zillit.desktop.feature.maps.domain.LatLng
 import com.zillit.desktop.feature.maps.domain.MapAttachment
 import com.zillit.desktop.feature.maps.domain.MapBadges
 import com.zillit.desktop.feature.maps.domain.MapHost
+import com.zillit.desktop.feature.maps.domain.MapLocator
 import com.zillit.desktop.feature.maps.domain.MapPhotos
 import com.zillit.desktop.feature.maps.domain.MapPrefs
 import com.zillit.desktop.feature.maps.domain.MapShareHost
@@ -48,7 +49,12 @@ import com.zillit.desktop.feature.maps.ui.screen.MapImages
 import com.zillit.desktop.feature.maps.ui.screen.PHOTO_EXTENSIONS
 import com.zillit.desktop.feature.maps.ui.screen.decodeMapImage
 import io.ktor.client.request.get
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.client.statement.readRawBytes
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -63,6 +69,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -93,6 +100,7 @@ internal fun AppGraph.Ready.buildMaps(permissions: () -> ProjectPermissions): Ma
         badges = mapBadges(),
         prefs = mapPrefs(),
         staticMaps = mapStaticMaps(),
+        locator = mapLocator(),
     ),
     rights = rightsRequests,
 )
@@ -125,24 +133,27 @@ private fun MapCanvasPane(engine: KcefMapEngine, visible: Boolean) {
     val component by engine.surface.collectAsState()
     val awtComponent = component
     Box(Modifier.fillMaxSize().background(ZillitTheme.colors.surfaceSunken), contentAlignment = Alignment.Center) {
-        if (awtComponent == null) {
-            ZillitSpinner()
-        } else {
-            // Handed back when the pane leaves the screen: the engine parks the
-            // component in a hidden window of its own, because a browser
-            // component left with no parent is a browser that will not work the
-            // next time the tool opens.
-            DisposableEffect(awtComponent) {
-                onDispose { engine.releaseSurface() }
+        when {
+            awtComponent == null -> ZillitSpinner()
+            // Taken OUT of the tree while a dialog or the list covers it, not
+            // merely hidden: an interop panel is a heavyweight island that
+            // Compose cannot paint over, and with its child hidden the island
+            // still shows as a blank grey block exactly where the dialog or
+            // the list should be. Removing it hands the browser back to the
+            // engine's parking window (as leaving the tool does), so the page
+            // — camera, pins, cards — is untouched and returns as it was.
+            !visible -> Unit
+            else -> {
+                // Handed back when the pane leaves the screen: the engine parks
+                // the component in a hidden window of its own, because a browser
+                // component left with no parent is a browser that will not work
+                // the next time the tool opens.
+                DisposableEffect(awtComponent) {
+                    engine.claimSurface()
+                    onDispose { engine.releaseSurface() }
+                }
+                SwingPanel(factory = { awtComponent }, modifier = Modifier.fillMaxSize())
             }
-            // Hidden rather than removed while a dialog or the list covers
-            // it: the browser view paints above every Compose pixel, and
-            // hiding it keeps the map exactly where it was for when it returns.
-            SwingPanel(
-                factory = { awtComponent },
-                modifier = Modifier.fillMaxSize(),
-                update = { it.isVisible = visible },
-            )
         }
     }
 }
@@ -159,7 +170,9 @@ private fun AppGraph.Ready.mapPhotos(): MapPhotos {
     val picker = AwtAttachmentPicker()
     val uploader = S3AttachmentUploader(
         httpClient = httpClient,
-        credentials = { awsKeyPair(remoteConfigRepository)?.let { (access, secret) -> AwsCredentials(access, secret) } },
+        credentials = {
+            awsKeyPair(remoteConfigRepository)?.let { (access, secret) -> AwsCredentials(access, secret) }
+        },
         storage = storageTarget,
         newKey = { fileName -> "map/${UUID.randomUUID()}/${fileName.safeKeyPart()}" },
     )
@@ -182,7 +195,8 @@ private fun AppGraph.Ready.mapPhotos(): MapPhotos {
         override suspend fun upload(photo: PickedPhoto): ZillitResult<MapAttachment> {
             val ready = jpegIfHeic(photo)
             val extension = ready.name.substringAfterLast('.', "").lowercase()
-            return when (val stored = uploader.upload(ready.name, contentTypeFor(ready.name, ready.contentType), ready.bytes)) {
+            val stored = uploader.upload(ready.name, contentTypeFor(ready.name, ready.contentType), ready.bytes)
+            return when (stored) {
                 is ZillitResult.Failure -> stored
                 is ZillitResult.Success -> {
                     val picture = decodeMapImage(ready.bytes, Int.MAX_VALUE)
@@ -360,6 +374,37 @@ private fun AppGraph.Ready.mapStaticMaps(): MapStaticMaps = object : MapStaticMa
     }
 }
 
+// Position ----------------------------------------------------------------------------
+
+/**
+ * Where this machine is, approximately: Google's Geolocation API from the
+ * network address, with the production's own key. The map page asks the
+ * browser first, but embedded Chromium has no way to grant that prompt, so on
+ * the desktop this is the answer that "Use my current location" and the
+ * Cities panel's Current Location card actually get. City-level accuracy, which
+ * is what both need.
+ */
+private fun AppGraph.Ready.mapLocator(): MapLocator = object : MapLocator {
+    override suspend fun locate(): LatLng? {
+        val key = remoteConfigRepository.credentials.value?.googleMapsKey?.takeIf { it.isNotBlank() } ?: return null
+        return runCatching {
+            val response = httpClient.post("https://www.googleapis.com/geolocation/v1/geolocate?key=$key") {
+                contentType(ContentType.Application.Json)
+                setBody(GEOLOCATE_BODY)
+            }
+            if (!response.status.isSuccess()) {
+                ZillitLog.w(TAG) { "geolocate refused: ${response.status.value}" }
+                return null
+            }
+            val answer = Json.parseToJsonElement(response.bodyAsText()) as? JsonObject
+            val location = answer?.get("location") as? JsonObject
+            val lat = (location?.get("lat") as? JsonPrimitive)?.doubleOrNull
+            val lng = (location?.get("lng") as? JsonPrimitive)?.doubleOrNull
+            if (lat != null && lng != null) LatLng(lat, lng) else null
+        }.onFailure { ZillitLog.w(TAG) { "geolocate failed: ${it::class.simpleName}" } }.getOrNull()
+    }
+}
+
 /** Points on a circle of [radiusMiles] around [centre] — a destination-point walk. */
 private fun circlePoints(centre: LatLng, radiusMiles: Double): List<LatLng> {
     val angular = radiusMiles * METERS_PER_MILE / EARTH_RADIUS_M
@@ -380,7 +425,8 @@ private fun AppGraph.Ready.mapImages(): MapImages {
     val photos = mapPhotos()
     val statics = mapStaticMaps()
     val cache = object : LinkedHashMap<String, ImageBitmap>(IMAGE_CACHE, LOAD_FACTOR, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageBitmap>?): Boolean = size > IMAGE_CACHE
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageBitmap>?): Boolean =
+            size > IMAGE_CACHE
     }
     return object : MapImages {
         override suspend fun photo(attachment: MapAttachment, preview: Boolean): ImageBitmap? {
@@ -409,6 +455,9 @@ private fun AppGraph.Ready.mapImages(): MapImages {
 
 /** The web's map badge tool label (`BADGE_CONSTANTS.map_label`). */
 private const val MAP_BADGE_TOOL = "map_label"
+
+/** Locate by network address alone — the desktop has no radios to report. */
+private const val GEOLOCATE_BODY = "{\"considerIp\":true}"
 private const val TAG = "MapsWiring"
 private const val MAX_PHOTO_BYTES = 30L * 1024 * 1024
 private const val CONVERT_SECONDS = 30L

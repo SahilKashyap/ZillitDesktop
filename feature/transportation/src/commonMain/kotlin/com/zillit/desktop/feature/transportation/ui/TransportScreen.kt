@@ -6,6 +6,9 @@ package com.zillit.desktop.feature.transportation.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,75 +16,99 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
+import com.zillit.desktop.core.designsystem.component.SideNavItem
+import com.zillit.desktop.core.designsystem.component.SideNavSection
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
+import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
+import com.zillit.desktop.core.designsystem.component.ZillitDivider
+import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
+import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
+import com.zillit.desktop.core.designsystem.component.ZillitLazyVerticalGrid
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
+import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
+import com.zillit.desktop.core.designsystem.component.ZillitSegmented
+import com.zillit.desktop.core.designsystem.component.ZillitSideNav
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.feature.transportation.domain.PermanentStatus
 import com.zillit.desktop.feature.transportation.domain.PermanentTrip
 import com.zillit.desktop.feature.transportation.domain.TripRequest
 import com.zillit.desktop.feature.transportation.domain.TripStatus
 import com.zillit.desktop.feature.transportation.domain.Vehicle
+import com.zillit.desktop.feature.transportation.ui.pages.DriverDetailsBody
+import com.zillit.desktop.feature.transportation.ui.pages.DriverRow
+import com.zillit.desktop.feature.transportation.ui.pages.Face
 import com.zillit.desktop.feature.transportation.ui.pages.TransportDialogs
+import com.zillit.desktop.feature.transportation.ui.pages.VehiclePicture
+import com.zillit.desktop.feature.transportation.ui.pages.allocationTone
+import com.zillit.desktop.feature.transportation.ui.pages.priorityTone
+import com.zillit.desktop.feature.transportation.ui.pages.statusTone
 
 /** The transport tool: a section nav on the left, the section on the right, dialogs over both. */
 @Composable
-fun TransportScreen(state: TransportUiState, onEvent: (TransportEvent) -> Unit) {
+fun TransportScreen(state: TransportUiState, onEvent: (TransportEvent) -> Unit, openLink: (String) -> Unit = {}) {
     val colors = ZillitTheme.colors
     Box(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .width(NAV_WIDTH)
-                    .fillMaxHeight()
-                    .background(colors.surfaceSunken)
-                    .padding(ZillitTheme.spacing.md),
-                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-            ) {
-                ZillitText(text = "Transportation", style = ZillitTheme.typography.titleLarge)
-                ZillitText(
-                    text = if (state.viewer.isCoordinator) "Coordinator" else if (state.isDriver) "Driver" else "Crew",
-                    style = ZillitTheme.typography.bodySmall,
-                    color = colors.textMuted,
-                    modifier = Modifier.padding(bottom = ZillitTheme.spacing.sm),
-                )
-                state.sections.forEach { section ->
-                    val active = section == state.section
-                    ZillitText(
-                        text = section.label,
-                        style = ZillitTheme.typography.bodyMedium,
-                        color = if (active) colors.accentText else colors.textPrimary,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(if (active) colors.accentSoft else colors.surfaceSunken,
-                                ZillitTheme.shapes.medium)
-                            .clickable { onEvent(TransportEvent.SelectSection(section)) }
-                            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
-                    )
-                }
-            }
+            ZillitSideNav(
+                sections = listOf(
+                    SideNavSection(
+                        title = null,
+                        items = state.sections.map { section ->
+                            SideNavItem(
+                                id = section.name,
+                                label = section.label,
+                                icon = section.icon(),
+                                count = state.sectionBadge(section),
+                            )
+                        },
+                    ),
+                ),
+                activeId = state.section.name,
+                onSelect = { id -> onEvent(TransportEvent.SelectSection(TransportSection.valueOf(id))) },
+                modifier = Modifier.fillMaxHeight().background(colors.surfaceSunken),
+                header = {
+                    Column(Modifier.padding(bottom = ZillitTheme.spacing.sm)) {
+                        ZillitText(text = "Transportation", style = ZillitTheme.typography.titleLarge)
+                        ZillitText(
+                            text = when {
+                                state.viewer.isCoordinator -> "Coordinator"
+                                state.isDriver -> "Driver"
+                                else -> "Crew"
+                            },
+                            style = ZillitTheme.typography.bodySmall,
+                            color = colors.textMuted,
+                        )
+                    }
+                },
+            )
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -95,12 +122,8 @@ fun TransportScreen(state: TransportUiState, onEvent: (TransportEvent) -> Unit) 
                         text = message,
                         tone = StatusTone.Rejected,
                         action = {
-                            ZillitButton(
-                                text = "Dismiss",
-                                onClick = { onEvent(TransportEvent.DismissError) },
-                                variant = ButtonVariant.Tertiary,
-                                size = ButtonSize.Small,
-                            )
+                            ZillitButton(text = "Dismiss", onClick = { onEvent(TransportEvent.DismissError) },
+                                variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
                         },
                     )
                 }
@@ -110,11 +133,39 @@ fun TransportScreen(state: TransportUiState, onEvent: (TransportEvent) -> Unit) 
                     TransportSection.Permanent -> PermanentSection(state, onEvent)
                     TransportSection.Drivers -> DriversSection(state, onEvent)
                     TransportSection.MyAssignments -> MyAssignmentsSection(state, onEvent)
+                    TransportSection.MyDetails -> MyDetailsSection(state, onEvent)
                 }
             }
         }
-        TransportDialogs(state, onEvent)
+        TransportDialogs(state, onEvent, openLink)
     }
+}
+
+private fun TransportSection.icon() = when (this) {
+    TransportSection.Requests -> ZillitIcons.Pin
+    TransportSection.Vehicles -> ZillitIcons.Transport
+    TransportSection.Drivers -> ZillitIcons.Users
+    TransportSection.Permanent -> ZillitIcons.Calendar
+    TransportSection.MyAssignments -> ZillitIcons.Tick
+    TransportSection.MyDetails -> ZillitIcons.User
+}
+
+/** A card the pointer lifts — the web's `hover:shadow-md` tiles. */
+@Composable
+private fun HoverCard(modifier: Modifier = Modifier, onClick: (() -> Unit)?, content: @Composable () -> Unit) {
+    val colors = ZillitTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val lifted = hovered && onClick != null
+    Box(
+        modifier
+            .fillMaxWidth()
+            .hoverable(interaction)
+            .background(if (lifted) colors.surfaceHover else colors.surface, ZillitTheme.shapes.large)
+            .border(1.dp, if (lifted) colors.borderStrong else colors.border, ZillitTheme.shapes.large)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(ZillitTheme.spacing.md),
+    ) { content() }
 }
 
 // Requests -------------------------------------------------------------------
@@ -123,16 +174,19 @@ fun TransportScreen(state: TransportUiState, onEvent: (TransportEvent) -> Unit) 
 private fun RequestsSection(state: TransportUiState, onEvent: (TransportEvent) -> Unit) {
     ZillitPageHeader(
         title = "Pickup requests",
-        description = if (state.viewer.isCoordinator) "Every request on the project." else "Requests you raised.",
+        description = if (state.viewer.isCoordinator) "Every request on the production — approve, assign, track." else
+            "Requests you raised, and the ones you ride in.",
         actions = {
             ZillitButton(text = "Refresh", onClick = { onEvent(TransportEvent.Refresh) },
                 variant = ButtonVariant.Tertiary, loading = state.loading)
-            ZillitButton(text = "Raise request", onClick = { onEvent(TransportEvent.NewRequest) },
+            ZillitButton(text = "Raise pickup request", onClick = { onEvent(TransportEvent.NewRequest) },
                 leadingIcon = ZillitIcons.Add)
         },
     )
     ZillitTabStrip(
-        tabs = TripStatus.entries.map { ZillitTab(it.wire, it.label) },
+        tabs = TripStatus.entries.map {
+            ZillitTab(it.wire, it.label, count = state.badge(TransportUiState.tripStatusBadge(it)))
+        },
         activeId = state.tripStatus.wire,
         onSelect = { id -> onEvent(TransportEvent.SelectTripStatus(TripStatus.entries.first { it.wire == id })) },
     )
@@ -147,75 +201,69 @@ private fun TripList(state: TransportUiState, trips: List<TripRequest>, onEvent:
         return
     }
     if (trips.isEmpty()) {
-        ZillitText(text = "No requests here.", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
+        ZillitEmptyState(title = "No requests here", message = "Requests in this state will appear as they arrive.")
         return
     }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    ZillitLazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         items(trips, key = { it.id }) { trip ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(colors.surface, ZillitTheme.shapes.medium)
-                    .border(1.dp, colors.border, ZillitTheme.shapes.medium)
-                    .clickable { onEvent(TransportEvent.OpenTrip(trip)) }
-                    .padding(ZillitTheme.spacing.md),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                        verticalAlignment = Alignment.CenterVertically) {
+            val raiser = state.user(trip.raisedBy)
+            HoverCard(onClick = { onEvent(TransportEvent.OpenTrip(trip)) }) {
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+                    // The web's coloured left edge: the priority at a glance.
+                    Box(Modifier.width(EDGE).height(EDGE_HEIGHT).background(priorityColor(trip.priority),
+                        ZillitTheme.shapes.pill))
+                    Face(raiser, state.userName(trip.raisedBy))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            ZillitText(
+                                text = trip.passengers.joinToString { it.name.ifBlank { state.userName(it.userId) } }
+                                    .ifBlank { "No passengers" },
+                                style = ZillitTheme.typography.titleMedium,
+                                color = colors.textPrimary,
+                            )
+                            ZillitStatusPill(label = trip.priority.uppercase().ifBlank { "—" },
+                                tone = priorityTone(trip.priority))
+                        }
                         ZillitText(
-                            text = trip.passengers.joinToString { it.name.ifBlank { state.userName(it.userId) } }
-                                .ifBlank { "No passengers" },
-                            style = ZillitTheme.typography.titleMedium,
-                            color = colors.textPrimary,
-                        )
-                        ZillitStatusPill(label = trip.priority.ifBlank { "—" }, tone = priorityTone(trip.priority))
-                    }
-                    ZillitText(
-                        text = "Raised by ${state.userName(trip.raisedBy)} · first pickup " +
-                            TransportClock.dateTime(trip.passengers.minOfOrNull { it.pickupMs } ?: 0L),
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                    )
-                    if (trip.driverId != null || trip.vehicleId != null) {
-                        ZillitText(
-                            text = "Driver ${state.userName(trip.driverId)} · ${state.vehicleLabel(trip.vehicleId)}",
+                            text = "Raised by ${state.userName(trip.raisedBy)} · pickup " +
+                                TransportClock.dateTime(trip.firstPickupMs),
                             style = ZillitTheme.typography.bodySmall,
-                            color = colors.textMuted,
+                            color = colors.textSecondary,
                         )
+                        if (trip.driverId != null || trip.vehicleId != null) {
+                            ZillitText(
+                                text = "Driver ${state.userName(trip.driverId)} · " +
+                                    state.vehicleLabel(trip.vehicleId),
+                                style = ZillitTheme.typography.bodySmall,
+                                color = colors.textMuted,
+                            )
+                        }
                     }
+                    ZillitStatusPill(label = trip.status.label, tone = statusTone(trip.status))
                 }
-                ZillitStatusPill(label = trip.status.label, tone = statusTone(trip.status))
             }
         }
     }
 }
 
-internal fun priorityTone(priority: String): StatusTone = when (priority.lowercase()) {
-    "urgent" -> StatusTone.Rejected
-    "high" -> StatusTone.Escalated
-    "medium" -> StatusTone.Pending
-    else -> StatusTone.Neutral
-}
-
-internal fun statusTone(status: TripStatus): StatusTone = when (status) {
-    TripStatus.Pending -> StatusTone.Pending
-    TripStatus.Assigned -> StatusTone.Progress
-    TripStatus.InProgress -> StatusTone.Progress
-    TripStatus.Completed -> StatusTone.Done
-    TripStatus.Cancelled -> StatusTone.Rejected
+@Composable
+private fun priorityColor(priority: String) = when (priority.lowercase()) {
+    "urgent" -> ZillitTheme.colors.danger
+    "high" -> ZillitTheme.colors.accent
+    "medium" -> ZillitTheme.colors.info
+    else -> ZillitTheme.colors.success
 }
 
 // Vehicles -------------------------------------------------------------------
 
 @Composable
 private fun VehiclesSection(state: TransportUiState, onEvent: (TransportEvent) -> Unit) {
-    val colors = ZillitTheme.colors
+    val selecting = state.vehicleSelection != null
     ZillitPageHeader(
-        title = "Vehicles",
-        description = "The project's fleet — who drives what, and what is free.",
+        title = "Vehicle list",
+        description = "The production's fleet — who drives what, and what is free.",
         actions = {
             ZillitButton(text = "Refresh", onClick = { onEvent(TransportEvent.Refresh) },
                 variant = ButtonVariant.Tertiary, loading = state.loading)
@@ -223,66 +271,83 @@ private fun VehiclesSection(state: TransportUiState, onEvent: (TransportEvent) -
                 leadingIcon = ZillitIcons.Add)
         },
     )
-    if (state.vehicles.isEmpty()) {
-        ZillitText(text = "No vehicles yet.", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitSearchField(value = state.vehicleQuery, onValueChange = { onEvent(TransportEvent.VehicleQuery(it)) },
+            placeholder = "Search by name or number", modifier = Modifier.width(SEARCH), enabled = !selecting)
+        if (state.visibleVehicles.isNotEmpty() && state.vehicleQuery.isBlank()) {
+            ZillitButton(text = if (selecting) "Cancel" else "Select",
+                onClick = { onEvent(TransportEvent.ToggleVehicleSelection) }, variant = ButtonVariant.Secondary)
+        }
+        val chosen = state.vehicleSelection.orEmpty()
+        if (selecting && chosen.isNotEmpty()) {
+            ZillitButton(text = "Delete (${chosen.size})", onClick = { onEvent(TransportEvent.DeleteSelectedVehicles) },
+                variant = ButtonVariant.Danger, leadingIcon = ZillitIcons.Trash, loading = state.busy)
+        }
+    }
+    val vehicles = state.visibleVehicles
+    if (vehicles.isEmpty()) {
+        ZillitEmptyState(title = if (state.vehicleQuery.isBlank()) "No vehicles yet" else "No vehicles match",
+            message = if (state.vehicleQuery.isBlank()) "Add the production's first vehicle." else null)
         return
     }
-    LazyVerticalGrid(
+    ZillitLazyVerticalGrid(
         columns = GridCells.Adaptive(CARD_MIN_WIDTH),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        items(state.vehicles, key = { it.id }) { vehicle -> VehicleCard(state, vehicle, onEvent) }
+        items(vehicles, key = { it.id }) { vehicle -> VehicleCard(state, vehicle, onEvent) }
     }
 }
 
 @Composable
 private fun VehicleCard(state: TransportUiState, vehicle: Vehicle, onEvent: (TransportEvent) -> Unit) {
     val colors = ZillitTheme.colors
-    Column(
-        modifier = Modifier
-            .background(colors.surface, ZillitTheme.shapes.medium)
-            .border(1.dp, colors.border, ZillitTheme.shapes.medium)
-            .padding(ZillitTheme.spacing.md),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically) {
-            ZillitText(text = vehicle.name.ifBlank { vehicle.number }, style = ZillitTheme.typography.titleMedium,
-                color = colors.textPrimary)
-            ZillitStatusPill(
-                label = vehicle.allocation.label,
-                tone = if (vehicle.editable) StatusTone.Done else StatusTone.Progress,
-            )
-            if (vehicle.isPrivate) ZillitStatusPill(label = "Personal", tone = StatusTone.Neutral)
-        }
-        ZillitText(
-            text = listOf(vehicle.number, vehicle.type,
-                "${vehicle.seats} seats").filter { it.isNotBlank() }.joinToString(" · "),
-            style = ZillitTheme.typography.bodySmall,
-            color = colors.textSecondary,
-        )
-        ZillitText(
-            text = "Driver: ${state.userName(vehicle.driverId)}",
-            style = ZillitTheme.typography.bodySmall,
-            color = colors.textMuted,
-        )
-        if (vehicle.ownerName.isNotBlank()) {
-            ZillitText(text = "Owner: ${vehicle.ownerName} ${vehicle.ownerContact}".trim(),
-                style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-            if (vehicle.editable && !vehicle.isPrivate) {
-                ZillitButton(text = "Assign driver", onClick = { onEvent(TransportEvent.AssignDriver(vehicle)) },
-                    variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+    val selecting = state.vehicleSelection != null
+    val driver = state.user(vehicle.driverId)
+    HoverCard(onClick = if (selecting) null else { { onEvent(TransportEvent.OpenVehicle(vehicle)) } }) {
+        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+                verticalAlignment = Alignment.CenterVertically) {
+                VehiclePicture(state, vehicle)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        ZillitText(text = vehicle.name.ifBlank { vehicle.number },
+                            style = ZillitTheme.typography.titleMedium, color = colors.textPrimary,
+                            modifier = Modifier.weight(1f, fill = false), maxLines = 1)
+                        if (vehicle.isPrivate) ZillitStatusPill(label = "Private", tone = StatusTone.Neutral)
+                        if (selecting && vehicle.deletable) {
+                            ZillitCheckbox(checked = vehicle.id in state.vehicleSelection.orEmpty(),
+                                onCheckedChange = { onEvent(TransportEvent.ToggleVehicleSelected(vehicle.id)) })
+                        }
+                    }
+                    ZillitText(text = vehicle.number, style = ZillitTheme.typography.bodySmall,
+                        color = colors.textMuted)
+                    ZillitStatusPill(label = vehicle.allocation.label, tone = allocationTone(vehicle.allocation))
+                    if (vehicle.seats > 0) {
+                        ZillitText(text = "Seating capacity: ${vehicle.seats}",
+                            style = ZillitTheme.typography.bodySmall, color = colors.textSecondary)
+                    }
+                    ZillitText(
+                        text = "Driver — ${driver?.fullName ?: "Not assigned"}",
+                        style = ZillitTheme.typography.bodySmall,
+                        color = if (driver == null) colors.danger else colors.textSecondary,
+                    )
+                }
             }
-            if (vehicle.editable) {
-                ZillitButton(text = "Edit", onClick = { onEvent(TransportEvent.EditVehicle(vehicle)) },
-                    variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
-            }
-            if (vehicle.deletable) {
-                ZillitButton(text = "Delete", onClick = { onEvent(TransportEvent.DeleteVehicles(listOf(vehicle.id))) },
-                    variant = ButtonVariant.Danger, size = ButtonSize.Small)
+            if (!selecting && vehicle.editable) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs,
+                    Alignment.End)) {
+                    if (vehicle.deletable) {
+                        ZillitButton(text = "Delete", onClick = { onEvent(TransportEvent.DeleteVehicle(vehicle)) },
+                            variant = ButtonVariant.Danger, size = ButtonSize.Small, leadingIcon = ZillitIcons.Trash)
+                    }
+                    ZillitButton(text = "Edit", onClick = { onEvent(TransportEvent.EditVehicle(vehicle)) },
+                        variant = ButtonVariant.Secondary, size = ButtonSize.Small, leadingIcon = ZillitIcons.Edit)
+                }
             }
         }
     }
@@ -292,29 +357,41 @@ private fun VehicleCard(state: TransportUiState, vehicle: Vehicle, onEvent: (Tra
 
 @Composable
 private fun PermanentSection(state: TransportUiState, onEvent: (TransportEvent) -> Unit) {
-    val colors = ZillitTheme.colors
+    val coordinator = state.viewer.isCoordinator
     ZillitPageHeader(
         title = "Permanent allocations",
-        description = if (state.viewer
-            .isCoordinator) "Vehicles and drivers assigned for a run of days." else "Allocations you ride in or drive.",
+        description = if (coordinator) "Vehicles and drivers assigned to people for a run of days." else
+            "Allocations you ride in" + if (state.isDriver) " or drive." else ".",
         actions = {
             ZillitButton(text = "Refresh", onClick = { onEvent(TransportEvent.Refresh) },
                 variant = ButtonVariant.Tertiary, loading = state.loading)
-            if (state.viewer.isCoordinator) {
-                ZillitButton(text = "New allocation", onClick = { onEvent(TransportEvent.NewPermanent) },
+            if (coordinator) {
+                ZillitButton(text = "Assign vehicle", onClick = { onEvent(TransportEvent.NewPermanent) },
                     leadingIcon = ZillitIcons.Add)
             }
         },
     )
-    if (state.viewer.isCoordinator) {
+    if (coordinator) {
         ZillitTabStrip(
             tabs = listOf(
-                ZillitTab(PermanentStatus.Permanent.wire, "Assigned"),
+                ZillitTab(PermanentStatus.Permanent.wire, "Assigned vehicles", count = state.badge(TransportUiState
+                    .PERMANENT_BADGE)),
                 ZillitTab(PermanentStatus.Draft.wire, "Drafts"),
                 ZillitTab(PermanentStatus.Completed.wire, "Completed"),
             ),
             activeId = state.permanentTab.wire,
             onSelect = { id -> onEvent(TransportEvent.SelectPermanentTab(PermanentStatus.fromWire(id))) },
+        )
+    } else if (state.isDriver) {
+        ZillitTabStrip(
+            tabs = listOf(
+                ZillitTab("passenger", "Assigned as passenger",
+                    count = state.badge(TransportUiState.PERMANENT_AS_PASSENGER_BADGE)),
+                ZillitTab("driver", "Assigned as driver",
+                    count = state.badge(TransportUiState.PERMANENT_AS_DRIVER_BADGE)),
+            ),
+            activeId = if (state.permanentAsDriver) "driver" else "passenger",
+            onSelect = { id -> onEvent(TransportEvent.SelectPermanentRole(id == "driver")) },
         )
     }
     if (state.loading && state.permanent.isEmpty()) {
@@ -322,72 +399,74 @@ private fun PermanentSection(state: TransportUiState, onEvent: (TransportEvent) 
         return
     }
     if (state.permanent.isEmpty()) {
-        ZillitText(text = "No allocations here.", style = ZillitTheme.typography.bodyMedium, color = colors.textMuted)
+        ZillitEmptyState(title = "No allocations here")
         return
     }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    ZillitLazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         items(state.permanent, key = { it.id }) { trip -> PermanentRow(state, trip, onEvent) }
     }
 }
 
+/** The web's `PermanentRequestItem`, its kebab menu spelled out as buttons. */
 @Composable
 private fun PermanentRow(state: TransportUiState, trip: PermanentTrip, onEvent: (TransportEvent) -> Unit) {
     val colors = ZillitTheme.colors
     val coordinator = state.viewer.isCoordinator
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colors.surface, ZillitTheme.shapes.medium)
-            .border(1.dp, colors.border, ZillitTheme.shapes.medium)
-            .padding(ZillitTheme.spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+    val vehicle = state.vehicle(trip.vehicleId)
+    HoverCard(onClick = { onEvent(TransportEvent.EditPermanent(trip, viewOnly = true)) }) {
+        Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+            if (vehicle != null) VehiclePicture(state, vehicle)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    ZillitText(text = vehicle?.number ?: "No vehicle", style = ZillitTheme.typography.titleMedium,
+                        color = colors.textPrimary)
+                    ZillitStatusPill(
+                        label = trip.status.label,
+                        tone = when (trip.status) {
+                            PermanentStatus.Draft -> StatusTone.Pending
+                            PermanentStatus.Permanent -> StatusTone.Progress
+                            PermanentStatus.Completed -> StatusTone.Done
+                        },
+                    )
+                }
+                ZillitText(text = "Trip type: ${if (trip.fullDay) "Full day" else "Pickup and drop-off"}",
+                    style = ZillitTheme.typography.bodySmall, color = colors.textSecondary)
+                val first = trip.passengers.firstOrNull()
                 ZillitText(
-                    text = trip.passengers.joinToString { it.name.ifBlank { state.userName(it.userId) } }
-                        .ifBlank { "No passengers" },
-                    style = ZillitTheme.typography.titleMedium,
-                    color = colors.textPrimary,
-                )
-                ZillitStatusPill(
-                    label = trip.status.label,
-                    tone = when (trip.status) {
-                        PermanentStatus.Draft -> StatusTone.Pending
-                        PermanentStatus.Permanent -> StatusTone.Progress
-                        PermanentStatus.Completed -> StatusTone.Done
+                    text = "Passengers: " + when {
+                        first == null -> "N/A"
+                        trip.passengers.size == 1 -> first.name.ifBlank { state.userName(first.userId) }
+                        else -> first.name.ifBlank { state.userName(first.userId) } +
+                            " +${trip.passengers.size - 1} more"
                     },
+                    style = ZillitTheme.typography.bodySmall,
+                    color = colors.textSecondary,
                 )
-                if (trip.fullDay) ZillitStatusPill(label = "Full day", tone = StatusTone.Neutral)
+                ZillitText(text = "Driver: ${state.userName(trip.driverId)}", style = ZillitTheme.typography.bodySmall,
+                    color = colors.textSecondary)
+                val end = if (trip.endMs > 0) TransportClock.date(trip.endMs) else "open"
+                ZillitText(text = "${TransportClock.date(trip.startMs)} → $end",
+                    style = ZillitTheme.typography.bodySmall, color = colors.textMuted)
             }
-            val end = if (trip.endMs > 0) TransportClock.date(trip.endMs) else "open"
-            ZillitText(
-                text = "${TransportClock.date(trip.startMs)} → $end · " +
-                    "Driver ${state.userName(trip.driverId)} · ${state.vehicleLabel(trip.vehicleId)}",
-                style = ZillitTheme.typography.bodySmall,
-                color = colors.textSecondary,
-            )
-        }
-        val mine = trip.passengers.any { it.userId == state.viewer.userId }
-        if (mine && trip.status != PermanentStatus.Completed) {
-            ZillitCheckbox(checked = trip.selfManage, onCheckedChange = { onEvent(TransportEvent.SelfManage(trip,
-                it)) }, label = "Self-manage")
-        }
-        if ((coordinator && trip.status == PermanentStatus.Permanent) || trip.status == PermanentStatus.Draft) {
-            ZillitButton(text = "Edit", onClick = { onEvent(TransportEvent.EditPermanent(trip)) },
-                variant = ButtonVariant.Tertiary, size = ButtonSize.Small)
-        }
-        if (coordinator && trip.status == PermanentStatus.Permanent) {
-            ZillitButton(text = "Unassign", onClick = { onEvent(TransportEvent.UnassignPermanent(trip)) },
-                variant = ButtonVariant.Secondary, size = ButtonSize.Small)
-        }
-        if (trip.status == PermanentStatus.Draft) {
-            ZillitButton(text = "Delete", onClick = { onEvent(TransportEvent.DeletePermanent(trip)) },
-                variant = ButtonVariant.Danger, size = ButtonSize.Small)
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                if ((coordinator && trip.status == PermanentStatus.Permanent) || trip.status == PermanentStatus.Draft) {
+                    ZillitButton(text = "Edit", onClick = { onEvent(TransportEvent.EditPermanent(trip)) },
+                        variant = ButtonVariant.Secondary, size = ButtonSize.Small)
+                }
+                if (coordinator && trip.status == PermanentStatus.Permanent) {
+                    ZillitButton(text = "Unassign", onClick = { onEvent(TransportEvent.UnassignPermanent(trip)) },
+                        variant = ButtonVariant.Danger, size = ButtonSize.Small)
+                }
+                if (trip.status == PermanentStatus.Draft) {
+                    ZillitButton(text = "Delete", onClick = { onEvent(TransportEvent.DeletePermanent(trip)) },
+                        variant = ButtonVariant.Danger, size = ButtonSize.Small)
+                }
+            }
         }
     }
 }
@@ -414,26 +493,14 @@ private fun LicenceRequests(state: TransportUiState, onEvent: (TransportEvent) -
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ZillitText(
-                    text = state.userName(request.userId),
-                    style = ZillitTheme.typography.bodyMedium,
-                    color = ZillitTheme.colors.textPrimary,
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitButton(
-                    text = "Approve",
+                ZillitText(text = state.userName(request.userId), style = ZillitTheme.typography.bodyMedium,
+                    color = ZillitTheme.colors.textPrimary, modifier = Modifier.weight(1f))
+                ZillitButton(text = "Approve",
                     onClick = { onEvent(TransportEvent.DecideLicence(request.id, approved = true)) },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                    enabled = !state.busy,
-                )
-                ZillitButton(
-                    text = "Reject",
+                    variant = ButtonVariant.Secondary, size = ButtonSize.Small, enabled = !state.busy)
+                ZillitButton(text = "Reject",
                     onClick = { onEvent(TransportEvent.DecideLicence(request.id, approved = false)) },
-                    variant = ButtonVariant.Danger,
-                    size = ButtonSize.Small,
-                    enabled = !state.busy,
-                )
+                    variant = ButtonVariant.Danger, size = ButtonSize.Small, enabled = !state.busy)
             }
         }
     }
@@ -441,113 +508,59 @@ private fun LicenceRequests(state: TransportUiState, onEvent: (TransportEvent) -
 
 @Composable
 private fun DriversSection(state: TransportUiState, onEvent: (TransportEvent) -> Unit) {
-    val colors = ZillitTheme.colors
     ZillitPageHeader(
         title = "Drivers",
-        description = "Everyone the project can put behind a wheel — by designation, or made a temporary driver.",
+        description = "Everyone the production can put behind a wheel — by designation, or made a temporary driver.",
         actions = {
             ZillitButton(text = "Refresh", onClick = { onEvent(TransportEvent.Refresh) },
                 variant = ButtonVariant.Tertiary, loading = state.loading)
+            ZillitButton(text = "Temporary drivers", onClick = { onEvent(TransportEvent.OpenTempDrivers) },
+                variant = ButtonVariant.Secondary, leadingIcon = ZillitIcons.UserPlus)
         },
     )
-    val drivers = state.drivers
-    val others = state.temporaryDriverCandidates()
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ZillitSegmented(
+            options = DriverFilter.entries.map { ZillitTab(it.name, it.label) },
+            activeId = state.driverFilter.name,
+            onSelect = { onEvent(TransportEvent.SelectDriverFilter(DriverFilter.valueOf(it))) },
+        )
+        ZillitSearchField(value = state.driverQuery, onValueChange = { onEvent(TransportEvent.DriverQuery(it)) },
+            placeholder = "Search driver by name", modifier = Modifier.width(SEARCH))
+    }
+    if (state.driverFilter == DriverFilter.Allocated) {
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            AllocationFilter.entries.forEach { filter ->
+                ZillitChoiceChip(label = filter.label, selected = state.allocationFilter == filter,
+                    onClick = { onEvent(TransportEvent.SelectAllocationFilter(filter)) })
+            }
+        }
+    }
+    val drivers = state.filteredDrivers()
+    ZillitLazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         if (state.licenceRequests.isNotEmpty()) {
             item { LicenceRequests(state, onEvent) }
         }
-        item {
-            ZillitText(text = "DRIVERS (${drivers.size})", style = ZillitTheme.typography.bodySmall,
-                color = colors.textMuted)
-        }
         if (drivers.isEmpty()) {
-            item { ZillitText(text = "No drivers yet.", style = ZillitTheme.typography.bodyMedium,
-                color = colors.textMuted) }
-        }
-        items(drivers, key = { "d:" + it.userId }) { user ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(colors.surface, ZillitTheme.shapes.medium)
-                    .border(1.dp, colors.border, ZillitTheme.shapes.medium)
-                    .padding(ZillitTheme.spacing.md),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        ZillitText(text = user.fullName, style = ZillitTheme.typography.titleMedium,
-                            color = colors.textPrimary)
-                        if (user.isTempDriver) ZillitStatusPill(label = "Temporary", tone = StatusTone.Neutral)
-                        ZillitStatusPill(
-                            label = user.availability,
-                            tone = if (user.isTripAssigned || user.permanentTrip) StatusTone.Rejected else StatusTone
-                                .Done,
-                        )
-                    }
-                    ZillitText(
-                        text = "${user.designation.ifBlank { "—" }} · vehicle ${state.vehicleLabel(user.vehicleId)}",
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textSecondary,
-                    )
-                }
-                if (user.permanentTrip && !user.fullDayTrip) {
-                    ZillitButton(
-                        text = if (user.isTripAssigned) "Mark available" else "Mark unavailable",
-                        onClick = { onEvent(TransportEvent.SetAvailability(user.userId,
-                            available = user.isTripAssigned)) },
-                        variant = ButtonVariant.Tertiary,
-                        size = ButtonSize.Small,
-                    )
-                }
-                ZillitButton(
-                    text = "Licence reminder",
-                    onClick = { onEvent(TransportEvent.DocumentReminder(user.userId, "license")) },
-                    variant = ButtonVariant.Tertiary,
-                    size = ButtonSize.Small,
+            item {
+                ZillitEmptyState(
+                    title = "No drivers here",
+                    message = if (state.driverFilter == DriverFilter.All) {
+                        "Drivers come from the transport department's designations, or are made temporary drivers."
+                    } else {
+                        null
+                    },
                 )
-                if (user.isTempDriver) {
-                    ZillitButton(
-                        text = "Remove temp",
-                        onClick = { onEvent(TransportEvent.ToggleTempDriver(user.userId, on = false)) },
-                        variant = ButtonVariant.Danger,
-                        size = ButtonSize.Small,
-                    )
-                }
             }
         }
-        item {
-            ZillitText(
-                text = "MAKE A TEMPORARY DRIVER",
-                style = ZillitTheme.typography.bodySmall,
-                color = colors.textMuted,
-                modifier = Modifier.padding(top = ZillitTheme.spacing.md),
-            )
-        }
-        items(others, key = { "o:" + it.userId }) { user ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(colors.surface, ZillitTheme.shapes.medium)
-                    .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    ZillitText(text = user.fullName, style = ZillitTheme.typography.bodyMedium,
-                        color = colors.textPrimary)
-                    ZillitText(
-                        text = listOf(user.designation, user.department).filter { it.isNotBlank() }.joinToString(" · "),
-                        style = ZillitTheme.typography.bodySmall,
-                        color = colors.textMuted,
-                    )
-                }
-                ZillitButton(
-                    text = "Make temp driver",
-                    onClick = { onEvent(TransportEvent.ToggleTempDriver(user.userId, on = true)) },
-                    variant = ButtonVariant.Secondary,
-                    size = ButtonSize.Small,
-                )
+        items(drivers, key = { it.userId }) { user ->
+            HoverCard(onClick = { onEvent(TransportEvent.OpenDriver(user)) }) {
+                DriverRow(state, user, onEvent, trailing = {
+                    ZillitText(text = "›", style = ZillitTheme.typography.titleLarge,
+                        color = ZillitTheme.colors.textMuted)
+                })
             }
         }
     }
@@ -566,13 +579,46 @@ private fun MyAssignmentsSection(state: TransportUiState, onEvent: (TransportEve
         },
     )
     ZillitTabStrip(
-        tabs = listOf(ZillitTab(TripStatus.Assigned.wire, "To start"), ZillitTab(TripStatus.Completed.wire,
-            "Completed")),
+        tabs = listOf(
+            ZillitTab(TripStatus.Assigned.wire, "Start trip",
+                count = state.badge(TransportUiState.DRIVER_ASSIGNMENT_BADGE)),
+            ZillitTab(TripStatus.Completed.wire, "Completed trips"),
+        ),
         activeId = state.myTab.wire,
         onSelect = { id -> onEvent(TransportEvent.SelectMyTab(TripStatus.fromWire(id))) },
     )
     TripList(state, state.myTrips, onEvent)
 }
 
-private val NAV_WIDTH = 220.dp
-private val CARD_MIN_WIDTH = 300.dp
+// Fill in details ------------------------------------------------------------
+
+/** The driver's own record — the web's Fill in details tile, as a page rather than a modal. */
+@Composable
+private fun MyDetailsSection(state: TransportUiState, onEvent: (TransportEvent) -> Unit) {
+    val editor = state.driverDetails?.takeIf { it.self }
+    ZillitPageHeader(
+        title = "Fill in details",
+        description = "Your phone, address, licence and documents — what the transport office needs before it " +
+            "assigns you trips.",
+        actions = {
+            if (state.badge(TransportUiState.DRIVER_REMINDER_BADGE) > 0) {
+                ZillitBadge(count = state.badge(TransportUiState.DRIVER_REMINDER_BADGE))
+            }
+            ZillitButton(text = "Update", onClick = { onEvent(TransportEvent.SaveDriverDetails) },
+                loading = editor?.saving == true, enabled = editor != null && !editor.uploading)
+        },
+    )
+    if (editor == null) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { ZillitSpinner() }
+        return
+    }
+    ZillitScrollColumn(modifier = Modifier.widthIn(max = DETAILS_WIDTH)) {
+        DriverDetailsBody(state, editor, onEvent)
+    }
+}
+
+private val CARD_MIN_WIDTH = 320.dp
+private val SEARCH = 300.dp
+private val EDGE = 4.dp
+private val EDGE_HEIGHT = 44.dp
+private val DETAILS_WIDTH = 760.dp

@@ -8,6 +8,7 @@ import com.zillit.desktop.feature.email.domain.EmailContact
 import com.zillit.desktop.feature.email.domain.EmailRepository
 import com.zillit.desktop.feature.email.domain.PickedFile
 import com.zillit.desktop.feature.email.domain.SignatureRepository
+import kotlin.uuid.Uuid
 
 /**
  * Everything writing a message needs.
@@ -35,6 +36,14 @@ data class Composing(
      */
     val chooseFilesOf: suspend (PreviewKind) -> List<PickedFile> = { chooseFiles() },
     val newAttachmentId: () -> String = { "attachment" },
+    /**
+     * Mints the key a new composer sends with its draft create — the
+     * `unique_id` the server dedupes on. Called once per composer, never per
+     * request: the whole point is that a retried create carries the *same*
+     * key. A real UUID by default, unlike [newAttachmentId], because a fixed
+     * value here would have the server fold every new draft onto the first.
+     */
+    val newDraftKey: () -> String = { Uuid.random().toString() },
     /** Reply-all drops this address, so a reply never goes to its sender. */
     val selfAddress: () -> String = { "" },
 )

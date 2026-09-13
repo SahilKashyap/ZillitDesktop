@@ -4,6 +4,8 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitApi
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitActiveCall
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitCallPolicy
+import com.zillit.desktop.feature.calls.data.livekit.LiveKitJoin
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitDial
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitDismissal
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitIdentity
@@ -47,67 +49,6 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class LiveKitLineTest {
 
-    /** The presence socket, as a script: what the line sent, and a way to answer or push events. */
-    private class FakeSocket : LiveKitSocketFactory, LiveKitSocket {
-        val connects = mutableListOf<Pair<String, Map<String, String>>>()
-        val frames = mutableListOf<JsonObject>()
-        var onFrame: (String) -> Unit = {}
-        var onClosed: (String) -> Unit = {}
-        var refuse = false
-
-        override suspend fun connect(
-            url: String,
-            headers: Map<String, String>,
-            onFrame: (String) -> Unit,
-            onClosed: (reason: String) -> Unit,
-        ): LiveKitSocket {
-            if (refuse) error("upgrade refused")
-            connects += url to headers
-            this.onFrame = onFrame
-            this.onClosed = onClosed
-            return this
-        }
-
-        override fun send(frame: String): Boolean {
-            frames += Json.parseToJsonElement(frame).jsonObject
-            return true
-        }
-
-        override fun close(reason: String) = onClosed(reason)
-
-        /** Answers the last request of [type] with [data]. */
-        fun answer(type: String, data: String = "{}", ok: Boolean = true) {
-            val req = frames.last { it["type"]!!.jsonPrimitive.content == type }
-            val id = req["reqId"]!!.jsonPrimitive.content
-            val field = if (ok) "\"data\":$data" else "\"error\":$data"
-            onFrame("""{"reqId":"$id","ok":$ok,$field}""")
-        }
-
-        fun push(event: String) = onFrame(event)
-
-        fun sentTypes() = frames.map { it["type"]!!.jsonPrimitive.content }
-    }
-
-    /** The REST side: every call recorded, answers scripted per path suffix. */
-    private class FakeHttp : SignedJsonHttp {
-        val calls = mutableListOf<Triple<String, JsonObject?, Pair<String?, String?>>>()
-        val answers = mutableMapOf<String, String>()
-
-        override suspend fun call(
-            verb: HttpVerb,
-            url: String,
-            body: JsonObject?,
-            projectId: String?,
-            userId: String?,
-        ): ZillitResult<JsonElement?> {
-            calls += Triple(url, body, projectId to userId)
-            val answer = answers.entries.firstOrNull { url.endsWith(it.key) }?.value ?: "{}"
-            return ZillitResult.Success(Json.parseToJsonElement(answer))
-        }
-
-        fun paths() = calls.map { it.first.substringAfter("/api") }
-    }
-
     private class Listener : LiveKitLineListener {
         val invites = mutableListOf<CallSession>()
         val rings = mutableListOf<Triple<String, CallStatus, Boolean>>()
@@ -115,6 +56,10 @@ class LiveKitLineTest {
         val ended = mutableListOf<String>()
         val rosters = mutableListOf<List<CallParticipant>>()
         val activeCalls = mutableListOf<List<LiveKitActiveCall>>()
+        val reactions = mutableListOf<Triple<String, String, String>>()
+        override fun onReaction(callId: String, userId: String, emoji: String) {
+            reactions += Triple(callId, userId, emoji)
+        }
         override fun onInvite(session: CallSession) { invites += session }
         override fun onRingState(
             callId: String,
@@ -125,15 +70,17 @@ class LiveKitLineTest {
         ) {
             rings += Triple(userId, status, busy)
         }
-        override fun onDismissed(callId: String, why: LiveKitDismissal) { dismissed += callId to why }
+        override fun onDismissed(callId: String, why: LiveKitDismissal, byName: String) {
+            dismissed += callId to why
+        }
         override fun onEnded(reason: String) { ended += reason }
         override fun onRoster(callId: String, participants: List<CallParticipant>) { rosters += participants }
         override fun onActiveCalls(calls: List<LiveKitActiveCall>) { activeCalls += calls }
     }
 
     private fun kotlinx.coroutines.test.TestScope.line(
-        socket: FakeSocket,
-        http: FakeHttp,
+        socket: LiveKitFakeSocket,
+        http: LiveKitFakeHttp,
         override: String? = null,
     ): Pair<LiveKitLine, Listener> {
         val listener = Listener()
@@ -153,8 +100,8 @@ class LiveKitLineTest {
 
     @Test
     fun `presence connects with the handshake blob on the query and the header, then registers`() = runTest {
-        val socket = FakeSocket()
-        val (line, _) = line(socket, FakeHttp())
+        val socket = LiveKitFakeSocket()
+        val (line, _) = line(socket, LiveKitFakeHttp())
         line.start()
         runCurrent()
 
@@ -171,8 +118,8 @@ class LiveKitLineTest {
 
     @Test
     fun `a ring becomes an invite and is acknowledged on the socket`() = runTest {
-        val socket = FakeSocket()
-        val (line, listener) = line(socket, FakeHttp())
+        val socket = LiveKitFakeSocket()
+        val (line, listener) = line(socket, LiveKitFakeHttp())
         line.start()
         runCurrent()
 
@@ -191,8 +138,8 @@ class LiveKitLineTest {
 
     @Test
     fun `placing a call creates over REST, rings over the socket, and joins with the ack's room`() = runTest {
-        val socket = FakeSocket()
-        val http = FakeHttp().apply { answers["/v1/calls"] = """{"callId":"c9","wsUrl":"","token":""}""" }
+        val socket = LiveKitFakeSocket()
+        val http = LiveKitFakeHttp().apply { answers["/v1/calls"] = """{"callId":"c9","wsUrl":"","token":""}""" }
         val (line, _) = line(socket, http)
         line.start()
         runCurrent()
@@ -225,8 +172,8 @@ class LiveKitLineTest {
 
     @Test
     fun `with the socket down, the REST create carries the whole call so the server rings it`() = runTest {
-        val socket = FakeSocket().apply { refuse = true }
-        val http = FakeHttp().apply {
+        val socket = LiveKitFakeSocket().apply { refuse = true }
+        val http = LiveKitFakeHttp().apply {
             answers["/v1/calls"] = """{"callId":"c7","livekit":{"token":"t","url":"wss://node.zillit.com/livekit"}}"""
         }
         val (line, _) = line(socket, http)
@@ -250,8 +197,8 @@ class LiveKitLineTest {
 
     @Test
     fun `an internal room address is replaced by the configured public one`() = runTest {
-        val socket = FakeSocket()
-        val http = FakeHttp().apply {
+        val socket = LiveKitFakeSocket()
+        val http = LiveKitFakeHttp().apply {
             answers["/v1/calls"] = """{"callId":"c9","livekit":{"token":"t","url":"ws://localhost:7880"}}"""
         }
         val (line, _) = line(socket, http, override = "wss://calls.zillit.com/livekit")
@@ -274,8 +221,8 @@ class LiveKitLineTest {
      */
     @Test
     fun `a reachable room from the server beats the configured one`() = runTest {
-        val socket = FakeSocket()
-        val http = FakeHttp().apply {
+        val socket = LiveKitFakeSocket()
+        val http = LiveKitFakeHttp().apply {
             answers["/v1/calls"] = """{"callId":"c9","livekit":{"token":"t","url":"wss://node-eu.zillit.com"}}"""
         }
         val (line, _) = line(socket, http, override = "wss://calls.zillit.com/livekit")
@@ -295,8 +242,8 @@ class LiveKitLineTest {
 
     @Test
     fun `without a usable room the token is minted`() = runTest {
-        val socket = FakeSocket()
-        val http = FakeHttp().apply {
+        val socket = LiveKitFakeSocket()
+        val http = LiveKitFakeHttp().apply {
             answers["/v1/calls"] = """{"callId":"c9","livekit":{"token":"t","url":"ws://localhost:7880"}}"""
             answers["/v1/livekit/token"] = """{"token":"minted","url":"wss://eu.zillit.com/livekit"}"""
         }
@@ -316,8 +263,8 @@ class LiveKitLineTest {
 
     @Test
     fun `accepting over the socket uses the ring's own room and never mints`() = runTest {
-        val socket = FakeSocket()
-        val http = FakeHttp()
+        val socket = LiveKitFakeSocket()
+        val http = LiveKitFakeHttp()
         val (line, _) = line(socket, http)
         line.start()
         runCurrent()
@@ -338,8 +285,8 @@ class LiveKitLineTest {
 
     @Test
     fun `with the socket down, accept and decline go over REST as the call's identity`() = runTest {
-        val socket = FakeSocket().apply { refuse = true }
-        val http = FakeHttp().apply {
+        val socket = LiveKitFakeSocket().apply { refuse = true }
+        val http = LiveKitFakeHttp().apply {
             answers["/accept"] =
                 """{"callId":"c1","livekit":{"token":"rest-tok","url":"wss://node.zillit.com/livekit"}}"""
         }
@@ -365,8 +312,8 @@ class LiveKitLineTest {
 
     @Test
     fun `ring states, dismissals and endings reach the listener in the machine's words`() = runTest {
-        val socket = FakeSocket()
-        val (line, listener) = line(socket, FakeHttp())
+        val socket = LiveKitFakeSocket()
+        val (line, listener) = line(socket, LiveKitFakeHttp())
         line.start()
         runCurrent()
 
@@ -383,9 +330,131 @@ class LiveKitLineTest {
     }
 
     @Test
+    fun `a reaction goes over the socket, and over REST when the socket refuses`() = runTest {
+        val socket = LiveKitFakeSocket()
+        val http = LiveKitFakeHttp()
+        val (line, listener) = line(socket, http)
+        line.start()
+        runCurrent()
+
+        val first = async { line.react("c", "👍", "p1", "me") }
+        runCurrent()
+        socket.answer("reactCall")
+        first.await()
+        val sent = socket.frames.last { it["type"]!!.jsonPrimitive.content == "reactCall" }
+        assertEquals("👍", sent["emoji"]!!.jsonPrimitive.content)
+        assertTrue(http.paths().none { it.endsWith("/react") }, "the socket carried it")
+
+        val second = async { line.react("c", "❤️", "p1", "me") }
+        runCurrent()
+        socket.answer("reactCall", "\"policy\"", ok = false)
+        second.await()
+        assertEquals("/v1/calls/c/react", http.paths().last())
+
+        // Nothing floats until the server echoes it.
+        socket.push("""{"type":"callReaction","callId":"c","userId":"me","emoji":"👍"}""")
+        runCurrent()
+        assertEquals(Triple("c", "me", "👍"), listener.reactions.single())
+    }
+
+    @Test
+    fun `hold and resume ride the socket with REST twins`() = runTest {
+        val socket = LiveKitFakeSocket()
+        val http = LiveKitFakeHttp()
+        val (line, _) = line(socket, http)
+        line.start()
+        runCurrent()
+
+        val held = async { line.hold("c", on = true, "p1", "me") }
+        runCurrent()
+        socket.answer("holdCall")
+        held.await()
+        assertTrue("holdCall" in socket.sentTypes())
+
+        line.disconnect("test")
+        line.hold("c", on = false, "p1", "me")
+        assertEquals("/v1/calls/c/resume", http.paths().last())
+    }
+
+    @Test
+    fun `the host's verbs are socket-only and carry their fields`() = runTest {
+        val socket = LiveKitFakeSocket()
+        val (line, _) = line(socket, LiveKitFakeHttp())
+        line.start()
+        runCurrent()
+
+        val policy = async {
+            line.setCallPolicy("c", LiveKitCallPolicy(on = true, chatEnabled = false).toPatch())
+        }
+        runCurrent()
+        val patch = socket.frames.last { it["type"]!!.jsonPrimitive.content == "setCallPolicy" }["patch"]!!.jsonObject
+        assertEquals("false", patch["chatEnabled"]!!.jsonPrimitive.content)
+        socket.answer("setCallPolicy")
+        assertTrue(policy.await())
+
+        val block = async { line.blockChat("c", "u", blocked = true) }
+        runCurrent()
+        val sent = socket.frames.last { it["type"]!!.jsonPrimitive.content == "blockChat" }
+        assertEquals("u", sent["userId"]!!.jsonPrimitive.content)
+        assertEquals("true", sent["blocked"]!!.jsonPrimitive.content)
+        socket.answer("blockChat")
+        assertTrue(block.await())
+
+        val kick = async { line.removeFromCall("c", "u") }
+        runCurrent()
+        socket.answer("removeFromCall", "\"not_host\"", ok = false)
+        assertTrue(!kick.await(), "a refusal is reported, not thrown")
+
+        line.disconnect("test")
+        assertTrue(!line.hostAction("c", "muteAll"), "no socket, no host verb")
+    }
+
+    @Test
+    fun `a host mute and a recording mark are REST, and a second recorder is refused`() = runTest {
+        val socket = LiveKitFakeSocket()
+        val http = LiveKitFakeHttp()
+        http.answers["/v1/livekit/recording/mark-started"] = "!409:already_recording"
+        val (line, _) = line(socket, http)
+        line.start()
+        runCurrent()
+        val me = LiveKitIdentity("me", "Me", "p1", "Sides Testing")
+
+        assertTrue(line.muteParticipant("c", "u", camera = true, self = me))
+        val mute = http.calls.last { it.first.endsWith("/v1/livekit/mute") }
+        assertEquals("camera", mute.second!!["source"]!!.jsonPrimitive.content)
+        assertEquals("u", mute.second!!["targetUserId"]!!.jsonPrimitive.content)
+
+        val refused = line.markRecording("c", on = true, self = me)
+        assertIs<ZillitResult.Failure>(refused)
+        val http409 = refused.error as com.zillit.desktop.core.common.ZillitError.Http
+        assertEquals("already_recording", http409.serverMessage)
+        assertIs<ZillitResult.Success<Unit>>(line.markRecording("c", on = false, self = me))
+    }
+
+    @Test
+    fun `joining an active call accepts on the socket, then over REST for the room`() = runTest {
+        val socket = LiveKitFakeSocket()
+        val http = LiveKitFakeHttp()
+        http.answers["/accept"] = """{"callId":"c9","livekit":{"token":"t9","url":"wss://node.zillit.com/rtc"}}"""
+        val (line, _) = line(socket, http)
+        line.start()
+        runCurrent()
+
+        val joined = async { line.joinActive("c9", LiveKitIdentity("me", "Me", "p1", "Sides Testing")) }
+        runCurrent()
+        socket.answer("acceptCall")
+        val join = assertIs<ZillitResult.Success<LiveKitJoin>>(joined.await()).data
+        assertEquals("c9", join.callId)
+        assertEquals("t9", join.token)
+        assertEquals("wss://node.zillit.com/rtc", join.url)
+        assertEquals("/v1/calls/c9/accept", http.paths().last())
+        assertTrue(http.paths().none { it.endsWith("/token") }, "the accept carried the room; nothing minted")
+    }
+
+    @Test
     fun `a dropped socket comes back on its own`() = runTest {
-        val socket = FakeSocket()
-        val (line, _) = line(socket, FakeHttp())
+        val socket = LiveKitFakeSocket()
+        val (line, _) = line(socket, LiveKitFakeHttp())
         line.start()
         runCurrent()
         assertEquals(1, socket.connects.size)
@@ -410,8 +479,8 @@ class LiveKitLineTest {
 
     @Test
     fun `the heartbeat's answer reaches the listener as the server's active calls`() = runTest {
-        val socket = FakeSocket()
-        val (line, listener) = line(socket, FakeHttp())
+        val socket = LiveKitFakeSocket()
+        val (line, listener) = line(socket, LiveKitFakeHttp())
         line.start()
         runCurrent()
         socket.answer(
@@ -426,8 +495,8 @@ class LiveKitLineTest {
 
     @Test
     fun `a ring already dealt with here does not sound again`() = runTest {
-        val socket = FakeSocket()
-        val (line, listener) = line(socket, FakeHttp())
+        val socket = LiveKitFakeSocket()
+        val (line, listener) = line(socket, LiveKitFakeHttp())
         line.start()
         runCurrent()
         val ring = """{"type":"incomingCall","callId":"c1","callType":"audio","callMode":"private",""" +
@@ -449,8 +518,8 @@ class LiveKitLineTest {
 
     @Test
     fun `an expired ring is dropped`() = runTest {
-        val socket = FakeSocket()
-        val (line, listener) = line(socket, FakeHttp())
+        val socket = LiveKitFakeSocket()
+        val (line, listener) = line(socket, LiveKitFakeHttp())
         line.start()
         runCurrent()
 

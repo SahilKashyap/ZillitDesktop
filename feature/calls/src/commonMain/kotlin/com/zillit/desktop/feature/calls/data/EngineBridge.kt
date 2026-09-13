@@ -68,6 +68,12 @@ object EngineBridge {
                 deleted = obj.bool("deleted"),
             )
             "speakers" -> CallEngineEvent.ActiveSpeakers(obj.intList("uids"))
+            // Line 3's roster facts off the room: attributes and metadata.
+            "peer-hand" -> CallEngineEvent.PeerHand(obj.str("userId").orEmpty(), obj.bool("raised"))
+            "lk-recording" -> CallEngineEvent.RecordingBy(obj.str("by").orEmpty())
+            "self-audio" -> CallEngineEvent.SelfMicMuted(obj.bool("muted"))
+            // Something the page wants the user told, without the call ending.
+            "notice" -> CallEngineEvent.Degraded(obj.str("message") ?: return null)
             "network" -> CallEngineEvent.NetworkQuality(obj.int("uid"), obj.int("tx"), obj.int("rx"))
             "connection" -> CallEngineEvent.ConnectionChanged(
                 connection(obj.str("state")),

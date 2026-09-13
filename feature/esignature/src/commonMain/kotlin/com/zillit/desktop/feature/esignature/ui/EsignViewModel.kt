@@ -2,50 +2,65 @@
 
 package com.zillit.desktop.feature.esignature.ui
 
-import com.zillit.desktop.core.permissions.rightsRefusalMessage
+import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
-import com.zillit.desktop.core.localization.localised
-import com.zillit.desktop.core.common.ZillitError
-import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.core.mvvm.ZillitViewModel
-import com.zillit.desktop.feature.esignature.domain.Envelope
-import com.zillit.desktop.feature.esignature.domain.EnvelopeRecipient
-import com.zillit.desktop.feature.esignature.domain.EnvelopeScope
-import com.zillit.desktop.feature.esignature.domain.EnvelopeStatus
+import com.zillit.desktop.core.permissions.rightsRefusalMessage
 import com.zillit.desktop.feature.esignature.domain.EsignFileTransfer
 import com.zillit.desktop.feature.esignature.domain.EsignPdf
 import com.zillit.desktop.feature.esignature.domain.EsignRepository
 import com.zillit.desktop.feature.esignature.domain.EsignViewer
-import com.zillit.desktop.feature.esignature.domain.FieldAnswer
-import com.zillit.desktop.feature.esignature.domain.FieldStyle
-import com.zillit.desktop.feature.esignature.domain.FieldType
-import com.zillit.desktop.feature.esignature.domain.NewField
-import com.zillit.desktop.feature.esignature.domain.SignedField
 import com.zillit.desktop.feature.esignature.domain.SignerOptionLike
+import com.zillit.desktop.feature.esignature.ui.flows.BulkFlow
+import com.zillit.desktop.feature.esignature.ui.flows.DetailFlow
+import com.zillit.desktop.feature.esignature.ui.flows.EditorFlow
+import com.zillit.desktop.feature.esignature.ui.flows.ListsFlow
+import com.zillit.desktop.feature.esignature.ui.flows.MarksFlow
+import com.zillit.desktop.feature.esignature.ui.flows.SigningFlow
+import com.zillit.desktop.feature.esignature.ui.flows.TemplatesFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 
 /**
  * E-Signature.
  *
- * The one non-obvious flow is signing: the desktop fills every field the
- * envelope placed for this signer — marks resolve to the saved signature or
- * initials, dates to today, typed fields to what was entered — and sends
- * **values**; the flattened PDF is the backend's job and arrives later as
- * the envelope's signed document. The mirror image of the documents tool,
- * and the reason this module contains no stamping code.
+ * The one non-obvious flow is signing: the desktop collects every field the
+ * envelope placed for this signer — marks from the pad or the saved
+ * library, dates and text from what was entered — and sends **values**;
+ * the flattened PDF is the backend's job and arrives later as the
+ * envelope's signed document. The mirror image of the documents tool, and
+ * the reason this module contains no stamping code.
+ *
+ * The view model only routes: each surface's logic lives in a flow class
+ * behind [EsignStore], so the editor, the signer, the template library and
+ * the bulk dashboard can each be read on their own.
  */
+@Suppress("LongParameterList") // Every seam the host injects.
 class EsignViewModel(
-    private val repository: EsignRepository,
-    private val transfer: EsignFileTransfer,
-    private val pdf: EsignPdf,
+    override val repository: EsignRepository,
+    override val transfer: EsignFileTransfer,
+    override val pdf: EsignPdf,
     private val resolveViewer: () -> EsignViewer,
     private val currentUserId: () -> String,
-    private val currentUserName: () -> String,
-    private val signerOptions: () -> List<SignerOptionLike>,
-    private val newId: () -> String,
+    override val currentUserName: () -> String,
+    override val signerOptions: () -> List<SignerOptionLike>,
+    override val newId: () -> String,
+    private val currentUserEmail: () -> String = { "" },
+    override val now: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
     /** Carries a refused press to the app frame, which offers to ask an admin. */
     private val rights: RightsRequestBus? = null,
-) : ZillitViewModel<EsignUiState, EsignEvent, EsignEffect>(EsignUiState()) {
+) : ZillitViewModel<EsignUiState, EsignEvent, EsignEffect>(EsignUiState()), EsignStore {
+
+    private val lists = ListsFlow(this)
+    private val detail = DetailFlow(this)
+    private val signing = SigningFlow(this)
+    private val editor = EditorFlow(this)
+    private val marks = MarksFlow(this)
+    private val templates = TemplatesFlow(this)
+    private val bulk = BulkFlow(this)
+
+    private var pendingPick: PickPurpose? = null
+    private var listening = false
 
     fun start() {
         val viewer = resolveViewer()
@@ -53,345 +68,38 @@ class EsignViewModel(
             copy(
                 viewer = viewer,
                 currentUserId = currentUserId(),
+                currentUserEmail = currentUserEmail(),
                 surface = if (viewer.receiverOnly) EsignSurface.Sign else surface,
             )
         }
-        refresh()
-        loadMarks()
+        lists.loadBoth()
+        marks.load()
         listenOnce()
     }
 
     /**
-     * Refetches the visible envelope list when the socket announces an
-     * envelope change — the web's `DocuSignObservers` upsert, as a targeted
-     * reload. Guarded so a second Start (the window reopening) does not
-     * stack collectors.
+     * Refetches the visible lists when the socket announces an envelope
+     * change — the web's `DocuSignObservers` upsert, as a targeted reload.
+     * Guarded so a second start (the window reopening) does not stack
+     * collectors.
      */
     private fun listenOnce() {
         if (listening) return
         listening = true
         launch {
-            repository.refreshes.collect { refresh() }
-        }
-    }
-
-    private var listening = false
-
-    @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
-    override fun onEvent(event: EsignEvent) {
-        when (event) {
-            is EsignEvent.SwitchSurface -> {
-                setState { copy(surface = event.surface) }
-                refresh()
-            }
-            EsignEvent.Refresh -> refresh()
-            is EsignEvent.SwitchManageBucket -> {
-                setState { copy(manage = manage.copy(bucket = event.bucket)) }
-                loadManage()
-            }
-            is EsignEvent.SwitchSignBucket -> {
-                setState { copy(signList = signList.copy(bucket = event.bucket)) }
-                loadSignList()
-            }
-            is EsignEvent.OpenEnvelope -> openEnvelope(event.envelope)
-            EsignEvent.CloseDetail -> setState { copy(detail = null) }
-            EsignEvent.Consent -> consent()
-            EsignEvent.StartVoid -> if (!refusesPost()) {
-                setState { copy(detail = detail?.copy(voiding = true, voidReason = "")) }
-            }
-            is EsignEvent.EditVoidReason ->
-                setState { copy(detail = detail?.copy(voidReason = event.reason)) }
-            EsignEvent.CancelVoid -> setState { copy(detail = detail?.copy(voiding = false)) }
-            EsignEvent.ConfirmVoid -> confirmVoid()
-            is EsignEvent.Answer -> setState {
-                copy(
-                    detail = detail?.copy(
-                        answers = detail.answers + (event.fieldId to event.answer),
-                    ),
-                )
-            }
-            EsignEvent.SignEnvelope -> signEnvelope()
-            is EsignEvent.EditDeclineReason ->
-                setState { copy(detail = detail?.copy(declineReason = event.reason)) }
-            EsignEvent.StartDecline -> setState { copy(detail = detail?.copy(declining = true)) }
-            EsignEvent.CancelDecline -> setState { copy(detail = detail?.copy(declining = false)) }
-            EsignEvent.ConfirmDecline -> confirmDecline()
-            is EsignEvent.DeleteDraft -> if (!refusesPost()) deleteDraft(event.envelopeId)
-            is EsignEvent.Remind -> if (!refusesPost()) remind(event.envelopeId, event.recipientId)
-            EsignEvent.StartCompose -> if (refusesPost()) Unit else {
-                sendEffect(EsignEffect.PickPdf)
-            }
-            is EsignEvent.EditCompose -> setState { copy(compose = event.state) }
-            EsignEvent.BeginPlacement -> beginPlacement()
-            is EsignEvent.PlaceField -> placeField(event.page, event.xPx, event.yPx)
-            is EsignEvent.RemovePlaced -> removePlaced(event.signer, event.index)
-            EsignEvent.SubmitCompose -> submitCompose()
-            EsignEvent.CancelCompose -> setState { copy(compose = null) }
-            EsignEvent.ToggleMarks -> setState { copy(showMarks = !showMarks) }
-            is EsignEvent.StartDrawMark -> setState {
-                copy(marks = marks.copy(drawing = DrawMarkState(isSignature = event.isSignature)))
-            }
-            is EsignEvent.AddMarkStroke -> setState {
-                copy(
-                    marks = marks.copy(
-                        drawing = marks.drawing?.copy(
-                            strokes = marks.drawing.strokes + listOf(event.stroke),
-                        ),
-                    ),
-                )
-            }
-            EsignEvent.ClearMarkStrokes -> setState {
-                copy(marks = marks.copy(drawing = marks.drawing?.copy(strokes = emptyList())))
-            }
-            EsignEvent.SaveMark -> saveMark()
-            EsignEvent.CancelDrawMark -> setState { copy(marks = marks.copy(drawing = null)) }
-            is EsignEvent.DeleteMark -> deleteMark(event.id)
-            is EsignEvent.FilePicked -> startComposeWith(event.name, event.bytes)
-        }
-    }
-
-    private fun refresh() {
-        when (currentState.surface) {
-            EsignSurface.Manage -> loadManage()
-            EsignSurface.Sign -> loadSignList()
-        }
-    }
-
-    private fun loadManage() {
-        setState { copy(manage = manage.copy(loading = true)) }
-        launchResult(
-            block = {
-                repository.envelopes(
-                    EnvelopeScope.Sent,
-                    currentState.manage.bucket.wire,
-                    userId = null,
-                )
-            },
-            onSuccess = { rows -> setState { copy(manage = manage.copy(rows = rows, loading = false)) } },
-            onError = { error ->
-                setState { copy(manage = manage.copy(loading = false)) }
-                sendEffect(EsignEffect.Failed(error.localised()))
-            },
-        )
-    }
-
-    private fun loadSignList() {
-        setState { copy(signList = signList.copy(loading = true)) }
-        launchResult(
-            block = {
-                repository.envelopes(
-                    EnvelopeScope.Received,
-                    currentState.signList.bucket.wire,
-                    userId = currentState.currentUserId,
-                )
-            },
-            onSuccess = { rows ->
-                setState { copy(signList = signList.copy(rows = rows, loading = false)) }
-            },
-            onError = { error ->
-                setState { copy(signList = signList.copy(loading = false)) }
-                sendEffect(EsignEffect.Failed(error.localised()))
-            },
-        )
-    }
-
-    private fun loadMarks() {
-        setState { copy(marks = marks.copy(loading = true)) }
-        launchResult(
-            block = { repository.savedSignatures() },
-            onSuccess = { items ->
-                setState { copy(marks = marks.copy(items = items, loading = false)) }
-                items.forEach { mark ->
-                    val image = mark.image ?: return@forEach
-                    if (currentState.marks.images.containsKey(mark.id)) return@forEach
-                    launch {
-                        val bytes = (transfer.fetch(image) as? ZillitResult.Success)?.data
-                            ?: return@launch
-                        setState {
-                            copy(marks = marks.copy(images = marks.images + (mark.id to bytes)))
-                        }
-                    }
-                }
-            },
-            onError = { setState { copy(marks = marks.copy(loading = false)) } },
-        )
-    }
-
-    // ---------------------------------------------------------------- detail
-
-    private fun openEnvelope(row: Envelope) {
-        setState {
-            copy(detail = EnvelopeDetailState(envelope = row, loadingPages = true))
-        }
-        launch {
-            // The list rows are thin; the full envelope carries tabs and
-            // recipients. Mark-viewed rides along, as the web does on open.
-            when (val full = repository.envelope(row.id)) {
-                is ZillitResult.Failure -> {
-                    setState { copy(detail = detail?.copy(loadingPages = false)) }
-                    sendEffect(EsignEffect.Failed(full.error.localised()))
-                }
-                is ZillitResult.Success -> {
-                    val envelope = full.data
-                    val me = envelope.recipientFor(currentState.currentUserId)
-                    val waitingOnMe = me != null && !me.signed && !me.declined
-                    val open = envelope.status != EnvelopeStatus.Completed
-                    val mine = if (waitingOnMe && open && me != null) {
-                        envelope.fieldsFor(me)
-                    } else {
-                        emptyList()
-                    }
-                    // Who sent it decides whether cancelling is offered. The
-                    // list's own bucket is not enough: a self-sent envelope is
-                    // read from the detail, never from the received list.
-                    val sentByMe = envelope.createdBy.isNotBlank() &&
-                        envelope.createdBy == currentState.currentUserId
-                    setState {
-                        copy(
-                            detail = detail?.copy(
-                                envelope = envelope,
-                                myFields = mine,
-                                sentByMe = sentByMe,
-                            ),
-                        )
-                    }
-                    if (mine.isNotEmpty()) {
-                        launch { repository.markViewed(envelope.id) }
-                    }
-                    loadDetailPages(envelope)
-                    loadAudit(envelope.id)
-                }
+            repository.refreshes.collect {
+                lists.loadBoth()
+                if (currentState.page == EsignPageKind.Detail) detail.refresh()
             }
         }
     }
 
-    private suspend fun loadDetailPages(envelope: Envelope) {
-        // The finished rendition once it exists; the original otherwise.
-        val stored = envelope.signedDocument ?: envelope.document
-        if (stored == null || !stored.name.endsWith(".pdf", ignoreCase = true) &&
-            !stored.contentSubtype.equals("pdf", ignoreCase = true)
-        ) {
-            setState { copy(detail = detail?.copy(loadingPages = false, notPdf = true)) }
-            return
-        }
-        when (val bytes = transfer.fetch(stored)) {
-            is ZillitResult.Failure -> {
-                setState { copy(detail = detail?.copy(loadingPages = false)) }
-                sendEffect(EsignEffect.Failed(bytes.error.localised()))
-            }
-            is ZillitResult.Success ->
-                when (val pages = pdf.renderPages(bytes.data, PAGE_RENDER_WIDTH)) {
-                    is ZillitResult.Failure ->
-                        setState {
-                            copy(detail = detail?.copy(loadingPages = false, notPdf = true))
-                        }
-                    is ZillitResult.Success -> setState {
-                        copy(detail = detail?.copy(pages = pages.data, loadingPages = false))
-                    }
-                }
-        }
-    }
+    // ---------------------------------------------------------------- store
 
-    private fun loadAudit(envelopeId: String) {
-        launchResult(
-            block = { repository.auditTrail(envelopeId) },
-            onSuccess = { entries -> setState { copy(detail = detail?.copy(audit = entries)) } },
-            onError = { /* the trail is garnish; the tracker stays useful without it */ },
-        )
-    }
-
-    // ---------------------------------------------------------------- signing
-
-    private fun signEnvelope() {
-        val detail = currentState.detail ?: return
-        if (!detail.canSignNow) return
-        setState { copy(detail = detail.copy(signing = true)) }
-        launch {
-            when (val fields = answersFor(detail)) {
-                is ZillitResult.Failure -> {
-                    setState { copy(detail = currentState.detail?.copy(signing = false)) }
-                    sendEffect(EsignEffect.Failed(fields.error.localised()))
-                }
-                is ZillitResult.Success -> {
-                    when (val signed = repository.sign(detail.envelope.id, fields.data)) {
-                        is ZillitResult.Failure -> {
-                            setState { copy(detail = currentState.detail?.copy(signing = false)) }
-                            sendEffect(EsignEffect.Failed(signed.error.localised()))
-                        }
-                        is ZillitResult.Success -> {
-                            setState { copy(detail = null) }
-                            sendEffect(EsignEffect.Notice("Signed."))
-                            refresh()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Every field this signer owns becomes an answer: explicit ones from the
-     * form, marks from the saved signature or initials, the rest from the
-     * builder's defaults. A missing saved mark is the one refusal.
-     */
-    private fun answersFor(detail: EnvelopeDetailState): ZillitResult<List<SignedField>> {
-        val answers = mutableListOf<SignedField>()
-        for (field in detail.myFields) {
-            val explicit = detail.answers[field.id]
-            val answer: FieldAnswer? = when {
-                explicit != null -> explicit
-                field.type.isMark -> {
-                    val mark = currentState.marks.items.firstOrNull {
-                        it.isSignature == (field.type == FieldType.SignHere)
-                    }?.image ?: return ZillitResult.Failure(
-                        ZillitError.Validation(
-                            "Draw your ${field.type.label.lowercase()} first — " +
-                                "open Saved marks and set it up.",
-                        ),
-                    )
-                    FieldAnswer.Mark(mark)
-                }
-                field.type == FieldType.FullName -> FieldAnswer.Typed(currentUserName())
-                field.type == FieldType.Text || field.type == FieldType.Email -> {
-                    // A required field the signer never filled is not an empty
-                    // answer to send — Android refuses the whole submit with
-                    // "Please complete every required field." and the wire
-                    // marks a tab required unless it says otherwise. This port
-                    // sent the default (usually blank) and completed the
-                    // envelope regardless.
-                    if (field.required && field.defaultValue.isBlank()) {
-                        return ZillitResult.Failure(
-                            ZillitError.Validation(
-                                "Fill in ${field.label.ifBlank { "every required field" }} before signing.",
-                            ),
-                        )
-                    }
-                    FieldAnswer.Typed(field.defaultValue)
-                }
-                else -> null
-            }
-            answers += SignedField(
-                tabId = field.id,
-                type = field.type,
-                documentIndex = field.documentIndex,
-                answer = answer,
-            )
-        }
-        return ZillitResult.Success(answers)
-    }
-
-    private fun confirmDecline() {
-        val detail = currentState.detail ?: return
-        launchResult(
-            block = { repository.decline(detail.envelope.id, detail.declineReason) },
-            onSuccess = {
-                setState { copy(detail = null) }
-                sendEffect(EsignEffect.Notice("Declined."))
-                refresh()
-            },
-            onError = { sendEffect(EsignEffect.Failed(it.userMessage)) },
-        )
-    }
+    override val current: EsignUiState get() = currentState
+    override fun update(reducer: EsignUiState.() -> EsignUiState) = setState(reducer)
+    override fun effect(effect: EsignEffect) = sendEffect(effect)
+    override fun runTask(block: suspend CoroutineScope.() -> Unit): Job = launch(block)
 
     /**
      * Refuses a write, and offers the one thing that changes the answer.
@@ -400,288 +108,255 @@ class EsignViewModel(
      * is what sent people to support rather than to an admin who could grant
      * the right in a few seconds.
      */
-    private fun refusesPost(): Boolean {
+    override fun refusesPost(): Boolean {
         if (currentState.viewer.canPost) return false
         rights?.ask(MODULE_LABEL, RightsKind.Post)
         sendEffect(EsignEffect.Failed(rightsRefusalMessage(MODULE_LABEL, RightsKind.Post, rights != null)))
         return true
     }
 
-    /**
-     * Records the signer's agreement to sign electronically.
-     *
-     * The one step that must not be silently skipped: an electronic signature
-     * rests on the signer having consented, and an audit trail that cannot
-     * show it is an audit trail that does not answer the only question anybody
-     * asks of it. So the gate stays up when the call fails, and says why —
-     * rather than letting somebody sign against a consent nothing recorded.
-     */
-    private fun consent() {
-        val envelopeId = currentState.detail?.envelope?.id ?: return
-        setState { copy(detail = detail?.copy(consenting = true)) }
-        launchResult(
-            block = { repository.acceptTerms(envelopeId) },
-            onSuccess = { setState { copy(detail = detail?.copy(consented = true, consenting = false)) } },
-            onError = {
-                setState { copy(detail = detail?.copy(consenting = false)) }
-                sendEffect(
-                    EsignEffect.Failed("Your acceptance was not recorded — please try again."),
-                )
+    override fun requestPick(purpose: PickPurpose) {
+        pendingPick = purpose
+        sendEffect(
+            when (purpose) {
+                PickPurpose.Document -> EsignEffect.PickPdf
+                PickPurpose.Csv -> EsignEffect.PickCsv
+                PickPurpose.PadImage, PickPurpose.FieldUpload -> EsignEffect.PickImage
             },
         )
     }
 
-    /**
-     * Cancels an envelope that has already gone out.
-     *
-     * Not a delete: the envelope and its trail stay, marked void with the
-     * reason. The reason is required because it is what the recipients are
-     * told and what the trail keeps.
-     */
-    private fun confirmVoid() {
-        val detail = currentState.detail ?: return
-        val reason = detail.voidReason.trim()
-        if (reason.isBlank()) {
-            sendEffect(EsignEffect.Failed("Say why this envelope is being cancelled."))
-            return
-        }
-        launchResult(
-            block = { repository.voidEnvelope(detail.envelope.id, reason) },
-            onSuccess = {
-                setState { copy(detail = null) }
-                sendEffect(EsignEffect.Notice("Envelope cancelled."))
-                loadManage()
-            },
-            onError = {
-                setState { copy(detail = detail.copy(voiding = false)) }
-                sendEffect(EsignEffect.Failed(it.userMessage))
-            },
-        )
+    /** The host's picker came back empty — nothing chosen. */
+    fun pickCancelled() {
+        val purpose = pendingPick
+        pendingPick = null
+        if (purpose == PickPurpose.Document) editor.pickCancelled()
     }
 
-    private fun deleteDraft(envelopeId: String) {
-        launchResult(
-            block = { repository.deleteDraft(envelopeId) },
-            onSuccess = { loadManage() },
-            onError = { sendEffect(EsignEffect.Failed(it.userMessage)) },
-        )
-    }
+    // ---------------------------------------------------------------- events
 
-    private fun remind(envelopeId: String, recipientId: String?) {
-        launchResult(
-            block = { repository.remind(envelopeId, recipientId) },
-            onSuccess = { sendEffect(EsignEffect.Notice("Reminder sent.")) },
-            onError = { sendEffect(EsignEffect.Failed(it.userMessage)) },
-        )
-    }
+    @Suppress("CyclomaticComplexMethod", "LongMethod") // Event fan-out: one line per act.
+    override fun onEvent(event: EsignEvent) {
+        when (event) {
+            // navigation
+            is EsignEvent.SwitchSurface -> switchSurface(event.surface)
+            EsignEvent.Refresh -> refresh()
+            is EsignEvent.SetLayout -> setState { copy(layout = event.layout) }
+            EsignEvent.Back -> back()
 
-    // ---------------------------------------------------------------- compose
-
-    private fun startComposeWith(name: String, bytes: ByteArray) {
-        val pages = when (val rendered = pdf.renderPages(bytes, PAGE_RENDER_WIDTH)) {
-            is ZillitResult.Failure -> {
-                sendEffect(EsignEffect.Failed("Only PDF documents can be sent for e-signature."))
-                return
+            // manage list
+            is EsignEvent.SwitchOuterTab -> setState { copy(manage = manage.copy(outer = event.tab)) }
+            is EsignEvent.SwitchInnerTab -> setState { copy(manage = manage.copy(inner = event.tab)) }
+            is EsignEvent.SetSentFilter -> setState { copy(manage = manage.copy(sentFilter = event.filter)) }
+            is EsignEvent.SearchManage -> setState { copy(manage = manage.copy(search = event.query)) }
+            is EsignEvent.AskDeleteDraft -> if (event.envelopeId == null || !refusesPost()) {
+                setState { copy(manage = manage.copy(confirmDeleteId = event.envelopeId)) }
             }
-            is ZillitResult.Success -> rendered.data
-        }
-        setState {
-            copy(
-                compose = ComposeState(
-                    fileName = name,
-                    fileBytes = bytes,
-                    title = name.removeSuffix(".pdf"),
-                    pages = pages,
-                    options = signerOptions(),
-                ),
-            )
-        }
-    }
+            EsignEvent.ConfirmDeleteDraft -> lists.deleteDraft()
 
-    private fun beginPlacement() {
-        val compose = currentState.compose ?: return
-        if (compose.chosen.isEmpty()) {
-            sendEffect(EsignEffect.Failed("Choose at least one signer first."))
-            return
-        }
-        if (compose.missingEmails.isNotEmpty()) {
-            sendEffect(
-                EsignEffect.Failed(
-                    "Every signer needs an email address — the service refuses one without.",
-                ),
-            )
-            return
-        }
-        setState {
-            copy(compose = compose.copy(placing = true, activeSigner = compose.chosen.first()))
-        }
-    }
+            // sign list
+            is EsignEvent.SwitchSignBucket -> setState { copy(signList = signList.copy(tab = event.bucket)) }
+            is EsignEvent.SearchSign -> setState { copy(signList = signList.copy(search = event.query)) }
 
-    private fun placeField(page: Int, xPx: Float, yPx: Float) {
-        val compose = currentState.compose ?: return
-        val signer = compose.activeSigner ?: return
-        val pageImage = compose.pages.firstOrNull { it.page == page } ?: return
-        val (xPt, yPt) = pageImage.pointFromTap(xPx, yPx)
-        val field = PlacedField(
-            type = compose.activeType,
-            style = if (compose.activeType.isTyped) compose.activeStyle else FieldStyle(),
-            page = page,
-            x = (xPt - FieldType.DEFAULT_WIDTH / 2)
-                .coerceIn(0.0, (pageImage.widthPt - FieldType.DEFAULT_WIDTH).coerceAtLeast(0.0)),
-            y = (yPt - FieldType.DEFAULT_HEIGHT / 2)
-                .coerceIn(0.0, (pageImage.heightPt - FieldType.DEFAULT_HEIGHT).coerceAtLeast(0.0)),
-        )
-        val mine = compose.placed[signer].orEmpty() + field
-        setState { copy(compose = compose.copy(placed = compose.placed + (signer to mine))) }
-    }
+            // opening
+            is EsignEvent.OpenEnvelope -> lists.open(event.envelope, editor, detail)
+            is EsignEvent.OpenDetail -> detail.open(event.envelopeId)
+            is EsignEvent.OpenSigning -> signing.open(event.envelope, event.mode, event.fromDetail)
 
-    private fun removePlaced(signer: String, index: Int) {
-        val compose = currentState.compose ?: return
-        val mine = compose.placed[signer].orEmpty().filterIndexed { i, _ -> i != index }
-        setState { copy(compose = compose.copy(placed = compose.placed + (signer to mine))) }
-    }
-
-    private fun submitCompose() {
-        val compose = currentState.compose ?: return
-        val bytes = compose.fileBytes ?: return
-        if (!compose.everySignerCovered) {
-            sendEffect(EsignEffect.Failed("Every signer needs at least one field."))
-            return
-        }
-        setState { copy(compose = compose.copy(sending = true)) }
-        launch {
-            val fileName = compose.title.ifBlank { compose.fileName }.let {
-                if (it.endsWith(".pdf", ignoreCase = true)) it else "$it.pdf"
+            // detail
+            EsignEvent.RefreshDetail -> detail.refresh()
+            EsignEvent.ToggleAudit -> setState { copy(detail = detail?.copy(showAudit = !detail.showAudit)) }
+            EsignEvent.ToggleOrder -> setState { copy(detail = detail?.copy(showOrder = !detail.showOrder)) }
+            is EsignEvent.Remind -> detail.remind(event.recipientId)
+            EsignEvent.DownloadAuditPdf -> detail.downloadAuditPdf()
+            EsignEvent.DownloadSigned -> detail.downloadSigned()
+            EsignEvent.StartVoid -> if (!refusesPost()) {
+                setState { copy(detail = detail?.copy(voiding = true, voidReason = "")) }
             }
-            val stored = transfer.store(fileName, "application/pdf", bytes)
-            when (stored) {
-                is ZillitResult.Failure -> {
-                    setState { copy(compose = currentState.compose?.copy(sending = false)) }
-                    sendEffect(EsignEffect.Failed(stored.error.localised()))
+            is EsignEvent.EditVoidReason -> setState { copy(detail = detail?.copy(voidReason = event.reason)) }
+            EsignEvent.CancelVoid -> setState { copy(detail = detail?.copy(voiding = false)) }
+            EsignEvent.ConfirmVoid -> detail.confirmVoid(lists)
+
+            // signing
+            EsignEvent.Consent -> signing.consent()
+            is EsignEvent.FocusField -> signing.focus(event.index)
+            EsignEvent.NextField -> signing.next()
+            EsignEvent.PrevField -> signing.prev()
+            is EsignEvent.Answer -> signing.answer(event.fieldId, event.answer)
+            is EsignEvent.SetSignOnce -> setState {
+                copy(signing = signing?.copy(signOnce = event.on, currentIndex = 0))
+            }
+            is EsignEvent.SetApplyToAll -> setState { copy(signing = signing?.copy(applyToAll = event.on)) }
+            EsignEvent.OpenPad -> signing.openPad()
+            EsignEvent.ClosePad -> setState { copy(signing = signing?.copy(pad = null)) }
+            is EsignEvent.SetPadMode -> padEdit { it.copy(mode = event.mode) }
+            is EsignEvent.AddPadStroke -> padEdit { it.copy(strokes = it.strokes + listOf(event.stroke)) }
+            EsignEvent.ClearPad -> padEdit {
+                it.copy(strokes = emptyList(), typedName = "", uploadBytes = null, uploadName = "")
+            }
+            is EsignEvent.EditTypedName -> padEdit { it.copy(typedName = event.name) }
+            is EsignEvent.SetPadFont -> padEdit { it.copy(font = event.font) }
+            is EsignEvent.SetSaveForLater -> padEdit { it.copy(saveForLater = event.on) }
+            EsignEvent.PickPadImage -> requestPick(PickPurpose.PadImage)
+            EsignEvent.ApplyPad -> signing.applyPad()
+            is EsignEvent.UseSavedMark -> signing.useSavedMark(event.markId)
+            EsignEvent.PickUploadForField -> signing.pickUploadForField()
+            EsignEvent.FinishSigning -> signing.finish(lists)
+            EsignEvent.StartDecline -> setState { copy(signing = signing?.copy(declining = true)) }
+            is EsignEvent.EditDeclineReason -> setState { copy(signing = signing?.copy(declineReason = event.reason)) }
+            EsignEvent.CancelDecline -> setState { copy(signing = signing?.copy(declining = false)) }
+            EsignEvent.ConfirmDecline -> signing.confirmDecline(lists)
+
+            // editor
+            EsignEvent.StartCompose -> editor.startCompose()
+            EsignEvent.StartTemplate -> editor.startTemplate()
+            is EsignEvent.UseTemplate -> editor.useTemplate(event.template)
+            is EsignEvent.EditTemplate -> editor.editTemplate(event.template)
+            is EsignEvent.EditCompose -> editor.edit(event.transform)
+            EsignEvent.PickDocument -> editor.pickDocument()
+            EsignEvent.GoToPlace -> editor.goToPlace()
+            EsignEvent.GoToPrepare -> editor.goToPrepare()
+            is EsignEvent.ChoosePlacementMode -> editor.choosePlacementMode(event.mode)
+            is EsignEvent.ToggleSelfSign -> editor.toggleSelfSign(event.on)
+            is EsignEvent.AddSigner -> editor.addSigner(event.userId)
+            is EsignEvent.AddCc -> editor.addCc(event.userId)
+            is EsignEvent.RemoveRecipient -> editor.removeRecipient(event.index)
+            is EsignEvent.MoveRecipient -> editor.moveRecipient(event.index, event.up)
+            is EsignEvent.OpenExternal -> editor.edit { copy(external = ExternalRecipientDraft(role = event.role)) }
+            EsignEvent.CloseExternal -> editor.edit { copy(external = null) }
+            is EsignEvent.EditExternal -> editor.edit { copy(external = event.draft) }
+            EsignEvent.AddExternal -> editor.addExternal()
+            is EsignEvent.EditSettings -> editor.edit { copy(settings = event.settings) }
+            is EsignEvent.PageClicked -> editor.pageClicked(event.page, event.xPt, event.yPt)
+            is EsignEvent.ArmType -> editor.edit { copy(armedType = event.type) }
+            is EsignEvent.ArmSigner -> editor.edit { copy(armedSignerIndex = event.recipientIndex) }
+            is EsignEvent.TogglePendingSigner -> editor.edit {
+                val current = pending ?: return@edit this
+                val next = if (event.recipientIndex in current.signerIndexes) {
+                    current.signerIndexes - event.recipientIndex
+                } else {
+                    current.signerIndexes + event.recipientIndex
                 }
-                is ZillitResult.Success -> createAndSend(compose, stored.data, fileName)
+                copy(pending = current.copy(signerIndexes = next))
+            }
+            is EsignEvent.PlacePending -> editor.placePending(event.type)
+            EsignEvent.CancelPending -> editor.edit { copy(pending = null) }
+            is EsignEvent.SelectField -> editor.edit { copy(selectedField = event.index, pending = null) }
+            is EsignEvent.UpdateField -> editor.updateField(event.index, event.transform)
+            is EsignEvent.MoveField -> editor.moveField(event.index, event.dxPt, event.dyPt)
+            is EsignEvent.ResizeField -> editor.resizeField(event.index, event.dwPt, event.dhPt)
+            is EsignEvent.DeleteField -> editor.deleteField(event.index)
+            is EsignEvent.DuplicateField -> editor.duplicateField(event.index)
+            is EsignEvent.SetInitialsOnAllPages -> editor.setInitialsOnAllPages(event.on)
+            is EsignEvent.SetZoom -> editor.edit { copy(zoom = event.zoom.coerceIn(MIN_ZOOM, MAX_ZOOM)) }
+            EsignEvent.SaveDraft -> editor.saveDraft(lists)
+            EsignEvent.RequestSend -> editor.requestSend()
+            EsignEvent.CancelSend -> editor.edit { copy(confirmSend = false) }
+            EsignEvent.ConfirmSend -> editor.confirmSend(lists)
+            EsignEvent.OpenSaveAsTemplate, EsignEvent.SaveTemplate -> editor.openSaveAsTemplate()
+            is EsignEvent.EditSaveAsTemplate -> editor.edit { copy(saveAsTemplate = event.draft) }
+            EsignEvent.CancelSaveAsTemplate -> editor.edit { copy(saveAsTemplate = null) }
+            EsignEvent.ConfirmSaveAsTemplate -> editor.confirmSaveAsTemplate(templates)
+            EsignEvent.CancelCompose -> editor.cancel()
+
+            // marks
+            EsignEvent.OpenMarks -> marks.open()
+            EsignEvent.CloseMarks -> marks.close()
+            is EsignEvent.SetMarksKind -> setState { copy(marks = marks.copy(forSignature = event.forSignature)) }
+            EsignEvent.SaveMark -> marks.save()
+            is EsignEvent.AskDeleteMark -> setState { copy(marks = marks.copy(confirmDeleteId = event.id)) }
+            EsignEvent.ConfirmDeleteMark -> marks.confirmDelete()
+
+            // templates
+            is EsignEvent.SearchTemplates -> setState { copy(templates = templates.copy(search = event.query)) }
+            is EsignEvent.FilterTemplates -> setState { copy(templates = templates.copy(category = event.category)) }
+            is EsignEvent.SetTemplatesLayout -> setState { copy(templates = templates.copy(layout = event.layout)) }
+            is EsignEvent.ShowTemplate -> setState { copy(templates = templates.copy(detail = event.template)) }
+            is EsignEvent.DuplicateTemplate -> templates.duplicate(event.template)
+            is EsignEvent.AskDeleteTemplate -> if (event.id == null || !refusesPost()) {
+                setState { copy(templates = templates.copy(confirmDeleteId = event.id)) }
+            }
+            EsignEvent.ConfirmDeleteTemplate -> templates.confirmDelete()
+
+            // bulk
+            is EsignEvent.StartBulkSend -> bulk.start(event.template)
+            EsignEvent.CancelBulkSend -> bulk.cancel()
+            EsignEvent.PickBulkCsv -> bulk.pickCsv()
+            is EsignEvent.BulkStep -> bulk.step(event.step)
+            is EsignEvent.EditBatchName -> bulk.editBatchName(event.name)
+            EsignEvent.ConfirmBulkSend -> bulk.confirm()
+            is EsignEvent.OpenBulkJob -> bulk.openJob(event.job)
+            is EsignEvent.RetryFailed -> bulk.retryFailed(event.jobId)
+            is EsignEvent.RemindOutstanding -> bulk.remindOutstanding(event.jobId)
+
+            // files
+            is EsignEvent.FilePicked -> filePicked(event.name, event.bytes)
+        }
+    }
+
+    private fun switchSurface(surface: EsignSurface) {
+        if (currentState.viewer.receiverOnly && surface != EsignSurface.Sign) return
+        setState { copy(surface = surface) }
+        when (surface) {
+            EsignSurface.Manage -> if (currentState.manage.buckets.isEmpty()) lists.loadManage()
+            EsignSurface.Sign -> if (currentState.signList.buckets.isEmpty()) lists.loadSignList()
+            EsignSurface.Templates -> if (!currentState.templates.loaded) templates.load()
+            EsignSurface.Bulk -> bulk.load()
+        }
+    }
+
+    private fun refresh() {
+        when (currentState.page) {
+            EsignPageKind.Detail -> detail.refresh()
+            else -> when (currentState.surface) {
+                EsignSurface.Templates -> templates.load()
+                EsignSurface.Bulk -> bulk.load()
+                else -> lists.loadBoth()
             }
         }
     }
 
-    private suspend fun createAndSend(
-        compose: ComposeState,
-        stored: com.zillit.desktop.feature.esignature.domain.StoredFile,
-        fileName: String,
-    ) {
-        val recipients = compose.chosen.mapIndexed { index, userId ->
-            val option = compose.options.firstOrNull { it.userId == userId }
-            EnvelopeRecipient(
-                userId = userId,
-                name = option?.fullName.orEmpty(),
-                email = compose.emailFor(userId),
-                role = "signer",
-                routingOrder = index + 1,
-            )
-        }
-        val fields = compose.chosen.flatMapIndexed { index, userId ->
-            compose.placed[userId].orEmpty().map { placed ->
-                NewField(
-                    type = placed.type,
-                    recipientIndex = index,
-                    page = placed.page,
-                    x = placed.x,
-                    y = placed.y,
-                    style = placed.style,
-                )
+    /** Back walks the stack: signing → the detail it came from or the list; detail/editor → the list. */
+    private fun back() {
+        val state = currentState
+        when (state.page) {
+            EsignPageKind.Signing -> {
+                val toDetail = state.signing?.returnToDetail == true && state.detail != null
+                setState { copy(signing = null, page = if (toDetail) EsignPageKind.Detail else EsignPageKind.Lists) }
+                if (toDetail) detail.refresh() else lists.loadBoth()
             }
-        }
-        val document = stored.copy(
-            name = fileName,
-            pageCount = compose.pages.size,
-        )
-        when (
-            val created = repository.create(
-                title = compose.title.ifBlank { fileName },
-                description = compose.description,
-                document = document,
-                recipients = recipients,
-                fields = fields,
-            )
-        ) {
-            is ZillitResult.Failure -> {
-                setState { copy(compose = currentState.compose?.copy(sending = false)) }
-                sendEffect(EsignEffect.Failed(created.error.localised()))
-            }
-            is ZillitResult.Success -> when (val sent = repository.send(created.data.id)) {
-                is ZillitResult.Failure -> {
-                    setState { copy(compose = currentState.compose?.copy(sending = false)) }
-                    sendEffect(
-                        EsignEffect.Failed(
-                            "Created as a draft, but sending failed: ${sent.error.localised()}",
-                        ),
-                    )
-                }
-                is ZillitResult.Success -> {
-                    setState { copy(compose = null) }
-                    sendEffect(EsignEffect.Notice("Envelope sent."))
-                    refresh()
-                }
-            }
+            EsignPageKind.Detail -> setState { copy(detail = null, page = EsignPageKind.Lists) }
+            EsignPageKind.Editor -> editor.cancel()
+            EsignPageKind.Lists -> Unit
         }
     }
 
-    // ------------------------------------------------------------------ marks
-
-    private fun saveMark() {
-        val drawing = currentState.marks.drawing ?: return
-        if (drawing.strokes.none { it.size > 1 }) {
-            sendEffect(EsignEffect.Failed("Draw something first."))
-            return
-        }
-        setState { copy(marks = marks.copy(drawing = drawing.copy(saving = true))) }
-        launch {
-            val png = when (
-                val raster = pdf.rasterizeStrokes(drawing.strokes, DRAW_WIDTH, DRAW_HEIGHT)
-            ) {
-                is ZillitResult.Failure -> {
-                    setState { copy(marks = marks.copy(drawing = marks.drawing?.copy(saving = false))) }
-                    sendEffect(EsignEffect.Failed(raster.error.localised()))
-                    return@launch
-                }
-                is ZillitResult.Success -> raster.data
-            }
-            val stored = transfer.store("${newId()}.png", "image/png", png)
-            when (stored) {
-                is ZillitResult.Failure -> {
-                    setState { copy(marks = marks.copy(drawing = marks.drawing?.copy(saving = false))) }
-                    sendEffect(EsignEffect.Failed(stored.error.localised()))
-                }
-                is ZillitResult.Success -> {
-                    when (repository.saveSignature(drawing.isSignature, stored.data)) {
-                        is ZillitResult.Failure -> {
-                            setState {
-                                copy(marks = marks.copy(drawing = marks.drawing?.copy(saving = false)))
-                            }
-                            sendEffect(EsignEffect.Failed("The mark could not be saved."))
-                        }
-                        is ZillitResult.Success -> {
-                            setState { copy(marks = marks.copy(drawing = null)) }
-                            loadMarks()
-                        }
-                    }
-                }
-            }
+    private fun padEdit(transform: (PadState) -> PadState) {
+        if (currentState.signing?.pad != null) {
+            signing.editPad(transform)
+        } else if (currentState.marks.open) {
+            marks.editPad(transform)
         }
     }
 
-    private fun deleteMark(id: String) {
-        launchResult(
-            block = { repository.deleteSavedSignature(id) },
-            onSuccess = { loadMarks() },
-            onError = { sendEffect(EsignEffect.Failed(it.userMessage)) },
-        )
+    private fun filePicked(name: String, bytes: ByteArray) {
+        val purpose = pendingPick
+        pendingPick = null
+        when (purpose) {
+            PickPurpose.Document, null -> editor.documentPicked(name, bytes)
+            PickPurpose.Csv -> bulk.csvPicked(name, bytes)
+            PickPurpose.PadImage -> if (currentState.signing?.pad != null) {
+                signing.padImagePicked(name, bytes)
+            } else {
+                marks.imagePicked(name, bytes)
+            }
+            PickPurpose.FieldUpload -> signing.fieldUploadPicked(name, bytes)
+        }
     }
 
     private companion object {
-        const val PAGE_RENDER_WIDTH = 800
-        const val DRAW_WIDTH = 800
-        const val DRAW_HEIGHT = 300
+        const val MIN_ZOOM = 0.5f
+        const val MAX_ZOOM = 2f
     }
 }
 

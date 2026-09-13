@@ -45,6 +45,13 @@ INCOMING = ("incoming.wav", 2.0, [
 OUTGOING = ("outgoing.wav", 3.0, [
     (425, 0.0, 1.0, 0.08),
 ])
+# guestChime(): a soft single rising chime, played ONCE — a guest knocking, or
+# a second call arriving while one is up. Not looped, so the period is the
+# sound's own length.
+CHIME = ("chime.wav", 0.4, [
+    (660, 0.0, 0.16, 0.05),
+    (880, 0.14, 0.22, 0.05),
+])
 
 ATTACK = 0.02   # gain.linearRampToValueAtTime(gainV, at + 0.02)
 RELEASE = 0.03  # gain.setValueAtTime(gainV, at + dur - 0.03)
@@ -83,5 +90,5 @@ def write(name, frames):
     print(f"{name}: {len(frames)/RATE:.3f}s  peak={peak:.3f} full scale")
 
 
-for name, period, beeps in (INCOMING, OUTGOING):
+for name, period, beeps in (INCOMING, OUTGOING, CHIME):
     write(name, render(period, beeps))

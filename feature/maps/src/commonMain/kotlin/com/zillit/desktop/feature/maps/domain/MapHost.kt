@@ -19,6 +19,7 @@ class MapHost(
     val badges: MapBadges = MapBadges.None,
     val prefs: MapPrefs = MapPrefs.InMemory(),
     val staticMaps: MapStaticMaps? = null,
+    val locator: MapLocator? = null,
 )
 
 /** A photo chosen on this machine, before it is stored. */
@@ -101,6 +102,18 @@ interface MapPrefs {
             zones[cityId] = zoneId
         }
     }
+}
+
+/**
+ * Where this machine is, when the browser cannot say.
+ *
+ * The web asks `navigator.geolocation`; embedded Chromium here has no way to
+ * grant that prompt, so the page's answer is always a refusal. This is the
+ * second try — an approximate fix (Google's Geolocation API from the network
+ * address is the desktop's), good enough to name the city someone is in.
+ */
+interface MapLocator {
+    suspend fun locate(): LatLng?
 }
 
 /**

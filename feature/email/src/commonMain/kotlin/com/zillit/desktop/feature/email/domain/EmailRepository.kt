@@ -76,8 +76,16 @@ interface DraftRepository {
     /** Saved drafts, newest first. Pass "now" for the newest page. */
     suspend fun drafts(beforeMillis: Long): ZillitResult<List<EmailDraft>>
 
-    /** Saves a new draft and returns its id. */
-    suspend fun saveDraft(message: OutgoingEmail): ZillitResult<String>
+    /**
+     * Saves a new draft and returns its id.
+     *
+     * [uniqueId] is the compose session's key, minted once when the composer
+     * opens and sent unchanged on every attempt to create its draft. The
+     * server folds a repeated create onto the first record it made for that
+     * key, so a create whose answer was lost on a slow link can be tried
+     * again without leaving a second copy in Drafts.
+     */
+    suspend fun saveDraft(message: OutgoingEmail, uniqueId: String): ZillitResult<String>
 
     /** Overwrites an existing draft. */
     suspend fun updateDraft(draftId: String, message: OutgoingEmail): ZillitResult<Unit>

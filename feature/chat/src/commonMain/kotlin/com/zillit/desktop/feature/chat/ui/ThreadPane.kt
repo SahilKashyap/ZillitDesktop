@@ -28,9 +28,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import kotlinx.coroutines.launch
@@ -58,10 +55,16 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitFileBadge
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
+import com.zillit.desktop.core.designsystem.component.ZillitMenuDivider
+import com.zillit.desktop.core.designsystem.component.ZillitMenuEntries
+import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
+import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
+import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
@@ -462,46 +465,23 @@ private fun CallLineButton(
             onClick = { open = true },
             tint = tint,
         )
-        DropdownMenu(
+        // Each line's row: the line's number and nothing else. It used to
+        // carry the media stack's name beside it — "Agora", "Mediasoup" — on
+        // the theory that "Line 1" alone means nothing; but those are our
+        // vendors, not the user's vocabulary, and naming them here puts an
+        // implementation detail in front of somebody choosing how to ring a
+        // colleague. The phones offer the same choice by number alone.
+        ZillitActionMenu(
             expanded = open,
             onDismissRequest = { open = false },
-            modifier = Modifier.background(
-                ZillitTheme.colors.surfaceRaised,
-                RoundedCornerShape(LINE_MENU_RADIUS),
-            ),
-        ) {
-            lines.forEach { line ->
-                CallLineRow(line.label) { open = false; onPick(line) }
-            }
-        }
+            entries = lines.map { line ->
+                ZillitMenuEntry.Action(label = line.label, icon = icon, tone = ZillitMenuTone.Approve) {
+                    onPick(line)
+                }
+            },
+        )
     }
 }
-
-/**
- * One line to place the call on.
- *
- * The line's number and nothing else. It used to carry the media stack's name
- * beside it — "Agora", "Mediasoup" — on the theory that "Line 1" alone means
- * nothing; but those are our vendors, not the user's vocabulary, and naming
- * them here puts an implementation detail in front of somebody choosing how to
- * ring a colleague. The phones offer the same choice by number alone.
- */
-@Composable
-private fun CallLineRow(title: String, onClick: () -> Unit) {
-    DropdownMenuItem(
-        onClick = onClick,
-        modifier = Modifier.background(ZillitTheme.colors.surfaceRaised),
-        text = {
-            ZillitText(
-                text = title,
-                style = ZillitTheme.typography.bodyMedium,
-                color = ZillitTheme.colors.textPrimary,
-            )
-        },
-    )
-}
-
-private val LINE_MENU_RADIUS = 12.dp
 
 /**
  * Three breathing dots in a bubble-shaped pill, then the words.
@@ -1364,7 +1344,7 @@ private fun BubbleMenu(
 ) {
     val seams = LocalChatSeams.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    androidx.compose.material3.DropdownMenu(
+    ZillitMenuSurface(
         expanded = open,
         onDismissRequest = onDismiss,
         // Beside a right-aligned self bubble the menu must hang leftward
@@ -1372,13 +1352,15 @@ private fun BubbleMenu(
         // width trick the react affordance uses, and why the reaction row
         // below has a fixed width.
         offset = if (alignEnd) {
-            androidx.compose.ui.unit.DpOffset(-REACT_MENU_WIDTH, 0.dp)
+            androidx.compose.ui.unit.DpOffset(-REACT_MENU_WIDTH, MENU_DROP)
         } else {
-            androidx.compose.ui.unit.DpOffset(0.dp, 0.dp)
+            androidx.compose.ui.unit.DpOffset(0.dp, MENU_DROP)
         },
     ) {
         Row(
-            modifier = Modifier.width(REACT_MENU_WIDTH).padding(horizontal = ZillitTheme.spacing.sm),
+            modifier = Modifier
+                .width(REACT_MENU_WIDTH)
+                .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xxs),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             QUICK_REACTIONS.forEach { emoji ->
@@ -1395,63 +1377,60 @@ private fun BubbleMenu(
                 )
             }
         }
-        // Only a line the server can address can be quoted: a just-sent
-        // bubble still wears its local id (see isDeletable's reasoning).
-        if (message.id.isNotBlank() && (!message.isMine || message.id != message.uniqueId)) {
-            MenuLine("Reply") {
-                onDismiss()
-                onReply()
+        ZillitMenuDivider()
+        val entries = buildList {
+            // Only a line the server can address can be quoted: a just-sent
+            // bubble still wears its local id (see isDeletable's reasoning).
+            if (message.id.isNotBlank() && (!message.isMine || message.id != message.uniqueId)) {
+                add(menuLine("Reply", ZillitIcons.Reply, ZillitMenuTone.Primary, onReply))
             }
-        }
-        if (message.body.isNotBlank()) {
-            MenuLine("Copy") {
-                onDismiss()
-                com.zillit.desktop.core.designsystem.component.copyTextToClipboard(message.body)
+            if (message.body.isNotBlank()) {
+                add(
+                    menuLine("Copy", ZillitIcons.Copy) {
+                        com.zillit.desktop.core.designsystem.component.copyTextToClipboard(message.body)
+                    },
+                )
             }
-        }
-        // A shared place gets NEITHER file action, even though a phone-sent
-        // one carries a map screenshot. Both web menus strip Save/Download
-        // for `message_type === 'location'` — `MyMessage.jsx:503-508` and
-        // `SenderMessage.jsx:292-295` drop key '10', and `DropDown.jsx:271`
-        // gates SAVE_TO_DEVICE on `!isLocationMessage` — as does Android
-        // (`ChatAndGroupPage.kt:2418` showSave, `:2432` showPrint, `:2438`
-        // imageReply). Reply, Forward and Delete stay everywhere; Edit is
-        // stripped too (`DropDown.jsx:233`, `ChatAndGroupPage.kt:2445`), and
-        // this client has no Edit or Forward to strip.
-        message.attachment?.takeIf { message.location == null }?.let { file ->
-            // A received picture back onto the clipboard — the seam's write
-            // half (AWT Transferable under the hood on the JVM).
-            val clipboard = seams.clipboard
-            if (file.kind == "image" && clipboard != null) {
-                MenuLine("Copy image") {
-                    onDismiss()
-                    scope.launch {
-                        val image = seams.loadFullImage?.invoke(file) ?: media.loadThumbnail(file)
-                        image?.let { clipboard.writeImage(it) }
-                    }
+            // A shared place gets NEITHER file action, even though a phone-sent
+            // one carries a map screenshot. Both web menus strip Save/Download
+            // for `message_type === 'location'` — `MyMessage.jsx:503-508` and
+            // `SenderMessage.jsx:292-295` drop key '10', and `DropDown.jsx:271`
+            // gates SAVE_TO_DEVICE on `!isLocationMessage` — as does Android
+            // (`ChatAndGroupPage.kt:2418` showSave, `:2432` showPrint, `:2438`
+            // imageReply). Reply, Forward and Delete stay everywhere; Edit is
+            // stripped too (`DropDown.jsx:233`, `ChatAndGroupPage.kt:2445`), and
+            // this client has no Edit or Forward to strip.
+            message.attachment?.takeIf { message.location == null }?.let { file ->
+                // A received picture back onto the clipboard — the seam's write
+                // half (AWT Transferable under the hood on the JVM).
+                val clipboard = seams.clipboard
+                if (file.kind == "image" && clipboard != null) {
+                    add(
+                        menuLine("Copy image", ZillitIcons.Photo) {
+                            scope.launch {
+                                val image = seams.loadFullImage?.invoke(file) ?: media.loadThumbnail(file)
+                                image?.let { clipboard.writeImage(it) }
+                            }
+                        },
+                    )
                 }
+                add(menuLine("Download", ZillitIcons.Download) { media.onOpen(file) })
             }
-            MenuLine("Download") {
-                onDismiss()
-                media.onOpen(file)
-            }
-        }
-        if (message.isDeletable) {
-            MenuLine("Delete for everyone") {
-                onDismiss()
-                onDelete()
+            if (message.isDeletable) {
+                add(menuLine("Delete for everyone", ZillitIcons.Trash, ZillitMenuTone.Danger, onDelete))
             }
         }
+        ZillitMenuEntries(entries = entries, onDismiss = onDismiss)
     }
 }
 
-@Composable
-private fun MenuLine(label: String, onClick: () -> Unit) {
-    androidx.compose.material3.DropdownMenuItem(
-        text = { ZillitText(text = label, style = ZillitTheme.typography.bodyMedium) },
-        onClick = onClick,
-    )
-}
+/** One row of the bubble menu — the design system's entry, in this file's idiom. */
+private fun menuLine(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tone: ZillitMenuTone = ZillitMenuTone.Neutral,
+    onClick: () -> Unit,
+) = ZillitMenuEntry.Action(label = label, icon = icon, tone = tone, onClick = onClick)
 
 /** The quick six, on hover — the same shortlist the other clients offer. */
 @Composable
@@ -1469,16 +1448,16 @@ private fun ReactAffordance(
             onClick = { onOpenChange(true) },
             size = REACT_BUTTON,
         )
-        androidx.compose.material3.DropdownMenu(
+        ZillitMenuSurface(
             expanded = open,
             onDismissRequest = { onOpenChange(false) },
             // Beside a right-aligned bubble the menu must grow leftward: the
             // default start-aligned drop would cross the window edge, and a
             // popup that cannot fit inside it is never shown at all.
             offset = if (openLeft) {
-                androidx.compose.ui.unit.DpOffset(REACT_BUTTON - REACT_MENU_WIDTH, 0.dp)
+                androidx.compose.ui.unit.DpOffset(REACT_BUTTON - REACT_MENU_WIDTH, MENU_DROP)
             } else {
-                androidx.compose.ui.unit.DpOffset(0.dp, 0.dp)
+                androidx.compose.ui.unit.DpOffset(0.dp, MENU_DROP)
             },
         ) {
             Row(
@@ -1532,7 +1511,7 @@ private fun ComposerActions(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
             contentDescription = "Insert an emoji",
             onClick = { emojiOpen = true },
         )
-        androidx.compose.material3.DropdownMenu(
+        ZillitMenuSurface(
             expanded = emojiOpen,
             onDismissRequest = { emojiOpen = false },
         ) {
@@ -1887,6 +1866,9 @@ private val PLAY_BADGE = 40.dp
 private val VOICE_MIN_WIDTH = 220.dp
 private val REACT_BUTTON = 24.dp
 private val REACT_MENU_WIDTH = 232.dp
+
+/** The menu's gap under its anchor — the design system's own, restated for the aimed offsets. */
+private val MENU_DROP = 4.dp
 private val UPLOAD_BAR_WIDTH = 220.dp
 private val QUOTE_BAR = 3.dp
 private val LOCATION_PIN = 16.dp

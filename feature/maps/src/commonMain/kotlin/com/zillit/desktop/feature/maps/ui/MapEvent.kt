@@ -51,6 +51,9 @@ sealed interface MapEvent {
         data class SearchPick(val prediction: PlacePrediction) : Cities
         data class Select(val cityId: String) : Cities
         data object Add : Cities
+
+        /** "Add" on the Current Location card: Add City filled in from here. */
+        data object AddCurrentPlace : Cities
         data class Delete(val cityId: String) : Cities
         data class Reorder(val cityIds: List<String>) : Cities
         data class AddQuery(val text: String) : Cities

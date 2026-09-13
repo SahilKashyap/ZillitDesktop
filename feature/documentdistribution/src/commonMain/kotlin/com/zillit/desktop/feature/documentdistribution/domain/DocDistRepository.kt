@@ -56,6 +56,10 @@ data class NewDistribution(
     /** Attachment id → the stamp to apply. Absent ids go out unstamped. */
     val watermarks: Map<String, WatermarkStyle> = emptyMap(),
     val replyTo: String? = null,
+    /** The lists that fed this send and what each contributed (ZL-20299). */
+    val listsUsed: List<ListUsed> = emptyList(),
+    /** Combined size of every attachment, checked against [MAX_TOTAL_ATTACHMENT_BYTES]. */
+    val totalBytes: Long = 0,
 ) {
     val totalAttachments: Int get() = attachmentIds.size + ephemeralAttachmentIds.size
 
@@ -69,9 +73,16 @@ data class NewDistribution(
     @Suppress("ReturnCount") // One rule per return; merging them loses which failed.
     fun validationError(): String? {
         if (to.isEmpty()) return "Add at least one recipient."
-        val bad = (to + cc + bcc).firstOrNull { !it.email.looksLikeEmail() }
-        if (bad != null) return "\"${bad.email}\" is not a valid email address."
+        val bad = (to + cc + bcc).filterNot { isValidEmail(it.email) }
+        if (bad.isNotEmpty()) {
+            return "Fix or remove invalid email address" + (if (bad.size > 1) "es" else "") +
+                ": " + bad.joinToString(", ") { it.email }
+        }
         if (totalAttachments == 0) return "Attach at least one document."
+        if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+            return "Attachments exceed the ${formatBytes(MAX_TOTAL_ATTACHMENT_BYTES)} limit " +
+                "(${formatBytes(totalBytes)}). Remove some files before sending."
+        }
         return null
     }
 }
@@ -132,15 +143,74 @@ interface DocDistRepository {
      */
     suspend fun folders(): ZillitResult<List<LibraryFolder>>
 
-    suspend fun createFolder(name: String, parentId: String?): ZillitResult<Unit>
+    /** [folderDate] is `YYYY-MM-DD` and mandatory: the library groups by it on every view. */
+    suspend fun createFolder(
+        name: String,
+        parentId: String?,
+        description: String = "",
+        folderDate: String? = null,
+    ): ZillitResult<Unit>
 
-    suspend fun renameFolder(folderId: String, name: String): ZillitResult<Unit>
+    suspend fun updateFolder(folderId: String, name: String, description: String): ZillitResult<Unit>
 
     suspend fun deleteFolder(folderId: String): ZillitResult<Unit>
 
     suspend fun moveFolders(folderIds: List<String>, parentId: String?): ZillitResult<Unit>
 
     suspend fun documents(query: LibraryQuery): ZillitResult<LibraryPage>
+
+    /**
+     * Every document inside [folderIds], one high-limit query each.
+     *
+     * For the actions that act on a folder — distribute, publish, watermark —
+     * where the paged listing cannot be relied on to hold the folder's rows.
+     * De-duplicated, because a folder can appear twice in the input.
+     */
+    suspend fun documentsInFolders(folderIds: Collection<String>): ZillitResult<List<LibraryDocument>>
+
+    /** The whole library, flat, for the composer's picker. */
+    suspend fun allDocuments(): ZillitResult<List<LibraryDocument>>
+
+    /** Library documents by id, for re-hydrating a past send's attachments. */
+    suspend fun documentsByIds(ids: List<String>): ZillitResult<List<LibraryDocument>>
+
+    /** Device uploads by id, for the same — rows the janitor swept are simply absent. */
+    suspend fun ephemeralByIds(ids: List<String>): ZillitResult<List<LibraryDocument>>
+
+    /**
+     * Puts a file into the library.
+     *
+     * S3 productions PUT the bytes to storage and register them with
+     * `documents/from-s3`; LOCAL ones multipart to `documents`. Either way the
+     * caller gets the catalogued row back.
+     */
+    suspend fun uploadDocument(
+        file: LocalFile,
+        folderId: String?,
+        documentDate: String?,
+    ): ZillitResult<LibraryDocument>
+
+    /** A one-shot composer attachment — never catalogued, swept after the send. */
+    suspend fun uploadEphemeral(file: LocalFile): ZillitResult<LibraryDocument>
+
+    suspend fun deleteEphemeral(attachmentId: String): ZillitResult<Unit>
+
+    /** The document's bytes, for the in-app preview and for saving a copy. */
+    suspend fun documentBytes(document: LibraryDocument): ZillitResult<ByteArray>
+
+    /** One document stamped by the server with [text] in [style]. */
+    suspend fun watermarkedCopy(
+        documentId: String,
+        text: String,
+        style: WatermarkStyle,
+    ): ZillitResult<ByteArray>
+
+    /** A zip, one folder per recipient, each holding their personalised copies. */
+    suspend fun watermarkedZip(
+        documentIds: List<String>,
+        recipients: List<ZipRecipient>,
+        style: WatermarkStyle,
+    ): ZillitResult<ByteArray>
 
     suspend fun deleteDocument(documentId: String): ZillitResult<Unit>
 
@@ -166,15 +236,29 @@ interface DocDistRepository {
 
     suspend fun lists(): ZillitResult<List<DistributionList>>
 
-    suspend fun createList(name: String, recipients: List<Recipient>): ZillitResult<Unit>
-
-    suspend fun updateList(
-        listId: String,
+    /** Returns the created list, id and all, so the composer can select it at once. */
+    suspend fun createList(
         name: String,
         recipients: List<Recipient>,
+        description: String = "",
+    ): ZillitResult<DistributionList>
+
+    /**
+     * Replaces a list's membership — the endpoint replaces rather than
+     * patches. A null [name] leaves the name alone, which is how the address
+     * book edits membership without knowing the list's other fields.
+     */
+    suspend fun updateList(
+        listId: String,
+        name: String?,
+        recipients: List<Recipient>,
+        description: String? = null,
     ): ZillitResult<Unit>
 
     suspend fun deleteList(listId: String): ZillitResult<Unit>
+
+    /** The server's CSV of a list's members (`name,email,job`). */
+    suspend fun exportList(listId: String): ZillitResult<ByteArray>
 
     // -- address book ------------------------------------------------------
 
@@ -204,7 +288,9 @@ interface DocDistRepository {
         page: Int,
         search: String,
         senderIds: Set<String> = emptySet(),
-    ): ZillitResult<List<Distribution>>
+        /** Rows per page; the server caps it at 200. */
+        limit: Int = HISTORY_PAGE_LIMIT,
+    ): ZillitResult<HistoryPage>
 
     /**
      * Every distinct sender across the project's history, for the "Sent by"
@@ -238,6 +324,15 @@ interface DocDistRepository {
      */
     suspend fun publish(category: String, draft: PublishDraft): ZillitResult<Unit>
 }
+
+/** The History page size — the web's, and the server's default. */
+const val HISTORY_PAGE_LIMIT = 50
+
+/** The most the server hands back in one page; the address book asks for it all at once. */
+const val HISTORY_MAX_LIMIT = 200
+
+/** One recipient of a watermark zip, with their stamp already rendered. */
+data class ZipRecipient(val name: String, val email: String, val watermarkText: String)
 
 /** The stale listing a socket event names; see [DocDistRepository.refreshes]. */
 enum class DocDistRefresh { Library, History, Lists, Templates }

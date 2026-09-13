@@ -103,8 +103,104 @@ class LiveKitWireTest {
 
     @Test
     fun `an unread type is unknown, never an error`() {
-        assertIs<LiveKitFrame.Unknown>(parseLiveKitFrame("""{"type":"guestKnocking","callId":"c"}"""))
+        assertIs<LiveKitFrame.Unknown>(parseLiveKitFrame("""{"type":"somethingNew","callId":"c"}"""))
         assertNull(parseLiveKitFrame("not json"))
+    }
+
+    @Test
+    fun `the in-call events the web reads are read here too`() {
+        val reaction = assertIs<LiveKitEvent.Reaction>(
+            event("""{"type":"callReaction","callId":"c","userId":"u","emoji":"👍"}"""),
+        )
+        assertEquals("👍", reaction.emoji)
+        assertTrue(assertIs<LiveKitEvent.Held>(event("""{"type":"callHeld","callId":"c","userId":"u"}""")).onHold)
+        assertTrue(!assertIs<LiveKitEvent.Held>(event("""{"type":"callResumed","callId":"c","userId":"u"}""")).onHold)
+        assertEquals(
+            listOf("a", "b"),
+            assertIs<LiveKitEvent.HandsLowered>(
+                event("""{"type":"handsLowered","callId":"c","userIds":["a","b"]}"""),
+            ).userIds,
+        )
+        val block = assertIs<LiveKitEvent.ChatBlock>(
+            event("""{"type":"chatBlockChanged","callId":"c","userId":"u","blocked":true}"""),
+        )
+        assertTrue(block.blocked)
+        val action = assertIs<LiveKitEvent.HostAction>(
+            event("""{"type":"hostAction","callId":"c","action":"muteAll"}"""),
+        )
+        assertEquals("muteAll", action.action)
+        val knock = assertIs<LiveKitEvent.GuestKnocking>(
+            event("""{"type":"guestKnocking","callId":"c","guestId":"g1","name":"Pat"}"""),
+        )
+        assertEquals("Pat", knock.name)
+        val list = assertIs<LiveKitEvent.GuestList>(
+            event("""{"type":"guestListChanged","callId":"c","guests":[{"guestId":"g1","name":"Pat"}]}"""),
+        )
+        assertEquals("g1", list.guests.single().guestId)
+        val removed = assertIs<LiveKitEvent.Removed>(
+            event("""{"type":"removedFromCall","callId":"c","by":{"userId":"h","displayName":"Host"}}"""),
+        )
+        assertEquals("Host", removed.byName)
+        val notice = assertIs<LiveKitEvent.Notice>(
+            event("""{"type":"notice","text":"Recording started","level":"warning","sticky":true}"""),
+        )
+        assertTrue(notice.warning && notice.sticky)
+    }
+
+    @Test
+    fun `a policy fills what the server left out with the permissive default`() {
+        val changed = assertIs<LiveKitEvent.PolicyChanged>(
+            event(
+                """{"type":"callPolicyChanged","callId":"c",
+                    "policy":{"on":true,"chatEnabled":false,"screenShareLocked":true}}""",
+            ),
+        )
+        val policy = changed.policy
+        assertTrue(policy.on && policy.chatOff && policy.shareLocked)
+        // An older server omits reactionsAllowed: absent must mean allowed.
+        assertTrue(!policy.reactionsOff, "absent reactionsAllowed is allowed")
+        assertTrue(!policy.handsOff && !policy.recordingOff && !policy.linkOff)
+        // Off: nothing bites whatever the flags say.
+        assertTrue(!policy.copy(on = false).chatOff)
+        assertEquals(8, policy.toPatch().size)
+    }
+
+    @Test
+    fun `the roster carries hold, guest and designation as the web reads them`() {
+        val roster = readLiveKitRoster(
+            Json.parseToJsonElement(
+                """{"states":[
+                    {"userId":"u-1","displayName":"Vivek","state":"in_call","onHold":true,"designationName":"DoP"},
+                    {"userId":"guest_9","displayName":"Pat","state":"in_call"},
+                    {"userId":"u-3","displayName":"Ana","state":"in_call","isGuest":"true",
+                     "designation_name":"Grip"}]}""",
+            ),
+            callerId = "",
+        )
+        assertTrue(roster[0].onHold)
+        assertEquals("DoP", roster[0].designation)
+        assertTrue(roster[1].isGuest, "the guest prefix chips a row the roster forgot to flag")
+        assertTrue(roster[2].isGuest, "a stringified flag still reads")
+        assertEquals("Grip", roster[2].designation)
+        assertTrue(!roster[1].onHold, "absent is not on hold")
+    }
+
+    @Test
+    fun `an active call carries what the Calls tab draws`() {
+        val calls = assertIs<LiveKitEvent.ActiveCalls>(
+            event(
+                """{"type":"activeCallsChanged","calls":[{"callId":"c1","callType":"video","callMode":"group",
+                   "chatRoomId":"r","chatRoomName":"Camera dept","projectId":"p1","callerId":"u","callerName":"Vivek",
+                   "userIds":["u","me","x"],"inCallUsers":[{"userId":"u","displayName":"Vivek"}],"inCallCount":1}]}""",
+            ),
+        ).calls
+        val call = calls.single()
+        assertEquals(CallType.Video, call.callType)
+        assertEquals(CallMode.Group, call.callMode)
+        assertEquals("Camera dept", call.title)
+        assertEquals(listOf("u", "me", "x"), call.userIds)
+        assertEquals("u" to "Vivek", call.inCallUsers.single())
+        assertEquals(1, call.inCallCount)
     }
 
     @Test

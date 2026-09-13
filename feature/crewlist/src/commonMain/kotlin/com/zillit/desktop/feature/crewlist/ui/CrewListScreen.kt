@@ -215,7 +215,7 @@ private fun customiseModel(state: CrewListUiState, customise: CustomiseState, co
     isAdmin = state.viewer.isAdmin,
     obscured = covered || state.chooserOpen || state.working != null || state.pdf != null ||
         state.distribution != null || state.company != null || state.confirmPublish ||
-        state.addingExternalUser,
+        state.addingExternalUser || state.profile != null || state.departments != null,
     generating = state.working == CrewWork.Generating,
 )
 

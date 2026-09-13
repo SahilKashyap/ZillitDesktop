@@ -31,6 +31,15 @@ interface TransportRepository {
     suspend fun updateVehicle(id: String, draft: VehicleDraft): ZillitResult<Vehicle?>
     suspend fun deleteVehicles(ids: List<String>): ZillitResult<Unit>
 
+    /**
+     * `POST driver/temporary-driver-vehicle` — a temporary driver's own car,
+     * created with the flag that makes them a driver in the same call
+     * (`VehicleForm.jsx`, `from === 'temp-driver'`; ZL-11014 put the owner
+     * details on it).
+     */
+    suspend fun createTempDriverVehicle(userId: String, draft: VehicleDraft): ZillitResult<Vehicle?> =
+        ZillitResult.Failure(ZillitError.Unknown("temporary driver vehicles are not wired"))
+
     // Drivers ----------------------------------------------------------------
     /** The designations that make a crew member a driver — loaded by the web's header, not the tool. */
     suspend fun driverDesignations(): ZillitResult<List<String>>
@@ -41,13 +50,32 @@ interface TransportRepository {
     /** The users holding the tool's posting right — the coordinators. */
     suspend fun postingRightUsers(): ZillitResult<List<String>>
 
+    /**
+     * Everyone with view rights on the tool (`access/users?viewing_access=true`)
+     * — the web's `ViewingRightUsersList` narrows every passenger, CC and
+     * driver picker to them, since a request names people who must be able to
+     * open it. An empty answer means "unknown" and the pickers stay open.
+     */
+    suspend fun viewingRightUserIds(): ZillitResult<Set<String>> = ZillitResult.Success(emptySet())
+
     /** `driver/update-details` — any subset: vehicle, temp-driver flag, availability. */
     suspend fun updateDriver(
         userId: String,
         vehicleId: String? = null,
         isTempDriver: Boolean? = null,
         isTripAssigned: Boolean? = null,
-    ): ZillitResult<Unit>
+    ): ZillitResult<Unit> = updateDriverDetails(
+        DriverDetailsUpdate(
+            userId,
+            vehicleId = vehicleId,
+            isTempDriver = isTempDriver,
+            isTripAssigned = isTripAssigned,
+        ),
+    )
+
+    /** The same route with everything Fill in details can change. */
+    suspend fun updateDriverDetails(update: DriverDetailsUpdate): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("driver details are not wired"))
 
     suspend fun pendingDocumentReminder(userId: String, type: String, message: String?): ZillitResult<Unit>
 

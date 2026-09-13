@@ -162,6 +162,16 @@ data class CallParticipant(
     val missedCall: Boolean = false,
     /** Their hand is up — the roster row's `raise_hand`. */
     val handRaised: Boolean = false,
+    /**
+     * Line 3: they put the call on hold — still in the room, sending and
+     * hearing nothing until they resume. Orthogonal to [status]: a held
+     * person is InCall AND on hold, so only ever badge a connected row.
+     */
+    val onHold: Boolean = false,
+    /** Line 3: a link guest (`guest_<id>`), who is never a host and never addable. */
+    val isGuest: Boolean = false,
+    /** Job title, where the roster reports one; shown under the name. */
+    val designation: String = "",
 ) {
     /** The engine's numeric uid, or 0 when the server has not assigned one. */
     val numericUid: Int get() = agoraUid.trim().toIntOrNull() ?: 0

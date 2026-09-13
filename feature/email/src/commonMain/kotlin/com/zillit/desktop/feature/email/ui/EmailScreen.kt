@@ -24,8 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -44,6 +42,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -52,6 +51,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
+import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
@@ -326,22 +326,17 @@ private fun SettingsFootRow(
 
     Box {
         SidebarActionRow(icon = ZillitIcons.Settings, label = "Settings") { open = true }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            listOf(
-                "Signatures" to onOpenSignatures,
-                "Contacts" to onOpenContacts,
-                "Calendar" to onOpenCalendar,
-                "Email settings" to onOpenSettings,
-            ).forEach { (label, action) ->
-                DropdownMenuItem(
-                    text = { ZillitText(label, style = ZillitTheme.typography.bodyMedium) },
-                    onClick = {
-                        open = false
-                        action()
-                    },
-                )
-            }
-        }
+        ZillitActionMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            entries = listOf(
+                ZillitMenuEntry.Action("Signatures", ZillitIcons.Edit, onClick = onOpenSignatures),
+                ZillitMenuEntry.Action("Contacts", ZillitIcons.Users, onClick = onOpenContacts),
+                ZillitMenuEntry.Action("Calendar", ZillitIcons.Calendar, onClick = onOpenCalendar),
+                ZillitMenuEntry.Divider,
+                ZillitMenuEntry.Action("Email settings", ZillitIcons.Settings, onClick = onOpenSettings),
+            ),
+        )
     }
 }
 
@@ -565,17 +560,15 @@ private fun MoveMenu(state: EmailUiState, onEvent: (EmailEvent) -> Unit) {
             size = ButtonSize.Small,
             onClick = { open = true },
         )
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            state.moveTargets.forEach { folder ->
-                DropdownMenuItem(
-                    text = { ZillitText(folder.displayName, style = ZillitTheme.typography.bodyMedium) },
-                    onClick = {
-                        open = false
-                        onEvent(EmailEvent.MoveSelected(folder.name))
-                    },
-                )
-            }
-        }
+        ZillitActionMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            entries = state.moveTargets.map { folder ->
+                ZillitMenuEntry.Action(folder.displayName, ZillitIcons.Folder) {
+                    onEvent(EmailEvent.MoveSelected(folder.name))
+                }
+            },
+        )
     }
 }
 

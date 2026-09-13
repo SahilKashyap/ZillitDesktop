@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlin.time.Clock
 
 /**
  * The map tool — the web's `/film-tools/map` (`components/map-module`):
@@ -37,9 +38,12 @@ class MapViewModel(
     canvas: MapCanvasHost? = null,
     private val host: MapHost = MapHost(),
     private val rights: RightsRequestBus? = null,
+    /** Wall-clock millis, for how long a position fix is trusted. */
+    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) : ZillitViewModel<MapUiState, MapEvent, MapEffect>(MapUiState()) {
 
     private val canvasClient = MapCanvasClient(canvas, viewModelScope)
+    private val positionFinder = PositionFinder(canvasClient, host.locator, clock)
 
     private val store: MapStore = object : MapStore {
         override val state: MapUiState get() = currentState
@@ -47,6 +51,7 @@ class MapViewModel(
         override val canvas: MapCanvasClient get() = canvasClient
         override val host: MapHost get() = this@MapViewModel.host
         override val rights: RightsRequestBus? get() = this@MapViewModel.rights
+        override val position: PositionFinder get() = positionFinder
         override val hooks: MapHooks get() = this@MapViewModel.hooks
 
         override fun update(reducer: MapUiState.() -> MapUiState) = setState(reducer)

@@ -45,9 +45,40 @@ interface LiveKitLineListener {
 
     /**
      * The ring this device showed for [callId] is over without an answer here:
-     * the caller cancelled, another device took it, or the host removed us.
+     * the caller cancelled, another device took it, or the host removed us
+     * ([byName] says who, when the server named them).
      */
-    fun onDismissed(callId: String, why: LiveKitDismissal)
+    fun onDismissed(callId: String, why: LiveKitDismissal, byName: String = "")
+
+    /** One row of the roster moved (`callUserStateChanged`), with what the event knew about them. */
+    fun onUserState(callId: String, participant: CallParticipant) = Unit
+
+    /** Someone — us included — threw an emoji; floats are drawn from this and only this. */
+    fun onReaction(callId: String, userId: String, emoji: String) = Unit
+
+    /** Someone held or resumed. Applied for ourselves too: the server is the authority. */
+    fun onHeld(callId: String, userId: String, onHold: Boolean) = Unit
+
+    /** The host lowered exactly these hands. */
+    fun onHandsLowered(callId: String, userIds: List<String>) = Unit
+
+    /** The host blocked or unblocked someone's chat — ours, when [userId] is us. */
+    fun onChatBlock(callId: String, userId: String, blocked: Boolean) = Unit
+
+    /** The host changed the call's controls. */
+    fun onPolicy(callId: String, policy: LiveKitCallPolicy) = Unit
+
+    /** The host asked everyone to do one thing: `muteAll`, `clearBackgrounds`, `lowerHands`. */
+    fun onHostAction(callId: String, action: String) = Unit
+
+    /** A link guest is knocking. */
+    fun onGuestKnocking(callId: String, guestId: String, name: String) = Unit
+
+    /** Who is waiting at the door. */
+    fun onGuestList(callId: String, guests: List<LiveKitGuest>) = Unit
+
+    /** A server broadcast for the user to read. */
+    fun onNotice(text: String, warning: Boolean, sticky: Boolean) = Unit
 
     /** The call is over for everyone. */
     fun onEnded(reason: String)
@@ -271,29 +302,52 @@ class LiveKitLine(
 
     // ── Events ──────────────────────────────────────────────────────────────
 
+    @Suppress("CyclomaticComplexMethod") // One branch per server event; the whole vocabulary in one place.
     private fun dispatch(event: LiveKitEvent) {
         val sink = listener ?: return
         when (event) {
             is LiveKitEvent.IncomingCall -> onIncoming(event.invite, sink)
             is LiveKitEvent.RingState ->
                 sink.onRingState(event.callId, event.userId, "", event.status, event.busy)
-            is LiveKitEvent.UserState ->
+            is LiveKitEvent.UserState -> {
                 sink.onRingState(event.callId, event.userId, event.displayName, event.status, busy = false)
+                sink.onUserState(
+                    event.callId,
+                    CallParticipant(
+                        userId = event.userId,
+                        name = event.displayName,
+                        image = event.image,
+                        status = event.status,
+                        isGuest = event.isGuest,
+                    ),
+                )
+            }
             is LiveKitEvent.Cancelled -> dismissed(event.callId, LiveKitDismissal.Cancelled, sink)
             is LiveKitEvent.HandledElsewhere -> dismissed(event.callId, LiveKitDismissal.HandledElsewhere, sink)
-            is LiveKitEvent.Removed -> dismissed(event.callId, LiveKitDismissal.Removed, sink)
+            is LiveKitEvent.Removed -> dismissed(event.callId, LiveKitDismissal.Removed, sink, event.byName)
             is LiveKitEvent.Ended -> sink.onEnded(event.reason)
             is LiveKitEvent.ActiveCalls -> sink.onActiveCalls(event.calls)
-            is LiveKitEvent.Notice -> ZillitLog.i(TAG) { "notice: ${event.text}" }
+            is LiveKitEvent.Notice -> {
+                ZillitLog.i(TAG) { "notice: ${event.text}" }
+                sink.onNotice(event.text, event.warning, event.sticky)
+            }
+            is LiveKitEvent.Reaction -> sink.onReaction(event.callId, event.userId, event.emoji)
+            is LiveKitEvent.Held -> sink.onHeld(event.callId, event.userId, event.onHold)
+            is LiveKitEvent.HandsLowered -> sink.onHandsLowered(event.callId, event.userIds)
+            is LiveKitEvent.ChatBlock -> sink.onChatBlock(event.callId, event.userId, event.blocked)
+            is LiveKitEvent.PolicyChanged -> sink.onPolicy(event.callId, event.policy)
+            is LiveKitEvent.HostAction -> sink.onHostAction(event.callId, event.action)
+            is LiveKitEvent.GuestKnocking -> sink.onGuestKnocking(event.callId, event.guestId, event.name)
+            is LiveKitEvent.GuestList -> sink.onGuestList(event.callId, event.guests)
             is LiveKitEvent.ParticipantJoined,
             is LiveKitEvent.ParticipantLeft,
             -> Unit
         }
     }
 
-    private fun dismissed(callId: String, why: LiveKitDismissal, sink: LiveKitLineListener) {
+    private fun dismissed(callId: String, why: LiveKitDismissal, sink: LiveKitLineListener, byName: String = "") {
         markResolved(callId)
-        sink.onDismissed(callId, why)
+        sink.onDismissed(callId, why, byName)
     }
 
     /**
@@ -515,6 +569,100 @@ class LiveKitLine(
         }
     }
 
+    // ── In-call verbs (the web's `App.tsx` socket requests, REST where it has a twin) ──
+
+    /**
+     * Throws an emoji. Nothing floats here: the server echoes `callReaction`
+     * to everyone, us included, so the sender sees exactly what the others do
+     * — and only once the server accepted it (policy, whitelist, rate limit).
+     */
+    suspend fun react(callId: String, emoji: String, projectId: String?, userId: String) {
+        overSocketOrRest(callId, "reactCall", extra = mapOf("emoji" to JsonPrimitive(emoji))) {
+            api.react(callId, emoji, projectId, userId)
+        }
+    }
+
+    /** Puts our own leg on hold, or resumes it. The server fans `callHeld` / `callResumed` back out. */
+    suspend fun hold(callId: String, on: Boolean, projectId: String?, userId: String) {
+        overSocketOrRest(callId, if (on) "holdCall" else "resumeCall") { api.hold(callId, on, projectId, userId) }
+    }
+
+    /** Retracts one still-ringing invite; a no-op once they answered. */
+    suspend fun cancelInvite(callId: String, userId: String): Boolean =
+        socketOnly("cancelInvite", callId, mapOf("userId" to JsonPrimitive(userId)))
+
+    /** Host only: kicks and blocks someone until a member adds them again. */
+    suspend fun removeFromCall(callId: String, userId: String): Boolean =
+        socketOnly("removeFromCall", callId, mapOf("userId" to JsonPrimitive(userId)))
+
+    /** Host only: revokes or restores someone's chat; the SFU drops their packets. */
+    suspend fun blockChat(callId: String, userId: String, blocked: Boolean): Boolean =
+        socketOnly("blockChat", callId, mapOf("userId" to JsonPrimitive(userId), "blocked" to JsonPrimitive(blocked)))
+
+    /** Host only: merges a partial policy; `callPolicyChanged` comes back to everyone. */
+    suspend fun setCallPolicy(callId: String, patch: Map<String, Boolean>): Boolean =
+        socketOnly(
+            "setCallPolicy",
+            callId,
+            mapOf("patch" to buildJsonObject { patch.forEach { (key, value) -> put(key, JsonPrimitive(value)) } }),
+        )
+
+    /** Host only: `muteAll`, `clearBackgrounds` or `lowerHands`, once. */
+    suspend fun hostAction(callId: String, action: String): Boolean =
+        socketOnly("hostAction", callId, mapOf("action" to JsonPrimitive(action)))
+
+    suspend fun admitGuest(callId: String, guestId: String): Boolean =
+        socketOnly("admitGuest", callId, mapOf("guestId" to JsonPrimitive(guestId)))
+
+    suspend fun declineGuest(callId: String, guestId: String): Boolean =
+        socketOnly("declineGuest", callId, mapOf("guestId" to JsonPrimitive(guestId)))
+
+    /**
+     * Has the SFU mute someone's microphone or camera for everyone. REST only
+     * — the web's `hostMute` — and the room's own TrackMuted is what moves
+     * the roster; the caller announces who did it over the data channel.
+     */
+    suspend fun muteParticipant(
+        callId: String,
+        targetUserId: String,
+        camera: Boolean,
+        self: LiveKitIdentity,
+    ): Boolean = api.mute(
+        callId, targetUserId, if (camera) "camera" else "microphone", self.userId, self.projectId, self.userId,
+    ) is ZillitResult.Success
+
+    /**
+     * Marks this user as the call's recorder, or clears the mark. False when
+     * somebody else already holds it (409 `already_recording`); the local
+     * recorder must not start then. Stopping is best-effort — leaving clears
+     * the mark server-side anyway.
+     */
+    suspend fun markRecording(callId: String, on: Boolean, self: LiveKitIdentity): ZillitResult<Unit> =
+        api.markRecording(callId, self.userId, on, self.projectId)
+
+    /**
+     * Joins a call already under way — the Calls tab's Join / Switch here.
+     * The socket `acceptCall` records THIS device as the one in the call
+     * (server-safe in every state: in_call moves the device pointer, ringing
+     * is a normal accept, otherwise a no-op); the REST accept hands back the
+     * room. The web does both, in this order.
+     */
+    suspend fun joinActive(callId: String, self: LiveKitIdentity): ZillitResult<LiveKitJoin> {
+        peer?.let { live -> runCatching { live.request("acceptCall", callIdFields(callId)) } }
+        return when (val rest = api.acceptCall(callId, self.userId, self.displayName, self.projectId)) {
+            is ZillitResult.Success ->
+                resolveJoin(callId, rest.data.livekit, self.userId, self.displayName, self.projectId)
+            is ZillitResult.Failure -> rest
+        }
+    }
+
+    private suspend fun socketOnly(type: String, callId: String, fields: Map<String, JsonElement>): Boolean {
+        val live = peer ?: return false
+        return runCatching { live.request(type, callIdFields(callId, fields)) }
+            .onFailure { ZillitLog.w(TAG) { "$type refused: ${it.message}" } }
+            .isSuccess
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     /**
@@ -559,16 +707,24 @@ class LiveKitLine(
         }
     }
 
-    private suspend fun overSocketOrRest(callId: String, type: String, rest: suspend () -> ZillitResult<Unit>) {
+    private suspend fun overSocketOrRest(
+        callId: String,
+        type: String,
+        extra: Map<String, JsonElement> = emptyMap(),
+        rest: suspend () -> ZillitResult<Unit>,
+    ) {
         val live = peer
-        if (live != null && runCatching { live.request(type, callIdFields(callId)) }.isSuccess) return
+        if (live != null && runCatching { live.request(type, callIdFields(callId, extra)) }.isSuccess) return
         when (val outcome = rest()) {
             is ZillitResult.Success -> Unit
             is ZillitResult.Failure -> ZillitLog.w(TAG) { "$type not delivered: ${outcome.error.technical}" }
         }
     }
 
-    private fun callIdFields(callId: String) = buildJsonObject { put("callId", JsonPrimitive(callId)) }
+    private fun callIdFields(callId: String, extra: Map<String, JsonElement> = emptyMap()) = buildJsonObject {
+        put("callId", JsonPrimitive(callId))
+        extra.forEach { (key, value) -> put(key, value) }
+    }
 
     /** The ack's room, when it folded one in; else what the create carried. */
     private fun LiveKitCallCredentials.withRoomFrom(ack: JsonElement?): LiveKitCallCredentials =

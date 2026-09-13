@@ -25,6 +25,9 @@ internal interface MapStore {
     val host: MapHost
     val rights: RightsRequestBus?
 
+    /** This machine's position, when it can be had. */
+    val position: PositionFinder
+
     fun update(reducer: MapUiState.() -> MapUiState)
     fun effect(effect: MapEffect)
     fun spawn(block: suspend CoroutineScope.() -> Unit): Job

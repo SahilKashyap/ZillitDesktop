@@ -55,6 +55,9 @@
   }
   body.pin-mode #map, body.pin-mode #map * { cursor: crosshair !important; }
   button { font-family: inherit; }
+  /* `hidden` must win over an element's own display rule (`#cities` is flex),
+     or the floating Cities control never leaves while its panel is open. */
+  [hidden] { display: none !important; }
   svg.fi { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 2;
            stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
 
@@ -171,6 +174,9 @@ var CLUSTER_GRID_PX = 60;
 var NEARBY_DEGREES = 0.0001;                                /* useSpiderfier */
 var HOVER_IN_MS = 120;                                      /* req M */
 var HOVER_OUT_MS = 250;
+/* The web waits this long for the browser's position before moving on. Here
+   the prompt can never be granted, so this is how long a refusal takes. */
+var GEO_TIMEOUT_MS = 4000;
 var GUIDE_STEPS = [
   'Add the required city to the Map Module.',
   'Create a Studio Zone (if required).',
@@ -1066,14 +1072,19 @@ function request(q) {
           reply(q.id, true, { north: ne.lat(), east: ne.lng(), south: sw.lat(), west: sw.lng() });
         });
         break;
-      case 'currentPosition':
+      case 'currentPosition': {
         if (!navigator.geolocation) { reply(q.id, false); break; }
+        /* Chromium answers a prompt nobody can grant by never answering at
+           all on some builds; the timer is what turns that into a refusal. */
+        var answered = false;
+        var timer = setTimeout(function () { if (!answered) { answered = true; reply(q.id, false, { status: 'TIMEOUT' }); } }, GEO_TIMEOUT_MS);
         navigator.geolocation.getCurrentPosition(
-          function (pos) { reply(q.id, true, { lat: pos.coords.latitude, lng: pos.coords.longitude }); },
-          function () { reply(q.id, false); },
-          { enableHighAccuracy: true, timeout: 8000 }
+          function (pos) { if (answered) return; answered = true; clearTimeout(timer); reply(q.id, true, { lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+          function () { if (answered) return; answered = true; clearTimeout(timer); reply(q.id, false); },
+          { enableHighAccuracy: true, timeout: GEO_TIMEOUT_MS, maximumAge: 5 * 60 * 1000 }
         );
         break;
+      }
       case 'route': {
         var service = new google.maps.DirectionsService();
         service.route({ origin: q.origin, destination: q.destination, travelMode: google.maps.TravelMode.DRIVING }, function (result, status) {

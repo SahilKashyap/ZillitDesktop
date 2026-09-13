@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,7 +31,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
+import com.zillit.desktop.core.designsystem.component.ZillitMenuEntries
+import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
+import com.zillit.desktop.core.designsystem.component.ZillitMenuSurface
+import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.email.domain.MarkFamily
 import com.zillit.desktop.feature.email.domain.TextMark
 
@@ -157,7 +161,6 @@ private fun SizePicker(
     onClear: (MarkFamily) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val colors = ZillitTheme.colors
 
     Box {
         FormatChip(
@@ -165,29 +168,22 @@ private fun SizePicker(
             isActive = current != null,
             onClick = { expanded = true },
         )
-        DropdownMenu(
+        ZillitActionMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
-            modifier = Modifier.background(colors.surfaceRaised, RoundedCornerShape(MENU_RADIUS)),
-        ) {
-            FONT_SIZES.forEach { px ->
-                DropdownMenuItem(
-                    onClick = {
-                        expanded = false
-                        // The default size is the absence of a mark, so the
-                        // body follows the theme instead of hard-coding it.
-                        if (px == DEFAULT_SIZE) onClear(MarkFamily.FontSize) else onPick(TextMark.FontSize(px))
-                    },
-                    text = {
-                        ZillitText(
-                            text = if (px == DEFAULT_SIZE) "$px (default)" else "$px",
-                            style = ZillitTheme.typography.bodyMedium,
-                            color = if (px == current) colors.accentText else colors.textPrimary,
-                        )
-                    },
-                )
-            }
-        }
+            entries = FONT_SIZES.map { px ->
+                ZillitMenuEntry.Action(
+                    label = if (px == DEFAULT_SIZE) "$px (default)" else "$px",
+                    // The chosen size wears the accent tile; the rest sit bare.
+                    icon = if (px == current) ZillitIcons.Check else null,
+                    tone = ZillitMenuTone.Primary,
+                ) {
+                    // The default size is the absence of a mark, so the
+                    // body follows the theme instead of hard-coding it.
+                    if (px == DEFAULT_SIZE) onClear(MarkFamily.FontSize) else onPick(TextMark.FontSize(px))
+                }
+            },
+        )
     }
 }
 
@@ -211,23 +207,13 @@ private fun ColorPicker(
             onClick = { expanded = true },
             underlay = current?.let { hexColor(it) } ?: colors.textMuted,
         )
-        DropdownMenu(
+        ZillitMenuSurface(
             expanded = expanded,
             onDismissRequest = { expanded = false },
-            modifier = Modifier.background(colors.surfaceRaised, RoundedCornerShape(MENU_RADIUS)),
         ) {
-            DropdownMenuItem(
-                onClick = {
-                    expanded = false
-                    onClear(clears)
-                },
-                text = {
-                    ZillitText(
-                        text = "Default",
-                        style = ZillitTheme.typography.bodyMedium,
-                        color = colors.textPrimary,
-                    )
-                },
+            ZillitMenuEntries(
+                entries = listOf(ZillitMenuEntry.Action("Default", ZillitIcons.Minus) { onClear(clears) }),
+                onDismiss = { expanded = false },
             )
             PALETTE.chunked(SWATCHES_PER_ROW).forEach { row ->
                 SwatchRow(row, current) { hex ->
@@ -300,4 +286,3 @@ private val SWATCH_SIZE = 20.dp
 private val SWATCH_RADIUS = 4.dp
 private val SWATCH_BAR_WIDTH = 14.dp
 private val SWATCH_BAR_HEIGHT = 3.dp
-private val MENU_RADIUS = 8.dp

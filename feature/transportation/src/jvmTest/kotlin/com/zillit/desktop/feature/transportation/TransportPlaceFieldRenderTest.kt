@@ -17,7 +17,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.locationpicker.LocalLocationPicker
 import com.zillit.desktop.core.locationpicker.LocationPicker
 import com.zillit.desktop.core.locationpicker.PickedLocation
-import com.zillit.desktop.feature.transportation.ui.RaiseEditor
+import com.zillit.desktop.feature.transportation.ui.PassengerEditor
 import com.zillit.desktop.feature.transportation.ui.TransportEvent
 import com.zillit.desktop.feature.transportation.ui.TransportUiState
 import com.zillit.desktop.feature.transportation.ui.pages.TransportDialogs
@@ -58,28 +58,32 @@ class TransportPlaceFieldRenderTest {
 
     private fun ComposeUiTest.raiseDialog(
         picker: LocationPicker?,
-        editor: RaiseEditor,
+        editor: PassengerEditor,
         onEvent: (TransportEvent) -> Unit,
     ) {
         setContent {
             ZillitTheme {
                 CompositionLocalProvider(LocalLocationPicker provides picker) {
-                    TransportDialogs(TransportUiState(raise = editor), onEvent)
+                    TransportDialogs(TransportUiState(passengerDialog = editor), onEvent)
                 }
             }
         }
     }
 
+    private val changes = { events: List<TransportEvent> ->
+        events.filterIsInstance<TransportEvent.PassengerChanged>().map { it.editor }
+    }
+
     @Test
     fun `picking a pickup fills its address and both coordinates`() = runComposeUiTest {
         val events = mutableListOf<TransportEvent>()
-        raiseDialog(FakePicker(aria), RaiseEditor(), events::add)
+        raiseDialog(FakePicker(aria), PassengerEditor(), events::add)
 
         scrollDialogToBottom()
         onAllNodesWithText("Pick on map")[0].performClick()
         waitForIdle()
 
-        val passenger = events.filterIsInstance<TransportEvent.RaiseChanged>().mapNotNull { it.passenger }.last()
+        val passenger = changes(events).last()
         assertEquals("Aria Hotel, 12 Marine Drive, Mumbai", passenger.pickupAddress)
         assertEquals("18.94", passenger.pickupLat)
         assertEquals("72.82", passenger.pickupLng)
@@ -88,14 +92,14 @@ class TransportPlaceFieldRenderTest {
     @Test
     fun `picking a drop-off fills the other end, leaving the pickup alone`() = runComposeUiTest {
         val events = mutableListOf<TransportEvent>()
-        val started = RaiseEditor().let { it.copy(passenger = it.passenger.copy(pickupAddress = "Base camp")) }
+        val started = PassengerEditor(pickupAddress = "Base camp")
         raiseDialog(FakePicker(aria), started, events::add)
 
         scrollDialogToBottom()
         onAllNodesWithText("Pick on map")[1].performClick()
         waitForIdle()
 
-        val passenger = events.filterIsInstance<TransportEvent.RaiseChanged>().mapNotNull { it.passenger }.last()
+        val passenger = changes(events).last()
         assertEquals("Aria Hotel, 12 Marine Drive, Mumbai", passenger.dropAddress)
         assertEquals("18.94", passenger.dropLat)
         assertEquals("72.82", passenger.dropLng)
@@ -106,23 +110,21 @@ class TransportPlaceFieldRenderTest {
     fun `a cancelled pick changes nothing`() = runComposeUiTest {
         val events = mutableListOf<TransportEvent>()
         val picker = FakePicker(null)
-        raiseDialog(picker, RaiseEditor(), events::add)
+        raiseDialog(picker, PassengerEditor(), events::add)
 
         scrollDialogToBottom()
         onAllNodesWithText("Pick on map")[0].performClick()
         waitForIdle()
 
         assertEquals(1, picker.opened)
-        assertTrue(events.filterIsInstance<TransportEvent.RaiseChanged>().none { it.passenger != null })
+        assertTrue(changes(events).isEmpty())
     }
 
     @Test
     fun `the map opens where the place already is`() = runComposeUiTest {
         val events = mutableListOf<TransportEvent>()
         val picker = FakePicker(aria)
-        val placed = RaiseEditor().let {
-            it.copy(passenger = it.passenger.copy(pickupAddress = "Base camp", pickupLat = "1.5", pickupLng = "-2.25"))
-        }
+        val placed = PassengerEditor(pickupAddress = "Base camp", pickupLat = "1.5", pickupLng = "-2.25")
         raiseDialog(picker, placed, events::add)
 
         scrollDialogToBottom()
@@ -137,15 +139,15 @@ class TransportPlaceFieldRenderTest {
         // The desktop's original route into the numbers, and the only one a
         // host with no maps key has besides typing them.
         val events = mutableListOf<TransportEvent>()
-        raiseDialog(FakePicker(aria), RaiseEditor(), events::add)
+        raiseDialog(FakePicker(aria), PassengerEditor(), events::add)
 
         scrollDialogToBottom()
-        // Date, Time, then the two addresses — the selects carry no text action.
+        // The passenger select carries no text action, so the pickup address is the first field.
         onAllNodes(hasSetTextAction())[PICKUP_FIELD]
             .performTextInput("https://www.google.com/maps/@18.94,72.82,17z")
         waitForIdle()
 
-        val passenger = events.filterIsInstance<TransportEvent.RaiseChanged>().mapNotNull { it.passenger }.last()
+        val passenger = changes(events).last()
         assertEquals("18.94", passenger.pickupLat)
         assertEquals("72.82", passenger.pickupLng)
     }
@@ -155,7 +157,7 @@ class TransportPlaceFieldRenderTest {
         // Offline, or a host without a maps key: the trio the dialog always
         // showed is still there, so the only workflow that ever existed here
         // never becomes unreachable.
-        raiseDialog(picker = null, editor = RaiseEditor(), onEvent = {})
+        raiseDialog(picker = null, editor = PassengerEditor(), onEvent = {})
 
         scrollDialogToBottom()
         onAllNodesWithText("Pick on map").assertCountEquals(0)
@@ -170,9 +172,7 @@ class TransportPlaceFieldRenderTest {
         // One field and a line of numbers instead of a trio of boxes — but the
         // boxes are one click away, for a place the map cannot find.
         val events = mutableListOf<TransportEvent>()
-        val known = RaiseEditor().let {
-            it.copy(passenger = it.passenger.copy(pickupLat = "18.94", pickupLng = "72.82"))
-        }
+        val known = PassengerEditor(pickupLat = "18.94", pickupLng = "72.82")
         raiseDialog(FakePicker(aria), known, events::add)
 
         scrollDialogToBottom()
@@ -195,7 +195,7 @@ class TransportPlaceFieldRenderTest {
     private companion object {
         const val SCROLL_TO_END = 10_000f
 
-        /** Date, Time, pickup address, drop-off address — the selects take no text. */
-        const val PICKUP_FIELD = 2
+        /** Pickup address, drop-off address, date, time — the select takes no text. */
+        const val PICKUP_FIELD = 0
     }
 }

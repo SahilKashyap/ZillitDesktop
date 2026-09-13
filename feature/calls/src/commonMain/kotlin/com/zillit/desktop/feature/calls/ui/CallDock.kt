@@ -78,15 +78,26 @@ fun CallDock(
     }
 }
 
-/** Microphone and camera: a pill each, caret first, then the toggle (`CallRoom.tsx:1620-1672`). */
+/**
+ * Microphone and camera: a pill each, caret first, then the toggle (`CallRoom.tsx:1620-1672`).
+ *
+ * Held = deliberately silent both ways, so both toggles are off the table
+ * until the user resumes: leaving them live would let them unmute into a
+ * call the server has them marked as absent from.
+ */
 @Composable
 private fun MediaPills(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     SplitPill(
         icon = if (state.micMuted) ZillitIcons.MicOff else ZillitIcons.Mic,
-        label = if (state.micMuted) "Unmute" else "Mute",
+        label = when {
+            state.onHold -> "On hold — resume the call to use your microphone"
+            state.micMuted -> "Unmute"
+            else -> "Mute"
+        },
         off = state.micMuted,
         caretLabel = "Audio settings",
         caretActive = state.audioPickerOpen,
+        enabled = !state.onHold,
         onCaret = { onEvent(CallEvent.ToggleAudioPicker) },
         onClick = { onEvent(CallEvent.ToggleMic) },
     )
@@ -95,37 +106,55 @@ private fun MediaPills(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     // where the user reaches for this button.
     SplitPill(
         icon = if (state.cameraOn) ZillitIcons.Camera else ZillitIcons.CameraOff,
-        label = if (state.cameraOn) "Turn camera off" else "Turn camera on",
+        label = when {
+            state.onHold -> "On hold — resume the call to use your camera"
+            state.cameraOn -> "Turn camera off"
+            else -> "Turn camera on"
+        },
         off = !state.cameraOn,
         caretLabel = "Video settings",
         caretActive = state.audioPickerOpen,
+        enabled = !state.onHold,
         onCaret = { onEvent(CallEvent.ToggleAudioPicker) },
         onClick = { onEvent(CallEvent.ToggleCamera) },
     )
 }
 
-/** Hand, present, react — the things that need a connected room. */
+/**
+ * Hand, present, react — the things that need a connected room.
+ *
+ * Under a host policy a locked control stays drawn but says why
+ * (`handRestricted`, `reactionsOn`), and Present follows the host's lock the
+ * way the web hides it: shown and working when allowed, gone when not — the
+ * host keeps it either way (`CallRoom.tsx:1714-1746`).
+ */
 @Composable
 private fun RoomVerbs(state: CallUiState, onEvent: (CallEvent) -> Unit, connected: Boolean) {
     DockButton(
         icon = ZillitIcons.Hand,
-        label = if (state.handRaised) "Lower hand" else "Raise hand",
+        label = when {
+            state.handsLocked -> "Raising hands is off"
+            state.handRaised -> "Lower hand"
+            else -> "Raise hand"
+        },
         active = state.handRaised,
         enabled = connected,
         onClick = { onEvent(CallEvent.ToggleHand) },
     )
-    DockButton(
-        icon = ZillitIcons.Monitor,
-        label = if (state.media.selfSharing) "Stop presenting" else "Present",
-        active = state.media.selfSharing,
-        enabled = connected,
-        onClick = { onEvent(CallEvent.ToggleScreenShare) },
-    )
+    if (!state.shareLocked) {
+        DockButton(
+            icon = ZillitIcons.Monitor,
+            label = if (state.media.selfSharing) "Stop presenting" else "Present",
+            active = state.media.selfSharing,
+            enabled = connected,
+            onClick = { onEvent(CallEvent.ToggleScreenShare) },
+        )
+    }
     DockButton(
         icon = ZillitIcons.Smiley,
-        label = "Send a reaction",
+        label = if (state.reactionsLocked) "Reactions are off" else "Send a reaction",
         active = state.reactionBarOpen,
-        enabled = connected,
+        enabled = connected && !state.reactionsLocked,
         onClick = { onEvent(CallEvent.ToggleReactionBar) },
     )
 }
@@ -209,6 +238,7 @@ private fun SplitPill(
     caretActive: Boolean,
     onCaret: () -> Unit,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     val group = if (off) CallPalette.offPill else CallPalette.controlGroup
     val caret = if (off) CallPalette.offCaret else if (caretActive) CallPalette.control else CallPalette.caret
@@ -216,6 +246,7 @@ private fun SplitPill(
     Row(
         modifier = Modifier
             .height(DOCK_BUTTON)
+            .alpha(if (enabled) 1f else INERT_ALPHA)
             .clip(RoundedCornerShape(PILL_CORNER))
             .background(group),
         verticalAlignment = Alignment.CenterVertically,
@@ -241,7 +272,7 @@ private fun SplitPill(
             Box(
                 modifier = Modifier
                     .size(DOCK_BUTTON)
-                    .clickable(onClick = onClick),
+                    .clickable(enabled = enabled, onClick = onClick),
                 contentAlignment = Alignment.Center,
             ) {
                 ZillitIcon(icon = icon, contentDescription = label, tint = glyph, size = DOCK_ICON)

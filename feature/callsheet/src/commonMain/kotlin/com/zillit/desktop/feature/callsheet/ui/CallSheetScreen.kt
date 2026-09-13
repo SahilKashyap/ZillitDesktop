@@ -1,253 +1,109 @@
 package com.zillit.desktop.feature.callsheet.ui
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ButtonSize
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.StatusTone
-import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
-import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
-import com.zillit.desktop.core.designsystem.component.ZillitSpinner
-import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
-import com.zillit.desktop.core.designsystem.component.ZillitTab
-import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
-import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.feature.callsheet.domain.CallSheetStatus
-import com.zillit.desktop.feature.callsheet.domain.CallSheetSummary
-import com.zillit.desktop.feature.callsheet.ui.pages.PublishSheetDialog
-import com.zillit.desktop.feature.callsheet.ui.pages.SendSheetDialog
-import com.zillit.desktop.feature.callsheet.ui.pages.SheetEditorPage
-import com.zillit.desktop.feature.callsheet.ui.pages.SheetPdfOverlay
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.zillit.desktop.core.designsystem.component.ZillitScrollRail
+import com.zillit.desktop.core.designsystem.component.zillitVerticalScroll
+import com.zillit.desktop.feature.callsheet.domain.SheetTab
+import com.zillit.desktop.feature.callsheet.ui.components.ProvideSheetFaces
+import com.zillit.desktop.feature.callsheet.ui.components.sheetText
+import com.zillit.desktop.feature.callsheet.ui.dialogs.PdfOverlayView
+import com.zillit.desktop.feature.callsheet.ui.dialogs.SheetDialogHost
+import com.zillit.desktop.feature.callsheet.ui.editor.EditorView
+import com.zillit.desktop.feature.callsheet.ui.pages.ActivityPill
+import com.zillit.desktop.feature.callsheet.ui.pages.ApprovalsPage
+import com.zillit.desktop.feature.callsheet.ui.pages.DraftsPage
+import com.zillit.desktop.feature.callsheet.ui.pages.LoadingBlock
+import com.zillit.desktop.feature.callsheet.ui.pages.PermissionPage
+import com.zillit.desktop.feature.callsheet.ui.pages.PublishedPage
+import com.zillit.desktop.feature.callsheet.ui.pages.SheetTabRow
+import com.zillit.desktop.feature.callsheet.ui.pages.SheetToolbar
+import com.zillit.desktop.feature.callsheet.ui.theme.ProvideSheetPalette
+import com.zillit.desktop.feature.callsheet.ui.theme.SheetTheme
+import kotlin.time.Clock
 
 /**
- * The call sheet tool.
- *
- * One hub with three tabs; the editor and the PDF viewer open over it as
- * full-page states rather than routes, because a sheet mid-edit and its list
- * are never on screen together on the web either.
+ * The call sheet tool — the web's `CallSheetApp`: the list view (toolbar,
+ * tabs, one tab at a time), the editor, the PDF viewer and every dialog.
  */
 @Composable
 fun CallSheetScreen(
-    state: CallSheetUiState,
-    onEvent: (CallSheetEvent) -> Unit,
+    state: SheetUiState,
+    onEvent: (SheetEvent) -> Unit,
+    modifier: Modifier = Modifier,
+    loadAvatar: suspend (String) -> ImageBitmap? = { null },
+    nowMillis: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
-    val editor = state.editor
-    if (editor != null) {
-        SheetEditorPage(state = state, editor = editor, onEvent = onEvent)
-        return
-    }
-
-    Box(Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(ZillitTheme.spacing.lg),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        ) {
-            HubChrome(state = state, onEvent = onEvent)
-
-            when {
-                state.loading -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    ZillitSpinner()
+    ProvideSheetPalette {
+        ProvideSheetFaces(loadAvatar) {
+            Box(modifier.fillMaxSize().background(SheetTheme.colors.bgPrimary)) {
+                val editor = state.editor
+                when {
+                    state.viewer.isBlocked -> NoAccess()
+                    editor != null -> EditorView(state, editor, onEvent)
+                    else -> ListView(state, onEvent, nowMillis())
                 }
-                state.listFor.isEmpty() -> ZillitText(
-                    text = "Nothing here yet.",
-                    style = ZillitTheme.typography.bodyMedium,
-                    color = ZillitTheme.colors.textMuted,
+                ActivityPill(
+                    active = state.busy || state.lists.anyLoading() || state.permission.loading,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
                 )
-                else -> SheetList(state = state, onEvent = onEvent)
+                PdfOverlayView(state.pdf, onEvent)
+                SheetDialogHost(state, onEvent, nowMillis)
             }
         }
-
-        state.pdf?.let { SheetPdfOverlay(view = it, onEvent = onEvent) }
-        state.send?.let { SendSheetDialog(state = state, dialog = it, onEvent = onEvent) }
-        state.publish?.let { PublishSheetDialog(dialog = it, busy = state.busy, onEvent = onEvent) }
     }
 }
 
+private fun SheetLists.anyLoading(): Boolean =
+    listOf(drafts, sent, received, finalized, published).any { it.loading }
+
 @Composable
-@Suppress("LongMethod") // Chrome: header, notices and two tab strips in order.
-private fun HubChrome(state: CallSheetUiState, onEvent: (CallSheetEvent) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
-            ZillitPageHeader(
-                title = "Call Sheet",
-                description = "Compose, review and publish the day's call sheet.",
-                actions = {
-                    if (state.viewer.canAuthor) {
-                        ZillitButton(
-                            text = "Create call sheet",
-                            onClick = { onEvent(CallSheetEvent.NewSheet) },
-                            loading = state.busy,
-                        )
+private fun ListView(state: SheetUiState, onEvent: (SheetEvent) -> Unit, nowMillis: Long) {
+    Column(Modifier.fillMaxSize()) {
+        SheetToolbar(state)
+        val scroll = rememberScrollState()
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxWidth().zillitVerticalScroll(scroll)) {
+                SheetTabRow(state, onEvent)
+                Box(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+                    if (state.viewer.ready) {
+                        when (state.activeTab) {
+                            SheetTab.Drafts -> DraftsPage(state, onEvent, nowMillis)
+                            SheetTab.Approvals -> ApprovalsPage(state, onEvent, nowMillis)
+                            SheetTab.Published -> PublishedPage(state, onEvent, nowMillis)
+                            SheetTab.Permission -> PermissionPage(state, onEvent)
+                        }
+                    } else {
+                        LoadingBlock("Loading call sheets…")
                     }
-                },
-            )
-
-            if (state.viewer.isBlocked) {
-                ZillitNotice(text = "You do not have access to the call sheet tool.")
-                return@Column
+                }
             }
-
-            state.error?.let { message ->
-                ZillitNotice(
-                    text = message,
-                    tone = StatusTone.Rejected,
-                    action = {
-                        ZillitButton(
-                            text = "Dismiss",
-                            onClick = { onEvent(CallSheetEvent.DismissError) },
-                            variant = ButtonVariant.Tertiary,
-                            size = ButtonSize.Small,
-                        )
-                    },
-                )
-            }
-
-            ZillitTabStrip(
-                tabs = CallSheetDestination.entries
-                    .filter { it.visibleTo(state.viewer) }
-                    .map { ZillitTab(id = it.name, label = it.label) },
-                activeId = state.destination.name,
-                onSelect = { id ->
-                    onEvent(CallSheetEvent.Open(CallSheetDestination.valueOf(id)))
-                },
-            )
-
-            if (state.destination == CallSheetDestination.Approvals) {
-                ZillitTabStrip(
-                    tabs = ApprovalBucket.entries.map { ZillitTab(id = it.name, label = it.label) },
-                    activeId = state.bucket.name,
-                    onSelect = { id ->
-                        onEvent(CallSheetEvent.OpenBucket(ApprovalBucket.valueOf(id)))
-                    },
-                )
-            }
-    }
-}
-
-@Composable
-private fun SheetList(state: CallSheetUiState, onEvent: (CallSheetEvent) -> Unit) {
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        items(state.listFor, key = { it.id }) { sheet ->
-            SheetRow(state = state, sheet = sheet, onEvent = onEvent)
+            ZillitScrollRail(scroll, Modifier.align(Alignment.CenterEnd))
         }
     }
 }
 
 @Composable
-private fun SheetRow(
-    state: CallSheetUiState,
-    sheet: CallSheetSummary,
-    onEvent: (CallSheetEvent) -> Unit,
-) {
-    ZillitSectionCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            Column(Modifier.weight(1f)) {
-                ZillitText(
-                    text = sheet.name.ifBlank { "Call sheet ${sheet.serialNo}" },
-                    style = ZillitTheme.typography.titleSmall,
-                )
-                ZillitText(
-                    text = listOf(sheet.serialNo, sheet.createdBy)
-                        .filter { it.isNotBlank() }
-                        .joinToString("  ·  "),
-                    style = ZillitTheme.typography.bodySmall,
-                    color = ZillitTheme.colors.textMuted,
-                )
-            }
-            ZillitStatusPill(label = sheet.status.label, tone = sheet.status.tone)
-            RowActions(state = state, sheet = sheet, onEvent = onEvent)
-        }
-    }
-}
-
-@Composable
-private fun RowActions(
-    state: CallSheetUiState,
-    sheet: CallSheetSummary,
-    onEvent: (CallSheetEvent) -> Unit,
-) {
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        ZillitButton(
-            text = "View",
-            onClick = { onEvent(CallSheetEvent.ViewPdf(sheet.id, sheet.name)) },
-            variant = ButtonVariant.Tertiary,
-            size = ButtonSize.Small,
+private fun NoAccess() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            "You do not have access to call sheets on this production.",
+            style = sheetText(14.sp),
+            color = SheetTheme.colors.textTertiary,
+            textAlign = TextAlign.Center,
         )
-        if (state.viewer.canAuthor && !sheet.status.locked) {
-            ZillitButton(
-                text = "Edit",
-                onClick = { onEvent(CallSheetEvent.EditSheet(sheet.id)) },
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Small,
-            )
-        }
-        if (state.viewer.canAuthor && sheet.status == CallSheetStatus.Draft) {
-            ZillitButton(
-                text = "Send",
-                onClick = { onEvent(CallSheetEvent.OpenSend(sheet.id, sheet.name)) },
-                size = ButtonSize.Small,
-            )
-            ZillitButton(
-                text = "Delete",
-                onClick = { onEvent(CallSheetEvent.DeleteSheet(sheet.id)) },
-                variant = ButtonVariant.Danger,
-                size = ButtonSize.Small,
-            )
-        }
-        if (state.bucket == ApprovalBucket.Received &&
-            state.destination == CallSheetDestination.Approvals &&
-            sheet.status.reviewInFlight
-        ) {
-            ZillitButton(
-                text = "Approve",
-                onClick = { onEvent(CallSheetEvent.Approve(sheet.id)) },
-                size = ButtonSize.Small,
-                loading = state.busy,
-            )
-            ZillitButton(
-                text = "Reject",
-                onClick = { onEvent(CallSheetEvent.Reject(sheet.id, "")) },
-                variant = ButtonVariant.Danger,
-                size = ButtonSize.Small,
-            )
-        }
-        if (state.viewer.canAuthor && sheet.status == CallSheetStatus.ApprovedForPublish) {
-            ZillitButton(
-                text = "Publish",
-                onClick = { onEvent(CallSheetEvent.OpenPublish(sheet.id, sheet.name)) },
-                size = ButtonSize.Small,
-            )
-        }
-        Spacer(Modifier)
     }
 }
-
-internal val CallSheetStatus.tone: StatusTone
-    get() = when (this) {
-        CallSheetStatus.Draft -> StatusTone.Neutral
-        CallSheetStatus.PendingInternalApproval, CallSheetStatus.PendingApproval -> StatusTone.Pending
-        CallSheetStatus.InternalApproved -> StatusTone.Progress
-        CallSheetStatus.ApprovedForPublish -> StatusTone.Ready
-        CallSheetStatus.Published -> StatusTone.Done
-        CallSheetStatus.ApprovalRejected -> StatusTone.Rejected
-        CallSheetStatus.Deleted, CallSheetStatus.Unknown -> StatusTone.Neutral
-    }

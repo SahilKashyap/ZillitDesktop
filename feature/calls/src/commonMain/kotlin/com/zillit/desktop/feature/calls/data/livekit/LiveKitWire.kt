@@ -75,12 +75,46 @@ sealed interface LiveKitEvent {
     /** The call is over for everyone. */
     data class Ended(val reason: String) : LiveKitEvent
 
-    /** The host removed this participant. */
-    data class Removed(val callId: String) : LiveKitEvent
+    /** The host removed this participant; [byName] is who, when the server said. */
+    data class Removed(val callId: String, val byName: String = "") : LiveKitEvent
 
-    /** A participant's state in the roster moved (`callUserStateChanged`). */
-    data class UserState(val callId: String, val userId: String, val displayName: String, val status: CallStatus) :
-        LiveKitEvent
+    /**
+     * A participant's state in the roster moved (`callUserStateChanged`).
+     * [onHold] and [isGuest] ride along as the web reads them; a null hold
+     * means the event did not say.
+     */
+    data class UserState(
+        val callId: String,
+        val userId: String,
+        val displayName: String,
+        val status: CallStatus,
+        val isGuest: Boolean = false,
+        val image: String = "",
+    ) : LiveKitEvent
+
+    /** Someone threw an emoji — our own come back too, and float only then (`callReaction`). */
+    data class Reaction(val callId: String, val userId: String, val emoji: String) : LiveKitEvent
+
+    /** Someone put the call on hold, or took it off (`callHeld` / `callResumed`). */
+    data class Held(val callId: String, val userId: String, val onHold: Boolean) : LiveKitEvent
+
+    /** The host lowered exactly these hands (`handsLowered`); never anyone else's. */
+    data class HandsLowered(val callId: String, val userIds: List<String>) : LiveKitEvent
+
+    /** The host blocked or unblocked one participant's chat (`chatBlockChanged`). */
+    data class ChatBlock(val callId: String, val userId: String, val blocked: Boolean) : LiveKitEvent
+
+    /** The host changed the call's controls (`callPolicyChanged`). */
+    data class PolicyChanged(val callId: String, val policy: LiveKitCallPolicy) : LiveKitEvent
+
+    /** A one-shot cooperative host broadcast: `muteAll`, `clearBackgrounds`, `lowerHands`. */
+    data class HostAction(val callId: String, val action: String) : LiveKitEvent
+
+    /** A link guest is knocking (`guestKnocking`) — one chime, one toast. */
+    data class GuestKnocking(val callId: String, val guestId: String, val name: String) : LiveKitEvent
+
+    /** Everyone waiting at the door right now (`guestListChanged`). */
+    data class GuestList(val callId: String, val guests: List<LiveKitGuest>) : LiveKitEvent
 
     data class ParticipantJoined(val userId: String, val displayName: String) : LiveKitEvent
 
@@ -89,11 +123,94 @@ sealed interface LiveKitEvent {
     /** The server's list of calls this user is in or invited to — the heartbeat's answer, or its own broadcast. */
     data class ActiveCalls(val calls: List<LiveKitActiveCall>) : LiveKitEvent
 
-    data class Notice(val text: String) : LiveKitEvent
+    /** A server broadcast for the user to read; sticky ones stay until dismissed. */
+    data class Notice(val text: String, val warning: Boolean = false, val sticky: Boolean = false) : LiveKitEvent
 }
 
-/** One call on the server's active list: who is actually in it, as opposed to invited. */
-data class LiveKitActiveCall(val callId: String, val inCallUserIds: List<String>)
+/** A link guest waiting to be admitted. */
+data class LiveKitGuest(val guestId: String, val name: String)
+
+/**
+ * The host's call-level controls (`CallPolicy` in the web's protocol).
+ *
+ * Every restriction only bites while [on] is true, and the defaults are the
+ * permissive ones, so a call with no policy behaves as one with none.
+ * [reactionsAllowed] is read strictly — an older server omits it, and absent
+ * must mean allowed or reactions vanish against a server that predates them.
+ */
+data class LiveKitCallPolicy(
+    val on: Boolean = false,
+    val chatEnabled: Boolean = true,
+    val bgEffectsAllowed: Boolean = true,
+    val screenShareLocked: Boolean = false,
+    val linkJoinEnabled: Boolean = true,
+    val handRaiseAllowed: Boolean = true,
+    val recordingAllowed: Boolean = true,
+    val reactionsAllowed: Boolean = true,
+) {
+    /** The restrictions that apply to someone who is not the host. */
+    val chatOff: Boolean get() = on && !chatEnabled
+    val shareLocked: Boolean get() = on && screenShareLocked
+    val linkOff: Boolean get() = on && !linkJoinEnabled
+    val handsOff: Boolean get() = on && !handRaiseAllowed
+    val recordingOff: Boolean get() = on && !recordingAllowed
+    val reactionsOff: Boolean get() = on && !reactionsAllowed
+    val backgroundsOff: Boolean get() = on && !bgEffectsAllowed
+
+    /** The wire's keys, for a `setCallPolicy` patch. */
+    fun toPatch(): Map<String, Boolean> = mapOf(
+        "on" to on,
+        "chatEnabled" to chatEnabled,
+        "bgEffectsAllowed" to bgEffectsAllowed,
+        "screenShareLocked" to screenShareLocked,
+        "linkJoinEnabled" to linkJoinEnabled,
+        "handRaiseAllowed" to handRaiseAllowed,
+        "recordingAllowed" to recordingAllowed,
+        "reactionsAllowed" to reactionsAllowed,
+    )
+}
+
+/** `{on, chatEnabled, …}` — absent flags keep their permissive default. */
+fun readLiveKitPolicy(obj: JsonObject?): LiveKitCallPolicy {
+    val base = LiveKitCallPolicy()
+    obj ?: return base
+    return LiveKitCallPolicy(
+        on = obj.bool("on") ?: base.on,
+        chatEnabled = obj.bool("chatEnabled") ?: base.chatEnabled,
+        bgEffectsAllowed = obj.bool("bgEffectsAllowed") ?: base.bgEffectsAllowed,
+        screenShareLocked = obj.bool("screenShareLocked") ?: base.screenShareLocked,
+        linkJoinEnabled = obj.bool("linkJoinEnabled") ?: base.linkJoinEnabled,
+        handRaiseAllowed = obj.bool("handRaiseAllowed") ?: base.handRaiseAllowed,
+        recordingAllowed = obj.bool("recordingAllowed") ?: base.recordingAllowed,
+        reactionsAllowed = obj.bool("reactionsAllowed") ?: base.reactionsAllowed,
+    )
+}
+
+/**
+ * One call on the server's active list (`ActiveCallInfo`): what it is, who
+ * started it, and who is actually in it as opposed to invited. The Calls tab
+ * draws Join / Switch here / Return from this and nothing else.
+ */
+data class LiveKitActiveCall(
+    val callId: String,
+    val inCallUserIds: List<String>,
+    val callType: CallType = CallType.Audio,
+    val callMode: CallMode = CallMode.Private,
+    val chatRoomId: String = "",
+    val chatRoomName: String = "",
+    val projectId: String = "",
+    val callerId: String = "",
+    val callerName: String = "",
+    /** Everyone involved — rung, joined or left — so a member of the call can find it. */
+    val userIds: List<String> = emptyList(),
+    /** Who is in the room, named, for the join-confirm sheet. */
+    val inCallUsers: List<Pair<String, String>> = emptyList(),
+) {
+    val inCallCount: Int get() = inCallUsers.size.takeIf { it > 0 } ?: inCallUserIds.size
+
+    /** The room's name, else the caller's — what the Calls tab titles it. */
+    val title: String get() = chatRoomName.ifBlank { callerName }.ifBlank { "Ongoing call" }
+}
 
 /**
  * `{calls: [{callId, inCallUsers: [{userId}]}]}` — the `listActiveCalls`
@@ -103,8 +220,24 @@ fun readActiveCalls(obj: JsonObject): List<LiveKitActiveCall> =
     (obj["calls"] as? JsonArray).orEmpty().mapNotNull { call ->
         val row = call as? JsonObject ?: return@mapNotNull null
         val callId = row.text("callId") ?: return@mapNotNull null
-        val inCall = (row["inCallUsers"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.text("userId") }
-        LiveKitActiveCall(callId, inCall)
+        val inCall = (row["inCallUsers"] as? JsonArray).orEmpty().mapNotNull { user ->
+            val obj = user as? JsonObject ?: return@mapNotNull null
+            val id = obj.text("userId") ?: return@mapNotNull null
+            id to obj.text("displayName").orEmpty()
+        }
+        LiveKitActiveCall(
+            callId = callId,
+            inCallUserIds = inCall.map { it.first },
+            callType = CallType.ofWire(row.text("callType")),
+            callMode = CallMode.ofWire(row.text("callMode")),
+            chatRoomId = row.text("chatRoomId").orEmpty(),
+            chatRoomName = row.text("chatRoomName").orEmpty(),
+            projectId = row.text("projectId").orEmpty(),
+            callerId = row.text("callerId").orEmpty(),
+            callerName = row.text("callerName").orEmpty(),
+            userIds = (row["userIds"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull },
+            inCallUsers = inCall,
+        )
     }
 
 /** An `incomingCall` event: who is calling, on which production, and the room to join. */
@@ -191,7 +324,8 @@ fun liveKitRequestFrame(type: String, reqId: String, fields: JsonObject): String
         fields.forEach { (key, value) -> put(key, value) }
     }.toString()
 
-@Suppress("CyclomaticComplexMethod") // One branch per event type; the whole vocabulary in one place is the point.
+// One branch per event type; the whole vocabulary in one place is the point.
+@Suppress("CyclomaticComplexMethod", "LongMethod")
 private fun readEvent(type: String, obj: JsonObject): LiveKitEvent? = when (type) {
     "incomingCall" -> readInvite(obj)?.let(LiveKitEvent::IncomingCall)
     "callRinging" -> ringState(obj, CallStatus.Ringing)
@@ -202,19 +336,64 @@ private fun readEvent(type: String, obj: JsonObject): LiveKitEvent? = when (type
     "callCancelled" -> obj.text("callId")?.let(LiveKitEvent::Cancelled)
     "callHandledElsewhere" -> obj.text("callId")?.let(LiveKitEvent::HandledElsewhere)
     "callEnded" -> LiveKitEvent.Ended(obj.text("reason").orEmpty())
-    "removedFromCall" -> obj.text("callId")?.let(LiveKitEvent::Removed)
+    "removedFromCall" -> obj.text("callId")?.let {
+        LiveKitEvent.Removed(it, (obj["by"] as? JsonObject)?.text("displayName").orEmpty())
+    }
     "callUserStateChanged" -> LiveKitEvent.UserState(
         callId = obj.text("callId").orEmpty(),
         userId = obj.text("userId") ?: return null,
         displayName = obj.text("displayName").orEmpty(),
         status = userStateStatus(obj.text("state")) ?: return null,
+        isGuest = obj.bool("isGuest") ?: obj.text("userId").orEmpty().startsWith(GUEST_PREFIX),
+        image = obj.picture().orEmpty(),
+    )
+    "callReaction" -> LiveKitEvent.Reaction(
+        callId = obj.text("callId") ?: return null,
+        userId = obj.text("userId") ?: return null,
+        emoji = obj.text("emoji") ?: return null,
+    )
+    "callHeld", "callResumed" -> LiveKitEvent.Held(
+        callId = obj.text("callId") ?: return null,
+        userId = obj.text("userId") ?: return null,
+        onHold = type == "callHeld",
+    )
+    "handsLowered" -> LiveKitEvent.HandsLowered(
+        callId = obj.text("callId") ?: return null,
+        userIds = (obj["userIds"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull },
+    )
+    "chatBlockChanged" -> LiveKitEvent.ChatBlock(
+        callId = obj.text("callId") ?: return null,
+        userId = obj.text("userId") ?: return null,
+        blocked = obj.bool("blocked") ?: false,
+    )
+    "callPolicyChanged" -> LiveKitEvent.PolicyChanged(
+        callId = obj.text("callId") ?: return null,
+        policy = readLiveKitPolicy(obj["policy"] as? JsonObject),
+    )
+    "hostAction" -> LiveKitEvent.HostAction(
+        callId = obj.text("callId") ?: return null,
+        action = obj.text("action") ?: return null,
+    )
+    "guestKnocking" -> LiveKitEvent.GuestKnocking(
+        callId = obj.text("callId") ?: return null,
+        guestId = obj.text("guestId") ?: return null,
+        name = obj.text("name").orEmpty(),
+    )
+    "guestListChanged" -> LiveKitEvent.GuestList(
+        callId = obj.text("callId") ?: return null,
+        guests = (obj["guests"] as? JsonArray).orEmpty().mapNotNull { row ->
+            val guest = row as? JsonObject ?: return@mapNotNull null
+            LiveKitGuest(guest.text("guestId") ?: return@mapNotNull null, guest.text("name").orEmpty())
+        },
     )
     "participantJoined" -> (obj["participant"] as? JsonObject)?.let { p ->
         LiveKitEvent.ParticipantJoined(p.text("userId") ?: return null, p.text("displayName").orEmpty())
     }
     "participantLeft" -> obj.text("userId")?.let(LiveKitEvent::ParticipantLeft)
     "activeCallsChanged" -> LiveKitEvent.ActiveCalls(readActiveCalls(obj))
-    "notice" -> obj.text("text")?.let(LiveKitEvent::Notice)
+    "notice" -> obj.text("text")?.let {
+        LiveKitEvent.Notice(it, warning = obj.text("level") == "warning", sticky = obj.bool("sticky") ?: false)
+    }
     else -> null
 }
 
@@ -306,9 +485,18 @@ fun readLiveKitRoster(data: JsonElement?, callerId: String): List<CallParticipan
             name = state.text("displayName").orEmpty(),
             image = state.picture().orEmpty(),
             status = if (userId == callerId && status == CallStatus.InCall) CallStatus.Caller else status,
+            // Omitted when not on hold — read absent as false, never unknown.
+            onHold = state.bool("onHold") ?: false,
+            isGuest = state.bool("isGuest") ?: userId.startsWith(GUEST_PREFIX),
+            // Spellings vary by backend; the web reads all three.
+            designation = state.text("designationName") ?: state.text("designation_name")
+                ?: state.text("designation").orEmpty(),
         )
     }
 }
+
+/** Link guests are minted as `guest_<id>`; the tiles chip them off the prefix even when the roster forgets to. */
+const val GUEST_PREFIX = "guest_"
 
 /**
  * A profile picture is either a string or an S3 object `{media, bucket, region}`;
@@ -326,5 +514,9 @@ internal fun JsonObject.text(key: String): String? =
     (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
 
 internal fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.intOrNull
+
+/** A JSON boolean, or the string spelling of one — some rows stringify their flags. */
+internal fun JsonObject.bool(key: String): Boolean? =
+    (this[key] as? JsonPrimitive)?.let { it.booleanOrNull ?: it.contentOrNull?.toBooleanStrictOrNull() }
 
 internal val LIVEKIT_JSON = Json { ignoreUnknownKeys = true; isLenient = true }

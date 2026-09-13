@@ -70,6 +70,9 @@ fun CallStage(
         ) {
             CallTopBar(state, onEvent, videoAvailable)
             NoticeBanner(state, onEvent)
+            // A second ring, in the column with the banners: outside the
+            // video rectangle, or it would never be drawn.
+            state.secondCall?.let { CallSecondCallBanner(it, onEvent) }
             StageBody(
                 state = state,
                 onEvent = onEvent,
@@ -150,44 +153,83 @@ private fun StageBody(
                 if (state.tiles.size <= 1) WaitingForOthers()
             }
         }
-        // At most one is open at a time in practice, but they are independent
-        // toggles: opening two just splits the width, rather than one of them
-        // silently winning.
-        if (state.rosterOpen) {
-            CallRosterPanel(
-                tiles = state.tiles,
-                modifier = Modifier.width(ROSTER_WIDTH).fillMaxSize(),
-            )
-        }
-        if (state.addPeopleOpen) {
-            CallAddPeoplePanel(
-                crew = state.addableCrew,
-                onPick = { onEvent(CallEvent.AddPerson(it)) },
-                modifier = Modifier.width(ROSTER_WIDTH).fillMaxSize(),
-            )
-        }
-        if (state.audioPickerOpen) {
-            CallDevicePanel(
-                devices = state.devices,
-                onChooseMicrophone = { onEvent(CallEvent.ChooseMicrophone(it)) },
-                onChooseSpeaker = { onEvent(CallEvent.ChooseSpeaker(it)) },
-                modifier = Modifier.width(ROSTER_WIDTH).fillMaxSize(),
-            )
-        }
-        if (state.moreOpen) {
-            CallMorePanel(
-                state = state,
-                onEvent = onEvent,
-                modifier = Modifier.width(ROSTER_WIDTH).fillMaxSize(),
-            )
-        }
-        if (state.chatOpen) {
-            CallChatPanel(
-                lines = state.chat,
-                onSend = { onEvent(CallEvent.SendChat(it)) },
-                modifier = Modifier.width(ROSTER_WIDTH).fillMaxSize(),
-            )
-        }
+        SidePanels(state, onEvent)
+    }
+}
+
+/**
+ * Whatever is open beside the picture. At most one in practice, but they
+ * are independent toggles: opening two just splits the width, rather than
+ * one of them silently winning.
+ */
+@Composable
+private fun SidePanels(state: CallUiState, onEvent: (CallEvent) -> Unit) {
+    val panel = Modifier.width(ROSTER_WIDTH).fillMaxSize()
+    if (state.rosterOpen) {
+        CallRosterPanel(
+            tiles = state.tiles,
+            modifier = panel,
+            state = state,
+            onEvent = onEvent,
+        )
+    }
+    if (state.hostControlsOpen && state.isHost) {
+        CallHostControlsPanel(
+            policy = state.line3.policy,
+            onPolicy = { onEvent(CallEvent.SetCallPolicy(it)) },
+            onAction = { onEvent(CallEvent.HostAction(it)) },
+            onClose = { onEvent(CallEvent.ToggleHostControls) },
+            modifier = panel,
+        )
+    }
+    if (state.guestsOpen) {
+        CallGuestsPanel(
+            guests = state.line3.pendingGuests,
+            onAdmit = { onEvent(CallEvent.AdmitGuest(it)) },
+            onDecline = { onEvent(CallEvent.DeclineGuest(it)) },
+            onClose = { onEvent(CallEvent.ToggleGuests) },
+            modifier = panel,
+        )
+    }
+    if (state.addPeopleOpen) {
+        CallAddPeoplePanel(
+            crew = state.addableCrew,
+            onPick = { onEvent(CallEvent.AddPerson(it)) },
+            modifier = panel,
+        )
+    }
+    ToolPanels(state, onEvent, panel)
+}
+
+/** The device list, the ⋮ rows and the chat — the panels about the call rather than its people. */
+@Composable
+private fun ToolPanels(state: CallUiState, onEvent: (CallEvent) -> Unit, panel: Modifier) {
+    if (state.audioPickerOpen) {
+        CallDevicePanel(
+            devices = state.devices,
+            onChooseMicrophone = { onEvent(CallEvent.ChooseMicrophone(it)) },
+            onChooseSpeaker = { onEvent(CallEvent.ChooseSpeaker(it)) },
+            modifier = panel,
+        )
+    }
+    if (state.moreOpen) {
+        CallMorePanel(
+            state = state,
+            onEvent = onEvent,
+            modifier = panel,
+        )
+    }
+    if (state.chatOpen) {
+        CallChatPanel(
+            lines = state.chat,
+            onSend = { onEvent(CallEvent.SendChat(it)) },
+            modifier = panel,
+            lockedReason = when {
+                state.chatLocked -> "The host has turned chat off"
+                state.selfChatBlocked -> "The host blocked you from chat"
+                else -> null
+            },
+        )
     }
 }
 
@@ -212,10 +254,12 @@ private fun CallTopBar(state: CallUiState, onEvent: (CallEvent) -> Unit, videoAv
         CallTimer(state)
         TitlePill(state)
         ConnectionPill(state, videoAvailable)
+        HoldPill(state, onEvent)
         RecordingPill(state)
         HandPill(state, onEvent)
         Box(modifier = Modifier.weight(1f))
         NetworkPip(quality = state.media.selfQuality, showLabel = false)
+        GuestsPill(state, onEvent)
         PeopleButton(state, onEvent)
         WindowControls(state = state, onEvent = onEvent)
     }
@@ -320,6 +364,63 @@ private fun StatusPill(text: String, background: Color, foreground: Color, icon:
             Box(modifier = Modifier.size(BANNER_DOT).clip(CircleShape).background(foreground))
         }
         ZillitText(text = text, style = ZillitTheme.typography.labelSmall, color = foreground, maxLines = 1)
+    }
+}
+
+/**
+ * MY hold, with Resume on the pill (`CallRoom.tsx:1394-1403`): the tiles
+ * badge everyone else's, and the action that undoes the state belongs where
+ * the state is announced, not buried back in the ⋮ menu.
+ */
+@Composable
+private fun HoldPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
+    if (!state.onHold) return
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(PILL_CORNER))
+            .background(CallPalette.amberSoft)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitIcon(icon = ZillitIcons.Pause, contentDescription = null, tint = CallPalette.onAccent, size = PILL_ICON)
+        ZillitText(text = "Call on hold", style = ZillitTheme.typography.labelSmall, color = CallPalette.onAccent)
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(PILL_CORNER))
+                .background(CallPalette.onAccent)
+                .clickable { onEvent(CallEvent.ToggleHold) }
+                .padding(horizontal = ZillitTheme.spacing.sm, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            ZillitIcon(
+                icon = ZillitIcons.Play,
+                contentDescription = null,
+                tint = CallPalette.amberSoft,
+                size = RESUME_ICON,
+            )
+            ZillitText(text = "Resume", style = ZillitTheme.typography.labelSmall, color = CallPalette.amberSoft)
+        }
+    }
+}
+
+/**
+ * Guests at the door — a labelled pill with a count, not a bare glyph
+ * (`CallRoom.tsx:1447-1470`): "someone outside the project wants in" is a
+ * decision, and a tiny icon with a dot was routinely missed.
+ */
+@Composable
+private fun GuestsPill(state: CallUiState, onEvent: (CallEvent) -> Unit) {
+    val waiting = state.line3.pendingGuests.size
+    if (waiting == 0) return
+    Box(modifier = Modifier.clickable { onEvent(CallEvent.ToggleGuests) }) {
+        StatusPill(
+            text = "External request${if (waiting > 1) "s" else ""} · $waiting",
+            background = if (state.guestsOpen) CallPalette.accent else CallPalette.control,
+            foreground = if (state.guestsOpen) CallPalette.onAccent else CallPalette.text,
+            icon = ZillitIcons.UserPlus,
+        )
     }
 }
 
@@ -507,5 +608,6 @@ private val COUNT_BADGE = 17.dp
 private val BADGE_FONT = 10.sp
 private val BANNER_CORNER = 10.dp
 private val BANNER_DOT = 8.dp
+private val RESUME_ICON = 11.dp
 
 /** How long the picture goes untouched before the chrome steps aside. */

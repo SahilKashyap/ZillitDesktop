@@ -36,6 +36,12 @@ data class CallTile(
     val media: TileMedia? = null,
     /** Their hand is up — drawn on the tile as well as said in the banner. */
     val hand: Boolean = false,
+    /** Line 3: on hold — in the room, sending and hearing nothing. */
+    val onHold: Boolean = false,
+    /** Line 3: a link guest, chipped as such. */
+    val isGuest: Boolean = false,
+    /** Job title under the name, where the roster reports one. */
+    val designation: String = "",
 )
 
 private val ON_STAGE = setOf(CallStatus.Caller, CallStatus.Ringing, CallStatus.InCall)
@@ -158,6 +164,9 @@ private fun rosterTile(
             TileMedia(uid in media.speaking, it.audioMuted, it.videoOn, it.sharing, it.quality)
         },
         hand = person.handRaised,
+        onHold = person.onHold && person.status.isConnected,
+        isGuest = person.isGuest,
+        designation = person.designation,
     )
 
 private fun selfTile(

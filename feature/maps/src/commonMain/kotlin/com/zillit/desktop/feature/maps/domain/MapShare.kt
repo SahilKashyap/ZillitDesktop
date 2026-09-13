@@ -181,6 +181,18 @@ data class GeocodedPlace(val address: String, val components: List<GeoComponent>
             ?: first("route")
             ?: firstLine
 
+    /**
+     * The city this point is in — the Cities panel's Current Location card
+     * (`Sidebar.jsx`): the locality, else the postal town, else the district,
+     * else the region, else the whole address.
+     */
+    val cityName: String
+        get() = first("locality")
+            ?: first("postal_town")
+            ?: first("administrative_area_level_2")
+            ?: first("administrative_area_level_1")
+            ?: address.ifBlank { "Current Location" }
+
     private val firstLine: String get() = address.substringBefore(',')
 
     /** The first component carrying any of [types], in Google's order. */

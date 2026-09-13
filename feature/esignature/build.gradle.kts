@@ -18,6 +18,7 @@ kotlin {
             implementation(project(":core:permissions"))
             implementation(project(":core:workspace"))
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.kotlinx.datetime)
         }
         commonTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)

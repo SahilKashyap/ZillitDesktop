@@ -95,6 +95,18 @@ fun CallOverlay(
             CallVideoLayer(slot, videoSurface)
         }
 
+        // The second ring reaches the main window too, where the call is
+        // only a pill: the stage draws its own copy inside its column.
+        val stageDrawn = state.phase == CallPhase.InCall && drawsStage(ownsCall, state.pipOpen, state.expanded)
+        val waiting = state.secondCall
+        if (waiting != null && !stageDrawn) {
+            CallSecondCallBanner(
+                waiting = waiting,
+                onEvent = onEvent,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = ZillitTheme.spacing.xl),
+            )
+        }
+
         state.endedNotice?.let { notice ->
             EndedNotice(
                 text = notice,

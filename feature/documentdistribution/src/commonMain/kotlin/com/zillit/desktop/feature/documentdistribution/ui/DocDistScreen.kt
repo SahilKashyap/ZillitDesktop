@@ -32,6 +32,7 @@ import com.zillit.desktop.feature.documentdistribution.ui.pages.DocDistPromptDia
 import com.zillit.desktop.feature.documentdistribution.ui.pages.HistoryPage
 import com.zillit.desktop.feature.documentdistribution.ui.pages.LibraryPage
 import com.zillit.desktop.feature.documentdistribution.ui.pages.ListsPage
+import com.zillit.desktop.feature.documentdistribution.ui.pages.TemplateEditorDialog
 import com.zillit.desktop.feature.documentdistribution.ui.pages.TemplatesPage
 
 /**
@@ -76,8 +77,12 @@ fun DocDistScreen(
             }
         }
 
-        DocDistPromptDialog(state.prompt, onEvent)
+        // Dialogs any page can raise: the composer is opened from the
+        // address book and the lists too, and its "save as template" from
+        // wherever it sits.
         ComposerDialog(state, onEvent)
+        TemplateEditorDialog(state, onEvent)
+        DocDistPromptDialog(state.prompt, onEvent)
 
         ZillitToast(
             message = state.notice,

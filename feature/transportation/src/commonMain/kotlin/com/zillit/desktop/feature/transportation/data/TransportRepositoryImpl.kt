@@ -7,6 +7,7 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.feature.transportation.domain.DriverDetailsUpdate
 import com.zillit.desktop.feature.transportation.domain.LicenceRequest
 import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
@@ -71,6 +72,9 @@ class TransportRepositoryImpl(
     /** `project/users` on the core host — the driver flags live there. */
     private val users = config.apiV2() + "project/users"
 
+    /** `access/users` on the core host — who may open the tool. */
+    private val access = config.apiV2() + "access/users"
+
     // Vehicles ---------------------------------------------------------------
 
     override suspend fun vehicles(): ZillitResult<List<Vehicle>> =
@@ -99,6 +103,14 @@ class TransportRepositoryImpl(
             buildJsonObject { put("vehicleIds", buildJsonArray { ids.forEach { add(JsonPrimitive(it)) } }) },
         )
 
+    override suspend fun createTempDriverVehicle(userId: String, draft: VehicleDraft): ZillitResult<Vehicle?> =
+        apiClient.envelope(
+            HttpVerb.Post,
+            "$base/driver/temporary-driver-vehicle",
+            RequestModule.ProjectUser,
+            tempDriverVehicleWire(userId, draft),
+        ).mapData { parseVehicle(it as? JsonObject) }
+
     // Drivers ----------------------------------------------------------------
 
     override suspend fun driverDesignations(): ZillitResult<List<String>> =
@@ -116,21 +128,24 @@ class TransportRepositoryImpl(
             (data as? JsonArray).items().mapNotNull { (it as? JsonPrimitive)?.content }
         }
 
-    override suspend fun updateDriver(
-        userId: String,
-        vehicleId: String?,
-        isTempDriver: Boolean?,
-        isTripAssigned: Boolean?,
-    ): ZillitResult<Unit> = write(
-        HttpVerb.Put,
-        "$base/driver/update-details",
-        buildJsonObject {
-            put("user_id", userId)
-            vehicleId?.let { put("vehicle_id", it) }
-            isTempDriver?.let { put("is_temp_driver", it) }
-            isTripAssigned?.let { put("is_trip_assigned", it) }
-        },
-    )
+    /**
+     * `GET access/users?toolIdentifier=transportation_tool&viewing_access=true`
+     * — the web's `fetchuserapproveringrights({ view_access: true })`. The
+     * answer is an id array; ids that arrive as objects read by `user_id`.
+     */
+    override suspend fun viewingRightUserIds(): ZillitResult<Set<String>> =
+        get(access, mapOf("toolIdentifier" to TOOL, "viewing_access" to "true")).mapData { data ->
+            (data as? JsonArray).items().mapNotNullTo(mutableSetOf()) { element ->
+                when (element) {
+                    is JsonPrimitive -> element.content.takeIf { it.isNotBlank() }
+                    is JsonObject -> element.text("user_id", "_id").takeIf { it.isNotBlank() }
+                    else -> null
+                }
+            }
+        }
+
+    override suspend fun updateDriverDetails(update: DriverDetailsUpdate): ZillitResult<Unit> =
+        write(HttpVerb.Put, "$base/driver/update-details", driverDetailsWire(update))
 
     override suspend fun pendingDocumentReminder(userId: String, type: String, message: String?): ZillitResult<Unit> =
         write(
@@ -278,6 +293,7 @@ class TransportRepositoryImpl(
 
     private companion object {
         const val HTTP_OK = 200
+        const val TOOL = "transportation_tool"
     }
 }
 

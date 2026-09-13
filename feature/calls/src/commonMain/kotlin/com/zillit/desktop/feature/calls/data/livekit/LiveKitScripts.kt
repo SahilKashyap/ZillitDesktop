@@ -38,6 +38,14 @@ object LiveKitScripts {
     fun sendChat(id: String, text: String, atMillis: Long): String =
         "zillitLk.sendChat(${id.js()}, ${text.js()}, $atMillis)"
 
+    fun setHold(on: Boolean): String = "zillitLk.setHold($on)"
+
+    fun setPeerSubscribed(userId: String, video: Boolean, on: Boolean): String =
+        "zillitLk.setPeerSubscribed(${userId.js()}, $video, $on)"
+
+    fun announceHostMute(targetUserId: String, camera: Boolean, byName: String): String =
+        "zillitLk.announceHostMute(${targetUserId.js()}, $camera, ${byName.js()})"
+
     /** A JS string literal: quoted, with the characters that would end it or the script escaped. */
     private fun String.js(): String = buildString {
         append('"')
