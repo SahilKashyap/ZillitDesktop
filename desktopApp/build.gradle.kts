@@ -604,6 +604,63 @@ if (bundleConfig.isPresent) {
     tasks.matching { it.name == "prepareAppResources" }
         .configureEach { dependsOn(stageBundledConfig) }
 
+    // Declaring the config as an INPUT of the image-producing tasks, not just a
+    // dependency edge. Staging it is not enough: when the config is the only
+    // thing that changed, both of these judged themselves up to date and
+    // `packageDmg` re-packaged an app image built around the PREVIOUS config —
+    // a green build whose DMG carried the wrong URLs. Naming the file as an
+    // input is what makes a config-only edit invalidate the image.
+    tasks.matching { it.name == "prepareAppResources" || it.name == "createDistributable" }
+        .configureEach { inputs.file(configFile).withPropertyName("bundledZillitConfig") }
+
+    // Defence in depth for the same failure. The input wiring above should keep
+    // the image fresh, but any future path that rebuilds the app without the
+    // config — a cached image, a hand-run task, a plugin upgrade that drops the
+    // input — puts the wrong endpoints in front of users with nothing failing.
+    // So the packaged bundle is compared with the file it claims to carry, and
+    // a mismatch stops the build instead of shipping.
+    val verifyBundledConfig = tasks.register("verifyBundledConfig") {
+        description = "Fails if the config inside the app image is not the one that was staged."
+        dependsOn("createDistributable")
+
+        // Captured at configuration time: the execution body must not reach
+        // back into the project, or the configuration cache rejects it.
+        val source = configFile
+        val imageDir = layout.buildDirectory.dir("compose/binaries/main/app")
+        inputs.file(source).withPropertyName("stagedZillitConfig")
+
+        doLast {
+            val image = imageDir.get().asFile
+            val packaged = image.walkTopDown().filter { it.name == source.name }.toList()
+
+            check(packaged.isNotEmpty()) {
+                "verifyBundledConfig: -PzillitBundleConfig was requested but no ${source.name} " +
+                    "is inside the app image at ${image.path}. The DMG would start with no " +
+                    "configuration at all."
+            }
+
+            val wanted = source.readBytes()
+            val stale = packaged.filter { !it.readBytes().contentEquals(wanted) }
+            check(stale.isEmpty()) {
+                buildString {
+                    appendLine("verifyBundledConfig: the app image carries a STALE ${source.name}.")
+                    appendLine("Packaging it would ship a build aimed at the wrong servers.")
+                    appendLine()
+                    appendLine("  wanted (${wanted.size} bytes): ${source.path}")
+                    stale.forEach { appendLine("  found  (${it.length()} bytes): ${it.path}") }
+                    appendLine()
+                    append("Delete build/compose/binaries/main/app and package again.")
+                }
+            }
+        }
+    }
+
+    // Every way the image becomes something a person can run or hand over.
+    listOf("packageDmg", "packageDistributionForCurrentOS", "runDistributable", "notarizeDmg")
+        .forEach { consumer ->
+            tasks.matching { it.name == consumer }.configureEach { dependsOn(verifyBundledConfig) }
+        }
+
     logger.lifecycle("Bundling ${configFile.path} inside the app — it will carry its own header key")
 }
 
