@@ -84,10 +84,23 @@ class Line3CoordinatorTest {
         val hands = mutableListOf<Boolean>()
         var mics = mutableListOf<Boolean>()
         var joined = 0
+
+        /** False holds the connect open: the test decides when the room is up. */
+        var autoJoin = true
+        private var pendingIdentity: String? = null
         override suspend fun initialize(): Boolean = true
         override suspend fun join(params: CallJoin) {
             joined++
-            _events.emit(CallEngineEvent.Joined(params.identity, 42))
+            if (autoJoin) {
+                _events.emit(CallEngineEvent.Joined(params.identity, 42))
+            } else {
+                pendingIdentity = params.identity
+            }
+        }
+
+        suspend fun completeJoin() {
+            pendingIdentity?.let { _events.emit(CallEngineEvent.Joined(it, 42)) }
+            pendingIdentity = null
         }
 
         suspend fun push(event: CallEngineEvent) = _events.emit(event)
@@ -389,6 +402,55 @@ class Line3CoordinatorTest {
         assertEquals("c3", h.coordinator.session.value?.callUuid)
         assertEquals(CallPhase.InCall, h.coordinator.phase.value)
         assertEquals(2, h.engine.joined)
+    }
+
+    /**
+     * The server broadcasts `callHandledElsewhere` to every session of the
+     * user, the one that just answered included, and lists us in the call
+     * the moment the accept lands. Neither may end the call taken HERE —
+     * only a ring still up is theirs to dismiss.
+     */
+    @Test
+    fun `answering here survives the server's handled-elsewhere echo and its active list`() = runTest {
+        val h = harness()
+        h.engine.autoJoin = false
+        h.socket.push(ring)
+        runCurrent()
+        h.coordinator.accept()
+        runCurrent()
+        h.socket.answer("acceptCall")
+        runCurrent()
+        assertEquals(CallPhase.InCall, h.coordinator.phase.value, "accepting is the transition")
+        assertEquals(1, h.engine.joined)
+
+        h.socket.push("""{"type":"callHandledElsewhere","callId":"c1"}""")
+        h.socket.push(
+            """{"type":"activeCallsChanged","calls":[{"callId":"c1",
+               "inCallUsers":[{"userId":"vivek","displayName":"Vivek"},{"userId":"me","displayName":"Me"}]}]}""",
+        )
+        h.socket.push("""{"type":"callCancelled","callId":"c1"}""")
+        runCurrent()
+        assertEquals("c1", h.coordinator.session.value?.callUuid, "the call we took survives the ring's dismissals")
+        assertEquals(CallPhase.InCall, h.coordinator.phase.value)
+
+        h.engine.completeJoin()
+        runCurrent()
+        assertEquals(CallPhase.InCall, h.coordinator.phase.value)
+        assertTrue(h.toasts.none { it.startsWith("Missed call") })
+    }
+
+    /** The same list while the ring is still UNanswered here is a late ring: it stops. */
+    @Test
+    fun `a ring the server says we answered elsewhere stops here`() = runTest {
+        val h = harness()
+        h.socket.push(ring)
+        runCurrent()
+        h.socket.push(
+            """{"type":"activeCallsChanged","calls":[{"callId":"c1",
+               "inCallUsers":[{"userId":"vivek","displayName":"Vivek"},{"userId":"me","displayName":"Me"}]}]}""",
+        )
+        runCurrent()
+        assertEquals(CallPhase.Idle, h.coordinator.phase.value)
     }
 
     @Test

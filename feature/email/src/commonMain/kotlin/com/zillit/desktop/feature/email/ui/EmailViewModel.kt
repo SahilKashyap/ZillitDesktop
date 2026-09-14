@@ -1,403 +1,406 @@
 package com.zillit.desktop.feature.email.ui
 
+import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.feature.email.data.FolderSyncResult
 import com.zillit.desktop.feature.email.data.Mailbox
-import com.zillit.desktop.feature.email.data.SyncedPage
-import com.zillit.desktop.feature.email.domain.ComposeMode
-import com.zillit.desktop.feature.email.domain.DeleteIntent
+import com.zillit.desktop.feature.email.domain.ActiveMailbox
+import com.zillit.desktop.feature.email.domain.ConversationViewRepository
 import com.zillit.desktop.feature.email.domain.DraftRepository
-import com.zillit.desktop.feature.email.domain.EmailAttachment
 import com.zillit.desktop.feature.email.domain.EmailDraft
+import com.zillit.desktop.feature.email.domain.EmailFilters
 import com.zillit.desktop.feature.email.domain.EmailFolder
 import com.zillit.desktop.feature.email.domain.EmailMessage
 import com.zillit.desktop.feature.email.domain.EmailRealtimeEvent
 import com.zillit.desktop.feature.email.domain.EmailRepository
-import com.zillit.desktop.feature.email.domain.EmailQuery
 import com.zillit.desktop.feature.email.domain.EmailSummary
-import com.zillit.desktop.feature.email.domain.defaultFolder
-import com.zillit.desktop.feature.email.domain.deleteIntentFor
-import com.zillit.desktop.feature.email.domain.moveTargets
-import com.zillit.desktop.feature.email.domain.forSidebar
+import com.zillit.desktop.feature.email.domain.MailboxDirectory
+import com.zillit.desktop.feature.email.domain.MailboxKind
+import com.zillit.desktop.feature.email.domain.MailboxPreferences
+import com.zillit.desktop.feature.email.domain.SELECTION_LIMIT
+import com.zillit.desktop.feature.email.domain.asThread
+import com.zillit.desktop.feature.email.domain.printableHtml
+import com.zillit.desktop.feature.email.domain.selectionMembers
+import com.zillit.desktop.feature.email.domain.threadMembersByFolder
 import com.zillit.desktop.feature.email.domain.toSummary
-
-data class EmailUiState(
-    val folders: List<EmailFolder> = emptyList(),
-    /**
-     * The badge service's unread per folder (`email_label` grouped by unit,
-     * where the unit is the folder name) — the number the phones badge each
-     * folder with. Distinct from the folder list's IMAP `unread`, which is
-     * the mail server's own count and can disagree with the badge ledger.
-     */
-    val folderBadges: Map<String, Int> = emptyMap(),
-    val selectedFolderName: String? = null,
-    val messages: List<EmailSummary> = emptyList(),
-    val selectedMessageId: String? = null,
-    val thread: List<EmailMessage> = emptyList(),
-    val isLoadingThread: Boolean = false,
-    val isLoadingFolders: Boolean = false,
-    val isLoadingMessages: Boolean = false,
-    /** A background batch is in flight — shown as a footer, not a blank list. */
-    val isLoadingMore: Boolean = false,
-    val hasMore: Boolean = false,
-    /**
-     * Saved drafts, held whole rather than as summaries.
-     *
-     * The composer needs the real thing when one is reopened, and the Drafts
-     * folder is small enough that keeping it in memory costs nothing.
-     */
-    val drafts: List<EmailDraft> = emptyList(),
-    /** Rows ticked for a bulk action. */
-    val selectedIds: Set<String> = emptySet(),
-    /** A destructive action waiting on the user to confirm it. */
-    val pendingConfirm: PendingConfirm? = null,
-    val error: String? = null,
-) {
-    val sidebar: List<EmailFolder> get() = folders.forSidebar()
-
-    val selectedFolder: EmailFolder?
-        get() = folders.firstOrNull { it.name == selectedFolderName } ?: folders.defaultFolder()
-
-    /**
-     * What the list shows when nothing is being searched.
-     *
-     * A live search replaces this with its own results — see [MailSearch]. It
-     * deliberately leaves the folder behind: someone looking for a call sheet
-     * does not know which folder it is in, which is the point of searching, and
-     * a search confined to the open folder is the one that finds nothing and
-     * gets blamed for it.
-     */
-    val visibleMessages: List<EmailSummary> get() = messages
-
-    val openMessage: EmailSummary?
-        get() = messages.firstOrNull { it.id == selectedMessageId }
-
-    /** True when the open folder is Drafts, which behaves differently throughout. */
-    val isViewingDrafts: Boolean
-        get() = selectedFolder?.name.equals(EmailFolder.DRAFTS, ignoreCase = true)
-
-    fun draft(id: String): EmailDraft? = drafts.firstOrNull { it.id == id }
-
-    /** True when the open folder is Trash, where delete destroys rather than moves. */
-    val isViewingTrash: Boolean
-        get() = selectedFolder?.name.equals(EmailFolder.TRASH, ignoreCase = true)
-
-    val selectedMessages: List<EmailSummary>
-        get() = messages.filter { it.id in selectedIds }
-
-    /** Where the selection could be moved to. */
-    val moveTargets: List<EmailFolder> get() = folders.moveTargets(selectedFolderName)
-
-    /**
-     * Selecting rows takes over the toolbar.
-     *
-     * Drafts are excluded: they are not IMAP messages, so moving or trashing
-     * them would address ids the mail endpoints have never heard of.
-     */
-    val isSelecting: Boolean get() = selectedIds.isNotEmpty() && !isViewingDrafts
-}
-
-/** A destructive action the user has been asked to confirm. */
-sealed interface PendingConfirm {
-
-    /** Permanently destroying the selection. Only ever raised from Trash. */
-    data class Destroy(val messageIds: List<String>) : PendingConfirm
-
-    data object EmptyTrash : PendingConfirm
-
-    /**
-     * Deleting a folder, and whatever is in it.
-     *
-     * [cachedCount] is what this machine holds, which is a floor rather than a
-     * total — a folder only partly synced holds more on the server. Worded to
-     * say so, because "delete 12 messages" when it is really 400 is worse than
-     * saying nothing.
-     */
-    data class DeleteFolder(val folder: EmailFolder, val cachedCount: Int) : PendingConfirm
-}
-
-sealed interface EmailEvent {
-    data object Load : EmailEvent
-
-    /** A different production opened; the mailbox starts over. */
-    data object ProjectChanged : EmailEvent
-    data object Refresh : EmailEvent
-
-    /** Anything that acts on one message. */
-    sealed interface Message : EmailEvent
-
-    data object CloseMessage : Message
-
-    /** The list reached its end — fetch the next batch. */
-    data object LoadMore : EmailEvent
-
-    data class SelectFolder(val folderName: String) : EmailEvent
-    data class SelectMessage(val messageId: String) : Message
-    data class QueryChanged(val value: String) : EmailEvent
-
-    /** Narrows the search: fields, folders, read state, attachments. */
-    data class SearchFiltersChanged(val query: EmailQuery) : EmailEvent
-
-    /**
-     * Opens the composer. [replyTo] is null for a new message.
-     *
-     * [addressedTo] and [about] prefill a message the app itself offered to
-     * start — writing to support is the one today — and are ignored for a
-     * reply, which brings its own recipient.
-     */
-    data class Compose(
-        val mode: ComposeMode,
-        val replyTo: EmailMessage? = null,
-        val addressedTo: String = "",
-        val about: String = "",
-    ) : Message
-
-    /** Something changed on the server. */
-    data class Realtime(val event: EmailRealtimeEvent) : EmailEvent
-
-    /** Managing the folder list itself. */
-    sealed interface Folder : EmailEvent
-
-    /** Opens the folder dialog. [folder] is null to create a new one. */
-    data class EditFolder(val folder: EmailFolder? = null) : Folder
-
-    data class FolderNameChanged(val value: String) : Folder
-
-    /** Creates or renames, whichever the dialog was opened for. */
-    data object SaveFolder : Folder
-
-    /** Asks to delete the folder the dialog is editing. */
-    data object DeleteFolder : Folder
-    data object DismissFolderEdit : Folder
-
-    /** Everything to do with ticked rows and acting on them. */
-    sealed interface Selection : EmailEvent
-
-    /** Ticks or unticks a row. */
-    data class ToggleSelection(val messageId: String) : Selection
-    data object ClearSelection : Selection
-
-    /** Trash the selection — or destroy it, when already in Trash. */
-    data object DeleteSelected : Selection
-
-    /** One row's hover action: trash this message without a selection. */
-    data class TrashMessage(val messageId: String) : Selection
-
-    data class MoveSelected(val folderName: String) : Selection
-
-    data object EmptyTrash : Selection
-
-    /** Goes ahead with whatever [EmailUiState.pendingConfirm] holds. */
-    data object ConfirmPending : Selection
-    data object DismissConfirm : Selection
-
-    /** Reopens a saved draft in the composer. */
-    data class EditDraft(val draftId: String) : Message
-
-    /** Fetches an attachment and writes it to the user's Downloads folder. */
-    data class DownloadAttachment(
-        val attachment: EmailAttachment,
-        val messageId: String,
-    ) : Message
-}
-
-sealed interface EmailEffect {
-    /** Hand off to the composer, which is its own ViewModel and its own window. */
-    data class OpenComposer(
-        val mode: ComposeMode,
-        val replyTo: EmailMessage?,
-        /** Prefilled when the app offered to start this message. */
-        val addressedTo: String = "",
-        val about: String = "",
-    ) : EmailEffect
-
-    /** Reopen a saved draft in a composer window. */
-    data class OpenDraft(val draftId: String) : EmailEffect
-}
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 /**
- * Drives the mailbox: folders down the left, messages in the middle, the open
- * conversation on the right.
+ * Drives the mailbox: the switcher and folders down the left, the list in
+ * the middle, the open conversation on the right.
  *
- * Reads from the cache first and syncs behind it, so a folder the user has
- * visited before renders immediately. Composing lives in [ComposeViewModel] —
- * this class is already the busiest thing in the module.
+ * Reads from the cache first and syncs behind it — the whole mailbox, folder
+ * by folder, the way the web's `useEmailSync` does on open — so a folder the
+ * user has visited before renders immediately and conversations can count
+ * the replies that live in other folders. Composing lives in
+ * [ComposeViewModel]; the bulk actions on ticked rows in [MailActions].
  */
+@Suppress("LongParameterList", "TooManyFunctions") // Every collaborator the mailbox talks to; a handler per event.
 class EmailViewModel(
     private val mailbox: Mailbox,
     private val repository: EmailRepository,
     private val draftRepository: DraftRepository,
     /** The folder dialog and its requests — see [FolderEditor]. */
     val folderEditor: FolderEditor,
-    /** The search box, which spans every synced folder — see [MailSearch]. */
-    val search: MailSearch = MailSearch { emptyList() },
     /**
      * The drafts cursor. Required, not defaulted: a wrong clock here asks the
      * server for drafts saved before the epoch and gets nothing back.
      */
     private val nowMillis: () -> Long,
-    /** The badge ledger's two hooks for mail — see [MailBadges]. */
+    /** The badge ledger's hooks for mail — see [MailBadges]. */
     private val badges: MailBadges = MailBadges(),
     /** Attachment downloads, which keep their own state — see [AttachmentDownloader]. */
     val downloader: AttachmentDownloader = AttachmentDownloader(repository, store = null),
-    /** The composers standing on the mailbox's bottom edge — see [ComposerDeck]. */
-    val composers: ComposerDeck = ComposerDeck(),
+    /** Which of the two mailboxes every call addresses; flipped by the switcher. */
+    val activeMailbox: ActiveMailbox = ActiveMailbox(),
+    /** Where the two mailboxes come from; null on a build with one mailbox. */
+    private val directory: MailboxDirectory? = null,
+    private val preferences: MailboxPreferences = MailboxPreferences.None,
+    /** The conversation-view setting of the active mailbox; null hides the dialog. */
+    private val conversationView: ConversationViewRepository? = null,
 ) : ZillitViewModel<EmailUiState, EmailEvent, EmailEffect>(EmailUiState()) {
 
     /** Set when mail arrives mid-sync; drained when that sync finishes. */
-    private var pendingResync = false
+    private var pendingResync: Set<String> = emptySet()
 
-    /**
-     * Syncs currently running.
-     *
-     * Its own counter rather than the `isLoading*` flags: those say which
-     * spinner to show, and once a folder has mail on screen both are false
-     * *while a sync is running* — so guarding on them let a burst of socket
-     * events start a sync each.
-     */
-    private var inFlight = 0
+    /** The full pass in flight, if any — folder events queue behind it. */
+    private var syncJob: Job? = null
 
-    // No eager load: every call carries project and user in its header.
+    /** Which folder was auto-opened, so a folder opens its newest row once, not on every batch. */
+    private var autoOpenedFolder: String? = null
 
+    /** The bulk actions, kept out of this class for its size. */
+    private val actions = MailActions(this)
+
+    /** Messages other screens ask the mailbox to start; the window collects them. */
+    val composeRequests: ComposeRequests = ComposeRequests()
+
+    @Suppress("CyclomaticComplexMethod") // One branch per event; every one delegates.
     override fun onEvent(event: EmailEvent) {
         when (event) {
-            EmailEvent.Load -> loadFolders()
+            EmailEvent.Load -> load()
             EmailEvent.ProjectChanged -> {
                 // The mailbox belongs to the production: folders, the open
                 // message and every selection are the last one's.
+                autoOpenedFolder = null
+                syncJob?.cancel()
                 setState { EmailUiState() }
-                loadFolders()
+                load()
             }
-            EmailEvent.Refresh -> currentState.selectedFolder?.let { syncFolder(it, more = false) }
-            EmailEvent.LoadMore -> loadMore()
-            is EmailEvent.QueryChanged -> search.term(event.value)
-            is EmailEvent.SearchFiltersChanged -> search.filters(event.query)
+            EmailEvent.Refresh -> refresh()
             is EmailEvent.SelectFolder -> selectFolder(event.folderName)
-            is EmailEvent.Selection -> onSelection(event)
+            is EmailEvent.QueryChanged -> setState { copy(searchTerm = event.value).regrouped() }
+            EmailEvent.ToggleSearchAllFolders -> setState { copy(searchAllFolders = !searchAllFolders).regrouped() }
+            is EmailEvent.FiltersChanged -> setState { copy(filters = event.filters).regrouped() }
+            EmailEvent.ClearFilters -> setState { copy(filters = EmailFilters.None).regrouped() }
+            is EmailEvent.Selection -> actions.onSelection(event)
             is EmailEvent.Realtime -> onRealtime(event.event)
             is EmailEvent.Message -> onMessage(event)
             is EmailEvent.Folder -> onFolder(event)
+            is EmailEvent.Mailbox -> onMailbox(event)
+            EmailEvent.OpenConversationDialog -> setState { copy(conversationDialog = true) }
+            EmailEvent.DismissConversationDialog -> setState { copy(conversationDialog = false) }
+            is EmailEvent.ConversationViewChanged -> setConversationView(event.enabled)
+            EmailEvent.DismissError -> setState { copy(error = null) }
+            EmailEvent.DismissNotice -> setState { copy(notice = null) }
         }
     }
 
-    private fun selectFolder(folderName: String) {
-        val folder = currentState.folders.firstOrNull { it.name == folderName } ?: return
+    // -- opening -------------------------------------------------------------
 
+    /**
+     * Opens the mailbox: which mailboxes exist and which is active, then the
+     * cached folders and rows at once, then the full sync behind them.
+     */
+    private fun load() {
+        launch {
+            resolveMailboxes()
+            loadFolders()
+        }
+    }
+
+    /**
+     * The two identities, and the remembered choice between them.
+     *
+     * Read fresh every open: the web refetches the project on entry because
+     * Accounts-department membership changes while the user is elsewhere,
+     * and a stale gate would show a mailbox the user can no longer open —
+     * or hide one they just gained. A remembered Accounts choice with no
+     * Accounts mailbox any more falls back to personal, as the web does.
+     */
+    private suspend fun resolveMailboxes() {
+        val source = directory ?: return
+        val personal = (source.personal() as? ZillitResult.Success)?.data
+        val accounts = (source.accounts() as? ZillitResult.Success)?.data
+        val remembered = preferences.activeMailbox() ?: MailboxKind.Personal
+        val active = if (remembered == MailboxKind.Accounts && accounts != null) remembered else MailboxKind.Personal
+        activeMailbox.switch(active, if (active == MailboxKind.Accounts) accounts else personal)
         setState {
-            // Cached mail shows at once. Unlike the old paged version there is
-            // no empty moment, because the folder's rows are already on disk.
             copy(
-                selectedFolderName = folder.name,
-                messages = mailbox.cachedMessages(folder.name),
-                selectedMessageId = null,
-                thread = emptyList(),
-                error = null,
+                mailboxes = mailboxes.copy(personal = personal, accounts = accounts, active = active),
+                conversationView = (if (active == MailboxKind.Accounts) accounts else personal)
+                    ?.conversationView ?: (active == MailboxKind.Personal),
             )
         }
-        // Opening a folder ends the search: the list is about to show that
-        // folder, and leaving the box filled would say otherwise.
-        search.clear()
-        syncFolder(folder, more = false)
+        refreshMailboxUnread()
+        if (accounts != null && !preferences.hasSeenMailboxTour()) {
+            setState { copy(tourOpen = true) }
+        }
     }
 
     private fun loadFolders() {
         val cached = mailbox.cachedFolders()
-        setState { copy(isLoadingFolders = cached.isEmpty(), folders = cached, error = null) }
+        setState {
+            copy(
+                isLoadingFolders = cached.isEmpty(),
+                folders = cached,
+                everything = mailbox.cachedMessages(),
+                error = null,
+            ).regrouped()
+        }
 
         // Open whatever is cached straight away; a mail client that shows an
         // empty pane while it talks to the server makes the user wait to see
         // mail this machine already has.
-        currentState.selectedFolder?.let { selectFolder(it.name) }
+        currentState.selectedFolder?.let { showFolder(it.name) }
 
-        launch { badges.folderBadges()?.let { split -> setState { copy(folderBadges = split) } } }
+        refreshFolderBadges()
         launchResult(
             block = { mailbox.syncFolders() },
             onSuccess = { folders ->
                 setState { copy(isLoadingFolders = false, folders = folders) }
                 if (currentState.selectedFolderName == null) {
-                    currentState.selectedFolder?.let { selectFolder(it.name) }
+                    currentState.selectedFolder?.let { showFolder(it.name) }
                 }
+                syncEverything(showProgress = true)
             },
             onError = { setState { copy(isLoadingFolders = false, error = it.localised()) } },
         )
     }
 
-    private fun loadMore() {
-        val state = currentState
-        if (state.isLoadingMore || !state.hasMore) return
-        state.selectedFolder?.let { syncFolder(it, more = true) }
+    private fun refresh() {
+        if (currentState.isRefreshing) return
+        setState { copy(isRefreshing = true) }
+        launchResult(
+            block = { mailbox.syncFolders() },
+            onSuccess = { folders ->
+                setState { copy(folders = folders) }
+                if (currentState.isViewingDrafts) loadDrafts()
+                syncEverything(showProgress = true) { setState { copy(isRefreshing = false) } }
+            },
+            onError = { setState { copy(isRefreshing = false, error = it.localised()) } },
+        )
+    }
+
+    // -- folders ---------------------------------------------------------------
+
+    private fun selectFolder(folderName: String) {
+        val folder = currentState.folders.firstOrNull { it.name == folderName } ?: return
+        if (folder.name == currentState.selectedFolderName) return
+        showFolder(folder.name)
     }
 
     /**
-     * Fetches the next uncached batch for a folder.
-     *
-     * The same call serves first load, refresh and scroll — see `Mailbox`, where
-     * paging and caching are one mechanism. [more] only decides which spinner
-     * the user sees.
+     * Puts a folder on screen from the cache, closing what was open: the web
+     * clears the reading pane, the selection and the search on a folder
+     * click, then opens the folder's newest row.
      */
-    private fun syncFolder(folder: EmailFolder, more: Boolean) {
-        // Drafts are not IMAP: they live in Zillit's own store and are paged by
-        // timestamp, so the uid diff below would sync an empty IMAP folder and
-        // show nothing while the drafts sat elsewhere. See `EmailDraft`.
-        if (folder.name.equals(EmailFolder.DRAFTS, ignoreCase = true)) {
-            loadDrafts()
-            return
-        }
-
-        inFlight++
+    private fun showFolder(folderName: String) {
         setState {
             copy(
-                isLoadingMessages = !more && messages.isEmpty(),
-                isLoadingMore = more,
+                selectedFolderName = folderName,
+                messages = mailbox.cachedMessages(folderName),
+                openRowId = null,
+                thread = emptyList(),
+                selectedIds = emptySet(),
+                searchTerm = "",
                 error = null,
-            )
+            ).regrouped()
         }
+        if (currentState.isViewingDrafts) {
+            loadDrafts()
+        } else {
+            openFirstIfNone()
+        }
+    }
 
-        // Stamped before the uid list is asked for, so a mail that lands
-        // mid-sync — and so is missing from that list — is not taken as gone.
-        val listedAt = nowMillis()
+    /**
+     * The web opens a folder's newest row as soon as its rows are in
+     * (`useEmailListData`'s auto-open), once per folder: a mailbox that opens
+     * onto an empty pane looks broken, but re-opening the first row on every
+     * batch would fight the user's own clicks.
+     */
+    private fun openFirstIfNone() {
+        val state = currentState
+        val folder = state.selectedFolderName ?: return
+        if (state.isViewingDrafts || state.openRowId != null || autoOpenedFolder == folder) return
+        val first = state.rows.firstOrNull() ?: return
+        autoOpenedFolder = folder
+        openRow(first.id)
+    }
+
+    private fun loadDrafts() {
+        setState { copy(isLoadingMessages = messages.isEmpty(), error = null) }
         launchResult(
-            block = { mailbox.syncNext(folder.name) },
-            onSuccess = { page ->
-                inFlight--
-                reconcileBadges(folder.name, page, listedAt)
-                // Guard against a slow folder the user has already left.
-                if (currentState.selectedFolderName == folder.name) {
+            block = { draftRepository.drafts(nowMillis()) },
+            onSuccess = { drafts ->
+                if (currentState.isViewingDrafts) {
                     setState {
                         copy(
                             isLoadingMessages = false,
-                            isLoadingMore = false,
-                            messages = page.messages,
-                            hasMore = page.hasMore,
-                        )
-                    }
-                    if (pendingResync) {
-                        pendingResync = false
-                        syncFolder(folder, more = false)
+                            drafts = drafts,
+                            messages = drafts.map(EmailDraft::toSummary),
+                        ).regrouped()
                     }
                 }
             },
             onError = { error ->
-                inFlight--
-                if (currentState.selectedFolderName == folder.name) {
-                    setState {
-                        copy(
-                            isLoadingMessages = false,
-                            isLoadingMore = false,
-                            // Cached mail stays on screen behind the message:
-                            // a failed refresh should not empty a readable list.
-                            error = error.localised(),
-                        )
-                    }
-                    // Not retried on failure: a server that just refused this
-                    // folder will refuse it again, and a queued retry would
-                    // become a loop.
-                    pendingResync = false
+                if (currentState.isViewingDrafts) {
+                    setState { copy(isLoadingMessages = false, error = error.localised()) }
                 }
             },
         )
     }
+
+    // -- syncing ---------------------------------------------------------------
+
+    /**
+     * The full pass — every folder, the open one first so it fills before
+     * the rest. One at a time: a second request while one runs is queued
+     * behind it as a resync of whatever folders asked.
+     */
+    private fun syncEverything(showProgress: Boolean, onDone: () -> Unit = {}) {
+        if (syncJob?.isActive == true) {
+            pendingResync = pendingResync + currentState.folders.map { it.name }
+            return
+        }
+        syncFolders(currentState.folders.map { it.name }, showProgress, onDone)
+    }
+
+    /**
+     * Re-syncs the named folders — the web's `syncFolders`, run for a socket
+     * event that names a folder — or every folder for the full pass.
+     */
+    private fun syncFolders(folderNames: List<String>, showProgress: Boolean, onDone: () -> Unit = {}) {
+        val open = currentState.selectedFolderName
+        val ordered = currentState.folders
+            .filter { it.name in folderNames }
+            .sortedBy { if (it.name == open) 0 else 1 }
+        if (ordered.isEmpty()) {
+            onDone()
+            return
+        }
+        if (showProgress) setState { copy(sync = SyncProgress(0), isLoadingMessages = messages.isEmpty()) }
+
+        syncJob = launch {
+            try {
+                mailbox.syncEverything(
+                    folders = ordered,
+                    onProgress = { percent -> if (showProgress) setState { copy(sync = SyncProgress(percent)) } },
+                    onFolderChanged = ::onFolderSynced,
+                    nowMillis = nowMillis,
+                )
+            } finally {
+                setState { copy(sync = null, isLoadingMessages = false) }
+                onDone()
+                drainPendingResync()
+            }
+        }
+    }
+
+    private fun drainPendingResync() {
+        val queued = pendingResync
+        pendingResync = emptySet()
+        if (queued.isNotEmpty()) syncFolders(queued.toList(), showProgress = false)
+    }
+
+    /**
+     * A batch landed: the open folder's rows refresh, every conversation's
+     * count with them, and the badge ledger is squared with what the server
+     * said the folder holds — off the sync's own path so a slow ledger never
+     * holds the list back.
+     */
+    private suspend fun onFolderSynced(result: FolderSyncResult) {
+        setState {
+            val open = selectedFolderName == result.folderName && !isViewingDrafts
+            copy(
+                messages = if (open) mailbox.cachedMessages(result.folderName) else messages,
+                everything = mailbox.cachedMessages(),
+                isLoadingMessages = false,
+            ).regrouped()
+        }
+        openFirstIfNone()
+        launch {
+            badges.onFolderSynced(
+                MailFolderSync(
+                    folderName = result.folderName,
+                    serverUids = result.serverUids,
+                    messages = mailbox.cachedMessages(result.folderName),
+                    complete = result.complete,
+                    listedAt = result.listedAt,
+                    mailboxAddress = currentState.activeMailboxAddress.takeIf { it.isNotBlank() },
+                ),
+            )
+            refreshFolderBadges()
+        }
+    }
+
+    /**
+     * Re-reads the open folder and every conversation's members from the
+     * cache — after a move, a delete, or a sync — and re-syncs the folders
+     * named so the server's view replaces the optimistic one.
+     */
+    internal fun reloadAfterChange(folderNames: List<String?>) {
+        setState {
+            copy(
+                messages = if (isViewingDrafts) messages else mailbox.cachedMessages(selectedFolderName.orEmpty()),
+                everything = mailbox.cachedMessages(),
+            ).regrouped()
+        }
+        val named = folderNames.filterNotNull().filter { it.isNotBlank() }.distinct()
+        if (syncJob?.isActive == true) {
+            pendingResync = pendingResync + named
+        } else {
+            syncFolders(named, showProgress = false)
+        }
+        refreshFolders()
+    }
+
+    internal fun refreshFolders() {
+        launchResult(
+            block = { mailbox.syncFolders() },
+            onSuccess = { folders -> setState { copy(folders = folders) } },
+            // Silent: a failed background refresh must not put an error banner
+            // over mail the user is reading.
+            onError = { },
+        )
+        refreshFolderBadges()
+    }
+
+    private fun refreshFolderBadges() {
+        // Null is a failed ask; the last split stands rather than dropping the
+        // folder list back onto IMAP counts mid-session.
+        launch {
+            badges.folderBadges(currentState.activeMailboxAddress.takeIf { it.isNotBlank() })
+                ?.let { split -> setState { copy(folderBadges = split) } }
+        }
+        refreshMailboxUnread()
+    }
+
+    private fun refreshMailboxUnread() {
+        launch {
+            badges.mailboxUnread()?.let { unread ->
+                setState { copy(mailboxes = mailboxes.copy(unreadByAddress = unread)) }
+            }
+        }
+    }
+
+    // -- realtime --------------------------------------------------------------
 
     /**
      * Reacts to a server-side change.
@@ -410,142 +413,172 @@ class EmailViewModel(
         when (event) {
             EmailRealtimeEvent.FoldersChanged -> refreshFolders()
 
-            is EmailRealtimeEvent.ReadChanged -> onReadElsewhere(event.uid)
+            // `email:read` — opened on another of this person's devices. The
+            // row, the cache and the badge ledger all learn it, as for a click
+            // here (the web's `email_read` listener does the same). A uid the
+            // open folder does not hold waits for its own folder's sync, and
+            // one already read here was handed to the ledger by that click.
+            is EmailRealtimeEvent.ReadChanged -> {
+                val folder = currentState.selectedFolder ?: return
+                val message = currentState.messages.firstOrNull { it.uid == event.uid } ?: return
+                if (message.isRead) return
+                mailbox.markRead(folder.name, message.id)
+                setState {
+                    copy(messages = messages.map { if (it.uid == event.uid) it.copy(isRead = true) else it })
+                        .regrouped()
+                }
+                launch {
+                    badges.onMessageRead(
+                        MailRead(folder.name, event.uid, message.id, activeMailboxAddress()),
+                    )
+                    refreshFolderBadges()
+                }
+            }
 
             EmailRealtimeEvent.DraftsChanged -> if (currentState.isViewingDrafts) loadDrafts()
 
             is EmailRealtimeEvent.FolderChanged -> {
                 refreshFolders()
-                val open = currentState.selectedFolder ?: return
-                // A change in a folder that is not open needs no work: it will
-                // sync when the user opens it, and its unread count has just
-                // been refreshed above.
-                if (event.folderName == null || event.folderName.equals(open.name, ignoreCase = true)) {
-                    requestSync(open)
-                }
+                // A named folder re-syncs on its own; an unnamed change — a
+                // move, which touches two — re-syncs the open folder and
+                // Inbox, the two the user would notice being stale.
+                val named = event.folderName?.let { listOf(it) }
+                    ?: listOfNotNull(currentState.selectedFolderName, EmailFolder.INBOX).distinct()
+                reloadAfterChange(named)
             }
         }
     }
 
-    /**
-     * `email:read` — this mail was opened on another of this person's
-     * devices. The row, the cache and the badge ledger all learn it, as they
-     * would for a click here; the web does the same in its `email_read`
-     * listener. A uid outside the open folder waits for that folder's sync.
-     */
-    private fun onReadElsewhere(uid: Int) {
-        val folder = currentState.selectedFolder ?: return
-        val message = currentState.messages.firstOrNull { it.uid == uid } ?: return
-        if (!message.isRead) mailbox.markRead(folder.name, message.id)
-        setState {
-            copy(messages = messages.map { if (it.uid == uid) it.copy(isRead = true) else it })
-        }
-        launch {
-            badges.onMessageRead(MailRead(folder.name, uid, message.id))
-            badges.folderBadges()?.let { split -> setState { copy(folderBadges = split) } }
-        }
-    }
-
-    /**
-     * Squares the badge ledger with what the server just said the folder
-     * holds, then redraws the folder counts from it. Off the sync's own path
-     * so a slow ledger never holds the list back.
-     */
-    private fun reconcileBadges(folderName: String, page: SyncedPage, listedAt: Long) {
-        launch {
-            badges.onFolderSynced(
-                MailFolderSync(
-                    folderName = folderName,
-                    serverUids = page.serverUids,
-                    messages = page.messages,
-                    complete = page.complete,
-                    listedAt = listedAt,
-                ),
-            )
-            badges.folderBadges()?.let { split -> setState { copy(folderBadges = split) } }
-        }
-    }
-
-    private fun loadDrafts() {
-        setState { copy(isLoadingMessages = messages.isEmpty(), error = null) }
-
-        launchResult(
-            block = { draftRepository.drafts(nowMillis()) },
-            onSuccess = { drafts ->
-                if (currentState.isViewingDrafts) {
-                    setState {
-                        copy(
-                            isLoadingMessages = false,
-                            isLoadingMore = false,
-                            drafts = drafts,
-                            messages = drafts.map(EmailDraft::toSummary),
-                            hasMore = false,
-                        )
-                    }
-                }
-            },
-            onError = { error ->
-                if (currentState.isViewingDrafts) {
-                    setState { copy(isLoadingMessages = false, error = error.localised()) }
-                }
-            },
-        )
-    }
+    // -- messages --------------------------------------------------------------
 
     /** Opening, closing and acting on a single message. */
     private fun onMessage(event: EmailEvent.Message) {
         when (event) {
-            is EmailEvent.SelectMessage -> openMessage(event.messageId)
+            is EmailEvent.SelectMessage -> openRow(event.rowId)
+            EmailEvent.OpenFirst -> currentState.rows.firstOrNull()?.let { openRow(it.id) }
             is EmailEvent.EditDraft -> sendEffect(EmailEffect.OpenDraft(event.draftId))
             is EmailEvent.Compose ->
-                sendEffect(
-                    EmailEffect.OpenComposer(event.mode, event.replyTo, event.addressedTo, event.about),
-                )
-            EmailEvent.CloseMessage -> setState {
-                copy(selectedMessageId = null, thread = emptyList())
-            }
+                sendEffect(EmailEffect.OpenComposer(event.mode, event.replyTo, event.addressedTo, event.about))
+            EmailEvent.CloseMessage -> setState { copy(openRowId = null, thread = emptyList()) }
             is EmailEvent.DownloadAttachment -> launch {
-                currentState.selectedFolder?.let { folder ->
-                    downloader.download(event.attachment, event.messageId, folder.name)
+                downloader.download(event.attachment, event.messageId, event.folderName)
+            }
+            is EmailEvent.Print -> printOpen(event.message)
+            EmailEvent.PopOut -> {
+                val newest = currentState.newestOpen ?: return
+                sendEffect(EmailEffect.PopOutThread(newest.subject, currentState.thread))
+            }
+            is EmailEvent.AddToContacts -> sendEffect(EmailEffect.AddToContacts(event.address))
+        }
+    }
+
+    /**
+     * Prints the open conversation as the web's toolbar does — every message
+     * with conversation view on, only the newest without it — or one message
+     * from its own menu.
+     */
+    private fun printOpen(one: EmailMessage?) {
+        val state = currentState
+        val messages = when {
+            one != null -> listOf(one)
+            state.conversationView -> state.thread
+            else -> listOfNotNull(state.newestOpen)
+        }
+        val subject = messages.maxByOrNull { it.receivedAtMillis }?.subject.orEmpty()
+        if (messages.isNotEmpty()) {
+            // A fresh nonce per page: the print call is the one script the
+            // page's policy admits, and a body cannot guess it.
+            val nonce = kotlin.uuid.Uuid.random().toString().replace("-", "")
+            sendEffect(EmailEffect.Print(subject, printableHtml(subject, messages, nonce)))
+        }
+    }
+
+    /**
+     * Opens a row and loads its conversation.
+     *
+     * The row highlights and marks read immediately; the thread follows. Waiting
+     * for the fetch before showing the selection makes the click feel
+     * unregistered. With conversation view on, every message of the thread
+     * this machine holds is fetched — one call per folder, in parallel, the
+     * web's `fetchCurrentEmailFromDb` — and each is marked read as it opens.
+     */
+    private fun openRow(rowId: String) {
+        val state = currentState
+        // A draft opens for editing rather than reading — there is no thread to
+        // fetch, and `get-emails` does not know about drafts anyway.
+        if (state.isViewingDrafts) {
+            sendEffect(EmailEffect.OpenDraft(rowId))
+            return
+        }
+        if (state.openRowId == rowId && state.thread.isNotEmpty()) return
+        val row = state.rows.firstOrNull { it.id == rowId } ?: return
+        val folder = state.selectedFolder ?: return
+
+        val members = if (state.conversationView && !state.searchAllFolders) {
+            threadMembersByFolder(row.threadId, state.everything, folder.name)
+                .ifEmpty { mapOf(row.message.folderName.ifBlank { folder.name } to listOf(row.message)) }
+        } else {
+            mapOf(row.message.folderName.ifBlank { folder.name } to listOf(row.message))
+        }
+
+        markRead(members)
+        setState {
+            copy(
+                openRowId = rowId,
+                thread = emptyList(),
+                isLoadingThread = true,
+                messages = messages.map { if (members.containsMessage(it.id)) it.copy(isRead = true) else it },
+                everything = everything.map { if (members.containsMessage(it.id)) it.copy(isRead = true) else it },
+            ).regrouped()
+        }
+
+        launch {
+            val fetched = coroutineScope {
+                members.map { (folderName, rows) ->
+                    async { repository.trail(folderName, rows.map { it.id }) }
+                }.awaitAll()
+            }
+            if (currentState.openRowId != rowId) return@launch
+            val messages = fetched.filterIsInstance<ZillitResult.Success<List<EmailMessage>>>()
+                .flatMap { it.data }
+                .distinctBy { it.id }
+                .asThread()
+            val failure = fetched.filterIsInstance<ZillitResult.Failure>().firstOrNull()
+            setState {
+                copy(
+                    isLoadingThread = false,
+                    thread = messages,
+                    error = if (messages.isEmpty()) failure?.error?.localised() else error,
+                )
+            }
+        }
+    }
+
+    private fun Map<String, List<EmailSummary>>.containsMessage(id: String): Boolean =
+        values.any { rows -> rows.any { it.id == id } }
+
+    /** Every unread copy the click opens is read now: cache, and badge ledger. */
+    private fun markRead(members: Map<String, List<EmailSummary>>) {
+        members.forEach { (folderName, rows) ->
+            rows.forEach { row ->
+                mailbox.markRead(folderName, row.id)
+                // Only mail that was unread has a badge record to clear — an
+                // emit per click on already-read mail cost a settle wait and
+                // three requests. (Mail read elsewhere but still badged is
+                // the folder sync's job.)
+                if (!row.isRead) {
+                    launch {
+                        badges.onMessageRead(MailRead(folderName, row.uid, row.id, activeMailboxAddress()))
+                        refreshFolderBadges()
+                    }
                 }
             }
         }
     }
 
-    /**
-     * Selecting rows, and what can be done with a selection.
-     *
-     * Split out of [onEvent] to keep the main dispatcher readable — these seven
-     * cases are one feature, not seven.
-     */
-    private fun onSelection(event: EmailEvent.Selection) {
-        when (event) {
-            is EmailEvent.ToggleSelection -> setState {
-                copy(
-                    selectedIds = if (event.messageId in selectedIds) {
-                        selectedIds - event.messageId
-                    } else {
-                        selectedIds + event.messageId
-                    },
-                )
-            }
-            EmailEvent.ClearSelection -> setState { copy(selectedIds = emptySet()) }
-            EmailEvent.DeleteSelected -> {
-                val folder = currentState.selectedFolder
-                val selected = currentState.selectedMessages
-                if (folder != null && selected.isNotEmpty()) trash(selected, folder.name)
-            }
-            is EmailEvent.TrashMessage -> {
-                val folder = currentState.selectedFolder
-                val message = currentState.messages.firstOrNull { it.id == event.messageId }
-                if (folder != null && message != null) trash(listOf(message), folder.name)
-            }
-            is EmailEvent.MoveSelected -> moveSelected(event.folderName)
-            EmailEvent.EmptyTrash -> setState { copy(pendingConfirm = PendingConfirm.EmptyTrash) }
-            EmailEvent.ConfirmPending -> runPendingConfirm()
-            EmailEvent.DismissConfirm -> setState { copy(pendingConfirm = null) }
-        }
-    }
+    internal fun activeMailboxAddress(): String? = currentState.activeMailboxAddress.takeIf { it.isNotBlank() }
+
+    // -- folder management -----------------------------------------------------
 
     /**
      * The folder dialog, and what happens after it.
@@ -569,6 +602,7 @@ class EmailViewModel(
                         // The sidebar is server-owned; re-reading it is how the
                         // folder gets its flags and its place in the order.
                         refreshFolders()
+                        setState { copy(notice = if (renamed == null) "Folder created" else "Folder renamed") }
                         if (renamed != null && renamed == currentState.selectedFolderName) {
                             setState { copy(selectedFolderName = saved.data) }
                         }
@@ -576,7 +610,8 @@ class EmailViewModel(
                 }
             }
 
-            EmailEvent.DeleteFolder -> folderEditor.folderToDelete()?.let { folder ->
+            is EmailEvent.DeleteFolder -> {
+                val folder = event.folder ?: folderEditor.folderToDelete() ?: return
                 // Asked, never done directly: this is the only action here that
                 // can destroy mail the user did not choose to delete.
                 setState {
@@ -591,7 +626,7 @@ class EmailViewModel(
         }
     }
 
-    private fun deleteFolder(folder: EmailFolder) {
+    internal fun deleteFolder(folder: EmailFolder) {
         launchResult(
             block = { folderEditor.delete(folder) },
             onSuccess = {
@@ -599,198 +634,136 @@ class EmailViewModel(
                 // stays readable on disk under a folder that no longer exists —
                 // and comes back if someone recreates the name.
                 mailbox.forget(folder.name)
-
                 if (currentState.selectedFolderName.equals(folder.name, ignoreCase = true)) {
-                    setState { copy(selectedFolderName = null, messages = emptyList()) }
+                    setState {
+                        copy(selectedFolderName = null, messages = emptyList(), openRowId = null, thread = emptyList())
+                    }
+                    currentState.selectedFolder?.let { showFolder(it.name) }
                 }
+                setState { copy(notice = "Folder deleted") }
                 refreshFolders()
-                currentState.selectedFolder?.let { syncFolder(it, more = false) }
             },
             onError = { setState { copy(error = it.localised()) } },
         )
     }
 
-    // -- move and delete ---------------------------------------------------
+    // -- the switcher ----------------------------------------------------------
 
-    /**
-     * Trashes the selection, or asks before destroying it.
-     *
-     * The rule about which lives in [deleteIntentFor]. Destroying is the one
-     * action in this module that cannot be undone, so it is the one that stops
-     * to ask.
-     */
-    /** One hovered row or the whole tick set — the same trash rules. */
-    private fun trash(selected: List<EmailSummary>, folderName: String) {
-        when (val intent = deleteIntentFor(selected, folderName)) {
-            is DeleteIntent.Destroy ->
-                setState { copy(pendingConfirm = PendingConfirm.Destroy(intent.messageIds)) }
-
-            is DeleteIntent.MoveToTrash -> {
-                forget(selected.map { it.id })
-                launch {
-                    // One call per source folder: a move names a single source,
-                    // and a selection can span folders.
-                    intent.byFolder.forEach { (source, ids) ->
-                        applyOrReload { repository.move(ids, source, EmailFolder.TRASH) }
-                    }
-                }
+    private fun onMailbox(event: EmailEvent.Mailbox) {
+        when (event) {
+            is EmailEvent.SwitchMailbox -> switchMailbox(event.kind)
+            EmailEvent.ShowTour -> setState { copy(tourOpen = true) }
+            EmailEvent.DismissTour -> {
+                setState { copy(tourOpen = false) }
+                launch { preferences.markMailboxTourSeen() }
             }
         }
     }
 
-    private fun moveSelected(target: String) {
+    /**
+     * Flips the module onto the other mailbox — the web remounts it, which is
+     * what starting over here amounts to: folders, rows, the open message and
+     * the selection all belong to the mailbox they were read from.
+     */
+    private fun switchMailbox(kind: MailboxKind) {
         val state = currentState
-        val folder = state.selectedFolder ?: return
-        val selected = state.selectedMessages.ifEmpty { return }
-
-        forget(selected.map { it.id })
-        launch {
-            selected.groupBy { it.folderName.ifBlank { folder.name } }
-                .forEach { (source, group) ->
-                    applyOrReload { repository.move(group.map { it.id }, source, target) }
-                }
+        if (kind == state.mailboxes.active) return
+        val identity = state.mailboxes.identity(kind) ?: return
+        syncJob?.cancel()
+        autoOpenedFolder = null
+        activeMailbox.switch(kind, identity)
+        launch { preferences.setActiveMailbox(kind) }
+        setState {
+            EmailUiState(
+                mailboxes = mailboxes.copy(active = kind),
+                conversationView = identity.conversationView ?: (kind == MailboxKind.Personal),
+            )
         }
-    }
-
-    private fun runPendingConfirm() {
-        val pending = currentState.pendingConfirm ?: return
-        setState { copy(pendingConfirm = null) }
-
-        when (pending) {
-            is PendingConfirm.Destroy -> {
-                forget(pending.messageIds)
-                launch { applyOrReload { repository.deletePermanently(pending.messageIds) } }
-            }
-            PendingConfirm.EmptyTrash -> {
-                forget(currentState.messages.map { it.id })
-                launch { applyOrReload { repository.emptyTrash() } }
-            }
-            is PendingConfirm.DeleteFolder -> deleteFolder(pending.folder)
-        }
+        loadFolders()
     }
 
     /**
-     * Drops messages from the list at once, before the server has answered.
-     *
-     * Mail actions have to feel immediate — a row that lingers for a round trip
-     * reads as a click that did not register. [applyOrReload] puts anything the
-     * server rejected back.
+     * Optimistic, and reverted on failure — Android's exact sequence: flip,
+     * PATCH, put it back if the server said no. The list regroups at once;
+     * the web reloads the page for the same effect.
      */
-    private fun forget(ids: List<String>) {
+    private fun setConversationView(enabled: Boolean) {
+        val target = conversationView ?: return
+        val previous = currentState.conversationView
+        setState {
+            copy(conversationView = enabled, isSavingConversationView = true, conversationDialog = false).regrouped()
+        }
+        launchResult(
+            block = { target.setEnabled(enabled) },
+            onSuccess = {
+                setState {
+                    copy(isSavingConversationView = false, notice = "Conversation view ${if (enabled) "on" else "off"}")
+                }
+            },
+            onError = { error ->
+                setState {
+                    copy(conversationView = previous, isSavingConversationView = false, error = error.localised())
+                        .regrouped()
+                }
+            },
+        )
+    }
+
+    // -- what the actions need -------------------------------------------------
+
+    internal fun forgetOpen(ids: Collection<String>) {
         val gone = ids.toSet()
         setState {
             copy(
                 messages = messages.filterNot { it.id in gone },
+                everything = everything.filterNot { it.id in gone },
                 selectedIds = selectedIds - gone,
-                selectedMessageId = selectedMessageId?.takeUnless { it in gone },
-                thread = if (selectedMessageId in gone) emptyList() else thread,
-            )
+                openRowId = openRowId?.takeUnless { it in gone },
+                thread = if (openRowId in gone) emptyList() else thread.filterNot { it.id in gone },
+            ).regrouped()
         }
     }
 
-    /**
-     * Runs a mailbox change, re-syncing either way.
-     *
-     * On success because the cache still holds the old rows; on failure because
-     * the optimistic removal above has to be undone, and re-reading the folder
-     * is both simpler and more truthful than trying to restore what was there.
-     */
-    private suspend fun applyOrReload(block: suspend () -> ZillitResult<Unit>) {
-        val result = block()
-
-        // A plain re-sync is enough either way: `syncNext` diffs the server's
-        // uid list against the cache and drops whatever is no longer there, so
-        // a successful move removes the rows and a failed one restores them.
-        currentState.selectedFolder?.let { syncFolder(it, more = false) }
-        refreshFolders()
-
-        // Reported *after* the reload, not before: `syncFolder` clears the
-        // error as it starts, so setting it first meant a failed move silently
-        // undid itself — the row vanished, came back, and said nothing.
-        if (result is ZillitResult.Failure) {
-            setState { copy(error = result.error.localised()) }
-        }
-    }
-
-    private fun refreshFolders() {
-        // Null is a failed ask; the last split stands rather than dropping the
-        // folder list back onto IMAP counts mid-session.
-        launch { badges.folderBadges()?.let { split -> setState { copy(folderBadges = split) } } }
-        launchResult(
-            block = { mailbox.syncFolders() },
-            onSuccess = { folders -> setState { copy(folders = folders) } },
-            // Silent: a failed background refresh must not put an error banner
-            // over mail the user is reading.
-            onError = { },
-        )
-    }
-
-    /**
-     * Syncs, or queues one if a sync is already running.
-     *
-     * Without the queue a mail that lands *during* a sync is lost until the
-     * next event: the running sync may already have read the uid list. Without
-     * the guard, ten mails arriving at once would start ten syncs.
-     */
-    private fun requestSync(folder: EmailFolder) {
-        if (inFlight > 0) {
-            pendingResync = true
-            return
-        }
-        syncFolder(folder, more = false)
-    }
-
-    /**
-     * Opens a message and loads its conversation.
-     *
-     * The row highlights and marks read immediately; the thread follows. Waiting
-     * for the fetch before showing the selection makes the click feel
-     * unregistered.
-     */
-    private fun openMessage(messageId: String) {
+    /** The messages a ticked selection stands for, conversation view honoured. */
+    internal fun selectionTargets(ids: Set<String> = currentState.selectedIds): List<EmailSummary> {
         val state = currentState
-        // A draft opens for editing rather than reading — there is no thread to
-        // fetch, and `email-trail` does not know about drafts anyway.
-        if (state.isViewingDrafts) {
-            sendEffect(EmailEffect.OpenDraft(messageId))
-            return
-        }
-        if (state.selectedMessageId == messageId && state.thread.isNotEmpty()) return
+        val ticked = state.rows.filter { it.id in ids }.map { it.message }
+        return selectionMembers(ticked, state.everything, state.conversationView, state.selectedFolder?.name.orEmpty())
+    }
 
-        val folder = state.selectedFolder ?: return
-        val opened = state.messages.firstOrNull { it.id == messageId }
-        mailbox.markRead(folder.name, messageId)
-        // Only mail that was unread has a badge record to clear — an emit per
-        // click on already-read mail cost a settle wait and three requests.
-        // (Mail read elsewhere but still badged is the folder sync's job.)
-        if (opened != null && !opened.isRead) {
-            launch {
-                badges.onMessageRead(MailRead(folder.name, opened.uid, messageId))
-                badges.folderBadges()?.let { split -> setState { copy(folderBadges = split) } }
+    /** Runs one mail call, reports how it went, and re-syncs the [folders] it touched. */
+    internal fun runOnMailbox(
+        block: suspend () -> ZillitResult<Unit>,
+        done: String,
+        folders: List<String?> = emptyList(),
+    ) {
+        launch {
+            when (val result = block()) {
+                is ZillitResult.Success -> setState { copy(notice = done) }
+                is ZillitResult.Failure -> setState { copy(error = result.error.localised()) }
             }
+            reloadAfterChange(folders)
         }
+    }
 
-        setState {
-            copy(
-                selectedMessageId = messageId,
-                thread = emptyList(),
-                isLoadingThread = true,
-                messages = messages.map { if (it.id == messageId) it.copy(isRead = true) else it },
-            )
-        }
+    internal fun reloadDrafts() = loadDrafts()
 
-        launchResult(
-            block = { repository.trail(folder.name, listOf(messageId)) },
-            onSuccess = { thread ->
-                if (currentState.selectedMessageId == messageId) {
-                    setState { copy(isLoadingThread = false, thread = thread) }
-                }
-            },
-            onError = { error ->
-                if (currentState.selectedMessageId == messageId) {
-                    setState { copy(isLoadingThread = false, error = error.localised()) }
-                }
-            },
-        )
+    internal fun update(reducer: EmailUiState.() -> EmailUiState) = setState(reducer)
+
+    internal fun ledgerRead(folder: String, uid: Int, messageId: String) {
+        launch { badges.onMessageRead(MailRead(folder, uid, messageId, activeMailboxAddress())) }
+    }
+
+    internal fun warn(message: String) = ZillitLog.w(TAG) { message }
+
+    internal val drafts: DraftRepository get() = draftRepository
+    internal val mail: EmailRepository get() = repository
+    internal val store: Mailbox get() = mailbox
+
+    private companion object {
+        const val TAG = "Email"
     }
 }
+
+/** The web's `EMAIL_SELECTION_MAX_LIMIT`, re-exported for the screen's copy. */
+internal const val MAX_SELECTION = SELECTION_LIMIT

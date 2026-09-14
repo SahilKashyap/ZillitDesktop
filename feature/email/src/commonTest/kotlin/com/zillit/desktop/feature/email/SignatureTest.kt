@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.email.domain.SYSTEM_SIGNATURE
 import com.zillit.desktop.feature.email.domain.composedBody
 import com.zillit.desktop.feature.email.domain.defaultFor
 import com.zillit.desktop.feature.email.ui.ComposeEvent
+import com.zillit.desktop.feature.email.ui.RecipientField
 import com.zillit.desktop.feature.email.ui.ComposeViewModel
 import com.zillit.desktop.feature.email.ui.Composing
 import kotlinx.coroutines.Dispatchers
@@ -117,7 +118,8 @@ class SignatureTest {
         val composer = composer(server)
         advanceUntilIdle()
 
-        composer.onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        composer.onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
+        composer.onEvent(ComposeEvent.SubjectChanged("Call"))
         composer.onEvent(ComposeEvent.BodyChanged(RichText.plain("Call is 6am")))
         composer.onEvent(ComposeEvent.Send)
         advanceUntilIdle()
@@ -132,7 +134,8 @@ class SignatureTest {
         val composer = composer(server)
         advanceUntilIdle()
 
-        composer.onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        composer.onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
+        composer.onEvent(ComposeEvent.SubjectChanged("Call"))
         listOf("One", "One two", "One two three").forEach {
             composer.onEvent(ComposeEvent.BodyChanged(RichText.plain(it)))
         }
@@ -150,7 +153,8 @@ class SignatureTest {
         val composer = composer(server)
         advanceUntilIdle()
 
-        composer.onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        composer.onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
+        composer.onEvent(ComposeEvent.SubjectChanged("Call"))
         composer.onEvent(ComposeEvent.BodyChanged(RichText.plain("Hi")))
         composer.onEvent(ComposeEvent.SignatureChosen(short))
         composer.onEvent(ComposeEvent.Send)
@@ -165,7 +169,8 @@ class SignatureTest {
         val composer = composer(server)
         advanceUntilIdle()
 
-        composer.onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        composer.onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
+        composer.onEvent(ComposeEvent.SubjectChanged("Call"))
         composer.onEvent(ComposeEvent.BodyChanged(RichText.plain("Hi")))
         composer.onEvent(ComposeEvent.SignatureChosen(null))
         composer.onEvent(ComposeEvent.Send)
@@ -196,7 +201,8 @@ class SignatureTest {
         val composer = composer(server)
         advanceUntilIdle()
 
-        composer.onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        composer.onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
+        composer.onEvent(ComposeEvent.SubjectChanged("Call"))
 
         assertNull(composer.state.value.error)
         assertTrue(composer.state.value.canSend)

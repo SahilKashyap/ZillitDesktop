@@ -24,12 +24,19 @@ class SqlMailboxCache(
      * another's — the one failure this cache must never produce.
      */
     private val currentProjectId: () -> String,
+    /**
+     * The address the rows belong to, also resolved per call: the same cache
+     * serves the personal and the shared Accounts mailbox, whose uids
+     * collide. Blank before an address is known.
+     */
+    private val currentMailbox: () -> String = { "" },
 ) : MailboxCache {
 
     private val projectId get() = currentProjectId()
+    private val mailbox get() = currentMailbox()
 
     override fun folders(): List<EmailFolder> =
-        cache.folders(projectId).map {
+        cache.folders(projectId, mailbox).map {
             EmailFolder(
                 name = it.folderName,
                 isSystem = it.isSystem,
@@ -47,12 +54,13 @@ class SqlMailboxCache(
                     unreadCount = it.unreadCount,
                 )
             },
+            mailbox = mailbox,
         )
     }
 
     override fun messages(folderName: String): List<EmailSummary> =
-        cache.emails(projectId, folderName).map(::toSummary).also { rows ->
-            ZillitLog.d(TAG) { "messages($folderName) for project '${projectId}': ${rows.size} cached" }
+        cache.emails(projectId, folderName, mailbox).map(::toSummary).also { rows ->
+            ZillitLog.d(TAG) { "messages($folderName) for project '$projectId': ${rows.size} cached" }
         }
 
     private fun toSummary(row: EmailSnapshot) = EmailSummary(
@@ -61,6 +69,8 @@ class SqlMailboxCache(
         subject = row.subject,
         from = row.sender,
         to = row.recipients,
+        cc = row.cc,
+        bcc = row.bcc,
         snippet = row.snippet,
         receivedAtMillis = row.receivedAt,
         isRead = row.isRead,
@@ -75,7 +85,7 @@ class SqlMailboxCache(
         messages: List<EmailSummary>,
         dropUids: Set<Int>,
     ) {
-        ZillitLog.d(TAG) { "saveMessages($folderName) for project '${projectId}': ${messages.size} rows" }
+        ZillitLog.d(TAG) { "saveMessages($folderName) for project '$projectId': ${messages.size} rows" }
         cache.saveEmails(
             projectId = projectId,
             folderName = folderName,
@@ -92,20 +102,23 @@ class SqlMailboxCache(
                     receivedAt = it.receivedAtMillis,
                     isRead = it.isRead,
                     attachmentCount = it.attachmentCount,
+                    cc = it.cc,
+                    bcc = it.bcc,
                 )
             },
             dropUids = dropUids,
+            mailbox = mailbox,
         )
     }
 
-    override fun allMessages(): List<EmailSummary> = cache.allEmails(projectId).map(::toSummary)
+    override fun allMessages(): List<EmailSummary> = cache.allEmails(projectId, mailbox).map(::toSummary)
 
-    override fun cachedUids(folderName: String): Set<Int> = cache.cachedUids(projectId, folderName)
+    override fun cachedUids(folderName: String): Set<Int> = cache.cachedUids(projectId, folderName, mailbox)
 
-    override fun clearFolder(folderName: String) = cache.clearFolder(projectId, folderName)
+    override fun clearFolder(folderName: String) = cache.clearFolder(projectId, folderName, mailbox)
 
     override fun markRead(folderName: String, messageId: String) {
-        cache.markRead(projectId, folderName, messageId)
+        cache.markRead(projectId, folderName, messageId, mailbox)
     }
 }
 

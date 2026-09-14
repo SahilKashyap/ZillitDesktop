@@ -1,5 +1,6 @@
 package com.zillit.desktop.core.appupdate
 
+import com.zillit.desktop.core.common.OperatingSystem
 import com.zillit.desktop.core.config.FirebaseConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -85,6 +86,92 @@ class AppUpdateCheckerTest {
         val status = check(installed = "1.0.0", entries = """"desktop_min_version":"1.1.0"""")
 
         assertEquals(UpdateStatus.Required("1.1.0", null), status)
+    }
+
+    /**
+     * The template as it really was, on every environment, on 2026-09-14.
+     *
+     * The values carry literal quotes because the console was typed into with
+     * them. Prod published `"1.0.3"` over a floor of `"1.0.1"`, an install on
+     * 1.0.1 compared `"1.0.3"` as 0.0.3 and heard nothing — this is the whole
+     * "update feature not working" report, reproduced.
+     */
+    @Test
+    fun `quoted console values are read as the numbers inside them`() = runTest {
+        val status = check(
+            installed = "1.0.1",
+            entries = """"desktop_latest_version":"\"1.0.3\"","desktop_min_version":"\"1.0.1\"",""" +
+                """"desktop_download_url":"\"https://drive.example/get\""""",
+        )
+
+        assertEquals(UpdateStatus.Available("1.0.3", "https://drive.example/get"), status)
+    }
+
+    /** Dev's `desktop_download_url` is the two characters `""`; that is no URL, and falls back. */
+    @Test
+    fun `a quoted-empty URL falls back`() = runTest {
+        val status = check(
+            installed = "1.1.0",
+            entries = """"desktop_latest_version":"1.2.0","desktop_download_url":"\"\""""",
+            fallback = "https://zillit.example.com/download",
+        )
+
+        assertEquals(UpdateStatus.Available("1.2.0", "https://zillit.example.com/download"), status)
+    }
+
+    // -- per-platform keys ---------------------------------------------------
+
+    @Test
+    fun `a Windows install takes the _windows URL over the plain one`() = runTest {
+        val entries = """"desktop_latest_version":"1.2.0",""" +
+            """"desktop_download_url":"https://dl.example/Zillit.dmg",""" +
+            """"desktop_download_url_windows":"https://dl.example/Zillit.msi""""
+
+        assertEquals(
+            UpdateStatus.Available("1.2.0", "https://dl.example/Zillit.msi"),
+            check(installed = "1.1.0", entries = entries, os = OperatingSystem.Windows),
+        )
+        assertEquals(
+            UpdateStatus.Available("1.2.0", "https://dl.example/Zillit.dmg"),
+            check(installed = "1.1.0", entries = entries, os = OperatingSystem.MacOs),
+        )
+    }
+
+    /** One platform's build lags: its own latest/floor decide, the plain keys are everyone else's. */
+    @Test
+    fun `a platform version overrides the plain one`() = runTest {
+        val entries = """"desktop_latest_version":"1.3.0","desktop_min_version":"1.2.0",""" +
+            """"desktop_latest_version_windows":"1.1.0","desktop_min_version_windows":"1.0.0""""
+
+        assertEquals(
+            UpdateStatus.UpToDate,
+            check(installed = "1.1.0", entries = entries, os = OperatingSystem.Windows),
+        )
+        assertEquals(
+            UpdateStatus.Required("1.3.0", null),
+            check(installed = "1.1.0", entries = entries, os = OperatingSystem.MacOs),
+        )
+    }
+
+    @Test
+    fun `an empty platform key falls through to the plain one`() = runTest {
+        val entries = """"desktop_latest_version":"1.2.0",""" +
+            """"desktop_download_url":"https://dl.example/get","desktop_download_url_mac":"""""
+
+        assertEquals(
+            UpdateStatus.Available("1.2.0", "https://dl.example/get"),
+            check(installed = "1.1.0", entries = entries, os = OperatingSystem.MacOs),
+        )
+    }
+
+    @Test
+    fun `an unknown platform reads only the plain keys`() = runTest {
+        val entries = """"desktop_latest_version":"1.2.0","desktop_latest_version_mac":"9.0.0""""
+
+        assertEquals(
+            UpdateStatus.Available("1.2.0", null),
+            check(installed = "1.1.0", entries = entries, os = OperatingSystem.Unknown),
+        )
     }
 
     // -- the silence contract ------------------------------------------------
@@ -285,6 +372,7 @@ class AppUpdateCheckerTest {
         entries: String? = null,
         body: String? = null,
         fallback: String? = null,
+        os: OperatingSystem = OperatingSystem.Unknown,
     ): UpdateStatus {
         val payload = body ?: """{"entries":{$entries},"state":"UPDATE"}"""
         val client = HttpClient(
@@ -292,15 +380,21 @@ class AppUpdateCheckerTest {
                 respond(content = payload, headers = headersOf(HttpHeaders.ContentType, "application/json"))
             },
         )
-        return checker(client, installed, fallback).check()
+        return checker(client, installed, fallback, os).check()
     }
 
-    private fun checker(client: HttpClient, installed: String?, fallback: String? = null) = AppUpdateChecker(
+    private fun checker(
+        client: HttpClient,
+        installed: String?,
+        fallback: String? = null,
+        os: OperatingSystem = OperatingSystem.Unknown,
+    ) = AppUpdateChecker(
         httpClient = client,
         firebase = firebase,
         installedVersion = { installed },
         instanceId = { INSTANCE_ID },
         fallbackDownloadUrl = { fallback },
+        os = os,
     )
 
     /** Records every request body it is sent, so "no request" is assertable. */

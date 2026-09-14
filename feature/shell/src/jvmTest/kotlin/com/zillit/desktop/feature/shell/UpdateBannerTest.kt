@@ -55,6 +55,16 @@ class UpdateBannerTest {
         onNodeWithText("Download").assertIsDisplayed()
     }
 
+    /** The two numbers side by side are the whole message. */
+    @Test
+    fun `the strip names the installed version next to the new one`() = runComposeUiTest {
+        setShell(
+            notice = UpdateNotice("1.2.0", mandatory = false, downloadUrl = DOWNLOAD_URL, installedVersion = "1.1.0"),
+        )
+
+        onNodeWithText("Version 1.2.0 is available. You have 1.1.0.").assertIsDisplayed()
+    }
+
     @Test
     fun `Download hands the URL to the launcher`() = runComposeUiTest {
         val opened = mutableListOf<String>()

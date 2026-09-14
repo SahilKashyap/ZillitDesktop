@@ -32,6 +32,13 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
     private val rows = mutableMapOf<String, NotificationRecord>()
     private var projectId: String? = null
 
+    /**
+     * Per production, the mailboxes this desktop can open there, as the
+     * email rows tag them — see [showMailboxes]. A production not named yet
+     * counts every row.
+     */
+    private val mailboxes = mutableMapOf<String, Set<String>>()
+
     private val state = MutableStateFlow(BadgeCounts.Empty)
     val counts: StateFlow<BadgeCounts> = state.asStateFlow()
 
@@ -56,12 +63,45 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
         publish()
     }
 
-    /** Sign-out and production switch — the counts belong to a production. The rows stay on disk. */
+    /**
+     * Sign-out and production switch — the counts belong to a production. The
+     * rows stay on disk, and so do the mailboxes learnt: the picker between
+     * productions counts by them.
+     */
     fun clear() {
         projectId = null
         rows.clear()
         state.value = BadgeCounts.Empty
     }
+
+    /** Sign-out — the next person's mailboxes are their own to name. */
+    fun forgetMailboxes() {
+        mailboxes.clear()
+    }
+
+    /**
+     * Which mailboxes the badges may count mail for on one production.
+     *
+     * An email row is tagged with its mailbox (`level_1`, ZL-21025): the
+     * person's own, or the production's shared Accounts mailbox. The web
+     * counts both because it can open both; a mailbox this desktop cannot
+     * open is mail it has no view for and a badge nothing here could clear —
+     * the two unread rows of an Accounts inbox sat on the rail for days
+     * before the desktop had an Accounts mailbox. Rows for a mailbox not
+     * named here stay in the ledger, uncounted.
+     *
+     * Per production, because mailboxes are provisioned per production. An
+     * empty set is "unknown", not "none": an ask that failed keeps the last
+     * answer, and only [forgetMailboxes] — a sign-out — forgets it.
+     */
+    suspend fun showMailboxes(projectId: String, addresses: Set<String>) = lock.withLock {
+        val known = addresses.map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        if (known.isEmpty() || mailboxes.put(projectId, known) == known) return@withLock
+        if (projectId == this.projectId) publish()
+    }
+
+    /** The mailboxes learnt so far, production by production — for a host that remembers them. */
+    fun mailboxes(): Map<String, Set<String>> = mailboxes.toMap()
 
     /**
      * The production picker's numbers: unread per production over every row
@@ -70,8 +110,8 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
      * row — a listing that never names devices must not read as empty.
      */
     fun projectCounts(deviceId: String? = null): Map<String, Int> {
-        val own = deviceId?.takeIf { it.isNotBlank() }?.let(storage::unreadByProject).orEmpty()
-        return own.ifEmpty { storage.unreadByProject("") }
+        val own = deviceId?.takeIf { it.isNotBlank() }?.let { storage.unreadByProject(it, mailboxes) }.orEmpty()
+        return own.ifEmpty { storage.unreadByProject("", mailboxes) }
     }
 
     /** The seed watermark for [projectId] — see [NotificationLedgerStore.watermark]. */
@@ -155,11 +195,15 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
     }
 
     /** One screen's split of the open production's rows. */
-    fun split(query: BadgeDrilldownQuery): Map<String, Int> = splitBadges(rows.values.toList(), query)
+    fun split(query: BadgeDrilldownQuery): Map<String, Int> = splitBadges(shown(), query)
 
-    /** The open production's rows of one section that still count — what a badge is made of. */
-    fun unreadRows(section: String): List<NotificationRecord> =
-        rows.values.filter { it.section == section && it.counts }
+    /**
+     * The open production's rows of one section that still count — what a
+     * badge is made of. [everyMailbox] adds the mail rows held back for a
+     * mailbox this desktop cannot show, for the line that explains a count.
+     */
+    fun unreadRows(section: String, everyMailbox: Boolean = false): List<NotificationRecord> =
+        (if (everyMailbox) rows.values.toList() else shown()).filter { it.section == section && it.counts }
 
     /**
      * The open production's rows of one section, as wire rows — what the
@@ -167,7 +211,10 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
      * server's own backlog page.
      */
     fun wireRows(section: String): JsonArray =
-        JsonArray(rows.values.filter { it.section == section }.mapNotNull { it.asWireRow() })
+        JsonArray(shown().filter { it.section == section }.mapNotNull { it.asWireRow() })
+
+    /** The open production's rows this desktop may count — see [showMailboxes]. */
+    private fun shown(): List<NotificationRecord> = rows.values.filter { it.isOfMailboxes(mailboxes[it.projectId]) }
 
     private fun flip(ids: List<String>) {
         if (ids.isEmpty()) return
@@ -176,7 +223,7 @@ class BadgeStore(private val storage: NotificationLedgerStore = InMemoryNotifica
     }
 
     private fun publish() {
-        val counts = tallyBadges(rows.values)
+        val counts = tallyBadges(shown())
         if (counts != state.value) {
             ZillitLog.d(TAG) { "ledger ${rows.size} rows → sections=${counts.sectionMap()} tools=${counts.toolMap()}" }
         }

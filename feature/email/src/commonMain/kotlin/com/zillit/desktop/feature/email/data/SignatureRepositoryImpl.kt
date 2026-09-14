@@ -16,12 +16,15 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.zillit.desktop.feature.email.domain.EmailSignature
+import com.zillit.desktop.feature.email.domain.MailboxScope
 import com.zillit.desktop.feature.email.domain.SignatureRepository
 
 /** Sign-offs appended to outgoing mail. */
 class SignatureRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
+    /** The shared Accounts mailbox keeps its own sign-offs. */
+    private val scope: MailboxScope = MailboxScope.Personal,
 ) : SignatureRepository {
 
     private val api get() = config.apiV2(ZillitService.Email)
@@ -32,6 +35,7 @@ class SignatureRepositoryImpl(
             url = "${api}email-signature",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
         ).map { payload -> payload.signatureRows().mapNotNull(::readSignature) }
 
     override suspend fun create(title: String, body: String): ZillitResult<EmailSignature> =
@@ -40,16 +44,19 @@ class SignatureRepositoryImpl(
             url = "${api}email-signature/create",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
             body = jsonBody(
-                buildJsonObject {
-                    put("signature_title", title)
-                    put("signature_body", body)
-                    // A new signature is not made automatic. Silently taking
-                    // over someone's mail because they added a second one is
-                    // the kind of surprise nobody wants from a sign-off.
-                    put("use_for_new_email", false)
-                    put("use_for_reply_and_forward", false)
-                },
+                scope.body(
+                    buildJsonObject {
+                        put("signature_title", title)
+                        put("signature_body", body)
+                        // A new signature is not made automatic. Silently taking
+                        // over someone's mail because they added a second one is
+                        // the kind of surprise nobody wants from a sign-off.
+                        put("use_for_new_email", false)
+                        put("use_for_reply_and_forward", false)
+                    },
+                ),
             ),
         ).map { payload ->
             readSignature(payload) ?: EmailSignature(id = "", title = title, body = body)
@@ -61,12 +68,15 @@ class SignatureRepositoryImpl(
             url = "${api}email-signature/update",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
             body = jsonBody(
-                buildJsonObject {
-                    put("_id", id)
-                    put("signature_title", title)
-                    put("signature_body", body)
-                },
+                scope.body(
+                    buildJsonObject {
+                        put("_id", id)
+                        put("signature_title", title)
+                        put("signature_body", body)
+                    },
+                ),
             ),
         ).map { }
 
@@ -80,12 +90,15 @@ class SignatureRepositoryImpl(
             url = "${api}email-signature/update-usage-flags",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
             body = jsonBody(
-                buildJsonObject {
-                    put("_id", id)
-                    put("use_for_new_email", useForNew)
-                    put("use_for_reply_and_forward", useForReply)
-                },
+                scope.body(
+                    buildJsonObject {
+                        put("_id", id)
+                        put("use_for_new_email", useForNew)
+                        put("use_for_reply_and_forward", useForReply)
+                    },
+                ),
             ),
         ).map { }
 
@@ -95,6 +108,8 @@ class SignatureRepositoryImpl(
             url = "${api}email-signature/$id",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
+            body = scope.flagBody()?.let(::jsonBody),
         ).map { }
 }
 

@@ -11,7 +11,16 @@ data class OutgoingEmail(
     val cc: List<String> = emptyList(),
     val bcc: List<String> = emptyList(),
     val subject: String = "",
+    /** What was typed: the editor's HTML, without the sign-off or the quote. */
     val body: String = "",
+    /**
+     * The message being answered or forwarded, already formatted the way the
+     * web and Android quote it — an attribution line and a `<blockquote>`, or
+     * the forwarded-message header. Kept out of [body] because the editor
+     * cannot hold the original's markup without flattening it; it is joined
+     * back on at the moment the message is serialised (see [composedBody]).
+     */
+    val quotedHtml: String = "",
     /**
      * The `References` chain, threading this reply onto its conversation.
      *
@@ -35,6 +44,16 @@ data class OutgoingEmail(
      * a message cannot be sent until every upload has finished.
      */
     val attachments: List<StoredFile> = emptyList(),
+    /**
+     * The original's files, carried along on a reply or forward.
+     *
+     * Both other clients re-attach everything that is not an inline picture
+     * (web `setIngrainedAttachments(nonEmbeddedAttachments)`, Android
+     * `ingrained = attachments.filter { !isInline }`) and send them as
+     * `ingrained_attachment` — server-side copies the mail service already
+     * holds, so nothing is re-uploaded. Removable one by one in the composer.
+     */
+    val forwarded: List<EmailAttachment> = emptyList(),
 ) {
     /**
      * Whether this is worth sending.
@@ -67,78 +86,126 @@ internal fun String.isValidEmail(): Boolean {
 enum class ComposeMode { New, Reply, ReplyAll, Forward }
 
 /**
- * Builds the draft for a reply or forward.
+ * Builds the draft for a reply or forward — the web's `ComposeModal` rules,
+ * one function for all three modes so they cannot drift apart:
  *
- * One function for all three modes so they cannot drift apart. The rules are
- * conventional, and each is a thing users notice when it is wrong:
- *
- *  - **Reply** goes to the sender alone.
- *  - **Reply all** adds everyone who was on the message, minus [selfAddress] —
- *    replying to yourself is the classic mail-client embarrassment.
+ *  - **Reply** goes to the message's reply-to address. A message *I* sent
+ *    (from Sent, or whose reply-to is my own address) goes back to whoever I
+ *    sent it to, minus me.
+ *  - **Reply all** puts the reply-to address in To and everyone else who was
+ *    on the message in Cc, minus [selfAddress] — replying to yourself is the
+ *    classic mail-client embarrassment. A message I sent keeps its To and Cc.
  *  - **Forward** addresses nobody; the user picks.
  *
- * The subject is prefixed only when it is not already, so a long thread does not
- * become `Re: Re: Re:`.
+ * The subject is prefixed only when it is not already, so a long thread does
+ * not become `Re: Re: Re:`. The original goes into [OutgoingEmail.quotedHtml]
+ * in the shape both other clients send, and its files ride along as
+ * [OutgoingEmail.forwarded].
  */
-fun EmailMessage.replyDraft(mode: ComposeMode, selfAddress: String = ""): OutgoingEmail {
-    val sender = from.headerAddress()
-    val everyone = (to + cc).map { it.headerAddress() }
+fun EmailMessage.replyDraft(
+    mode: ComposeMode,
+    selfAddress: String = "",
+    /** The reading pane's timestamp for the attribution line; blank leaves the date out. */
+    quotedDate: String = mailFullTimeLabel(receivedAtMillis),
+): OutgoingEmail {
+    val me = selfAddress.trim()
+    val replyAddress = replyAddress
+    val sentByMe = folderName.equals(EmailFolder.SENT, ignoreCase = true) ||
+        (me.isNotBlank() && replyAddress.equals(me, ignoreCase = true))
+    val toAddresses = to.map { it.headerAddress() }
+    val ccAddresses = cc.map { it.headerAddress() }
 
-    val recipients = when (mode) {
-        ComposeMode.Reply -> listOf(sender)
-        ComposeMode.ReplyAll -> (listOf(sender) + everyone).distinctAddresses(except = selfAddress)
-        else -> emptyList()
+    val recipients: Pair<List<String>, List<String>> = when (mode) {
+        ComposeMode.Reply ->
+            if (sentByMe) toAddresses.distinctAddresses(except = me) to emptyList()
+            else listOf(replyAddress) to emptyList()
+        ComposeMode.ReplyAll ->
+            if (sentByMe) {
+                toAddresses.distinctAddresses(except = "") to ccAddresses.distinctAddresses(except = "")
+            } else {
+                listOf(replyAddress) to (toAddresses + ccAddresses).distinctAddresses(except = me)
+                    .filterNot { it.equals(replyAddress, ignoreCase = true) }
+            }
+        else -> emptyList<String>() to emptyList()
     }
 
     return OutgoingEmail(
-        to = recipients.filter { it.isNotBlank() },
+        to = recipients.first.filter { it.isNotBlank() },
+        cc = recipients.second,
         subject = subject.prefixedFor(mode),
-        body = quotedFor(mode),
-        // A forward starts a new conversation; a reply continues this one —
-        // and continuing it means the WHOLE chain, not just this message.
-        // Sending only this id threaded a reply to the first message and lost
-        // every later one into a new conversation (QA: "replying generates a
-        // new mail"). Both phones and the web send the parent's chain.
-        references = if (mode == ComposeMode.Forward) emptyList() else replyReferences,
+        quotedHtml = quotedFor(mode, quotedDate),
+        // Continuing the conversation means the WHOLE chain, not just this
+        // message: sending only this id threaded a reply to the first message
+        // and lost every later one into a new conversation (QA: "replying
+        // generates a new mail"). Both phones and the web send the parent's
+        // chain — for a forward as well, so the forwarded copy still files
+        // beside the original in a threaded client.
+        references = if (mode == ComposeMode.New) emptyList() else replyReferences,
+        forwarded = if (mode == ComposeMode.New) emptyList() else listedAttachments,
     )
 }
 
 private fun List<String>.distinctAddresses(except: String): List<String> =
     map { it.trim() }
-        .filter { it.isNotBlank() && !it.equals(except.trim(), ignoreCase = true) }
+        .filter { it.isNotBlank() && !(except.isNotBlank() && it.equals(except.trim(), ignoreCase = true)) }
         .distinctBy { it.lowercase() }
 
 private fun String.prefixedFor(mode: ComposeMode): String {
-    val prefix = when (mode) {
-        ComposeMode.Forward -> "Fwd: "
-        ComposeMode.Reply, ComposeMode.ReplyAll -> "Re: "
-        ComposeMode.New -> return this
+    val bare = trim().replace(PREFIX_PATTERN, "").trim()
+    return when (mode) {
+        ComposeMode.Forward -> "Fwd: $bare"
+        ComposeMode.Reply, ComposeMode.ReplyAll -> "Re: $bare"
+        ComposeMode.New -> this
     }
-    return if (startsWith(prefix, ignoreCase = true)) this else prefix + this
 }
 
+/** A leading `Re:`/`Fwd:`/`FW:`, in any case, possibly repeated. */
+private val PREFIX_PATTERN = Regex("^(\\s*(re|fwd|fw)\\s*:\\s*)+", RegexOption.IGNORE_CASE)
+
 /**
- * The quoted original, below a blank line for the reply to be typed into.
+ * The quoted original, as HTML, in the shape the web (`formatEmailBody`,
+ * the forward block in `ComposeModal.jsx`) and Android
+ * (`buildReplyQuotedHtml`, `buildForwardQuotedHtml`) both send — so a reply
+ * from here reads exactly like one from a phone at the far end.
  *
- * Plain text even when the original was HTML: quoting markup inside a composer
- * that cannot edit markup produces mail that renders as tag soup at the far end.
+ * Plain-text originals get their line breaks made explicit first; the web's
+ * `getEmailBody` does the same (`text.replace(/\n/g, '<br/>')`).
  */
-private fun EmailMessage.quotedFor(mode: ComposeMode): String {
+private fun EmailMessage.quotedFor(mode: ComposeMode, date: String): String {
     if (mode == ComposeMode.New) return ""
+    val original = if (isHtml) body else body.escapeHtml().replace("\n", "<br/>")
 
-    val plain = if (isHtml) htmlToPlainText(body) else body
-    val header = if (mode == ComposeMode.Forward) {
-        "---------- Forwarded message ----------\nFrom: $from\nSubject: $subject"
+    return if (mode == ComposeMode.Forward) {
+        buildString {
+            append("<br/><br/><div class=\"zl-quoted-trail\">")
+            append("-------Forwarded message-------<br/>")
+            append("From: ").append(replyAddress.escapeHtml()).append("<br/>")
+            if (date.isNotBlank()) append("Date: ").append(date.escapeHtml()).append("<br/>")
+            append("Subject: ").append(subject.escapeHtml()).append("<br/>")
+            append("To: ").append(to.joinToString(", ").escapeHtml())
+            if (cc.isNotEmpty()) append("<br/>Cc: ").append(cc.joinToString(", ").escapeHtml())
+            append("<br/><br/>")
+            append(original)
+            append("</div>")
+        }
     } else {
-        // No date: this module has no formatter, and "On <blank>, X wrote:" is
-        // worse than the plain attribution every client falls back to.
-        "$senderName wrote:"
+        val on = if (date.isNotBlank()) "On $date, " else ""
+        "<br><div style=\"color: #666666;\">${on.escapeHtml()}${replyAddress.escapeHtml()} wrote:</div>" +
+            "<blockquote style=\"margin: 0 0 0 0.8em; border-left: 2px solid #ccc; padding-left: 1em; " +
+            "color: #666666;\">$original</blockquote>"
     }
+}
 
-    return buildString {
-        append("\n\n")
-        append(header)
-        append('\n')
-        plain.lineSequence().forEach { line -> append("> ").append(line).append('\n') }
+/** The five characters that would otherwise be read as markup. */
+internal fun String.escapeHtml(): String = buildString(length) {
+    for (char in this@escapeHtml) {
+        when (char) {
+            '&' -> append("&amp;")
+            '<' -> append("&lt;")
+            '>' -> append("&gt;")
+            '"' -> append("&quot;")
+            '\'' -> append("&#39;")
+            else -> append(char)
+        }
     }
 }

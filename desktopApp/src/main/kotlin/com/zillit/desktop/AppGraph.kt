@@ -44,6 +44,7 @@ import com.zillit.desktop.core.sync.SqlOutboxStore
 import com.zillit.desktop.core.sync.SyncEngine
 import com.zillit.desktop.core.sync.SyncHandlerRegistry
 import com.zillit.desktop.core.sync.SyncScope
+import io.ktor.client.HttpClient
 import io.ktor.client.request.head
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.launchIn
@@ -156,6 +157,7 @@ import com.zillit.desktop.feature.email.data.SuitableRegionSource
 import com.zillit.desktop.feature.email.domain.StorageTargetSource
 import com.zillit.desktop.feature.email.domain.AttachmentUploader
 import com.zillit.desktop.feature.email.data.ContactRepositoryImpl
+import com.zillit.desktop.feature.email.domain.ActiveMailbox
 import com.zillit.desktop.feature.email.data.DraftRepositoryImpl
 import com.zillit.desktop.feature.email.data.EmailRepositoryImpl
 import com.zillit.desktop.feature.email.data.FolderRepositoryImpl
@@ -201,6 +203,18 @@ import com.zillit.desktop.feature.auth.domain.QrLoginRepository
  *
  * Deliberately fails to construct if configuration is missing — see [Unconfigured].
  */
+/**
+ * The version this binary is.
+ *
+ * jpackage's `-Djpackage.app-version` and the generated [BuildInfo.VERSION]
+ * come from the same `zillit.version` and agree on a packaged build; the
+ * property is preferred only because it is what the installer actually
+ * stamped, should a hand-edited `.cfg` ever differ. Unpackaged, only the
+ * constant exists.
+ */
+internal fun installedAppVersion(): String =
+    System.getProperty("jpackage.app-version")?.trim()?.takeIf { it.isNotEmpty() } ?: BuildInfo.VERSION
+
 /** What the `deviceInfo` header reports about this machine. */
 private fun currentDeviceDescription(): com.zillit.desktop.core.network.DeviceDescription {
     val platform = currentPlatform()
@@ -422,6 +436,7 @@ private suspend fun onProjectOpened(
     remoteConfig: com.zillit.desktop.core.remoteconfig.RemoteConfigRepository,
     badges: BadgeStore,
     seeder: NotificationLedgerSeeder,
+    learnMailbox: suspend (projectId: String) -> Unit,
     socket: SocketIoClient,
     socketUrl: String,
     socketAuth: suspend () -> Map<String, String>,
@@ -473,6 +488,9 @@ private suspend fun onProjectOpened(
         badges.open(project.id)
         seeder.seed(project.id)
     }
+    // Which mailbox's mail the badges may count — asked of the profile, so
+    // apart from the rows: a slow answer must not hold the counts back.
+    scope.launch { learnMailbox(project.id) }
 }
 
 /**
@@ -548,6 +566,8 @@ sealed interface AppGraph {
         val contactRepository: ContactRepository,
         val signatureRepository: SignatureRepository,
         val folderRepository: FolderRepository,
+        /** Which mailbox the mail repositories address — flipped by the Email tool's switcher. */
+        val activeMailbox: ActiveMailbox,
         val attachmentUploader: AttachmentUploader,
         /** An uploader that puts files in ANOTHER production's storage. */
         val uploaderForProject: (ProjectSnapshot, CallOptions) -> AttachmentUploader,
@@ -600,6 +620,8 @@ sealed interface AppGraph {
         val badgeStore: BadgeStore,
         /** Asks the notification service for the ledger rows it has not seen. */
         val badgeSeeder: NotificationLedgerSeeder,
+        /** Which mailbox the badges count mail for, per production — see [MailboxScopes]. */
+        val mailboxScopes: MailboxScopes,
         /** This device's server id, once registered; null before. */
         val deviceId: () -> String?,
         /** The signed REST client — for host-level fetches with no feature home. */
@@ -874,6 +896,13 @@ sealed interface AppGraph {
                 store = badgeStore,
                 myUserId = { headerContext.value.userId },
             )
+            // The email rows are tagged with their mailbox; the ledger counts
+            // only the one this desktop can open, which the profile names.
+            // Both mailboxes count on the rail now that the Email tool can open
+            // the shared Accounts one.
+            val mailboxScopes = MailboxScopes(
+                apiClient, config, headerContext, badgeStore, preferences, accountsOpenable = { true },
+            )
 
             // The finance repositories, built here because the offline
             // handlers below send through them.
@@ -1007,6 +1036,7 @@ sealed interface AppGraph {
                     tokenSession.clearSession()
                     handshakeRecord = null
                     badgeStore.clear()
+                    badgeStore.forgetMailboxes()
                     projectListCache?.clear()
                     // The presence socket is this device's standing as reachable; signed out, it is not.
                     liveKitLine?.disconnect("signed out")
@@ -1085,6 +1115,7 @@ sealed interface AppGraph {
                         remoteConfig = remoteConfigRepository,
                         badges = badgeStore,
                         seeder = badgeSeeder,
+                        learnMailbox = { mailboxScopes.learn(it) },
                         socket = socketClient,
                         socketUrl = config.baseUrl(ZillitService.Chat),
                         socketAuth = socketHandshake,
@@ -1142,19 +1173,7 @@ sealed interface AppGraph {
                 )
             }
 
-            // "A newer build exists", from Firebase Remote Config. Rides the
-            // plain client for the same reason chatPresence does: Google must
-            // never see the Zillit headers. Off entirely without
-            // <ENV>_FIREBASE_APP_ID, and off under `:desktopApp:run`.
-            val appUpdateChecker = AppUpdateChecker(
-                httpClient = storageClient,
-                firebase = config.firebase,
-                // jpackage writes `-Djpackage.app-version` into the bundle's
-                // .cfg; absent unpackaged, which the checker reads as "unknown".
-                installedVersion = { System.getProperty("jpackage.app-version") },
-                instanceId = { updateInstanceId(preferences) },
-                fallbackDownloadUrl = { remoteConfigRepository.current()?.appDownloadUrl },
-            )
+            val appUpdateChecker = appUpdateChecker(storageClient, config, preferences, remoteConfigRepository)
 
             val chatRepository = ChatRepositoryImpl(
                 apiClient = apiClient,
@@ -1407,7 +1426,12 @@ sealed interface AppGraph {
             )
 
             val calendarRepository = CalendarRepositoryImpl(apiClient, config)
-            val emailRepository = EmailRepositoryImpl(apiClient, config)
+            // One switch for every mail call: the personal mailbox, or the
+            // production's shared Accounts one while its member flips to it.
+            // The From: header follows whichever is active.
+            val activeMailbox = ActiveMailbox()
+            val mailFrom = { activeMailbox.fromHeader(projectContext.context.value.profile?.fullName.orEmpty()) }
+            val emailRepository = EmailRepositoryImpl(apiClient, config, scope = activeMailbox, fromHeader = mailFrom)
 
             val presetRepository = PresetRepositoryImpl(
                 apiClient = apiClient,
@@ -1476,10 +1500,11 @@ sealed interface AppGraph {
                 emailRealtime = EmailRealtimeSource(socketEvents),
                 calendarRepository = calendarRepository,
                 emailRepository = emailRepository,
-                draftRepository = DraftRepositoryImpl(apiClient, config),
-                contactRepository = ContactRepositoryImpl(apiClient, config),
-                signatureRepository = SignatureRepositoryImpl(apiClient, config),
-                folderRepository = FolderRepositoryImpl(apiClient, config),
+                draftRepository = DraftRepositoryImpl(apiClient, config, scope = activeMailbox, fromHeader = mailFrom),
+                contactRepository = ContactRepositoryImpl(apiClient, config, scope = activeMailbox),
+                signatureRepository = SignatureRepositoryImpl(apiClient, config, scope = activeMailbox),
+                folderRepository = FolderRepositoryImpl(apiClient, config, scope = activeMailbox),
+                activeMailbox = activeMailbox,
                 attachmentUploader = attachmentUploader,
                 uploaderForProject = uploaderForProject,
                 noticeMedia = noticeMedia,
@@ -1562,6 +1587,7 @@ sealed interface AppGraph {
                 httpClient = storageClient,
                 badgeStore = badgeStore,
                 badgeSeeder = badgeSeeder,
+                mailboxScopes = mailboxScopes,
                 deviceId = { headerContext.value.deviceId.takeIf { it.isNotBlank() } },
                 badgeDrilldown = badgeDrilldown,
                 apiClient = apiClient,
@@ -1647,7 +1673,7 @@ private suspend fun io.ktor.client.HttpClient.reaches(url: String): Boolean =
  * one. See `AwsV4Signer`.
  */
 private fun uploader(
-    storageClient: io.ktor.client.HttpClient,
+    storageClient: HttpClient,
     apiClient: ApiClient,
     config: AppConfig,
     remoteConfig: RemoteConfigRepository,
@@ -1692,7 +1718,7 @@ private fun uploader(
  * that the Box token call names it, since that one is project-scoped.
  */
 private fun projectUploader(
-    storageClient: io.ktor.client.HttpClient,
+    storageClient: HttpClient,
     apiClient: ApiClient,
     config: AppConfig,
     remoteConfig: RemoteConfigRepository,
@@ -1864,6 +1890,32 @@ internal suspend fun AppGraph.Ready.crewPresets(): ZillitResult<CrewPresets> {
 
 /** `project_type` for a personal production, which runs no mail. */
 private const val PERSONAL_PRODUCTION = "personal"
+
+/**
+ * "A newer build exists", from Firebase Remote Config.
+ *
+ * Rides the plain [storageClient] for the same reason the chat presence feed
+ * does: Google must never see the Zillit headers. Off entirely without
+ * `<ENV>_FIREBASE_APP_ID`.
+ */
+private fun appUpdateChecker(
+    storageClient: HttpClient,
+    config: AppConfig,
+    preferences: PreferenceStore,
+    remoteConfigRepository: RemoteConfigRepository,
+) = AppUpdateChecker(
+    httpClient = storageClient,
+    firebase = config.firebase,
+    // The compiled-in version, so `:desktopApp:run` checks too — it used to
+    // read only jpackage's `.cfg` and switch itself off unpackaged, which is
+    // where every "the update banner never shows" report was tested from.
+    installedVersion = { installedAppVersion() },
+    instanceId = { updateInstanceId(preferences) },
+    fallbackDownloadUrl = { remoteConfigRepository.current()?.appDownloadUrl },
+    // `_mac` / `_windows` keys win over the plain ones, so a Windows install
+    // is never sent a .dmg.
+    os = currentPlatform().os,
+)
 
 /**
  * A stable per-install id for Firebase Remote Config.

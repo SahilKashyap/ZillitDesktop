@@ -440,11 +440,15 @@ data class StatusAction(
  * @param downloadUrl null when nothing published a usable https URL. The banner
  *   still appears; it simply has no button, because "a newer version exists" is
  *   worth knowing even when we cannot say where to get it.
+ * @param installedVersion what this build is, named in the strip so "1.0.3 is
+ *   available" is read next to "you have 1.0.2" — the two numbers are the
+ *   whole message. Null leaves it out.
  */
 data class UpdateNotice(
     val latestVersion: String,
     val mandatory: Boolean,
     val downloadUrl: String?,
+    val installedVersion: String? = null,
 )
 
 private val SWITCHER_CHEVRON = 14.dp

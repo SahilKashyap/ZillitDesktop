@@ -8,6 +8,8 @@ import com.zillit.desktop.feature.email.domain.EmailDraft
 import com.zillit.desktop.feature.email.domain.EmailFolder
 import com.zillit.desktop.feature.email.domain.EmailMessage
 import com.zillit.desktop.feature.email.domain.EmailSummary
+import com.zillit.desktop.feature.email.domain.StoredFile
+import com.zillit.desktop.feature.email.domain.calculateThreadId
 import com.zillit.desktop.feature.email.domain.toSnippet
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -58,12 +60,16 @@ internal fun readSummary(row: JsonElement): EmailSummary? {
 
     return EmailSummary(
         id = id,
-        // Threading falls back to the message itself: a mail with no thread is a
-        // thread of one, and a blank id would collapse them all together.
-        threadId = row.str("thread_id") ?: row.str("trail_reference_id") ?: id,
+        // The conversation's root, worked out the way the web and Android
+        // do — see `calculateThreadId`. Never the server's `thread_id`: the
+        // browser overwrites that with this value, and the two clients must
+        // stack the same rows.
+        threadId = calculateThreadId(id, row.headerIds("references"), row.str("in_reply_to")),
         subject = row.str("subject") ?: "(no subject)",
         from = row.str("from").orEmpty(),
         to = row.addresses("to"),
+        cc = row.addresses("cc"),
+        bcc = row.addresses("bcc"),
         snippet = body.toSnippet(),
         receivedAtMillis = row.millis("created_at"),
         isRead = row.bool("read"),
@@ -85,24 +91,29 @@ internal fun readMessage(row: JsonElement): EmailMessage? {
 
     return EmailMessage(
         id = id,
-        // The server's own trail id first; then the chain's root and the
-        // parent, which is how the phones group a thread when the server
-        // sends no trail (Android `calculateThreadId`).
-        threadId = row.str("thread_id")
-            ?: row.str("trail_reference_id")
-            ?: references.firstOrNull()
-            ?: inReplyTo.takeIf { it.isNotBlank() }
-            ?: id,
+        // The same rule the list rows are grouped by, so a message always
+        // finds the conversation its row sits in.
+        threadId = calculateThreadId(id, references, inReplyTo),
         subject = row.str("subject") ?: "(no subject)",
         from = row.str("from").orEmpty(),
         to = row.addresses("to"),
         cc = row.addresses("cc"),
+        bcc = row.addresses("bcc"),
+        replyTo = row.str("reply_to").orEmpty(),
         body = raw,
         isHtml = row.bool("html_email") || raw.looksLikeHtml(),
-        receivedAtMillis = row.millis("created_at"),
-        // `ingrained_attachment` holds inline images — part of the body, not
-        // things to list as files the reader can download.
-        attachments = (row["attachments"] as? JsonArray).orEmpty().mapNotNull(::readAttachment),
+        receivedAtMillis = row.millis("created_at").takeIf { it > 0 } ?: row.millis("sent_at"),
+        folderName = row.str("folder_name").orEmpty(),
+        uid = row.int("uid"),
+        isRead = row.bool("read"),
+        // `attachments` and `ingrained_attachment` both: the second holds
+        // pictures the body draws, which the composer must carry when the
+        // message is forwarded and the reader must not list as files —
+        // `EmailMessage.listedAttachments` tells them apart by content id.
+        attachments = (
+            (row["attachments"] as? JsonArray).orEmpty() +
+                (row["ingrained_attachment"] as? JsonArray).orEmpty()
+            ).mapNotNull(::readAttachment).distinctBy { it.id },
         references = references,
         inReplyTo = inReplyTo,
     )
@@ -126,8 +137,28 @@ internal fun readDraft(row: JsonElement): EmailDraft? {
         bcc = row.addresses("bcc"),
         subject = row.str("subject").orEmpty(),
         body = row.str("body") ?: row.str("text").orEmpty(),
-        updatedAtMillis = row.millis("updated_at").takeIf { it > 0 } ?: row.millis("created_at"),
+        updatedAtMillis = row.millis("updated_at").takeIf { it > 0 }
+            ?: row.millis("updated").takeIf { it > 0 }
+            ?: row.millis("created_at"),
         references = row.headerIds("references"),
+        // Files uploaded while the draft was written come back as the send
+        // payload's shape; only those that name an object can be re-sent.
+        attachments = (row["attachments"] as? JsonArray).orEmpty().mapNotNull(::readStoredFile),
+        forwarded = (row["ingrained_attachment"] as? JsonArray).orEmpty().mapNotNull(::readAttachment),
+    )
+}
+
+/** An uploaded file as a draft or a forward carries it; null without an object key. */
+internal fun readStoredFile(row: JsonElement): StoredFile? {
+    if (row !is JsonObject) return null
+    val media = row.str("media") ?: return null
+    return StoredFile(
+        media = media,
+        bucket = row.str("bucket").orEmpty(),
+        region = row.str("region").orEmpty(),
+        fileName = row.str("name") ?: row.str("file_name") ?: "file",
+        contentType = row.str("content_type") ?: "application/octet-stream",
+        sizeBytes = row.millis("content_length").takeIf { it > 0 } ?: row.millis("size"),
     )
 }
 
@@ -188,6 +219,11 @@ private fun readAttachment(row: JsonElement): EmailAttachment? {
         fileName = row.str("name") ?: row.str("file_name") ?: "file",
         contentType = row.str("content_type"),
         sizeBytes = row.millis("content_length").takeIf { it > 0 } ?: row.millis("size"),
+        contentId = row.str("content_id"),
+        contentDisposition = row.str("content_disposition") ?: "attachment",
+        media = row.str("media"),
+        bucket = row.str("bucket"),
+        region = row.str("region"),
     )
 }
 

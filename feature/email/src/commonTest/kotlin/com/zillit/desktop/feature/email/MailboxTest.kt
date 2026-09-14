@@ -132,4 +132,44 @@ class MailboxTest {
 
         assertEquals(listOf("INBOX", "Drafts"), mailbox.cachedFolders().map { it.name })
     }
+    // -- the whole mailbox ---------------------------------------------------
+
+    @Test
+    fun `the whole mailbox syncs folder after folder, reporting its share done`() = runTest {
+        // The web's `useEmailSync`: every folder but Drafts, in batches of 50,
+        // with "Syncing emails… N%" counting batches across all of them.
+        val server = FakeMailServer(uids = (1..120).toList(), folderNames = listOf("INBOX", "Drafts", "Sent"))
+        val mailbox = Mailbox(server, InMemoryMailboxCache())
+        val progress = mutableListOf<Int>()
+        val changed = mutableListOf<Pair<String, Boolean>>()
+
+        mailbox.syncEverything(
+            folders = (server.folders() as ZillitResult.Success).data,
+            onProgress = { progress += it },
+            onFolderChanged = { changed += it.folderName to it.complete },
+        )
+
+        // Two IMAP folders of three batches each; Drafts is not IMAP.
+        assertEquals(6, server.indexed.size)
+        assertEquals(listOf(0, 16, 33, 50, 66, 83, 100, 100), progress)
+        assertEquals(listOf("INBOX", "INBOX", "INBOX", "Sent", "Sent", "Sent"), changed.map { it.first })
+        assertEquals(listOf(false, false, true, false, false, true), changed.map { it.second })
+        assertEquals(120, mailbox.cachedMessages("Sent").size)
+    }
+
+    @Test
+    fun `a mailbox already held asks each folder for its list and nothing more`() = runTest {
+        val server = FakeMailServer(uids = (1..10).toList(), folderNames = listOf("INBOX", "Sent"))
+        val mailbox = Mailbox(server, InMemoryMailboxCache())
+        val folders = (server.folders() as ZillitResult.Success).data
+        mailbox.syncEverything(folders)
+        server.indexed.clear()
+        val progress = mutableListOf<Int>()
+
+        mailbox.syncEverything(folders, onProgress = { progress += it })
+
+        assertTrue(server.indexed.isEmpty(), "a complete folder was fetched again")
+        assertEquals(listOf(0, 100), progress, "nothing to do still ends at 100%")
+    }
+
 }

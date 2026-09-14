@@ -1,11 +1,14 @@
 package com.zillit.desktop.feature.email
 
+import com.zillit.desktop.feature.email.domain.EmailFilters
 import com.zillit.desktop.feature.email.domain.EmailQuery
 import com.zillit.desktop.feature.email.domain.EmailSummary
 import com.zillit.desktop.feature.email.domain.ReadFilter
+import com.zillit.desktop.feature.email.domain.ReadStatus
 import com.zillit.desktop.feature.email.domain.SearchField
+import com.zillit.desktop.feature.email.domain.applyFilters
+import com.zillit.desktop.feature.email.domain.matchingSearch
 import com.zillit.desktop.feature.email.domain.search
-import com.zillit.desktop.feature.email.ui.MailSearch
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -157,51 +160,39 @@ class EmailSearchTest {
         assertEquals(listOf("m4"), hits.map { it.id })
     }
 
-    // -- the state holder --------------------------------------------------
+    // -- the folder's own search box and filters ---------------------------
 
     @Test
-    fun `typing runs the search and clearing ends it`() {
-        val search = MailSearch { mailbox }
-
-        search.term("invoice")
-        assertTrue(search.state.value.isActive)
-        assertEquals(listOf("m3"), search.state.value.results.map { it.id })
-
-        search.term("")
-        assertFalse(search.state.value.isActive)
-        assertTrue(search.state.value.results.isEmpty())
+    fun `the folder search box matches subject, sender and recipients`() {
+        // The web's `useEmailListData` filter over the open folder's rows.
+        assertEquals(listOf("m1"), mailbox.matchingSearch("day 12").map { it.id })
+        assertEquals(listOf("m2"), mailbox.matchingSearch("ravi").map { it.id })
+        assertEquals(listOf("m4"), mailbox.matchingSearch("crew@prod").map { it.id })
     }
 
     @Test
-    fun `opening a folder ends the search`() {
-        val search = MailSearch { mailbox }
-        search.term("invoice")
-
-        search.clear()
-
-        assertFalse(search.state.value.isActive)
-        assertEquals("", search.state.value.query.term)
+    fun `a blank folder search leaves the rows alone`() {
+        assertEquals(mailbox, mailbox.matchingSearch("   "))
     }
 
     @Test
-    fun `the scope line counts the folders actually searched`() {
-        // Not decoration: with no server-side search, the user has to know the
-        // result set covers downloaded mail rather than the mailbox.
-        val search = MailSearch { mailbox }
-
-        search.term("@")
-
-        assertEquals(3, search.state.value.syncedFolderCount)
-        assertTrue(search.state.value.scope.contains("3 folders"), search.state.value.scope)
+    fun `filters narrow by read status, attachments and address`() {
+        assertEquals(listOf("m4"), mailbox.applyFilters(EmailFilters(readStatus = ReadStatus.Read)).map { it.id })
+        assertEquals(
+            listOf("m1", "m2", "m3"),
+            mailbox.applyFilters(EmailFilters(readStatus = ReadStatus.Unread)).map { it.id },
+        )
+        assertEquals(listOf("m4"), mailbox.applyFilters(EmailFilters(hasAttachments = true)).map { it.id })
+        assertEquals(listOf("m1"), mailbox.applyFilters(EmailFilters(from = "aisha")).map { it.id })
+        assertEquals(listOf("m4"), mailbox.applyFilters(EmailFilters(to = "CREW@")).map { it.id })
+        assertTrue(mailbox.applyFilters(EmailFilters(cc = "nobody")).isEmpty())
     }
 
     @Test
-    fun `an empty cache says so rather than saying no results`() {
-        val search = MailSearch { emptyList() }
-
-        search.term("anything")
-
-        assertTrue(search.state.value.scope.contains("No mail"), search.state.value.scope)
+    fun `no filter set means every row, and the button's dot stays off`() {
+        assertEquals(mailbox, mailbox.applyFilters(EmailFilters.None))
+        assertFalse(EmailFilters.None.isActive)
+        assertTrue(EmailFilters(bcc = "x").isActive)
     }
 
     @Test

@@ -13,6 +13,13 @@ data class EmailSummary(
     val subject: String,
     val from: String,
     val to: List<String> = emptyList(),
+    /**
+     * Carried on the summary, not only the full message: the list's address
+     * filters (`Filters → Cc / Bcc`) run over cached rows, which is all the
+     * folder has until a message is opened.
+     */
+    val cc: List<String> = emptyList(),
+    val bcc: List<String> = emptyList(),
     val snippet: String = "",
     val receivedAtMillis: Long = 0,
     val isRead: Boolean = false,
@@ -34,9 +41,37 @@ data class EmailSummary(
 
     val senderAddress: String get() = from.headerAddress()
 
+    /** Everyone the message went to, for the Sent row and the address filters. */
+    val recipients: List<String> get() = to + cc + bcc
+
     /** Never prints subject or snippet — mail bodies are the most private thing here. */
     override fun toString(): String = "EmailSummary(id=$id, read=$isRead, attachments=$attachmentCount)"
 }
+
+/**
+ * Which conversation a message belongs to — the web's `calculateThreadId`
+ * and Android's namesake, applied to every row as it is cached:
+ *
+ *  1. the first real entry of its `References` chain — the ROOT of the
+ *     conversation, which every reply in it shares;
+ *  2. failing that, `In-Reply-To`;
+ *  3. failing that, the message itself: a mail with no thread is a thread
+ *     of one.
+ *
+ * Computed here rather than taken from the server's `thread_id`: the web
+ * overwrites that field with this value on every sync, so grouping on
+ * anything else would disagree with the browser about which rows stack.
+ * `<>` is the placeholder some clients send for "no reference" and is not
+ * a reference.
+ */
+fun calculateThreadId(id: String, references: List<String>, inReplyTo: String?): String {
+    val root = references.firstOrNull { it.isReference() }
+    if (root != null) return root
+    if (inReplyTo != null && inReplyTo.isReference()) return inReplyTo.trim()
+    return id
+}
+
+private fun String.isReference(): Boolean = trim().let { it.isNotEmpty() && it != "<>" }
 
 /**
  * Extracts the display name from a mail header.

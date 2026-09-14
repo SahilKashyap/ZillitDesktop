@@ -18,7 +18,7 @@ import com.zillit.desktop.feature.email.domain.EmailSummary
 import com.zillit.desktop.feature.email.ui.EmailScreen
 import com.zillit.desktop.feature.email.ui.EmailUiState
 import com.zillit.desktop.feature.email.ui.LIST_PANE_TAG
-import com.zillit.desktop.feature.email.ui.READING_PANE_TAG
+import com.zillit.desktop.feature.email.ui.PANE_TAG
 import com.zillit.desktop.feature.email.ui.SPLITTER_TAG
 import kotlin.math.abs
 import kotlin.test.Test
@@ -27,9 +27,10 @@ import kotlin.test.assertTrue
 /**
  * The mailbox as it is actually laid out with a message open.
  *
- * Composed rather than reasoned about: the split is a fraction of whatever the
- * panes are given, and the arithmetic being right says nothing about the
- * sidebar, the splitter's own width, or a drag reaching the handle at all.
+ * Composed rather than reasoned about: the split is a width clamped to what
+ * the panes are given, and the arithmetic being right says nothing about the
+ * nav strip, the sidebar, the splitter's own width, or a drag reaching the
+ * handle at all.
  */
 @OptIn(ExperimentalTestApi::class)
 class MailboxSplitRenderTest {
@@ -54,17 +55,17 @@ class MailboxSplitRenderTest {
                 folderName = "INBOX",
             ),
         ),
-        selectedMessageId = "m1",
-    )
+        openRowId = "m1",
+    ).regrouped()
 
     @Test
-    fun `the listing keeps a quarter and the message takes the rest`() = mailboxTest {
+    fun `the listing opens at the web's default width and the message takes the rest`() = mailboxTest {
         setMailbox()
 
-        // 1200 wide, less the 200pt folder sidebar, is 1000 to divide.
-        assertNear(250.dp, listWidth(), "listing")
-        // The remainder, less the splitter's own grab bar.
-        assertNear(742.dp, readingWidth(), "message")
+        // The web's list opens at its 280 minimum; the reading pane has the
+        // rest of the 1200 after the nav strip, the sidebar and two splitters.
+        assertNear(280.dp, listWidth(), "listing")
+        assertNear(MAILBOX_WIDTH - NAV_STRIP - SIDEBAR - 280.dp - SPLITTER * 2, readingWidth(), "message")
     }
 
     @Test
@@ -79,7 +80,7 @@ class MailboxSplitRenderTest {
             release()
         }
 
-        assertNear(450.dp, listWidth(), "listing after the drag")
+        assertNear(480.dp, listWidth(), "listing after the drag")
         assertTrue(readingWidth() < message, "the message pane should have given the width up")
     }
 
@@ -95,7 +96,7 @@ class MailboxSplitRenderTest {
         }
 
         // Clamped at the listing's minimum — not at zero, and not off-screen.
-        assertNear(220.dp, listWidth(), "listing dragged hard left")
+        assertNear(280.dp, listWidth(), "listing dragged hard left")
     }
 
     /**
@@ -132,7 +133,7 @@ class MailboxSplitRenderTest {
 
     private fun ComposeUiTest.listWidth(): Dp = onNodeWithTag(LIST_PANE_TAG).getUnclippedBoundsInRoot().width
 
-    private fun ComposeUiTest.readingWidth(): Dp = onNodeWithTag(READING_PANE_TAG).getUnclippedBoundsInRoot().width
+    private fun ComposeUiTest.readingWidth(): Dp = onNodeWithTag(PANE_TAG).getUnclippedBoundsInRoot().width
 
     private fun assertNear(expected: Dp, actual: Dp, what: String) {
         assertTrue(
@@ -144,6 +145,13 @@ class MailboxSplitRenderTest {
 
 private val MAILBOX_WIDTH = 1200.dp
 private val MAILBOX_HEIGHT = 800.dp
+
+/** The web's fixed nav strip and the sidebar's opening width. */
+private val NAV_STRIP = 48.dp
+private val SIDEBAR = 200.dp
+
+/** `ZillitPaneSplitter`'s grab bar. */
+private val SPLITTER = 8.dp
 
 /** Rounding between pixels and points; anything larger is a layout change. */
 private val TOLERANCE = 2.dp

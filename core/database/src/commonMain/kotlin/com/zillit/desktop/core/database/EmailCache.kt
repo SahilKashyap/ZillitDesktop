@@ -19,6 +19,8 @@ data class EmailSnapshot(
     val receivedAt: Long,
     val isRead: Boolean,
     val attachmentCount: Int,
+    val cc: List<String> = emptyList(),
+    val bcc: List<String> = emptyList(),
 )
 
 data class EmailFolderSnapshot(
@@ -33,6 +35,12 @@ data class EmailFolderSnapshot(
  * Separate from [ProjectCache] because it is written on a different rhythm —
  * continuously as folders sync, rather than once when a production opens — but
  * cleared alongside it, by [clearProject].
+ *
+ * Every read and write names the **mailbox** the rows belong to (the address
+ * they were fetched for): a production can give one user a personal mailbox
+ * and a shared Accounts one, and IMAP uids restart at 1 in each, so a row is
+ * only meaningful together with its mailbox. `""` is the mailbox of a build
+ * that never learnt an address, which keeps old callers working unchanged.
  */
 class EmailCache(database: ZillitDatabase, private val nowMillis: () -> Long) {
 
@@ -40,15 +48,16 @@ class EmailCache(database: ZillitDatabase, private val nowMillis: () -> Long) {
 
     // -- folders -----------------------------------------------------------
 
-    fun saveFolders(projectId: String, folders: List<EmailFolderSnapshot>) {
+    fun saveFolders(projectId: String, folders: List<EmailFolderSnapshot>, mailbox: String = "") {
         queries.transaction {
             // Replace rather than merge: a folder deleted on another device has
             // to disappear here too, and the server's list is the whole truth.
-            queries.deleteFolders(projectId)
+            queries.deleteFolders(projectId, mailbox)
             folders.forEach { folder ->
                 queries.upsertFolder(
                     folderName = folder.folderName,
                     projectId = projectId,
+                    mailbox = mailbox,
                     isSystem = folder.isSystem.toDb(),
                     unreadCount = folder.unreadCount.toLong(),
                     cachedAt = nowMillis(),
@@ -57,8 +66,8 @@ class EmailCache(database: ZillitDatabase, private val nowMillis: () -> Long) {
         }
     }
 
-    fun folders(projectId: String): List<EmailFolderSnapshot> =
-        queries.selectFolders(projectId).executeAsList().map {
+    fun folders(projectId: String, mailbox: String = ""): List<EmailFolderSnapshot> =
+        queries.selectFolders(projectId, mailbox).executeAsList().map {
             EmailFolderSnapshot(
                 folderName = it.folderName,
                 isSystem = it.isSystem.toBool(),
@@ -81,19 +90,23 @@ class EmailCache(database: ZillitDatabase, private val nowMillis: () -> Long) {
         folderName: String,
         emails: List<EmailSnapshot>,
         dropUids: Set<Int> = emptySet(),
+        mailbox: String = "",
     ) {
         queries.transaction {
-            dropUids.forEach { uid -> queries.deleteEmail(projectId, folderName, uid.toLong()) }
+            dropUids.forEach { uid -> queries.deleteEmail(projectId, mailbox, folderName, uid.toLong()) }
             emails.forEach { email ->
                 queries.upsertEmail(
                     uid = email.uid.toLong(),
                     projectId = projectId,
+                    mailbox = mailbox,
                     folderName = folderName,
                     messageId = email.messageId,
                     threadId = email.threadId,
                     subject = email.subject,
                     sender = email.sender,
                     recipients = email.recipients.joinToString(RECIPIENT_SEPARATOR),
+                    ccRecipients = email.cc.joinToString(RECIPIENT_SEPARATOR),
+                    bccRecipients = email.bcc.joinToString(RECIPIENT_SEPARATOR),
                     snippet = email.snippet,
                     receivedAt = email.receivedAt,
                     isRead = email.isRead.toDb(),
@@ -104,12 +117,12 @@ class EmailCache(database: ZillitDatabase, private val nowMillis: () -> Long) {
         }
     }
 
-    /** Every folder at once, for search. */
-    fun allEmails(projectId: String): List<EmailSnapshot> =
-        queries.selectAllEmails(projectId).executeAsList().map(::toSnapshot)
+    /** Every folder at once, for search and threading. */
+    fun allEmails(projectId: String, mailbox: String = ""): List<EmailSnapshot> =
+        queries.selectAllEmails(projectId, mailbox).executeAsList().map(::toSnapshot)
 
-    fun emails(projectId: String, folderName: String): List<EmailSnapshot> =
-        queries.selectEmails(projectId, folderName).executeAsList().map(::toSnapshot)
+    fun emails(projectId: String, folderName: String, mailbox: String = ""): List<EmailSnapshot> =
+        queries.selectEmails(projectId, mailbox, folderName).executeAsList().map(::toSnapshot)
 
     private fun toSnapshot(row: CachedEmail) = EmailSnapshot(
         uid = row.uid.toInt(),
@@ -118,16 +131,21 @@ class EmailCache(database: ZillitDatabase, private val nowMillis: () -> Long) {
         threadId = row.threadId,
         subject = row.subject,
         sender = row.sender,
-        recipients = row.recipients.split(RECIPIENT_SEPARATOR).filter(String::isNotBlank),
+        recipients = row.recipients.splitAddresses(),
         snippet = row.snippet,
         receivedAt = row.receivedAt,
         isRead = row.isRead.toBool(),
         attachmentCount = row.attachmentCount.toInt(),
+        cc = row.ccRecipients.splitAddresses(),
+        bcc = row.bccRecipients.splitAddresses(),
     )
 
+    private fun String.splitAddresses(): List<String> =
+        split(RECIPIENT_SEPARATOR).filter(String::isNotBlank)
+
     /** The uids already held, which is what the sync diffs against. */
-    fun cachedUids(projectId: String, folderName: String): Set<Int> =
-        queries.selectUids(projectId, folderName).executeAsList().map(Long::toInt).toSet()
+    fun cachedUids(projectId: String, folderName: String, mailbox: String = ""): Set<Int> =
+        queries.selectUids(projectId, mailbox, folderName).executeAsList().map(Long::toInt).toSet()
 
     /**
      * Marks a message read locally.
@@ -135,19 +153,19 @@ class EmailCache(database: ZillitDatabase, private val nowMillis: () -> Long) {
      * Written here as well as on the server so the row stops looking unread the
      * instant it is opened, rather than after the next folder sync.
      */
-    fun markRead(projectId: String, folderName: String, messageId: String) {
-        queries.markRead(projectId, folderName, messageId)
+    fun markRead(projectId: String, folderName: String, messageId: String, mailbox: String = "") {
+        queries.markRead(projectId, mailbox, folderName, messageId)
     }
 
-    fun clearFolder(projectId: String, folderName: String) {
-        queries.deleteFolderEmails(projectId, folderName)
+    fun clearFolder(projectId: String, folderName: String, mailbox: String = "") {
+        queries.deleteFolderEmails(projectId, mailbox, folderName)
     }
 
-    /** Drops all mail held for a production. Called on switch and sign-out. */
+    /** Drops all mail held for a production, every mailbox. Called on switch and sign-out. */
     fun clearProject(projectId: String) {
         queries.transaction {
             queries.deleteEmailData(projectId)
-            queries.deleteFolders(projectId)
+            queries.deleteAllProjectFolders(projectId)
         }
     }
 

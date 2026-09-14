@@ -997,6 +997,84 @@ object ZillitIcons {
         moveTo(5f, 12f); lineTo(19f, 12f)
     }
 
+    // -- mail ----------------------------------------------------------------
+
+    /** Two arrows curling back — Reply all. */
+    val ReplyAll: ImageVector = stroked("ReplyAll") {
+        moveTo(11f, 7f); lineTo(6f, 12f); lineTo(11f, 17f)
+        moveTo(7f, 8f); lineTo(3f, 12f); lineTo(7f, 16f)
+        moveTo(6f, 12f); lineTo(15f, 12f)
+        curveTo(18.3f, 12f, 21f, 14.7f, 21f, 18f)
+        lineTo(21f, 19f)
+    }
+
+    /** A printer: the sheet in the tray, the body, the sheet coming out. */
+    val Print: ImageVector = stroked("Print") {
+        moveTo(7f, 9f); lineTo(7f, 4f); lineTo(17f, 4f); lineTo(17f, 9f)
+        roundedRect(4f, 9f, 20f, 16f, 2f)
+        moveTo(7f, 20f); lineTo(7f, 14f); lineTo(17f, 14f); lineTo(17f, 20f); close()
+    }
+
+    /** The web's tray glyph for Inbox — a box with a lipped front. */
+    val Inbox: ImageVector = stroked("Inbox") {
+        moveTo(4f, 13f); lineTo(8f, 13f); lineTo(10f, 16f); lineTo(14f, 16f); lineTo(16f, 13f); lineTo(20f, 13f)
+        moveTo(4f, 13f); lineTo(6f, 5f); lineTo(18f, 5f); lineTo(20f, 13f)
+        lineTo(20f, 18f); curveTo(20f, 18.6f, 19.6f, 19f, 19f, 19f)
+        lineTo(5f, 19f); curveTo(4.4f, 19f, 4f, 18.6f, 4f, 18f); close()
+    }
+
+    /** A label tag — the web's custom-folder glyph. */
+    val Tag: ImageVector = stroked("Tag") {
+        moveTo(4f, 4f); lineTo(11f, 4f); lineTo(20f, 13f); lineTo(13f, 20f); lineTo(4f, 11f); close()
+        moveTo(8f, 8f); lineTo(8.01f, 8f)
+    }
+
+    /** A flourish under a line — a signature. */
+    val Signature: ImageVector = stroked("Signature") {
+        moveTo(4f, 15f)
+        curveTo(6f, 9f, 8f, 9f, 9f, 13f)
+        curveTo(10f, 17f, 11f, 17f, 12f, 12f)
+        curveTo(13f, 8f, 14f, 8f, 15f, 12f)
+        curveTo(15.5f, 14f, 16.5f, 14f, 18f, 12f)
+        moveTo(4f, 19f); lineTo(20f, 19f)
+    }
+
+    /** Three dots stacked — the row menu the web draws vertically. */
+    val MoreVertical: ImageVector = stroked("MoreVertical") {
+        moveTo(12f, 5f); lineTo(12.01f, 5f)
+        moveTo(12f, 12f); lineTo(12.01f, 12f)
+        moveTo(12f, 19f); lineTo(12.01f, 19f)
+    }
+
+    /** An open envelope — read mail. */
+    val MailOpen: ImageVector = stroked("MailOpen") {
+        moveTo(3f, 10f); lineTo(12f, 4f); lineTo(21f, 10f)
+        lineTo(21f, 19f); curveTo(21f, 19.6f, 20.6f, 20f, 20f, 20f)
+        lineTo(4f, 20f); curveTo(3.4f, 20f, 3f, 19.6f, 3f, 19f); close()
+        moveTo(3f, 10f); lineTo(12f, 15f); lineTo(21f, 10f)
+    }
+
+    /** A folder with a plus — Move to folder. */
+    val FolderPlus: ImageVector = stroked("FolderPlus") {
+        moveTo(3f, 7f); lineTo(3f, 18f); curveTo(3f, 18.6f, 3.4f, 19f, 4f, 19f)
+        lineTo(20f, 19f); curveTo(20.6f, 19f, 21f, 18.6f, 21f, 18f)
+        lineTo(21f, 9f); curveTo(21f, 8.4f, 20.6f, 8f, 20f, 8f)
+        lineTo(12f, 8f); lineTo(10f, 5f); lineTo(4f, 5f); curveTo(3.4f, 5f, 3f, 5.4f, 3f, 6f); close()
+        moveTo(12f, 11f); lineTo(12f, 16f)
+        moveTo(9.5f, 13.5f); lineTo(14.5f, 13.5f)
+    }
+
+    /** A page with a folded corner and a pen — Drafts. */
+    val Draft: ImageVector = stroked("Draft") {
+        moveTo(14f, 3f); lineTo(6f, 3f); curveTo(5.4f, 3f, 5f, 3.4f, 5f, 4f)
+        lineTo(5f, 20f); curveTo(5f, 20.6f, 5.4f, 21f, 6f, 21f)
+        lineTo(18f, 21f); curveTo(18.6f, 21f, 19f, 20.6f, 19f, 20f)
+        lineTo(19f, 8f); close()
+        moveTo(14f, 3f); lineTo(14f, 8f); lineTo(19f, 8f)
+        moveTo(8f, 13f); lineTo(16f, 13f)
+        moveTo(8f, 17f); lineTo(13f, 17f)
+    }
+
     /** A closed rectangle with round corners, drawn clockwise from the top-left edge. */
     private fun PathBuilder.roundedRect(left: Float, top: Float, right: Float, bottom: Float, radius: Float) {
         moveTo(left + radius, top)

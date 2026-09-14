@@ -202,6 +202,14 @@ object ZillitPreferences {
     val LastProjectId = PreferenceKey.StringKey("session.lastProjectId", "", PreferenceScope.User)
     val LastUnitId = PreferenceKey.StringKey("session.lastUnitId", "", PreferenceScope.User)
 
+    /**
+     * Which mailbox the badge ledger counts mail for, production by
+     * production — `<project id>\t<address>` lines. User-scoped rather than
+     * project-scoped because the picker reads it for every production at once,
+     * before any is open (see `MailboxScopes`).
+     */
+    val BadgeMailboxes = PreferenceKey.StringKey("badges.mailboxes", "", PreferenceScope.User)
+
     // -- per-project view settings -----------------------------------------
     //
     // Project-scoped because a user's chosen view for one production has no
@@ -219,6 +227,16 @@ object ZillitPreferences {
 
     /** Android's `isEmailTrailingEnabled`. */
     val EmailTrailingEnabled = PreferenceKey.BooleanKey("email.trailing", true, PreferenceScope.Project)
+
+    /**
+     * Which mailbox the Email tool last showed on this production — `personal`
+     * or `accounts` (the web's `active_email_mailbox`, keyed by project). Empty
+     * means never chosen, which opens the personal one.
+     */
+    val EmailActiveMailbox = PreferenceKey.StringKey("email.activeMailbox", "", PreferenceScope.Project)
+
+    /** Whether the mailbox switcher's one-time tour has been shown here (the web's `email_mailbox_tour_seen`). */
+    val EmailMailboxTourSeen = PreferenceKey.BooleanKey("email.mailboxTourSeen", false, PreferenceScope.Project)
 
     val ToolGroupOrder = PreferenceKey.StringKey("tools.groupOrder", "", PreferenceScope.Project)
 
@@ -249,9 +267,9 @@ object ZillitPreferences {
         NotifyMessages, NotifyMail, NotifyUpdates, NotifyCalls, NotifyActivity, RingOnIncomingCall, TokenAuthMode,
         WeatherPlace,
         CallMicrophoneId, CallSpeakerId,
-        LastProjectId, LastUnitId,
+        LastProjectId, LastUnitId, BadgeMailboxes,
         BoxScheduleView, BoxScheduleCalendarMode, BoxScheduleListMode,
-        EmailTrailingEnabled, ToolGroupOrder, RecentMentions, ChatFavourites,
+        EmailTrailingEnabled, EmailActiveMailbox, EmailMailboxTourSeen, ToolGroupOrder, RecentMentions, ChatFavourites,
         CallWidget, MessageWidget, CloseToTray, StartAtLogin,
         DriveWidgetProject, ChatWidgetProject, CrewWidgetProject,
     ) + DriveWidget.all + ChatWidget.all + CrewWidget.all

@@ -55,11 +55,12 @@ internal fun UpdateBanner(
     val tone = if (notice.mandatory) StatusTone.Rejected else StatusTone.Progress
     val accent = if (notice.mandatory) colors.danger else colors.info
 
+    val installed = notice.installedVersion?.takeIf { it.isNotBlank() }?.let { " You have $it." }.orEmpty()
     ZillitNotice(
         text = if (notice.mandatory) {
-            "Zillit must be updated to continue. Version ${notice.latestVersion} is required."
+            "Zillit must be updated to continue. Version ${notice.latestVersion} is required.$installed"
         } else {
-            "Version ${notice.latestVersion} is available."
+            "Version ${notice.latestVersion} is available.$installed"
         },
         tone = tone,
         icon = ZillitIcons.Download,

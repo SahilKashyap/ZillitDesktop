@@ -8,6 +8,8 @@ import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.jsonBody
 import com.zillit.desktop.feature.email.domain.BccPresetRepository
+import com.zillit.desktop.feature.email.domain.MailboxDirectory
+import com.zillit.desktop.feature.email.domain.MailboxScope
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -25,9 +27,21 @@ class BccPresetRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
     private val profile: MailboxProfileSource = MailboxProfileSource(apiClient, config),
+    /**
+     * The shared Accounts mailbox keeps its presets on the project
+     * (`accounts_mail_box_detail.bcc`, `PATCH project/accounts-mail-box/bcc`)
+     * — the web's `BccPresetModal` reads and writes there while it is active.
+     */
+    private val scope: MailboxScope = MailboxScope.Personal,
+    private val directory: MailboxDirectory? = null,
 ) : BccPresetRepository {
 
-    override suspend fun presets(): ZillitResult<List<String>> = profile.profile().map { it.bccPresets }
+    override suspend fun presets(): ZillitResult<List<String>> =
+        if (scope.isAccountsActive() && directory != null) {
+            directory.accounts().map { it?.bccPresets.orEmpty() }
+        } else {
+            profile.profile().map { it.bccPresets }
+        }
 
     /**
      * `{"bcc": [{"email_address": "…"}, …]}` — the whole list, every time.
@@ -39,6 +53,13 @@ class BccPresetRepositoryImpl(
      * (`EmailPresetPage.kt:195`).
      */
     override suspend fun save(addresses: List<String>): ZillitResult<Unit> =
+        if (scope.isAccountsActive() && directory != null) {
+            directory.setAccountsBccPresets(addresses.map { it.trim().lowercase() })
+        } else {
+            saveOnProfile(addresses)
+        }
+
+    private suspend fun saveOnProfile(addresses: List<String>): ZillitResult<Unit> =
         apiClient.envelope(
             verb = HttpVerb.Patch,
             url = "${config.apiV2()}user/update-bcc-preset",

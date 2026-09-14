@@ -2017,6 +2017,17 @@ class CallCoordinator(
             }
             val current = _session.value ?: return
             if (!callId.matches(current)) return
+            // A cancel or a handled-elsewhere only ever dismisses a RING. The
+            // server broadcasts `callHandledElsewhere` to every session of the
+            // user — the one that just answered included — so acting on it
+            // past the ring ended the call this device had taken: the phone
+            // showed a connected call, the desktop nothing (2026-09-14). The
+            // web clears only its incoming popup; Android gates on its ring
+            // phase (`isRingingFor`). A removal is the host's and stands.
+            if (why != LiveKitDismissal.Removed && _phase.value != CallPhase.Incoming) {
+                ZillitLog.i(TAG) { "line 3 $why for ${current.callUuid} after the ring; ignored" }
+                return
+            }
             val reason = when (why) {
                 LiveKitDismissal.HandledElsewhere -> CallEndReason.PickedElsewhere
                 LiveKitDismissal.Cancelled, LiveKitDismissal.Removed -> CallEndReason.RemoteEnded

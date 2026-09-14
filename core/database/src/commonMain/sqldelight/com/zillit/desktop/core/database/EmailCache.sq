@@ -13,16 +13,25 @@
 --
 -- `uid` is the IMAP sequence number and the unit of synchronisation: the server
 -- lists uids, and whatever is missing here is what gets fetched.
+--
+-- `mailbox` is the address the copy was read for. A production can give one
+-- user two mailboxes — their own and the shared Accounts one — and uids
+-- restart at 1 in each, so the same (folder, uid) names different mail in
+-- the two; the web partitions its rows by `project_email` for the same reason
+-- (ZL-21025).
 
 CREATE TABLE cachedEmail (
     uid             INTEGER NOT NULL,
     projectId       TEXT NOT NULL,
+    mailbox         TEXT NOT NULL DEFAULT '',
     folderName      TEXT NOT NULL,
     messageId       TEXT NOT NULL,
     threadId        TEXT NOT NULL,
     subject         TEXT NOT NULL,
     sender          TEXT NOT NULL,
     recipients      TEXT NOT NULL,
+    ccRecipients    TEXT NOT NULL DEFAULT '',
+    bccRecipients   TEXT NOT NULL DEFAULT '',
     snippet         TEXT NOT NULL,
     receivedAt      INTEGER NOT NULL,
     isRead          INTEGER NOT NULL DEFAULT 0,
@@ -30,59 +39,63 @@ CREATE TABLE cachedEmail (
     cachedAt        INTEGER NOT NULL,
     -- Composite, not messageId: the same message appears in two folders when it
     -- is copied, and each copy has its own uid and its own read flag.
-    PRIMARY KEY (projectId, folderName, uid)
+    PRIMARY KEY (projectId, mailbox, folderName, uid)
 );
 
 -- The list query orders by this; without it a large folder sorts on every open.
-CREATE INDEX cachedEmailByDate ON cachedEmail (projectId, folderName, receivedAt DESC);
+CREATE INDEX cachedEmailByDate ON cachedEmail (projectId, mailbox, folderName, receivedAt DESC);
 
 CREATE TABLE cachedEmailFolder (
     folderName  TEXT NOT NULL,
     projectId   TEXT NOT NULL,
+    mailbox     TEXT NOT NULL DEFAULT '',
     isSystem    INTEGER NOT NULL DEFAULT 0,
     unreadCount INTEGER NOT NULL DEFAULT 0,
     cachedAt    INTEGER NOT NULL,
-    PRIMARY KEY (projectId, folderName)
+    PRIMARY KEY (projectId, mailbox, folderName)
 );
 
 -- folders --------------------------------------------------------------------
 upsertFolder:
-INSERT OR REPLACE INTO cachedEmailFolder VALUES (?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO cachedEmailFolder VALUES (?, ?, ?, ?, ?, ?);
 
 selectFolders:
-SELECT * FROM cachedEmailFolder WHERE projectId = ?;
+SELECT * FROM cachedEmailFolder WHERE projectId = ? AND mailbox = ?;
 
 deleteFolders:
+DELETE FROM cachedEmailFolder WHERE projectId = ? AND mailbox = ?;
+
+deleteAllProjectFolders:
 DELETE FROM cachedEmailFolder WHERE projectId = ?;
 
 -- messages -------------------------------------------------------------------
 upsertEmail:
-INSERT OR REPLACE INTO cachedEmail VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO cachedEmail VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectEmails:
 SELECT * FROM cachedEmail
-WHERE projectId = ? AND folderName = ?
+WHERE projectId = ? AND mailbox = ? AND folderName = ?
 ORDER BY receivedAt DESC;
 
--- Every folder at once, for search. Ordered here rather than in Kotlin so the
--- index does the work.
+-- Every folder at once, for search and for threading. Ordered here rather
+-- than in Kotlin so the index does the work.
 selectAllEmails:
-SELECT * FROM cachedEmail WHERE projectId = ? ORDER BY receivedAt DESC;
+SELECT * FROM cachedEmail WHERE projectId = ? AND mailbox = ? ORDER BY receivedAt DESC;
 
 -- Just the uids, for the sync diff. Selecting whole rows to compare integers
 -- would read every cached body-adjacent column on each refresh.
 selectUids:
-SELECT uid FROM cachedEmail WHERE projectId = ? AND folderName = ?;
+SELECT uid FROM cachedEmail WHERE projectId = ? AND mailbox = ? AND folderName = ?;
 
 markRead:
 UPDATE cachedEmail SET isRead = 1
-WHERE projectId = ? AND folderName = ? AND messageId = ?;
+WHERE projectId = ? AND mailbox = ? AND folderName = ? AND messageId = ?;
 
 deleteEmail:
-DELETE FROM cachedEmail WHERE projectId = ? AND folderName = ? AND uid = ?;
+DELETE FROM cachedEmail WHERE projectId = ? AND mailbox = ? AND folderName = ? AND uid = ?;
 
 deleteFolderEmails:
-DELETE FROM cachedEmail WHERE projectId = ? AND folderName = ?;
+DELETE FROM cachedEmail WHERE projectId = ? AND mailbox = ? AND folderName = ?;
 
 -- wipe -----------------------------------------------------------------------
 deleteEmailData:

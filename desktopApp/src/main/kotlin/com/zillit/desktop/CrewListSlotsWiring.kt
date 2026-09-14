@@ -19,7 +19,6 @@ import com.zillit.desktop.feature.crewlist.ui.CrewListSlots
 import com.zillit.desktop.feature.crewlist.ui.CrewListToolProvider
 import com.zillit.desktop.feature.crewlist.ui.CrewListViewModel
 import com.zillit.desktop.feature.crewlist.ui.dialogs.CrewContactActions
-import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.externalusers.ui.ExternalUserFormDialog
 import com.zillit.desktop.feature.externalusers.ui.ExternalUsersEffect
 import com.zillit.desktop.feature.externalusers.ui.ExternalUsersEvent
@@ -81,9 +80,9 @@ private fun AppGraph.Ready.crewContactActions(viewModels: AppViewModels, navigat
         },
         email = viewModels.email?.let { mail ->
             { address ->
-                // Raised on the mailbox's own deck, so it is waiting whether the
-                // mail window is already open or opens now.
-                mail.composers.open(ComposeMode.New, replyToId = null, addressedTo = address)
+                // Queued on the mailbox, so it is raised whether the mail
+                // window is already open or opens now.
+                mail.composeRequests.post(address)
                 navigator.openInNewWindow(WorkspaceRoute.Tool(EMAIL_ROUTE))
             }
         },

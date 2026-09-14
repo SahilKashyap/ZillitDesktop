@@ -6,6 +6,7 @@ import com.zillit.desktop.feature.email.domain.EmailMessage
 import com.zillit.desktop.feature.email.domain.RichText
 import com.zillit.desktop.feature.email.domain.TextMark
 import com.zillit.desktop.feature.email.ui.ComposeEvent
+import com.zillit.desktop.feature.email.ui.RecipientField
 import com.zillit.desktop.feature.email.ui.ComposeViewModel
 import com.zillit.desktop.feature.email.ui.Composing
 import kotlinx.coroutines.Dispatchers
@@ -45,8 +46,10 @@ class ComposeBodyTest {
         editing: EmailDraft? = null,
     ) = ComposeViewModel(Composing(server, server, server, server), ComposeMode.New, replyTo, editing)
 
+    /** Addressed and titled, so a send is not stopped by the no-subject question. */
     private fun ComposeViewModel.write(body: RichText) {
-        onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
+        onEvent(ComposeEvent.SubjectChanged("Call"))
         onEvent(ComposeEvent.BodyChanged(body))
     }
 
@@ -115,13 +118,16 @@ class ComposeBodyTest {
         )
         val composer = ComposeViewModel(Composing(server, server, server, server), ComposeMode.Reply, original)
 
-        composer.onEvent(ComposeEvent.ToChanged("a@prod.com"))
+        composer.onEvent(recipientsTyped(RecipientField.To, "a@prod.com"))
         composer.onEvent(ComposeEvent.Send)
         advanceUntilIdle()
 
+        // The web's quote: "{sender} wrote:" over a blockquote of the
+        // original, whose plain-text lines become breaks.
         val body = server.sent?.body.orEmpty()
-        assertTrue(body.contains("<br>"), "the quoted original collapsed into one line")
-        assertTrue(body.contains("&gt; Line one"), body)
+        assertTrue(body.contains("a@prod.com wrote:"), body)
+        assertTrue(body.contains("<blockquote"), body)
+        assertTrue(body.contains("Line one<br/>Line two"), "the quoted original collapsed into one line: $body")
     }
 
     @Test
@@ -145,10 +151,50 @@ class ComposeBodyTest {
         val server = FakeMailServer()
         val composer = composer(server)
 
-        composer.onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        composer.onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
+        composer.onEvent(ComposeEvent.SubjectChanged("Call"))
         composer.onEvent(ComposeEvent.Send)
         advanceUntilIdle()
 
         assertEquals("", server.sent?.body)
+    }
+
+    @Test
+    fun `a new message with no subject asks before it goes`() = runTest {
+        // The web's `send_email_without_subject_text` dialog: Send stops and
+        // asks; "Send Anyway" goes; "Don't Send" leaves everything typed.
+        val server = FakeMailServer()
+        val composer = composer(server)
+
+        composer.onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
+        composer.onEvent(ComposeEvent.BodyChanged(RichText.plain("No title")))
+        composer.onEvent(ComposeEvent.Send)
+        advanceUntilIdle()
+
+        assertTrue(composer.state.value.asksSubjectless, "it sent without asking")
+        assertEquals(null, server.sent)
+
+        composer.onEvent(ComposeEvent.DismissSubjectless)
+        assertEquals("No title", composer.state.value.body.text)
+        assertEquals(null, server.sent)
+
+        composer.onEvent(ComposeEvent.SendAnyway)
+        advanceUntilIdle()
+        assertTrue(server.sent?.body.orEmpty().startsWith("No title"), "sent: ${server.sent?.body}")
+    }
+
+    @Test
+    fun `a reply with no subject goes without asking`() = runTest {
+        // Only a *new* message is asked — a reply's subject is the original's,
+        // blank or not, and the web asks nothing there.
+        val server = FakeMailServer()
+        val original = EmailMessage(id = "m1", threadId = "t1", subject = "", from = "a@prod.com")
+        val composer = ComposeViewModel(Composing(server, server, server, server), ComposeMode.Reply, original)
+
+        composer.onEvent(ComposeEvent.BodyChanged(RichText.plain("Noted")))
+        composer.onEvent(ComposeEvent.Send)
+        advanceUntilIdle()
+
+        assertTrue(server.sent != null, "the reply was stopped by the no-subject question")
     }
 }

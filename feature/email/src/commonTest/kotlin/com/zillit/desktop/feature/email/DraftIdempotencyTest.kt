@@ -4,6 +4,7 @@ import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.EmailDraft
 import com.zillit.desktop.feature.email.domain.RichText
 import com.zillit.desktop.feature.email.ui.ComposeEvent
+import com.zillit.desktop.feature.email.ui.RecipientField
 import com.zillit.desktop.feature.email.ui.ComposeViewModel
 import com.zillit.desktop.feature.email.ui.Composing
 import kotlinx.coroutines.Dispatchers
@@ -43,7 +44,7 @@ class DraftIdempotencyTest {
         ComposeViewModel(deps, ComposeMode.New, null, null)
 
     private fun type(composer: ComposeViewModel, body: String) {
-        composer.onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        composer.onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
         composer.onEvent(ComposeEvent.BodyChanged(RichText.plain(body)))
     }
 

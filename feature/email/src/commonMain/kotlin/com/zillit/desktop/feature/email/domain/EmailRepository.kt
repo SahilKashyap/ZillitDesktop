@@ -103,6 +103,13 @@ interface DraftRepository {
  */
 interface ContactRepository {
     suspend fun contacts(): ZillitResult<List<EmailContact>>
+
+    /**
+     * Adds bare addresses to the book, named by themselves — what both other
+     * clients do with every recipient of a sent message. Fire-and-forget:
+     * a failure here is not a failure of the send.
+     */
+    suspend fun saveAddresses(addresses: List<String>): ZillitResult<Unit> = ZillitResult.Success(Unit)
 }
 
 /**

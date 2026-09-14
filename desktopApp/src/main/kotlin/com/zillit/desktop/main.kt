@@ -119,10 +119,16 @@ import com.zillit.desktop.feature.email.data.InMemoryMailboxCache
 import com.zillit.desktop.feature.email.data.Mailbox
 import com.zillit.desktop.feature.email.data.SqlMailboxCache
 import com.zillit.desktop.feature.email.ui.AttachmentDownloader
+import com.zillit.desktop.feature.email.data.ConversationViewRepositoryImpl
+import com.zillit.desktop.feature.email.data.CrewMailboxSource
+import com.zillit.desktop.feature.email.data.EmailGroupRepositoryImpl
+import com.zillit.desktop.feature.email.data.MailboxDirectoryImpl
 import com.zillit.desktop.feature.email.ui.Composing
+import com.zillit.desktop.feature.email.ui.EmailComposePopoutProvider
 import com.zillit.desktop.feature.email.ui.EmailEvent
+import com.zillit.desktop.feature.email.ui.EmailHost
+import com.zillit.desktop.feature.email.ui.EmailThreadPopoutProvider
 import com.zillit.desktop.feature.email.ui.FolderEditor
-import com.zillit.desktop.feature.email.ui.MailSearch
 import com.zillit.desktop.feature.email.ui.SignatureToolProvider
 import com.zillit.desktop.feature.settings.account.AccountViewModel
 import com.zillit.desktop.feature.settings.account.ProfileSeed
@@ -134,6 +140,7 @@ import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
 import com.zillit.desktop.feature.settings.approvals.ApprovalsEvent
 import com.zillit.desktop.feature.settings.approvals.ApprovalsViewModel
 import com.zillit.desktop.feature.settings.approvals.KnownCrewMember
+import com.zillit.desktop.feature.settings.ui.AboutInfo
 import com.zillit.desktop.feature.settings.ui.AccountSummary
 import com.zillit.desktop.feature.settings.ui.AdminSettingsUiState
 import com.zillit.desktop.feature.settings.ui.NotificationSettings
@@ -1431,6 +1438,9 @@ private fun ZillitContent(
                 onThemeModeChange = onThemeModeChange,
                 createViewModel = createViewModel,
                 joinViewModel = joinViewModel,
+                // On the sign-in page, where someone who cannot get in can
+                // still read it off to support.
+                appVersion = installedAppVersion(),
             )
         }
         // Above either screen: the startup notification-permission check, as
@@ -1486,7 +1496,7 @@ private fun SignedInShell(
         projectName = authState.activeProject?.name,
         statusText = statusText(socketState, syncStatus),
         statusAction = syncStatusAction(syncStatus) { pendingChangesOpen = true },
-        updateNotice = updateStatus.toNotice(),
+        updateNotice = updateStatus.toNotice(installedAppVersion()),
         // The guarded launcher — https only, as the auth links use.
         onDownloadUpdate = ::openInBrowser,
         railItems = railItemsWith(
@@ -1529,6 +1539,17 @@ private fun SignedInShell(
             )
         }
     }
+}
+
+/**
+ * `macOS 26.5`, `Windows 11`, `Linux 6.8` — what the About row prints.
+ *
+ * The JVM still calls the Mac "Mac OS X", a name Apple dropped in 2016;
+ * nobody types it into a bug report, so it is not shown.
+ */
+private fun hostPlatformLabel(): String {
+    val name = System.getProperty("os.name").orEmpty().let { if (it.startsWith("Mac OS X")) "macOS" else it }
+    return "$name ${System.getProperty("os.version").orEmpty()}".trim()
 }
 
 /**
@@ -1610,27 +1631,25 @@ private fun rememberRestoredWindowState(preferences: PreferenceStore): WindowSta
  * unopenable database degrades the mailbox rather than removing it.
  */
 private fun buildMailbox(ready: AppGraph.Ready): EmailViewModel {
+    val projectId = { ready.projectContext?.context?.value?.project?.projectId.orEmpty() }
     val cache = ready.emailCache?.let { store ->
         // Resolved per call: the mailbox outlives any one production, and
         // capturing the id would file one project's mail under another's.
-        SqlMailboxCache(store) {
-            ready.projectContext?.context?.value?.project?.projectId.orEmpty()
-        }
-    } ?: InMemoryMailboxCache()
+        // The address partitions the rows too — the personal and the shared
+        // Accounts mailbox reuse the same uids for different mail.
+        SqlMailboxCache(store, currentProjectId = projectId, currentMailbox = { ready.activeMailbox.address })
+    } ?: InMemoryMailboxCache { ready.activeMailbox.address }
 
     val mailbox = Mailbox(ready.emailRepository, cache)
 
-    // The ledger's email rows carry the mailbox address (`level_1`), so the
-    // reads are scoped to this person's own mailbox — the profile names it.
-    val ledger = MailLedger(
-        store = ready.badgeStore,
-        mailboxAddress = MailboxAddress(
-            projectId = { ready.projectContext?.context?.value?.project?.projectId },
-            fetch = {
-                com.zillit.desktop.feature.email.data.MailboxCredentialsRepositoryImpl(ready.apiClient, ready.config)
-                    .credentials()
-            },
-        )::invoke,
+    // The ledger's email rows carry the mailbox address (`level_1`), so every
+    // read names the mailbox it happened in.
+    val ledger = MailLedger(store = ready.badgeStore, scopes = ready.mailboxScopes)
+    val directory = MailboxDirectoryImpl(
+        ready.apiClient,
+        ready.config,
+        projectId = { projectId().takeIf { it.isNotBlank() } },
+        userName = { ready.projectContext?.context?.value?.profile?.fullName.orEmpty() },
     )
 
     return EmailViewModel(
@@ -1638,21 +1657,30 @@ private fun buildMailbox(ready: AppGraph.Ready): EmailViewModel {
         repository = ready.emailRepository,
         draftRepository = ready.draftRepository,
         folderEditor = FolderEditor(ready.folderRepository),
-        search = MailSearch { mailbox.cachedMessages() },
         nowMillis = System::currentTimeMillis,
         // The badge ledger's reads, alongside the mailbox's own. A row is
         // keyed by folder and uid (see `LedgerRead.Mail`); the server is still
         // told by message id, as the web and iOS tell it.
         badges = com.zillit.desktop.feature.email.ui.MailBadges(
             onMessageRead = { read ->
-                ledger.read(read)
+                ledger.read(read, read.mailboxAddress)
                 emitSegmentRead(ready, segment = "email_label", module = "email_label", referenceId = read.messageId)
             },
-            onFolderSynced = { sync -> ledger.synced(sync) },
+            onFolderSynced = { sync -> ledger.synced(sync, sync.mailboxAddress) },
             // Per-folder unread from the badge ledger — the unit is the folder.
-            folderBadges = { sectionSplit(ready, "email_label", "unit") },
+            folderBadges = { address -> ledger.folderBadges(address) },
+            mailboxUnread = { ledger.mailboxUnread() },
         ),
         downloader = AttachmentDownloader(ready.emailRepository, DownloadsAttachmentStore()),
+        activeMailbox = ready.activeMailbox,
+        directory = directory,
+        preferences = MailboxPreferenceStore(ready.preferences),
+        conversationView = ConversationViewRepositoryImpl(
+            ready.apiClient,
+            ready.config,
+            scope = ready.activeMailbox,
+            directory = directory,
+        ),
     )
 }
 
@@ -1793,15 +1821,21 @@ private fun mailProvider(
     onOpenCalendar: () -> Unit,
 ) = EmailToolProvider(
     viewModel = viewModel,
-    onOpenCalendar = onOpenCalendar,
     composing = Composing(
         repository = ready.emailRepository,
         drafts = ready.draftRepository,
         contacts = ready.contactRepository,
         signatures = ready.signatureRepository,
         // Crew come from the production context already loaded when the project
-        // opened, so a composer costs one request rather than two.
+        // opened, so a composer opens with suggestions before any request
+        // answers; the mailbox addresses replace them once `project/users` does.
         crew = { ready.projectContext?.context?.value?.crewContacts().orEmpty() },
+        crewMailboxes = {
+            CrewMailboxSource(ready.apiClient, ready.config) {
+                ready.projectContext?.context?.value?.isAdmin == true
+            }.crew()
+        },
+        groups = { EmailGroupRepositoryImpl(ready.apiClient, ready.config).groups() },
         uploader = ready.attachmentUploader,
         chooseFiles = { FilePicker().pick() },
         chooseFilesOf = { kind ->
@@ -1812,30 +1846,37 @@ private fun mailProvider(
         newAttachmentId = { UUID.randomUUID().toString() },
         // Reply-all drops this address, so a reply never goes to the person
         // sending it.
-        selfAddress = { ready.projectContext?.context?.value?.profile?.email.orEmpty() },
+        selfAddress = {
+            ready.activeMailbox.address.ifBlank { ready.projectContext?.context?.value?.profile?.email.orEmpty() }
+        },
+        mailbox = { ready.activeMailbox.identity.value },
+        nowMillis = System::currentTimeMillis,
     ),
-    messageById = { id -> viewModel.state.value.thread.firstOrNull { it.id == id } },
-    // Reopening a draft reads the copy the Drafts folder already holds, rather
-    // than re-fetching one the user is looking at.
-    draftById = { id -> viewModel.state.value.draft(id) },
-    loadAvatar = { address ->
-        ready.projectContext?.context?.value?.users
-            ?.firstOrNull { it.email?.equals(address, ignoreCase = true) == true }
-            ?.let { user -> fetchAvatar(ready, user.userId)?.let(::decodeImageBitmap) }
-    },
-    // The same fetch the download path uses, decoded into a bitmap rather
-    // than written to Downloads.
-    loadThumbnail = { attachment, messageId ->
-        val folder = viewModel.state.value.selectedFolder?.name.orEmpty()
-        (
-            ready.emailRepository.attachment(attachment.id, messageId, folder)
-                as? com.zillit.desktop.core.common.ZillitResult.Success
-            )?.data
-            ?.let(::decodeBase64Default)
-            ?.let(::decodeImageBitmap)
-    },
-    // A message another screen queued — "write to us" on the help page.
-    claimPendingCompose = ::claimPendingSupportCompose,
+    host = EmailHost(
+        loadAvatar = { address ->
+            ready.projectContext?.context?.value?.users
+                ?.firstOrNull { it.email?.equals(address, ignoreCase = true) == true }
+                ?.let { user -> fetchAvatar(ready, user.userId)?.let(::decodeImageBitmap) }
+        },
+        // The same fetch the download path uses, decoded into a bitmap rather
+        // than written to Downloads.
+        loadThumbnail = { attachment, messageId, folder ->
+            (
+                ready.emailRepository.attachment(attachment.id, messageId, folder)
+                    as? com.zillit.desktop.core.common.ZillitResult.Success
+                )?.data
+                ?.let(::decodeBase64Default)
+                ?.let(::decodeImageBitmap)
+        },
+        onOpenLink = ::openInBrowser,
+        onPrint = ::printMailPage,
+        onOpenCalendar = onOpenCalendar,
+        readBy = { messageId -> readByForSentMail(ready, messageId) },
+        isAdmin = { ready.projectContext?.context?.value?.isAdmin == true },
+        canAttach = true,
+        // A message another screen queued — "write to us" on the help page.
+        claimPendingCompose = ::claimPendingSupportCompose,
+    ),
 )
 
 /** Chat & Calls: the crew directory, from the users the project already syncs. */
@@ -1936,6 +1977,11 @@ private suspend fun seedFromLastProduction(ready: AppGraph.Ready) {
     val project = known.firstOrNull { it.id == lastId } ?: known.firstOrNull() ?: return
     val userId = project.userId?.takeIf { it.isNotBlank() } ?: return
     ready.badgeSeeder.seed(project.id, userId)
+    // The picker's counts leave out mail for a mailbox this desktop cannot
+    // show: the productions opened before scope by what was learnt then, the
+    // last one by a fresh ask under its own ids.
+    ready.mailboxScopes.restore()
+    ready.mailboxScopes.learn(project.id, userId)
 }
 
 /**
@@ -2188,9 +2234,11 @@ private fun AppGraph.Ready.payrollViewer(): PayrollViewer {
 }
 
 /** `Unknown` and `UpToDate` both mean "render nothing". */
-private fun UpdateStatus.toNotice(): UpdateNotice? = when (this) {
-    is UpdateStatus.Available -> UpdateNotice(latestVersion, mandatory = false, downloadUrl = downloadUrl)
-    is UpdateStatus.Required -> UpdateNotice(latestVersion, mandatory = true, downloadUrl = downloadUrl)
+private fun UpdateStatus.toNotice(installed: String): UpdateNotice? = when (this) {
+    is UpdateStatus.Available ->
+        UpdateNotice(latestVersion, mandatory = false, downloadUrl = downloadUrl, installedVersion = installed)
+    is UpdateStatus.Required ->
+        UpdateNotice(latestVersion, mandatory = true, downloadUrl = downloadUrl, installedVersion = installed)
     UpdateStatus.Unknown, UpdateStatus.UpToDate -> null
 }
 
@@ -3077,6 +3125,26 @@ private fun buildRegistry(
     val signatures = (graph as? AppGraph.Ready)?.let {
         SignatureToolProvider(it.signatureRepository, events = it.socketEvents)
     }
+    // The web's two pop-outs: a composer, and a conversation, each in a
+    // window of its own, served from the mailbox's own state.
+    val mailCompose = email?.let { EmailComposePopoutProvider(it) }
+    val mailThread = email?.let { provider ->
+        (graph as? AppGraph.Ready)?.let { ready ->
+            EmailThreadPopoutProvider(
+                provider,
+                host = EmailHost(
+                    loadAvatar = { address ->
+                        ready.projectContext?.context?.value?.users
+                            ?.firstOrNull { it.email?.equals(address, ignoreCase = true) == true }
+                            ?.let { user -> fetchAvatar(ready, user.userId)?.let(::decodeImageBitmap) }
+                    },
+                    onOpenLink = ::openInBrowser,
+                    onPrint = ::printMailPage,
+                    readBy = { messageId -> readByForSentMail(ready, messageId) },
+                ),
+            )
+        }
+    }
     // openInBrowser is the guarded launcher — https only, as the auth links use.
     val settings = SettingsToolProvider(
         viewModel = settingsViewModel,
@@ -3100,6 +3168,14 @@ private fun buildRegistry(
             folders = { ready.emailRepository.folders() },
             driveFolders = DriveFolderSource { parent -> ready.driveFolderOptions(parent) },
             events = ready.socketEvents,
+            // The settings follow the mailbox the Email tool has open.
+            scope = ready.activeMailbox,
+            directory = MailboxDirectoryImpl(
+                ready.apiClient,
+                ready.config,
+                projectId = { ready.projectContext?.context?.value?.project?.projectId },
+                userName = { ready.projectContext?.context?.value?.profile?.fullName.orEmpty() },
+            ),
         )
     }
     val mailContacts = (graph as? AppGraph.Ready)?.let { ready ->
@@ -3107,6 +3183,10 @@ private fun buildRegistry(
             apiClient = ready.apiClient,
             config = ready.config,
             events = ready.socketEvents,
+            scope = ready.activeMailbox,
+            // "Write to" from the address book: queued for the mailbox, which
+            // raises the composer when its window opens or at once if it is up.
+            onWriteTo = { address -> emailViewModel?.composeRequests?.post(address) },
         )
     }
     // The rail's foot: SOS, and the two app pages beside it.
@@ -3306,8 +3386,8 @@ private fun buildRegistry(
     val adReport = viewModels.adReport?.let { reportToolProvider(it, graph, chatViewModel) }
     val wrapReport = viewModels.wrapReport?.let { reportToolProvider(it, graph, chatViewModel) }
     val real = listOfNotNull(
-        home, chat, email, signatures, mailSettings, mailContacts, settings, admin, notifications,
-        sos, help,
+        home, chat, email, mailCompose, mailThread, signatures, mailSettings, mailContacts,
+        settings, admin, notifications, sos, help,
         cash, cards, orders, timecards, payroll, deals, distribution, drive,
         accountHub, taxFiling, bankRec, budgetBuilder, formSignature, esignature,
         callSheet, productionReport, adReport, wrapReport, sides, permissionGrid,
@@ -3574,6 +3654,10 @@ private fun buildSettings(
         unitContext = ready?.projectContext?.context?.map {
             UnitContext(projectId = it.project?.projectId, joinUnitId = it.profile?.joinUnitId)
         } ?: flowOf(UnitContext()),
+        // The About row's button — the same checker the banner polls, so the
+        // two can never disagree about what "latest" is. Null before the
+        // graph is ready: there is no client to ask with.
+        checkForUpdates = ready?.let { { it.appUpdateChecker.check() } },
         // Follows the loaded production, like the units above. The snapshot in
         // `initial` is taken before the profile has arrived, so read once this
         // was blank forever — and `isAdmin` never became true, which kept the
@@ -3587,6 +3671,11 @@ private fun buildSettings(
             )
         } ?: flowOf(AccountSummary()),
         initial = SettingsUiState(
+            about = AboutInfo(
+                version = installedAppVersion(),
+                build = BuildInfo.GIT_SHA,
+                platform = hostPlatformLabel(),
+            ),
             unit = UnitSelection(selectedId = context?.profile?.joinUnitId),
             account = AccountSummary(
                 fullName = context?.profile?.fullName.orEmpty(),

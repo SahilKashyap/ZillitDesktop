@@ -4,7 +4,6 @@ import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.EmailMessage
 import com.zillit.desktop.feature.email.domain.OutgoingEmail
 import com.zillit.desktop.feature.email.domain.replyDraft
-import com.zillit.desktop.feature.email.ui.toAddresses
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -37,28 +36,50 @@ class ReplyDraftTest {
     }
 
     @Test
-    fun `reply all includes everyone but me`() {
-        // Replying to yourself is the classic mail-client embarrassment.
+    fun `reply all answers the sender and copies everyone else but me`() {
+        // The web's split (`ComposeModal.jsx`): the reply-to address in To,
+        // the rest of the recipients in Cc. Replying to yourself is the
+        // classic mail-client embarrassment, so I am left out.
         val draft = message.replyDraft(ComposeMode.ReplyAll, selfAddress = "me@prod.com")
 
-        assertEquals(listOf("aisha@prod.com", "crew@prod.com", "ad@prod.com"), draft.to)
-        assertFalse(draft.to.contains("me@prod.com"))
+        assertEquals(listOf("aisha@prod.com"), draft.to)
+        assertEquals(listOf("crew@prod.com", "ad@prod.com"), draft.cc)
+        assertFalse((draft.to + draft.cc).contains("me@prod.com"))
     }
 
     @Test
     fun `my own address is matched regardless of case`() {
         val draft = message.replyDraft(ComposeMode.ReplyAll, selfAddress = "ME@PROD.COM")
 
-        assertFalse(draft.to.any { it.equals("me@prod.com", ignoreCase = true) })
+        assertFalse((draft.to + draft.cc).any { it.equals("me@prod.com", ignoreCase = true) })
     }
 
     @Test
     fun `reply all does not address anyone twice`() {
-        val duplicated = message.copy(to = listOf("aisha@prod.com", "crew@prod.com"))
+        val duplicated = message.copy(to = listOf("aisha@prod.com", "crew@prod.com", "crew@prod.com"))
 
         val draft = duplicated.replyDraft(ComposeMode.ReplyAll)
 
-        assertEquals(draft.to.distinct(), draft.to)
+        assertEquals(listOf("aisha@prod.com"), draft.to)
+        assertEquals(listOf("crew@prod.com", "ad@prod.com"), draft.cc, "the sender is not copied to themselves")
+    }
+
+    @Test
+    fun `a reply to my own sent mail goes back to whoever I sent it to`() {
+        // From Sent — or a message whose reply-to is me — the web addresses
+        // the original recipients, minus me, rather than replying to myself.
+        val mine = message.copy(from = "Me <me@prod.com>", replyTo = "me@prod.com", folderName = "Sent")
+
+        val draft = mine.replyDraft(ComposeMode.Reply, selfAddress = "me@prod.com")
+
+        assertEquals(listOf("crew@prod.com"), draft.to)
+    }
+
+    @Test
+    fun `reply-to wins over the sender`() {
+        val routed = message.copy(replyTo = "Production Office <office@prod.com>")
+
+        assertEquals(listOf("office@prod.com"), routed.replyDraft(ComposeMode.Reply).to)
     }
 
     @Test
@@ -80,17 +101,20 @@ class ReplyDraftTest {
 
     @Test
     fun `an existing prefix is recognised whatever its case`() {
-        val shouted = message.copy(subject = "RE: Call sheet")
+        val shouted = message.copy(subject = "RE: FW: Call sheet")
 
-        assertEquals("RE: Call sheet", shouted.replyDraft(ComposeMode.Reply).subject)
+        assertEquals("Re: Call sheet", shouted.replyDraft(ComposeMode.Reply).subject)
+        assertEquals("Fwd: Call sheet", shouted.replyDraft(ComposeMode.Forward).subject)
     }
 
     @Test
-    fun `a reply threads onto the conversation and a forward starts a new one`() {
+    fun `a reply and a forward both thread onto the conversation`() {
         // Without the reference the reply arrives as a new conversation in the
-        // recipient's client — invisible to us, obvious to them.
+        // recipient's client — invisible to us, obvious to them. The web sends
+        // the chain on a forward too, so the copy files beside the original.
         assertEquals(listOf("m1"), message.replyDraft(ComposeMode.Reply).references)
-        assertTrue(message.replyDraft(ComposeMode.Forward).references.isEmpty())
+        assertEquals(listOf("m1"), message.replyDraft(ComposeMode.Forward).references)
+        assertTrue(message.replyDraft(ComposeMode.New).references.isEmpty())
     }
 
     @Test
@@ -119,14 +143,47 @@ class ReplyDraftTest {
     }
 
     @Test
-    fun `the original is quoted, and html is flattened first`() {
+    fun `the original is quoted as html below the editor, the way the phones quote it`() {
         val html = message.copy(body = "<p>Call is <b>6am</b>.</p>", isHtml = true)
 
-        val body = html.replyDraft(ComposeMode.Reply).body
+        val draft = html.replyDraft(ComposeMode.Reply, quotedDate = "Nov 14, 2023 at 10:13 PM")
 
-        assertTrue(body.contains("> "), "the original should be quoted")
-        assertFalse(body.contains("<p>"), "quoting markup into a plain-text composer is tag soup")
-        assertTrue(body.contains("6am"))
+        assertEquals("", draft.body, "the editor starts empty; the quote is its own block")
+        assertTrue(draft.quotedHtml.contains("<blockquote"), "a reply quotes in a blockquote")
+        assertTrue(draft.quotedHtml.contains("On Nov 14, 2023 at 10:13 PM, aisha@prod.com wrote:"))
+        assertTrue(draft.quotedHtml.contains("<b>6am</b>"), "the original's markup is kept")
+    }
+
+    @Test
+    fun `a plain-text original is escaped and its line breaks kept`() {
+        val plain = message.copy(body = "Line one\nCall is <6am>", isHtml = false)
+
+        val quoted = plain.replyDraft(ComposeMode.Reply).quotedHtml
+
+        assertTrue(quoted.contains("Line one<br/>Call is &lt;6am&gt;"))
+    }
+
+    @Test
+    fun `a forward carries the header block and the original's files`() {
+        val withFiles = message.copy(
+            attachments = listOf(
+                com.zillit.desktop.feature.email.domain.EmailAttachment(id = "a1", fileName = "sheet.pdf"),
+                com.zillit.desktop.feature.email.domain.EmailAttachment(
+                    id = "a2",
+                    fileName = "logo.png",
+                    contentId = "logo",
+                    contentDisposition = "inline",
+                ),
+            ),
+            body = "<p>See attached <img src=\"cid:logo\"></p>",
+            isHtml = true,
+        )
+
+        val draft = withFiles.replyDraft(ComposeMode.Forward)
+
+        assertTrue(draft.quotedHtml.contains("Forwarded message"))
+        assertTrue(draft.quotedHtml.contains("Subject: Call sheet for Tuesday"))
+        assertEquals(listOf("a1"), draft.forwarded.map { it.id }, "inline pictures ride the body, not the list")
     }
 
     @Test
@@ -136,6 +193,7 @@ class ReplyDraftTest {
         assertTrue(draft.to.isEmpty())
         assertEquals("Call sheet for Tuesday", draft.subject, "unprefixed")
         assertEquals("", draft.body)
+        assertEquals("", draft.quotedHtml)
     }
 
     @Test
@@ -151,37 +209,5 @@ class ReplyDraftTest {
         // People send both. Refusing would be the client inventing a rule the
         // server does not have.
         assertTrue(OutgoingEmail(to = listOf("a@b.com"), subject = "", body = "").canSend)
-    }
-
-    @Test
-    fun `recipient fields split on commas and semicolons, not whitespace`() {
-        assertEquals(listOf("a@b.com", "c@d.com"), "a@b.com, c@d.com".toAddresses())
-        assertEquals(listOf("a@b.com", "c@d.com"), "a@b.com; c@d.com".toAddresses())
-        // A pasted `Aisha Khan <a@b.com>` must not shatter on the space —
-        // it is ONE recipient, reduced to its bare address.
-        assertEquals(listOf("a@b.com"), "Aisha Khan <a@b.com>".toAddresses())
-    }
-
-    @Test
-    fun `a recipient picked from suggestions is a valid, bare address`() {
-        // The picker inserts the friendly form and a trailing separator; the
-        // Send button read this as invalid because of the spaces, so picking
-        // a contact the recommended way left Send disabled.
-        val typed = "Vivek Mishra <vivek@zillit.com>, "
-        assertEquals(listOf("vivek@zillit.com"), typed.toAddresses())
-        assertTrue(OutgoingEmail(to = typed.toAddresses()).canSend)
-    }
-
-    @Test
-    fun `undecorated and half-decorated entries pass through untouched`() {
-        assertEquals(listOf("a@b.com"), "a@b.com".toAddresses())
-        // A dangling bracket is not a decoration; keep it visible so the
-        // validity check can reject it rather than silently repairing it.
-        assertEquals(listOf("broken <a@b.com"), "broken <a@b.com".toAddresses())
-    }
-
-    @Test
-    fun `blank recipient input yields nothing rather than one empty address`() {
-        assertTrue("  ,  ; ".toAddresses().isEmpty())
     }
 }

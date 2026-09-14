@@ -23,12 +23,13 @@ import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitText
 
 /**
- * Asks before something irreversible.
+ * Asks before a delete.
  *
- * Only two things in this module reach here — destroying mail already in Trash,
- * and emptying Trash — and both are unrecoverable. Everything else, including
- * an ordinary delete, moves to Trash and needs no dialog: a confirmation on a
- * reversible action just trains people to dismiss confirmations.
+ * The web asks before every one of them — "Are you sure you want to delete
+ * the selected emails?" even for a move to Trash (`DeleteConfirmModal`) —
+ * and this follows it: the same words for the same action on both clients.
+ * Destroying mail already in Trash, emptying Trash and deleting a folder
+ * say so in their own words, because those cannot be undone.
  */
 @Composable
 internal fun ConfirmDialog(
@@ -125,34 +126,41 @@ internal fun DialogButtons(
 
 private val PendingConfirm.title: String
     get() = when (this) {
+        is PendingConfirm.TrashSelected -> "Delete Email"
+        is PendingConfirm.DeleteDrafts -> if (draftIds.size == 1) "Delete Draft" else "Delete Drafts"
+        is PendingConfirm.DeleteOne -> "Confirm Deletion"
         is PendingConfirm.Destroy -> if (messageIds.size == 1) {
             "Delete this message forever?"
         } else {
             "Delete ${messageIds.size} messages forever?"
         }
-        PendingConfirm.EmptyTrash -> "Empty Trash?"
+        PendingConfirm.EmptyTrash -> "Confirmation"
         is PendingConfirm.DeleteFolder -> "Delete \"${folder.displayName}\"?"
     }
 
 private val PendingConfirm.body: String
     get() = when (this) {
+        is PendingConfirm.TrashSelected -> "Are you sure you want to delete the selected emails?"
+        is PendingConfirm.DeleteDrafts -> "Are you sure you want to delete the selected drafts?"
+        is PendingConfirm.DeleteOne -> "Are you sure you want to delete?"
         is PendingConfirm.Destroy -> "This cannot be undone."
-        PendingConfirm.EmptyTrash -> "Everything in Trash will be deleted. This cannot be undone."
+        PendingConfirm.EmptyTrash -> "Are you sure you want to empty the Trash folder?"
         // Says what is at stake without overstating what is known: the cached
         // count is a floor, since a partly synced folder holds more.
         is PendingConfirm.DeleteFolder -> if (cachedCount > 0) {
-            "The folder and the mail in it will be deleted — at least $cachedCount " +
-                "message${if (cachedCount == 1) "" else "s"}. This cannot be undone."
+            "Are you sure you want to delete this folder? The folder and the mail in it will be deleted — " +
+                "at least $cachedCount message${if (cachedCount == 1) "" else "s"}. This cannot be undone."
         } else {
-            "The folder and any mail in it will be deleted. This cannot be undone."
+            "Are you sure you want to delete this folder? The folder and any mail in it will be deleted."
         }
     }
 
 private val PendingConfirm.action: String
     get() = when (this) {
+        is PendingConfirm.TrashSelected, is PendingConfirm.DeleteDrafts, is PendingConfirm.DeleteOne -> "Delete"
         is PendingConfirm.Destroy -> "Delete forever"
-        PendingConfirm.EmptyTrash -> "Empty Trash"
-        is PendingConfirm.DeleteFolder -> "Delete folder"
+        PendingConfirm.EmptyTrash -> "Yes, Empty"
+        is PendingConfirm.DeleteFolder -> "Delete"
     }
 
 private val DIALOG_WIDTH = 420.dp

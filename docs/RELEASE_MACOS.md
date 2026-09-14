@@ -44,6 +44,13 @@ xcrun notarytool history --apple-id <id> --team-id <TEAMID> --password <pw>
 
 ## Building
 
+**Version first.** The build number lives in one place — `zillit.version` in
+`gradle.properties` — and feeds the DMG name, the launcher's
+`jpackage.app-version`, the version Settings ▸ About shows, and the number the
+update check compares against Remote Config. Bump it there before packaging
+(or pass `-Pzillit.version=1.0.3` for a one-off). Nothing in
+`desktopApp/build.gradle.kts` needs editing.
+
 QA — bundles `~/.zillit/zillit.properties` inside the app and points at develop,
 so testers install and sign in with nothing to configure:
 
@@ -65,9 +72,31 @@ A bundled-config build carries the AES header key in plain text inside the app.
 That is the accepted trade for a build a tester can install with nothing to copy
 — keep those artifacts on internal distribution only.
 
-Gradle names every DMG `Zillit-Desktop-1.0.0.dmg` regardless of environment. Rename
-anything that leaves the machine, or a develop build will eventually reach a
-real user.
+Gradle names every DMG `Zillit-Desktop-<zillit.version>.dmg` regardless of
+environment. Rename anything that leaves the machine, or a develop build will
+eventually reach a real user.
+
+## Telling installs about it
+
+The app asks Firebase Remote Config (the same project as the calling plane's
+config) whether it is out of date, once at sign-in and every six hours, and
+Settings ▸ About has a *Check for updates* button that asks on demand. After
+uploading a build, publish in the console — **plain values, no quotes** (the
+console takes a string; typing `"1.0.3"` stores the quotes and, until
+2026-09-14, that read as version 0.0.3 and no banner ever showed):
+
+| Key | Value | Effect |
+|---|---|---|
+| `desktop_latest_version` | `1.0.3` | older installs see a dismissible "Version 1.0.3 is available" strip |
+| `desktop_min_version` | `1.0.1` | installs below this see a non-dismissible "must update" strip |
+| `desktop_download_url` | `https://…` | the Download button; https only |
+
+Mac and Windows builds rarely ship together, so each key also takes a
+platform suffix that wins on that platform: `desktop_download_url_mac`,
+`desktop_download_url_windows` (and `_linux`), likewise
+`desktop_latest_version_windows` / `desktop_min_version_windows`. The plain
+key is the fallback for everyone. Without the Windows URL, a Windows install
+is offered whatever the plain key points at — a `.dmg`.
 
 ## Verifying
 

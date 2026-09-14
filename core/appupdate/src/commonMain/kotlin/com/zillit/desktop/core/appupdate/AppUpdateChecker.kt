@@ -1,5 +1,6 @@
 package com.zillit.desktop.core.appupdate
 
+import com.zillit.desktop.core.common.OperatingSystem
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.config.FirebaseConfig
 import io.ktor.client.HttpClient
@@ -24,18 +25,41 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * All three live in the Firebase console under the same project as the calling
  * plane's config, and — per the Remote Config REST contract — **every value is
- * a string**, even the version numbers.
+ * a string**, even the version numbers. Type the bare value into the console:
+ * `1.2.0`, **not** `"1.2.0"`. The quotes below are Kotlin's, not part of the
+ * value. (They were typed in once, on every environment, and the checker read
+ * `"1.0.3"` as `0.0.3` for months — see [AppVersions.normalise], which now
+ * forgives it.)
  *
- * | Key | Example | Meaning |
+ * | Key | Value | Meaning |
  * |---|---|---|
- * | `desktop_latest_version` | `"1.2.0"` | newest published desktop build |
- * | `desktop_min_version` | `"1.1.0"` | below this, updating is mandatory |
- * | `desktop_download_url` | `"https://zillit.com/download"` | where to send the reader |
+ * | `desktop_latest_version` | `1.2.0` | newest published desktop build |
+ * | `desktop_min_version` | `1.1.0` | below this, updating is mandatory |
+ * | `desktop_download_url` | `https://zillit.com/download` | where to send the reader |
+ *
+ * ### Per-platform overrides
+ *
+ * A Mac and a Windows build are cut on different machines and rarely on the
+ * same day, and a `.dmg` is no use to someone on Windows. Each key therefore
+ * accepts a platform-suffixed variant that wins over the plain one when this
+ * install matches it:
+ *
+ * | Platform | Suffix | e.g. |
+ * |---|---|---|
+ * | macOS | `_mac` | `desktop_download_url_mac` |
+ * | Windows | `_windows` | `desktop_download_url_windows` |
+ * | Linux | `_linux` | `desktop_latest_version_linux` |
+ *
+ * The plain key is the fallback for every platform, so a template that names
+ * only `desktop_download_url` keeps working; one that adds
+ * `desktop_download_url_windows` sends Windows to the `.msi` and everyone
+ * else to the plain link. Versions can be split the same way when one
+ * platform's build lags.
  *
  * `desktop_download_url` is optional: when it is absent the checker falls back
  * to the Zillit configuration's own `app_download_url`
  * (`RemoteCredentials.appDownloadUrl`), which is the value the phones already
- * use. Only `https://` is accepted from either source — see [usableUrl].
+ * use. Only `https://` is accepted from any source — see [usableUrl].
  *
  * The keys are `desktop_`-prefixed on purpose. Android reads
  * `android_force_update` (`utils/Constants.kt:213`); sharing one key across
@@ -76,9 +100,12 @@ import kotlinx.serialization.json.JsonPrimitive
  * @param httpClient the plain client — **never** `ApiClient`.
  * @param firebase the configured Firebase triple; null switches the whole
  *   feature off.
- * @param installedVersion `System.getProperty("jpackage.app-version")` in the
- *   app. Null or blank under `:desktopApp:run`, where there is no packaged
- *   version to compare and therefore nothing honest to say.
+ * @param installedVersion the build's own version — `BuildInfo.VERSION` in the
+ *   app, which jpackage also stamps as `jpackage.app-version`. Null or blank
+ *   means there is nothing honest to compare against, and the check stays
+ *   silent.
+ * @param os which platform-suffixed keys apply to this install. `Unknown`
+ *   reads only the plain keys.
  * @param instanceId a stable per-install id, persisted by the caller. A fresh
  *   id every launch would make this install look like a new one to Firebase and
  *   skew percentage rollouts, so the caller generates once and stores.
@@ -93,6 +120,7 @@ class AppUpdateChecker(
     private val installedVersion: () -> String?,
     private val instanceId: suspend () -> String,
     private val fallbackDownloadUrl: suspend () -> String?,
+    private val os: OperatingSystem = OperatingSystem.Unknown,
     private val host: String = FIREBASE_REMOTE_CONFIG_HOST,
 ) {
 
@@ -125,12 +153,11 @@ class AppUpdateChecker(
             return null
         }
 
-        val installed = installedVersion()?.trim().orEmpty()
-        if (installed.isEmpty()) {
-            // `:desktopApp:run` — jpackage never wrote a `.cfg`, so there is no
-            // installed version. Comparing against nothing can only produce a
-            // wrong answer, so it produces none.
-            announceOff("no packaged version on this run; not checking")
+        val installed = AppVersions.normalise(installedVersion())
+        if (!AppVersions.isMeaningful(installed)) {
+            // Nothing to compare against can only produce a wrong answer, so
+            // it produces none.
+            announceOff("no build version on this run; not checking")
             return null
         }
 
@@ -186,14 +213,17 @@ class AppUpdateChecker(
      * failure that gets ignored for a week.
      */
     private suspend fun verdict(entries: Map<String, String>, installed: String): UpdateStatus {
-        val latest = entries[KEY_LATEST_VERSION]?.trim().orEmpty()
-        val floor = entries[KEY_MIN_VERSION]?.trim().orEmpty()
+        val latest = AppVersions.normalise(entries.forPlatform(KEY_LATEST_VERSION, os))
+        val floor = AppVersions.normalise(entries.forPlatform(KEY_MIN_VERSION, os))
         if (!AppVersions.isMeaningful(latest) && !AppVersions.isMeaningful(floor)) {
             // The template exists but says nothing about desktop builds.
             return UpdateStatus.Unknown
         }
 
-        val url = usableUrl(entries[KEY_DOWNLOAD_URL]) ?: usableUrl(fallbackDownloadUrl())
+        val url = usableUrl(entries.forPlatform(KEY_DOWNLOAD_URL, os)) ?: usableUrl(fallbackDownloadUrl())
+        ZillitLog.d(TAG) {
+            "installed $installed; latest ${latest.ifEmpty { "-" }}; floor ${floor.ifEmpty { "-" }}"
+        }
         if (AppVersions.isMeaningful(floor) && AppVersions.isBelow(installed, floor)) {
             // The floor is the honest thing to name when no separate latest was
             // published — "update to at least this" beats naming nothing.
@@ -265,6 +295,28 @@ internal fun parseEntries(payload: String): Map<String, String>? {
 }
 
 /**
+ * The value for [key] on this [os]: the platform-suffixed key when the console
+ * publishes one with something in it, otherwise the plain key.
+ *
+ * "Something in it" matters: dev's template carries `desktop_download_url` as
+ * the two characters `""`, and a suffixed key left equally empty must fall
+ * through to the plain one rather than blank it.
+ */
+internal fun Map<String, String>.forPlatform(key: String, os: OperatingSystem): String? {
+    val suffixed = os.keySuffix?.let { suffix -> this["$key$suffix"] }
+    return suffixed?.takeIf { AppVersions.normalise(it).isNotEmpty() } ?: this[key]
+}
+
+/** `_mac`, `_windows`, `_linux`; null where no suffix applies. */
+internal val OperatingSystem.keySuffix: String?
+    get() = when (this) {
+        OperatingSystem.MacOs -> "_mac"
+        OperatingSystem.Windows -> "_windows"
+        OperatingSystem.Linux -> "_linux"
+        OperatingSystem.Unknown -> null
+    }
+
+/**
  * Accepts a download target, or nothing.
  *
  * `https` only. The value is typed into a remote console by a human and lands
@@ -273,9 +325,12 @@ internal fun parseEntries(payload: String): Map<String, String>? {
  * launcher guards this too (`BrowserLauncher.openInBrowser`); this is the
  * second lock, and it is stricter than the first because a download page for a
  * signed installer has no business being served over plaintext.
+ *
+ * Quotes are forgiven for the same reason they are on versions: the console
+ * gets typed into.
  */
 internal fun usableUrl(raw: String?): String? =
-    raw?.trim()?.takeIf { it.startsWith("https://", ignoreCase = true) }
+    AppVersions.normalise(raw).takeIf { it.startsWith("https://", ignoreCase = true) }
 
 /** `https://firebaseremoteconfig.googleapis.com` — no trailing slash. */
 const val FIREBASE_REMOTE_CONFIG_HOST = "https://firebaseremoteconfig.googleapis.com"

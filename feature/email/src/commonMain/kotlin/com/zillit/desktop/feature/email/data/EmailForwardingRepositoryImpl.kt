@@ -10,6 +10,7 @@ import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.jsonBody
 import com.zillit.desktop.feature.email.domain.EmailForwarding
 import com.zillit.desktop.feature.email.domain.EmailForwardingRepository
+import com.zillit.desktop.feature.email.domain.MailboxScope
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
@@ -25,6 +26,8 @@ import kotlinx.serialization.json.put
 class EmailForwardingRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
+    /** The shared Accounts mailbox forwards on its own setting. */
+    private val scope: MailboxScope = MailboxScope.Personal,
 ) : EmailForwardingRepository {
 
     private val url get() = "${config.apiV2(ZillitService.Email)}email-forwarding-setting"
@@ -37,6 +40,7 @@ class EmailForwardingRepositoryImpl(
             url = url,
             serializer = ForwardingSettingDto.serializer(),
             module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
         ).map { it?.toForwarding() }
 
     // POST {forward_to_email, enabled:true} — ForwardingSettingRequest
@@ -48,11 +52,14 @@ class EmailForwardingRepositoryImpl(
             url = url,
             serializer = ForwardingSettingDto.serializer(),
             module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
             body = jsonBody(
-                buildJsonObject {
-                    put("forward_to_email", trimmed)
-                    put("enabled", true)
-                },
+                scope.body(
+                    buildJsonObject {
+                        put("forward_to_email", trimmed)
+                        put("enabled", true)
+                    },
+                ),
             ),
         ).map { saved ->
             // The echo can be blank on some builds; the address just sent is
@@ -67,6 +74,8 @@ class EmailForwardingRepositoryImpl(
             verb = HttpVerb.Delete,
             url = url,
             module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
+            body = scope.flagBody()?.let(::jsonBody),
         ).map { }
 }
 
