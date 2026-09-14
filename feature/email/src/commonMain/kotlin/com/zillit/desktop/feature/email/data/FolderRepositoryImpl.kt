@@ -16,6 +16,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.zillit.desktop.feature.email.domain.FolderRepository
+import com.zillit.desktop.feature.email.domain.MailboxScope
 
 /**
  * Creating, renaming and deleting mail folders.
@@ -26,6 +27,8 @@ import com.zillit.desktop.feature.email.domain.FolderRepository
 class FolderRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
+    /** Which mailbox's folders — see [MailboxScope]. */
+    private val scope: MailboxScope = MailboxScope.Personal,
 ) : FolderRepository {
 
     private val api get() = config.apiV2(ZillitService.Email)
@@ -36,7 +39,8 @@ class FolderRepositoryImpl(
             url = "${api}imap-folders",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
-            body = jsonBody(buildJsonObject { put("folder_name", name) }),
+            queryParameters = scope.query(),
+            body = jsonBody(scope.body(buildJsonObject { put("folder_name", name) })),
         ).map { }
 
     override suspend fun renameFolder(name: String, newName: String): ZillitResult<Unit> =
@@ -45,13 +49,16 @@ class FolderRepositoryImpl(
             url = "${api}imap-folders",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
             body = jsonBody(
-                buildJsonObject {
-                    // Both names, not an id: IMAP folders are identified by name,
-                    // so a rename is "this one becomes that one".
-                    put("folder_name", name)
-                    put("new_folder_name", newName)
-                },
+                scope.body(
+                    buildJsonObject {
+                        // Both names, not an id: IMAP folders are identified by name,
+                        // so a rename is "this one becomes that one".
+                        put("folder_name", name)
+                        put("new_folder_name", newName)
+                    },
+                ),
             ),
         ).map { }
 
@@ -61,6 +68,7 @@ class FolderRepositoryImpl(
             url = "${api}imap-folders",
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
-            body = jsonBody(buildJsonObject { put("folder_name", name) }),
+            queryParameters = scope.query(),
+            body = jsonBody(scope.body(buildJsonObject { put("folder_name", name) })),
         ).map { }
 }

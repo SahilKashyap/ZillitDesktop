@@ -26,9 +26,38 @@ package com.zillit.desktop.core.appupdate
  *  - a segment is read up to its first non-digit, so `1.2.0-beta` == `1.2.0`
  *    and a pre-release never counts as newer than the release it precedes;
  *  - a leading `v` is tolerated, because release tags carry one;
+ *  - surrounding quotes are ignored — see [normalise];
  *  - anything else is zero: `""`, `"latest"`, `"1..2"` all compare as `0`.
  */
 object AppVersions {
+
+    /**
+     * The value as the person who typed it meant it.
+     *
+     * Remote Config's console takes a string, and the KDoc table that told the
+     * backend team what to publish showed the example as `"1.2.0"` — so that is
+     * what got typed, quotes included. Every Zillit project's template carries
+     * `desktop_latest_version` as the seven characters `"1.0.3"` (verified
+     * 2026-09-14 against dev, QA and prod). Read raw, the first segment is `"1`,
+     * which parses as zero, so `"1.0.3"` compared as `0.0.3` — *older* than
+     * every installed build — and the banner never once appeared.
+     *
+     * Stripped here rather than fixed in the console, because the console will
+     * be typed into again. Trims whitespace, then one matching pair of straight
+     * or curly quotes (`"…"`, `'…'`, `“…”`, `‘…’`), then whitespace again; a
+     * value with no quotes passes through untouched.
+     */
+    fun normalise(raw: String?): String {
+        var value = raw?.trim().orEmpty()
+        while (value.length >= 2) {
+            val open = value.first()
+            val close = value.last()
+            val pair = QUOTE_PAIRS.any { (o, c) -> open == o && close == c }
+            if (!pair) break
+            value = value.substring(1, value.length - 1).trim()
+        }
+        return value
+    }
 
     /**
      * Negative when [left] is older, zero when equal, positive when newer.
@@ -72,7 +101,7 @@ object AppVersions {
      * ordering that makes sense for a number too big to hold.
      */
     private fun segments(raw: String?): List<Long> {
-        val trimmed = raw?.trim()?.removePrefix("v")?.removePrefix("V").orEmpty()
+        val trimmed = normalise(raw).removePrefix("v").removePrefix("V")
         if (trimmed.isEmpty()) return emptyList()
 
         return trimmed.split('.').map { segment ->
@@ -80,4 +109,7 @@ object AppVersions {
             if (digits.isEmpty()) 0L else digits.toLongOrNull() ?: Long.MAX_VALUE
         }
     }
+
+    /** Straight and typographic pairs — a console on a Mac curls quotes as you type. */
+    private val QUOTE_PAIRS = listOf('"' to '"', '\'' to '\'', '\u201C' to '\u201D', '\u2018' to '\u2019')
 }

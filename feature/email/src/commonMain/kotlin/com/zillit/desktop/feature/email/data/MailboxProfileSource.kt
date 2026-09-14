@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.feature.email.domain.MailboxCredentials
@@ -33,12 +34,17 @@ class MailboxProfileSource(
     /** The core service, not the mail one: the profile is a project-management record. */
     private val api get() = config.apiV2()
 
-    suspend fun profile(): ZillitResult<MailboxProfile> =
+    /**
+     * [options] names another production (and the caller's id on it) when the
+     * open one is not the right scope — the picker asks before any is open.
+     */
+    suspend fun profile(options: CallOptions = CallOptions()): ZillitResult<MailboxProfile> =
         apiClient.request(
             verb = HttpVerb.Get,
             url = "${api}user/profile",
             serializer = MailboxProfileDto.serializer(),
             module = RequestModule.ProjectUser,
+            options = options,
         ).map { it.toProfile() }
 }
 

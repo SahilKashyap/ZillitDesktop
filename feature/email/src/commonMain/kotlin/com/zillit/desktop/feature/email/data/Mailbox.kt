@@ -86,7 +86,12 @@ class Mailbox(
             // Nothing new, but mail may still have been deleted elsewhere.
             if (stale.isNotEmpty()) cache.saveMessages(folderName, emptyList(), dropUids = stale)
             return ZillitResult.Success(
-                SyncedPage(cache.messages(folderName), hasMore = false, serverUids = serverUids.toSet(), complete = true),
+                SyncedPage(
+                    messages = cache.messages(folderName),
+                    hasMore = false,
+                    serverUids = serverUids.toSet(),
+                    complete = true,
+                ),
             )
         }
 
@@ -113,6 +118,96 @@ class Mailbox(
         }
     }
 
+    /**
+     * Brings every folder up to date — the web's open-and-refresh pass
+     * (`useEmailSync.fetchInitialData`): each folder's uid list, then every
+     * uid this machine lacks in batches of [EmailSync.BATCH], newest first,
+     * folder after folder. [onProgress] is told the share of batches done,
+     * which is what the "Syncing emails… 45%" strip shows; [onFolderChanged]
+     * fires after each batch lands so the open folder repaints as it fills.
+     *
+     * Why the whole mailbox and not just the open folder: conversations span
+     * folders. The Inbox row for a thread counts the replies in Sent, and a
+     * click on it opens them — neither is possible while Sent has never been
+     * synced. Drafts are skipped: they are not IMAP (see `EmailDraft`).
+     */
+    suspend fun syncEverything(
+        folders: List<EmailFolder>,
+        onProgress: suspend (percent: Int) -> Unit = {},
+        onFolderChanged: suspend (FolderSyncResult) -> Unit = {},
+        /** The clock the uid lists are stamped with, for the badge ledger's arrival guard. */
+        nowMillis: () -> Long = { 0L },
+    ) {
+        val plans = folders
+            .filterNot { it.name.equals(EmailFolder.DRAFTS, ignoreCase = true) }
+            .mapNotNull { folder -> planFor(folder.name, nowMillis()) }
+
+        val total = plans.sumOf { it.batches.size }
+        var done = 0
+        onProgress(0)
+        for (plan in plans) {
+            if (plan.stale.isNotEmpty() || plan.batches.isEmpty()) {
+                if (plan.stale.isNotEmpty()) cache.saveMessages(plan.folderName, emptyList(), dropUids = plan.stale)
+                onFolderChanged(
+                    FolderSyncResult(
+                        plan.folderName,
+                        plan.serverUids,
+                        complete = plan.batches.isEmpty(),
+                        plan.listedAt,
+                    ),
+                )
+            }
+            for ((index, batch) in plan.batches.withIndex()) {
+                when (val page = repository.index(plan.folderName, batch)) {
+                    is ZillitResult.Success -> cache.saveMessages(plan.folderName, page.data)
+                    is ZillitResult.Failure -> ZillitLog.w(TAG) {
+                        "sync of ${plan.folderName} batch ${index + 1}/${plan.batches.size} failed: " +
+                            page.error.technical
+                    }
+                }
+                done++
+                onFolderChanged(
+                    FolderSyncResult(
+                        plan.folderName,
+                        plan.serverUids,
+                        complete = EmailSync.isComplete(plan.serverUids.toList(), cache.cachedUids(plan.folderName)),
+                        listedAt = plan.listedAt,
+                    ),
+                )
+                if (total > 0) onProgress(done * PERCENT / total)
+            }
+        }
+        onProgress(PERCENT)
+    }
+
+    /** What a folder needs: the server's list, the stale rows, and the batches to fetch. */
+    private suspend fun planFor(folderName: String, listedAt: Long): SyncPlan? {
+        val serverUids = when (val uids = repository.folderUids(folderName)) {
+            is ZillitResult.Failure -> {
+                ZillitLog.w(TAG) { "could not list $folderName: ${uids.error.technical}" }
+                return null
+            }
+            is ZillitResult.Success -> uids.data
+        }
+        val cachedUids = cache.cachedUids(folderName)
+        val missing = serverUids.filter { it !in cachedUids }.sortedDescending()
+        return SyncPlan(
+            folderName = folderName,
+            serverUids = serverUids.toSet(),
+            stale = EmailSync.staleUids(serverUids, cachedUids),
+            batches = missing.chunked(EmailSync.BATCH),
+            listedAt = listedAt,
+        )
+    }
+
+    private class SyncPlan(
+        val folderName: String,
+        val serverUids: Set<Int>,
+        val stale: Set<Int>,
+        val batches: List<List<Int>>,
+        val listedAt: Long,
+    )
+
     /** Forgets a deleted folder's mail, so it does not linger on disk. */
     fun forget(folderName: String) = cache.clearFolder(folderName)
 
@@ -121,5 +216,19 @@ class Mailbox(
 
     private companion object {
         const val TAG = "Mailbox"
+        const val PERCENT = 100
     }
 }
+
+/**
+ * One folder's state after a batch of the full sync landed: the server's
+ * complete uid list and whether every uid it names is now held — what the
+ * badge ledger squares itself against.
+ */
+data class FolderSyncResult(
+    val folderName: String,
+    val serverUids: Set<Int>,
+    val complete: Boolean,
+    /** When the folder's uid list was asked for. */
+    val listedAt: Long = 0L,
+)

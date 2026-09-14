@@ -14,6 +14,8 @@ import com.zillit.desktop.core.network.jsonBody
 import com.zillit.desktop.feature.email.domain.ConversationViewRepository
 import com.zillit.desktop.feature.email.domain.MailboxCredentials
 import com.zillit.desktop.feature.email.domain.MailboxCredentialsRepository
+import com.zillit.desktop.feature.email.domain.MailboxDirectory
+import com.zillit.desktop.feature.email.domain.MailboxScope
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
@@ -36,6 +38,8 @@ class MailboxCredentialsRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
     private val profile: MailboxProfileSource = MailboxProfileSource(apiClient, config),
+    /** The reveal is per mailbox; the shared one's password is its own. */
+    private val scope: MailboxScope = MailboxScope.Personal,
 ) : MailboxCredentialsRepository {
 
     private val mail get() = config.apiV2(ZillitService.Email)
@@ -58,6 +62,7 @@ class MailboxCredentialsRepositoryImpl(
             url = "${mail}imap-credentials/reveal",
             serializer = RevealedCredentialsDto.serializer(),
             module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
             options = CallOptions(readCache = false),
         ).flatMap { revealed ->
             val password = revealed.smtp?.password?.takeIf(String::isNotBlank)
@@ -133,17 +138,34 @@ class ConversationViewRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
     private val profile: MailboxProfileSource = MailboxProfileSource(apiClient, config),
+    /**
+     * The shared Accounts mailbox stores this setting on the project rather
+     * than the user (`accounts_mail_box_detail.conversation_view`, written
+     * by `PATCH project/accounts-mail-box/conversation-view`); while it is
+     * active the reads and writes go there.
+     */
+    private val scope: MailboxScope = MailboxScope.Personal,
+    private val directory: MailboxDirectory? = null,
 ) : ConversationViewRepository {
 
-    // Android defaults a missing value to on (ConversationViewPreference.kt:30).
+    // Android defaults a missing value to on (ConversationViewPreference.kt:30);
+    // the web defaults the shared mailbox's to off (`getEmailThreadEnabled`).
     override suspend fun isEnabled(): ZillitResult<Boolean> =
-        profile.profile().map { it.conversationView ?: true }
+        if (scope.isAccountsActive() && directory != null) {
+            directory.accounts().map { it?.conversationView ?: false }
+        } else {
+            profile.profile().map { it.conversationView ?: true }
+        }
 
     override suspend fun setEnabled(enabled: Boolean): ZillitResult<Unit> =
-        apiClient.envelope(
-            verb = HttpVerb.Patch,
-            url = "${config.apiV2()}user/update-conversation-view",
-            module = RequestModule.ProjectUser,
-            body = jsonBody(buildJsonObject { put("conversation_view", enabled) }),
-        ).map { }
+        if (scope.isAccountsActive() && directory != null) {
+            directory.setAccountsConversationView(enabled)
+        } else {
+            apiClient.envelope(
+                verb = HttpVerb.Patch,
+                url = "${config.apiV2()}user/update-conversation-view",
+                module = RequestModule.ProjectUser,
+                body = jsonBody(buildJsonObject { put("conversation_view", enabled) }),
+            ).map { }
+        }
 }

@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
@@ -53,6 +54,7 @@ internal fun QrLoginPage(
     state: AuthUiState,
     onEvent: (AuthEvent) -> Unit,
     modifier: Modifier = Modifier,
+    appVersion: String? = null,
 ) {
     Box(
         modifier = modifier
@@ -95,6 +97,18 @@ internal fun QrLoginPage(
                     .height(1.dp)
                     .background(ZillitTheme.colors.signInTextMuted.copy(alpha = DIVIDER_ALPHA)),
             )
+
+            // The footer under the rule: which build this is, for the person
+            // who cannot get past this page and is asked.
+            appVersion?.takeIf { it.isNotBlank() }?.let { version ->
+                ZillitText(
+                    text = "Zillit Desktop $version",
+                    style = ZillitTheme.typography.bodySmall,
+                    color = ZillitTheme.colors.signInTextMuted,
+                    modifier = Modifier.fillMaxWidth().testTag(VERSION_TAG),
+                    textAlign = TextAlign.End,
+                )
+            }
         }
     }
 }
@@ -318,3 +332,6 @@ private const val QR_WEIGHT = 1f
 private const val OVERLAY_ALPHA = 0.95f
 private const val PLACEHOLDER_ALPHA = 0.15f
 private const val DIVIDER_ALPHA = 0.3f
+
+/** The version footer, so a test can find it by something other than its text. */
+internal const val VERSION_TAG = "sign-in-version"

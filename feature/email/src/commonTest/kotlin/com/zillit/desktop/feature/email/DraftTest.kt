@@ -10,6 +10,7 @@ import com.zillit.desktop.feature.email.domain.EmailFolder
 import com.zillit.desktop.feature.email.domain.isWorthSaving
 import com.zillit.desktop.feature.email.domain.toSummary
 import com.zillit.desktop.feature.email.ui.ComposeEvent
+import com.zillit.desktop.feature.email.ui.RecipientField
 import com.zillit.desktop.feature.email.ui.ComposeViewModel
 import com.zillit.desktop.feature.email.ui.Composing
 import com.zillit.desktop.feature.email.ui.EmailEvent
@@ -54,7 +55,8 @@ class DraftTest {
         ComposeViewModel(Composing(server, server, server, server), ComposeMode.New, null, editing)
 
     private fun type(composer: ComposeViewModel, body: String) {
-        composer.onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        composer.onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
+        composer.onEvent(ComposeEvent.SubjectChanged("Tomorrow"))
         composer.onEvent(ComposeEvent.BodyChanged(RichText.plain(body)))
     }
 
@@ -241,8 +243,7 @@ class DraftTest {
 
         val composer = composer(FakeMailServer(), editing = existing)
 
-        assertTrue(composer.state.value.showsCopyFields, "the Cc would look lost")
-        assertEquals("c@d.com", composer.state.value.ccText)
+        assertEquals(listOf("c@d.com"), composer.state.value.cc, "the Cc would look lost")
         assertTrue(composer.state.value.isDraftSaved)
     }
 

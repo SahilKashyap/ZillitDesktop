@@ -51,7 +51,7 @@ internal fun FolderDialog(
                 ZillitButton(
                     text = "Delete",
                     variant = ButtonVariant.Tertiary,
-                    onClick = { onEvent(EmailEvent.DeleteFolder) },
+                    onClick = { onEvent(EmailEvent.DeleteFolder()) },
                 )
             }
 

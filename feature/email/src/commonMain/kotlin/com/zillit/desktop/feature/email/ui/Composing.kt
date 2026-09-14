@@ -1,11 +1,14 @@
 package com.zillit.desktop.feature.email.ui
 
+import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.feature.email.domain.AttachmentUploader
 import com.zillit.desktop.feature.email.domain.ContactRepository
 import com.zillit.desktop.feature.email.domain.DraftRepository
 import com.zillit.desktop.feature.email.domain.EmailContact
+import com.zillit.desktop.feature.email.domain.EmailGroup
 import com.zillit.desktop.feature.email.domain.EmailRepository
+import com.zillit.desktop.feature.email.domain.MailboxIdentity
 import com.zillit.desktop.feature.email.domain.PickedFile
 import com.zillit.desktop.feature.email.domain.SignatureRepository
 import kotlin.uuid.Uuid
@@ -24,8 +27,19 @@ data class Composing(
     val drafts: DraftRepository,
     val contacts: ContactRepository,
     val signatures: SignatureRepository,
-    /** Crew on this production, for To/Cc/Bcc suggestions. */
+    /**
+     * Crew on this production, for To/Cc/Bcc suggestions — whatever the host
+     * already holds, answered at once. [crewMailboxes] refines it.
+     */
     val crew: () -> List<EmailContact> = { emptyList() },
+    /**
+     * The crew by their Zillit mailbox addresses (`project/users` →
+     * `mail_box_detail`), which is where production mail actually goes.
+     * Fetched once per composer; a failure leaves [crew] standing.
+     */
+    val crewMailboxes: suspend () -> ZillitResult<List<EmailContact>> = { ZillitResult.Success(emptyList()) },
+    /** Distribution groups, offered by name like a person (web `emailGroupsList`). */
+    val groups: suspend () -> ZillitResult<List<EmailGroup>> = { ZillitResult.Success(emptyList()) },
     /** Null on a build with no file storage, which hides the Attach button. */
     val uploader: AttachmentUploader? = null,
     /** Opens the system file chooser. Suspends while it is up. */
@@ -46,4 +60,12 @@ data class Composing(
     val newDraftKey: () -> String = { Uuid.random().toString() },
     /** Reply-all drops this address, so a reply never goes to its sender. */
     val selfAddress: () -> String = { "" },
+    /**
+     * The mailbox the message goes out from — its address for the From row
+     * and its BCC presets, which every new message starts with. Null before
+     * the mailbox is known; [selfAddress] then stands in for the address.
+     */
+    val mailbox: () -> MailboxIdentity? = { null },
+    /** The reading pane's stamp for the quoted original's "On …, X wrote:" line. */
+    val nowMillis: () -> Long = { 0L },
 )

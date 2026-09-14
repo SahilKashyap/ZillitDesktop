@@ -56,6 +56,8 @@ data class SettingsUiState(
     val unsentChanges: Int = 0,
     /** The administration page, reached from this one. */
     val admin: AdminSettingsUiState = AdminSettingsUiState(),
+    /** Which build this is, and what the last update check said. */
+    val about: AboutInfo = AboutInfo(),
 ) {
     val canDecreaseScale: Boolean get() = uiScalePercent > MIN_SCALE
     val canIncreaseScale: Boolean get() = uiScalePercent < MAX_SCALE
@@ -123,6 +125,50 @@ data class AdminSettingsUiState(
 }
 
 /**
+ * What this build is, for the About row.
+ *
+ * Supplied by the app, which is the only module that knows: the version is a
+ * compile-time constant generated from `zillit.version`, and the git sha rides
+ * with it. Neither is fetched. The phones show the same line under their
+ * settings (`SettingPage.kt` prints `BuildConfig.VERSION_NAME`; the web's side
+ * menu shows `web_app_version`), and it is the first thing support asks for.
+ */
+data class AboutInfo(
+    /** `1.0.2`. Empty only in a test that never set one. */
+    val version: String = "",
+    /** The short git sha the build was cut from; empty for a build without git. */
+    val build: String = "",
+    /** `macOS 26.5`, `Windows 11` — what the JVM reports, for the same bug report. */
+    val platform: String = "",
+    val updateCheck: UpdateCheck = UpdateCheck.Idle,
+) {
+    /** `1.0.2 (2dbe8ff)`, or just the version. */
+    val versionLabel: String
+        get() = if (build.isBlank()) version else "$version ($build)"
+}
+
+/**
+ * The manual "Check for updates" on the About row, as one closed set.
+ *
+ * Distinct from the shell's banner, which polls on its own clock and shows
+ * only when there is something to say. This is the reader asking, and a
+ * reader who asked deserves an answer even when the answer is "you are
+ * current" or "could not reach the server" — the two the banner never shows.
+ */
+sealed interface UpdateCheck {
+    /** Not asked yet this session. */
+    data object Idle : UpdateCheck
+    data object Checking : UpdateCheck
+    data object UpToDate : UpdateCheck
+
+    /** A newer build exists. [downloadUrl] null when no https link was published. */
+    data class Available(val version: String, val downloadUrl: String?, val mandatory: Boolean) : UpdateCheck
+
+    /** No answer — unconfigured, offline, or nothing published for desktop. */
+    data object Unavailable : UpdateCheck
+}
+
+/**
  * What the open production says about this user's unit.
  *
  * Fed in as a flow rather than read once: units belong to a production, so
@@ -177,6 +223,12 @@ sealed interface SettingsEvent {
     data object AskSignOut : SettingsEvent
     data object ConfirmSignOut : SettingsEvent
     data object DismissSignOut : SettingsEvent
+
+    /** The About row's button. */
+    data object CheckForUpdates : SettingsEvent
+
+    /** The Download that follows a successful check. [url] is what the check returned. */
+    data class DownloadUpdate(val url: String) : SettingsEvent
 }
 
 sealed interface SettingsEffect {

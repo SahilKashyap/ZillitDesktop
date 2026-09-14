@@ -59,13 +59,13 @@ UPDATE notificationLedger SET messageRead = 1 WHERE id IN ?;
 selectWatermark:
 SELECT MAX(updated) FROM notificationLedger WHERE (:projectId = '' OR projectId = :projectId) AND fromApi = 1;
 
--- The production picker: unread per production, every production at once
+-- The production picker's rows: every unread row of every production
 -- (Android `calculateAllProjectsBadges`: this device's unread rows grouped
--- by project). An empty device id counts every device's rows.
-unreadByProject:
-SELECT projectId, COUNT(*) AS unread FROM notificationLedger
-WHERE messageRead = 0 AND ignored = 0 AND deleted = 0 AND (:deviceId = '' OR deviceId = :deviceId)
-GROUP BY projectId;
+-- by project — the grouping is done in Kotlin, where each production's
+-- mailbox scope is known). An empty device id takes every device's rows.
+selectUnread:
+SELECT * FROM notificationLedger
+WHERE messageRead = 0 AND ignored = 0 AND deleted = 0 AND (:deviceId = '' OR deviceId = :deviceId);
 
 deleteProject:
 DELETE FROM notificationLedger WHERE projectId = ?;

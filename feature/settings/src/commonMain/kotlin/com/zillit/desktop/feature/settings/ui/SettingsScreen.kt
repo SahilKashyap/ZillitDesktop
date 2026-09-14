@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ThemeMode
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
@@ -90,6 +91,7 @@ fun SettingsScreen(
                 ProductionSection(state, onEvent)
                 NotificationsSection(state, onEvent)
                 DesktopSection(state, onEvent)
+                AboutSection(state.about, onEvent)
             }
         }
 
@@ -331,6 +333,86 @@ private fun DesktopSection(state: SettingsUiState, onEvent: (SettingsEvent) -> U
         }
     }
 }
+/**
+ * Which build this is, and a way to ask whether it is the newest.
+ *
+ * Last on the page, as it is on the phones: nobody opens Settings for it
+ * until something is wrong, and then it is the first thing support asks for.
+ * The version line is a single string on purpose — it gets copied into a
+ * message.
+ *
+ * The check's answer is written under the row rather than shown as a toast:
+ * a toast is gone before the reader has decided whether to click Download,
+ * and "you are up to date" is worth leaving on screen.
+ */
+@Composable
+private fun AboutSection(about: AboutInfo, onEvent: (SettingsEvent) -> Unit) {
+    Section("About", ZillitIcons.Info) {
+        val check = about.updateCheck
+        SettingRow(
+            title = "Zillit Desktop ${about.version}".trimEnd(),
+            detail = listOfNotNull(
+                about.build.takeIf { it.isNotBlank() }?.let { "Build $it" },
+                about.platform.takeIf { it.isNotBlank() },
+            ).joinToString(" · "),
+        ) {
+            ZillitButton(
+                text = "Check for updates",
+                onClick = { onEvent(SettingsEvent.CheckForUpdates) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                loading = check == UpdateCheck.Checking,
+            )
+        }
+        if (check != UpdateCheck.Idle && check != UpdateCheck.Checking) {
+            UpdateCheckResult(check, onEvent)
+        }
+    }
+}
+
+/** The line under the About row once a check has answered. */
+@Composable
+private fun UpdateCheckResult(check: UpdateCheck, onEvent: (SettingsEvent) -> Unit) {
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ZillitTheme.spacing.md)
+            .padding(bottom = ZillitTheme.spacing.md)
+            .testTag(UPDATE_RESULT_TAG),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        val (text, color) = when (check) {
+            UpdateCheck.UpToDate -> "You're on the latest version." to colors.textMuted
+            is UpdateCheck.Available -> if (check.mandatory) {
+                "Version ${check.version} is required. This version will stop working." to colors.danger
+            } else {
+                "Version ${check.version} is available." to colors.info
+            }
+            UpdateCheck.Unavailable ->
+                "Couldn't check for updates. You may be offline, or this build isn't set up to check." to
+                    colors.textMuted
+            UpdateCheck.Idle, UpdateCheck.Checking -> "" to colors.textMuted
+        }
+        ZillitText(
+            text = text,
+            style = ZillitTheme.typography.bodySmall,
+            color = color,
+            modifier = Modifier.weight(1f),
+        )
+        (check as? UpdateCheck.Available)?.downloadUrl?.let { url ->
+            ZillitButton(
+                text = "Download",
+                onClick = { onEvent(SettingsEvent.DownloadUpdate(url)) },
+                variant = if (check.mandatory) ButtonVariant.Danger else ButtonVariant.Primary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Download,
+            )
+        }
+    }
+}
+
 @Composable
 private fun NotifyToggle(
     title: String,
@@ -536,6 +618,9 @@ private val TITLE_ACCENT_HEIGHT = 40.dp
 private val ACCOUNT_AVATAR = 48.dp
 private val SECTION_ICON = 14.dp
 private val UNIT_SELECT_WIDTH = 240.dp
+
+/** The About row's answer line — so a test can read what the check said. */
+internal const val UPDATE_RESULT_TAG = "settings-update-result"
 
 /** The sentence the sign-out question adds when unsent work would be lost. */
 internal fun unsentChangesWarning(count: Int): String {

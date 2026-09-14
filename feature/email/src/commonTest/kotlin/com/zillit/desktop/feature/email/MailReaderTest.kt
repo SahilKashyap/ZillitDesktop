@@ -133,16 +133,18 @@ class MailReaderTest {
 
     @Test
     fun `a message with no trail id is threaded by its chain, then its parent`() {
-        // The phones' `calculateThreadId`: the root of the chain, else the
+        // The web's `calculateThreadId`: the root of the chain, else the
         // message it answers, else itself.
         fun thread(json: String) = readMessage(Json.parseToJsonElement(json))?.threadId
 
         assertEquals("m1", thread("""{"id":"m3","references":["m1","m2"]}"""))
         assertEquals("m2", thread("""{"id":"m3","in_reply_to":"m2"}"""))
         assertEquals("m3", thread("""{"id":"m3"}"""))
-        // A trail the server computed still wins over both.
+        // The server's own `thread_id` is ignored: the web overwrites it with
+        // this value on every sync (`EmailDB.addEmailsToDB`), so grouping on
+        // it would stack rows differently from the browser.
         assertEquals(
-            "t9",
+            "m1",
             thread("""{"id":"m3","thread_id":"t9","references":["m1"]}"""),
         )
     }

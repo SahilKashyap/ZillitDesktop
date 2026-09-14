@@ -34,8 +34,11 @@ From the repo root, in PowerShell or `cmd`:
 .\gradlew.bat :desktopApp:packageExe -PzillitEnv=develop -PzillitBundleConfig
 ```
 
-- `.exe` lands at `desktopApp\build\compose\binaries\main\exe\Zillit-Desktop-1.0.0.exe`
-- `:desktopApp:packageMsi` gives the `.msi` at `...\main\msi\Zillit-Desktop-1.0.0.msi`
+- The version in the file names is `zillit.version` from `gradle.properties`
+  — bump it there (or `-Pzillit.version=1.0.3`) before packaging; it is also
+  what Settings ▸ About shows and what the update check compares.
+- `.exe` lands at `desktopApp\build\compose\binaries\main\exe\Zillit-Desktop-<version>.exe`
+- `:desktopApp:packageMsi` gives the `.msi` at `...\main\msi\Zillit-Desktop-<version>.msi`
 - `:desktopApp:packageDistributionForCurrentOS` builds both.
 - `-PzillitEnv=develop` bakes the environment in (`-Dzillit.env=develop` in the
   launcher's `Zillit.cfg`); drop it for a **prod** installer. Check with
@@ -48,6 +51,12 @@ From the repo root, in PowerShell or `cmd`:
 
 The installer is **unsigned** (SmartScreen will warn once; "More info → Run
 anyway"). Authenticode signing is a later milestone.
+
+After uploading it, publish `desktop_download_url_windows` (and, if the
+Windows build's number differs from the Mac's, `desktop_latest_version_windows`
+/ `desktop_min_version_windows`) in Firebase Remote Config — plain values, no
+quotes. See "Telling installs about it" in `RELEASE_MACOS.md`; without the
+Windows URL, Windows installs are offered the Mac `.dmg`.
 
 ## First-run checks on Windows — please report these back
 

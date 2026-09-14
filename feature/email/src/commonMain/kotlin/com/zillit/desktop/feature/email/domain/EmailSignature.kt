@@ -69,13 +69,18 @@ fun List<EmailSignature>.defaultFor(mode: ComposeMode): EmailSignature? {
  * than merely unlikely. The cost is that the editor does not show it, which is
  * what the preview under the composer is for.
  */
-fun composedBody(body: String, signature: EmailSignature?): String {
-    val sign = signature?.body?.takeIf { it.isNotBlank() } ?: return body
-    if (body.isBlank()) return sign
-
-    // Two breaks, matching what every client puts between a message and its
-    // sign-off. Not a `<hr>`: some clients render it edge to edge.
-    return "$body<br><br>$sign"
+fun composedBody(body: String, signature: EmailSignature?, quotedHtml: String = ""): String {
+    val sign = signature?.body?.takeIf { it.isNotBlank() }
+    val signed = when {
+        sign == null -> body
+        body.isBlank() -> sign
+        // Two breaks, matching what every client puts between a message and
+        // its sign-off. Not a `<hr>`: some clients render it edge to edge.
+        else -> "$body<br><br>$sign"
+    }
+    // The quoted original comes last, below the sign-off — the web's order
+    // (`insertSignature(signature) + formattedBody`), and Gmail's.
+    return if (quotedHtml.isBlank()) signed else signed + quotedHtml
 }
 
 /** Creating, editing and deleting sign-offs. */

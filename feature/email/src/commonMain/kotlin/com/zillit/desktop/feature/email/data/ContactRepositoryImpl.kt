@@ -11,6 +11,7 @@ import com.zillit.desktop.core.network.jsonBody
 import com.zillit.desktop.feature.email.domain.AddressBookRepository
 import com.zillit.desktop.feature.email.domain.ContactRepository
 import com.zillit.desktop.feature.email.domain.EmailContact
+import com.zillit.desktop.feature.email.domain.MailboxScope
 import com.zillit.desktop.feature.email.domain.SavedContact
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -35,6 +36,8 @@ import kotlinx.serialization.json.putJsonArray
 class ContactRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
+    /** The shared Accounts mailbox keeps its own address book (web `getMailboxCacheKey`). */
+    private val scope: MailboxScope = MailboxScope.Personal,
 ) : ContactRepository, AddressBookRepository {
 
     private val api get() = config.apiV2(ZillitService.Email)
@@ -54,8 +57,43 @@ class ContactRepositoryImpl(
             verb = HttpVerb.Post,
             url = url,
             module = RequestModule.ProjectUser,
-            body = jsonBody(buildJsonObject { putJsonArray("contacts") { add(contactBody(contact)) } }),
+            queryParameters = scope.query(),
+            body = jsonBody(scope.body(buildJsonObject { putJsonArray("contacts") { add(contactBody(contact)) } })),
         ).map { }
+
+    /**
+     * Remembers every address a message was sent to — one row each, named by
+     * the address — which is how the web's address book fills itself
+     * (`enqueueContactsSave`): the next message to the same person offers
+     * them as a suggestion. Crew already known to the production are left
+     * out by the caller.
+     */
+    override suspend fun saveAddresses(addresses: List<String>): ZillitResult<Unit> {
+        val rows = addresses.map(String::trim).filter(String::isNotEmpty).distinctBy { it.lowercase() }
+        if (rows.isEmpty()) return ZillitResult.Success(Unit)
+        return apiClient.envelope(
+            verb = HttpVerb.Post,
+            url = url,
+            module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
+            body = jsonBody(
+                scope.body(
+                    buildJsonObject {
+                        putJsonArray("contacts") {
+                            rows.forEach { address ->
+                                add(
+                                    buildJsonObject {
+                                        put("contact_name", address)
+                                        put("email_address", address)
+                                    },
+                                )
+                            }
+                        }
+                    },
+                ),
+            ),
+        ).map { }
+    }
 
     // PUT email-contact/{id} {…} — SaveContactRequest bare, not wrapped
     // (EmailApi.updateContact, EmailApi.kt:271-276).
@@ -64,7 +102,8 @@ class ContactRepositoryImpl(
             verb = HttpVerb.Put,
             url = "$url/$id",
             module = RequestModule.ProjectUser,
-            body = jsonBody(contactBody(contact)),
+            queryParameters = scope.query(),
+            body = jsonBody(scope.body(contactBody(contact))),
         ).map { }
 
     // DELETE email-contact/{id} — EmailApi.deleteContact (EmailApi.kt:278-283).
@@ -73,6 +112,8 @@ class ContactRepositoryImpl(
             verb = HttpVerb.Delete,
             url = "$url/$id",
             module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
+            body = scope.flagBody()?.let(::jsonBody),
         ).map { }
 
     private suspend fun rows(): ZillitResult<List<JsonElement>> =
@@ -81,6 +122,7 @@ class ContactRepositoryImpl(
             url = url,
             serializer = JsonElement.serializer(),
             module = RequestModule.ProjectUser,
+            queryParameters = scope.query(),
         ).map { payload -> payload.contactRows() }
 }
 

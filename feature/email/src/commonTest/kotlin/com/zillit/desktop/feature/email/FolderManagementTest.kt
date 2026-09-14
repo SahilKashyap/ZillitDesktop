@@ -294,7 +294,7 @@ class FolderManagementTest {
         advanceUntilIdle()
 
         mailbox.onEvent(EmailEvent.EditFolder(EmailFolder("Vendors")))
-        mailbox.onEvent(EmailEvent.DeleteFolder)
+        mailbox.onEvent(EmailEvent.DeleteFolder())
         advanceUntilIdle()
 
         assertIs<PendingConfirm.DeleteFolder>(mailbox.state.value.pendingConfirm)
@@ -311,7 +311,7 @@ class FolderManagementTest {
         advanceUntilIdle()
 
         mailbox.onEvent(EmailEvent.EditFolder(EmailFolder("Vendors")))
-        mailbox.onEvent(EmailEvent.DeleteFolder)
+        mailbox.onEvent(EmailEvent.DeleteFolder())
         advanceUntilIdle()
 
         val pending = assertIs<PendingConfirm.DeleteFolder>(mailbox.state.value.pendingConfirm)
@@ -324,7 +324,7 @@ class FolderManagementTest {
         val mailbox = loaded(server)
         advanceUntilIdle()
         mailbox.onEvent(EmailEvent.EditFolder(EmailFolder("Vendors")))
-        mailbox.onEvent(EmailEvent.DeleteFolder)
+        mailbox.onEvent(EmailEvent.DeleteFolder())
         advanceUntilIdle()
 
         mailbox.onEvent(EmailEvent.ConfirmPending)
@@ -355,7 +355,7 @@ class FolderManagementTest {
         assertTrue(cache.messages("Vendors").isNotEmpty(), "precondition: mail was cached")
 
         mailbox.onEvent(EmailEvent.EditFolder(EmailFolder("Vendors")))
-        mailbox.onEvent(EmailEvent.DeleteFolder)
+        mailbox.onEvent(EmailEvent.DeleteFolder())
         mailbox.onEvent(EmailEvent.ConfirmPending)
         advanceUntilIdle()
 
@@ -372,7 +372,7 @@ class FolderManagementTest {
         advanceUntilIdle()
 
         mailbox.onEvent(EmailEvent.EditFolder(EmailFolder("Vendors")))
-        mailbox.onEvent(EmailEvent.DeleteFolder)
+        mailbox.onEvent(EmailEvent.DeleteFolder())
         mailbox.onEvent(EmailEvent.ConfirmPending)
         advanceUntilIdle()
 
@@ -385,7 +385,7 @@ class FolderManagementTest {
         val mailbox = loaded(server)
         advanceUntilIdle()
         mailbox.onEvent(EmailEvent.EditFolder(EmailFolder("Vendors")))
-        mailbox.onEvent(EmailEvent.DeleteFolder)
+        mailbox.onEvent(EmailEvent.DeleteFolder())
         advanceUntilIdle()
 
         mailbox.onEvent(EmailEvent.DismissConfirm)
@@ -404,7 +404,7 @@ class FolderManagementTest {
         advanceUntilIdle()
 
         mailbox.onEvent(EmailEvent.EditFolder(EmailFolder("INBOX", isSystem = true)))
-        mailbox.onEvent(EmailEvent.DeleteFolder)
+        mailbox.onEvent(EmailEvent.DeleteFolder())
         advanceUntilIdle()
 
         assertNull(mailbox.state.value.pendingConfirm)
@@ -419,7 +419,7 @@ class FolderManagementTest {
         val mailbox = loaded(server)
         advanceUntilIdle()
         mailbox.onEvent(EmailEvent.EditFolder(EmailFolder("Vendors")))
-        mailbox.onEvent(EmailEvent.DeleteFolder)
+        mailbox.onEvent(EmailEvent.DeleteFolder())
         advanceUntilIdle()
 
         mailbox.onEvent(EmailEvent.ConfirmPending)

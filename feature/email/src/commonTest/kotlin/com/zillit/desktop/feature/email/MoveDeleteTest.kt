@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.email
 import com.zillit.desktop.feature.email.data.InMemoryMailboxCache
 import com.zillit.desktop.feature.email.data.Mailbox
 import com.zillit.desktop.feature.email.domain.DeleteIntent
+import com.zillit.desktop.feature.email.domain.EmailDraft
 import com.zillit.desktop.feature.email.domain.EmailFolder
 import com.zillit.desktop.feature.email.domain.EmailSummary
 import com.zillit.desktop.feature.email.domain.deleteIntentFor
@@ -10,6 +11,7 @@ import com.zillit.desktop.feature.email.domain.moveTargets
 import com.zillit.desktop.feature.email.ui.EmailEvent
 import com.zillit.desktop.feature.email.ui.EmailViewModel
 import com.zillit.desktop.feature.email.ui.FolderEditor
+import com.zillit.desktop.feature.email.ui.MailInfo
 import com.zillit.desktop.feature.email.ui.PendingConfirm
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -122,13 +124,22 @@ class MoveDeleteTest {
     // -- through the mailbox -----------------------------------------------
 
     @Test
-    fun `trashing a selection calls move, not delete`() = runTest {
+    fun `trashing a selection asks, then calls move rather than delete`() = runTest {
+        // The web confirms every delete ("Are you sure you want to delete the
+        // selected emails?"), even the recoverable one — the same words here
+        // means the same habit on both clients.
         val server = FakeMailServer()
         val mailbox = loadedInbox(server)
         advanceUntilIdle()
 
         mailbox.onEvent(EmailEvent.ToggleSelection("m3"))
         mailbox.onEvent(EmailEvent.DeleteSelected)
+        advanceUntilIdle()
+
+        assertIs<PendingConfirm.TrashSelected>(mailbox.state.value.pendingConfirm)
+        assertTrue(server.moves.isEmpty(), "it moved before asking")
+
+        mailbox.onEvent(EmailEvent.ConfirmPending)
         advanceUntilIdle()
 
         assertEquals(1, server.moves.size)
@@ -138,21 +149,25 @@ class MoveDeleteTest {
     }
 
     @Test
-    fun `a hover trash needs no selection and calls move`() = runTest {
+    fun `the toolbar's delete acts on the open conversation without a selection`() = runTest {
         val server = FakeMailServer()
         val mailbox = loadedInbox(server)
         advanceUntilIdle()
+        mailbox.onEvent(EmailEvent.SelectMessage("m2"))
+        advanceUntilIdle()
 
-        mailbox.onEvent(EmailEvent.TrashMessage("m2"))
+        mailbox.onEvent(EmailEvent.DeleteOpen)
+        mailbox.onEvent(EmailEvent.ConfirmPending)
         advanceUntilIdle()
 
         assertEquals(listOf("m2"), server.moves.single().ids)
         assertEquals("Trash", server.moves.single().to)
         assertFalse(mailbox.state.value.messages.any { it.id == "m2" }, "the row lingered")
+        assertEquals(null, mailbox.state.value.openRowId, "the pane kept showing a message that is gone")
     }
 
     @Test
-    fun `a hover trash in Trash asks before destroying`() = runTest {
+    fun `deleting the open conversation in Trash asks before destroying`() = runTest {
         val server = FakeMailServer(folderNames = listOf("INBOX", "Trash"))
         val mailbox = loadedInbox(server)
         advanceUntilIdle()
@@ -160,7 +175,9 @@ class MoveDeleteTest {
         advanceUntilIdle()
 
         val target = mailbox.state.value.messages.first()
-        mailbox.onEvent(EmailEvent.TrashMessage(target.id))
+        mailbox.onEvent(EmailEvent.SelectMessage(target.id))
+        advanceUntilIdle()
+        mailbox.onEvent(EmailEvent.DeleteOpen)
         advanceUntilIdle()
 
         assertTrue(server.destroyed.isEmpty(), "destroyed without asking")
@@ -176,11 +193,27 @@ class MoveDeleteTest {
 
         mailbox.onEvent(EmailEvent.ToggleSelection("m3"))
         mailbox.onEvent(EmailEvent.DeleteSelected)
+        mailbox.onEvent(EmailEvent.ConfirmPending)
 
         assertFalse(
             mailbox.state.value.messages.any { it.id == "m3" },
             "the row was still there before the server answered",
         )
+    }
+
+    @Test
+    fun `cancelling the delete keeps the ticks`() = runTest {
+        // The web restores the previous selection on cancel.
+        val server = FakeMailServer()
+        val mailbox = loadedInbox(server)
+        advanceUntilIdle()
+
+        mailbox.onEvent(EmailEvent.ToggleSelection("m3"))
+        mailbox.onEvent(EmailEvent.DeleteSelected)
+        mailbox.onEvent(EmailEvent.DismissConfirm)
+
+        assertEquals(setOf("m3"), mailbox.state.value.selectedIds)
+        assertTrue(server.moves.isEmpty())
     }
 
     @Test
@@ -191,6 +224,7 @@ class MoveDeleteTest {
 
         mailbox.onEvent(EmailEvent.ToggleSelection("m3"))
         mailbox.onEvent(EmailEvent.DeleteSelected)
+        mailbox.onEvent(EmailEvent.ConfirmPending)
         advanceUntilIdle()
 
         assertTrue(
@@ -294,10 +328,11 @@ class MoveDeleteTest {
 
         mailbox.onEvent(EmailEvent.ToggleSelection("m3"))
         mailbox.onEvent(EmailEvent.DeleteSelected)
+        mailbox.onEvent(EmailEvent.ConfirmPending)
         advanceUntilIdle()
 
         assertTrue(mailbox.state.value.selectedIds.isEmpty())
-        assertFalse(mailbox.state.value.isSelecting)
+        assertFalse(mailbox.state.value.hasSelection)
     }
 
     @Test
@@ -311,25 +346,45 @@ class MoveDeleteTest {
 
         mailbox.onEvent(EmailEvent.ToggleSelection("m3"))
         mailbox.onEvent(EmailEvent.DeleteSelected)
+        mailbox.onEvent(EmailEvent.ConfirmPending)
         advanceUntilIdle()
 
-        assertEquals(null, mailbox.state.value.selectedMessageId)
+        assertEquals(null, mailbox.state.value.openRowId)
         assertTrue(mailbox.state.value.thread.isEmpty())
     }
 
     @Test
-    fun `drafts cannot be selected for a mail action`() = runTest {
+    fun `ticked drafts are deleted through the draft store, never moved`() = runTest {
         // Their ids belong to a different store; the mail endpoints have never
-        // heard of them.
-        val server = FakeMailServer()
+        // heard of them. The web's Drafts folder ticks them for Delete only.
+        val server = FakeMailServer().apply { storedDrafts = listOf(EmailDraft(id = "d1", subject = "Half written")) }
         val mailbox = loadedInbox(server)
         advanceUntilIdle()
         mailbox.onEvent(EmailEvent.SelectFolder(EmailFolder.DRAFTS))
         advanceUntilIdle()
 
         mailbox.onEvent(EmailEvent.ToggleSelection("d1"))
+        mailbox.onEvent(EmailEvent.DeleteSelected)
+        assertIs<PendingConfirm.DeleteDrafts>(mailbox.state.value.pendingConfirm)
+        mailbox.onEvent(EmailEvent.ConfirmPending)
+        advanceUntilIdle()
 
-        assertFalse(mailbox.state.value.isSelecting, "the selection toolbar would offer a broken move")
+        assertTrue(server.moves.isEmpty(), "a draft id reached the mail endpoints")
+        assertEquals(listOf("d1"), server.deletedDraftIds)
+    }
+
+    @Test
+    fun `ticking a thirty-first row is refused and explained`() = runTest {
+        // The web's `EMAIL_SELECTION_MAX_LIMIT`: the server refuses bigger
+        // batches, so the client says so instead of sending one.
+        val server = FakeMailServer(uids = (1..35).toList())
+        val mailbox = loadedInbox(server)
+        advanceUntilIdle()
+
+        mailbox.state.value.rows.take(31).forEach { mailbox.onEvent(EmailEvent.ToggleSelection(it.id)) }
+
+        assertEquals(30, mailbox.state.value.selectedIds.size)
+        assertEquals(MailInfo.SelectionLimit, mailbox.state.value.info)
     }
 
     @Test

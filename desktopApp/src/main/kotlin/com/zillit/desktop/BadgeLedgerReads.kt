@@ -4,16 +4,31 @@ import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.badges.BadgeStore
 import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.badges.MailFolderState
+import com.zillit.desktop.core.badges.isMailOf
 import com.zillit.desktop.core.badges.NotificationRecord
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.feature.email.domain.MailboxCredentials
+import com.zillit.desktop.core.common.map
+import com.zillit.desktop.core.config.AppConfig
+import com.zillit.desktop.core.datastore.PreferenceStore
+import com.zillit.desktop.core.datastore.ZillitPreferences
+import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.CallOptions
+import com.zillit.desktop.core.network.HeaderContext
+import com.zillit.desktop.core.network.HttpVerb
+import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.feature.email.data.MailboxProfileSource
 import com.zillit.desktop.feature.email.ui.MailFolderSync
 import com.zillit.desktop.feature.email.ui.MailRead
 import com.zillit.desktop.feature.notifications.domain.NotificationsRepository
 import com.zillit.desktop.feature.sos.domain.SosRepository
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * Which ledger rows a segment read clears — Android's `segmentProvider`
@@ -69,32 +84,82 @@ internal fun NotificationsRepository.readingLedger(store: BadgeStore): Notificat
     }
 
 /**
- * The mailbox's reads, applied to the ledger.
+ * The mailbox's reads, applied to the ledger — and the ledger's mail
+ * counts, cut the way the mailbox draws them.
  *
  * An email row is keyed by folder and IMAP uid, tagged with the mailbox
- * address in `level_1` — see `LedgerRead.Mail`. Two hooks: a message opened
- * clears its row; a folder synced retires the rows that no longer describe
- * unread mail (read on another device, moved by a rule, deleted), which is
- * what keeps the Email badge equal to the unread mail on screen.
+ * address in `level_1` — see `LedgerRead.Mail`. Every entry point takes the
+ * address of the mailbox the module is showing (the person's own, or the
+ * production's shared Accounts mailbox); untagged rows predate the tag and
+ * are the person's own. Null means the module does not know yet, which reads
+ * as the personal mailbox and fails open where the address is unknown too.
  */
 internal class MailLedger(
     private val store: BadgeStore,
-    /** This person's own mailbox address, as the rows tag it; null while unknown (the read then fails open). */
-    private val mailboxAddress: suspend () -> String?,
+    private val scopes: MailboxScopes,
 ) {
     private var lastReport = ""
 
-    suspend fun read(read: MailRead): Int =
-        store.markRead(LedgerRead.Mail(read.folderName, read.uid, read.messageId, mailboxAddress()))
+    /** A message opened for reading: its row clears. */
+    suspend fun read(read: MailRead, mailbox: String? = null): Int {
+        val scope = scopeOf(mailbox)
+        return store.markRead(
+            LedgerRead.Mail(read.folderName, read.uid, read.messageId, scope.address, scope.ownsUntagged),
+        )
+    }
 
-    suspend fun synced(sync: MailFolderSync): Int {
-        val retired = store.markRead(LedgerRead.MailFolder(sync.toLedgerState(mailboxAddress())))
+    /**
+     * A folder synced against the server: rows that no longer describe unread
+     * mail retire — read on another device, moved by a rule, deleted — which
+     * is what keeps the Email badge equal to the unread mail on screen.
+     */
+    suspend fun synced(sync: MailFolderSync, mailbox: String? = null): Int {
+        val scope = scopeOf(mailbox)
+        val retired = store.markRead(LedgerRead.MailFolder(sync.toLedgerState(scope)))
         if (retired > 0) ZillitLog.d(TAG) { "email rows retired by ${sync.folderName} sync: $retired" }
         report()
         return retired
     }
 
-    private fun MailFolderSync.toLedgerState(mailbox: String?) = MailFolderState(
+    /** Unread per folder of one mailbox — the folder list's badges. */
+    suspend fun folderBadges(mailbox: String?): Map<String, Int> {
+        val scope = scopeOf(mailbox)
+        return unreadMail().filter { it.isMailOf(scope.address, scope.ownsUntagged) }
+            .groupingBy { it.unit }.eachCount()
+    }
+
+    /**
+     * Unread per mailbox address — the switcher's pills, and its dot for the
+     * mailbox not in view. Untagged rows count under the personal address;
+     * tagged rows under the learnt address they match, else as tagged.
+     */
+    fun mailboxUnread(): Map<String, Int> {
+        val personal = scopes.personal(store.openProjectId)
+        val known = listOfNotNull(personal, scopes.accounts(store.openProjectId))
+        return unreadMail().groupingBy { row ->
+            when {
+                row.level1.isBlank() -> personal.orEmpty()
+                else -> known.firstOrNull { row.level1.sameAddress(it) } ?: row.level1.trim()
+            }
+        }.eachCount()
+    }
+
+    private fun unreadMail() = store.unreadRows(BadgeSections.EMAIL, everyMailbox = true)
+
+    /**
+     * Which rows a mailbox address names. The personal mailbox owns the
+     * untagged rows; the shared Accounts mailbox does not. An address the
+     * module has not given yet is the personal one — unknown, it fails open.
+     */
+    private suspend fun scopeOf(mailbox: String?): MailScope {
+        val personal = store.openProjectId?.let { scopes.learn(it) }
+        val address = mailbox?.takeIf { it.isNotBlank() } ?: personal
+        return MailScope(address, ownsUntagged = personal == null || address == null || address.sameAddress(personal))
+    }
+
+    private data class MailScope(val address: String?, val ownsUntagged: Boolean)
+
+    private fun MailFolderSync.toLedgerState(scope: MailScope) = MailFolderState(
         folder = folderName,
         uids = serverUids,
         readUids = messages.filter { it.isRead }.map { it.uid }.toSet(),
@@ -102,7 +167,8 @@ internal class MailLedger(
         messageIds = messages.map { it.id }.toSet(),
         complete = complete,
         listedAt = listedAt,
-        mailbox = mailbox,
+        mailbox = scope.address,
+        ownsUntagged = scope.ownsUntagged,
     )
 
     /**
@@ -111,11 +177,16 @@ internal class MailLedger(
      * diagnosed from this line, not from the count.
      */
     private fun report() {
-        val rows = store.unreadRows(BadgeSections.EMAIL)
-        val line = rows.joinToString { "${it.unit}/${it.referenceId}/${it.level1.maskedAddress()}/${it.created}" }
+        val counted = store.unreadRows(BadgeSections.EMAIL)
+        val held = unreadMail() - counted.toSet()
+        val describe = { rows: List<NotificationRecord> ->
+            rows.joinToString { "${it.unit}/${it.referenceId}/${it.level1.maskedAddress()}/${it.created}" }
+        }
+        val line = "email rows still unread: ${counted.size} [${describe(counted)}]" +
+            if (held.isEmpty()) "" else "; held for another mailbox: ${held.size} [${describe(held)}]"
         if (line == lastReport) return
         lastReport = line
-        ZillitLog.d(TAG) { "email rows still unread: ${rows.size} [$line]" }
+        ZillitLog.d(TAG) { line }
     }
 
     private fun String.maskedAddress(): String = when {
@@ -129,40 +200,173 @@ internal class MailLedger(
     }
 }
 
+private fun String.sameAddress(other: String): Boolean = trim().equals(other.trim(), ignoreCase = true)
+
 /**
- * This person's mailbox address for the open production, asked of the profile
- * once and kept — a read must not cost a request. Re-asked after a failure,
- * and for another production.
+ * One address asked of the server once per production and kept — a read
+ * must not cost a request. Re-asked after a failure. The picker asks before
+ * any production is open, naming the last one and the person's id on it, as
+ * its seed does.
  */
-internal class MailboxAddress(
+class MailboxAddress(
     private val projectId: () -> String?,
-    private val fetch: suspend () -> ZillitResult<MailboxCredentials?>,
+    private val userId: () -> String?,
+    private val fetch: suspend (projectId: String?, userId: String?) -> ZillitResult<String?>,
 ) {
     private val lock = Mutex()
-    private var forProject: String? = null
+    private var scope: Pair<String?, String?>? = null
     private var resolved = false
     private var address: String? = null
 
-    suspend operator fun invoke(): String? = lock.withLock {
-        val project = projectId()
-        if (project != forProject) {
-            forProject = project
-            resolved = false
-            address = null
-        }
-        if (!resolved) {
-            when (val got = fetch()) {
-                is ZillitResult.Success -> {
-                    address = got.data?.emailAddress?.takeIf { it.isNotBlank() }
-                    resolved = true
-                }
-                is ZillitResult.Failure -> ZillitLog.w(TAG) { "mailbox address unknown: ${got.error.technical}" }
+    suspend operator fun invoke(projectId: String? = this.projectId(), userId: String? = this.userId()): String? =
+        lock.withLock {
+            val asked = projectId to userId
+            if (asked != scope) {
+                scope = asked
+                resolved = false
+                address = null
             }
+            if (!resolved) {
+                // The open production needs no override — its headers already say so.
+                val override = projectId.takeIf { it != this.projectId() }
+                when (val got = fetch(override, userId.takeIf { override != null })) {
+                    is ZillitResult.Success -> {
+                        address = got.data?.trim()?.takeIf { it.isNotBlank() }
+                        resolved = true
+                    }
+                    is ZillitResult.Failure -> ZillitLog.w(TAG) { "mailbox address unknown: ${got.error.technical}" }
+                }
+            }
+            address
         }
-        address
+
+    companion object {
+        private const val TAG = "Badges"
+
+        /** The person's own mailbox: `GET user/profile` → `mail_box_detail.email_address`, as the settings read it. */
+        fun personal(apiClient: ApiClient, config: AppConfig, headers: StateFlow<HeaderContext>) = MailboxAddress(
+            projectId = { headers.value.projectId },
+            userId = { headers.value.userId },
+            fetch = { project, user ->
+                MailboxProfileSource(apiClient, config)
+                    .profile(CallOptions(projectId = project, userId = user))
+                    .map { it.credentials?.emailAddress }
+            },
+        )
+
+        /**
+         * The production's shared Accounts mailbox: `GET project/{id}` →
+         * `accounts_mail_box_detail.email_address`, which the server fills
+         * only for Accounts-department members (`{}` for everyone else — the
+         * web's `getAccountsMailboxDetail`).
+         */
+        fun accounts(apiClient: ApiClient, config: AppConfig, headers: StateFlow<HeaderContext>) = MailboxAddress(
+            projectId = { headers.value.projectId },
+            userId = { headers.value.userId },
+            fetch = { project, user ->
+                val id = project ?: headers.value.projectId
+                if (id == null) {
+                    ZillitResult.Success(null)
+                } else {
+                    apiClient.request(
+                        verb = HttpVerb.Get,
+                        url = "${config.apiV2()}project/$id",
+                        serializer = JsonElement.serializer(),
+                        module = RequestModule.ProjectUser,
+                        options = CallOptions(projectId = project, userId = user),
+                    ).map { body ->
+                        ((body as? JsonObject)?.get("accounts_mail_box_detail") as? JsonObject)
+                            ?.get("email_address")?.let { it as? JsonPrimitive }?.contentOrNull
+                    }
+                }
+            },
+        )
+    }
+}
+
+/**
+ * Which mailboxes the badges count mail for, production by production.
+ *
+ * Asked of the server when a production opens ([learn]) and handed to the
+ * ledger; remembered in one user-scoped preference so the picker, shown
+ * before any production is open, scopes the productions opened before
+ * ([restore]). A production never opened here counts every mail row until
+ * it is. Sign-out wipes the preference with the rest of the user scope.
+ *
+ * Two addresses per production: the person's own, and the shared Accounts
+ * mailbox their department may open. The Accounts one counts only while
+ * [accountsOpenable] says the desktop can show that mailbox — a badge for
+ * mail with no view is a badge nothing here could clear.
+ */
+class MailboxScopes(
+    private val store: BadgeStore,
+    private val preferences: PreferenceStore,
+    private val personalAddress: MailboxAddress,
+    private val accountsAddress: MailboxAddress,
+    private val accountsOpenable: () -> Boolean = { false },
+) {
+    constructor(
+        apiClient: ApiClient,
+        config: AppConfig,
+        headers: StateFlow<HeaderContext>,
+        store: BadgeStore,
+        preferences: PreferenceStore,
+        accountsOpenable: () -> Boolean = { false },
+    ) : this(
+        store,
+        preferences,
+        MailboxAddress.personal(apiClient, config, headers),
+        MailboxAddress.accounts(apiClient, config, headers),
+        accountsOpenable,
+    )
+
+    private val lock = Mutex()
+    private val personal = mutableMapOf<String, String>()
+    private val accounts = mutableMapOf<String, String>()
+
+    /** The person's own mailbox on [projectId], once learnt. */
+    fun personal(projectId: String?): String? = projectId?.let(personal::get)
+
+    /** The production's Accounts mailbox, once learnt — null when the person is not in that department. */
+    fun accounts(projectId: String?): String? = projectId?.let(accounts::get)
+
+    /** Earlier sessions' answers, back into the ledger. */
+    suspend fun restore() {
+        preferences.get(ZillitPreferences.BadgeMailboxes).lineSequence()
+            .map { it.split('\t') }
+            .filter { it.size >= 2 && it[0].isNotBlank() }
+            .forEach { parts ->
+                val project = parts[0]
+                parts[1].takeIf { it.isNotBlank() }?.let { personal[project] = it }
+                parts.getOrNull(2)?.takeIf { it.isNotBlank() }?.let { accounts[project] = it }
+                store.showMailboxes(project, openable(project))
+            }
     }
 
-    private companion object {
-        const val TAG = "Badges"
+    /**
+     * This person's mailboxes on [projectId], asked once and remembered;
+     * answers the personal address. The open production needs no [userId];
+     * the picker names the last one's.
+     */
+    suspend fun learn(projectId: String, userId: String? = null): String? {
+        val own = if (userId == null) personalAddress(projectId) else personalAddress(projectId, userId)
+        val shared = if (userId == null) accountsAddress(projectId) else accountsAddress(projectId, userId)
+        lock.withLock {
+            val before = personal.toMap() to accounts.toMap()
+            own?.let { personal[projectId] = it }
+            shared?.let { accounts[projectId] = it }
+            // Written only when something was learnt: every folder sync asks.
+            if (before != (personal.toMap() to accounts.toMap())) {
+                val lines = (personal.keys + accounts.keys).map { project ->
+                    "$project\t${personal[project].orEmpty()}\t${accounts[project].orEmpty()}"
+                }
+                preferences.set(ZillitPreferences.BadgeMailboxes, lines.joinToString("\n"))
+            }
+        }
+        store.showMailboxes(projectId, openable(projectId))
+        return own
     }
+
+    private fun openable(projectId: String): Set<String> =
+        setOfNotNull(personal[projectId], accounts[projectId]?.takeIf { accountsOpenable() })
 }

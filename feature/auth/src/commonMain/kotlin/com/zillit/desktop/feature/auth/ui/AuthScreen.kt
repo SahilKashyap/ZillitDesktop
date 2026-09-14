@@ -45,6 +45,13 @@ fun AuthScreen(
     onThemeModeChange: (ThemeMode) -> kotlin.Unit = {},
     createViewModel: CreateProductionViewModel? = null,
     joinViewModel: JoinProductionViewModel? = null,
+    /**
+     * The build's version, printed small on the sign-in page.
+     *
+     * Someone who cannot get past this page is exactly who support will ask
+     * "which version?", and Settings is on the other side of signing in.
+     */
+    appVersion: String? = null,
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -52,7 +59,7 @@ fun AuthScreen(
     // the shared card, matching the web: `/device/login` is the QR landing page,
     // `/projects` is a searchable list. Neither fits a 420pt column.
     (state.step as? AuthStep.QrLogin)?.let { qr ->
-        QrLoginPage(qr, state, viewModel::onEvent, modifier)
+        QrLoginPage(qr, state, viewModel::onEvent, modifier, appVersion)
         return
     }
     if (state.step == AuthStep.ProjectSelection) {

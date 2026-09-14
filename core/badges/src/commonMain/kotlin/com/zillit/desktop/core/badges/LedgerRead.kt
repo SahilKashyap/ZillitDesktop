@@ -86,9 +86,15 @@ sealed interface LedgerRead {
         val uid: Int,
         val messageId: String = "",
         val mailbox: String? = null,
+        /**
+         * Whether rows without a mailbox tag are this read's. They predate the
+         * stamp and are the person's own mail, so the personal mailbox owns
+         * them and the shared Accounts mailbox does not.
+         */
+        val ownsUntagged: Boolean = true,
     ) : LedgerRead {
         override fun matches(row: NotificationRecord): Boolean =
-            row.isMailIn(folder, mailbox) &&
+            row.isMailIn(folder, mailbox, ownsUntagged) &&
                 (row.referenceId == uid.toString() || (messageId.isNotBlank() && row.namesMessage(messageId)))
     }
 
@@ -98,7 +104,7 @@ sealed interface LedgerRead {
      */
     data class MailFolder(val state: MailFolderState) : LedgerRead {
         override fun matches(row: NotificationRecord): Boolean =
-            row.isMailIn(state.folder, state.mailbox) && state.retires(row)
+            row.isMailIn(state.folder, state.mailbox, state.ownsUntagged) && state.retires(row)
     }
 }
 
@@ -135,6 +141,8 @@ data class MailFolderState(
     val listedAt: Long = Long.MAX_VALUE,
     /** This mailbox's address, as the rows carry it in `level_1`; null when unknown. */
     val mailbox: String? = null,
+    /** Whether untagged rows are this mailbox's — see [LedgerRead.Mail.ownsUntagged]. */
+    val ownsUntagged: Boolean = true,
 ) {
     /** Whether one row, already known to be this folder's, is no longer a badge. */
     fun retires(row: NotificationRecord): Boolean {
@@ -157,12 +165,42 @@ data class MailFolderState(
 /**
  * Whether a row is an email row of one folder in one mailbox. The folder
  * compares case-insensitively — `INBOX` is by RFC 3501, and the service has
- * spelled the others both ways; the mailbox likewise (an address).
+ * spelled the others both ways.
  */
-private fun NotificationRecord.isMailIn(folder: String, mailbox: String?): Boolean =
+private fun NotificationRecord.isMailIn(folder: String, mailbox: String?, ownsUntagged: Boolean): Boolean =
     section == BadgeSections.EMAIL &&
         unit.trim().equals(folder.trim(), ignoreCase = true) &&
-        (level1.isBlank() || mailbox.isNullOrBlank() || level1.trim().equals(mailbox.trim(), ignoreCase = true))
+        isMailOf(mailbox, ownsUntagged)
+
+/**
+ * Whether an email row is one mailbox's.
+ *
+ * The service stamps the receiving mailbox's address in `level_1` (ZL-21025):
+ * a person's own, or the production's shared Accounts mailbox their
+ * department may open. Untagged rows predate the stamp and are the person's
+ * own, so they are the personal mailbox's ([ownsUntagged]) and nobody else's;
+ * an unknown address ([mailbox] null) admits every row, so a read never
+ * leaves its own badge stuck. Addresses compare case-insensitively, trimmed.
+ */
+fun NotificationRecord.isMailOf(mailbox: String?, ownsUntagged: Boolean = true): Boolean = when {
+    level1.isBlank() -> ownsUntagged || mailbox.isNullOrBlank()
+    mailbox.isNullOrBlank() -> true
+    else -> level1.sameAddress(mailbox)
+}
+
+/**
+ * Whether a row may be counted for a production whose openable mailboxes are
+ * [mailboxes]: rows of other sections always; untagged mail always (it is the
+ * person's own); tagged mail when its mailbox is one this desktop can open. A
+ * production with no mailbox named yet counts everything.
+ */
+fun NotificationRecord.isOfMailboxes(mailboxes: Set<String>?): Boolean =
+    section != BadgeSections.EMAIL ||
+        level1.isBlank() ||
+        mailboxes.isNullOrEmpty() ||
+        mailboxes.any { level1.sameAddress(it) }
+
+internal fun String.sameAddress(other: String): Boolean = trim().equals(other.trim(), ignoreCase = true)
 
 private fun NotificationRecord.namesMessage(messageId: String): Boolean =
     referenceId == messageId || id == messageId || mongoId == messageId

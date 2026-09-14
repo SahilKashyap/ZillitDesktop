@@ -7,6 +7,13 @@ enum class ContactSource {
 
     /** Crew on this production. */
     ProjectUser,
+
+    /**
+     * A distribution group: one address that fans out to its members
+     * (`imap-email-group`), offered by name like a person (web
+     * `ComposeModal.jsx` `emailGroupsList`).
+     */
+    Group,
 }
 
 /**

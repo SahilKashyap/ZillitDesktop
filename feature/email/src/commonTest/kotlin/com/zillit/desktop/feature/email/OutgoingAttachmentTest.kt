@@ -13,6 +13,7 @@ import com.zillit.desktop.feature.email.domain.StoredFile
 import com.zillit.desktop.feature.email.domain.UploadState
 import com.zillit.desktop.feature.email.domain.areSettled
 import com.zillit.desktop.feature.email.ui.ComposeEvent
+import com.zillit.desktop.feature.email.ui.RecipientField
 import com.zillit.desktop.feature.email.ui.ComposeViewModel
 import com.zillit.desktop.feature.email.ui.Composing
 import kotlinx.coroutines.CompletableDeferred
@@ -89,7 +90,8 @@ class OutgoingAttachmentTest {
         )
 
     private fun ComposeViewModel.addressAndWrite() {
-        onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
+        onEvent(ComposeEvent.SubjectChanged("Sides"))
         onEvent(ComposeEvent.BodyChanged(RichText.plain("See attached")))
     }
 

@@ -30,7 +30,13 @@ data class EmailDraft(
      * chain on send, one step further along.
      */
     val references: List<String> = emptyList(),
+    /** Files uploaded while the draft was written — `attachments` on the wire. */
+    val attachments: List<StoredFile> = emptyList(),
+    /** The original's files an unfinished reply carries — `ingrained_attachment`. */
+    val forwarded: List<EmailAttachment> = emptyList(),
 ) {
+    val hasAttachments: Boolean get() = attachments.isNotEmpty() || forwarded.isNotEmpty()
+
     /** Never prints the body. */
     override fun toString(): String = "EmailDraft(id=$id, to=${to.size}, chars=${body.length})"
 }
@@ -48,10 +54,14 @@ fun EmailDraft.toSummary(): EmailSummary = EmailSummary(
     subject = subject.ifBlank { "(no subject)" },
     from = to.joinToString(", ").ifBlank { "(no recipient)" },
     to = to,
+    cc = cc,
+    bcc = bcc,
     snippet = body.toSnippet(),
     receivedAtMillis = updatedAtMillis,
     // A draft is something you wrote; it cannot be unread.
     isRead = true,
+    hasAttachments = hasAttachments,
+    attachmentCount = attachments.size + forwarded.size,
     folderName = EmailFolder.DRAFTS,
 )
 
@@ -64,6 +74,8 @@ fun EmailDraft.toOutgoing(): OutgoingEmail = OutgoingEmail(
     body = body,
     draftId = id,
     references = references,
+    attachments = attachments,
+    forwarded = forwarded,
 )
 
 /**
@@ -73,4 +85,5 @@ fun EmailDraft.toOutgoing(): OutgoingEmail = OutgoingEmail(
  * it would, since closing saves. Matches Android's check exactly.
  */
 val OutgoingEmail.isWorthSaving: Boolean
-    get() = to.isNotEmpty() || subject.isNotBlank() || body.isNotBlank()
+    get() = to.isNotEmpty() || cc.isNotEmpty() || bcc.isNotEmpty() ||
+        subject.isNotBlank() || body.isNotBlank() || attachments.isNotEmpty()

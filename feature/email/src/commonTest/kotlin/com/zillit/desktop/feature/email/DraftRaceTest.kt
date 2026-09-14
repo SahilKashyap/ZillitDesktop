@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.email
 import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.RichText
 import com.zillit.desktop.feature.email.ui.ComposeEvent
+import com.zillit.desktop.feature.email.ui.RecipientField
 import com.zillit.desktop.feature.email.ui.ComposeViewModel
 import com.zillit.desktop.feature.email.ui.Composing
 import kotlinx.coroutines.CompletableDeferred
@@ -51,7 +52,7 @@ class DraftRaceTest {
         val gate = CompletableDeferred<Unit>()
         server.draftGate = gate
 
-        composer.onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        composer.onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
         composer.onEvent(ComposeEvent.BodyChanged(RichText.plain("First")))
         advanceUntilIdle()
 
@@ -81,7 +82,7 @@ class DraftRaceTest {
         val gate = CompletableDeferred<Unit>()
         server.draftGate = gate
 
-        composer.onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        composer.onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
         composer.onEvent(ComposeEvent.BodyChanged(RichText.plain("Ready")))
         advanceUntilIdle()
 
@@ -104,7 +105,7 @@ class DraftRaceTest {
         val gate = CompletableDeferred<Unit>()
         server.draftGate = gate
 
-        composer.onEvent(ComposeEvent.ToChanged("crew@prod.com"))
+        composer.onEvent(recipientsTyped(RecipientField.To, "crew@prod.com"))
         composer.onEvent(ComposeEvent.BodyChanged(RichText.plain("Half")))
         advanceUntilIdle()
 

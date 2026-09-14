@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.settings.ui
 
+import com.zillit.desktop.core.appupdate.UpdateStatus
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.designsystem.ThemeMode
@@ -49,6 +50,12 @@ class SettingsViewModel(
      * why nothing that gates on it was ever offered.
      */
     account: Flow<AccountSummary> = flowOf(AccountSummary()),
+    /**
+     * Asks Firebase whether a newer build exists — the same checker the
+     * shell's banner polls. Null when the build cannot check (no app id,
+     * unpackaged), in which case the About row says so instead of trying.
+     */
+    private val checkForUpdates: (suspend () -> UpdateStatus)? = null,
     initial: SettingsUiState = SettingsUiState(),
 ) : ZillitViewModel<SettingsUiState, SettingsEvent, SettingsEffect>(initial) {
 
@@ -166,6 +173,9 @@ class SettingsViewModel(
                 launch { unsentChanges().let { count -> setState { copy(unsentChanges = count) } } }
             }
             SettingsEvent.DismissSignOut -> setState { copy(isConfirmingSignOut = false) }
+
+            SettingsEvent.CheckForUpdates -> checkForUpdates()
+            is SettingsEvent.DownloadUpdate -> sendEffect(SettingsEffect.OpenExternal(event.url))
             SettingsEvent.ConfirmSignOut -> {
                 setState { copy(isConfirmingSignOut = false) }
                 launch {
@@ -173,6 +183,31 @@ class SettingsViewModel(
                     sendEffect(SettingsEffect.SignedOut)
                 }
             }
+        }
+    }
+
+    /**
+     * One check, one answer, on the About row.
+     *
+     * A second click while one is in flight is ignored rather than queued:
+     * the answer it would get is the one already coming.
+     */
+    private fun checkForUpdates() {
+        if (currentState.about.updateCheck == UpdateCheck.Checking) return
+        val check = checkForUpdates
+        if (check == null) {
+            setState { copy(about = about.copy(updateCheck = UpdateCheck.Unavailable)) }
+            return
+        }
+        setState { copy(about = about.copy(updateCheck = UpdateCheck.Checking)) }
+        launch {
+            val result = when (val status = check()) {
+                UpdateStatus.UpToDate -> UpdateCheck.UpToDate
+                is UpdateStatus.Available -> UpdateCheck.Available(status.latestVersion, status.downloadUrl, false)
+                is UpdateStatus.Required -> UpdateCheck.Available(status.latestVersion, status.downloadUrl, true)
+                UpdateStatus.Unknown -> UpdateCheck.Unavailable
+            }
+            setState { copy(about = about.copy(updateCheck = result)) }
         }
     }
 

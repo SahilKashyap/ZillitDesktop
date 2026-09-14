@@ -36,6 +36,15 @@ class AppVersionsTest {
         // Ordinary ordering.
         Triple("1.2.1", "1.2.0", 1),
         Triple("2.0.0", "1.99.99", 1),
+
+        // What every console actually held on 2026-09-14: the quotes were
+        // typed in. Read raw, `"1.0.3` parsed as 0 and prod's "latest" sat
+        // below every install; the banner never once showed.
+        Triple("\"1.0.3\"", "1.0.1", 1),
+        Triple("\"1.2.0\"", "1.2.0", 0),
+        Triple("'1.2.0'", "1.1.9", 1),
+        Triple("\u201C1.2.0\u201D", "1.2.0", 0),
+        Triple(" \"v1.10.0\" ", "1.9.0", 1),
     )
 
     @Test
@@ -92,5 +101,24 @@ class AppVersionsTest {
         assertFalse(AppVersions.isMeaningful(null))
         assertFalse(AppVersions.isMeaningful(""))
         assertFalse(AppVersions.isMeaningful("TBD"))
+    }
+
+    /**
+     * The quote table. One pair, stripped; nested pairs, all stripped; a lone
+     * quote is left alone, because it is not a pair and guessing which end
+     * the typist meant is how `"1.2.0` turns into `1.2.0"`.
+     */
+    @Test
+    fun `normalise strips the quotes a console typist adds`() {
+        assertEquals("1.2.0", AppVersions.normalise("\"1.2.0\""))
+        assertEquals("1.2.0", AppVersions.normalise("'1.2.0'"))
+        assertEquals("1.2.0", AppVersions.normalise("\u201C1.2.0\u201D"))
+        assertEquals("1.2.0", AppVersions.normalise("  \" 1.2.0 \"  "))
+        assertEquals("1.2.0", AppVersions.normalise("\"'1.2.0'\""))
+        assertEquals("1.2.0", AppVersions.normalise("1.2.0"))
+        assertEquals("", AppVersions.normalise("\"\""))
+        assertEquals("", AppVersions.normalise(null))
+        assertEquals("\"1.2.0", AppVersions.normalise("\"1.2.0"))
+        assertEquals("https://x.example/get", AppVersions.normalise("\"https://x.example/get\""))
     }
 }

@@ -204,7 +204,7 @@ class ContactSuggestionTest {
         val composer = ComposeViewModel(Composing(server, server, server, server), ComposeMode.New, null, null)
         advanceUntilIdle()
 
-        composer.onEvent(ComposeEvent.ToChanged("ais"))
+        composer.onEvent(typingIn(RecipientField.To, "ais"))
         assertTrue(composer.state.value.suggestions.isEmpty(), "nothing is focused yet")
 
         composer.onEvent(ComposeEvent.FocusChanged(RecipientField.To))
@@ -218,12 +218,13 @@ class ContactSuggestionTest {
         val composer = ComposeViewModel(Composing(server, server, server, server), ComposeMode.New, null, null)
         advanceUntilIdle()
         composer.onEvent(ComposeEvent.FocusChanged(RecipientField.Cc))
-        composer.onEvent(ComposeEvent.CcChanged("ais"))
+        composer.onEvent(typingIn(RecipientField.Cc, "ais"))
 
         composer.onEvent(ComposeEvent.ContactPicked(book.first()))
 
-        assertEquals("Aisha Khan <aisha@prod.com>, ", composer.state.value.ccText)
-        assertEquals("", composer.state.value.toText, "the wrong field was filled")
+        assertEquals(listOf("aisha@prod.com"), composer.state.value.cc)
+        assertEquals("", composer.state.value.ccInput, "the typed fragment is replaced by the chip")
+        assertTrue(composer.state.value.to.isEmpty(), "the wrong field was filled")
     }
 
     @Test
@@ -237,7 +238,7 @@ class ContactSuggestionTest {
             ComposeMode.New,
         )
         composer.onEvent(ComposeEvent.FocusChanged(RecipientField.To))
-        composer.onEvent(ComposeEvent.ToChanged("rav"))
+        composer.onEvent(typingIn(RecipientField.To, "rav"))
 
         assertEquals(listOf("ravi@prod.com"), composer.state.value.suggestions.map { it.address })
     }

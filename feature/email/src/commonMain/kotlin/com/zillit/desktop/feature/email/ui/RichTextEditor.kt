@@ -4,7 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
@@ -126,7 +127,11 @@ internal fun RichTextEditor(
             textStyle = ZillitTheme.typography.bodyMedium.copy(color = colors.textPrimary),
             cursorBrush = SolidColor(colors.accent),
             modifier = Modifier
-                .fillMaxSize()
+                // A floor rather than the whole pane: the composer scrolls,
+                // so the field grows with the message and a click anywhere in
+                // its first screenful lands the caret.
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = FIELD_MIN_HEIGHT)
                 .clip(ZillitTheme.shapes.medium)
                 .background(colors.surface)
                 .border(HAIRLINE, colors.border, ZillitTheme.shapes.medium)
@@ -284,3 +289,6 @@ private val HAIRLINE = 1.dp
 private const val HEX_DIGITS = 6
 private const val HEX_RADIX = 16
 private const val OPAQUE = 0xFF000000L
+
+/** The editor's floor: a message pane that starts at a few lines reads as a form field, not a page. */
+private val FIELD_MIN_HEIGHT = 220.dp
