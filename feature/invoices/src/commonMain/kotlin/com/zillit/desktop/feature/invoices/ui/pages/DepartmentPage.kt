@@ -33,7 +33,9 @@ import com.zillit.desktop.feature.invoices.ui.QuickFilter
 @Composable
 internal fun ColumnScope.DepartmentPage(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
     ZillitTabStrip(
-        tabs = DepartmentTab.entries.map { ZillitTab(it.id, it.label) },
+        tabs = DepartmentTab.entries.map { tab ->
+            ZillitTab(tab.id, tab.label, count = tab.badgeKey?.let(state.unread::get) ?: 0)
+        },
         activeId = state.departmentTab.id,
         onSelect = { id -> onEvent(InvoicesEvent.SelectDepartmentTab(DepartmentTab.entries.first { it.id == id })) },
     )

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistUnread
 import com.zillit.desktop.feature.documentdistribution.domain.Contact
 import com.zillit.desktop.feature.documentdistribution.domain.CsvContact
 import com.zillit.desktop.feature.documentdistribution.domain.DateGroup
@@ -21,6 +22,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
 import com.zillit.desktop.feature.documentdistribution.domain.PublishTarget
 import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettings
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 import com.zillit.desktop.feature.documentdistribution.domain.isValidEmail
 import kotlinx.datetime.LocalDate
@@ -315,6 +317,8 @@ data class TemplateEditorState(
 @Suppress("LongParameterList") // One field per thing on screen; a state is a record.
 data class DocDistUiState(
     val viewer: DocDistViewer = DocDistViewer(),
+    /** The tool's unread rows — the folders' bubbles, files' dots and sections' pills. */
+    val unread: DocDistUnread = DocDistUnread.None,
     /** Today as the view model last saw it — for "Today ·" headings and default dates. */
     val today: LocalDate = EPOCH_DAY,
     val destination: DocDistDestination = DocDistDestination.Library,
@@ -350,6 +354,12 @@ data class DocDistUiState(
     val preview: PreviewState? = null,
     val watermarkDownload: WatermarkDownloadState? = null,
     val watermarkBatch: WatermarkBatchState? = null,
+    /**
+     * The production's shared Size / Colour / Opacity, which every new stamp
+     * — the composer's, a single download's, a zip's — starts from. Built-in
+     * until the server answers, and replaced whole when another device saves.
+     */
+    val watermarkDefaults: WatermarkSettings = WatermarkSettings.BuiltIn,
     val picker: DocumentPickerState? = null,
 
     // -- history ----------------------------------------------------------

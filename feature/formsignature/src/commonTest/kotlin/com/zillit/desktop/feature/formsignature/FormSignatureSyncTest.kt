@@ -1,33 +1,16 @@
 package com.zillit.desktop.feature.formsignature
 
-import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.feature.formsignature.data.FORM_SIGN_SYNC_EVENTS
 import com.zillit.desktop.feature.formsignature.data.refreshKindsFor
-import com.zillit.desktop.feature.formsignature.domain.DocumentSigner
 import com.zillit.desktop.feature.formsignature.domain.FormSignRefresh
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureRepository
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureViewer
-import com.zillit.desktop.feature.formsignature.domain.HistoryEntry
-import com.zillit.desktop.feature.formsignature.domain.PdfPageImage
-import com.zillit.desktop.feature.formsignature.domain.PdfWork
-import com.zillit.desktop.feature.formsignature.domain.PlacedStamp
-import com.zillit.desktop.feature.formsignature.domain.SignDocument
-import com.zillit.desktop.feature.formsignature.domain.SignDocumentTab
-import com.zillit.desktop.feature.formsignature.domain.SignFileTransfer
-import com.zillit.desktop.feature.formsignature.domain.SignatureBlock
-import com.zillit.desktop.feature.formsignature.domain.SignerOption
-import com.zillit.desktop.feature.formsignature.domain.StandardForm
-import com.zillit.desktop.feature.formsignature.domain.StandardFormType
-import com.zillit.desktop.feature.formsignature.domain.StoredDocument
-import com.zillit.desktop.feature.formsignature.domain.StrokePoint
-import com.zillit.desktop.feature.formsignature.domain.UploadPurpose
-import com.zillit.desktop.feature.formsignature.ui.FormSignatureArea
+import com.zillit.desktop.feature.formsignature.ui.FormSignScreen
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureEvent
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -74,7 +57,7 @@ class FormSignatureSyncTest {
         assertEquals(
             emptyList(),
             refreshKindsFor(SocketEventName("document:message:added")),
-            "the chat family has no desktop surface",
+            "the chat family is the board engine's, not this listener's",
         )
     }
 
@@ -104,65 +87,14 @@ class FormSignatureSyncTest {
 
     // -- the view model ----------------------------------------------------
 
-    private class FakeRepo(override val refreshes: Flow<FormSignRefresh>) : FormSignatureRepository {
-        var formLoads = 0
-        var documentLoads = 0
-        override suspend fun standardForms(selfAssigned: Boolean): ZillitResult<List<StandardForm>> {
-            formLoads++
-            return ZillitResult.Success(emptyList())
-        }
-        override suspend fun selfAssign(documentId: String) = ZillitResult.Success(Unit)
-        override suspend fun deleteStandardForm(documentId: String) = ZillitResult.Success(Unit)
-        override suspend fun addStandardForm(document: StoredDocument, type: StandardFormType, note: String) =
-            ZillitResult.Success(Unit)
-        override suspend fun history(documentId: String) = ZillitResult.Success(emptyList<HistoryEntry>())
-        override suspend fun documents(tab: SignDocumentTab): ZillitResult<List<SignDocument>> {
-            documentLoads++
-            return ZillitResult.Success(emptyList())
-        }
-        override suspend fun sendForSignature(
-            document: StoredDocument,
-            signers: List<DocumentSigner>,
-            onlySignatureRequired: Boolean,
-            userSignatureRequired: Boolean,
-        ) = ZillitResult.Success(Unit)
-        override suspend fun deleteDocument(documentId: String) = ZillitResult.Success(Unit)
-        override suspend fun signDocument(documentId: String, signed: StoredDocument) = ZillitResult.Success(Unit)
-        override suspend fun signStandardForm(documentId: String, signed: StoredDocument) =
-            ZillitResult.Success(Unit)
-        override suspend fun signatures() = ZillitResult.Success(emptyList<SignatureBlock>())
-        override suspend fun saveSignature(
-            image: StoredDocument,
-            name: String,
-            isSignature: Boolean,
-            existingId: String?,
-        ) = ZillitResult.Success(Unit)
-        override suspend fun deleteSignature(signatureId: String) = ZillitResult.Success(Unit)
-        override suspend fun signerOptions() = ZillitResult.Success(emptyList<SignerOption>())
-    }
-
-    private object NoTransfer : SignFileTransfer {
-        override suspend fun store(purpose: UploadPurpose, fileName: String, contentType: String, bytes: ByteArray) =
-            ZillitResult.Success(StoredDocument(media = "k"))
-        override suspend fun fetch(document: StoredDocument) = ZillitResult.Success(ByteArray(0))
-    }
-
-    private object NoPdf : PdfWork {
-        override fun renderPages(pdf: ByteArray, targetWidthPx: Int) =
-            ZillitResult.Success(emptyList<PdfPageImage>())
-        override fun stamp(pdf: ByteArray, stamps: List<PlacedStamp>) = ZillitResult.Success(pdf)
-        override fun rasterizeStrokes(strokes: List<List<StrokePoint>>, canvasWidth: Int, canvasHeight: Int) =
-            ZillitResult.Success(ByteArray(0))
-    }
-
     @Test
     fun `a pulse reloads only the list on screen`() = runTest(dispatcher) {
         val events = MutableSharedFlow<FormSignRefresh>()
-        val repo = FakeRepo(refreshes = events)
+        val repo = FakeFormSignatureRepository(refreshes = events)
         val model = FormSignatureViewModel(
             repository = repo,
             transfer = NoTransfer,
-            pdfWork = NoPdf,
+            pdfWork = FakePdf(),
             resolveViewer = { FormSignatureViewer(canView = true, canPost = true, ready = true) },
             currentUserId = { "u1" },
             newId = { "id" },
@@ -176,7 +108,7 @@ class FormSignatureSyncTest {
         runCurrent()
         assertEquals(0, repo.documentLoads, "an event for a list not on screen is ignored")
 
-        model.onEvent(FormSignatureEvent.SwitchArea(FormSignatureArea.Documents))
+        model.onEvent(FormSignatureEvent.Open(FormSignScreen.DocumentsForSignature))
         runCurrent()
         assertEquals(1, repo.documentLoads)
 
@@ -186,6 +118,6 @@ class FormSignatureSyncTest {
 
         events.emit(FormSignRefresh.Forms)
         runCurrent()
-        assertEquals(0, repo.formLoads, "a forms pulse leaves the documents area alone")
+        assertEquals(0, repo.formLoads, "a forms pulse leaves the documents screen alone")
     }
 }

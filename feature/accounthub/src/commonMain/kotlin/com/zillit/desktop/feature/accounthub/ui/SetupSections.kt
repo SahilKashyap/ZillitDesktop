@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.accounthub.ui
 
+import com.zillit.desktop.feature.accounthub.domain.Companies
 import com.zillit.desktop.feature.accounthub.domain.DayType
 import com.zillit.desktop.feature.accounthub.domain.DayTypes
 import com.zillit.desktop.feature.accounthub.domain.ScheduleRules
@@ -36,7 +37,7 @@ internal class SetupSections(private val vm: AccountHubViewModel) {
         when (section) {
             SetupSection.Companies -> vm.commitSection(
                 marking = { copy(setup = this.setup.copy(companies = this.setup.companies.copy(saving = true))) },
-                call = { vm.repo.saveCompanies(setup.companies.edited) },
+                call = { vm.repo.saveCompanies(Companies.forWire(setup.companies.edited, setup.banks)) },
                 done = { rows -> copy(setup = this.setup.copy(companies = this.setup.companies.committed(rows))) },
                 failed = { copy(setup = this.setup.copy(companies = this.setup.companies.copy(saving = false))) },
                 notice = "Companies saved.",

@@ -63,6 +63,7 @@ interface NoticeDecryptor {
  * production's tool list instead of `home/unit`. [board] and [units] are the
  * two seams; the defaults are Home's.
  */
+@Suppress("LongParameterList") // One seam per way a board differs; a holder would rename, not reduce.
 class HomeFeedRepositoryImpl(
     private val apiClient: ApiClient,
     private val config: AppConfig,
@@ -91,6 +92,13 @@ class HomeFeedRepositoryImpl(
      * both spell them that way. Empty means none.
      */
     private val chatSegment: String = "chat",
+    /**
+     * Who a post is addressed to, when the board has that notion — the web's
+     * `receiverData.id` on the Documents & Signature, Catering and Accounts
+     * rooms, where an admin answers one person at a time. Null sends the post
+     * to the room as every other board does.
+     */
+    private val receiver: () -> String? = { null },
 ) : HomeFeedRepository {
 
     private val home get() = "${config.apiV2(service)}$board/"
@@ -230,6 +238,7 @@ class HomeFeedRepositoryImpl(
                     location = location?.toDto(),
                     replacePreviousChats = replacePrevious,
                     replaceChatId = replaceChatId,
+                    receiver = receiver(),
                 ),
             ),
         ).flatMap { row ->
@@ -532,6 +541,8 @@ internal data class NewNoticeDto(
      * false; the answer names it back as `replaced_chat_id`.
      */
     @SerialName("replace_chat_id") val replaceChatId: String? = null,
+    /** The person an admin is answering on a room that routes posts to one member; omitted elsewhere. */
+    @SerialName("receiver") val receiver: String? = null,
 )
 
 /**

@@ -8,6 +8,7 @@ import com.zillit.desktop.core.network.HttpClientEngineProvider
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.feature.calls.data.CallApi
 import com.zillit.desktop.feature.calls.domain.CallLogDirection
+import com.zillit.desktop.feature.calls.domain.CallLine
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallType
@@ -100,12 +101,27 @@ class CallLogViewModelTest {
         )
     }
 
-    private fun viewModel() = CallLogViewModel(
+    private fun viewModel(onRedial: (CallLogEntry, CallLine) -> String? = { _, _ -> null }) = CallLogViewModel(
         api = api(),
         selfUserId = { "me" },
         nowMillis = { 1_000L },
-        onRedial = {},
+        onRedial = onRedial,
     )
+
+    @Test
+    fun `a redial carries the chosen line, and the host's refusal becomes the pane's error`() = runTest(dispatcher) {
+        val rung = mutableListOf<Pair<String, CallLine>>()
+        val model = viewModel { row, line ->
+            rung += row.callUuid to line
+            if (row.callUuid == "gone") "User is not active in this project." else null
+        }
+        model.onEvent(CallLogEvent.Redial(entry("c1", peer = "u-aisha"), CallLine.Three))
+        assertEquals(listOf("c1" to CallLine.Three), rung)
+        assertEquals(null, model.currentState.error)
+
+        model.onEvent(CallLogEvent.Redial(entry("gone", peer = "u-left"), CallLine.One))
+        assertEquals("User is not active in this project.", model.currentState.error)
+    }
 
     /**
      * Drains the test scheduler *and* the client's own threads.

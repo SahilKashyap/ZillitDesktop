@@ -23,6 +23,20 @@ enum class AdDestination(val slug: String, val label: String) {
             Register -> AdRefresh.Register
             Days -> AdRefresh.Days
         }
+
+    /**
+     * The units the notification service files this page's rows under — the
+     * web's `AD_UNIT_BY_NAV` (`ad-dashboard-badge-helpers.js:33`), folded onto
+     * the desktop's three pages: today's list and the add-extras flow on
+     * Today, the register and its queries on Register, the schedule on Days.
+     * AD report rows have no page here.
+     */
+    val badgeKeys: List<String>
+        get() = when (this) {
+            Today -> listOf("today_list_label", "add_extras_label")
+            Register -> listOf("artiste_register_label", "artiste_query_label")
+            Days -> listOf("shoot_schedule_label")
+        }
 }
 
 /** Adding artistes from the register to the day. */
@@ -45,6 +59,8 @@ data class BlockState(
 data class AdUiState(
     val viewer: AdViewer = AdViewer(),
     val destination: AdDestination = AdDestination.Today,
+    /** Unread notifications per unit — the tabs' red chips. */
+    val unread: Map<String, Int> = emptyMap(),
     val loading: Boolean = false,
     val error: String? = null,
     val notice: String? = null,

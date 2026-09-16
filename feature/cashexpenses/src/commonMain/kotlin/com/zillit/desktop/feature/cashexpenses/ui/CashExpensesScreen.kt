@@ -120,7 +120,7 @@ fun CashExpensesScreen(
 @Composable
 private fun SharedQueueTabs(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     ZillitTabStrip(
-        tabs = state.sharedDestinations.map { ZillitTab(it.slug, it.label) },
+        tabs = state.sharedDestinations.map { ZillitTab(it.slug, it.label, count = state.unreadFor(it)) },
         activeId = state.destination.slug,
         onSelect = { slug ->
             CashDestination.fromSlug(slug)?.let { onEvent(CashEvent.Open(it)) }
@@ -162,9 +162,12 @@ private fun CashHeader(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         // the same arrangement as the web, so someone moving between the two
         // clients finds the Audit Queue in the same corner.
         ZillitTabStrip(
+            // The parents sum their pages' chips, as the web's top bar does.
             tabs = listOf(
-                ZillitTab(ExpenseType.PettyCash.wire, ExpenseType.PettyCash.label),
-                ZillitTab(ExpenseType.OutOfPocket.wire, ExpenseType.OutOfPocket.label),
+                ZillitTab(ExpenseType.PettyCash.wire, ExpenseType.PettyCash.label,
+                    count = state.unreadFor(ExpenseType.PettyCash)),
+                ZillitTab(ExpenseType.OutOfPocket.wire, ExpenseType.OutOfPocket.label,
+                    count = state.unreadFor(ExpenseType.OutOfPocket)),
             ),
             activeId = if (state.onSharedPage) null else state.pipeline.wire,
             onSelect = { onEvent(CashEvent.SwitchPipeline(ExpenseType.from(it))) },
@@ -176,7 +179,7 @@ private fun CashHeader(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             val pages = state.sectionDestinations
             if (pages.isNotEmpty()) {
                 ZillitTabStrip(
-                    tabs = pages.map { ZillitTab(it.slug, it.label) },
+                    tabs = pages.map { ZillitTab(it.slug, it.label, count = state.unreadFor(it)) },
                     activeId = state.destination.slug,
                     onSelect = { slug ->
                         CashDestination.fromSlug(slug)?.let { onEvent(CashEvent.Open(it)) }
@@ -232,3 +235,14 @@ private fun CashBody(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         else -> QueuePage(state, onEvent)
     }
 }
+
+/** Unread filed under one page — the web's per-tab chip (`CashExpensesModule.jsx:463-471`). */
+private fun CashUiState.unreadFor(destination: CashDestination): Int = destination.badgeKeys.sumOf { unread[it] ?: 0 }
+
+/** A pipeline's chip: its visible pages' keys added up, each key once. */
+private fun CashUiState.unreadFor(type: ExpenseType): Int =
+    CashDestination.entries
+        .filter { it.section != CashSection.Shared && it.expenseType == type && it.visibleTo(viewer) }
+        .flatMap { it.badgeKeys }
+        .distinct()
+        .sumOf { unread[it] ?: 0 }

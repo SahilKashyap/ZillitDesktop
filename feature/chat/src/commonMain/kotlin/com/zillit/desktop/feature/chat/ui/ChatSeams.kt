@@ -49,6 +49,16 @@ class ChatSeams(
      * the app.
      */
     val onOpenUrl: ((String) -> Unit)? = null,
+    /**
+     * The bubble menu's Share — the web's `shareMessagesAsEmail`
+     * (`utils/helpers/share-messages-as-email.js`): the line's words, file
+     * or place handed to the mailbox composer as a new message. The host
+     * owns the composer and the mailbox check (the web refuses with
+     * "Email-ID is not available" when the user has none — that sentence
+     * comes back as the answer and the thread shows it); null leaves the
+     * item off the menu.
+     */
+    val shareAsEmail: ((com.zillit.desktop.feature.chat.domain.ChatMessage) -> String?)? = null,
 )
 
 internal val LocalChatSeams = staticCompositionLocalOf { ChatSeams() }

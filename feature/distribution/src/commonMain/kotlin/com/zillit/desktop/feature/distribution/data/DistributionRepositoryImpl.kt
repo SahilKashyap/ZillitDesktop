@@ -42,7 +42,7 @@ class DistributionRepositoryImpl(
         enabled: Boolean,
         section: DistributionSection,
         isExternal: Boolean,
-    ): ZillitResult<Unit> =
+    ): ZillitResult<String?> =
         apiClient.envelope(
             verb = HttpVerb.Post,
             url = "${config.apiV2(ZillitService.Core)}distribution/project",
@@ -56,7 +56,7 @@ class DistributionRepositoryImpl(
                 // the server accepts from a shipping client.
                 put("isExternal", isExternal)
             },
-        ).refuseStatusZero().map { }
+        ).refuseStatusZero().map { it.message?.takeIf { text -> text.isNotBlank() } }
 }
 
 /** The service says no with `status: 0` on a 200 — surface its message. */

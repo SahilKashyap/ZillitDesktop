@@ -1,7 +1,8 @@
 package com.zillit.desktop.feature.formsignature.data
 
+import com.zillit.desktop.feature.formsignature.domain.ChatMember
+import com.zillit.desktop.feature.formsignature.domain.ChatUnit
 import com.zillit.desktop.feature.formsignature.domain.DocumentSigner
-import com.zillit.desktop.feature.formsignature.domain.HistoryEntry
 import com.zillit.desktop.feature.formsignature.domain.SignDocument
 import com.zillit.desktop.feature.formsignature.domain.SignSpot
 import com.zillit.desktop.feature.formsignature.domain.SignSpotKind
@@ -19,6 +20,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
+import kotlin.time.Instant
 
 /**
  * Wire shapes for the documents service, transcribed from the web's V2 tool.
@@ -83,12 +85,22 @@ internal fun StoredDocument.toSignatureWire(): JsonObject = buildJsonObject {
     put("name", name)
 }
 
+/**
+ * A signed copy. The wire spells the moment `signed_on` on some rows and
+ * `singed_on` on others — the web reads both (`UpdateHistoryModal.jsx:827`).
+ */
 @Serializable
 internal data class SignedCopyDto(
     @SerialName("signed_by") val signedBy: String? = null,
+    @SerialName("signed_on") val signedOn: JsonPrimitive? = null,
+    @SerialName("singed_on") val singedOn: JsonPrimitive? = null,
     val document: StoredDocumentDto? = null,
 ) {
-    fun toDomain() = SignedCopy(signedBy.orEmpty(), document?.toDomain())
+    fun toDomain() = SignedCopy(
+        signedBy = signedBy.orEmpty(),
+        signedOn = (signedOn ?: singedOn).wireMillis(),
+        document = document?.toDomain(),
+    )
 }
 
 /**
@@ -100,6 +112,7 @@ internal data class SignedCopyDto(
 @Serializable
 internal data class StandardFormDto(
     @SerialName("_id") val id: String? = null,
+    @SerialName("document_id") val documentId: String? = null,
     @SerialName("document_serial_no") val serialNo: JsonPrimitive? = null,
     val document: StoredDocumentDto? = null,
     @SerialName("sender_documents") val senderDocuments: StoredDocumentDto? = null,
@@ -108,18 +121,21 @@ internal data class StandardFormDto(
     @SerialName("user_id") val userId: String? = null,
     @SerialName("sender_id") val senderId: String? = null,
     @SerialName("full_name") val fullName: String? = null,
+    @SerialName("designation_name") val designationName: String? = null,
     val documents: List<SignedCopyDto>? = null,
 ) {
     fun toDomain(): StandardForm? {
         val rowId = id?.takeIf { it.isNotBlank() } ?: return null
         return StandardForm(
             id = rowId,
+            documentId = documentId.orEmpty(),
             serialNo = serialNo?.content.orEmpty(),
             document = (document ?: senderDocuments)?.toDomain(),
             type = StandardFormType.fromWire(documentType),
-            createdOn = createdOn?.content.orEmpty(),
+            createdOn = createdOn.wireMillis(),
             uploaderId = userId ?: senderId ?: "",
             uploaderName = fullName.orEmpty(),
+            uploaderDesignation = designationName.orEmpty(),
             signedCopies = documents.orEmpty().map { it.toDomain() },
         )
     }
@@ -147,9 +163,9 @@ internal data class SignSpotDto(
     }
 
     companion object {
-        // The fallback box, in PDF points — roughly the web's default field.
-        const val DEFAULT_SPOT_WIDTH = 160.0
-        const val DEFAULT_SPOT_HEIGHT = 56.0
+        // The fallback box, in PDF points — the web's default signature field.
+        const val DEFAULT_SPOT_WIDTH = 200.0
+        const val DEFAULT_SPOT_HEIGHT = 60.0
     }
 }
 
@@ -191,6 +207,7 @@ internal data class SignDocumentDto(
     @SerialName("_id") val id: String? = null,
     val document: StoredDocumentDto? = null,
     @SerialName("signing_document") val signingDocument: StoredDocumentDto? = null,
+    val documents: List<SignedCopyDto>? = null,
     val users: List<DocumentSignerDto>? = null,
     @SerialName("uploaded_by") val uploadedBy: String? = null,
     @SerialName("created_on") val createdOn: JsonPrimitive? = null,
@@ -206,10 +223,11 @@ internal data class SignDocumentDto(
             id = docId,
             document = document?.toDomain(),
             signingDocument = signingDocument?.toDomain(),
+            signedCopies = documents.orEmpty().map { it.toDomain() },
             signers = users.orEmpty().mapNotNull { it.toDomain() },
             uploadedBy = uploadedBy.orEmpty(),
-            createdOn = createdOn?.content.orEmpty(),
-            onlySignatureRequired = onlySignatureRequired.asBoolean(default = true),
+            createdOn = createdOn.wireMillis(),
+            onlySignatureRequired = onlySignatureRequired.asBoolean(),
             userSignatureRequired = userSignatureRequired.asBoolean(),
             finalized = finalized.asBoolean() || userStatus == STATUS_SIGNED,
             spots = spots.orEmpty().mapNotNull { it.toDomain() },
@@ -223,6 +241,7 @@ internal data class SignatureBlockDto(
     @SerialName("signature_id") val signatureId: String? = null,
     val signature: StoredDocumentDto? = null,
     @SerialName("is_signature") val isSignature: JsonPrimitive? = null,
+    @SerialName("created_on") val createdOn: JsonPrimitive? = null,
 ) {
     fun toDomain(): SignatureBlock? {
         val blockId = (id ?: signatureId)?.takeIf { it.isNotBlank() } ?: return null
@@ -231,6 +250,7 @@ internal data class SignatureBlockDto(
             isSignature = isSignature.asBoolean(default = true),
             image = signature?.toDomain(),
             name = signature?.name.orEmpty(),
+            createdOn = createdOn.wireMillis(),
         )
     }
 }
@@ -243,6 +263,8 @@ internal data class SignerOptionDto(
     val name: String? = null,
     @SerialName("user_email") val userEmail: String? = null,
     val email: String? = null,
+    @SerialName("designation_name") val designationName: String? = null,
+    val status: String? = null,
     @SerialName("posting_access") val postingAccess: JsonPrimitive? = null,
     @SerialName("view_access") val viewAccess: JsonPrimitive? = null,
 ) {
@@ -256,23 +278,38 @@ internal data class SignerOptionDto(
             fullName = fullName ?: userFullname ?: name ?: "",
             email = userEmail ?: email ?: "",
             canPost = postingAccess.asBoolean(),
+            canView = viewAccess.asBoolean() || postingAccess.asBoolean(),
+            designation = designationName.orEmpty(),
+            status = status.orEmpty(),
+        )
+    }
+}
+
+/** `GET form-signature/unit` — the discussion room, one per production. */
+@Serializable
+internal data class ChatUnitDto(
+    @SerialName("_id") val id: String? = null,
+    @SerialName("unit_id") val unitId: String? = null,
+    @SerialName("unit_name") val unitName: String? = null,
+    val name: String? = null,
+    @SerialName("team_members") val teamMembers: List<ChatMemberDto>? = null,
+) {
+    fun toDomain(): ChatUnit? {
+        val unit = (id ?: unitId)?.takeIf { it.isNotBlank() } ?: return null
+        return ChatUnit(
+            id = unit,
+            name = unitName ?: name ?: "",
+            members = teamMembers.orEmpty().mapNotNull { it.toDomain() },
         )
     }
 }
 
 @Serializable
-internal data class HistoryEntryDto(
-    val action: String? = null,
-    @SerialName("full_name") val fullName: String? = null,
-    @SerialName("user_name") val userName: String? = null,
-    @SerialName("signed_by") val signedBy: String? = null,
-    @SerialName("created_on") val createdOn: JsonPrimitive? = null,
+internal data class ChatMemberDto(
+    @SerialName("user_id") val userId: String? = null,
+    val enabled: JsonPrimitive? = null,
 ) {
-    fun toDomain(): HistoryEntry = HistoryEntry(
-        action = action.orEmpty(),
-        actorName = fullName ?: userName ?: signedBy ?: "",
-        happenedOn = createdOn?.content.orEmpty(),
-    )
+    fun toDomain(): ChatMember? = userId?.takeIf { it.isNotBlank() }?.let { ChatMember(it, enabled.asBoolean()) }
 }
 
 /**
@@ -285,5 +322,22 @@ internal fun JsonPrimitive?.asBoolean(default: Boolean = false): Boolean = when 
     "false", "0" -> false
     else -> default
 }
+
+/**
+ * A wire moment as epoch millis. This service stamps `created_on` as an
+ * ISO string (`2026-03-02T10:15:00.000Z`) and older rows as a number; the
+ * web hands either to `dayjs`, and this reads both. Nothing readable is null.
+ */
+internal fun JsonPrimitive?.wireMillis(): Long? {
+    val raw = this?.content?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    raw.toDoubleOrNull()?.let { n ->
+        val ms = if (n < SECONDS_CEILING) n * MILLIS else n
+        return ms.toLong().takeIf { it > 0 }
+    }
+    return runCatching { Instant.parse(raw).toEpochMilliseconds() }.getOrNull()
+}
+
+private const val SECONDS_CEILING = 1e11
+private const val MILLIS = 1000.0
 
 internal const val STATUS_SIGNED = "signed"

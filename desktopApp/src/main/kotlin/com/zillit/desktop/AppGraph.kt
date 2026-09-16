@@ -1571,6 +1571,7 @@ sealed interface AppGraph {
                     ),
                     isS3Storage = { projectContext.docDistUsesS3() },
                     newUniqueId = { java.util.UUID.randomUUID().toString() },
+                    selfDeviceId = { headerContext.value.deviceId.takeIf(String::isNotBlank) },
                 ),
                 driveRepository = DriveRepositoryImpl(
                     apiClient = apiClient,

@@ -4,6 +4,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.calls.domain.CallLine
@@ -11,9 +12,11 @@ import com.zillit.desktop.feature.calls.domain.CallLogDirection
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallType
+import com.zillit.desktop.feature.calls.ui.CallLogEvent
 import com.zillit.desktop.feature.calls.ui.CallLogPane
 import com.zillit.desktop.feature.calls.ui.CallLogUiState
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 /**
  * Composes the call history for real.
@@ -86,5 +89,35 @@ class CallLogPaneRenderTest {
         }
 
         onAllNodesWithText("Line 1").assertCountEquals(1)
+    }
+
+    @Test
+    fun `a click on a row asks which line, and the pick rings on it`() = runComposeUiTest {
+        val events = mutableListOf<CallLogEvent>()
+        // A Line 3 row with no device id: exactly the row that used to be
+        // unclickable. It still redials, by person.
+        val row = entry("c1", CallLine.Three, "u1").copy(peerDeviceId = "")
+        setContent {
+            ZillitTheme {
+                CallLogPane(
+                    state = CallLogUiState(entries = listOf(row)),
+                    onEvent = { events += it },
+                    nameFor = { names[it] },
+                    nowMillis = now,
+                    lines = CallLine.DEFAULT + CallLine.Three,
+                )
+            }
+        }
+
+        onNodeWithText("Aisha Khan").performClick()
+        waitForIdle()
+        // The picker: the two every production has, plus the third this one does.
+        onAllNodesWithText("Line 2").assertCountEquals(1)
+        onAllNodesWithText("Line 1").assertCountEquals(1)
+        // "Line 3" is both the row's tag and the menu's entry.
+        onAllNodesWithText("Line 3").assertCountEquals(2)
+        onNodeWithText("Line 1").performClick()
+        waitForIdle()
+        assertEquals(listOf<CallLogEvent>(CallLogEvent.Redial(row, CallLine.One)), events)
     }
 }

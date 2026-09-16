@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.addashboard.ui
 
+import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.common.ZillitError
@@ -34,10 +35,18 @@ class AdViewModel(
     private val rights: RightsRequestBus? = null,
     /** Live changes from other clients; null keeps the tool load-once. */
     private val events: SocketEventBus? = null,
+    /** The ledger's rows for this tool per unit, and the page read. */
+    private val badges: TabBadgeSource = TabBadgeSource.None,
 ) : ZillitViewModel<AdUiState, AdEvent, AdEffect>(AdUiState(viewer = viewer())) {
 
     private var started = false
     private var listening = false
+    private var watchingBadges = false
+
+    /** The page on screen is its read — the web's `emitAdTabRead`, each unit whole. */
+    private fun readPage(destination: AdDestination) {
+        destination.badgeKeys.filter { (currentState.unread[it] ?: 0) > 0 }.forEach(badges::read)
+    }
 
     /** Refuses, and offers the way forward the phones offer on every refusal. */
     private fun askForPostingRights() {
@@ -56,6 +65,15 @@ class AdViewModel(
     fun start() {
         if (started) return
         started = true
+        if (!watchingBadges) {
+            watchingBadges = true
+            launch {
+                badges.counts.collect { counts ->
+                    setState { copy(unread = counts) }
+                    readPage(currentState.destination)
+                }
+            }
+        }
         val identity = viewer()
         // Every date on this service is UTC midnight; a local one files the
         // day against the wrong date for a unit shooting in another zone.
@@ -113,6 +131,7 @@ class AdViewModel(
             is AdEvent.Open -> {
                 setState { copy(destination = event.destination) }
                 load(event.destination)
+                readPage(event.destination)
             }
 
             AdEvent.Refresh -> refresh()

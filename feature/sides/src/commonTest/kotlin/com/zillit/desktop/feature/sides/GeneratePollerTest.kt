@@ -2,7 +2,6 @@ package com.zillit.desktop.feature.sides
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.feature.sides.domain.GeneratePlan
 import com.zillit.desktop.feature.sides.domain.GeneratePoller
 import com.zillit.desktop.feature.sides.domain.SidesRecord
 import com.zillit.desktop.feature.sides.domain.SidesStatus
@@ -19,17 +18,11 @@ import kotlin.test.assertTrue
  */
 class GeneratePollerTest {
 
-    private fun record(status: String, id: String = "S1") = SidesRecord(
-        id = id, title = "t", status = SidesStatus.fromWire(status), rawStatus = status,
-        error = "", sceneNumbers = emptyList(), totalScenes = 0, scriptTitle = "",
-        versionLabel = "", generatedByName = "", generatedById = "", downloadCount = 0,
-        createdAt = "", attachmentName = "",
-    )
-
-    private val plan = GeneratePlan(scriptId = "x", versionId = "v", sceneNumbers = listOf("1"))
+    private fun record(status: String, id: String = "S1") =
+        SidesRecord(id = id, title = "t", status = SidesStatus.fromWire(status), rawStatus = status)
 
     private fun poller(
-        generate: suspend (GeneratePlan) -> ZillitResult<SidesRecord>,
+        generate: suspend () -> ZillitResult<SidesRecord>,
         get: suspend (String) -> ZillitResult<SidesRecord>,
         maxTicks: Int = GeneratePoller.MAX_TICKS,
     ) = GeneratePoller(generate = generate, get = get, maxTicks = maxTicks, sleep = { })
@@ -46,7 +39,7 @@ class GeneratePollerTest {
                 gets++
                 ZillitResult.Success(record(states.removeFirst()))
             },
-        ).run(plan) { ticks += it.rawStatus }
+        ).run { ticks += it.rawStatus }
 
         val result = (outcome as ZillitResult.Success).data
         assertEquals(listOf("generating", "generating", "generating", "ready"), ticks)
@@ -61,7 +54,7 @@ class GeneratePollerTest {
         val outcome = poller(
             generate = { ZillitResult.Success(record("ready")) },
             get = { gets++; ZillitResult.Success(record("ready")) },
-        ).run(plan)
+        ).run()
 
         assertEquals(0, gets)
         assertFalse((outcome as ZillitResult.Success).data.timedOut)
@@ -72,7 +65,7 @@ class GeneratePollerTest {
         val outcome = poller(
             generate = { ZillitResult.Success(record("generating")) },
             get = { ZillitResult.Success(record("error")) },
-        ).run(plan)
+        ).run()
 
         val result = (outcome as ZillitResult.Success).data
         assertEquals(SidesStatus.Error, result.sides.status)
@@ -84,7 +77,7 @@ class GeneratePollerTest {
         val outcome = poller(
             generate = { ZillitResult.Failure(ZillitError.Unknown("boom")) },
             get = { ZillitResult.Success(record("ready")) },
-        ).run(plan)
+        ).run()
 
         assertTrue(outcome is ZillitResult.Failure)
     }
@@ -102,7 +95,7 @@ class GeneratePollerTest {
                     ZillitResult.Success(record("ready"))
                 }
             },
-        ).run(plan)
+        ).run()
 
         assertEquals(2, gets)
         assertEquals(
@@ -118,7 +111,7 @@ class GeneratePollerTest {
             generate = { ZillitResult.Success(record("generating")) },
             get = { gets++; ZillitResult.Success(record("generating")) },
             maxTicks = 5,
-        ).run(plan)
+        ).run()
 
         val result = (outcome as ZillitResult.Success).data
         assertEquals(5, gets)
@@ -132,7 +125,7 @@ class GeneratePollerTest {
         val outcome = poller(
             generate = { ZillitResult.Success(record("generating")) },
             get = { gets++; ZillitResult.Success(record("generating")) },
-        ).run(plan)
+        ).run()
 
         assertEquals(90, gets)
         assertTrue((outcome as ZillitResult.Success).data.timedOut)

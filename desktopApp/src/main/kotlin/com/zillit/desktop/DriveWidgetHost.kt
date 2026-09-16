@@ -118,7 +118,12 @@ internal class DriveWidgetHost(
             repository = repository,
             viewer = { viewer },
             uploader = MultipartDriveUploader(repository, ready.httpClient),
+            previewHost = AppDrivePreviewHost(ready.httpClient),
+            // Names and share pickers are the open production's crew; another
+            // production's people are not fetched per switch.
+            crew = { if (isOpen) context?.users.orEmpty().map { it.toDrivePerson() } else emptyList() },
             newUploadId = { UUID.randomUUID().toString() },
+            now = System::currentTimeMillis,
         )
         viewModel.start()
         _session.update { current ->
@@ -130,3 +135,16 @@ internal class DriveWidgetHost(
         const val TAG = "DriveWidget"
     }
 }
+
+/**
+ * A crew member as the Drive's share pickers list them. The designation is a
+ * label key on the wire (`payroll_label`), so it goes through the dictionary
+ * first — the web's `getUserRoleName`.
+ */
+internal fun com.zillit.desktop.core.database.UserSnapshot.toDrivePerson() =
+    com.zillit.desktop.feature.drive.domain.DrivePerson(
+        id = userId,
+        name = fullName,
+        designation = designationText().orEmpty(),
+        avatarUrl = avatarUrl,
+    )

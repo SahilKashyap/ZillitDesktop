@@ -19,6 +19,7 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoSortDirection
 import com.zillit.desktop.feature.purchaseorder.domain.PoSortKey
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.domain.PoTaxType
+import com.zillit.desktop.feature.purchaseorder.domain.PoUnread
 import com.zillit.desktop.feature.purchaseorder.domain.PoTeamMember
 import com.zillit.desktop.feature.purchaseorder.domain.PoTemplate
 import com.zillit.desktop.feature.purchaseorder.domain.PoTotals
@@ -77,6 +78,8 @@ data class PoUiState(
     /** The order in the detail dialog, fetched fresh so its stamps are current. */
     val detail: PurchaseOrder? = null,
     val detailLoading: Boolean = false,
+    /** The tool's unread rows — the tabs' and rows' badges. */
+    val unread: PoUnread = PoUnread.None,
     val history: List<PoHistoryEntry> = emptyList(),
     val selection: Set<String> = emptySet(),
 

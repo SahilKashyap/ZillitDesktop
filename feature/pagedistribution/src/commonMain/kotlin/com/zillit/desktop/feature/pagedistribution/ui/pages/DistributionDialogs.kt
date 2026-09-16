@@ -89,7 +89,7 @@ internal fun DistributionDialogs(
 }
 
 @Composable
-private fun ConfirmDialog(
+internal fun ConfirmDialog(
     title: String,
     body: String,
     confirm: String,
@@ -317,10 +317,13 @@ private fun UploadDialog(state: DistributionUiState, onEvent: (DistributionEvent
 }
 
 @Composable
-private fun PdfDialog(state: DistributionUiState, onEvent: (DistributionEvent) -> Unit) {
+internal fun PdfDialog(state: DistributionUiState, onEvent: (DistributionEvent) -> Unit) {
     val view = state.pdf ?: return
     ZillitDialogShell(
-        title = view.document.attachment?.name?.ifBlank { null } ?: "Document",
+        title = view.document.attachment?.name?.ifBlank { null }
+            ?: view.document.originalName.ifBlank { null }
+            ?: view.document.name.ifBlank { null }
+            ?: "Document",
         onDismiss = { onEvent(DistributionEvent.CloseViewer) },
         visible = true,
         scrollable = false,

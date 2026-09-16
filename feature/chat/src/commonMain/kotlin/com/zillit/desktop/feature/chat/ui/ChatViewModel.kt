@@ -34,9 +34,19 @@ import com.zillit.desktop.feature.chat.domain.ChatVoice
 import com.zillit.desktop.feature.chat.domain.GroupRoom
 import com.zillit.desktop.feature.chat.domain.ChatComposerRules
 import com.zillit.desktop.feature.chat.domain.ChatPick
+import com.zillit.desktop.feature.chat.domain.ChatTranslator
+import com.zillit.desktop.feature.chat.domain.ForwardTarget
+import com.zillit.desktop.feature.chat.domain.ReadByReport
 import com.zillit.desktop.feature.chat.domain.PendingChatUpload
 import com.zillit.desktop.feature.chat.domain.liveChatUnread
 import com.zillit.desktop.feature.chat.domain.sortedRecents
+
+/**
+ * One conversation's newest line, for its row: the words (or what the
+ * file/place reads as) and who wrote them, so the row can say "You:" or
+ * lead with the writer's name in a room — the phones' listing line.
+ */
+data class ChatPreview(val text: String, val senderId: String = "")
 
 data class ChatUiState(
     /** Who the open thread is with; null shows the contact card instead. */
@@ -60,8 +70,8 @@ data class ChatUiState(
     val peerIsGroup: Boolean = false,
     /** The production's rooms, above the direct threads. */
     val groups: List<GroupRoom> = emptyList(),
-    /** The newest cached line per peer — the recents list's previews. */
-    val previews: Map<String, String> = emptyMap(),
+    /** The newest line per conversation — the recents list's previews. */
+    val previews: Map<String, ChatPreview> = emptyMap(),
     /** Unread badge per peer, absent when zero. */
     val unread: Map<String, Int> = emptyMap(),
     /** Newest activity per conversation, for the listing's time column. */
@@ -94,6 +104,31 @@ data class ChatUiState(
     /** A page of older messages is on its way. */
     val loadingOlder: Boolean = false,
     val error: String? = null,
+    /**
+     * A quiet confirmation — "Forwarded", "Message translated" — the web's
+     * `message.success`, shown as a toast and gone on its own.
+     */
+    val info: String? = null,
+    /** The message open in the Edit dialog, and the words as they are being rewritten. */
+    val editing: ChatMessage? = null,
+    val editDraft: String = "",
+    /** The message the Forward picker is open for; null keeps it closed. */
+    val forwarding: ChatMessage? = null,
+    /** The readers panel — which message, and its answer as it arrives. */
+    val readBy: ReadByView? = null,
+    /**
+     * Machine translations by server id, shown under the original words.
+     * Local to this screen, as the web keeps its `isTranslated` copies in
+     * its store: nothing is sent, and a reopened thread starts untranslated.
+     */
+    val translations: Map<String, String> = emptyMap(),
+    /** Ids whose translation is on its way — the menu item says so. */
+    val translating: Set<String> = emptySet(),
+    /**
+     * Whether the menu offers Translate at all: a translator is wired and
+     * the production's language differs from this computer's (ZL-16953).
+     */
+    val translateOffered: Boolean = false,
 ) {
     /**
      * Unread across the conversations the user can still open — the Chats
@@ -107,6 +142,18 @@ data class ChatUiState(
     val callsBadge: Int get() = sectionBadges["call_label"] ?: 0
 
     val canSend: Boolean get() = draft.isNotBlank() && peer != null
+}
+
+/**
+ * The readers panel's state: the message asked about, and the server's
+ * answer once it lands — or why it did not.
+ */
+data class ReadByView(
+    val message: ChatMessage,
+    val report: ReadByReport? = null,
+    val error: String? = null,
+) {
+    val isLoading: Boolean get() = report == null && error == null
 }
 
 sealed interface ChatEvent {
@@ -189,6 +236,47 @@ sealed interface ChatEvent {
     /** The row's star: keep this conversation in the Favourites filter. */
     data class ToggleFavourite(val id: String) : ChatEvent
 
+    /** The menu's Edit on one of our own lines: open the dialog on its words. */
+    data class StartEdit(val messageId: String) : ChatEvent
+    data class EditDraftChanged(val text: String) : ChatEvent
+    data object SubmitEdit : ChatEvent
+    data object CancelEdit : ChatEvent
+
+    /** The socket says a line's words changed — ours from another device, or theirs. */
+    data class Edited(val message: ChatMessage) : ChatEvent
+
+    /** The menu's Forward: open the destination picker on this message. */
+    data class StartForward(val messageId: String) : ChatEvent
+
+    /** The picker's Send: a copy to each destination. */
+    data class ForwardTo(val targets: List<ForwardTarget>) : ChatEvent
+    data object CancelForward : ChatEvent
+
+    /** The menu's Read by, on a room's line. */
+    data class ShowReadBy(val messageId: String) : ChatEvent
+    data object DismissReadBy : ChatEvent
+
+    /** The menu's Translate on someone's words; Show original takes it back. */
+    data class Translate(val messageId: String) : ChatEvent
+    data class ShowOriginal(val messageId: String) : ChatEvent
+
+    /**
+     * The Image Reply dialog's Post: someone's picture drawn on, sent back
+     * as a new picture with a caption — a plain media send, as the web's
+     * `ImageReplyHandler` sends it (not a threaded reply).
+     */
+    class ImageReply(
+        val name: String,
+        val contentType: String,
+        val bytes: ByteArray,
+        val caption: String,
+    ) : ChatEvent
+
+    data object DismissInfo : ChatEvent
+
+    /** A host seam said no — the sentence goes where every other refusal goes. */
+    data class Refused(val message: String) : ChatEvent
+
     /**
      * The Calls tab came on screen. Missed calls are read by looking at the
      * log — iOS's `readCNCMessage(.misscall)`, a `notification:read` on the
@@ -269,6 +357,14 @@ class ChatViewModel(
     private val presence: PresenceSource? = null,
     /** The production the presence node is scoped by; null while none is open. */
     private val presenceProjectId: () -> String? = { null },
+    /**
+     * The signed-in user is a production admin — the web's `is_admin`, which
+     * lifts the two-hour clock on Edit and Delete (see
+     * [ChatComposerRules.canRewrite]).
+     */
+    private val isAdmin: () -> Boolean = { false },
+    /** Machine translation for the menu's Translate; null leaves the item out. */
+    private val translator: ChatTranslator? = null,
 ) : ZillitViewModel<ChatUiState, ChatEvent, Nothing>(ChatUiState()) {
 
     /**
@@ -351,6 +447,10 @@ class ChatViewModel(
             }
         }
         launch { repository.deletions.collect { onEvent(ChatEvent.Deleted(it)) } }
+        // An edit is not a new line: the bubble's words change in place.
+        // (This flow existed on the repository for a while with nobody
+        // listening — an edit made on the phone never reached the screen.)
+        launch { repository.edits.collect { onEvent(ChatEvent.Edited(it)) } }
         // A group made, renamed or left somewhere else. The listing is the
         // whole of what changes here, so it is simply re-read — the same
         // fetch a reconnect does.
@@ -410,6 +510,23 @@ class ChatViewModel(
             is ChatEvent.Delete -> deleteMessage(event.messageId)
             is ChatEvent.Deleted -> dropDeleted(event.messageIds)
             is ChatEvent.React -> react(event.messageId, event.emoji)
+            is ChatEvent.StartEdit -> startEdit(event.messageId)
+            is ChatEvent.EditDraftChanged -> setState { copy(editDraft = event.text) }
+            ChatEvent.SubmitEdit -> submitEdit()
+            ChatEvent.CancelEdit -> setState { copy(editing = null, editDraft = "") }
+            is ChatEvent.Edited -> applyEdit(event.message)
+            is ChatEvent.StartForward -> setState {
+                copy(forwarding = messages.firstOrNull { it.id == event.messageId })
+            }
+            is ChatEvent.ForwardTo -> forward(event.targets)
+            ChatEvent.CancelForward -> setState { copy(forwarding = null) }
+            is ChatEvent.ShowReadBy -> showReadBy(event.messageId)
+            ChatEvent.DismissReadBy -> setState { copy(readBy = null) }
+            is ChatEvent.Translate -> translate(event.messageId)
+            is ChatEvent.ShowOriginal -> setState { copy(translations = translations - event.messageId) }
+            is ChatEvent.ImageReply -> imageReply(event)
+            ChatEvent.DismissInfo -> setState { copy(info = null) }
+            is ChatEvent.Refused -> setState { copy(error = event.message) }
             ChatEvent.StartRecording -> startRecording()
             ChatEvent.StopRecording -> finishRecording(discard = false)
             ChatEvent.CancelRecording -> finishRecording(discard = true)
@@ -423,9 +540,16 @@ class ChatViewModel(
             ChatEvent.ProjectChanged -> startFreshProject()
             ChatEvent.RefreshRecents -> {
                 refreshSectionBadges()
+                // Re-read on every refresh: the production's language lands
+                // with its context, which may be after this model was built.
+                setState { copy(translateOffered = translator?.isOffered() == true) }
                 launchResult(
                     block = { repository.rooms() },
-                    onSuccess = { rooms -> setState { copy(groups = rooms) } },
+                    onSuccess = { rooms ->
+                        setState { copy(groups = rooms) }
+                        // The rooms' own newest lines, now that their ids are known.
+                        setState { copy(previews = previews + previewsFor(emptyList())) }
+                    },
                     onError = { },
                 )
                 // The per-conversation counts and stamps, from the server's
@@ -1208,6 +1332,11 @@ class ChatViewModel(
      * reads as the peer reposting it.
      */
     private fun deleteMessage(messageId: String) {
+        val target = currentState.messages.firstOrNull { it.id == messageId }
+        if (target != null && !ChatComposerRules.canRewrite(target.timestampMillis, nowMillis(), isAdmin())) {
+            setState { copy(error = ChatComposerRules.REWRITE_WINDOW_CLOSED) }
+            return
+        }
         launchResult(
             block = {
                 repository.deleteMessages(listOf(messageId), currentState.peerIsGroup)
@@ -1261,6 +1390,173 @@ class ChatViewModel(
                 }
             }
         }
+    }
+
+    // -- the bubble menu's other verbs: edit, forward, read by, translate, image reply --
+
+    /**
+     * Opens the Edit dialog on one of our own lines — the web's
+     * `EditModal` seeded with the decrypted words. The two-hour clock is
+     * checked here, on the click, as the web checks it (`MyMessage.jsx:422-431`):
+     * the item stays on the menu and the refusal explains the clock.
+     */
+    private fun startEdit(messageId: String) {
+        val target = currentState.messages.firstOrNull { it.id == messageId && it.isMine } ?: return
+        if (!ChatComposerRules.canRewrite(target.timestampMillis, nowMillis(), isAdmin())) {
+            setState { copy(error = ChatComposerRules.REWRITE_WINDOW_CLOSED) }
+            return
+        }
+        setState { copy(editing = target, editDraft = target.body) }
+    }
+
+    /**
+     * The dialog's Save. Unchanged words close it without a round trip
+     * (ZL-16986, `MyMessage.jsx:247-251`); an emptied line is refused rather
+     * than sent, as the web's `isEmptyString` guard does; the ceiling is the
+     * composer's. The bubble changes only on the server's ack — an edit
+     * that was refused must not look applied.
+     */
+    private fun submitEdit() {
+        val target = currentState.editing ?: return
+        val words = currentState.editDraft.trim()
+        if (words == target.body.trim() || words.isEmpty()) {
+            setState { copy(editing = null, editDraft = "") }
+            return
+        }
+        if (ChatComposerRules.bodyTooLong(words)) {
+            setState { copy(error = ChatComposerRules.BODY_TOO_LONG) }
+            return
+        }
+        setState { copy(editing = null, editDraft = "") }
+        launchResult(
+            block = { repository.editMessage(target.id, words, currentState.peerIsGroup) },
+            onSuccess = { saved -> applyEdit(saved.copy(body = words, isEdited = true)) },
+            onError = { error -> setState { copy(error = error.localised()) } },
+        )
+    }
+
+    /**
+     * New words for a line already on screen — from our own ack or the
+     * socket's broadcast. Matched on the server id (an edited row may not
+     * echo our unique id); everything but the words and the flag is kept
+     * from the row we have, since the broadcast's copy can be thinner than
+     * the history's (reactions, the expanded quote).
+     */
+    private fun applyEdit(edited: ChatMessage) {
+        val id = edited.id
+        val lines = currentState.messages.map { line ->
+            if (line.id == id) line.copy(body = edited.body, bodyCipher = edited.bodyCipher, isEdited = true) else line
+        }
+        // The shelf's preview, when the edited line is the thread's newest.
+        val peer = currentState.peer?.userId
+        val newest = lines.lastOrNull()
+        val previews = if (peer != null && newest != null && newest.id == id) {
+            currentState.previews + (peer to previewLine(newest))
+        } else {
+            currentState.previews
+        }
+        // The translation was of the old words.
+        setState { copy(messages = lines, previews = previews, translations = translations - id) }
+    }
+
+    /**
+     * One copy per destination, each a plain send with its own unique id —
+     * the web's `forwardMessage` (`ForwardMsgModal.jsx:224-261`): the same
+     * words, file and place, `reply` dropped, `edited` reset. Sent to the
+     * open thread, the copy appears through the repository's ack the way any
+     * send does. Failures are counted, not fatal: the web fires every send
+     * and toasts success regardless; this toasts what actually went.
+     */
+    private fun forward(targets: List<ForwardTarget>) {
+        val source = currentState.forwarding ?: return
+        setState { copy(forwarding = null) }
+        if (targets.isEmpty()) return
+        launch {
+            var sent = 0
+            var refusal: String? = null
+            targets.forEach { target ->
+                val result = repository.send(
+                    receiverId = target.id,
+                    body = source.body,
+                    uniqueId = newUniqueId(),
+                    nowMillis = nowMillis(),
+                    isGroup = target.isGroup,
+                    attachment = source.attachment,
+                    location = source.location,
+                )
+                when (result) {
+                    is ZillitResult.Success -> sent++
+                    is ZillitResult.Failure -> refusal = result.error.localised()
+                }
+            }
+            setState {
+                copy(
+                    info = if (sent > 0) FORWARDED else null,
+                    error = refusal?.takeIf { sent < targets.size },
+                )
+            }
+            // A copy to the open thread is a new line on it; a copy elsewhere
+            // is that conversation's newest word — the shelf learns both.
+            onEvent(ChatEvent.RefreshRecents)
+        }
+    }
+
+    /** The readers panel: open at once, fill when the server answers. */
+    private fun showReadBy(messageId: String) {
+        val target = currentState.messages.firstOrNull { it.id == messageId } ?: return
+        setState { copy(readBy = ReadByView(target)) }
+        launchResult(
+            block = { repository.readBy(messageId) },
+            onSuccess = { report ->
+                setState { copy(readBy = readBy?.takeIf { it.message.id == messageId }?.copy(report = report)) }
+            },
+            onError = { error ->
+                setState {
+                    copy(readBy = readBy?.takeIf { it.message.id == messageId }?.copy(error = error.localised()))
+                }
+            },
+        )
+    }
+
+    /**
+     * Someone's words in this computer's language, under the original —
+     * the web's `handleTranslateCncMessage`. Nothing is sent: the answer is
+     * kept beside the message here alone.
+     */
+    private fun translate(messageId: String) {
+        val engine = translator ?: return
+        val target = currentState.messages.firstOrNull { it.id == messageId } ?: return
+        if (target.body.isBlank() || messageId in currentState.translating) return
+        setState { copy(translating = translating + messageId) }
+        launchResult(
+            block = { engine.translate(target.body, engine.deviceLanguage()) },
+            onSuccess = { translated ->
+                setState {
+                    copy(
+                        translating = translating - messageId,
+                        translations = translations + (messageId to translated),
+                        info = TRANSLATED,
+                    )
+                }
+            },
+            onError = { error ->
+                setState { copy(translating = translating - messageId, error = error.localised()) }
+            },
+        )
+    }
+
+    /**
+     * The drawn-on picture, straight to the media send — no preview step,
+     * the editor was the preview. Rides [unsentMedia] like a picked file so
+     * a failed upload keeps its retry.
+     */
+    private fun imageReply(event: ChatEvent.ImageReply) {
+        if (currentState.peer == null) return
+        val pending = PendingChatUpload(event.name, event.contentType, event.bytes) { bytes, onProgress ->
+            uploadMedia(event.name, event.contentType, bytes, onProgress)
+        }
+        setState { copy(pendingPreview = pending) }
+        sendMedia(PreviewResult(event.name, event.contentType, event.bytes), event.caption)
     }
 
     private var recordingTicker: kotlinx.coroutines.Job? = null
@@ -1320,8 +1616,13 @@ class ChatViewModel(
         launch { saveFavourites(next) }
     }
 
-    private fun previewsFor(ids: List<String>): Map<String, String> =
-        ids.mapNotNull { id ->
+    /**
+     * The shelf's previews for [ids] and for every room: a room's newest
+     * line is cached under the room id like a person's, but rooms are not
+     * in `recents`, so they are added here rather than asked for by each caller.
+     */
+    private fun previewsFor(ids: List<String>): Map<String, ChatPreview> =
+        (ids + currentState.groups.map(GroupRoom::id)).distinct().mapNotNull { id ->
             repository.lastMessageOf(id)?.let { last -> id to previewLine(last) }
         }.toMap()
 
@@ -1332,12 +1633,15 @@ class ChatViewModel(
      * listing marks a location with a pin
      * (`utils/Extensions.kt:295-317`, `provideEmojiContentTypeWise`).
      */
-    private fun previewLine(message: ChatMessage): String = when {
-        message.location != null ->
-            "📍 " + message.body.ifBlank { message.location.address }.ifBlank { "Location" }
-        message.attachment != null -> "📎 ${message.attachment.name}"
-        else -> message.body
-    }
+    private fun previewLine(message: ChatMessage): ChatPreview = ChatPreview(
+        text = when {
+            message.location != null ->
+                "📍 " + message.body.ifBlank { message.location.address }.ifBlank { "Location" }
+            message.attachment != null -> "📎 ${message.attachment.name}"
+            else -> message.body
+        },
+        senderId = message.senderId,
+    )
 
     /**
      * A read-untill receipt covers the whole thread, not one message: every
@@ -1393,9 +1697,20 @@ class ChatViewModel(
      */
     private fun ackDelivered(message: ChatMessage) {
         if (message.isMine || message.sendState != ChatSendState.Sent) return
-        val conversation = if (message.isGroup) message.receiverId else message.senderId
+        val conversation = message.conversationId()
         if (conversation.isBlank()) return
         launch { repository.markDelivered(conversation, message.id, message.isGroup) }
+    }
+
+    /**
+     * The conversation a line belongs to: the room for a room's line (its
+     * sender is a person, its receiver the room), otherwise the other end.
+     * Keyed by sender, a room's arrival used to lift, badge and preview the
+     * writer's DM row and leave the room's row still.
+     */
+    private fun ChatMessage.conversationId(): String = when {
+        isGroup || isMine -> receiverId
+        else -> senderId
     }
 
     private fun arrived(message: ChatMessage) {
@@ -1403,7 +1718,7 @@ class ChatViewModel(
         // for — the retry loop must not send a file the thread already shows.
         if (message.isMine) unsentMedia.remove(message.uniqueId)
         val peer = currentState.peer
-        val other = if (message.isMine) message.receiverId else message.senderId
+        val other = message.conversationId()
         val isOpen = peer != null &&
             (message.senderId == peer.userId || message.receiverId == peer.userId)
 
@@ -1458,10 +1773,10 @@ class ChatViewModel(
         if (peerId.isBlank() || peerId in recents) recents else recents + peerId
 
     private fun withPreview(
-        previews: Map<String, String>,
+        previews: Map<String, ChatPreview>,
         peerId: String,
         message: ChatMessage,
-    ): Map<String, String> {
+    ): Map<String, ChatPreview> {
         if (peerId.isBlank()) return previews
         return previews + (peerId to previewLine(message))
     }
@@ -1494,6 +1809,12 @@ class ChatViewModel(
 
 private const val TAG = "Chat"
 private const val RECORDING_TICK_MILLIS = 1_000L
+
+/** The web's `forward_successfully` (`utils/language/en.js:6781`). */
+internal const val FORWARDED = "Forward Successfully"
+
+/** The web's own sentence, used as its key (`cncUtil.js:1087`). */
+internal const val TRANSLATED = "Message translated successfully."
 
 /** The last DM list this production showed, and its stamps, for when the socket cannot answer. */
 private const val RECENTS_CACHE = "chat.recents"

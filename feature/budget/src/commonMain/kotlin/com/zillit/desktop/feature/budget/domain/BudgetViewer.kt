@@ -16,9 +16,39 @@ data class BudgetViewer(
     val canPostDepartment: Boolean = false,
     val canDownloadMain: Boolean = false,
     val canDownloadDepartment: Boolean = false,
+    /**
+     * A production admin. The web hides the view/download *count* items from
+     * everyone else (`CommonBudget.jsx:1780,1788`), and lets an admin see
+     * every department's budget rather than only their own
+     * (`AddAndShowDepartmentList.jsx:212-232`).
+     */
+    val isAdmin: Boolean = false,
     /** False until `project/tools` has answered — not a denial. See [from]. */
     val resolved: Boolean = false,
 ) {
+
+    /** Whether this person may open [mode] at all — the web bounces them to the grid otherwise. */
+    fun canView(mode: BudgetMode): Boolean = when (mode) {
+        BudgetMode.Main -> canViewMain
+        BudgetMode.Department -> canViewDepartment
+    }
+
+    /** Posting rights on the tile that opened the tool, not on the other one. */
+    fun canPost(mode: BudgetMode): Boolean = when (mode) {
+        BudgetMode.Main -> canPostMain
+        BudgetMode.Department -> canPostDepartment
+    }
+
+    /**
+     * The web's `getDownloadRight` is the opened tile's `download_access`
+     * (`FullBudget.jsx:59`, `DepartmentBudget.jsx:46`) — so a department
+     * budget's download is gated by the department tile even for a document
+     * whose type reads `main`.
+     */
+    fun canDownload(mode: BudgetMode): Boolean = when (mode) {
+        BudgetMode.Main -> canDownloadMain
+        BudgetMode.Department -> canDownloadDepartment
+    }
 
     /**
      * Neither budget is readable, so there is nothing to show at all — the web
@@ -77,6 +107,7 @@ data class BudgetViewer(
                 // to ask an admin for the right otherwise.
                 canDownloadMain = main?.canDownload == true || permissions.isAdmin,
                 canDownloadDepartment = department?.canDownload == true || permissions.isAdmin,
+                isAdmin = permissions.isAdmin,
                 resolved = true,
             )
         }

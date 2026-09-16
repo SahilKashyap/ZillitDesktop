@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.purchaseorder.ui
 
+import com.zillit.desktop.feature.purchaseorder.domain.PoBadgeScope
+import com.zillit.desktop.feature.purchaseorder.domain.PoBadges
 import com.zillit.desktop.feature.purchaseorder.domain.PoViewer
 
 /**
@@ -80,6 +82,20 @@ enum class PoDestination(
 
     /** Whether this page is one of the right-hand group, drawn after the action button. */
     val isRegisterTab: Boolean get() = this == Templates || this == Drafts || this == DeliveryAddresses
+
+    /**
+     * Where this tab's badge rows live, for the four tabs the web badges
+     * (`PurchaseOrdersModule.jsx:2653`, `DepartmentPOModule.jsx:563`); null
+     * for a tab that carries no slice. Invoices is counted by unit, not here.
+     */
+    val badgeScope: PoBadgeScope?
+        get() = when (this) {
+            AllPos -> PoBadgeScope(PoBadges.TOOL_HUB, PoBadges.LEVEL_ALL_POS)
+            Queue -> PoBadgeScope(PoBadges.TOOL_HUB, PoBadges.LEVEL_QUEUE)
+            ApprovalQueue -> PoBadgeScope(PoBadges.TOOL_PO, PoBadges.LEVEL_APPROVAL_QUEUE)
+            MyPos -> PoBadgeScope(PoBadges.TOOL_PO, PoBadges.LEVEL_MY_POS)
+            else -> null
+        }
 
     /** Whether orders raised offline, not yet on the server, belong on this page. */
     val showsLocalOrders: Boolean

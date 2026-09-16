@@ -128,6 +128,9 @@ class AccountHubRepositoryImpl(
     /** Payroll groups, auto-assignment rules and the chart's layers — see [HubSetupSource]. */
     private val setupSource = HubSetupSource(apiClient, config)
 
+    /** The union agreements the breakdown imports from — see [HubAgreementSource]. */
+    private val agreements = HubAgreementSource(apiClient, config)
+
     /** The chart of accounts — see [HubChartSource]. */
     private val chartSource = HubChartSource(apiClient, config)
 
@@ -735,6 +738,12 @@ class AccountHubRepositoryImpl(
 
     override suspend fun isdCodes() = presets.isdCodes()
 
+    override suspend fun coveredTerritories() = agreements.coveredTerritories()
+
+    override suspend fun unionAgreements(territory: String) = agreements.agreements(territory)
+
+    override suspend fun unionAgreementRules(identifier: String) = agreements.agreementRules(identifier)
+
     override suspend fun postcodePlace(countryCode: String, postcode: String) =
         presets.postcodePlace(countryCode, postcode)
 
@@ -869,6 +878,8 @@ private fun Company.toJson(): JsonElement = buildJsonObject {
         buildJsonObject {
             put("paye_ref", JsonPrimitive(ukPayeRef.trim()))
             put("accounts_office_ref", JsonPrimitive(ukAccountsOfficeRef.trim()))
+            put("pension_provider", JsonPrimitive(ukPensionProvider.trim()))
+            put("pension_scheme_ref", JsonPrimitive(ukPensionSchemeRef.trim()))
         },
     )
     // No currency: it is derived from the linked banks and the backend owns the

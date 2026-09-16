@@ -3,69 +3,75 @@ package com.zillit.desktop.feature.accounthub.ui.pages
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
-import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.feature.accounthub.domain.BankAccount
 import com.zillit.desktop.feature.accounthub.domain.BankAccounts
 import com.zillit.desktop.feature.accounthub.domain.Companies
-import com.zillit.desktop.feature.accounthub.domain.CountryTaxes
-import com.zillit.desktop.feature.accounthub.domain.CurrencySettings
-import com.zillit.desktop.feature.accounthub.domain.ProjectCurrency
+import com.zillit.desktop.feature.accounthub.domain.Company
 import com.zillit.desktop.feature.accounthub.domain.SortCode
-import com.zillit.desktop.feature.accounthub.domain.TaxType
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
-import com.zillit.desktop.feature.accounthub.ui.CurrencyFilter
 import com.zillit.desktop.feature.accounthub.ui.HubPage
 import com.zillit.desktop.feature.accounthub.ui.SetupModal
 import com.zillit.desktop.feature.accounthub.ui.SetupRemoval
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
 import com.zillit.desktop.feature.accounthub.ui.SetupTab
 import com.zillit.desktop.feature.accounthub.ui.SpendSetup
-import com.zillit.desktop.feature.accounthub.ui.asAmountText
 import com.zillit.desktop.feature.accounthub.ui.components.Chip
-import com.zillit.desktop.feature.accounthub.ui.components.CoaCodeField
-import com.zillit.desktop.feature.accounthub.ui.components.quickCreateHandler
 import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
 import com.zillit.desktop.feature.accounthub.ui.components.FieldLabel
-import com.zillit.desktop.feature.accounthub.ui.components.GhostAddButton
 import com.zillit.desktop.feature.accounthub.ui.components.HubModuleCard
-import com.zillit.desktop.feature.accounthub.ui.components.HubSelect
 import com.zillit.desktop.feature.accounthub.ui.components.MonoChip
 import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
 import com.zillit.desktop.feature.accounthub.ui.components.Pill
@@ -95,6 +101,10 @@ fun ProductionSetupPage(
     canOpenDocuments: Boolean = false,
 ) {
     val setup = state.setup
+    val scroll = rememberScrollState()
+    // A tab is a different page: it starts at its top, not wherever the other
+    // one was left.
+    LaunchedEffect(setup.tab) { scroll.scrollTo(0) }
 
     HubPage {
         ZillitPageHeader(
@@ -124,6 +134,7 @@ fun ProductionSetupPage(
 
         ZillitScrollColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
+            state = scroll,
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
             when (setup.tab) {
@@ -133,8 +144,11 @@ fun ProductionSetupPage(
         }
     }
 
+    // Composed in stacking order: the bank editor opens over the company
+    // editor (its inline "Add bank account"), and a removal confirms over both.
     CompanyDialog(state, onEvent)
     BankAccountDialog(state, onEvent)
+    NonUnionPayDialogs(state, onEvent)
     SetupRemovalDialog(state, onEvent)
     SetupModals(state, onEvent, canAttachAgreements, canOpenDocuments)
 }
@@ -284,6 +298,13 @@ private fun ColumnScope.DealMemoSections(
 
 // -- companies --------------------------------------------------------------
 
+/**
+ * The production's legal entities — the web's `CompaniesSection`.
+ *
+ * Every edit persists from its dialog, so the section's own Save is only a
+ * fallback for an edit whose save failed; the button appears when that
+ * happens and not otherwise.
+ */
 @Composable
 private fun CompaniesSection(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
     val setup = state.setup
@@ -312,7 +333,7 @@ private fun CompaniesSection(state: AccountHubUiState, onEvent: (AccountHubEvent
         },
     ) {
         if (companies.isEmpty()) {
-            EmptyLine("No companies added yet. Click Add company to create the first one.")
+            EmptyLine("No companies added yet. Click Add company to register the production's legal entities.")
         }
         companies.forEach { company ->
             CompanyCard(state, company, editable, onEvent)
@@ -321,42 +342,43 @@ private fun CompaniesSection(state: AccountHubUiState, onEvent: (AccountHubEvent
 }
 
 /**
- * One company — the web's card: a peach monogram, "Production Co.", the name
- * with a country chip and one pill per currency its banks span, and the
- * linked banks as mono chips.
+ * One company — the web's card: a gradient identity panel with a peach
+ * monogram and the account count, the name with a country chip and one pill
+ * per currency its banks span, the linked banks as chips, and an action rail
+ * that brightens on hover. The whole card opens the editor.
  */
 @Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
 @Composable
 private fun CompanyCard(
     state: AccountHubUiState,
-    company: com.zillit.desktop.feature.accounthub.domain.Company,
+    company: Company,
     editable: Boolean,
     onEvent: (AccountHubEvent) -> Unit,
 ) {
     val colors = ZillitTheme.colors
     val banks = state.setup.banks
-    val linked = banks.filter { it.id in company.bankIds }
-    val currencies = Companies.currencyCodes(company, banks)
+    // Both sides of the link (ZL-20605): a bank created from the Bank Accounts
+    // section points here by entity_id and must count.
+    val linkedIds = Companies.linkedBankIds(company, banks)
+    val linked = linkedIds.mapNotNull { id -> banks.firstOrNull { it.id == id } }
+    val currencies = Companies.currencyCodes(linkedIds, banks)
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val open = { if (editable) onEvent(AccountHubEvent.EditCompany(company)) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(ZillitTheme.shapes.large)
-            .border(1.dp, colors.border, ZillitTheme.shapes.large),
+            .background(colors.surface)
+            .border(1.dp, if (hovered) colors.borderStrong else colors.border, ZillitTheme.shapes.large)
+            .hoverable(interaction)
+            .clickable(enabled = editable, onClick = open)
+            .padding(CARD_INSET)
+            .height(IntrinsicSize.Min),
     ) {
-        Column(
-            modifier = Modifier.width(MONOGRAM_PANE).background(colors.surfaceSunken).padding(ZillitTheme.spacing.lg),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        ) {
-            Box(
-                modifier = Modifier.size(MONOGRAM).clip(ZillitTheme.shapes.large).background(colors.accentSoft),
-                contentAlignment = Alignment.Center,
-            ) {
-                ZillitText(
-                    text = company.monogram,
-                    style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = colors.accentText,
-                )
-            }
+        IdentityPanel(modifier = Modifier.width(MONOGRAM_PANE).fillMaxHeight()) {
+            Monogram(company.monogram)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
@@ -366,70 +388,175 @@ private fun CompanyCard(
             }
         }
         Row(
-            modifier = Modifier.weight(1f).padding(ZillitTheme.spacing.lg),
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
                 MonoLabel("Production Co.")
-                CompanyTitleRow(company.name, company.country, currencies)
-                if (company.legalName.isNotBlank()) FieldHint("Legal name · ${company.legalName}")
+                CompanyTitleRow(company, currencies)
+                if (company.legalName.isNotBlank() && company.legalName.trim() != company.name.trim()) {
+                    FieldHint("Legal name · ${company.legalName}")
+                }
             }
             Column(
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                modifier = Modifier.widthIn(max = LINKED_MAX),
             ) {
                 MonoLabel("Linked banks")
                 if (linked.isEmpty()) {
                     FieldHint("None")
                 } else {
-                    LinkedBankChips(linked.map { it.name.ifBlank { "Unnamed account" } })
+                    LinkedBankChips(linked)
                 }
             }
             if (editable) {
-                Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(start = ZillitTheme.spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
+                ) {
                     ZillitIconButton(
                         icon = ZillitIcons.Edit,
                         contentDescription = "Edit ${company.name}",
-                        onClick = { onEvent(AccountHubEvent.EditCompany(company)) },
+                        onClick = open,
+                        tint = if (hovered) colors.textPrimary else colors.textMuted,
                     )
                     ZillitIconButton(
                         icon = ZillitIcons.Trash,
                         contentDescription = "Remove ${company.name}",
                         onClick = { onEvent(AccountHubEvent.AskRemove(SetupRemoval.CompanyRow(company))) },
-                        tint = colors.danger,
+                        tint = if (hovered) colors.danger else colors.textMuted,
                     )
+                    Box(
+                        modifier = Modifier
+                            .size(CHEVRON_PILL)
+                            .clip(ZillitTheme.shapes.medium)
+                            .background(if (hovered) colors.textPrimary else colors.surfaceSunken),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ZillitIcon(
+                            icon = ZillitIcons.ChevronRight,
+                            tint = if (hovered) colors.surface else colors.textSecondary,
+                            size = CHEVRON_GLYPH,
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** The web's gradient identity panel — a soft wash from grey to peach, the card's left third. */
 @Composable
-private fun CompanyTitleRow(name: String, country: String, currencies: List<String>) {
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+internal fun IdentityPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val colors = ZillitTheme.colors
+    Column(
+        modifier = modifier
+            .clip(ZillitTheme.shapes.large)
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        colors.surfaceSunken,
+                        colors.accentSoft.copy(alpha = if (colors.isDark) DARK_WASH else LIGHT_WASH),
+                    ),
+                ),
+            )
+            .padding(ZillitTheme.spacing.lg),
+        verticalArrangement = Arrangement.SpaceBetween,
+        content = content,
+    )
+}
+
+/** The peach-wash monogram square the identity panels lead with. */
+@Composable
+internal fun Monogram(text: String) {
+    val colors = ZillitTheme.colors
+    Box(
+        modifier = Modifier.size(MONOGRAM).clip(ZillitTheme.shapes.large).background(colors.accentSoft),
+        contentAlignment = Alignment.Center,
     ) {
         ZillitText(
-            text = name.ifBlank { "Unnamed company" },
-            style = ZillitTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-            maxLines = 1,
+            text = text,
+            style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            color = colors.accentText,
         )
-        if (country.isNotBlank()) Pill(country)
-        currencies.forEach { Pill(it, tone = StatusTone.Pending) }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LinkedBankChips(names: List<String>) {
+private fun CompanyTitleRow(company: Company, currencies: List<String>) {
+    // Wraps: a company linked to banks in several currencies used to run its
+    // pills under the action rail (ZL-20980).
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitText(
+            text = company.name.ifBlank { "Unnamed company" },
+            style = ZillitTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            maxLines = 1,
+        )
+        if (company.country.isNotBlank()) {
+            Row(
+                modifier = Modifier.align(Alignment.CenterVertically),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                if (company.countryCode.isNotBlank()) MonoChip(company.countryCode.uppercase())
+                Pill(company.country)
+            }
+        }
+        currencies.forEach {
+            Pill(it, tone = StatusTone.Pending, modifier = Modifier.align(Alignment.CenterVertically))
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LinkedBankChips(banks: List<BankAccount>) {
+    val colors = ZillitTheme.colors
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs, Alignment.End),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        names.forEach { MonoChip(it) }
+        banks.forEach { bank ->
+            Row(
+                modifier = Modifier
+                    .clip(ZillitTheme.shapes.medium)
+                    .background(colors.surfaceSunken)
+                    .border(1.dp, colors.border, ZillitTheme.shapes.medium)
+                    .padding(start = ZillitTheme.spacing.xs, end = ZillitTheme.spacing.sm, top = 3.dp, bottom = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(MINI_MONOGRAM)
+                        .clip(ZillitTheme.shapes.small)
+                        .background(colors.textPrimary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ZillitText(
+                        text = bank.name.filter { it.isLetter() }.take(2).uppercase().ifBlank { "?" },
+                        style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = colors.surface,
+                    )
+                }
+                ZillitText(
+                    text = bank.name.ifBlank { "—" },
+                    style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 
@@ -460,21 +587,55 @@ private fun BankAccountsSection(state: AccountHubUiState, onEvent: (AccountHubEv
         // Said explicitly: this is the one section on the page with no Save
         // button, and its absence otherwise reads as a missing control.
         FieldHint("Each account saves on its own — there is no section-level save here.")
-        if (setup.banks.isEmpty() && !setup.banksLoading) EmptyLine("No bank accounts on this project yet.")
+        if (setup.banks.isEmpty() && !setup.banksLoading) {
+            EmptyBankState(editable, onAdd = { onEvent(AccountHubEvent.EditBank(null)) })
+        }
         setup.banks.forEach { bank -> BankCard(state, bank, editable, onEvent) }
     }
 }
 
+/** The web's empty state: one large soft card that is itself the "add" affordance. */
+@Composable
+private fun EmptyBankState(editable: Boolean, onAdd: () -> Unit) {
+    val colors = ZillitTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.large)
+            .background(colors.surfaceSunken)
+            .border(1.dp, colors.border, ZillitTheme.shapes.large)
+            .clickable(enabled = editable, onClick = onAdd)
+            .padding(vertical = ZillitTheme.spacing.xxl, horizontal = ZillitTheme.spacing.xl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Box(
+            modifier = Modifier.size(MONOGRAM).clip(CircleShape).background(colors.accentSoft),
+            contentAlignment = Alignment.Center,
+        ) {
+            ZillitIcon(icon = ZillitIcons.Bank, tint = colors.accentText)
+        }
+        ZillitText(
+            text = "No bank accounts on this project yet",
+            style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+        )
+        FieldHint(
+            if (editable) "Click to add the first one — payroll and vendor payments default to it." else "None added.",
+        )
+    }
+}
+
 /**
- * One bank — the web's card: the bank's name and currency, the holder as the
- * primary beat, and a three-column grid of the account details with the
- * number masked until revealed (and re-masked after five seconds).
+ * One bank — the web's card: a gradient identity panel with the bank's
+ * monogram, name and nominal subline, the holder as the primary beat, and a
+ * three-column grid of the account details with the number masked until
+ * revealed (re-masked after five seconds) and a copy button on every value.
  */
 @Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
 @Composable
 private fun BankCard(
     state: AccountHubUiState,
-    bank: com.zillit.desktop.feature.accounthub.domain.BankAccount,
+    bank: BankAccount,
     editable: Boolean,
     onEvent: (AccountHubEvent) -> Unit,
 ) {
@@ -488,46 +649,68 @@ private fun BankCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(ZillitTheme.shapes.large)
-            .border(1.dp, colors.border, ZillitTheme.shapes.large),
+            .background(colors.surface)
+            .border(1.dp, colors.border, ZillitTheme.shapes.large)
+            .padding(CARD_INSET)
+            .height(IntrinsicSize.Min),
     ) {
-        Column(
-            modifier = Modifier.width(BANK_LEFT).background(colors.surfaceSunken).padding(ZillitTheme.spacing.lg),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                ZillitText(
-                    text = bank.name.ifBlank { "Unnamed account" },
-                    style = ZillitTheme.typography.titleSmall,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f),
-                )
-                if (bank.currencyCode.isNotBlank()) Pill(bank.currencyCode, tone = StatusTone.Pending)
+        IdentityPanel(modifier = Modifier.width(BANK_LEFT).fillMaxHeight()) {
+            Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                ) {
+                    Monogram(bank.name.filter { it.isLetter() }.take(2).uppercase().ifBlank { "?" })
+                    Column(modifier = Modifier.weight(1f)) {
+                        ZillitText(
+                            text = bank.name.ifBlank { "Unnamed bank" },
+                            style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            maxLines = 1,
+                        )
+                        val codes = listOfNotNull(
+                            bank.nominalCode.takeIf { it.isNotBlank() }?.let { "NOM $it" },
+                            bank.apClearanceNominalCode.takeIf { it.isNotBlank() }?.let { "AP $it" },
+                        )
+                        if (codes.isNotEmpty()) {
+                            ZillitText(
+                                text = codes.joinToString("  "),
+                                style = ZillitTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                color = colors.textMuted,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                    if (bank.currencyCode.isNotBlank()) Pill(bank.currencyCode, tone = StatusTone.Pending)
+                }
             }
-            FieldLabel("Holder")
-            ZillitText(
-                text = holder.ifBlank { "—" },
-                style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                maxLines = 1,
-            )
-            // The render test keys on this line; it is also the one-glance summary.
-            FieldHint(
-                listOfNotNull(
-                    holder.takeIf { it.isNotBlank() },
-                    SortCode.formatted(bank.sortCode).takeIf { it.isNotBlank() },
-                    bank.accountNumber.takeIf { it.isNotBlank() },
-                    bank.currencyCode.takeIf { it.isNotBlank() },
-                ).joinToString(" · ").ifBlank { "—" },
-            )
+            Column(modifier = Modifier.padding(top = ZillitTheme.spacing.lg)) {
+                MonoLabel("Holder")
+                ZillitText(
+                    text = holder.ifBlank { "—" },
+                    style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                )
+                // The render test keys on this line; it is also the one-glance
+                // summary. The number stays masked here — the eye on the grid
+                // is the one place it is shown whole.
+                FieldHint(
+                    listOfNotNull(
+                        holder.takeIf { it.isNotBlank() },
+                        SortCode.formatted(bank.sortCode).takeIf { it.isNotBlank() },
+                        BankAccounts.masked(bank.accountNumber).takeIf { it.isNotBlank() },
+                        bank.currencyCode.takeIf { it.isNotBlank() },
+                    ).joinToString(" · ").ifBlank { "—" },
+                )
+            }
         }
         Column(
-            modifier = Modifier.weight(1f).padding(ZillitTheme.spacing.lg),
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                FieldLabel("Account details", modifier = Modifier.weight(1f))
+                MonoLabel("Account details", modifier = Modifier.weight(1f))
                 if (bank.accountNumber.isNotBlank()) {
                     ZillitIconButton(
                         icon = ZillitIcons.Eye,
@@ -549,283 +732,107 @@ private fun BankCard(
                     )
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
-            ) {
-                CardField(
-                    "Account number",
-                    if (revealed) bank.accountNumber else BankAccounts.masked(bank.accountNumber),
-                    Modifier.weight(1.1f),
-                )
-                CardField("Sort code", SortCode.formatted(bank.sortCode), Modifier.weight(0.9f))
-                CardField("SWIFT / BIC", bank.swiftCode, Modifier.weight(1f))
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
-            ) {
-                CardField("IBAN", bank.ibanNumber, Modifier.weight(1.1f))
-                CardField("Nominal", bank.nominalCode, Modifier.weight(0.9f))
-                CardField("AP clearance", bank.apClearanceNominalCode, Modifier.weight(1f))
-            }
+            DetailGrid(
+                listOf(
+                    DetailCell(
+                        "Account number",
+                        if (revealed) bank.accountNumber else BankAccounts.masked(bank.accountNumber),
+                        copyValue = bank.accountNumber,
+                    ),
+                    DetailCell("Sort code", SortCode.formatted(bank.sortCode)),
+                    DetailCell("SWIFT / BIC", bank.swiftCode),
+                ),
+            )
+            DetailGrid(
+                listOf(
+                    DetailCell("IBAN", bank.ibanNumber),
+                    DetailCell("Nominal", bank.nominalCode),
+                    DetailCell("AP clearance", bank.apClearanceNominalCode),
+                ),
+            )
             if (bank.chequeNumber.isNotBlank() || bank.wireNumber.isNotBlank()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
-                ) {
-                    CardField("Cheque number", bank.chequeNumber, Modifier.weight(1.1f))
-                    CardField("Wire number", bank.wireNumber, Modifier.weight(0.9f))
-                    Box(Modifier.weight(1f))
-                }
+                DetailGrid(
+                    listOf(
+                        DetailCell("Cheque number", bank.chequeNumber),
+                        DetailCell("Wire number", bank.wireNumber),
+                        null,
+                    ),
+                )
             }
             if (bank.additionalDetails.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
-                ) {
-                    bank.additionalDetails.take(MAX_EXTRA_COLUMNS).forEach {
-                        CardField(it.title, it.value, Modifier.weight(1f))
-                    }
-                }
+                ExtraDetailChips(bank)
             }
         }
     }
 }
 
+private data class DetailCell(val label: String, val value: String, val copyValue: String = value)
+
+/** Three columns with hairline dividers between them, as the web's grid draws them. */
 @Composable
-private fun CardField(label: String, value: String, modifier: Modifier = Modifier) {
+private fun DetailGrid(cells: List<DetailCell?>) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        cells.forEachIndexed { index, cell ->
+            if (index > 0) {
+                Box(Modifier.width(1.dp).fillMaxHeight().background(ZillitTheme.colors.divider))
+            }
+            if (cell == null) {
+                Spacer(Modifier.weight(1f))
+            } else {
+                CardField(cell.label, cell.value, cell.copyValue, Modifier.weight(if (index == 1) 0.9f else 1.1f))
+            }
+        }
+    }
+}
+
+/** A label over a mono value, with a copy button that turns into a tick for a moment. */
+@Composable
+private fun CardField(label: String, value: String, copyValue: String, modifier: Modifier = Modifier) {
+    val clipboard = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            kotlinx.coroutines.delay(COPIED_MS)
+            copied = false
+        }
+    }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         MonoLabel(label)
-        ZillitText(
-            text = value.ifBlank { "—" },
-            style = ZillitTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-            maxLines = 1,
-        )
-    }
-}
-
-// -- currencies -------------------------------------------------------------
-
-/**
- * The web's currency section: selected cards with a rate input on every
- * non-default one, a default-currency picker, and a searchable catalogue with
- * All / Major chips. A non-default currency without a positive rate blocks
- * the save.
- */
-@Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun CurrenciesSection(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
-    val setup = state.setup
-    val settings = setup.currencies.edited
-    val editable = state.viewer.canEdit
-    val missing = settings.missingRates
-
-    SectionShell(
-        title = "Project Currencies",
-        description = "Every currency this production transacts in. Drives FX warnings and the currency dropdown on " +
-            "POs and invoices.",
-        dirty = setup.currencies.dirty,
-        saving = setup.currencies.saving,
-        onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Currencies)) },
-        onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.Currencies)) },
-        editable = editable,
-        extraActions = {
-            if (editable && settings.currencies.isNotEmpty()) {
-                ZillitButton(
-                    text = "Clear all",
-                    onClick = { onEvent(AccountHubEvent.EditCurrencies(CurrencySettings())) },
-                    variant = ButtonVariant.Tertiary,
-                    size = ButtonSize.Small,
-                )
-            }
-        },
-    ) {
-        if (settings.currencies.isEmpty()) {
-            EmptyLine("No currencies selected yet. Pick them from the catalogue below.")
-        } else {
-            FieldLabel("Default currency")
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-            ) {
-                settings.currencies.forEach { currency ->
-                    val isDefault = currency.code == settings.defaultCode
-                    ZillitButton(
-                        text = currency.code,
-                        onClick = {
-                            if (editable) onEvent(
-                                AccountHubEvent.EditCurrencies(settings.copy(defaultCode = currency.code)),
-                            )
-                        },
-                        variant = if (isDefault) ButtonVariant.Primary else ButtonVariant.Tertiary,
-                        size = ButtonSize.Small,
-                        enabled = editable,
-                    )
-                }
-            }
-            FieldLabel("Selected")
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                settings.currencies.forEach { currency ->
-                    SelectedCurrencyCard(
-                        currency = currency,
-                        isDefault = currency.code == settings.defaultCode,
-                        invalid = currency.code in missing,
-                        editable = editable,
-                        onRate = { text ->
-                            onEvent(
-                                AccountHubEvent.EditCurrencies(
-                                    settings.copy(
-                                        currencies = settings.currencies.map {
-                                            if (it.code == currency.code) it.copy(rate = text.toDoubleOrNull()) else it
-                                        },
-                                    ),
-                                ),
-                            )
-                        },
-                        onRemove = { onEvent(AccountHubEvent.EditCurrencies(settings.without(currency.code))) },
-                    )
-                }
-            }
-            if (missing.isNotEmpty()) {
-                ZillitNotice(
-                    text = "Add an exchange rate for ${missing.joinToString(", ")} before saving.",
-                    tone = StatusTone.Rejected,
-                    icon = ZillitIcons.Warning,
-                )
-            }
-        }
-        if (editable) CurrencyCatalogue(state, settings, onEvent)
-    }
-}
-
-@Composable
-private fun SelectedCurrencyCard(
-    currency: ProjectCurrency,
-    isDefault: Boolean,
-    invalid: Boolean,
-    editable: Boolean,
-    onRate: (String) -> Unit,
-    onRemove: () -> Unit,
-) {
-    val colors = ZillitTheme.colors
-    Row(
-        modifier = Modifier
-            .width(CURRENCY_CARD)
-            .clip(ZillitTheme.shapes.large)
-            .background(colors.surface)
-            .border(
-                if (isDefault) 2.dp else 1.dp,
-                if (isDefault) colors.accent else colors.border,
-                ZillitTheme.shapes.large,
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            ZillitText(
+                text = value.ifBlank { "—" },
+                style = ZillitTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                maxLines = 1,
+                modifier = Modifier.weight(1f, fill = false),
             )
-            .padding(ZillitTheme.spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-            ) {
-                ZillitText(
-                    text = "${currency.symbol} ${currency.code}".trim(),
-                    style = ZillitTheme.typography.titleSmall,
-                )
-                if (isDefault) Pill("Default", tone = StatusTone.Pending)
-            }
-            FieldHint(currency.name)
-        }
-        if (isDefault) {
-            MonoChip("1.00")
-        } else {
-            ZillitTextField(
-                value = currency.rate.asAmountText(),
-                onValueChange = onRate,
-                placeholder = "1.00",
-                enabled = editable,
-                errorText = if (invalid) "Rate" else null,
-                keyboardType = KeyboardType.Decimal,
-                modifier = Modifier.width(RATE_WIDTH),
-            )
-        }
-        if (editable) {
-            ZillitIconButton(
-                icon = ZillitIcons.Close,
-                contentDescription = "Remove ${currency.code}",
-                onClick = onRemove,
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun CurrencyCatalogue(
-    state: AccountHubUiState,
-    settings: CurrencySettings,
-    onEvent: (AccountHubEvent) -> Unit,
-) {
-    val setup = state.setup
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            FieldLabel("Add currencies", modifier = Modifier.weight(1f))
-            CurrencyFilter.entries.forEach { filter ->
-                ZillitButton(
-                    text = filter.label,
-                    onClick = { onEvent(AccountHubEvent.SetCurrencyFilter(filter)) },
-                    variant = if (setup.currencyFilter == filter) ButtonVariant.Secondary else ButtonVariant.Tertiary,
-                    size = ButtonSize.Small,
-                )
-            }
-        }
-        ZillitSearchField(
-            value = setup.currencySearch,
-            onValueChange = { onEvent(AccountHubEvent.SearchCurrencies(it)) },
-            placeholder = "Search currencies… (code or name)",
-            modifier = Modifier.fillMaxWidth(),
-        )
-        val choices = setup.currencyChoices.take(CATALOGUE_LIMIT)
-        if (setup.currencyCatalogue.isEmpty()) {
-            FieldHint("Loading the currency catalogue…")
-        } else if (choices.isEmpty()) {
-            FieldHint("No currencies match.")
-        }
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        ) {
-            choices.forEach { currency ->
-                ZillitButton(
-                    text = "${currency.code} — ${currency.name}",
+            if (copyValue.isNotBlank()) {
+                ZillitIconButton(
+                    icon = if (copied) ZillitIcons.Check else ZillitIcons.Copy,
+                    contentDescription = if (copied) "Copied" else "Copy $label",
                     onClick = {
-                        onEvent(
-                            AccountHubEvent.EditCurrencies(
-                                settings.copy(
-                                    currencies = settings.currencies + currency,
-                                    // The first currency added becomes the
-                                    // default: a production with exactly one
-                                    // currency and no default pre-fills nothing.
-                                    defaultCode = settings.defaultCode ?: currency.code,
-                                ),
-                            ),
-                        )
+                        clipboard.setText(AnnotatedString(copyValue))
+                        copied = true
                     },
-                    variant = ButtonVariant.Tertiary,
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Add,
+                    tint = if (copied) ZillitTheme.colors.success else ZillitTheme.colors.textMuted,
                 )
             }
         }
-        if (setup.currencyChoices.size > CATALOGUE_LIMIT) FieldHint("Showing $CATALOGUE_LIMIT of " +
-            "${setup.currencyChoices.size} — search to narrow.")
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ExtraDetailChips(bank: BankAccount) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        bank.additionalDetails.filter { it.title.isNotBlank() || it.value.isNotBlank() }.forEach {
+            Chip(text = "${it.title.ifBlank { "—" }}: ${it.value}")
+        }
     }
 }
 
@@ -853,35 +860,52 @@ private fun AccountTagsSection(state: AccountHubUiState, onEvent: (AccountHubEve
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.AssetTags)) },
         editable = editable,
     ) {
-        if (tags.isEmpty()) EmptyLine("No tags yet.")
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        FieldLabel("Tags · ${tags.size}")
+        if (tags.isEmpty() && !editable) EmptyLine("No tags yet.")
+        // One control: the chips live inside the same well as the input, so the
+        // whole thing reads as a single field, as the web's combobox does.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(ZillitTheme.shapes.large)
+                .background(ZillitTheme.colors.surfaceSunken)
+                .border(1.dp, ZillitTheme.colors.border, ZillitTheme.shapes.large)
+                .padding(ZillitTheme.spacing.md),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            tags.forEach { tag ->
-                Chip(
-                    text = tag,
-                    onRemove = if (editable) ({ onEvent(AccountHubEvent.EditAssetTags(tags - tag)) }) else null,
+            if (tags.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                ) {
+                    tags.forEach { tag ->
+                        Chip(
+                            text = tag,
+                            onRemove = if (editable) ({ onEvent(AccountHubEvent.EditAssetTags(tags - tag)) }) else null,
+                        )
+                    }
+                }
+            }
+            if (editable) {
+                ZillitTextField(
+                    value = setup.tagDraft,
+                    onValueChange = { text ->
+                        // A comma commits what came before it, as the web's input does.
+                        if (text.endsWith(",")) {
+                            onEvent(AccountHubEvent.EditTagDraft(text))
+                            onEvent(AccountHubEvent.CommitTagDraft)
+                        } else {
+                            onEvent(AccountHubEvent.EditTagDraft(text))
+                        }
+                    },
+                    placeholder = if (tags.isEmpty()) "Type a tag and press Enter (or comma)…" else "Add another…",
+                    imeAction = ImeAction.Done,
+                    onImeAction = { onEvent(AccountHubEvent.CommitTagDraft) },
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
         if (editable) {
-            ZillitTextField(
-                value = setup.tagDraft,
-                onValueChange = { text ->
-                    // A comma commits what came before it, as the web's input does.
-                    if (text.endsWith(",")) {
-                        onEvent(AccountHubEvent.EditTagDraft(text))
-                        onEvent(AccountHubEvent.CommitTagDraft)
-                    } else {
-                        onEvent(AccountHubEvent.EditTagDraft(text))
-                    }
-                },
-                placeholder = "Type a tag and press Enter (or comma)…",
-                imeAction = ImeAction.Done,
-                onImeAction = { onEvent(AccountHubEvent.CommitTagDraft) },
-                modifier = Modifier.fillMaxWidth(),
-            )
             val suggested = SUGGESTED_TAGS.filter { it !in tags }
             if (suggested.isNotEmpty()) {
                 FieldLabel("Suggested")
@@ -904,246 +928,6 @@ private fun AccountTagsSection(state: AccountHubUiState, onEvent: (AccountHubEve
     }
 }
 
-// -- tax types --------------------------------------------------------------
-
-/**
- * Tax rates — the web's `TaxTypesSection`: pick a country, tick its
- * catalogue rates (each with a reclaimable toggle and a nominal), and add
- * custom rates with a 0–100 guard.
- */
-@Composable
-private fun TaxTypesSection(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
-    val setup = state.setup
-    val rows = setup.taxTypes.edited
-    val editable = state.viewer.canEdit
-    val countries = setup.countryTaxes
-    val chosenCountries = rows.mapNotNull { it.countryCode }.distinct()
-    val shownCountry = setup.taxCountry ?: chosenCountries.firstOrNull()
-    val country = countries.firstOrNull { it.countryCode == shownCountry }
-
-    SectionShell(
-        title = "Tax Types",
-        description = "Add the countries and their tax types for the project. Used directly in the line items of " +
-            "purchase orders, invoices, and card and cash expense receipts.",
-        dirty = setup.taxTypes.dirty,
-        saving = setup.taxTypes.saving,
-        onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.TaxTypes)) },
-        onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.TaxTypes)) },
-        editable = editable,
-        leftPanel = { TaxCountrySummary(rows, countries) },
-    ) {
-        HubSelect(
-            value = country,
-            options = countries,
-            label = { "${it.country} (${it.countryCode})" },
-            onSelect = { onEvent(AccountHubEvent.PickTaxCountry(it?.countryCode)) },
-            placeholder = if (countries.isEmpty()) "Loading countries…" else "Choose a country…",
-            fieldLabel = "Country",
-            enabled = editable && countries.isNotEmpty(),
-            secondary = { "${it.taxes.size} rate${if (it.taxes.size == 1) "" else "s"}" },
-        )
-        if (country != null) {
-            CountryRates(country, rows, editable, state, onEvent)
-        }
-        CustomRates(rows, editable, state, onEvent)
-        TaxType.problem(rows)?.let { ZillitNotice(text = it, tone = StatusTone.Rejected, icon = ZillitIcons.Warning) }
-    }
-}
-
-@Composable
-private fun TaxCountrySummary(rows: List<TaxType>, countries: List<CountryTaxes>) {
-    val byCountry = rows.filterNot { it.isCustom }.groupBy { it.countryCode.orEmpty() }
-    val custom = rows.count { it.isCustom }
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-        MonoLabel("Selected")
-        if (byCountry.isEmpty() && custom == 0) FieldHint("Nothing selected yet.")
-        byCountry.forEach { (code, taxes) ->
-            val name = countries.firstOrNull { it.countryCode == code }?.country ?: taxes.firstOrNull()?.country ?: code
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                MonoChip(code)
-                ZillitText(
-                    text = name.ifBlank { code },
-                    style = ZillitTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                )
-                FieldHint("${taxes.size}")
-            }
-        }
-        if (custom > 0) FieldHint("$custom custom rate${if (custom == 1) "" else "s"}")
-    }
-}
-
-@Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
-@Composable
-private fun CountryRates(
-    country: CountryTaxes,
-    rows: List<TaxType>,
-    editable: Boolean,
-    state: AccountHubUiState,
-    onEvent: (AccountHubEvent) -> Unit,
-) {
-    val allChecked = country.taxes.all { tax -> rows.any { it.identifier == tax.identifier } }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        FieldLabel("${country.country} rates", modifier = Modifier.weight(1f))
-        if (editable) {
-            ZillitButton(
-                text = if (allChecked) "Clear all" else "Select all",
-                onClick = {
-                    val next = if (allChecked) {
-                        rows.filterNot { row -> country.taxes.any { it.identifier == row.identifier } }
-                    } else {
-                        rows + country.taxes.filter { tax -> rows.none { it.identifier == tax.identifier } }
-                    }
-                    onEvent(AccountHubEvent.EditTaxTypes(next))
-                },
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-            )
-        }
-    }
-    country.taxes.forEach { tax ->
-        val existing = rows.firstOrNull { it.identifier == tax.identifier }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            ZillitCheckbox(
-                checked = existing != null,
-                onCheckedChange = { on ->
-                    onEvent(
-                        AccountHubEvent.EditTaxTypes(
-                            if (on) rows + tax else rows.filterNot { it.identifier == tax.identifier },
-                        ),
-                    )
-                },
-                label = "${tax.label} · ${tax.value}%",
-                enabled = editable,
-                modifier = Modifier.weight(1f),
-            )
-            if (existing != null) {
-                ZillitCheckbox(
-                    checked = existing.isRecoverable,
-                    onCheckedChange = { on ->
-                        onEvent(
-                            AccountHubEvent.EditTaxTypes(
-                                rows.map {
-                                    if (it.identifier == existing.identifier) it.copy(isRecoverable = on) else it
-                                },
-                            ),
-                        )
-                    },
-                    label = "Reclaimable",
-                    enabled = editable,
-                )
-                CoaCodeField(
-                    value = existing.nominal,
-                    onValueChange = { code ->
-                        onEvent(
-                            AccountHubEvent.EditTaxTypes(
-                                rows.map { if (it.identifier == existing.identifier) it.copy(nominal = code) else it },
-                            ),
-                        )
-                    },
-                    accounts = state.chart.accounts,
-                    placeholder = "Nominal",
-                    enabled = editable,
-                    modifier = Modifier.width(NOMINAL_WIDTH),
-                    onCreate = quickCreateHandler(state, onEvent),
-                )
-            }
-        }
-    }
-}
-
-@Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
-@Composable
-private fun CustomRates(
-    rows: List<TaxType>,
-    editable: Boolean,
-    state: AccountHubUiState,
-    onEvent: (AccountHubEvent) -> Unit,
-) {
-    val custom = rows.filter { it.isCustom }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        FieldLabel("Custom rates", modifier = Modifier.weight(1f))
-        if (editable) {
-            GhostAddButton(
-                text = "Add custom rate",
-                onClick = {
-                    onEvent(
-                        AccountHubEvent.EditTaxTypes(
-                            // Minted from what is already there rather than from
-                            // a counter, so two sessions cannot both mint custom_3.
-                            rows + TaxType(identifier = TaxType.nextCustomIdentifier(rows), type = "custom"),
-                        ),
-                    )
-                },
-            )
-        }
-    }
-    if (custom.isEmpty()) FieldHint("No custom rates.")
-    custom.forEach { tax ->
-        fun update(next: TaxType) =
-            onEvent(AccountHubEvent.EditTaxTypes(rows.map { if (it.identifier == tax.identifier) next else it }))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            ZillitTextField(
-                value = tax.type,
-                onValueChange = { update(tax.copy(type = it)) },
-                placeholder = "Type (e.g. VAT)",
-                enabled = editable,
-                modifier = Modifier.width(TYPE_WIDTH),
-            )
-            ZillitTextField(
-                value = tax.label,
-                onValueChange = { update(tax.copy(label = it)) },
-                placeholder = "Label",
-                enabled = editable,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitTextField(
-                value = tax.value,
-                onValueChange = { update(tax.copy(value = it)) },
-                placeholder = "Rate %",
-                enabled = editable,
-                keyboardType = KeyboardType.Decimal,
-                errorText = if (TaxType.isRateOutOfRange(tax.value)) "0–100" else null,
-                modifier = Modifier.width(RATE_WIDTH),
-            )
-            ZillitCheckbox(
-                checked = tax.isRecoverable,
-                onCheckedChange = { update(tax.copy(isRecoverable = it)) },
-                label = "Reclaimable",
-                enabled = editable,
-            )
-            CoaCodeField(
-                value = tax.nominal,
-                onValueChange = { update(tax.copy(nominal = it)) },
-                accounts = state.chart.accounts,
-                placeholder = "Nominal",
-                enabled = editable,
-                modifier = Modifier.width(NOMINAL_WIDTH),
-                onCreate = quickCreateHandler(state, onEvent),
-            )
-            if (editable) {
-                ZillitIconButton(
-                    icon = ZillitIcons.Trash,
-                    contentDescription = "Remove ${tax.label}",
-                    onClick = { onEvent(AccountHubEvent.EditTaxTypes(rows - tax)) },
-                )
-            }
-        }
-    }
-}
-
 @Composable
 internal fun EmptyLine(text: String) {
     ZillitText(
@@ -1158,13 +942,15 @@ private val SUGGESTED_TAGS = listOf("COSTUME", "VFX", "CATERING", "TRANSPORT", "
 
 private const val SKELETON_CARDS = 3
 private const val SKELETON_FILL = 0.6f
-private const val CATALOGUE_LIMIT = 24
-private const val MAX_EXTRA_COLUMNS = 3
+private const val COPIED_MS = 1_400L
+private const val LIGHT_WASH = 0.7f
+private const val DARK_WASH = 0.22f
 private val SKELETON_TITLE = 180.dp
-private val MONOGRAM_PANE = 160.dp
+private val CARD_INSET = 4.dp
+private val MONOGRAM_PANE = 168.dp
 private val MONOGRAM = 44.dp
-private val BANK_LEFT = 260.dp
-private val CURRENCY_CARD = 300.dp
-private val RATE_WIDTH = 96.dp
-private val NOMINAL_WIDTH = 150.dp
-private val TYPE_WIDTH = 120.dp
+private val MINI_MONOGRAM = 20.dp
+private val LINKED_MAX = 280.dp
+private val CHEVRON_PILL = 36.dp
+private val CHEVRON_GLYPH = 12.dp
+private val BANK_LEFT = 280.dp

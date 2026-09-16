@@ -8,7 +8,9 @@ package com.zillit.desktop.core.badges
  *   calendar row counts only when its event has an end time (pending or
  *   expired both count — 182-186, 215-225, `BottomNavigationActivity:401-405`).
  * - **Tools**: one per row, keyed by tool identifier; `ad_dashboard_label`
- *   never counts (187-199).
+ *   never counts (187-199). Also keyed by unit — a board tool's tab strip
+ *   (Accounts, Catering, Info, Location…) badges each unit the way the web's
+ *   `getMultipleUnitChatBadgesFromDB` groups a tool's rows by `unit`.
  * - **C&C**: missed calls plus every chat row that can be placed in a
  *   conversation (a room id or a sender); the rest are dropped (10133-10137,
  *   8126-8130).
@@ -48,6 +50,7 @@ private class Tally {
         if (row.tool == NotificationRecord.AD_DASHBOARD_TOOL) return
         count(row)
         if (row.tool.isNotBlank()) tools.add(wireToolToIdentifier(row.tool))
+        if (row.unit.isNotBlank()) units.add(row.unit)
     }
 
     private fun count(row: NotificationRecord) = sections.add(row.section)

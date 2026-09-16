@@ -10,10 +10,12 @@ import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.castboard.data.castingDiscussionEvents
 import com.zillit.desktop.feature.castboard.data.castingSyncEvents
 import com.zillit.desktop.feature.castboard.domain.BoardTool
+import com.zillit.desktop.feature.castboard.domain.CastingBadges
 import com.zillit.desktop.feature.castboard.domain.CastingEntry
 import com.zillit.desktop.feature.castboard.domain.CastingRepository
 import com.zillit.desktop.feature.castboard.domain.CastingStatus
 import com.zillit.desktop.feature.castboard.domain.CastingUnit
+import com.zillit.desktop.feature.castboard.domain.CastingUnread
 import com.zillit.desktop.feature.castboard.domain.CastingViewer
 
 /**
@@ -37,9 +39,19 @@ class CastingViewModel(
      * reopen. Null in tests and on a build with no socket.
      */
     private val events: SocketEventBus? = null,
+    /** The ledger's rows for this board, and its reads. */
+    private val badges: CastingBadges = CastingBadges.None,
 ) : ZillitViewModel<CastingUiState, CastingEvent, Nothing>(CastingUiState()) {
 
     init {
+        launch {
+            badges.leaves.collect { leaves ->
+                setState { copy(unread = CastingUnread(leaves)) }
+                // A comment landing on the open entry is read as it lands.
+                val open = currentState.openEntry ?: return@collect
+                readIfUnread(open)
+            }
+        }
         val bus = events
         if (bus != null) {
             launch {
@@ -149,6 +161,7 @@ class CastingViewModel(
         setState {
             copy(openEntry = entry, discussion = emptyList(), discussionDraft = "", discussionLoading = true)
         }
+        readIfUnread(entry)
         launch {
             val rows = repository.messages(entry.id, nowMillis())
             if (currentState.openEntry?.id != entry.id) return@launch
@@ -159,6 +172,14 @@ class CastingViewModel(
                 )
             }
         }
+    }
+
+    /** The entry on screen is the read — its folder rows and its own thread. */
+    private fun readIfUnread(entry: CastingEntry) {
+        val s = currentState
+        val unit = s.unit ?: return
+        val tool = CastingBadges.toolOf(unit.kind)
+        if (s.unread.entry(tool, s.status, entry) > 0) badges.readEntry(tool, s.status, entry)
     }
 
     /**
@@ -203,13 +224,22 @@ class CastingViewModel(
         setState { copy(loading = true, error = null) }
         launch {
             when (val answer = repository.entries(unit.unitId, currentState.status)) {
-                is ZillitResult.Success ->
+                is ZillitResult.Success -> {
                     setState { copy(loading = false, entries = answer.data) }
+                    sweepOrphans(unit, answer.data)
+                }
 
                 is ZillitResult.Failure ->
                     setState { copy(loading = false, error = answer.error.localised()) }
             }
         }
+    }
+
+    /** Rows of the loaded stage that no listed entry answers for are read — nothing else ever could. */
+    private fun sweepOrphans(unit: CastingUnit, entries: List<CastingEntry>) {
+        val s = currentState
+        if (s.unit?.unitId != unit.unitId) return
+        s.unread.orphans(CastingBadges.toolOf(unit.kind), s.status, entries).forEach(badges::readOrphan)
     }
 
     companion object {

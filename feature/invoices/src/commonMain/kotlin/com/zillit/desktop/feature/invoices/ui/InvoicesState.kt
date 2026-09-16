@@ -49,6 +49,15 @@ enum class DepartmentTab(val id: String, val label: String, val emptyText: Strin
     ApprovalQueue("all", "Approval Queue", "No invoices awaiting your approval"),
     MyDepartment("dept", "My Department", "No invoices found in your department"),
     MyInvoices("my", "My Invoices", "You haven't uploaded any invoices yet"),
+    ;
+
+    /** The `level_1` the service files this tab's rows under (`constants.js:176-186`); null for none. */
+    val badgeKey: String?
+        get() = when (this) {
+            ApprovalQueue -> "invoice_approval_queue"
+            MyInvoices -> "my_invoices"
+            MyDepartment -> null
+        }
 }
 
 /** Client-side filter on `approval_status`. */
@@ -115,6 +124,20 @@ enum class AccountantPage(
      * It names the stage rather than the screen ("Enter", "Pay", "Match"), so
      * the header reads as a place in the lifecycle.
      */
+    /** The `level_1` the service files this page's rows under (`constants.js:176-186`); null for none. */
+    val badgeKey: String?
+        get() = when (this) {
+            Inbox -> "invoice_inbox"
+            Register -> "invoice_register"
+            Matching -> "invoice_matching"
+            ApprovalQueue -> "invoice_approval_queue"
+            Entry -> "invoice_entry"
+            Payments -> "payment_runs"
+            Credits -> "credit_notes"
+            Sales -> "sales_invoices"
+            else -> null
+        }
+
     val eyebrow: String
         get() = when (this) {
             Overview -> "Invoices / AP"
@@ -398,6 +421,8 @@ data class EnterInvoiceForm(
 
 data class InvoicesUiState(
     val viewer: InvoiceViewer = InvoiceViewer(),
+    /** Unread notifications per `level_1` key — the sidebar's and tabs' red chips. */
+    val unread: Map<String, Int> = emptyMap(),
     val loading: Boolean = false,
     val busy: Boolean = false,
     val error: String? = null,
@@ -539,6 +564,9 @@ data class InvoicesUiState(
      * Only what is on screen can be counted: the lists are fetched per page,
      * so a row that is not open has nothing to say and shows nothing.
      */
+    /** The key the page on screen is filed under: the accountant's page, or the department tab. */
+    val openBadgeKey: String? get() = if (viewer.isAccountant) page.badgeKey else departmentTab.badgeKey
+
     fun sidebarBadge(page: AccountantPage): Int? = when {
         page != this.page -> null
         page == AccountantPage.Credits -> creditNotes.size.takeIf { it > 0 }

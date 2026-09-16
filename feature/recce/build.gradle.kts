@@ -13,6 +13,8 @@ kotlin {
             implementation(project(":core:socket"))
             // The rendezvous and every stop pick their address on a map.
             implementation(project(":core:locationpicker"))
+            // Decodes the map stills and the report pages the host hands over as bytes.
+            implementation(project(":core:media"))
             implementation(project(":core:mvvm"))
             implementation(project(":core:config"))
             implementation(project(":core:network"))

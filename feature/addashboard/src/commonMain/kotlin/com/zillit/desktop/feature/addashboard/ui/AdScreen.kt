@@ -76,7 +76,9 @@ fun AdScreen(state: AdUiState, onEvent: (AdEvent) -> Unit) {
 @Composable
 private fun ColumnScope.AdBody(state: AdUiState, onEvent: (AdEvent) -> Unit) {
     ZillitTabStrip(
-        tabs = AdDestination.entries.map { ZillitTab(it.slug, it.label) },
+        tabs = AdDestination.entries.map { tab ->
+            ZillitTab(tab.slug, tab.label, count = tab.badgeKeys.sumOf { state.unread[it] ?: 0 })
+        },
         activeId = state.destination.slug,
         onSelect = { slug ->
             AdDestination.entries.firstOrNull { it.slug == slug }

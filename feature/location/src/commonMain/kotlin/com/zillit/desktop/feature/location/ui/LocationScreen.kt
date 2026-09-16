@@ -37,6 +37,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitSectionLabel
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
@@ -58,6 +59,7 @@ import com.zillit.desktop.feature.location.domain.GroupBy
 import com.zillit.desktop.feature.location.domain.LocationFolder
 import com.zillit.desktop.feature.location.domain.LocationMedia
 import com.zillit.desktop.feature.location.domain.LocationStatus
+import com.zillit.desktop.feature.location.domain.LocationUnread
 import com.zillit.desktop.feature.location.domain.MediaAttachment
 
 /** The location library: shortlist tabs, grouping, the folder grid, and the dialogs. */
@@ -101,7 +103,7 @@ fun LocationScreen(
                 )
             }
             ZillitTabStrip(
-                tabs = LocationStatus.entries.map { ZillitTab(it.wire, it.label) },
+                tabs = LocationStatus.entries.map { ZillitTab(it.wire, it.label, count = state.unread.status(it)) },
                 activeId = state.status.wire,
                 onSelect = { id -> onEvent(LocationEvent.SelectStatus(LocationStatus.fromWire(id))) },
             )
@@ -134,7 +136,7 @@ fun LocationScreen(
         }
         when {
             state.gallery != null -> GalleryDialog(state, onEvent, loadImage, resolveUser)
-            state.browsing != null -> PicksDialog(state.browsing, onEvent)
+            state.browsing != null -> PicksDialog(state.browsing, state.unread, state.status, onEvent)
         }
         state.editor?.let { EditorDialog(state, onEvent) }
         state.viewing?.let { ViewDialog(state, it, onEvent, loadImage, resolveUser) }
@@ -165,8 +167,11 @@ private fun FolderGrid(state: LocationUiState, onEvent: (LocationEvent) -> Unit)
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        items(state.folders, key = { it.key }) { folder -> FolderTile(state.groupBy, folder,
-            colors) { onEvent(LocationEvent.OpenFolder(folder)) } }
+        items(state.folders, key = { it.key }) { folder ->
+            FolderTile(state.groupBy, folder, state.unread.folder(state.status, state.groupBy, folder), colors) {
+                onEvent(LocationEvent.OpenFolder(folder))
+            }
+        }
     }
 }
 
@@ -174,6 +179,7 @@ private fun FolderGrid(state: LocationUiState, onEvent: (LocationEvent) -> Unit)
 private fun FolderTile(
     by: GroupBy,
     folder: LocationFolder,
+    unread: Int,
     colors: com.zillit.desktop.core.designsystem.ZillitColors,
     onOpen: () -> Unit,
 ) {
@@ -185,15 +191,21 @@ private fun FolderTile(
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        ZillitText(
-            text = when (by) {
-                GroupBy.LocationName -> folder.title
-                GroupBy.SceneNo -> "Scene ${folder.title}"
-                GroupBy.EpisodeNo -> "Episode ${folder.title}"
-            },
-            style = ZillitTheme.typography.titleMedium,
-            color = colors.textPrimary,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+            ZillitText(
+                text = when (by) {
+                    GroupBy.LocationName -> folder.title
+                    GroupBy.SceneNo -> "Scene ${folder.title}"
+                    GroupBy.EpisodeNo -> "Episode ${folder.title}"
+                },
+                style = ZillitTheme.typography.titleMedium,
+                color = colors.textPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            // The folder's unread, as the web's folder cards carry it.
+            ZillitBadge(count = unread)
+        }
         val facts = buildList {
             if (by != GroupBy.LocationName && folder.locations.isNotEmpty()) add(folder.locations.joinToString())
             if (by != GroupBy.SceneNo && folder.sceneNumbers.any { it.isNotBlank() }) add("Scenes " + folder
@@ -271,7 +283,8 @@ private fun GalleryDialog(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
             items(open.records, key = { it.id }) { record ->
-                MediaTile(record, open.selecting, record.id in open.selected, loadImage, resolveUser, onEvent)
+                MediaTile(record, open.selecting, record.id in open.selected, state.unread.record(record.id),
+                    loadImage, resolveUser, onEvent)
             }
             if (!open.exhausted) {
                 item {
@@ -290,7 +303,8 @@ private fun GalleryDialog(
  * list modal — shown only when the folder holds more than one gallery.
  */
 @Composable
-private fun PicksDialog(open: OpenFolder, onEvent: (LocationEvent) -> Unit) {
+private fun PicksDialog(open: OpenFolder, unread: LocationUnread, status: LocationStatus,
+    onEvent: (LocationEvent) -> Unit) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
         title = open.title,
@@ -330,7 +344,9 @@ private fun PicksDialog(open: OpenFolder, onEvent: (LocationEvent) -> Unit) {
                         },
                         style = ZillitTheme.typography.bodyMedium,
                         color = colors.textPrimary,
+                        modifier = Modifier.weight(1f),
                     )
+                    ZillitBadge(count = unread.pick(status, pick))
                 }
             }
         }
@@ -342,6 +358,7 @@ private fun MediaTile(
     record: LocationMedia,
     selecting: Boolean,
     selected: Boolean,
+    unread: Int,
     loadImage: suspend (MediaAttachment, Boolean) -> ImageBitmap?,
     resolveUser: (String) -> String?,
     onEvent: (LocationEvent) -> Unit,
@@ -370,6 +387,8 @@ private fun MediaTile(
                 )
                 if (record.isLink) ZillitStatusPill(label = "Link", tone = StatusTone.Neutral)
                 if (record.attachment?.isVideo == true) ZillitStatusPill(label = "Video", tone = StatusTone.Neutral)
+                // Unread comments on this record — the web's image-list badge.
+                ZillitBadge(count = unread)
             }
             ZillitText(
                 text = listOf(

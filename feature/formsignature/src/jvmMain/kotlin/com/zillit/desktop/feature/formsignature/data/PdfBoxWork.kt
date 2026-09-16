@@ -69,6 +69,52 @@ class PdfBoxWork : PdfWork {
         },
     )
 
+    override fun renderPage(
+        pdf: ByteArray,
+        page: Int,
+        targetWidthPx: Int,
+    ): ZillitResult<PdfPageImage> = runCatching {
+        Loader.loadPDF(pdf).use { document ->
+            require(page in 1..document.numberOfPages) {
+                "page $page is not in this ${document.numberOfPages}-page document"
+            }
+            val box = document.getPage(page - 1).mediaBox
+            val image = PDFRenderer(document).renderImage(page - 1, targetWidthPx / box.width)
+            PdfPageImage(
+                page = page,
+                imageBytes = image.toPng(),
+                widthPx = image.width,
+                heightPx = image.height,
+                widthPt = box.width.toDouble(),
+                heightPt = box.height.toDouble(),
+            )
+        }
+    }.fold(
+        onSuccess = { ZillitResult.Success(it) },
+        onFailure = { thrown ->
+            ZillitResult.Failure(
+                ZillitError.Validation(
+                    thrown.message ?: "This page could not be rendered (${thrown::class.simpleName}).",
+                ),
+            )
+        },
+    )
+
+    override fun pageCount(pdf: ByteArray): ZillitResult<Int> = runCatching {
+        Loader.loadPDF(pdf).use { it.numberOfPages }
+    }.fold(
+        onSuccess = { ZillitResult.Success(it) },
+        onFailure = { ZillitResult.Failure(ZillitError.Validation("This document could not be opened as a PDF.")) },
+    )
+
+    override fun imageSize(png: ByteArray): ZillitResult<Pair<Int, Int>> = runCatching {
+        val image = ImageIO.read(png.inputStream()) ?: error("not an image")
+        image.width to image.height
+    }.fold(
+        onSuccess = { ZillitResult.Success(it) },
+        onFailure = { ZillitResult.Failure(ZillitError.Validation("The signature image could not be read.")) },
+    )
+
     override fun stamp(
         pdf: ByteArray,
         stamps: List<PlacedStamp>,

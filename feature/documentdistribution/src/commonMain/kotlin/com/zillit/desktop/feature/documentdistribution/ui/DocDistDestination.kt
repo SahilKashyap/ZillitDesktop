@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistBadges
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistViewer
 
 /**
@@ -32,6 +33,15 @@ enum class DocDistDestination(val slug: String, val label: String) {
     /** Reusable subject + body pairs for the composer. */
     Templates("templates", "Templates"),
     ;
+
+    /** The units whose rows a section shows and reads on entry (`Library.jsx:150-153`); empty for the library itself. */
+    val badgeUnits: List<String>
+        get() = when (this) {
+            History -> listOf(DocDistBadges.UNIT_PUBLICATION)
+            Lists -> listOf(DocDistBadges.UNIT_DISTRIBUTION, DocDistBadges.UNIT_PRESET)
+            Templates -> listOf(DocDistBadges.UNIT_TEMPLATE)
+            Library, AddressBook -> emptyList()
+        }
 
     /**
      * Whether [viewer] may open this page.

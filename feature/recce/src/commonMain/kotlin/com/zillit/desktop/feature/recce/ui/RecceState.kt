@@ -1,19 +1,27 @@
 package com.zillit.desktop.feature.recce.ui
 
 import com.zillit.desktop.core.units.ProductionUnit
+import com.zillit.desktop.feature.recce.domain.LatLng
 import com.zillit.desktop.feature.recce.domain.Recce
 import com.zillit.desktop.feature.recce.domain.RecceClock
 import com.zillit.desktop.feature.recce.domain.RecceCrewMember
 import com.zillit.desktop.feature.recce.domain.RecceDraft
+import com.zillit.desktop.feature.recce.domain.RecceQuery
 import com.zillit.desktop.feature.recce.domain.RecceStatus
 import com.zillit.desktop.feature.recce.domain.RecceStop
 import com.zillit.desktop.feature.recce.domain.ReccePerson
+import com.zillit.desktop.feature.recce.domain.ReccePdfPage
 import com.zillit.desktop.feature.recce.domain.RecceViewer
 import com.zillit.desktop.feature.recce.domain.StopKind
 import com.zillit.desktop.feature.recce.domain.Weather
+import com.zillit.desktop.feature.recce.domain.mapsLink
 
 /** The list's status filter — the web's segmented All / Published / Drafts. */
-enum class RecceFilter(val label: String) { All("All"), Published("Published"), Drafts("Drafts") }
+enum class RecceFilter(val label: String, val status: RecceStatus?) {
+    All("All", null),
+    Published("Published", RecceStatus.Published),
+    Drafts("Drafts", RecceStatus.Draft),
+}
 
 /** Which page the window shows; the web derives this from the URL. */
 sealed interface ReccePage {
@@ -23,6 +31,27 @@ sealed interface ReccePage {
     data class Form(val id: String?) : ReccePage
 }
 
+/**
+ * The tab badges — project-wide counts, not the loaded page. The web keeps
+ * drafts as `all − published` because a recce's status is binary.
+ */
+data class RecceCounts(val all: Int = 0, val published: Int = 0, val draft: Int = 0) {
+    fun of(filter: RecceFilter): Int = when (filter) {
+        RecceFilter.All -> all
+        RecceFilter.Published -> published
+        RecceFilter.Drafts -> draft
+    }
+
+    fun with(filter: RecceFilter, count: Int): RecceCounts = when (filter) {
+        RecceFilter.All -> copy(all = count, draft = (count - published).coerceAtLeast(0))
+        RecceFilter.Published -> copy(published = count, draft = (all - count).coerceAtLeast(0))
+        RecceFilter.Drafts -> copy(draft = count)
+    }
+}
+
+/** The fields the web validates before a publish. */
+enum class RecceField { Title, Date, RdvTime, RdvPlace }
+
 /** One stop under edit — text fields, parsed on save. */
 data class StopEditor(
     val time: String = "",
@@ -31,12 +60,17 @@ data class StopEditor(
     val place: String = "",
     val address: String = "",
     val w3w: String = "",
-    val latText: String = "",
-    val lngText: String = "",
+    val lat: Double? = null,
+    val long: Double? = null,
     val contact: String = "",
     val description: String = "",
     val travel: String = "",
 ) {
+    val pin: LatLng? get() = if (lat != null && long != null) LatLng(lat, long) else null
+
+    /** The link the form shows and copies — always derived from the pin, never stored. */
+    val mapsUrl: String get() = pin?.let { mapsLink(it) }.orEmpty()
+
     companion object {
         fun from(stop: RecceStop) = StopEditor(
             time = RecceClock.hm(stop.timeMs),
@@ -45,8 +79,8 @@ data class StopEditor(
             place = stop.place,
             address = stop.address,
             w3w = stop.w3w,
-            latText = stop.lat?.toString().orEmpty(),
-            lngText = stop.long?.toString().orEmpty(),
+            lat = stop.lat,
+            long = stop.long,
             contact = stop.contact,
             description = stop.description,
             travel = stop.travel,
@@ -60,8 +94,8 @@ data class StopEditor(
         place = place,
         address = address,
         w3w = w3w.removePrefix("///"),
-        lat = latText.trim().toDoubleOrNull(),
-        long = lngText.trim().toDoubleOrNull(),
+        lat = lat,
+        long = long,
         description = description,
         contact = contact,
         travel = travel,
@@ -76,6 +110,9 @@ data class PersonEditor(
     val contact: String = "",
     val note: String = "",
 ) {
+    /** A seed row nobody touched — it gives way to the first crew pick. */
+    val isBlankSeed: Boolean get() = userId == null && name.isBlank() && role.isBlank() && contact.isBlank()
+
     companion object {
         fun from(person: ReccePerson) = PersonEditor(
             userId = person.userId,
@@ -115,15 +152,20 @@ data class RecceEditor(
     val personnel: List<PersonEditor> = listOf(PersonEditor()),
     val dirty: Boolean = false,
     val saving: RecceStatus? = null,
+    /** Set by a refused publish; cleared as each field is edited. */
+    val errors: Map<RecceField, String> = emptyMap(),
 ) {
     val isEditing: Boolean get() = id != null
 
+    /** The web's footer counter leaves lunch out, as the list does. */
+    val stopCount: Int get() = stops.count { it.kind != StopKind.Lunch }
+
     /** The web's publish validation: title, date, RDV time, RDV place. */
-    fun publishProblems(): List<String> = buildList {
-        if (title.isBlank()) add("Give the recce a title")
-        if (RecceClock.dayMillis(dateYmd) == 0L) add("Pick the recce date")
-        if (RecceClock.clockMillis(dateYmd, rdv.time) == 0L) add("Set the RDV time")
-        if (rdv.place.isBlank()) add("Set the rendezvous point")
+    fun publishProblems(): Map<RecceField, String> = buildMap {
+        if (title.isBlank()) put(RecceField.Title, "Give the recce a title")
+        if (RecceClock.dayMillis(dateYmd) == 0L) put(RecceField.Date, "Pick the recce date")
+        if (RecceClock.clockMillis(dateYmd, rdv.time) == 0L) put(RecceField.RdvTime, "Set the RDV time")
+        if (rdv.place.isBlank()) put(RecceField.RdvPlace, "Set the rendezvous point")
     }
 
     fun toDraft(status: RecceStatus, timezone: String) = RecceDraft(
@@ -160,45 +202,83 @@ data class RecceEditor(
     }
 }
 
+/** The pending delete — the web's `{ ids, label }` confirm. */
+data class DeleteTarget(val id: String, val label: String)
+
+/** The generated report in the in-app viewer — the web's `DocumentViewer` over the new tab. */
+data class ReccePdfViewer(
+    val name: String,
+    val bytes: ByteArray? = null,
+    val pages: List<ReccePdfPage> = emptyList(),
+    val loading: Boolean = true,
+    val failed: String? = null,
+    val printing: Boolean = false,
+    val downloading: Boolean = false,
+)
+
+/** The route picture for the open recce, keyed by the itinerary it was drawn from. */
+data class RouteMapState(
+    val signature: String,
+    val image: ByteArray? = null,
+    val loading: Boolean = true,
+    /** How many stops made it onto the picture; zero shows the web's prompt. */
+    val plotted: Int = 0,
+)
+
 data class RecceUiState(
     val viewer: RecceViewer = RecceViewer(),
     val loading: Boolean = false,
+    val detailLoading: Boolean = false,
     val busy: Boolean = false,
     val error: String? = null,
+    // -- list, one server page --
     val recces: List<Recce> = emptyList(),
-    val units: List<ProductionUnit> = emptyList(),
-    val crew: List<RecceCrewMember> = emptyList(),
+    val total: Int = 0,
+    val page: Int = 1,
+    val pageSize: Int = RecceQuery.DEFAULT_PAGE_SIZE,
+    val counts: RecceCounts = RecceCounts(),
     val filter: RecceFilter = RecceFilter.All,
+    /** What the search box shows; the committed search is debounced behind it. */
     val query: String = "",
     val unitFilter: String? = null,
-    val page: ReccePage = ReccePage.Index,
+    val units: List<ProductionUnit> = emptyList(),
+    val crew: List<RecceCrewMember> = emptyList(),
+    // -- pages --
+    val route: ReccePage = ReccePage.Index,
     val selected: Recce? = null,
     val editor: RecceEditor? = null,
-    /** The id awaiting a delete confirmation. */
-    val confirmDelete: String? = null,
+    val leavePrompt: Boolean = false,
+    val deleteTarget: DeleteTarget? = null,
+    val deleting: Boolean = false,
+    val pdf: ReccePdfViewer? = null,
+    val routeMap: RouteMapState? = null,
+    /** Form previews, one picture per placed pin; null marks a fetch that found nothing. */
+    val previews: Map<LatLng, ByteArray?> = emptyMap(),
 ) {
+    /**
+     * Tab and search are applied server-side; the unit filter is the one
+     * left on the client — the list endpoint has no unit param (the web
+     * verified a nonsense `unit_id` still answers every row), so it can only
+     * narrow the page in hand.
+     */
     val visible: List<Recce>
-        get() {
-            val needle = query.trim().lowercase()
-            return recces
-                .filter {
-                    when (filter) {
-                        RecceFilter.All -> true
-                        RecceFilter.Published -> it.status == RecceStatus.Published
-                        RecceFilter.Drafts -> it.status == RecceStatus.Draft
-                    }
-                }
-                .filter { unitFilter == null || it.unit == unitFilter }
-                .filter { needle.isEmpty() || it.title.contains(needle, true) || it.rdv.place.contains(needle, true) }
-        }
+        get() = if (unitFilter == null) recces else recces.filter { it.unit == unitFilter }
 
-    val publishedCount: Int get() = recces.count { it.status == RecceStatus.Published }
-    val draftCount: Int get() = recces.count { it.status == RecceStatus.Draft }
-
-    /** The units seen in the list, for the filter — the web builds it from the rows. */
+    /** The units seen on this page, for the filter — the web builds it from the rows. */
     val unitsInList: List<ProductionUnit>
         get() = recces.map { it.unit }.filter { it.isNotBlank() }.distinct().map { id ->
             units.firstOrNull { it.id == id } ?: ProductionUnit(id, id)
+        }
+
+    val pageCount: Int get() = if (total <= 0) 1 else (total + pageSize - 1) / pageSize
+
+    /** "1–50 of 120" — the web's `showTotal`. */
+    val rangeLabel: String
+        get() {
+            if (total == 0) return "0 of 0"
+            val from = (page - 1) * pageSize + 1
+            val to = minOf(page * pageSize, total)
+            return "$from–$to of $total"
         }
 
     /** A unit id (or a legacy unit name) shown as its name. */
@@ -211,6 +291,8 @@ sealed interface RecceEvent {
     data class Filter(val filter: RecceFilter) : RecceEvent
     data class Search(val query: String) : RecceEvent
     data class FilterUnit(val unit: String?) : RecceEvent
+    data class GoToPage(val page: Int) : RecceEvent
+    data class PageSize(val size: Int) : RecceEvent
     data class Open(val id: String) : RecceEvent
     data object Back : RecceEvent
     data object New : RecceEvent
@@ -219,7 +301,13 @@ sealed interface RecceEvent {
     data object ConfirmDelete : RecceEvent
     data object CancelDelete : RecceEvent
     data object GeneratePdf : RecceEvent
+    data object PrintPdf : RecceEvent
+    data object DownloadPdf : RecceEvent
+    data object ClosePdf : RecceEvent
     data class OpenUrl(val url: String) : RecceEvent
+    data class NeedPreview(val pin: LatLng) : RecceEvent
+    /** The window's theme, so the map pictures are drawn to match. */
+    data class Theme(val dark: Boolean) : RecceEvent
 
     data class EditorChanged(
         val title: String? = null,
@@ -241,11 +329,16 @@ sealed interface RecceEvent {
     data class RemovePerson(val index: Int) : RecceEvent
     data object SaveDraft : RecceEvent
     data object Publish : RecceEvent
-    data object CancelEdit : RecceEvent
+    /** Back or Cancel on the form — asks first when there are unsaved edits. */
+    data object RequestCancel : RecceEvent
+    data object KeepEditing : RecceEvent
+    data object DiscardChanges : RecceEvent
     data object DismissError : RecceEvent
 }
 
 sealed interface RecceEffect {
-    data class Notice(val text: String) : RecceEffect
+    data class Notice(val text: String, val success: Boolean = true) : RecceEffect
     data class OpenUrl(val url: String) : RecceEffect
+    /** A refused publish — the web scrolls to the first failing field. */
+    data object ScrollToTop : RecceEffect
 }

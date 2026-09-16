@@ -16,6 +16,7 @@ import com.zillit.desktop.feature.email.domain.OutgoingAttachment
 import com.zillit.desktop.feature.email.domain.OutgoingEmail
 import com.zillit.desktop.feature.email.domain.PickedFile
 import com.zillit.desktop.feature.email.domain.RichText
+import com.zillit.desktop.feature.email.domain.StoredFile
 import com.zillit.desktop.feature.email.domain.UploadState
 import com.zillit.desktop.feature.email.domain.areSettled
 import com.zillit.desktop.feature.email.domain.composedBody
@@ -282,8 +283,16 @@ class ComposeViewModel(
      */
     addressedTo: String = "",
     about: String = "",
+    /**
+     * Words and files handed over by another tool — chat's Share. The files
+     * are already in storage, so they open as uploaded attachments; the
+     * words open in the editor. Ignored, like the two above, for a reply or
+     * a reopened draft.
+     */
+    bodyHtml: String = "",
+    attachments: List<StoredFile> = emptyList(),
 ) : ZillitViewModel<ComposeUiState, ComposeEvent, ComposeEffect>(
-    initial(mode, replyTo, deps, editing, addressedTo, about),
+    initial(mode, replyTo, deps, editing, addressedTo, about, bodyHtml, attachments),
 ) {
 
     /** Null until the first autosave, then the draft this composer owns. */
@@ -688,6 +697,8 @@ class ComposeViewModel(
             editing: EmailDraft?,
             addressedTo: String = "",
             about: String = "",
+            bodyHtml: String = "",
+            attachments: List<StoredFile> = emptyList(),
         ): ComposeUiState {
             val mailbox = deps.mailbox()
             val self = mailbox?.address?.takeIf { it.isNotBlank() } ?: deps.selfAddress()
@@ -699,7 +710,23 @@ class ComposeViewModel(
                 ?: OutgoingEmail(
                     to = listOfNotNull(addressedTo.takeIf(String::isNotBlank)),
                     subject = about,
+                    body = bodyHtml,
                 )
+            // A handed-over file is already stored: it opens as attached, not
+            // as a pending upload, and rides the send like one picked here.
+            val seeded = if (editing == null && replyTo == null) {
+                attachments.map { stored ->
+                    OutgoingAttachment(
+                        id = deps.newAttachmentId(),
+                        fileName = stored.fileName,
+                        sizeBytes = stored.sizeBytes,
+                        contentType = stored.contentType,
+                        state = UploadState.Uploaded(stored),
+                    )
+                }
+            } else {
+                emptyList()
+            }
 
             // Every new message starts with the mailbox's BCC presets, as on
             // both other clients; a reopened draft keeps what it was saved with.
@@ -708,9 +735,14 @@ class ComposeViewModel(
 
             return ComposeUiState(
                 draft = draft,
-                // A reopened draft holds HTML; everything else opens empty
-                // with the original quoted below the editor.
-                body = if (editing != null) htmlToRichText(draft.body) else RichText(),
+                // A reopened draft holds HTML, as does a handed-over body;
+                // a reply opens empty with the original quoted below.
+                body = if (editing != null || (replyTo == null && bodyHtml.isNotBlank())) {
+                    htmlToRichText(draft.body)
+                } else {
+                    RichText()
+                },
+                attachments = seeded,
                 mode = mode,
                 to = draft.to,
                 cc = draft.cc,

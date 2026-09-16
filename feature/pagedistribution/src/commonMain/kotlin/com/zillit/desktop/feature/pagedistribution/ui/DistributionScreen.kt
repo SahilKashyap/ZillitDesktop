@@ -52,11 +52,18 @@ import com.zillit.desktop.feature.pagedistribution.domain.DistributionTab
 import com.zillit.desktop.feature.pagedistribution.domain.ListMode
 import com.zillit.desktop.feature.pagedistribution.domain.PageColour
 import com.zillit.desktop.feature.pagedistribution.domain.TabKind
+import com.zillit.desktop.feature.pagedistribution.ui.dod.DodScreen
 import com.zillit.desktop.feature.pagedistribution.ui.pages.DistributionDialogs
+import com.zillit.desktop.feature.pagedistribution.ui.schedule.ScheduleScreen
+import com.zillit.desktop.feature.pagedistribution.ui.script.ScriptScreen
 
 /**
  * A distribution tool: tabs, the single list or the folder grid, search, and
  * the dialogs (folder, upload, viewer, tallies, move, confirms).
+ *
+ * Schedule D.O.D shares the state and events but wears the web's own D.O.D
+ * page — folder cards with unread counts, ribbon cards, the More pill — so
+ * it is handed to [DodScreen] here.
  */
 @Composable
 fun DistributionScreen(
@@ -65,6 +72,18 @@ fun DistributionScreen(
     /** A user id shown as "Name (Designation)"; null falls back to the id. */
     resolveUser: (String) -> String?,
 ) {
+    if (state.isDod) {
+        DodScreen(state, onEvent, resolveUser)
+        return
+    }
+    if (state.isSchedule) {
+        ScheduleScreen(state, onEvent, resolveUser)
+        return
+    }
+    if (state.isScript) {
+        ScriptScreen(state, onEvent, resolveUser)
+        return
+    }
     Box(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier

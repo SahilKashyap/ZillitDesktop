@@ -14,12 +14,13 @@ import kotlinx.coroutines.delay
  *  - the budget is 90 ticks of 2 s; exhausting it returns the last-seen
  *    record with [PollOutcome.timedOut] set.
  *
- * Cancellation rides coroutine cancellation instead of an AbortSignal —
- * `delay` throws `CancellationException` exactly where the web's abortable
- * sleep rejects.
+ * The generate call is a thunk so the manual and the call-sheet-driven
+ * runs share one loop. Cancellation rides coroutine cancellation instead
+ * of an AbortSignal — `delay` throws `CancellationException` exactly where
+ * the web's abortable sleep rejects.
  */
 class GeneratePoller(
-    private val generate: suspend (GeneratePlan) -> ZillitResult<SidesRecord>,
+    private val generate: suspend () -> ZillitResult<SidesRecord>,
     private val get: suspend (String) -> ZillitResult<SidesRecord>,
     private val intervalMs: Long = INTERVAL_MS,
     private val maxTicks: Int = MAX_TICKS,
@@ -28,11 +29,8 @@ class GeneratePoller(
 
     data class PollOutcome(val sides: SidesRecord, val timedOut: Boolean)
 
-    suspend fun run(
-        plan: GeneratePlan,
-        onTick: (SidesRecord) -> Unit = {},
-    ): ZillitResult<PollOutcome> {
-        val initial = when (val started = generate(plan)) {
+    suspend fun run(onTick: (SidesRecord) -> Unit = {}): ZillitResult<PollOutcome> {
+        val initial = when (val started = generate()) {
             is ZillitResult.Failure -> return started
             is ZillitResult.Success -> started.data
         }

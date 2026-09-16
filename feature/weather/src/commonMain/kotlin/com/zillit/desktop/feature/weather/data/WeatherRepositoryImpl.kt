@@ -55,9 +55,12 @@ class WeatherRepositoryImpl(
                     timezone = dto.timezone.orEmpty(),
                     current = current.toCurrent(),
                     hourly = dto.hourly.orEmpty().take(HOURS_SHOWN).map { it.toPoint() },
-                    // Today is already the big number above; the row below is
-                    // the days after it, as the web slices it.
-                    daily = dto.daily.orEmpty().drop(1).map { it.toPoint() },
+                    // Seven rows headed "Today", as the web labels its first row
+                    // (`SevendayForecastCard.jsx:17`). The web slices `daily`
+                    // from index 1 and still calls that row "Today", so its
+                    // first row is really tomorrow; starting at index 0 makes
+                    // the label true without changing the list's shape.
+                    daily = dto.daily.orEmpty().take(DAYS_SHOWN).map { it.toPoint() },
                 ),
             )
         }.getOrElse { failure ->
@@ -70,6 +73,9 @@ class WeatherRepositoryImpl(
 
         /** Two days of hours is more than a call sheet ever needs. */
         const val HOURS_SHOWN = 24
+
+        /** A week, today included — the web's "7-Day Forecast". */
+        const val DAYS_SHOWN = 7
 
         const val NO_KEY = "No weather key is configured for this environment."
         const val REFUSED = "The weather service refused the request."

@@ -8,9 +8,14 @@ import com.zillit.desktop.feature.drive.domain.DriveRepository
 import com.zillit.desktop.feature.drive.domain.UploadPart
 import com.zillit.desktop.feature.drive.domain.UploadRequest
 import com.zillit.desktop.feature.drive.domain.UploadSession
+import com.zillit.desktop.feature.drive.ui.DrivePreviewHost
 import com.zillit.desktop.feature.drive.ui.DriveUploader
 import com.zillit.desktop.feature.drive.ui.PickedFile
+import com.zillit.desktop.feature.drive.ui.UploadTarget
+import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
@@ -50,6 +55,31 @@ internal class DriveFilePicker {
         dialog.files.orEmpty().mapNotNull(::describe)
     }
 
+    /**
+     * A whole folder — the web's "Choose folder". AWT's dialog cannot pick
+     * directories on Windows, and macOS needs the `fileDialogForDirectories`
+     * property flipped, so this goes through Swing's chooser; every file
+     * beneath comes back with its path relative to the folder's parent, which
+     * is what recreates the tree in the Drive.
+     */
+    suspend fun pickFolder(): List<PickedFile> = withContext(Dispatchers.IO) {
+        val chooser = javax.swing.JFileChooser().apply {
+            dialogTitle = "Upload a folder to Drive"
+            fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
+            isMultiSelectionEnabled = false
+        }
+        val outcome = chooser.showOpenDialog(null)
+        val approved = outcome == javax.swing.JFileChooser.APPROVE_OPTION
+        val folder = chooser.selectedFile?.takeIf { approved && it.isDirectory } ?: return@withContext emptyList()
+        val root = folder.parentFile ?: folder
+        folder.walkTopDown()
+            .filter { it.isFile && !it.name.startsWith('.') }
+            .mapNotNull { file ->
+                describe(file)?.copy(relativePath = file.relativeTo(root).path.replace(File.separatorChar, '/'))
+            }
+            .toList()
+    }
+
     private fun describe(file: File): PickedFile? = when {
         !file.isFile -> null
         else -> PickedFile(
@@ -59,6 +89,53 @@ internal class DriveFilePicker {
             mimeType = URLConnection.guessContentTypeFromName(file.name)
                 ?: "application/octet-stream",
         )
+    }
+}
+
+/**
+ * The bytes behind a presigned address, and PDFBox for the pages — what the
+ * in-app preview needs. The plain client, as for uploads: a presigned S3 GET
+ * must not carry the API's own headers.
+ */
+internal class AppDrivePreviewHost(private val httpClient: HttpClient) : DrivePreviewHost {
+
+    private val pdf = PdfBoxWork()
+
+    override suspend fun fetchBytes(url: String, maxBytes: Long): ZillitResult<ByteArray> = try {
+        val response: HttpResponse = httpClient.get(url)
+        when {
+            !response.status.isSuccess() ->
+                ZillitResult.Failure(ZillitError.Http(response.status.value, "the file could not be fetched"))
+
+            (response.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L) > maxBytes ->
+                ZillitResult.Failure(ZillitError.Validation("This file is too large to preview here."))
+
+            else -> {
+                val bytes: ByteArray = response.body()
+                if (bytes.size > maxBytes) {
+                    ZillitResult.Failure(ZillitError.Validation("This file is too large to preview here."))
+                } else {
+                    ZillitResult.Success(bytes)
+                }
+            }
+        }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
+        ZillitLog.w(TAG) { "preview fetch failed: ${throwable.message}" }
+        ZillitResult.Failure(ZillitError.Unknown(throwable.message ?: "preview fetch failed"))
+    }
+
+    override suspend fun renderPdfPages(pdf: ByteArray, targetWidthPx: Int): ZillitResult<List<ByteArray>> =
+        withContext(Dispatchers.Default) {
+            when (val pages = this@AppDrivePreviewHost.pdf.renderPages(pdf, targetWidthPx)) {
+                is ZillitResult.Failure -> pages
+                is ZillitResult.Success -> ZillitResult.Success(pages.data.map { it.imageBytes })
+            }
+        }
+
+    private companion object {
+        const val TAG = "Drive"
     }
 }
 
@@ -103,7 +180,7 @@ internal class MultipartDriveUploader(
 
     override suspend fun upload(
         file: PickedFile,
-        folderId: String?,
+        target: UploadTarget,
         onProgress: (uploaded: Int, total: Int) -> Unit,
     ): ZillitResult<DriveItem> {
         val source = File(file.path)
@@ -118,7 +195,9 @@ internal class MultipartDriveUploader(
                 fileName = file.name,
                 sizeBytes = file.sizeBytes,
                 mimeType = file.mimeType,
-                folderId = folderId,
+                folderId = target.folderId,
+                description = target.description,
+                fileAccess = target.fileAccess,
             ),
         )) {
             is ZillitResult.Success -> opened.data
@@ -129,7 +208,12 @@ internal class MultipartDriveUploader(
         val completed = sendParts(source, session, file.mimeType, onProgress)
             ?: return abort(session.uploadId, file.name)
 
-        return repository.completeUpload(session.uploadId, completed)
+        return repository.completeUpload(
+            uploadId = session.uploadId,
+            parts = completed,
+            fileName = file.name,
+            description = target.description,
+        )
     }
 
     /**

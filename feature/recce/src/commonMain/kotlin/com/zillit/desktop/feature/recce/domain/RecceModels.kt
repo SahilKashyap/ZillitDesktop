@@ -38,6 +38,9 @@ data class Recce(
         get() = personnel.filter { p ->
             listOf(p.name, p.role, p.contact, p.note).any { it.isNotBlank() }
         }
+
+    /** "Published · v2" or "Draft" — the web's `StatusTag`. */
+    val statusLabel: String get() = if (isPublished) "Published · v${version.coerceAtLeast(1)}" else "Draft"
 }
 
 enum class RecceStatus(val wire: String, val label: String) {
@@ -91,11 +94,19 @@ data class RecceStop(
 ) {
     val hasPin: Boolean get() = lat != null && long != null && lat.isFinite() && long.isFinite()
 
-    /** The hand-off every maps app opens. */
-    val mapsUrl: String? get() = if (hasPin) "https://www.google.com/maps?q=$lat,$long" else null
+    val pin: LatLng? get() = if (hasPin) LatLng(lat!!, long!!) else null
+
+    /** The hand-off every maps app opens — the web's `gmapsLink`. */
+    val mapsUrl: String? get() = pin?.let { mapsLink(it) }
 
     val w3wUrl: String? get() = w3w.takeIf { it.isNotBlank() }?.let { "https://what3words.com/$it" }
 }
+
+/** A coordinate pair; the wire spells longitude `long`, Google spells it `lng`. */
+data class LatLng(val lat: Double, val lng: Double)
+
+/** The shareable Google Maps URL for a pin — the web's `gmapsLink(lat, long)`. */
+fun mapsLink(pin: LatLng): String = "https://www.google.com/maps?q=${pin.lat},${pin.lng}"
 
 data class ReccePerson(
     /** Set when picked from the crew; null for a typed-in guest. */
@@ -105,12 +116,16 @@ data class ReccePerson(
     val email: String = "",
     val contact: String = "",
     val note: String = "",
-)
+) {
+    /** The web hides the number for "Production" (a placeholder, not a phone). */
+    val hasPhone: Boolean get() = contact.isNotBlank() && contact != "Production"
+}
 
 /** One crew member offered by the personnel picker (`GET recce/crew`). */
 data class RecceCrewMember(
     val userId: String,
     val name: String,
+    /** The designation — an i18n label key on the wire, translated for display. */
     val role: String,
     val email: String,
     val contact: String,
@@ -129,25 +144,31 @@ data class RecceReport(
 /**
  * The tool's rights, read from `recce_tool`.
  *
- * The web is soft-permissive until rights load, then hides nothing — buttons
- * open a request-access prompt instead. The desktop keeps the buttons and
- * gates the *action*, which is the same experience without a flash of
- * unusable chrome; admins pass every gate, as they do in every other tool.
+ * The web's `useRecceRights` is soft-permissive until the rights payload has
+ * loaded (`SOFT_DEFAULT`), then keeps every button on screen — a press
+ * without the right opens the "ask an admin" flow. The desktop does the
+ * same: [mayPost] and [mayDownload] answer true while [ready] is false, so a
+ * viewer who opens the tool before `project/tools` has landed is never
+ * refused; admins pass every gate, as in every other tool.
  */
 data class RecceViewer(
     val userId: String = "",
     val canView: Boolean = true,
-    val canPost: Boolean = false,
-    val canDownload: Boolean = false,
+    val canPost: Boolean = true,
+    val canDownload: Boolean = true,
     val isAdmin: Boolean = false,
     val ready: Boolean = false,
 ) {
+    /** The web bounces a view-less user back to Film Tools once rights resolve. */
     val isBlocked: Boolean get() = ready && !canView && !isAdmin
-    val mayEdit: Boolean get() = isAdmin || canPost
-    val mayDownload: Boolean get() = isAdmin || canDownload
+    val mayPost: Boolean get() = !ready || isAdmin || canPost
+    val mayDownload: Boolean get() = !ready || isAdmin || canDownload
 
     companion object {
         const val TOOL_IDENTIFIER = "recce_tool"
+
+        /** What an admin reads in the request message — the web's tool label. */
+        const val MODULE_LABEL = "Recce"
 
         fun from(permissions: ProjectPermissions, userId: String): RecceViewer {
             val access = permissions.access(TOOL_IDENTIFIER)

@@ -10,6 +10,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.fileKindOf
 import com.zillit.desktop.feature.documentdistribution.domain.isValidEmail
 import com.zillit.desktop.feature.documentdistribution.domain.parseAddressList
 import com.zillit.desktop.feature.documentdistribution.domain.watermarkedFilename
+import com.zillit.desktop.feature.documentdistribution.domain.withDefaults
 
 /**
  * The two download-side watermark flows — one stamped copy, and a zip of
@@ -37,7 +38,11 @@ internal class WatermarkSection(
         vm.update {
             copy(
                 preview = null,
-                watermarkDownload = WatermarkDownloadState(document, previewLoading = document.isWatermarkable),
+                watermarkDownload = WatermarkDownloadState(
+                    document,
+                    style = WatermarkStyle().withDefaults(watermarkDefaults),
+                    previewLoading = document.isWatermarkable,
+                ),
             )
         }
         if (!document.isWatermarkable) return
@@ -87,7 +92,14 @@ internal class WatermarkSection(
         library.prepare(library::resolveSelection) { documents ->
             val stampable = documents.filter { it.isWatermarkable }
             if (stampable.isEmpty()) return@prepare vm.fail("No watermarkable files in the selection")
-            vm.update { copy(watermarkBatch = WatermarkBatchState(documents = stampable)) }
+            vm.update {
+                copy(
+                    watermarkBatch = WatermarkBatchState(
+                        documents = stampable,
+                        style = WatermarkStyle().withDefaults(watermarkDefaults),
+                    ),
+                )
+            }
             primeLists()
         }
     }

@@ -138,15 +138,25 @@ data class CompanyDto(
             legalName = legalName.orEmpty(),
             ukPayeRef = uk?.payeRef.orEmpty(),
             ukAccountsOfficeRef = uk?.accountsOfficeRef.orEmpty(),
+            ukPensionProvider = uk?.pensionProvider.orEmpty(),
+            ukPensionSchemeRef = uk?.pensionSchemeRef.orEmpty(),
         )
     }
 }
 
-/** The UK payroll references, nested under `uk` on a company. */
+/**
+ * The UK payroll block nested under `uk` on a company.
+ *
+ * Every key, every time: a key omitted from the block is **cleared**
+ * server-side, so a client that did not know about the pension pair wiped
+ * both on each save.
+ */
 @Serializable
 data class CompanyUkDto(
     @SerialName("paye_ref") val payeRef: String? = null,
     @SerialName("accounts_office_ref") val accountsOfficeRef: String? = null,
+    @SerialName("pension_provider") val pensionProvider: String? = null,
+    @SerialName("pension_scheme_ref") val pensionSchemeRef: String? = null,
 )
 
 /**
@@ -233,7 +243,13 @@ data class CurrencyDto(
     @SerialName("exr") val rate: Double? = null,
 ) {
     fun toDomain(): ProjectCurrency? = code?.takeIf { it.isNotBlank() }?.let {
-        ProjectCurrency(code = it, name = name.orEmpty(), symbol = symbol.orEmpty(), rate = rate)
+        ProjectCurrency(
+            code = it,
+            name = name.orEmpty(),
+            symbol = symbol.orEmpty(),
+            rate = rate,
+            country = country.orEmpty(),
+        )
     }
 }
 

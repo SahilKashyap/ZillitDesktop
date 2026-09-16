@@ -101,12 +101,8 @@ sealed interface AccountHubEvent {
 
     data class SetCurrencyFilter(val filter: CurrencyFilter) : AccountHubEvent
     data class SearchCurrencies(val term: String) : AccountHubEvent
-    data class ToggleCurrencyPicker(val open: Boolean) : AccountHubEvent
 
     data class EditTaxTypes(val taxTypes: List<TaxType>) : AccountHubEvent
-
-    /** Which country's catalogue the tax section shows. */
-    data class PickTaxCountry(val countryCode: String?) : AccountHubEvent
 
     data class EditAssetTags(val tags: List<String>) : AccountHubEvent
 
@@ -340,19 +336,28 @@ sealed interface AccountHubEvent {
 
     data class RevertSection(val section: SetupSection) : AccountHubEvent
 
-    /** Open the company editor. A null [company] adds. */
-    data class EditCompany(val company: Company?) : AccountHubEvent
+    /**
+     * Open the company editor. A null [company] adds; [fromBank] is the bank
+     * editor's own "+ Add company", which hides the bank block and makes the
+     * saved company that bank's holder.
+     */
+    data class EditCompany(val company: Company?, val fromBank: Boolean = false) : AccountHubEvent
 
     data class UpdateCompanyDraft(val company: Company) : AccountHubEvent
 
+    /** Persists the draft straight away, as the web's Done does; the dialog stays open on failure. */
     data object CommitCompanyDraft : AccountHubEvent
 
     data object DismissCompanyDraft : AccountHubEvent
 
+    /** Persists the list without the company straight away. */
     data class RemoveCompany(val id: String) : AccountHubEvent
 
-    /** Open the bank editor. A null [account] adds. */
-    data class EditBank(val account: BankAccount?) : AccountHubEvent
+    /**
+     * Open the bank editor. A null [account] adds; [fromCompany] is the
+     * company editor's own "Add bank account", stacked over it.
+     */
+    data class EditBank(val account: BankAccount?, val fromCompany: Boolean = false) : AccountHubEvent
 
     data class UpdateBankDraft(val account: BankAccount) : AccountHubEvent
 
@@ -366,6 +371,18 @@ sealed interface AccountHubEvent {
     data class RevealBank(val id: String?) : AccountHubEvent
 
     // -- non-union pay --------------------------------------------------------------
+
+    /** Opens the "Import union rules" dialog. */
+    data object OpenRuleImport : AccountHubEvent
+
+    data object DismissRuleImport : AccountHubEvent
+
+    data class PickImportTerritory(val territory: String) : AccountHubEvent
+
+    data class PickImportAgreement(val identifier: String) : AccountHubEvent
+
+    /** Appends the previewed rules to the breakdown and saves it. */
+    data object ConfirmRuleImport : AccountHubEvent
 
     /** Applies the pay breakdown to everybody, or to named departments. */
     data class ApplyPayToEveryone(val everyone: Boolean) : AccountHubEvent

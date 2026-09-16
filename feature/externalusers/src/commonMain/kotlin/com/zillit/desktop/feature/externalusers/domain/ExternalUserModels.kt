@@ -37,6 +37,41 @@ data class ExternalUser(
 data class LabeledValue(val label: String, val value: String)
 
 /**
+ * One country's dialling code, for the form's code picker — the web's
+ * `getCountryDetails` rows (`name (dial_code)`), read from the ISD preset.
+ */
+data class DialCode(val name: String, val dialCode: String, val isoCode: String = "") {
+    val label: String get() = "$name ($dialCode)"
+}
+
+/**
+ * A crew member the card's "Created By" line names — the web resolves
+ * `created_by` against `usersList` for the full name and designation.
+ */
+data class Creator(val userId: String, val fullName: String, val designation: String = "")
+
+/** `male` | `female` | `non-binary`, plus the legacy `other` (ZL-13367). */
+enum class Gender(val wire: String, val label: String) {
+    Male("male", "Male"),
+    Female("female", "Female"),
+    NonBinary("non-binary", "Non-binary"),
+    ;
+
+    companion object {
+        /** The web's card rule: `other` reads as Non-binary, anything else as itself, upper-cased. */
+        fun labelOf(wire: String): String = when (wire.lowercase()) {
+            "" -> ""
+            "other", NonBinary.wire -> NonBinary.label
+            else -> entries.firstOrNull { it.wire == wire.lowercase() }?.label ?: wire.uppercase()
+        }
+    }
+}
+
+/** `+44 7700 900123` — the code and number the way both clients print them; blank when neither is set. */
+val ExternalUser.phoneLine: String
+    get() = listOf(countryCode, phone).filter { it.isNotBlank() }.joinToString(" ")
+
+/**
  * The filter buckets, as both clients bucket the free-form type: the two
  * known labels are themselves, anything else non-blank is Others.
  */
@@ -105,7 +140,7 @@ data class ExternalUsersViewer(
  */
 fun ExternalUser.validationErrors(): Map<String, String> = buildMap {
     if (fullName.isBlank()) put("fullName", "Please enter the full name")
-    if (!email.looksLikeEmail()) put("email", "Please enter a valid email")
+    if (!email.trim().looksLikeEmail()) put("email", "Please enter a valid email")
     if (phone.isNotBlank() && countryCode.isBlank()) {
         put("countryCode", "Please select the country code")
     }

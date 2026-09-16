@@ -11,6 +11,8 @@ import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.feature.recce.domain.Recce
 import com.zillit.desktop.feature.recce.domain.RecceCrewMember
 import com.zillit.desktop.feature.recce.domain.RecceDraft
+import com.zillit.desktop.feature.recce.domain.RecceListPage
+import com.zillit.desktop.feature.recce.domain.RecceQuery
 import com.zillit.desktop.feature.recce.domain.ReccePerson
 import com.zillit.desktop.feature.recce.domain.RecceReport
 import com.zillit.desktop.feature.recce.domain.RecceRepository
@@ -35,7 +37,10 @@ import kotlinx.serialization.json.put
  * Transcription notes, from the web's `recceApi/api.js` and `RecceForm`:
  *
  *  - HTTP 200 + `status:0` is a failure, checked on every call;
- *  - the LIST answers `data.data` (a wrapper with paging the web ignores);
+ *  - the LIST answers `data.data` rows and `data.total`, paged by
+ *    `page` / `limit` / `status` / `search` — the service defaults to
+ *    `limit: 10`, so every list call sends its limit; empty filters are
+ *    dropped from the query rather than sent as `?status=`;
  *    the single read answers `data` itself; the crew answers either;
  *  - update is `PUT /recce` with `recce_id` in the body — no `/recce/{id}`
  *    write route; delete is `PUT /recce/delete {recce_ids:[...]}`;
@@ -50,11 +55,23 @@ class RecceRepositoryImpl(
 
     private val base = config.apiV2(ZillitService.Recce).trimEnd('/') + "/recce"
 
-    override suspend fun recces(): ZillitResult<List<Recce>> =
-        get(base).mapData { data ->
+    override suspend fun recces(query: RecceQuery): ZillitResult<RecceListPage> =
+        apiClient.envelope(
+            HttpVerb.Get,
+            base,
+            RequestModule.ProjectUser,
+            queryParameters = buildMap<String, Any?> {
+                put("page", query.page)
+                put("limit", query.limit)
+                query.status?.let { put("status", it.wire) }
+                query.search.trim().takeIf { it.isNotEmpty() }?.let { put("search", it) }
+            },
+        ).mapData { data ->
             // The list is wrapped once more than the single read.
-            val rows = (data as? JsonObject)?.get("data") as? JsonArray ?: data as? JsonArray
-            rows.items().mapNotNull { parseRecce(it as? JsonObject) }
+            val wrapper = data as? JsonObject
+            val rows = wrapper?.get("data") as? JsonArray ?: data as? JsonArray
+            val parsed = rows.items().mapNotNull { parseRecce(it as? JsonObject) }
+            RecceListPage(rows = parsed, total = wrapper?.int("total") ?: parsed.size)
         }
 
     override suspend fun recce(id: String): ZillitResult<Recce> =
@@ -230,6 +247,26 @@ internal fun parseRecce(obj: JsonObject?): Recce? {
         version = obj.int("version") ?: 1,
     )
 }
+
+/**
+ * The recce a `recce:created` / `recce:updated` broadcast carries — the web's
+ * `upsertRecce` reads `data.data`; a bare record is accepted too.
+ */
+fun parseRecceEvent(payload: JsonElement?): Recce? {
+    val obj = payload as? JsonObject ?: return null
+    return parseRecce(obj["data"] as? JsonObject) ?: parseRecce(obj)
+}
+
+/** The ids a `recce:deleted` broadcast names — `{project_id, ids}`. */
+fun parseDeletedIds(payload: JsonElement?): List<String> {
+    val obj = payload as? JsonObject ?: return emptyList()
+    return (obj["ids"] as? JsonArray).items()
+        .mapNotNull { (it as? JsonPrimitive)?.content?.takeIf { id -> id.isNotBlank() } }
+}
+
+/** The production a broadcast is about, when it says — a stray one is ignored. */
+fun eventProjectId(payload: JsonElement?): String? =
+    (payload as? JsonObject)?.text("project_id")?.takeIf { it.isNotBlank() }
 
 private fun parseStop(obj: JsonObject?): RecceStop? {
     if (obj == null) return null

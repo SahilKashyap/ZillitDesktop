@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.cashexpenses.ui
 
 import com.zillit.desktop.feature.cashexpenses.domain.CashFormFields
+import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.forms.customValues
 import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.core.forms.FormLayout
@@ -81,6 +82,8 @@ class CashExpensesViewModel(
     private val formTemplate: suspend () -> ZillitResult<FormTemplate> = {
         ZillitResult.Success(FormTemplate())
     },
+    /** The ledger's rows for this tool per page key, and the page read. */
+    private val badges: TabBadgeSource = TabBadgeSource.None,
 ) : ZillitViewModel<CashUiState, CashEvent, CashEffect>(
     CashUiState(
         viewer = viewer(),
@@ -91,6 +94,12 @@ class CashExpensesViewModel(
     private var loadJob: Job? = null
     private var started = false
     private var listening = false
+    private var watchingBadges = false
+
+    /** The page on screen is its read — every key it is filed under that has rows. */
+    private fun readPage(destination: CashDestination) {
+        destination.badgeKeys.filter { (currentState.unread[it] ?: 0) > 0 }.forEach(badges::read)
+    }
 
     /**
      * Resolves who this is, then opens their landing page.
@@ -108,6 +117,16 @@ class CashExpensesViewModel(
         if (started) return
         started = true
         loadFormTemplate()
+        if (!watchingBadges) {
+            watchingBadges = true
+            launch {
+                badges.counts.collect { counts ->
+                    setState { copy(unread = counts) }
+                    // A row landing on the open page is read as it lands.
+                    readPage(currentState.destination)
+                }
+            }
+        }
         launch {
             val identity = viewer()
             when (val metadata = repository.metadata()) {
@@ -201,6 +220,7 @@ class CashExpensesViewModel(
                     )
                 }
                 load(event.destination)
+                readPage(event.destination)
             }
 
             is CashEvent.SwitchPipeline -> {

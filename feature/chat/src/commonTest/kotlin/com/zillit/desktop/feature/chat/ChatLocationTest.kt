@@ -272,7 +272,7 @@ class ChatLocationTest {
         // The shelf marks the row with a pin, not a paperclip.
         assertEquals(
             "📍 Aria Hotel, 12 Rajpath Marg, New Delhi",
-            model.currentState.previews[aisha.userId],
+            model.currentState.previews[aisha.userId]?.text,
         )
     }
 

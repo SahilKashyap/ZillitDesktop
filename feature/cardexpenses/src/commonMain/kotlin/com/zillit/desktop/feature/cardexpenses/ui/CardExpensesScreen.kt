@@ -124,7 +124,7 @@ private fun CardholderHeader(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             },
         )
         ZillitTabStrip(
-            tabs = state.destinations.map { ZillitTab(it.slug, it.label) },
+            tabs = state.destinations.map { ZillitTab(it.slug, it.label, count = state.unreadFor(it)) },
             activeId = state.destination.slug,
             onSelect = { slug -> CardDestination.fromSlug(slug)?.let { onEvent(CardEvent.Open(it)) } },
         )
@@ -173,6 +173,7 @@ private fun CardUiState.navSections(): List<SideNavSection> =
                         label = destination.label,
                         icon = destination.icon,
                         count = badgeFor(destination),
+                        unread = unreadFor(destination),
                     )
                 },
             )
@@ -185,6 +186,9 @@ private fun CardUiState.navSections(): List<SideNavSection> =
  * dashboard and the sidebar disagreeing about how much work is waiting is
  * worse than either being slightly stale.
  */
+/** Unread notifications filed under a page — the web's sidebar `Badge` (`card-expenses-badge-helpers.js`). */
+private fun CardUiState.unreadFor(destination: CardDestination): Int = destination.badgeKeys.sumOf { unread[it] ?: 0 }
+
 private fun CardUiState.badgeFor(destination: CardDestination): Int = when (destination) {
     CardDestination.ReceiptInbox -> overview?.inbox ?: 0
     CardDestination.PendingCoding -> overview?.pendingCoding ?: 0

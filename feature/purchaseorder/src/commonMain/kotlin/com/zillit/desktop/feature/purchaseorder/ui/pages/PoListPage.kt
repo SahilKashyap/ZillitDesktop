@@ -22,6 +22,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ColumnWidth
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.TableColumn
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
@@ -252,11 +253,18 @@ internal fun poColumns(
             width = ColumnWidth.Fixed(NUMBER_WIDTH),
             cell = { order ->
                 Column {
-                    ZillitText(
-                        text = order.number.ifBlank { if (order.isLocalOnly) "Not yet numbered" else "—" },
-                        style = ZillitTheme.typography.numeric,
-                        maxLines = 1,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                    ) {
+                        ZillitText(
+                            text = order.number.ifBlank { if (order.isLocalOnly) "Not yet numbered" else "—" },
+                            style = ZillitTheme.typography.numeric,
+                            maxLines = 1,
+                        )
+                        // The row's unread on this tab — the web's per-PO badge.
+                        ZillitBadge(count = state.unread.order(state.destination.badgeScope, order.id))
+                    }
                     if (order.isLocalOnly) {
                         ZillitText(
                             text = if (order.local?.failed == true) "Needs attention" else "Waiting to send",

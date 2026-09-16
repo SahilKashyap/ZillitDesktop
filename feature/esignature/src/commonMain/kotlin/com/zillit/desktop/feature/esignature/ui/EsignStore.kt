@@ -19,6 +19,10 @@ enum class PickPurpose { Document, Csv, PadImage, FieldUpload }
  */
 internal interface EsignStore {
     val current: EsignUiState
+
+    /** An envelope opened from any flow: its badge rows are read. */
+    fun readEnvelopeBadges(envelopeId: String) {}
+
     val repository: EsignRepository
     val transfer: EsignFileTransfer
     val pdf: EsignPdf

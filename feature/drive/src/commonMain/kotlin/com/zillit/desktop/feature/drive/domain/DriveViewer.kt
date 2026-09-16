@@ -51,48 +51,59 @@ data class DriveViewer(
     fun may(action: DriveAction, item: DriveItem): Boolean {
         if (isAdmin) return true
         if (!canView) return false
-        return toolGrantFor(action) && itemGrantFor(action, grantsOn(item))
+        return toolGrantFor(action) && itemGrantFor(action, item, grantsOn(item))
     }
 
     /**
-     * What this viewer holds on [item] — the server's flags, or ownership.
+     * What this viewer holds on [item] — the server's flags, or the web's
+     * fallback when the row carried none (`DriveManagement.combinedData`):
+     * the creator gets everything, anyone else gets view and download.
      *
-     * **FR-05.7: a file's creator always gets owner-level rights**, and the
-     * listing routes do not send per-item flags at all. Without this rule every
-     * row resolves to [DrivePermissions.ViewOnly] and nobody but an admin can
-     * download or delete anything, including files they uploaded a moment ago.
-     * The web derives the same thing client-side
-     * (`String(record.created_by || record.uploaded_by) === String(currentUserId)`).
-     *
-     * Explicit grants still win: a row the server *did* describe is described
-     * correctly, and only the silent case falls back to ownership.
+     * **FR-05.7: a file's creator always gets owner-level rights**, and older
+     * listing routes send no per-item flags at all. Without this rule every
+     * row would resolve to view-only and nobody but an admin could download
+     * or delete anything, including files they uploaded a moment ago.
      */
-    private fun grantsOn(item: DriveItem): DrivePermissions {
-        if (item.permissions != DrivePermissions.ViewOnly) return item.permissions
-        val mine = userId.isNotBlank() && item.uploadedById == userId
-        return if (mine) DrivePermissions.Owner else item.permissions
+    fun grantsOn(item: DriveItem): DrivePermissions {
+        if (item.hasExplicitPermissions) return item.permissions
+        return if (owns(item)) DrivePermissions.Owner else DEFAULT_GRANT
     }
+
+    /** Whether [item] is this person's own — `created_by || uploaded_by === currentUserId`. */
+    fun owns(item: DriveItem): Boolean = userId.isNotBlank() && item.ownerId == userId
+
+    /** The web's "shared with you" indicator: someone else's row in my listing. */
+    fun isSharedWithMe(item: DriveItem): Boolean =
+        userId.isNotBlank() && item.createdById.isNotBlank() && item.createdById != userId
+
+    /** The web's `viewOnly` — offer Open/Preview and Favourite, nothing else. */
+    fun isViewOnly(item: DriveItem): Boolean = !isAdmin && grantsOn(item).isViewOnly
 
     /** The tool-level half of [may] — the production's permission grid. */
     private fun toolGrantFor(action: DriveAction): Boolean = when (action) {
         DriveAction.View -> true
         DriveAction.Download -> canDownload
         // Everything that changes something needs posting rights on the tool,
-        // whatever the item itself says.
+        // whatever the item itself says (ZL-18294).
         DriveAction.Edit, DriveAction.Delete, DriveAction.Share -> canPost
     }
 
     /** The item-level half of [may] — what the server resolved for this row. */
-    private fun itemGrantFor(action: DriveAction, granted: DrivePermissions): Boolean =
+    private fun itemGrantFor(action: DriveAction, item: DriveItem, granted: DrivePermissions): Boolean =
         when (action) {
             DriveAction.View -> granted.canView
             DriveAction.Edit -> granted.canEdit
             DriveAction.Download -> granted.canDownload
             DriveAction.Delete -> granted.canDelete
-            // Sharing rewrites who else can reach the file, so it is an owner's
-            // act — the server models that as delete rights, which only owners
-            // and creators hold.
-            DriveAction.Share -> granted.canDelete
+            // Files: any editor can share (`canShare = perms.can_edit`).
+            // Folders: only the owner may — the server 403s editors. In "My
+            // Drive" ownership is the row being mine; under "Shared with me"
+            // it is the full permission set, which editors lack (no delete).
+            DriveAction.Share -> if (item.isFolder) {
+                owns(item) || granted.isOwnerLevel
+            } else {
+                granted.canEdit
+            }
         }
 
     /** Whether Upload and New Folder appear. Tool-level only — there is no item yet. */
@@ -100,6 +111,9 @@ data class DriveViewer(
 
     companion object {
         const val TOOL_IDENTIFIER = "drive_tool"
+
+        /** What a row with no flags grants someone who is not its creator. */
+        private val DEFAULT_GRANT = DrivePermissions(canView = true, canDownload = true)
 
         /**
          * Reads this person's tool rights out of the production's permission set.

@@ -130,7 +130,7 @@ data class PayRule(
     val triggers: List<PayTrigger> = emptyList(),
     /**
      * "Basic + OT on top": the amount is paid over the base rather than in
-     * place of it. The web starts a new rule at true.
+     * place of it. The web's rules editor starts a new rule at false.
      */
     val isEnhancement: Boolean = false,
     val nominalCode: String = "",

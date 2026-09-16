@@ -27,8 +27,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.auth.domain.Project
 import com.zillit.desktop.feature.auth.ui.AuthViewModel
-import com.zillit.desktop.feature.drive.ui.DriveEffect
-import com.zillit.desktop.feature.drive.ui.DriveEvent
+import com.zillit.desktop.feature.drive.ui.handle
 import com.zillit.desktop.feature.drive.ui.DriveScreen
 import com.zillit.desktop.feature.drive.ui.DriveViewModel
 import kotlinx.coroutines.launch
@@ -168,42 +167,20 @@ private fun WidgetBody(projects: List<Project>, session: DriveWidgetHost.Session
     }
 }
 
-/** The compact Drive, plus the host seams the tool has: browser, editor, clipboard, picker. */
+/** The compact Drive, plus the host seams the tool has: browser, editor, clipboard, pickers. */
 @Composable
 private fun WidgetDrive(viewModel: DriveViewModel) {
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
     var failure by remember { mutableStateOf<String?>(null) }
+    val host = remember(viewModel) { driveHostSeams(viewModel, scope) }
 
     LaunchedEffect(viewModel) {
-        viewModel.effects.collect { effect ->
-            when (effect) {
-                is DriveEffect.Failed -> failure = effect.message
-                is DriveEffect.OpenUrl -> openInBrowser(effect.url)
-                is DriveEffect.OpenEditor -> DocumentEditorWindow.open(
-                    url = effect.url,
-                    fileName = effect.fileName,
-                    scope = scope,
-                    onUnavailable = { reason -> viewModel.onEditorUnavailable(reason) },
-                )
-                is DriveEffect.CopyToClipboard -> {
-                    copyToClipboard(effect.text)
-                    failure = effect.label
-                }
-                DriveEffect.PickFiles -> scope.launch {
-                    val picked = DriveFilePicker().pick()
-                    if (picked.isNotEmpty()) viewModel.onEvent(DriveEvent.Upload(picked))
-                }
-                is DriveEffect.PickFilesOf -> scope.launch {
-                    val picked = attachmentPicker.pickPaths(effect.kind).map { it.toDrivePick() }
-                    if (picked.isNotEmpty()) viewModel.onEvent(DriveEvent.Upload(picked))
-                }
-            }
-        }
+        viewModel.effects.collect { effect -> failure = handle(effect, viewModel, host) ?: failure }
     }
 
     Box(Modifier.fillMaxSize()) {
-        DriveScreen(state = state, onEvent = viewModel::onEvent, compact = true)
+        DriveScreen(state = state, onEvent = viewModel::onEvent, compact = true, now = host.now)
         ZillitErrorToast(message = failure, onDismiss = { failure = null })
     }
 }

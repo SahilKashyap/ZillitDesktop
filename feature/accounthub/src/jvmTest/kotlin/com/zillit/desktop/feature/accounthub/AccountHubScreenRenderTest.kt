@@ -310,7 +310,7 @@ class AccountHubScreenRenderTest {
                     AccountHubScreen(state = stale, onEvent = {})
                 }
             }
-            onNodeWithText("Zillit Films Ltd · 20-48-91 · 20481234 · GBP").assertIsDisplayed()
+            onNodeWithText("Zillit Films Ltd · 20-48-91 · •••• 1234 · GBP").assertIsDisplayed()
         }
     }
 

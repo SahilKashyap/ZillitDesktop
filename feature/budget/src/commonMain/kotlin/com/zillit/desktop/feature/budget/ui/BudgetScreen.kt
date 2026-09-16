@@ -1,373 +1,514 @@
 package com.zillit.desktop.feature.budget.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.component.ButtonVariant
-import com.zillit.desktop.core.designsystem.component.ZillitAvatar
-import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
-import com.zillit.desktop.core.designsystem.component.ZillitDivider
-import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
-import com.zillit.desktop.core.designsystem.component.ZillitFileBadge
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
-import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
-import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
-import com.zillit.desktop.core.designsystem.component.ZillitStatTile
-import com.zillit.desktop.core.designsystem.component.ZillitTab
-import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
-import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.feature.budget.domain.BudgetDocument
-import com.zillit.desktop.feature.budget.domain.BudgetType
+import com.zillit.desktop.core.designsystem.component.ZillitAvatar
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
+import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
+import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
+import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
+import com.zillit.desktop.core.designsystem.component.ZillitSearchField
+import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
+import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.ZillitToast
+import com.zillit.desktop.core.designsystem.component.ZillitToastTone
+import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.designsystem.component.ZillitVerticalDivider
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.feature.budget.domain.BudgetMode
+import com.zillit.desktop.feature.budget.domain.BudgetRules
 
 /**
- * The Budget tool.
+ * The Budget tool: a rail of the budget's versions and the conversations
+ * about it, beside the conversation that is open.
  *
- * Two budgets, one screen — the main budget for the production and one per
- * department — as the web serves both from a single page. The tab strip only
- * ever offers what this viewer's rights allow, so there is no route to a
- * "no access" state inside the tool.
+ * The web's `CommonBudget.jsx` layout — a 30 % sider and the chat beside it —
+ * with the rail's three faces (episodes, department directory, versions)
+ * cross-fading in place rather than replacing each other outright.
  */
 @Composable
 fun BudgetScreen(
     state: BudgetUiState,
     onEvent: (BudgetEvent) -> Unit,
     modifier: Modifier = Modifier,
-    /**
-     * The discussion that belongs to the budget on screen, supplied by the
-     * host: the chat tool's own thread, scoped to this budget's tool and
-     * department. Null draws the documents alone — which is what a host
-     * without a chat surface (and every render test) gets.
-     */
-    conversation: (@Composable () -> Unit)? = null,
+    seams: BudgetScreenSeams = BudgetScreenSeams(),
 ) {
-    Box(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
+    val colors = ZillitTheme.colors
+    Box(modifier.fillMaxSize().background(colors.canvas)) {
         when {
-            state.viewer.hasNoAccess -> ZillitEmptyState(
-                title = "No budget access",
-                message = "Neither the main budget nor your department's is shared with you.",
+            state.viewer.resolved && !state.viewer.canView(state.mode) -> ZillitEmptyState(
+                title = "No access to ${state.mode.title}",
+                message = "This tool is not shared with you. An administrator can grant viewing rights.",
                 icon = ZillitIcons.Shield,
                 modifier = Modifier.align(Alignment.Center),
             )
 
-            else -> Column(Modifier.fillMaxSize()) {
-                Header(state, onEvent)
-                ZillitDivider()
-                Body(state, onEvent, conversation)
+            else -> Row(Modifier.fillMaxSize()) {
+                Rail(state, onEvent, seams, Modifier.width(RAIL_WIDTH).fillMaxHeight())
+                ZillitVerticalDivider(Modifier.fillMaxHeight())
+                Box(Modifier.weight(1f).fillMaxHeight()) {
+                    val conversation = seams.conversation
+                    if (state.selectedChat != null && conversation != null) {
+                        conversation(state)
+                    } else {
+                        ConversationPlaceholder(state, Modifier.align(Alignment.Center))
+                    }
+                }
             }
         }
-        if (state.membersOpen) MembersDialog(state, onEvent)
-    }
-}
 
-@Composable
-private fun Header(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.lg),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-    ) {
-        ZillitPageHeader(
-            title = "Budget",
-            eyebrow = "Film tools",
-            description = "The project's budget and each department's, with who has seen them.",
-            actions = {
-                ZillitButton(
-                    text = "Members",
-                    onClick = { onEvent(BudgetEvent.ShowMembers) },
-                    variant = ButtonVariant.Secondary,
-                    leadingIcon = ZillitIcons.Users,
-                )
-                // Shown whatever the rights: BudgetViewModel.refusesPost
-                // answers a press without them by offering to ask an admin.
-                ZillitButton(
-                    text = "Upload budget",
-                    onClick = { onEvent(BudgetEvent.Upload) },
-                    leadingIcon = ZillitIcons.Upload,
-                    loading = state.busy,
-                )
-            },
+        BudgetDialogs(state, onEvent, seams)
+
+        ZillitErrorToast(message = state.error, onDismiss = { onEvent(BudgetEvent.DismissMessage) })
+        ZillitToast(
+            message = state.notice,
+            onDismiss = { onEvent(BudgetEvent.DismissMessage) },
+            tone = ZillitToastTone.Success,
         )
-        // One tab and nothing to switch to is a control that only takes up
-        // room; the header already names where you are.
-        if (state.tabs.size > 1) {
-            ZillitTabStrip(
-                tabs = state.tabs.map { ZillitTab(id = it.name, label = it.label) },
-                activeId = state.tab.name,
-                onSelect = { id ->
-                    BudgetTab.entries.firstOrNull { it.name == id }
-                        ?.let { onEvent(BudgetEvent.TabChanged(it)) }
-                },
-            )
-        }
     }
 }
 
+/** The left third: title, breadcrumb, and whichever face the stage calls for. */
 @Composable
-private fun Body(
+private fun Rail(
     state: BudgetUiState,
     onEvent: (BudgetEvent) -> Unit,
-    conversation: (@Composable () -> Unit)?,
+    seams: BudgetScreenSeams,
+    modifier: Modifier = Modifier,
 ) {
-    Row(Modifier.fillMaxSize()) {
-        if (state.tab == BudgetTab.Department) {
-            DepartmentList(state, onEvent)
-            ZillitDivider(Modifier.width(1.dp).fillMaxSize())
+    val colors = ZillitTheme.colors
+    Box(modifier.background(colors.surface)) {
+        Column(Modifier.fillMaxSize()) {
+            RailHeader(state, onEvent)
+            AnimatedContent(
+                targetState = state.stage,
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                label = "budget-stage",
+            ) { stage ->
+                when (stage) {
+                    BudgetStage.Episodes -> EpisodeList(state, onEvent)
+                    BudgetStage.Directory -> DepartmentDirectory(state, onEvent)
+                    BudgetStage.Versions -> VersionsPane(state, onEvent, seams)
+                }
+            }
         }
-        // The document is the subject; the conversation about it is the
-        // larger half, as on the web (a 30/70 split there).
-        DocumentPane(state, onEvent, Modifier.weight(DOCUMENT_WEIGHT))
-        if (conversation != null) {
-            ZillitDivider(Modifier.width(1.dp).fillMaxSize())
-            Box(Modifier.weight(CONVERSATION_WEIGHT).fillMaxSize()) { conversation() }
-        }
+        RailFloatingActions(state, onEvent, Modifier.align(Alignment.BottomEnd))
     }
 }
 
-/** The departments that have a budget, one row each. */
 @Composable
-private fun DepartmentList(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
-    ZillitScrollColumn(
-        modifier = Modifier.width(DEPARTMENT_PANE).fillMaxSize(),
-        contentPadding = PaddingValues(ZillitTheme.spacing.md),
+private fun RailHeader(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
+    val colors = ZillitTheme.colors
+    Column(
+        Modifier.fillMaxWidth().padding(
+            start = ZillitTheme.spacing.lg,
+            end = ZillitTheme.spacing.lg,
+            top = ZillitTheme.spacing.lg,
+            bottom = ZillitTheme.spacing.sm,
+        ),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        if (state.departmentBudgets.isEmpty()) {
-            ZillitText(
-                text = if (state.loading) "Loading…" else "No department has uploaded a budget yet.",
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.textSecondary,
-            )
-        }
-        state.departmentBudgets.forEach { document ->
-            val chosen = document.id == state.selected?.id
-            ZillitSectionCard(
-                modifier = Modifier.fillMaxWidth(),
-                title = document.label(),
-                meta = if (document.file?.isPresent == true) "Budget attached" else "No file",
-                icon = if (chosen) ZillitIcons.Check else null,
-            ) {
-                ZillitButton(
-                    text = if (chosen) "Showing" else "Open",
-                    onClick = { onEvent(BudgetEvent.Select(document.id)) },
-                    variant = if (chosen) ButtonVariant.Secondary else ButtonVariant.Tertiary,
-                    enabled = !chosen,
-                )
-            }
-        }
-    }
-}
-
-/** Whichever budget is selected: its file, its numbers, its actions. */
-@Composable
-private fun DocumentPane(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit, modifier: Modifier = Modifier) {
-    val document = state.selected
-    ZillitScrollColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(ZillitTheme.spacing.lg),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-    ) {
-        when {
-            state.loading && document == null -> ZillitText(
-                text = "Loading…",
-                style = ZillitTheme.typography.bodyMedium,
-                color = ZillitTheme.colors.textSecondary,
-            )
-
-            document?.file?.isPresent != true -> ZillitEmptyState(
-                title = "No budget uploaded",
-                message = "Upload a budget and everyone with access will see it here.",
-                icon = ZillitIcons.File,
-            )
-
-            else -> DocumentCard(state, document, onEvent)
-        }
-        state.error?.let { message -> Message(message, tone = true, onEvent) }
-        state.notice?.let { message -> Message(message, tone = false, onEvent) }
-    }
-}
-
-@Composable
-private fun DocumentCard(state: BudgetUiState, document: BudgetDocument, onEvent: (BudgetEvent) -> Unit) {
-    val file = document.file ?: return
-    ZillitSectionCard(
-        modifier = Modifier.fillMaxWidth(),
-        title = document.label(),
-        meta = document.uploadedByName.takeIf { it.isNotBlank() }?.let { "Uploaded by $it" },
-    ) {
-        FileRow(state, document, onEvent)
-        CountRow(state)
-    }
-}
-
-/** The file itself, and everything that can be done to it. */
-@Composable
-private fun FileRow(state: BudgetUiState, document: BudgetDocument, onEvent: (BudgetEvent) -> Unit) {
-    val file = document.file ?: return
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZillitFileBadge(fileName = file.name)
-        Column(Modifier.weight(1f)) {
-            ZillitText(
-                text = file.name,
-                style = ZillitTheme.typography.bodyMedium,
-                color = ZillitTheme.colors.textPrimary,
-            )
-            if (file.sizeBytes > 0) {
-                ZillitText(
-                    text = readableSize(file.sizeBytes),
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
-                )
-            }
-        }
-        ZillitButton(
-            text = "Open",
-            onClick = { onEvent(BudgetEvent.OpenFile) },
-            variant = ButtonVariant.Secondary,
-            leadingIcon = ZillitIcons.Eye,
-        )
-        ZillitButton(
-            text = "Download",
-            onClick = { onEvent(BudgetEvent.DownloadFile) },
-            variant = ButtonVariant.Secondary,
-            leadingIcon = ZillitIcons.Download,
-        )
-        ZillitButton(
-            text = "Remove",
-            onClick = { onEvent(BudgetEvent.Delete(document.id)) },
-            variant = ButtonVariant.Tertiary,
-            leadingIcon = ZillitIcons.Trash,
-            enabled = !state.busy,
-        )
-    }
-}
-
-/** Who has looked, and who has taken a copy. An unknown count shows a dash. */
-@Composable
-private fun CountRow(state: BudgetUiState) {
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        ZillitStatTile(
-            label = "Views",
-            value = state.viewCount?.toString() ?: "—",
-            icon = ZillitIcons.Eye,
-            modifier = Modifier.weight(1f),
-        )
-        ZillitStatTile(
-            label = "Downloads",
-            value = state.downloadCount?.toString() ?: "—",
-            icon = ZillitIcons.Download,
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
-private fun Message(message: String, tone: Boolean, onEvent: (BudgetEvent) -> Unit) {
-    ZillitSectionCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
+            Box(
+                Modifier.size(HEADER_ICON).clip(ZillitTheme.shapes.medium).background(colors.accentSoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                ZillitIcon(ZillitToolIcons.Budget, tint = colors.accentText, size = 18.dp)
+            }
+            Column {
+                ZillitText(
+                    text = state.mode.title,
+                    style = ZillitTheme.typography.titleMedium,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                )
+                ZillitText(
+                    text = when (state.mode) {
+                        BudgetMode.Main -> "The production's budget and the conversations about it"
+                        BudgetMode.Department -> "One budget per department, discussed with its crew"
+                    },
+                    style = ZillitTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                )
+            }
+        }
+        Breadcrumb(state, onEvent)
+    }
+}
+
+/**
+ * `CustomBreadcrumb.jsx`: Episode List / Episode - N / Department List /
+ * Department — only the crumbs that apply, the movable ones underlined.
+ */
+@Composable
+private fun Breadcrumb(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
+    val crumbs = buildList {
+        if (state.context.isTelevision && state.selectedEpisode.isNotBlank()) {
+            add("Episode List" to { onEvent(BudgetEvent.BackToEpisodes) })
+            add("Episode - ${state.selectedEpisode}" to null)
+        }
+        if (state.mode == BudgetMode.Department && state.openDepartment != null) {
+            add("Department List" to { onEvent(BudgetEvent.BackToDirectory) })
+            add(state.openDepartment.name to null)
+        }
+    }
+    if (crumbs.isEmpty()) return
+    val colors = ZillitTheme.colors
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        modifier = Modifier.padding(top = ZillitTheme.spacing.xs),
+    ) {
+        crumbs.forEachIndexed { index, (label, onClick) ->
+            if (index > 0) {
+                ZillitText(text = "/", style = ZillitTheme.typography.labelSmall, color = colors.textMuted)
+            }
             ZillitText(
-                text = message,
-                style = ZillitTheme.typography.bodySmall,
-                color = if (tone) ZillitTheme.colors.danger else ZillitTheme.colors.textSecondary,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitButton(
-                text = "Dismiss",
-                onClick = { onEvent(BudgetEvent.DismissMessage) },
-                variant = ButtonVariant.Tertiary,
+                text = label,
+                style = if (onClick != null) {
+                    ZillitTheme.typography.label.copy(textDecoration = TextDecoration.Underline)
+                } else {
+                    ZillitTheme.typography.label
+                },
+                color = if (onClick != null) colors.accentText else colors.textSecondary,
+                maxLines = 1,
+                modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
             )
         }
     }
 }
 
+// -- episodes ----------------------------------------------------------------
+
+/** `EpisodeList.jsx`: one card per episode, with everything unread beneath it. */
 @Composable
-private fun MembersDialog(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
-    ZillitDialogShell(
-        title = "Who can see this budget",
-        subtitle = state.tab.label,
-        icon = ZillitIcons.Users,
-        visible = true,
-        onDismiss = { onEvent(BudgetEvent.DismissMembers) },
-    ) {
-        if (state.members.isEmpty()) {
-            ZillitText(
-                text = "Nobody else has been given this budget.",
-                style = ZillitTheme.typography.bodySmall,
-                color = ZillitTheme.colors.textSecondary,
+private fun EpisodeList(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        ZillitSearchField(
+            value = state.episodeSearch,
+            onValueChange = { onEvent(BudgetEvent.EpisodeSearch(it)) },
+            placeholder = "Search episode",
+            modifier = Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.lg),
+        )
+        val episodes = state.episodesVisible
+        if (episodes.isEmpty()) {
+            RailEmpty(
+                title = if (state.loading) "Loading…" else "No episodes yet",
+                message = if (state.loading) null else "Upload a budget and its episode appears here.",
+            )
+            return
+        }
+        ZillitScrollColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            episodes.forEach { episode ->
+                RailRowCard(
+                    title = "Episode $episode",
+                    subtitle = state.episodes[episode].orEmpty().size.let { "$it budget".plural(it) },
+                    leading = { RailInitial(episode.take(2)) },
+                    badge = state.episodeUnread(episode),
+                    onClick = { onEvent(BudgetEvent.OpenEpisode(episode)) },
+                )
+            }
+        }
+    }
+}
+
+// -- the department directory ----------------------------------------------------
+
+/** `AddAndShowDepartmentList.jsx`: search, then a card per department with a budget. */
+@Composable
+private fun DepartmentDirectory(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        if (BudgetRules.showsDepartmentSearch(state.viewer)) {
+            ZillitSearchField(
+                value = state.directorySearch,
+                onValueChange = { onEvent(BudgetEvent.DirectorySearch(it)) },
+                placeholder = "Search department",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = ZillitTheme.spacing.lg),
             )
         }
-        state.members.forEach { member ->
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
+        val rows = state.directoryVisible
+        when {
+            state.loading && rows.isEmpty() -> LoadingRows()
+            rows.isEmpty() -> RailEmpty(
+                title = if (state.directorySearch.isBlank()) {
+                    "No department has a budget yet"
+                } else {
+                    "No department matches"
+                },
+                message = if (state.directorySearch.isBlank() && state.canPost) {
+                    "Use + to upload the first one."
+                } else {
+                    null
+                },
+            )
+
+            else -> ZillitScrollColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = ZillitTheme.spacing.lg,
+                    end = ZillitTheme.spacing.lg,
+                    top = ZillitTheme.spacing.md,
+                    bottom = FAB_CLEARANCE,
+                ),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
-                ZillitAvatar(name = member.fullName)
-                Column {
-                    ZillitText(
-                        text = member.fullName,
-                        style = ZillitTheme.typography.bodyMedium,
-                        color = ZillitTheme.colors.textPrimary,
+                rows.forEach { row ->
+                    RailRowCard(
+                        title = row.department.name,
+                        subtitle = null,
+                        leading = { RailInitial(row.department.name.take(1)) },
+                        badge = row.unread,
+                        onClick = { onEvent(BudgetEvent.OpenDepartment(row.department.id)) },
                     )
-                    if (member.departmentName.isNotBlank()) {
-                        ZillitText(
-                            text = member.departmentName,
-                            style = ZillitTheme.typography.labelSmall,
-                            color = ZillitTheme.colors.textMuted,
-                        )
-                    }
                 }
             }
         }
     }
 }
 
-/** "1.2 MB" — the same shape the drive's size column uses. */
-internal fun readableSize(bytes: Long): String = when {
-    bytes < BYTES_PER_KB -> "$bytes B"
-    bytes < BYTES_PER_KB * BYTES_PER_KB -> "${round1(bytes / BYTES_PER_KB)} KB"
-    else -> "${round1(bytes / (BYTES_PER_KB * BYTES_PER_KB))} MB"
-}
-
-/** One decimal place, without pulling in a formatter for two call sites. */
-private fun round1(value: Double): Double = (value * TENTHS).toInt() / TENTHS
-
-private const val BYTES_PER_KB = 1024.0
-private const val TENTHS = 10.0
+// -- shared rail furniture --------------------------------------------------------
 
 /**
- * What to call a budget on screen.
- *
- * The list endpoint does not always carry `department_name` — a live
- * department budget came back with none — so the type decides the fallback.
- * Naming an unnamed department budget "Main budget" told the reader the
- * opposite of the truth.
+ * One tappable card of the rail — a department, an episode, a person or a
+ * room: a leading face, a title with its badge, a chevron.
  */
-internal fun BudgetDocument.label(): String = departmentName.ifBlank {
-    when (type) {
-        BudgetType.Main -> "Main budget"
-        else -> "Department budget"
+@Composable
+internal fun RailRowCard(
+    title: String,
+    subtitle: String?,
+    leading: @Composable () -> Unit,
+    badge: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    trailingChevron: Boolean = true,
+    titleSuffix: String? = null,
+) {
+    val colors = ZillitTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val background = when {
+        selected -> colors.surfaceSelected
+        hovered -> colors.surfaceHover
+        else -> colors.surfaceSunken
+    }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.large)
+            .background(background)
+            .hoverable(interaction)
+            .clickable(onClick = onClick)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        leading()
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                ZillitText(
+                    text = title,
+                    style = if (badge > 0) ZillitTheme.typography.titleSmall else ZillitTheme.typography.bodyMedium,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                titleSuffix?.let {
+                    ZillitText(
+                        text = it,
+                        style = ZillitTheme.typography.labelSmall,
+                        color = colors.textSecondary,
+                        maxLines = 1,
+                    )
+                }
+            }
+            subtitle?.takeIf { it.isNotBlank() }?.let {
+                ZillitText(text = it, style = ZillitTheme.typography.labelSmall, color = colors.textMuted, maxLines = 1)
+            }
+        }
+        if (badge > 0) ZillitBadge(count = badge)
+        if (trailingChevron) ZillitIcon(ZillitIcons.ChevronRight, tint = colors.textMuted, size = CHEVRON_SIZE)
     }
 }
 
-private val DEPARTMENT_PANE = 280.dp
-private const val DOCUMENT_WEIGHT = 1f
-private const val CONVERSATION_WEIGHT = 1.4f
+/** A lettered disc — the web's antd `Avatar` with the first letter. */
+@Composable
+internal fun RailInitial(text: String, size: androidx.compose.ui.unit.Dp = INITIAL_SIZE) {
+    val colors = ZillitTheme.colors
+    Box(
+        Modifier.size(size).clip(CircleShape).background(colors.accentSoft),
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitText(
+            text = text.uppercase(),
+            style = ZillitTheme.typography.titleSmall,
+            color = colors.accentText,
+            maxLines = 1,
+        )
+    }
+}
+
+/** A person's face, or their initials while the picture loads or when there is none. */
+@Composable
+internal fun RailFace(name: String, userId: String, loadAvatar: suspend (String) -> ImageBitmap?) {
+    val image by androidx.compose.runtime.produceState<ImageBitmap?>(null, userId) {
+        value = runCatching { loadAvatar(userId) }.getOrNull()
+    }
+    ZillitAvatar(name = name, size = INITIAL_SIZE, image = image)
+}
+
+@Composable
+internal fun RailEmpty(title: String, message: String?, icon: ImageVector? = null) {
+    Box(Modifier.fillMaxSize().padding(ZillitTheme.spacing.lg), contentAlignment = Alignment.Center) {
+        ZillitEmptyState(title = title, message = message, icon = icon)
+    }
+}
+
+@Composable
+internal fun LoadingRows() {
+    Column(
+        Modifier.fillMaxWidth().padding(ZillitTheme.spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        repeat(SKELETON_ROWS) { ZillitSkeletonBar(Modifier.fillMaxWidth(), height = SKELETON_HEIGHT) }
+    }
+}
+
+/**
+ * The rail's floating buttons (`CommonBudget.jsx:2117-2260`): the chat
+ * bubble that offers "Add member" / "Create group", and the "+" that uploads
+ * — or, on the directory, opens the drawer of departments.
+ */
+@Composable
+private fun RailFloatingActions(state: BudgetUiState, onEvent: (BudgetEvent) -> Unit, modifier: Modifier = Modifier) {
+    if (state.stage == BudgetStage.Episodes) return
+    Row(
+        modifier = modifier.padding(ZillitTheme.spacing.lg),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (state.stage == BudgetStage.Versions) {
+            Box {
+                FloatingButton(
+                    icon = ZillitIcons.Chat,
+                    tooltip = "Discuss this budget",
+                    primary = false,
+                    onClick = { onEvent(BudgetEvent.ChatMenu(!state.chatMenuOpen)) },
+                )
+                ChatActionsMenu(state, onEvent)
+            }
+        }
+        FloatingButton(
+            icon = ZillitIcons.Add,
+            tooltip = if (state.stage == BudgetStage.Directory) "Add a department's budget" else "Upload budget",
+            primary = true,
+            onClick = {
+                if (state.stage == BudgetStage.Directory) {
+                    onEvent(BudgetEvent.OpenDrawer)
+                } else {
+                    onEvent(BudgetEvent.UploadRequested())
+                }
+            },
+        )
+    }
+}
+
+@Composable
+internal fun FloatingButton(icon: ImageVector, tooltip: String, primary: Boolean, onClick: () -> Unit) {
+    val colors = ZillitTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val background = when {
+        primary && hovered -> colors.accentHover
+        primary -> colors.accent
+        hovered -> colors.surfaceHover
+        else -> colors.surfaceRaised
+    }
+    ZillitTooltip(tooltip) {
+        Box(
+            Modifier
+                .size(FAB_SIZE)
+                .shadow(FAB_SHADOW, CircleShape)
+                .clip(CircleShape)
+                .background(background)
+                .hoverable(interaction)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            ZillitIcon(icon, tint = if (primary) colors.textOnAccent else colors.accentText, size = 20.dp)
+        }
+    }
+}
+
+/** The right two thirds before a thread is picked — the web's `Empty` with its two sentences. */
+@Composable
+private fun ConversationPlaceholder(state: BudgetUiState, modifier: Modifier = Modifier) {
+    val (title, message) = when {
+        state.mode == BudgetMode.Department && state.stage == BudgetStage.Directory ->
+            "Pick a department" to "Click on any department to start a conversation about its budget."
+        state.stage == BudgetStage.Episodes ->
+            "Pick an episode" to "Each episode keeps its own budgets and conversations."
+        !state.hasDocuments ->
+            "No budget yet" to "Upload a budget, then discuss it with the crew who can see it."
+        else ->
+            "Pick a conversation" to "Click on any user or group to start a conversation."
+    }
+    ZillitEmptyState(title = title, message = message, icon = ZillitIcons.Chat, modifier = modifier)
+}
+
+private fun String.plural(count: Int): String = if (count == 1) this else this + "s"
+
+private val RAIL_WIDTH = 380.dp
+private val HEADER_ICON = 36.dp
+private val INITIAL_SIZE = 40.dp
+private val FAB_SIZE = 48.dp
+private val FAB_SHADOW = 6.dp
+private val FAB_CLEARANCE = 88.dp
+private val SKELETON_HEIGHT = 56.dp
+private const val SKELETON_ROWS = 4
+private val CHEVRON_SIZE = 16.dp

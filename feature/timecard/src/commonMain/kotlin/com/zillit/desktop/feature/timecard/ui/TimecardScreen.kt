@@ -100,7 +100,9 @@ fun TimecardScreen(
                     },
                 )
                 ZillitTabStrip(
-                    tabs = state.visibleDestinations.map { ZillitTab(it.slug, it.label) },
+                    tabs = state.visibleDestinations.map { tab ->
+                        ZillitTab(tab.slug, tab.label, count = tab.badgeKeys.sumOf { state.unread[it] ?: 0 })
+                    },
                     activeId = state.destination.slug,
                     onSelect = { slug ->
                         TimecardDestination.entries.firstOrNull { it.slug == slug }

@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.saportal.ui
 
+import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
@@ -28,15 +29,33 @@ class SaPortalViewModel(
      * lambda instead.
      */
     private val events: SocketEventBus? = null,
+    /** The ledger's rows for this tool per unit, and the page read. */
+    private val badges: TabBadgeSource = TabBadgeSource.None,
     private val viewer: () -> SaViewer,
 ) : ZillitViewModel<SaUiState, SaEvent, SaEffect>(SaUiState(viewer = viewer())) {
 
     private var started = false
     private var listening = false
+    private var watchingBadges = false
+
+    /** The page on screen is its read — the web's `emitSaTabRead`, the whole unit. */
+    private fun readPage(destination: SaDestination) {
+        val key = destination.badgeKey ?: return
+        if ((currentState.unread[key] ?: 0) > 0) badges.read(key)
+    }
 
     fun start() {
         if (started) return
         started = true
+        if (!watchingBadges) {
+            watchingBadges = true
+            launch {
+                badges.counts.collect { counts ->
+                    setState { copy(unread = counts) }
+                    readPage(currentState.destination)
+                }
+            }
+        }
         val identity = viewer()
         setState { copy(viewer = identity) }
         if (!identity.isBlocked) refresh()
@@ -87,6 +106,7 @@ class SaPortalViewModel(
             is SaEvent.Open -> {
                 setState { copy(destination = event.destination) }
                 load(event.destination)
+                readPage(event.destination)
             }
 
             SaEvent.Refresh -> refresh()

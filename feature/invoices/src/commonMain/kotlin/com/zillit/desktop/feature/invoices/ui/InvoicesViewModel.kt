@@ -5,6 +5,7 @@ package com.zillit.desktop.feature.invoices.ui
 import com.zillit.desktop.feature.invoices.domain.CurrencyRates
 import com.zillit.desktop.feature.invoices.domain.InvoiceExportFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceExport
+import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
@@ -41,6 +42,7 @@ import kotlinx.coroutines.delay
  * department's, and the ones waiting on me — or, for the accounts
  * department, the register, the inbox and the approval queue.
  */
+@Suppress("LongParameterList", "LargeClass") // One host seam per concern; the pages' actions live in collaborators.
 class InvoicesViewModel(
     private val repository: InvoicesRepository,
     private val files: InvoiceFiles,
@@ -58,6 +60,8 @@ class InvoicesViewModel(
     private val departments: () -> Map<String, String> = { emptyMap() },
     /** Who work can be handed to: the accounts team, and the whole production. */
     private val directory: InvoiceDirectory = InvoiceDirectory(),
+    /** The ledger's rows for this tool per page key, and the page read. */
+    private val badges: TabBadgeSource = TabBadgeSource.None,
 ) : ZillitViewModel<InvoicesUiState, InvoicesEvent, InvoicesEffect>(InvoicesUiState()) {
 
     private val actions = InvoiceActions(this)
@@ -83,6 +87,12 @@ class InvoicesViewModel(
         refresh()
     }
 
+    /** The page on screen is its read — its rows, whole, as it is looked at. */
+    private fun readOpenPage() {
+        val key = currentState.openBadgeKey ?: return
+        if ((currentState.unread[key] ?: 0) > 0) badges.read(key)
+    }
+
     /**
      * Folds the socket's announcements into the screen: another client's
      * upload, decision or payment lands as a refetch of whatever tab is open
@@ -95,6 +105,8 @@ class InvoicesViewModel(
     private fun listenOnce() {
         if (listening) return
         listening = true
+        // A row landing on the open page is read as it lands.
+        launch { badges.counts.collect { counts -> setState { copy(unread = counts) }.also { readOpenPage() } } }
         launch {
             repository.refreshes.collect { kind ->
                 syncJobs.remove(kind)?.cancel()
@@ -124,11 +136,13 @@ class InvoicesViewModel(
             is InvoicesEvent.SelectDepartmentTab -> {
                 setState { copy(departmentTab = event.tab, invoices = emptyList(), selected = emptySet()) }
                 refresh()
+                readOpenPage()
             }
             is InvoicesEvent.SelectQuickFilter -> setState { copy(quickFilter = event.filter) }
             is InvoicesEvent.SelectPage -> {
                 setState { copy(page = event.page, invoices = emptyList(), selected = emptySet(), search = "") }
                 refresh()
+                readOpenPage()
             }
             is InvoicesEvent.ConfirmDuplicate -> judgeDuplicate(event.flagId, confirmed = true)
             is InvoicesEvent.DismissDuplicate -> judgeDuplicate(event.flagId, confirmed = false)

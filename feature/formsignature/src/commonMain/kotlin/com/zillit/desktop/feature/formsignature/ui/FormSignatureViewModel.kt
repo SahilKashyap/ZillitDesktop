@@ -2,72 +2,73 @@
 
 package com.zillit.desktop.feature.formsignature.ui
 
-import com.zillit.desktop.core.permissions.rightsRefusalMessage
+import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.localization.localised
+import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
-import com.zillit.desktop.core.localization.localised
-import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.core.mvvm.ZillitViewModel
-import com.zillit.desktop.feature.formsignature.domain.DocumentSigner
+import com.zillit.desktop.core.permissions.rightsRefusalMessage
 import com.zillit.desktop.feature.formsignature.domain.FormSignRefresh
+import com.zillit.desktop.feature.formsignature.domain.FormSignatureBadges
+import com.zillit.desktop.feature.formsignature.domain.FormSignatureHost
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureRepository
+import com.zillit.desktop.feature.formsignature.domain.FormSignatureUnread
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureViewer
 import com.zillit.desktop.feature.formsignature.domain.PdfWork
-import com.zillit.desktop.feature.formsignature.domain.PlacedStamp
-import com.zillit.desktop.feature.formsignature.domain.SignDocument
 import com.zillit.desktop.feature.formsignature.domain.SignDocumentTab
 import com.zillit.desktop.feature.formsignature.domain.SignFileTransfer
-import com.zillit.desktop.feature.formsignature.domain.SignSpot
-import com.zillit.desktop.feature.formsignature.domain.SignSpotKind
 import com.zillit.desktop.feature.formsignature.domain.SignatureBlock
-import com.zillit.desktop.feature.formsignature.domain.StandardForm
 import com.zillit.desktop.feature.formsignature.domain.StoredDocument
 import com.zillit.desktop.feature.formsignature.domain.UploadPurpose
+import com.zillit.desktop.feature.formsignature.ui.flows.DetailFlow
+import com.zillit.desktop.feature.formsignature.ui.flows.MarksFlow
+import com.zillit.desktop.feature.formsignature.ui.flows.SendFlow
+import kotlinx.coroutines.Job
 
 /**
- * Documents & Signature.
- *
- * ## Signing is local work first, a call second
- *
- * The server's contract is "hand me the finished file": this view model
- * fetches the PDF, stamps the reader's saved signature into it at the placed
- * spots, uploads the result, and only then tells the service the document is
- * signed. Every step can fail separately, and the order matters — a sign
- * call before the upload has landed would point the server at a key that
- * does not exist yet.
+ * Documents & Signature — the web's `ContractSignatureMain`: one shell, the
+ * tile hub, and the screens it pushes. Signing, sending and the saved marks
+ * live in their own flows; this class routes events, owns the lists, the
+ * discussion room and the confirmations.
  */
 class FormSignatureViewModel(
     private val repository: FormSignatureRepository,
     private val transfer: SignFileTransfer,
-    private val pdfWork: PdfWork,
+    pdfWork: PdfWork,
     private val resolveViewer: () -> FormSignatureViewer,
     private val currentUserId: () -> String,
-    private val newId: () -> String,
+    newId: () -> String,
+    private val host: FormSignatureHost = FormSignatureHost.None,
+    private val badges: FormSignatureBadges = FormSignatureBadges.None,
     /** Carries a refused press to the app frame, which offers to ask an admin. */
     private val rights: RightsRequestBus? = null,
 ) : ZillitViewModel<FormSignatureUiState, FormSignatureEvent, FormSignatureEffect>(
     FormSignatureUiState(),
 ) {
 
-    /** The open document's bytes — held here, not in state, by weight. */
-    private var detailPdf: ByteArray? = null
+    private val store = object : FormSignStore {
+        override val state: FormSignatureUiState get() = currentState
+        override fun update(reducer: FormSignatureUiState.() -> FormSignatureUiState) = setState(reducer)
+        override fun effect(effect: FormSignatureEffect) = sendEffect(effect)
+        override fun launch(block: suspend () -> Unit): Job = this@FormSignatureViewModel.launch { block() }
+    }
 
-    /** Which flow asked for a file, so the picker's answer lands in it. */
-    private var pendingPick: PickTarget? = null
+    private val marks = MarksFlow(store, repository, transfer, pdfWork, newId)
+    private val detail = DetailFlow(store, repository, transfer, pdfWork, host, badges, marks, onSigned = ::refresh)
+    private val send = SendFlow(store, repository, transfer, pdfWork, host, marks, onSent = ::loadDocuments)
+
+    private var listening = false
 
     fun start() {
-        val viewer = resolveViewer()
-        setState { copy(viewer = viewer, currentUserId = currentUserId()) }
-        loadSignatures()
+        setState { copy(viewer = resolveViewer(), currentUserId = currentUserId()) }
+        marks.load()
+        loadChatUnit()
         listenOnce()
     }
 
     /**
-     * Refetches the list a socket `document:*` event names, when that list
-     * is on screen — the web pages' own refetch handlers, ported as a
-     * targeted reload (an area switch already calls [refresh], so an event
-     * missed while elsewhere is corrected on arrival). Guarded so a second
-     * Start (the window reopening) does not stack collectors.
+     * The socket's refetch pulses and the badge ledger, collected once — a
+     * second Start (the window reopening) must not stack collectors.
      */
     private fun listenOnce() {
         if (listening) return
@@ -76,93 +77,160 @@ class FormSignatureViewModel(
             repository.refreshes.collect { kind ->
                 when (kind) {
                     FormSignRefresh.Forms ->
-                        if (currentState.area == FormSignatureArea.StandardForms) loadStandardForms()
+                        if (currentState.screen == FormSignScreen.StandardDocuments) loadStandardForms(quiet = true)
                     FormSignRefresh.Documents ->
-                        if (currentState.area == FormSignatureArea.Documents) loadDocuments()
+                        if (currentState.screen == FormSignScreen.DocumentsForSignature) loadDocuments(quiet = true)
                 }
             }
         }
+        launch { badges.leaves.collect { leaves -> setState { copy(unread = FormSignatureUnread(leaves)) } } }
     }
 
-    private var listening = false
-
-    @Suppress("CyclomaticComplexMethod") // One branch per user act; the fan-out IS the function.
+    @Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per user act; the fan-out IS the function.
     override fun onEvent(event: FormSignatureEvent) {
         when (event) {
-            is FormSignatureEvent.SwitchArea -> switchArea(event.area)
+            is FormSignatureEvent.Open -> open(event.screen)
+            FormSignatureEvent.Back -> back()
             FormSignatureEvent.Refresh -> refresh()
+            FormSignatureEvent.OpenGuide -> host.openGuide()
+
+            is FormSignatureEvent.SearchStandard -> setState { copy(standard = standard.copy(search = event.query)) }
             is FormSignatureEvent.SwitchStandardTab -> {
-                setState { copy(standard = standard.copy(tab = event.tab)) }
+                setState { copy(standard = standard.copy(tab = event.tab, search = "")) }
                 loadStandardForms()
             }
-            is FormSignatureEvent.SwitchDocumentsTab -> {
-                setState { copy(documents = documents.copy(tab = event.tab)) }
-                loadDocuments()
-            }
-            is FormSignatureEvent.OpenStandardForm -> openStandardForm(event.form)
-            is FormSignatureEvent.OpenDocument -> openDocument(event.document)
-            FormSignatureEvent.CloseDetail -> {
-                detailPdf = null
-                setState { copy(detail = null) }
-            }
-            is FormSignatureEvent.PlaceFreeSpot ->
-                placeFreeSpot(event.page, event.xPx, event.yPx)
-            FormSignatureEvent.SignOpenDocument -> signOpenDocument()
+            is FormSignatureEvent.OpenStandardForm -> detail.openStandardForm(event.form)
             is FormSignatureEvent.SelfAssign -> selfAssign(event.formId)
-            is FormSignatureEvent.DeleteStandardForm ->
-                if (!refusesPost()) deleteStandardForm(event.formId)
-            is FormSignatureEvent.DeleteDocument -> deleteDocument(event.documentId)
-            is SignerEditorEvent -> onSignerEditorEvent(event)
-            is FormSignatureEvent.ShowHistory -> showHistory(event.documentId)
+            is FormSignatureEvent.AskDeleteStandardForm ->
+                if (!refusesPost()) setState { copy(confirm = ConfirmState.DeleteForm(event.formId)) }
+            is FormSignatureEvent.ShowHistory -> setState { copy(history = HistoryState(event.form)) }
             FormSignatureEvent.CloseHistory -> setState { copy(history = null) }
-            FormSignatureEvent.StartUploadForm -> if (refusesPost()) Unit else {
-                pendingPick = PickTarget.StandardForm
-                sendEffect(FormSignatureEffect.PickPdf)
-            }
+            FormSignatureEvent.StartUploadForm -> if (!refusesPost()) setState { copy(uploadForm = UploadFormState()) }
             is FormSignatureEvent.EditUploadForm -> setState { copy(uploadForm = event.state) }
+            FormSignatureEvent.PickUploadFile ->
+                sendEffect(FormSignatureEffect.PickFile(PickTarget.StandardForm, PickKind.PdfOrWord))
             FormSignatureEvent.SubmitUploadForm -> submitUploadForm()
             FormSignatureEvent.CancelUploadForm -> setState { copy(uploadForm = null) }
-            FormSignatureEvent.StartSend -> if (refusesPost()) Unit else {
-                pendingPick = PickTarget.SendDocument
-                sendEffect(FormSignatureEffect.PickPdf)
-            }
-            is FormSignatureEvent.EditSend -> setState { copy(send = event.state) }
-            FormSignatureEvent.BeginPlacement -> beginPlacement()
-            is FormSignatureEvent.PlaceSendSpot ->
-                placeSendSpot(event.page, event.xPx, event.yPx)
-            is FormSignatureEvent.RemoveSendSpot -> removeSendSpot(event.signer, event.index)
-            FormSignatureEvent.SubmitSend -> submitSend()
-            FormSignatureEvent.CancelSend -> setState { copy(send = null) }
-            is FormSignatureEvent.StartDraw -> setState {
-                copy(draw = DrawState(isSignature = event.isSignature, existingId = event.existingId))
-            }
+
+            is FormSignatureEvent.SearchDocuments -> setState { copy(documents = documents.copy(search = event.query)) }
+            is FormSignatureEvent.SwitchDocumentsTab -> switchDocumentsTab(event.tab)
+            is FormSignatureEvent.OpenDocument -> detail.openDocument(event.document)
+            is FormSignatureEvent.AskDeleteDocument ->
+                if (!refusesPost()) setState { copy(confirm = ConfirmState.DeleteDocument(event.documentId)) }
+
+            FormSignatureEvent.StartSend -> if (!refusesPost()) send.start()
+            is FormSignatureEvent.EditSend -> send.edit(event.state)
+            FormSignatureEvent.SendPickFile -> send.pickFile()
+            FormSignatureEvent.SendNext -> send.next()
+            FormSignatureEvent.SendBack -> send.back()
+            is FormSignatureEvent.SendTurnPage -> send.turnPage(event.delta)
+            is FormSignatureEvent.SendSelectSigner -> send.selectSigner(event.personId)
+            is FormSignatureEvent.SendAddPlaceholder -> send.addPlaceholder(event.kind)
+            is FormSignatureEvent.SendMoveDraft -> send.moveDraft(event.x, event.y, event.width, event.height)
+            FormSignatureEvent.SendConfirmDraft -> send.confirmDraft()
+            FormSignatureEvent.SendCancelDraft -> send.cancelDraft()
+            is FormSignatureEvent.SendMoveSpot -> send.moveSpot(event.personId, event.index, event.x, event.y)
+            is FormSignatureEvent.SendRemoveSpot -> send.removeSpot(event.personId, event.index)
+            is FormSignatureEvent.SendAddOwnMark -> send.addOwnMark(event.kind)
+            is FormSignatureEvent.SendMoveOwnMark -> send.moveOwnMark(event.x, event.y, event.width)
+            FormSignatureEvent.SendConfirmOwnMark -> send.confirmOwnMark()
+            FormSignatureEvent.SendCancelOwnMark -> send.cancelOwnMark()
+            FormSignatureEvent.SubmitSend -> send.submit()
+            FormSignatureEvent.CancelSend -> send.cancel()
+
+            FormSignatureEvent.CloseDetail -> detail.close()
+            is FormSignatureEvent.TurnPage -> detail.turnPage(event.delta)
+            is FormSignatureEvent.TapPlaceholder -> detail.tapPlaceholder(event.spot)
+            FormSignatureEvent.AddSignature -> detail.addSignature()
+            is FormSignatureEvent.MoveFreeMark -> detail.moveFreeMark(event.x, event.y, event.width)
+            FormSignatureEvent.ConfirmFreeMark -> detail.confirmFreeMark()
+            FormSignatureEvent.CancelFreeMark -> detail.cancelFreeMark()
+            FormSignatureEvent.AskSendSigned -> detail.askSend()
+            FormSignatureEvent.DownloadDetail -> detail.download()
+            FormSignatureEvent.PrintDetail -> detail.print()
+            FormSignatureEvent.TransferToDownloads -> detail.transferToDownloads()
+
+            is FormSignatureEvent.PickSignature -> pickSignature(event.block)
+            FormSignatureEvent.ClosePicker -> setState { copy(picker = null) }
+            is FormSignatureEvent.StartDraw -> marks.start(event.isSignature, event.existingId, event.asPage)
             is FormSignatureEvent.EditDraw -> setState { copy(draw = event.state) }
-            is FormSignatureEvent.AddDrawStroke -> setState {
-                copy(draw = draw?.copy(strokes = draw.strokes + listOf(event.stroke)))
+            is FormSignatureEvent.AddDrawStroke -> marks.addStroke(event.stroke)
+            FormSignatureEvent.ClearDraw -> marks.clear()
+            FormSignatureEvent.SubmitDraw -> marks.submit()
+            FormSignatureEvent.CancelDraw -> marks.cancel()
+            is FormSignatureEvent.AskDeleteSignature ->
+                setState { copy(confirm = ConfirmState.DeleteSignature(event.blockId)) }
+
+            FormSignatureEvent.OpenChat -> openChat()
+            FormSignatureEvent.PickReceiver -> pickReceiver()
+            is FormSignatureEvent.ChooseReceiver ->
+                setState { copy(chat = chat.copy(receiver = event.option, pickingReceiver = false)) }
+            FormSignatureEvent.CloseReceiverPicker -> setState { copy(chat = chat.copy(pickingReceiver = false)) }
+
+            FormSignatureEvent.ConfirmYes -> confirmYes()
+            FormSignatureEvent.ConfirmNo -> setState { copy(confirm = null) }
+
+            is FormSignatureEvent.FilePicked -> when (event.target) {
+                PickTarget.StandardForm -> setState {
+                    copy(
+                        uploadForm = uploadForm?.copy(
+                            fileName = event.name,
+                            fileBytes = event.bytes,
+                            name = uploadForm.name.ifBlank { event.name.substringBeforeLast('.') },
+                        ),
+                    )
+                }
+                PickTarget.SendDocument -> send.filePicked(event.name, event.bytes)
             }
-            FormSignatureEvent.SubmitDraw -> submitDraw()
-            FormSignatureEvent.CancelDraw -> setState { copy(draw = null) }
-            is FormSignatureEvent.DeleteSignature -> deleteSignature(event.blockId)
-            is FormSignatureEvent.FilePicked -> filePicked(event.name, event.bytes)
         }
     }
 
-    private fun switchArea(area: FormSignatureArea) {
-        setState { copy(area = area, viewer = resolveViewer(), currentUserId = currentUserId()) }
-        refresh()
+    // ------------------------------------------------------------ navigation
+
+    private fun open(screen: FormSignScreen) {
+        setState { copy(screen = screen, viewer = resolveViewer(), currentUserId = currentUserId()) }
+        when (screen) {
+            FormSignScreen.StandardDocuments -> {
+                loadStandardForms()
+                loadChatUnit()
+            }
+            FormSignScreen.DocumentsForSignature -> {
+                loadDocuments()
+                readDocumentsTab()
+            }
+            FormSignScreen.SignatureBlock -> marks.load()
+            else -> Unit
+        }
+    }
+
+    /** The web's `handleBackClick`, screen by screen. */
+    private fun back() {
+        when (currentState.screen) {
+            FormSignScreen.Tiles -> Unit
+            FormSignScreen.StandardDocuments, FormSignScreen.DocumentsForSignature, FormSignScreen.SignatureBlock ->
+                setState { copy(screen = FormSignScreen.Tiles) }
+            FormSignScreen.DrawSignature -> marks.cancel()
+            FormSignScreen.Detail -> detail.close()
+            FormSignScreen.Chat -> {
+                currentState.chat.unit?.let { badges.readChat(it.id) }
+                setState { copy(screen = FormSignScreen.StandardDocuments, chat = chat.copy(receiver = null)) }
+            }
+        }
     }
 
     private fun refresh() {
-        when (currentState.area) {
-            FormSignatureArea.Hub -> Unit
-            FormSignatureArea.StandardForms -> loadStandardForms()
-            FormSignatureArea.Documents -> loadDocuments()
-            FormSignatureArea.Signatures -> loadSignatures()
+        when (currentState.screen) {
+            FormSignScreen.StandardDocuments -> loadStandardForms()
+            FormSignScreen.DocumentsForSignature -> loadDocuments()
+            FormSignScreen.SignatureBlock -> marks.load()
+            else -> Unit
         }
     }
 
-    private fun loadStandardForms() {
-        setState { copy(standard = standard.copy(loading = true)) }
+    // ------------------------------------------------------------------ lists
+
+    private fun loadStandardForms(quiet: Boolean = false) {
+        if (!quiet) setState { copy(standard = standard.copy(loading = true)) }
         launchResult(
             block = { repository.standardForms(currentState.standard.tab == StandardTab.Mine) },
             onSuccess = { rows -> setState { copy(standard = standard.copy(rows = rows, loading = false)) } },
@@ -173,8 +241,8 @@ class FormSignatureViewModel(
         )
     }
 
-    private fun loadDocuments() {
-        setState { copy(documents = documents.copy(loading = true)) }
+    private fun loadDocuments(quiet: Boolean = false) {
+        if (!quiet) setState { copy(documents = documents.copy(loading = true)) }
         launchResult(
             block = { repository.documents(currentState.documents.tab) },
             onSuccess = { rows -> setState { copy(documents = documents.copy(rows = rows, loading = false)) } },
@@ -185,199 +253,26 @@ class FormSignatureViewModel(
         )
     }
 
-    private fun loadSignatures() {
-        setState { copy(signatures = signatures.copy(loading = true)) }
-        launchResult(
-            block = { repository.signatures() },
-            onSuccess = { blocks ->
-                setState { copy(signatures = signatures.copy(blocks = blocks, loading = false)) }
-                fetchSignatureImages(blocks)
-            },
-            onError = { setState { copy(signatures = signatures.copy(loading = false)) } },
-        )
+    private fun switchDocumentsTab(tab: SignDocumentTab) {
+        setState { copy(documents = documents.copy(tab = tab, search = "")) }
+        loadDocuments()
+        readDocumentsTab()
     }
 
-    private fun fetchSignatureImages(blocks: List<SignatureBlock>) {
-        blocks.forEach { block ->
-            val image = block.image ?: return@forEach
-            if (currentState.signatures.images.containsKey(block.id)) return@forEach
-            launch {
-                val bytes = (transfer.fetch(image) as? ZillitResult.Success)?.data ?: return@launch
-                setState {
-                    copy(signatures = signatures.copy(images = signatures.images + (block.id to bytes)))
-                }
-            }
-        }
-    }
-
-    // ------------------------------------------------------------------ detail
-
-    private fun openStandardForm(form: StandardForm) {
-        val mine = currentState.standard.tab == StandardTab.Mine
-        val source = if (mine) DetailSource.StandardMine else DetailSource.StandardAll
-        openDetail(
-            DetailState(
-                source = source,
-                documentId = form.id,
-                title = form.name.ifBlank { "Document" },
-                stored = form.document,
-                canSign = mine && !form.signedBy(currentState.currentUserId),
-                alreadySigned = form.signedBy(currentState.currentUserId),
-            ),
-        )
-    }
-
-    private fun openDocument(document: SignDocument) {
-        val me = currentState.currentUserId
+    /** The web reads the tab's badge as it shows (`DocumentsForSignature.jsx:95-108`). */
+    private fun readDocumentsTab() {
         val tab = currentState.documents.tab
-        val mySigner = document.signer(me)
-        val canSign = !document.finalized && when (tab) {
-            SignDocumentTab.Received -> mySigner != null && !mySigner.signed
-            SignDocumentTab.Uploaded ->
-                document.userSignatureRequired && (mySigner == null || !mySigner.signed)
-            SignDocumentTab.Finalized -> false
-        }
-        openDetail(
-            DetailState(
-                source = DetailSource.ForSignature,
-                documentId = document.id,
-                title = document.name.ifBlank { "Document" },
-                stored = document.current,
-                mySpots = document.pendingSpotsFor(me),
-                canSign = canSign,
-                alreadySigned = mySigner?.signed == true || document.finalized,
-            ),
-        )
+        val leaves = currentState.unread.tabLeaves(tab)
+        if (leaves.isNotEmpty()) badges.readDocumentsTab(leaves)
     }
-
-    private fun openDetail(detail: DetailState) {
-        detailPdf = null
-        val stored = detail.stored
-        if (stored == null || !stored.isPdf) {
-            setState { copy(detail = detail.copy(loadingPages = false, notPdf = true)) }
-            return
-        }
-        setState { copy(detail = detail) }
-        launch {
-            when (val fetched = transfer.fetch(stored)) {
-                is ZillitResult.Failure -> {
-                    setState { copy(detail = currentState.detail?.copy(loadingPages = false)) }
-                    sendEffect(FormSignatureEffect.Failed(fetched.error.localised()))
-                }
-                is ZillitResult.Success -> {
-                    detailPdf = fetched.data
-                    when (val pages = pdfWork.renderPages(fetched.data, PAGE_RENDER_WIDTH)) {
-                        is ZillitResult.Failure -> setState {
-                            copy(detail = currentState.detail?.copy(loadingPages = false, notPdf = true))
-                        }
-                        is ZillitResult.Success -> setState {
-                            copy(
-                                detail = currentState.detail?.copy(
-                                    pages = pages.data,
-                                    loadingPages = false,
-                                ),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /** Free placement: only offered when the sender placed no boxes for me. */
-    private fun placeFreeSpot(page: Int, xPx: Float, yPx: Float) {
-        val detail = currentState.detail ?: return
-        if (!detail.canSign || detail.mySpots.isNotEmpty()) return
-        val pageImage = detail.pages.firstOrNull { it.page == page } ?: return
-        val spot = pageImage.spotFromTap(
-            xPx = xPx,
-            yPx = yPx,
-            kind = SignSpotKind.Signature,
-            spotWidth = FREE_SPOT_WIDTH,
-            spotHeight = FREE_SPOT_HEIGHT,
-        )
-        setState { copy(detail = detail.copy(freeSpot = spot)) }
-    }
-
-    private fun signOpenDocument() {
-        val detail = currentState.detail ?: return
-        val pdf = detailPdf
-        if (!detail.readyToSign || pdf == null) return
-        setState { copy(detail = detail.copy(signing = true)) }
-        launch {
-            val outcome = runSign(detail, pdf)
-            when (outcome) {
-                is ZillitResult.Failure -> {
-                    setState { copy(detail = currentState.detail?.copy(signing = false)) }
-                    sendEffect(FormSignatureEffect.Failed(outcome.error.localised()))
-                }
-                is ZillitResult.Success -> {
-                    detailPdf = null
-                    setState { copy(detail = null) }
-                    sendEffect(FormSignatureEffect.Notice("Signed and sent back."))
-                    refresh()
-                }
-            }
-        }
-    }
-
-    /** The whole signing pipeline; the first failure wins. */
-    private suspend fun runSign(detail: DetailState, pdf: ByteArray): ZillitResult<Unit> {
-        val spots = detail.mySpots.ifEmpty { listOfNotNull(detail.freeSpot) }
-
-        val stamps = mutableListOf<PlacedStamp>()
-        for (spot in spots) {
-            when (val ink = signatureImageFor(spot.kind)) {
-                is ZillitResult.Failure -> return ink
-                is ZillitResult.Success -> stamps += PlacedStamp(ink.data, spot)
-            }
-        }
-
-        val flattened = when (val stamped = pdfWork.stamp(pdf, stamps)) {
-            is ZillitResult.Failure -> return stamped
-            is ZillitResult.Success -> stamped.data
-        }
-
-        val fileName = detail.stored?.name?.ifBlank { null } ?: "${detail.title}.pdf"
-        val uploaded = when (
-            val stored = transfer.store(UploadPurpose.Document, fileName, PDF_MIME, flattened)
-        ) {
-            is ZillitResult.Failure -> return stored
-            is ZillitResult.Success -> stored.data.copy(name = fileName)
-        }
-
-        return when (detail.source) {
-            DetailSource.StandardMine -> repository.signStandardForm(detail.documentId, uploaded)
-            DetailSource.ForSignature -> repository.signDocument(detail.documentId, uploaded)
-            DetailSource.StandardAll -> ZillitResult.Success(Unit)
-        }
-    }
-
-    /** The saved block for [kind], fetched, or a message telling the user to make one. */
-    private suspend fun signatureImageFor(kind: SignSpotKind): ZillitResult<ByteArray> {
-        val block = currentState.signatures.blocks.firstOrNull {
-            it.isSignature == (kind == SignSpotKind.Signature)
-        }
-        val image = block?.image
-            ?: return ZillitResult.Failure(
-                com.zillit.desktop.core.common.ZillitError.Validation(
-                    "Set up your ${kind.label.lowercase()} in Signature block first.",
-                ),
-            )
-        currentState.signatures.images[block.id]?.let { return ZillitResult.Success(it) }
-        return transfer.fetch(image)
-    }
-
-    // ---------------------------------------------------------------- library
 
     private fun selfAssign(formId: String) {
         launchResult(
             block = { repository.selfAssign(formId) },
-            onSuccess = {
-                sendEffect(FormSignatureEffect.Notice("Added to your documents."))
-                loadStandardForms()
+            onSuccess = { message ->
+                sendEffect(FormSignatureEffect.Notice(message.ifBlank { "Added to My Downloads." }))
             },
-            onError = { sendEffect(FormSignatureEffect.Failed(it.userMessage)) },
+            onError = { sendEffect(FormSignatureEffect.Failed(it.localised())) },
         )
     }
 
@@ -390,141 +285,52 @@ class FormSignatureViewModel(
      */
     private fun refusesPost(): Boolean {
         if (currentState.viewer.canPost) return false
-        rights?.ask(MODULE_LABEL, RightsKind.Post)
-        sendEffect(FormSignatureEffect.Failed(rightsRefusalMessage(MODULE_LABEL, RightsKind.Post, rights != null)))
+        rights?.ask(FormSignatureUiState.TOOL_TITLE, RightsKind.Post)
+        sendEffect(
+            FormSignatureEffect.Failed(
+                rightsRefusalMessage(FormSignatureUiState.TOOL_TITLE, RightsKind.Post, rights != null),
+            ),
+        )
         return true
     }
 
-    private fun deleteStandardForm(formId: String) {
-        launchResult(
-            block = { repository.deleteStandardForm(formId) },
-            onSuccess = { loadStandardForms() },
-            onError = { sendEffect(FormSignatureEffect.Failed(it.userMessage)) },
-        )
-    }
+    // --------------------------------------------------------------- uploads
 
-    /** The signer editor's four events, kept off the main list. */
-    private fun onSignerEditorEvent(event: SignerEditorEvent) = when (event) {
-        is FormSignatureEvent.EditSigners -> if (refusesPost()) Unit else openSignerEditor(event.document)
-        is FormSignatureEvent.ToggleSigner -> toggleSigner(event.userId)
-        FormSignatureEvent.SaveSigners -> saveSigners()
-        FormSignatureEvent.CloseSignerEditor -> setState { copy(signerEditor = null) }
-    }
-
-    /** Ticks or unticks one name in the signer editor. */
-    private fun toggleSigner(userId: String) = setState {
-        copy(
-            signerEditor = signerEditor?.let { editor ->
-                editor.copy(
-                    chosen = if (userId in editor.chosen) editor.chosen - userId else editor.chosen + userId,
-                )
-            },
-        )
-    }
-
-    /**
-     * Opens the editor on a sent document, with everyone already on it ticked.
-     *
-     * Someone who has already signed is shown but cannot be unticked: taking
-     * them off would discard ink that exists.
-     */
-    private fun openSignerEditor(document: SignDocument) {
-        setState {
-            copy(
-                signerEditor = SignerEditorState(
-                    documentId = document.id,
-                    title = document.document?.name.orEmpty(),
-                    chosen = document.signers.map { it.userId }.toSet(),
-                    alreadySigned = document.signers.filter { it.signed }.map { it.userId }.toSet(),
-                ),
-            )
-        }
-        launch {
-            val options = repository.signerOptions()
-            setState {
-                copy(
-                    signerEditor = signerEditor?.copy(
-                        loading = false,
-                        options = (options as? ZillitResult.Success)?.data.orEmpty(),
-                    ),
-                )
-            }
-        }
-    }
-
-    /**
-     * Saves the whole list.
-     *
-     * The service replaces rather than merges, so what is posted is every
-     * signer the document should have — the ones already on it included.
-     */
-    private fun saveSigners() {
-        val editor = currentState.signerEditor ?: return
-        if (!editor.canSave) return
-        setState { copy(signerEditor = editor.copy(saving = true)) }
-        launch {
-            val signers = (editor.chosen + editor.alreadySigned).toList()
-            when (val answer = repository.updateSigners(editor.documentId, signers)) {
-                is ZillitResult.Success -> {
-                    setState { copy(signerEditor = null) }
-                    sendEffect(FormSignatureEffect.Notice("Signers updated"))
-                    loadDocuments()
-                }
-
-                is ZillitResult.Failure -> {
-                    setState { copy(signerEditor = editor.copy(saving = false)) }
-                    sendEffect(FormSignatureEffect.Failed(answer.error.localised()))
-                }
-            }
-        }
-    }
-
-    private fun deleteDocument(documentId: String) {
-        launchResult(
-            block = { repository.deleteDocument(documentId) },
-            onSuccess = { loadDocuments() },
-            onError = { sendEffect(FormSignatureEffect.Failed(it.userMessage)) },
-        )
-    }
-
-    private fun showHistory(documentId: String) {
-        setState { copy(history = HistoryState(documentId = documentId)) }
-        launchResult(
-            block = { repository.history(documentId) },
-            onSuccess = { entries ->
-                setState { copy(history = history?.copy(entries = entries, loading = false)) }
-            },
-            onError = { setState { copy(history = history?.copy(loading = false)) } },
-        )
-    }
-
+    /** The library upload — the web's `handleUploadForm`, checks in its order. */
     private fun submitUploadForm() {
         val form = currentState.uploadForm ?: return
-        val bytes = form.fileBytes ?: return
+        val bytes = form.fileBytes
+        if (form.name.isBlank()) {
+            sendEffect(FormSignatureEffect.Failed("Please enter Document Name"))
+            return
+        }
+        if (bytes == null) {
+            sendEffect(FormSignatureEffect.Failed("Please upload the Document"))
+            return
+        }
+        if (form.extension !in ALLOWED_UPLOADS) {
+            sendEffect(FormSignatureEffect.Failed("Please select a PDF or Word document"))
+            return
+        }
         setState { copy(uploadForm = form.copy(uploading = true)) }
         launch {
-            val stored = transfer.store(UploadPurpose.Document, form.fileName, PDF_MIME, bytes)
+            val stored = transfer.store(UploadPurpose.Document, form.fileName, mimeFor(form.extension), bytes)
             when (stored) {
                 is ZillitResult.Failure -> {
                     setState { copy(uploadForm = currentState.uploadForm?.copy(uploading = false)) }
                     sendEffect(FormSignatureEffect.Failed(stored.error.localised()))
                 }
                 is ZillitResult.Success -> {
-                    val saved = repository.addStandardForm(
-                        document = stored.data.copy(name = form.fileName),
-                        type = form.type,
-                        note = form.note,
-                    )
-                    when (saved) {
+                    // The typed name is the document's name; the extension rides as its subtype, as the web sends it.
+                    val document = stored.data.copy(name = form.name.trim(), contentSubtype = form.extension)
+                    when (val saved = repository.addStandardForm(document, form.type)) {
                         is ZillitResult.Failure -> {
-                            setState {
-                                copy(uploadForm = currentState.uploadForm?.copy(uploading = false))
-                            }
+                            setState { copy(uploadForm = currentState.uploadForm?.copy(uploading = false)) }
                             sendEffect(FormSignatureEffect.Failed(saved.error.localised()))
                         }
                         is ZillitResult.Success -> {
                             setState { copy(uploadForm = null) }
-                            sendEffect(FormSignatureEffect.Notice("Document published."))
+                            sendEffect(FormSignatureEffect.Notice("Document uploaded."))
                             loadStandardForms()
                         }
                     }
@@ -533,207 +339,85 @@ class FormSignatureViewModel(
         }
     }
 
-    // ------------------------------------------------------------------- send
+    // ---------------------------------------------------------------- picker
 
-    private fun filePicked(name: String, bytes: ByteArray) {
-        when (pendingPick) {
-            PickTarget.StandardForm -> setState {
-                copy(uploadForm = UploadFormState(fileName = name, fileBytes = bytes))
-            }
-            PickTarget.SendDocument -> startSendWith(name, bytes)
-            null -> Unit
+    private fun pickSignature(block: SignatureBlock) {
+        when (val purpose = currentState.picker?.purpose ?: return) {
+            is PickPurpose.FillPlaceholder -> detail.fillPlaceholder(purpose.spot, block)
+            PickPurpose.FreeOnDetail -> detail.placeFreeMark(block)
+            is PickPurpose.SenderMark -> send.placeOwnMark(block)
         }
-        pendingPick = null
     }
 
-    private fun startSendWith(name: String, bytes: ByteArray) {
-        val pages = when (val rendered = pdfWork.renderPages(bytes, PAGE_RENDER_WIDTH)) {
-            is ZillitResult.Failure -> {
-                sendEffect(FormSignatureEffect.Failed("Only PDF documents can be sent for signature."))
-                return
-            }
-            is ZillitResult.Success -> rendered.data
-        }
-        setState {
-            copy(
-                send = SendState(
-                    fileName = name,
-                    fileBytes = bytes,
-                    title = name.removeSuffix(".pdf"),
-                    pages = pages,
-                ),
-            )
-        }
-        launchResult(
-            block = { repository.signerOptions() },
-            onSuccess = { options ->
-                setState { copy(send = send?.copy(options = options)) }
-            },
-            onError = { sendEffect(FormSignatureEffect.Failed(it.userMessage)) },
-        )
-    }
+    // ------------------------------------------------------------------ chat
 
-    private fun beginPlacement() {
-        val send = currentState.send ?: return
-        if (send.chosen.isEmpty()) {
-            sendEffect(FormSignatureEffect.Failed("Choose at least one signer first."))
-            return
-        }
-        setState { copy(send = send.copy(placing = true, activeSigner = send.chosen.first())) }
-    }
-
-    private fun placeSendSpot(page: Int, xPx: Float, yPx: Float) {
-        val send = currentState.send ?: return
-        val signer = send.activeSigner ?: return
-        val pageImage = send.pages.firstOrNull { it.page == page } ?: return
-        val spot = pageImage.spotFromTap(
-            xPx = xPx,
-            yPx = yPx,
-            kind = send.activeKind,
-            spotWidth = FREE_SPOT_WIDTH,
-            spotHeight = FREE_SPOT_HEIGHT,
-        )
-        val mine = send.spots[signer].orEmpty() + spot
-        setState { copy(send = send.copy(spots = send.spots + (signer to mine))) }
-    }
-
-    private fun removeSendSpot(signer: String, index: Int) {
-        val send = currentState.send ?: return
-        val mine = send.spots[signer].orEmpty().filterIndexed { i, _ -> i != index }
-        setState { copy(send = send.copy(spots = send.spots + (signer to mine))) }
-    }
-
-    private fun submitSend() {
-        val send = currentState.send ?: return
-        val bytes = send.fileBytes ?: return
-        if (!send.everySignerCovered) {
-            sendEffect(
-                FormSignatureEffect.Failed("Every signer needs at least one signature box."),
-            )
-            return
-        }
-        setState { copy(send = send.copy(sending = true)) }
+    private fun loadChatUnit() {
         launch {
-            val fileName = send.title.ifBlank { send.fileName }.ensurePdfName()
-            val stored = transfer.store(UploadPurpose.Document, fileName, PDF_MIME, bytes)
-            when (stored) {
-                is ZillitResult.Failure -> {
-                    setState { copy(send = currentState.send?.copy(sending = false)) }
-                    sendEffect(FormSignatureEffect.Failed(stored.error.localised()))
-                }
-                is ZillitResult.Success -> {
-                    val signers = send.chosen.mapIndexed { index, userId ->
-                        val option = send.options.firstOrNull { it.userId == userId }
-                        DocumentSigner(
-                            userId = userId,
-                            email = option?.email.orEmpty(),
-                            fullName = option?.fullName.orEmpty(),
-                            order = index + 1,
-                            spots = send.spots[userId].orEmpty(),
-                        )
-                    }
-                    val sent = repository.sendForSignature(
-                        document = stored.data.copy(name = fileName),
-                        signers = signers,
-                        onlySignatureRequired = send.onlySignature,
-                        userSignatureRequired = send.senderSigns,
-                    )
-                    when (sent) {
-                        is ZillitResult.Failure -> {
-                            setState { copy(send = currentState.send?.copy(sending = false)) }
-                            sendEffect(FormSignatureEffect.Failed(sent.error.localised()))
-                        }
-                        is ZillitResult.Success -> {
-                            setState { copy(send = null) }
-                            sendEffect(FormSignatureEffect.Notice("Sent for signature."))
-                            loadDocuments()
-                        }
-                    }
-                }
-            }
+            val unit = (repository.chatUnit() as? ZillitResult.Success)?.data
+            setState { copy(chat = chat.copy(unit = unit)) }
         }
     }
 
-    // -------------------------------------------------------------- signature
-
-    private fun submitDraw() {
-        val draw = currentState.draw ?: return
-        if (draw.strokes.none { it.size > 1 }) {
-            val kind = if (draw.isSignature) "signature" else "initials"
-            sendEffect(FormSignatureEffect.Failed("Draw your $kind first."))
+    private fun openChat() {
+        val unit = currentState.chat.unit ?: run {
+            sendEffect(FormSignatureEffect.Failed("No unit given for discussion"))
             return
         }
-        setState { copy(draw = draw.copy(saving = true)) }
+        setState { copy(screen = FormSignScreen.Chat, chat = chat.copy(receiver = null)) }
+        // The web reads the room's badge once its messages are on screen.
+        if (currentState.unread.chat(unit.id) > 0) badges.readChat(unit.id)
+    }
+
+    /** "Select User" — the web's `SelectMembersModal`, single pick, self excluded. */
+    private fun pickReceiver() {
+        setState { copy(chat = chat.copy(pickingReceiver = true, loadingOptions = chat.options.isEmpty())) }
+        if (currentState.chat.options.isNotEmpty()) return
         launch {
-            val png = when (
-                val raster = pdfWork.rasterizeStrokes(draw.strokes, DRAW_WIDTH, DRAW_HEIGHT)
-            ) {
-                is ZillitResult.Failure -> {
-                    setState { copy(draw = currentState.draw?.copy(saving = false)) }
-                    sendEffect(FormSignatureEffect.Failed(raster.error.localised()))
-                    return@launch
-                }
-                is ZillitResult.Success -> raster.data
-            }
-            val stored = transfer.store(
-                purpose = UploadPurpose.SignatureImage,
-                fileName = "${newId()}.png",
-                contentType = "image/png",
-                bytes = png,
-            )
-            when (stored) {
-                is ZillitResult.Failure -> {
-                    setState { copy(draw = currentState.draw?.copy(saving = false)) }
-                    sendEffect(FormSignatureEffect.Failed(stored.error.localised()))
-                }
-                is ZillitResult.Success -> {
-                    val label = draw.name.ifBlank { if (draw.isSignature) "Signature" else "Initials" }
-                    val saved = repository.saveSignature(
-                        image = stored.data,
-                        name = label,
-                        isSignature = draw.isSignature,
-                        existingId = draw.existingId,
-                    )
-                    when (saved) {
-                        is ZillitResult.Failure -> {
-                            setState { copy(draw = currentState.draw?.copy(saving = false)) }
-                            sendEffect(FormSignatureEffect.Failed(saved.error.localised()))
-                        }
-                        is ZillitResult.Success -> {
-                            setState { copy(draw = null) }
-                            loadSignatures()
-                        }
-                    }
-                }
-            }
+            val me = currentState.currentUserId
+            val options = (repository.signerOptions() as? ZillitResult.Success)?.data.orEmpty()
+                .filter { it.userId != me }
+                .sortedBy { it.label.lowercase() }
+            setState { copy(chat = chat.copy(options = options, loadingOptions = false)) }
         }
     }
 
-    private fun deleteSignature(blockId: String) {
-        launchResult(
-            block = { repository.deleteSignature(blockId) },
-            onSuccess = { loadSignatures() },
-            onError = { sendEffect(FormSignatureEffect.Failed(it.userMessage)) },
-        )
+    // ---------------------------------------------------------- confirmations
+
+    private fun confirmYes() {
+        val confirm = currentState.confirm ?: return
+        setState { copy(confirm = null) }
+        when (confirm) {
+            is ConfirmState.DeleteForm -> launchResult(
+                block = { repository.deleteStandardForm(confirm.formId) },
+                onSuccess = {
+                    setState {
+                        copy(standard = standard.copy(rows = standard.rows.filterNot { it.id == confirm.formId }))
+                    }
+                    sendEffect(FormSignatureEffect.Notice("Document deleted."))
+                },
+                onError = { sendEffect(FormSignatureEffect.Failed(it.localised())) },
+            )
+            is ConfirmState.DeleteDocument -> launchResult(
+                block = { repository.deleteDocument(confirm.documentId) },
+                onSuccess = {
+                    sendEffect(FormSignatureEffect.Notice("Document deleted."))
+                    loadDocuments()
+                },
+                onError = { sendEffect(FormSignatureEffect.Failed(it.localised())) },
+            )
+            is ConfirmState.DeleteSignature -> marks.delete(confirm.blockId)
+            ConfirmState.LeaveSigned -> detail.close(force = true)
+            ConfirmState.SendSigned -> detail.send()
+        }
     }
 
-    private fun String.ensurePdfName(): String =
-        if (endsWith(".pdf", ignoreCase = true)) this else "$this.pdf"
-
-    private enum class PickTarget { StandardForm, SendDocument }
+    private fun mimeFor(extension: String): String = when (extension) {
+        "pdf" -> PDF_MIME
+        "doc" -> "application/msword"
+        else -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    }
 
     private companion object {
-        const val PAGE_RENDER_WIDTH = 800
-        const val PDF_MIME = "application/pdf"
-
-        // The default box, PDF points — the same footprint the web places.
-        const val FREE_SPOT_WIDTH = 160.0
-        const val FREE_SPOT_HEIGHT = 56.0
-
-        // The drawing canvas, matching the web's 800×300.
-        const val DRAW_WIDTH = 800
-        const val DRAW_HEIGHT = 300
+        val ALLOWED_UPLOADS = setOf(StoredDocument.SUBTYPE_PDF) + StoredDocument.WORD_SUBTYPES
     }
 }
-
-private const val MODULE_LABEL = "Documents & Signature"

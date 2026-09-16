@@ -34,12 +34,56 @@ data class Company(
      */
     val ukPayeRef: String = "",
     val ukAccountsOfficeRef: String = "",
+    /**
+     * The workplace pension (backend 2026-09-12), in the same `uk` block.
+     *
+     * Free text, so never trimmed per keystroke — a provider carries spaces
+     * ("Legal & General"); trimmed once on the way out instead.
+     */
+    val ukPensionProvider: String = "",
+    val ukPensionSchemeRef: String = "",
 ) {
-    /** The first letters of up to two words — the card's monogram. */
+    /** The first two letters of the name — the card's monogram, as the web draws it. */
     val monogram: String
-        get() = name.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
-            .take(2).joinToString("") { it.first().uppercaseChar().toString() }
-            .ifBlank { "?" }
+        get() = name.filter { it.isLetter() }.take(2).uppercase().ifBlank { "?" }
+
+    /**
+     * Whether the company files UK payroll, so the PAYE block applies.
+     *
+     * Case-blind: stored country codes are not guaranteed uppercase, and a
+     * strict match would hide the references of a company saved as "gb".
+     */
+    val isUk: Boolean get() = countryCode.equals(UK, ignoreCase = true)
+
+    companion object {
+        const val UK = "GB"
+    }
+}
+
+/**
+ * The UK employer references a company carries — the web's `ukPayrollFields`.
+ *
+ * Neither is required: a production company can legitimately not have its
+ * PAYE reference yet. What blocks is a reference that is present and
+ * malformed — presence is optional, correctness is not.
+ */
+object UkPayrollRefs {
+    /** The server caps both refs here and rejects longer ones outright. */
+    const val REF_MAX = 20
+    const val PENSION_PROVIDER_MAX = 200
+    const val PENSION_SCHEME_MAX = 50
+
+    private val PAYE = Regex("^\\d{3}/[A-Za-z0-9]{1,10}$")
+    private val ACCOUNTS_OFFICE = Regex("^\\d{3}P[A-Za-z]\\d{8}$")
+
+    const val PAYE_ERROR = "Use the format 123/AB456."
+    const val ACCOUNTS_OFFICE_ERROR = "Use the format 123PA00012345."
+
+    /** True when something was typed and it does not parse. */
+    fun isPayeInvalid(value: String): Boolean = value.trim().let { it.isNotEmpty() && !PAYE.matches(it) }
+
+    fun isAccountsOfficeInvalid(value: String): Boolean =
+        value.trim().let { it.isNotEmpty() && !ACCOUNTS_OFFICE.matches(it) }
 }
 
 /** Operations over the whole company list, where the invariant lives. */
@@ -64,11 +108,64 @@ object Companies {
         }
     }
 
+    /**
+     * The banks a company owns, read from **both** sides of the link.
+     *
+     * The link is stored twice and only one side is written by the bank
+     * editor: it persists the holder as `entity_id` on the bank, while the
+     * company row carries `bank_ids`. Counting only the company's list left
+     * a bank created from the Bank Accounts section reading "0 accounts" on
+     * its company (ZL-20605). `entity_id` is the authoritative pointer;
+     * `bank_ids` stands in for rows saved before it existed.
+     */
+    fun linkedBankIds(company: Company, banks: List<BankAccount>): List<String> {
+        val owned = banks.filter { it.entityId == company.id }.map { it.id }
+        val legacy = company.bankIds.filter { id -> banks.none { it.id == id && !it.entityId.isNullOrBlank() } }
+        return (owned + legacy).distinct()
+    }
+
     /** Every currency code the company's banks span, in link order. */
-    fun currencyCodes(company: Company, banks: List<BankAccount>): List<String> {
+    fun currencyCodes(company: Company, banks: List<BankAccount>): List<String> =
+        currencyCodes(linkedBankIds(company, banks), banks)
+
+    fun currencyCodes(bankIds: List<String>, banks: List<BankAccount>): List<String> {
         val byId = banks.associateBy { it.id }
-        return company.bankIds.mapNotNull { byId[it]?.currencyCode?.takeIf(String::isNotBlank) }
-            .distinct()
+        return bankIds.mapNotNull { byId[it]?.currencyCode?.takeIf(String::isNotBlank) }.distinct()
+    }
+
+    /**
+     * Why the editor refuses to commit, or null when it may — the web's own
+     * gate: a name, a country, and no malformed UK reference. The UK checks
+     * apply only to a UK company: one moved elsewhere keeps its block, and
+     * an ungated check would refuse over a field the person can no longer see.
+     */
+    fun problem(draft: Company): String? = when {
+        draft.name.isBlank() -> "Give the company a name."
+        draft.country.isBlank() -> "Pick the company's country."
+        draft.isUk && UkPayrollRefs.isPayeInvalid(draft.ukPayeRef) -> UkPayrollRefs.PAYE_ERROR
+        draft.isUk && UkPayrollRefs.isAccountsOfficeInvalid(draft.ukAccountsOfficeRef) ->
+            UkPayrollRefs.ACCOUNTS_OFFICE_ERROR
+        else -> null
+    }
+
+    /**
+     * The list as the server should receive it.
+     *
+     * Bank ids that no longer resolve are dropped, and a blank legal name
+     * falls back to the trading one: this PATCH rewrites every row, so a
+     * company nobody has opened since the field shipped would otherwise keep
+     * a blank forever while being rewritten on every save.
+     */
+    fun forWire(companies: List<Company>, banks: List<BankAccount>): List<Company> {
+        val known = banks.map { it.id }.toSet()
+        return companies.filter { it.name.isNotBlank() }.map { company ->
+            company.copy(
+                name = company.name.trim(),
+                legalName = company.legalName.trim().ifBlank { company.name.trim() },
+                bankIds = company.bankIds.filter { it in known },
+                taxCredits = company.taxCredits.map { it.trim() }.filter { it.isNotEmpty() },
+            )
+        }
     }
 }
 
@@ -205,12 +302,25 @@ object BankAccounts {
     fun firstInvalidDetail(details: List<BankDetail>): BankDetail? =
         persistable(details).firstOrNull { !it.isValid }
 
-    /** Whether another row already carries this account number. */
+    /**
+     * Whether another row already carries this account number.
+     *
+     * Compared normalised — spaces stripped, case-folded — so "12 34 56 78"
+     * and "12345678" collide the way a person reads them.
+     */
     fun duplicateNumber(draft: BankAccount, banks: List<BankAccount>): Boolean {
-        val number = draft.accountNumber.trim()
+        val number = normalisedNumber(draft.accountNumber)
         if (number.isEmpty()) return false
-        return banks.any { it.id != draft.id && it.accountNumber.trim() == number }
+        return banks.any { it.id != draft.id && normalisedNumber(it.accountNumber) == number }
     }
+
+    private fun normalisedNumber(value: String) = value.filterNot { it.isWhitespace() }.lowercase()
+
+    /**
+     * Digits only, applied to what is typed — never to a stored value, so a
+     * legacy non-digit number is shown and round-tripped untouched.
+     */
+    fun typedAccountNumber(value: String): String = value.filter { it.isDigit() }
 
     /**
      * A nominal code the chart does not know, wrapped as `[[code]]`.
@@ -299,6 +409,8 @@ data class ProjectCurrency(
      * is pinned to 1.
      */
     val rate: Double? = null,
+    /** The issuing country, from the catalogue; blank on a stored row. */
+    val country: String = "",
 )
 
 /**
@@ -331,11 +443,30 @@ data class CurrencySettings(
         missingRates.takeIf { it.isNotEmpty() }
             ?.let { "Add an exchange rate for ${it.joinToString(", ")} before saving." }
 
-    /** Drops a currency, clearing the default when that is what was dropped. */
-    fun without(code: String): CurrencySettings = CurrencySettings(
-        currencies = currencies.filterNot { it.code == code },
-        defaultCode = defaultCode?.takeIf { it != code },
-    )
+    /**
+     * Drops a currency. Dropping the default hands it to the first currency
+     * left, as the web does — a list with currencies and no default would
+     * pre-fill nothing on the next purchase order.
+     */
+    fun without(code: String): CurrencySettings {
+        val remaining = currencies.filterNot { it.code == code }
+        return CurrencySettings(
+            currencies = remaining,
+            defaultCode = if (defaultCode == code) remaining.firstOrNull()?.code else defaultCode,
+        )
+    }
+
+    /** Adds a currency; the first one added becomes the default. */
+    fun with(currency: ProjectCurrency): CurrencySettings =
+        if (currencies.any { it.code == currency.code }) {
+            this
+        } else {
+            copy(currencies = currencies + currency, defaultCode = defaultCode ?: currency.code)
+        }
+
+    /** Adds the currency when absent, drops it when present — the catalogue tile's click. */
+    fun toggled(currency: ProjectCurrency): CurrencySettings =
+        if (currencies.any { it.code == currency.code }) without(currency.code) else with(currency)
 
     /**
      * The form the server will actually store.

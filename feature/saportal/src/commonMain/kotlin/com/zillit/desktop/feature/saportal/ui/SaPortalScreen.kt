@@ -94,7 +94,7 @@ fun SaPortalScreen(state: SaUiState, onEvent: (SaEvent) -> Unit) {
 @Composable
 private fun ColumnScope.PortalBody(state: SaUiState, onEvent: (SaEvent) -> Unit) {
     ZillitTabStrip(
-        tabs = SaDestination.entries.map { ZillitTab(it.slug, it.label) },
+        tabs = SaDestination.entries.map { ZillitTab(it.slug, it.label, count = it.badgeKey?.let(state.unread::get) ?: 0) },
         activeId = state.destination.slug,
         onSelect = { slug ->
             SaDestination.entries.firstOrNull { it.slug == slug }

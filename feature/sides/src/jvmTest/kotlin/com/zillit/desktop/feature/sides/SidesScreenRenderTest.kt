@@ -1,51 +1,232 @@
 package com.zillit.desktop.feature.sides
 
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.feature.sides.domain.CallSheetRef
+import com.zillit.desktop.feature.sides.domain.SceneInfo
+import com.zillit.desktop.feature.sides.domain.ScenePage
+import com.zillit.desktop.feature.sides.domain.ScheduleRef
+import com.zillit.desktop.feature.sides.domain.Script
+import com.zillit.desktop.feature.sides.domain.ScriptVersion
+import com.zillit.desktop.feature.sides.domain.SidesPageRef
+import com.zillit.desktop.feature.sides.domain.SidesRecord
+import com.zillit.desktop.feature.sides.domain.SidesStatus
 import com.zillit.desktop.feature.sides.domain.SidesViewer
+import com.zillit.desktop.feature.sides.ui.AutoState
+import com.zillit.desktop.feature.sides.ui.DocKind
+import com.zillit.desktop.feature.sides.ui.GenerateState
+import com.zillit.desktop.feature.sides.ui.PickedDoc
+import com.zillit.desktop.feature.sides.ui.ScriptsState
 import com.zillit.desktop.feature.sides.ui.SidesDestination
+import com.zillit.desktop.feature.sides.ui.SidesDialog
+import com.zillit.desktop.feature.sides.ui.SidesEvent
+import com.zillit.desktop.feature.sides.ui.SidesLayout
+import com.zillit.desktop.feature.sides.ui.SidesListState
+import com.zillit.desktop.feature.sides.ui.SidesPdfView
 import com.zillit.desktop.feature.sides.ui.SidesScreen
 import com.zillit.desktop.feature.sides.ui.SidesUiState
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
-/** Composes the real sides screen at each destination, in both themes. */
+/** Composes every Sides surface with real data, in both themes. */
 @OptIn(ExperimentalTestApi::class)
 class SidesScreenRenderTest {
 
+    private val viewer = SidesViewer(canView = true, canPost = true, canDownload = true, ready = true)
+
+    private val record = SidesRecord(
+        id = "s1",
+        title = "Day 5 sides",
+        status = SidesStatus.Ready,
+        sceneNumbers = (1..15).map { it.toString() },
+        totalScenes = 15,
+        scriptTitle = "Ep 1",
+        versionNumber = 2,
+        generatedByName = "Aisha Khan",
+        downloadCount = 3,
+        createdAt = "2026-09-15T10:00:00Z",
+        attachmentName = "day5.pdf",
+        attachmentSize = 204_800,
+        sceneFolders = listOf(SidesPageRef("12A", "#1e88e5", listOf("12A"))),
+    )
+    private val generating = record.copy(id = "s2", title = "Rendering", status = SidesStatus.Generating)
+    private val script = Script(
+        id = "sc1",
+        title = "Ep 1",
+        updatedAt = "2026-09-15T10:00:00Z",
+        currentVersion = ScriptVersion("v2", 2, "v2", 110, "2026-09-15T10:00:00Z", "ep1.pdf"),
+    )
+    private val page = ScenePage("p1", "12A", "#e53935", "A very long note ".repeat(12), 3)
+
+    private fun compose(
+        state: SidesUiState,
+        dark: Boolean = false,
+        check: androidx.compose.ui.test.ComposeUiTest.() -> Unit = {},
+    ) {
+        runComposeUiTest {
+            setContent { ZillitTheme(darkTheme = dark) { SidesScreen(state = state, onEvent = {}) } }
+            check()
+        }
+    }
+
     @Test
-    fun `each destination composes in both themes`() {
-        SidesDestination.entries.forEach { destination ->
-            listOf(false, true).forEach { dark ->
-                runComposeUiTest {
-                    setContent {
-                        ZillitTheme(darkTheme = dark) {
-                            SidesScreen(
-                                state = SidesUiState(
-                                    viewer = SidesViewer(canView = true),
-                                    destination = destination,
-                                ),
-                                onEvent = {},
-                            )
-                        }
-                    }
-                }
+    fun `the list composes as cards and as a table, empty and full, in both themes`() {
+        listOf(false, true).forEach { dark ->
+            compose(SidesUiState(viewer = viewer), dark) { onNodeWithText("No sides yet").assertExists() }
+            val full = SidesListState(
+                sides = listOf(record, generating),
+                historyOpen = true,
+                history = listOf(record.copy(id = "h1", title = "Old sides")),
+            )
+            compose(SidesUiState(viewer = viewer, list = full), dark) {
+                onNodeWithText("Day 5 sides").assertExists()
+                onAllNodesWithText("+2").assertCountEquals(3)
+                onNodeWithText("Generating…").assertExists()
+            }
+            compose(SidesUiState(viewer = viewer, list = full.copy(layout = SidesLayout.Table)), dark) {
+                onAllNodesWithText("GENERATED BY").assertCountEquals(2)
             }
         }
     }
 
-    /** The history sheet is its own layout over the list. */
     @Test
-    fun `the history panel composes`() {
+    fun `the scripts manager composes with a version menu and long page notes`() {
+        val scripts = ScriptsState(
+            scripts = listOf(script, Script("sc2", "Ep 2")),
+            versions = mapOf("sc1" to listOf(script.currentVersion!!, ScriptVersion("v1", 1, "v1", 100, "", ""))),
+            pages = mapOf("sc1" to listOf(page)),
+            versionMenu = "sc1",
+        )
+        compose(SidesUiState(viewer = viewer, destination = SidesDestination.Scripts, scripts = scripts)) {
+            onNodeWithText("Ep 2").assertExists()
+            onNodeWithText("No script file yet — add pages or upload a file").assertExists()
+            onNodeWithText("more").assertExists()
+            onNodeWithText("Current").assertExists()
+        }
+        compose(SidesUiState(viewer = viewer, destination = SidesDestination.Scripts)) {
+            onNodeWithText("No scripts yet").assertExists()
+        }
+    }
+
+    @Test
+    fun `the generate form and its result stages compose`() {
+        val form = GenerateState(
+            loading = false,
+            scripts = listOf(script, Script("sc2", "Ep 2")),
+            activeScriptId = "sc1",
+            activeVersionId = "v2",
+            scriptId = "sc1",
+            extraScriptIds = listOf("sc2"),
+            versions = mapOf("sc1" to listOf(script.currentVersion!!), "sc2" to emptyList()),
+            pages = listOf(page),
+            scenesByVersion = mapOf("v2" to listOf(SceneInfo("1", "INT. KITCHEN"), SceneInfo("2"))),
+            openVersions = setOf("v2"),
+            openPages = setOf("p1"),
+            versionPicks = mapOf("v2" to listOf("2", "1")),
+            wholePages = setOf("p1"),
+            rearrange = true,
+            order = listOf("2", "1"),
+        )
+        compose(SidesUiState(viewer = viewer, generate = form)) {
+            onNodeWithText("Generate Sides").assertExists()
+            onNodeWithText("CURRENT").assertExists()
+            onNodeWithText("No scenes detected — include the entire PDF").assertExists()
+            onNodeWithText("Sides will be ordered as: 2, 1").assertExists()
+            onNodeWithText("2 scenes selected").assertExists()
+        }
+        compose(SidesUiState(viewer = viewer, generate = form.copy(running = true))) {
+            onNodeWithText("Generating sides…").assertExists()
+        }
+        val ready = form.copy(result = record.copy(status = SidesStatus.Ready), viewed = true)
+        compose(SidesUiState(viewer = viewer, generate = ready)) {
+            onNodeWithText("Sides generated successfully").assertExists()
+            onNodeWithText("Whole PDF").assertExists()
+            onNodeWithText("Publish").assertExists()
+        }
+        compose(SidesUiState(
+            viewer = viewer,
+            generate = form.copy(result = record.copy(status = SidesStatus.Error, error = "boom")),
+        )) {
+            onNodeWithText("boom").assertExists()
+        }
+    }
+
+    @Test
+    fun `the autogenerate dialog composes across its stages`() {
+        val auto = AutoState(
+            scriptId = "sc1",
+            scriptTitle = "Ep 1",
+            loading = false,
+            callSheets = listOf(
+                CallSheetRef("cs1", "Day 1", scenes = listOf("1", "2")),
+                CallSheetRef("cs2", "Day 2", "uploaded"),
+            ),
+            schedules = listOf(ScheduleRef("sh1", "Week 1", totalDays = 5, totalScenes = 40)),
+            selectedCallSheetId = "cs1",
+            rearrange = true,
+            order = listOf("2", "1"),
+            orderText = "2, 1",
+        )
+        compose(SidesUiState(viewer = viewer, auto = auto)) {
+            onNodeWithText("Script:").assertExists()
+            onNodeWithText("UPLOADED").assertExists()
+            onNodeWithText("5 days · 40 scenes").assertExists()
+            onNodeWithText("2 scene(s): 2, 1").assertExists()
+        }
+        compose(SidesUiState(viewer = viewer, auto = auto.copy(selectedCallSheetId = "cs2"))) {
+            onNodeWithText("No scenes found in this call sheet.").assertExists()
+        }
+        compose(SidesUiState(viewer = viewer, auto = auto.copy(result = record, viewed = false))) {
+            onNodeWithText("View Sides").assertExists()
+        }
+    }
+
+    @Test
+    fun `dialogs and the viewer compose`() {
+        listOf(
+            SidesDialog.AddScript(title = "Ep 3", file = PickedDoc("ep3.pdf", ByteArray(2048))),
+            SidesDialog.PageEditor(scriptId = "sc1", pageId = "p1", sceneNumber = "12A", currentFileName = "old.pdf"),
+            SidesDialog.UploadDoc(DocKind.Schedule),
+            SidesDialog.Confirm(com.zillit.desktop.feature.sides.ui.ConfirmKind.Sides, "s1", "Delete sides?", "Sure?"),
+        ).forEach { dialog -> compose(SidesUiState(viewer = viewer, dialog = dialog)) }
+        compose(SidesUiState(
+            viewer = viewer,
+            pdf = SidesPdfView("Day 5", "Sides", loading = false, notPdf = true, url = "u"),
+        )) {
+            onNodeWithText("Preview not available").assertExists()
+        }
+        compose(
+            SidesUiState(
+                viewer = viewer.copy(canDownload = false, isAdmin = false),
+                pdf = SidesPdfView("Day 5", "Sides", loading = false, notPdf = true, url = "u"),
+            ),
+        ) { onNodeWithText("Request download access").assertExists() }
+    }
+
+    @Test
+    fun `a blocked viewer sees the notice and no controls`() {
+        compose(SidesUiState(viewer = SidesViewer(canView = false, ready = true))) {
+            onNodeWithText("You don’t have access to Sides on this project.").assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun `the header switch fires the destination event`() {
+        val events = mutableListOf<SidesEvent>()
         runComposeUiTest {
             setContent {
                 ZillitTheme(darkTheme = false) {
-                    SidesScreen(
-                        state = SidesUiState(viewer = SidesViewer(canView = true), showHistory = true),
-                        onEvent = {},
-                    )
+                    SidesScreen(SidesUiState(viewer = viewer), onEvent = { events += it })
                 }
             }
+            onNodeWithText("Script").performClick()
         }
+        assertEquals(listOf<SidesEvent>(SidesEvent.Open(SidesDestination.Scripts)), events)
     }
 }

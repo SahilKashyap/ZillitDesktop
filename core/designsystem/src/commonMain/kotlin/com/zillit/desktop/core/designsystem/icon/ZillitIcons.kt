@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathBuilder
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.core.designsystem.ZillitPalette
 
 /**
  * The app's icon set.
@@ -38,8 +39,12 @@ object ZillitIcons {
      * A bare Z rather than a glyph borrowed from the tool set: the tray icon
      * stands for the whole application, and a calendar or a bell there would
      * claim the app is one of those things.
+     *
+     * Painted in the brand orange rather than the set's black: every other
+     * icon is tinted by the composable that draws it, but the tray renders the
+     * painter as-is, so the colour has to be baked in here.
      */
-    val Mark: ImageVector = stroked("Mark") {
+    val Mark: ImageVector = stroked("Mark", colour = ZillitPalette.Orange) {
         moveTo(7f, 6f); lineTo(17f, 6f); lineTo(7f, 18f); lineTo(17f, 18f)
     }
 
@@ -968,6 +973,19 @@ object ZillitIcons {
         lineTo(4f, 19f)
     }
 
+    /** A globe with its meridian and equator — Translate. */
+    val Globe: ImageVector = stroked("Globe") {
+        moveTo(12f, 3f)
+        arcTo(9f, 9f, 0f, true, true, 12f, 21f)
+        arcTo(9f, 9f, 0f, true, true, 12f, 3f)
+        moveTo(3f, 12f); lineTo(21f, 12f)
+        moveTo(12f, 3f)
+        curveTo(14.5f, 5.5f, 15.8f, 8.7f, 15.8f, 12f)
+        curveTo(15.8f, 15.3f, 14.5f, 18.5f, 12f, 21f)
+        curveTo(9.5f, 18.5f, 8.2f, 15.3f, 8.2f, 12f)
+        curveTo(8.2f, 8.7f, 9.5f, 5.5f, 12f, 3f)
+    }
+
     /** Two overlapping sheets — Copy. */
     val Copy: ImageVector = stroked("Copy") {
         roundedRect(9f, 9f, 20f, 20f, 2f)
@@ -1089,7 +1107,11 @@ object ZillitIcons {
         close()
     }
 
-    private fun stroked(name: String, pathBuilder: PathBuilder.() -> Unit): ImageVector =
+    private fun stroked(
+        name: String,
+        colour: Color = Color.Black,
+        pathBuilder: PathBuilder.() -> Unit,
+    ): ImageVector =
         ImageVector.Builder(
             name = name,
             defaultWidth = VIEWPORT.dp,
@@ -1098,7 +1120,7 @@ object ZillitIcons {
             viewportHeight = VIEWPORT,
         ).apply {
             path(
-                stroke = SolidColor(Color.Black),
+                stroke = SolidColor(colour),
                 strokeLineWidth = STROKE,
                 strokeLineCap = StrokeCap.Round,
                 strokeLineJoin = StrokeJoin.Round,

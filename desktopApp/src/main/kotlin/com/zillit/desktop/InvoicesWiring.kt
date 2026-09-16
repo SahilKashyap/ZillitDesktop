@@ -25,7 +25,14 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceViewer
 import com.zillit.desktop.feature.invoices.domain.PickedInvoiceFile
 import com.zillit.desktop.feature.invoices.ui.InvoicesToolProvider
 import com.zillit.desktop.feature.invoices.ui.InvoicesViewModel
+import com.zillit.desktop.core.badges.BadgeDrilldownQuery
+import com.zillit.desktop.core.badges.TabBadgeSource
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicReference
 
@@ -152,6 +159,19 @@ internal fun AppGraph.Ready.buildInvoices(
     scope: CoroutineScope,
 ): InvoicesViewModel {
     val reference = InvoiceReferenceData(this, scope)
+    val resolveViewer = {
+        val context = projectContext?.context?.value
+        val profile = context?.profile
+        InvoiceViewer.from(
+            permissions = permissions(),
+            userId = profile?.userId.orEmpty(),
+            departmentId = profile?.departmentId.orEmpty(),
+            // The untranslated keys ("accounts_department_label"), which is what the web substring-matches.
+            departmentIdentifier = profile?.departmentName.orEmpty(),
+            designationIdentifier = profile?.designationName.orEmpty(),
+            isTelevision = context?.project?.subType?.contains("television", ignoreCase = true) == true,
+        )
+    }
     return InvoicesViewModel(
         repository = InvoicesRepositoryImpl(
             apiClient,
@@ -160,19 +180,7 @@ internal fun AppGraph.Ready.buildInvoices(
             currentProjectId = { projectContext?.context?.value?.project?.projectId },
         ),
         files = invoiceFiles(),
-        resolveViewer = {
-            val context = projectContext?.context?.value
-            val profile = context?.profile
-            InvoiceViewer.from(
-                permissions = permissions(),
-                userId = profile?.userId.orEmpty(),
-                departmentId = profile?.departmentId.orEmpty(),
-                // The untranslated keys ("accounts_department_label"), which is what the web substring-matches.
-                departmentIdentifier = profile?.departmentName.orEmpty(),
-                designationIdentifier = profile?.designationName.orEmpty(),
-                isTelevision = context?.project?.subType?.contains("television", ignoreCase = true) == true,
-            )
-        },
+        resolveViewer = resolveViewer,
         projectMoney = { CurrencyRates(reference.currency(), reference.rates()) },
         resolveUser = { userId -> projectContext?.context?.value?.user(userId)?.fullName },
         departmentName = { id -> reference.departmentName(id) },
@@ -196,8 +204,38 @@ internal fun AppGraph.Ready.buildInvoices(
                     .sortedBy { it.name.lowercase() }
             },
         ),
+        // An accountant's rows file under the account hub; everyone else's
+        // under the tool the web nests the invoice tabs in — the purchase-order
+        // tool (`constants.js:164-173`) — or, as Android files them, an
+        // `invoices_label` tool of their own. Both are read, so neither sticks.
+        badges = invoiceBadges { resolveViewer().isAccountant },
     )
 }
+
+private fun AppGraph.Ready.invoiceBadges(isAccountant: () -> Boolean): TabBadgeSource = object : TabBadgeSource {
+    private val reads = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private fun tools(): List<String> =
+        if (isAccountant()) listOf(HUB_TOOL) else listOf(DEPARTMENT_PO_TOOL, DEPARTMENT_INVOICES_TOOL)
+
+    override val counts: Flow<Map<String, Int>> = badgeStore.counts
+        .map {
+            val perTool = tools().map { tool ->
+                badgeStore.split(BadgeDrilldownQuery(groupBy = "level_1", tool = tool, unit = INVOICE_UNIT))
+            }
+            perTool.flatMap { it.keys }.distinct().associateWith { key -> perTool.sumOf { it[key] ?: 0 } }
+        }
+        .distinctUntilChanged()
+
+    override fun read(key: String) {
+        reads.launch { tools().forEach { tool -> emitLevelRead(tool = tool, unit = INVOICE_UNIT, level1 = key) } }
+    }
+}
+
+private const val HUB_TOOL = "account_hub_label"
+private const val DEPARTMENT_PO_TOOL = "purchase_order_label"
+private const val DEPARTMENT_INVOICES_TOOL = "invoices_label"
+private const val INVOICE_UNIT = "invoice_label"
 
 private const val ACCOUNTS_DEPARTMENT = "accounts"
 

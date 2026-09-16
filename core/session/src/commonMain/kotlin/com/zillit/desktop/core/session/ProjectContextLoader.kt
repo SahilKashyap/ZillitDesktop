@@ -314,6 +314,13 @@ internal data class ProjectDetailDto(
     @SerialName("parent_project_name") val parentProjectName: String? = null,
     /** A scheduled deletion, still counting down and still stoppable. */
     @SerialName("mark_deleted") val markDeleted: Boolean? = null,
+    /**
+     * The production's working language. The web reads `language_code`
+     * first (`commonUtils.js` `getProjectLanguage`) and its chat edit path
+     * falls back to `project_language` (`MyMessage.jsx:252`); both are read.
+     */
+    @SerialName("language_code") val languageCode: String? = null,
+    @SerialName("project_language") val projectLanguage: String? = null,
 ) {
     fun toSnapshot(projectId: String) = ProjectSnapshot(
         projectId = projectId,
@@ -327,6 +334,7 @@ internal data class ProjectDetailDto(
         storageFolders = readStorageFolders(storageFolders),
         parentName = parentProjectName?.takeIf { it.isNotBlank() },
         markedForDeletion = markDeleted == true,
+        languageCode = (languageCode ?: projectLanguage)?.takeIf { it.isNotBlank() },
     )
 }
 

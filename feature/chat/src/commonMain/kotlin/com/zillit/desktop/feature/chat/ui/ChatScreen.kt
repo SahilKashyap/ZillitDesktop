@@ -1,8 +1,11 @@
 package com.zillit.desktop.feature.chat.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -21,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
@@ -64,9 +68,9 @@ import com.zillit.desktop.feature.chat.domain.GroupRoom
 import com.zillit.desktop.feature.chat.domain.RecentRow
 import kotlinx.coroutines.launch
 import com.zillit.desktop.feature.chat.domain.admits
+import com.zillit.desktop.feature.chat.domain.chatTimeLabel
 import com.zillit.desktop.feature.chat.domain.designationLabel
 import com.zillit.desktop.feature.chat.domain.lastEntryDate
-import com.zillit.desktop.feature.chat.domain.lastMessageAt
 import com.zillit.desktop.feature.chat.domain.recentRows
 import com.zillit.desktop.feature.chat.domain.searchCrew
 import com.zillit.desktop.feature.chat.domain.searchRecents
@@ -179,7 +183,7 @@ fun ChatScreen(
 
             if (!showDirectory || !compact) {
                 DetailSide(
-                    compact, chatState, viewModel, crew, selectedId, onOpenAttachment,
+                    compact, chatState, viewModel, crew, selfId, selectedId, onOpenAttachment,
                     loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
                     onBack = {
                         viewModel?.onEvent(ChatEvent.CloseThread)
@@ -220,6 +224,7 @@ private fun RowScope.DetailSide(
     chatState: ChatUiState?,
     viewModel: ChatViewModel?,
     crew: List<CrewContact>,
+    selfId: String?,
     selectedId: String?,
     onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap?,
@@ -251,7 +256,7 @@ private fun RowScope.DetailSide(
         }
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             DetailPane(
-                chatState, viewModel, crew, selectedId, onOpenAttachment,
+                chatState, viewModel, crew, selfId, selectedId, onOpenAttachment,
                 loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
             )
         }
@@ -316,6 +321,7 @@ private fun DetailPane(
     chatState: ChatUiState?,
     viewModel: ChatViewModel?,
     crew: List<CrewContact>,
+    selfId: String?,
     selectedId: String?,
     onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap?,
@@ -329,7 +335,7 @@ private fun DetailPane(
     when {
         chatState?.peer != null && viewModel != null ->
             OpenThread(
-                chatState, viewModel, crew, onOpenAttachment,
+                chatState, viewModel, crew, selfId, onOpenAttachment,
                 loadAvatar, loadThumbnail, onCall, lines, player, loadAudio,
             )
 
@@ -350,6 +356,7 @@ private fun OpenThread(
     chatState: ChatUiState,
     viewModel: ChatViewModel,
     crew: List<CrewContact>,
+    selfId: String?,
     onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     loadAvatar: suspend (String) -> ImageBitmap?,
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ImageBitmap?,
@@ -370,6 +377,11 @@ private fun OpenThread(
         // opens the person — their thread, whose header is their profile
         // line, the web's `setCurrentChat` treatment.
         resolveMention = { id -> crew.firstOrNull { it.userId == id }?.fullName },
+        // The readers panel names and captions its rows from the crew.
+        resolveContact = { id -> crew.firstOrNull { it.userId == id } },
+        // Forward's people: everyone still here, minus oneself — the same
+        // cut the Contacts tab makes.
+        forwardPeople = crew.filterNot { it.userId == selfId || it.hasLeft },
         onOpenUser = { id ->
             crew.firstOrNull { it.userId == id }?.let { tagged ->
                 viewModel.onEvent(ChatEvent.OpenThread(tagged))
@@ -613,14 +625,17 @@ private fun RecentsList(
 
     val nowMillis = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
     val roomsState = rememberLazyListState()
+    // No hairlines between rows: each row is its own rounded card under the
+    // cursor and when open, and a rule under every one of them cut across
+    // that. Rows animate to their new place when activity reorders them,
+    // so a conversation that just moved up is seen moving, not swapped.
     ZillitLazyColumn(
         state = roomsState,
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
         items(rows, key = RecentRow::id) { row ->
-            Column {
-                RecentRowCard(row, state, selfId, loadAvatar, onEvent, deleteRoom)
-                ZillitDivider()
+            Box(Modifier.animateItem()) {
+                RecentRowCard(row, state, selfId, loadAvatar, onEvent, deleteRoom, nowMillis, crew)
             }
         }
         if (hits.isNotEmpty()) {
@@ -642,12 +657,15 @@ private fun RecentsList(
  * the listing re-read once the server has taken it.
  */
 @Composable
+@Suppress("LongParameterList") // One row's data, its verbs and the clock.
 private fun GroupRowWithDelete(
     row: RecentRow.Group,
     state: ChatUiState,
     selfId: String?,
     onEvent: (ChatEvent) -> Unit,
     deleteRoom: (suspend (String) -> ZillitResult<Unit>)?,
+    nowMillis: Long,
+    nameFor: (String) -> String? = { null },
 ) {
     var confirming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
@@ -657,11 +675,17 @@ private fun GroupRowWithDelete(
 
     CrewRow(
         contact = CrewContact(userId = row.room.id, fullName = row.room.name),
-        isSelected = false,
+        isSelected = state.peerIsGroup && state.peer?.userId == row.room.id,
         loadAvatar = { null },
         onClick = { onEvent(ChatEvent.OpenGroup(row.room)) },
-        subtitle = (state.activity[row.room.id] ?: row.room.sortingActivity.takeIf { it > 0L })
-            ?.let { "${"last_message_at".localised()}: ${lastMessageAt(it)}" },
+        // The newest line, led by who wrote it — "You:" or a first name —
+        // the way a room's row reads on the phones; "Group" until one is cached.
+        subtitle = state.previews[row.room.id]?.line(selfId, inRoom = true, nameFor = nameFor) ?: "Group",
+        // The room's newest word, as a clock or a date at the row's end — the
+        // mail list's column, where "Last Message At: Sep 15, 2026 at 06:…"
+        // used to run under the name and ellipsise its own time away.
+        stamp = (state.activity[row.room.id] ?: row.room.sortingActivity.takeIf { it > 0L })
+            ?.let { chatTimeLabel(it, nowMillis) },
         badge = state.unread[row.room.id] ?: 0,
         trailing = if (mine) {
             {
@@ -742,8 +766,15 @@ private fun DeleteGroupDialog(
     }
 }
 
-/** One conversation row, group- or person-flavoured. */
+/**
+ * One conversation row, group- or person-flavoured.
+ *
+ * The open conversation is lit, whichever tab opened it: the list is the
+ * map of where the reader is, and a map with no "you are here" made every
+ * row look equally closed.
+ */
 @Composable
+@Suppress("LongParameterList") // One row's data, its verbs and the clock.
 private fun RecentRowCard(
     row: RecentRow,
     state: ChatUiState,
@@ -751,20 +782,31 @@ private fun RecentRowCard(
     loadAvatar: suspend (String) -> ImageBitmap?,
     onEvent: (ChatEvent) -> Unit,
     deleteRoom: (suspend (String) -> ZillitResult<Unit>)? = null,
+    nowMillis: Long = 0L,
+    /** Names a room line's writer for its preview. */
+    crew: List<CrewContact> = emptyList(),
 ) {
     when (row) {
         // The web's group row: name over the stamp line, badge, no
         // star and no designation slot (`GroupCard.jsx:300-333`).
-        is RecentRow.Group -> GroupRowWithDelete(row, state, selfId, onEvent, deleteRoom)
+        is RecentRow.Group -> GroupRowWithDelete(
+            row, state, selfId, onEvent, deleteRoom, nowMillis,
+            nameFor = { id -> crew.firstOrNull { it.userId == id }?.fullName },
+        )
 
-        // The web's user row: name, designation, "Last Entry"
-        // (`UserCard.jsx:317-362`) — no message preview.
+        // Name over the newest line — the phones' listing row — with the
+        // designation standing in until a line is cached; the stamp is the
+        // conversation's newest activity, the same clock the list sorts by,
+        // at the row's end rather than as the web's "Last Entry:" line.
         is RecentRow.Direct -> CrewRow(
             contact = row.contact,
-            isSelected = false,
+            isSelected = !state.peerIsGroup && state.peer?.userId == row.contact.userId,
             loadAvatar = loadAvatar,
             onClick = { onEvent(ChatEvent.OpenThread(row.contact)) },
-            meta = row.contact.lastEntryLine(),
+            subtitle = state.previews[row.contact.userId]?.line(selfId, inRoom = false),
+            stamp = (state.activity[row.contact.userId] ?: row.contact.lastActiveMillis)
+                ?.takeIf { it > 0L }
+                ?.let { chatTimeLabel(it, nowMillis) },
             badge = state.unread[row.contact.userId] ?: 0,
             isFavourite = row.contact.userId in state.favourites,
             onToggleFavourite = { onEvent(ChatEvent.ToggleFavourite(row.contact.userId)) },
@@ -795,18 +837,15 @@ private fun CrewList(
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
         items(crew.sortedBy { it.fullName.lowercase() }, key = CrewContact::userId) { contact ->
-            Column {
-                CrewRow(
-                    contact = contact,
-                    isSelected = contact.userId == selectedId,
-                    loadAvatar = loadAvatar,
-                    onClick = { onOpen(contact) },
-                    meta = contact.lastEntryLine(),
-                    isFavourite = contact.userId in favourites,
-                    onToggleFavourite = { onToggleFavourite(contact.userId) },
-                )
-                ZillitDivider()
-            }
+            CrewRow(
+                contact = contact,
+                isSelected = contact.userId == selectedId,
+                loadAvatar = loadAvatar,
+                onClick = { onOpen(contact) },
+                meta = contact.lastEntryLine(),
+                isFavourite = contact.userId in favourites,
+                onToggleFavourite = { onToggleFavourite(contact.userId) },
+            )
         }
     }
 }
@@ -825,6 +864,8 @@ private fun CrewRow(
     onClick: () -> Unit,
     subtitle: String? = null,
     meta: String? = null,
+    /** A clock or a date at the name line's end — when the row last moved. */
+    stamp: String? = null,
     badge: Int = 0,
     isFavourite: Boolean? = null,
     onToggleFavourite: () -> Unit = {},
@@ -834,31 +875,37 @@ private fun CrewRow(
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val unread = badge > 0
+    // Eased rather than switched: the highlight follows the cursor down the
+    // list instead of blinking from row to row.
+    val background by animateColorAsState(
+        when {
+            isSelected -> ZillitTheme.colors.accentSoft
+            // Lights under the cursor like every other list in the
+            // app; a row that ignores the pointer reads as inert.
+            hovered -> ZillitTheme.colors.surfaceHover
+            else -> ZillitTheme.colors.surface
+        },
+        animationSpec = tween(ROW_TINT_MILLIS),
+        label = "rowBackground",
+    )
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(ZillitTheme.shapes.medium)
-            .background(
-                when {
-                    isSelected -> ZillitTheme.colors.accentSoft
-                    // Lights under the cursor like every other list in the
-                    // app; a row that ignores the pointer reads as inert.
-                    hovered -> ZillitTheme.colors.surfaceHover
-                    else -> ZillitTheme.colors.surface
-                },
-            )
+            .clip(ZillitTheme.shapes.large)
+            .background(background)
             .hoverable(interaction)
             .clickable(onClick = onClick)
-            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
+            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         ZillitAvatar(
             name = contact.fullName,
             image = rememberAvatar(contact.userId, loadAvatar),
+            size = ROW_AVATAR,
         )
-        CrewIdentity(contact, unread, subtitle, meta, Modifier.weight(1f))
+        CrewIdentity(contact, unread, subtitle, meta, stamp, Modifier.weight(1f))
         RowTrailing(badge, isFavourite, onToggleFavourite)
         trailing?.invoke()
     }
@@ -866,36 +913,17 @@ private fun CrewRow(
 
 /** The name line, then whatever the row has to say under it. */
 @Composable
+@Suppress("LongParameterList") // The row's lines, one each.
 private fun CrewIdentity(
     contact: CrewContact,
     unread: Boolean,
     subtitle: String?,
     meta: String?,
+    stamp: String?,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ZillitText(
-                text = contact.fullName,
-                style = if (unread) {
-                    ZillitTheme.typography.titleSmall
-                } else {
-                    ZillitTheme.typography.bodyMedium
-                },
-                color = ZillitTheme.colors.textPrimary,
-                maxLines = 1,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            // Inline, the web's way — not a trailing tag.
-            if (contact.isAdmin) {
-                ZillitText(
-                    text = " - (Admin)",
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textSecondary,
-                    maxLines = 1,
-                )
-            }
-        }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        NameLine(contact, unread, stamp)
         // `designation` is a translation key off `project/users`
         // (`driver_label`); an explicit subtitle is already display text.
         // The generic member designation is hidden, as on the phones.
@@ -935,6 +963,54 @@ private fun CrewIdentity(
     }
 }
 
+/** The name, its inline admin suffix, and the stamp at the far end. */
+@Composable
+private fun NameLine(contact: CrewContact, unread: Boolean, stamp: String?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        // Name and suffix together take the slack; the stamp keeps its
+        // width, so a long name ellipsises and the clock never does.
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            ZillitText(
+                text = contact.fullName,
+                style = if (unread) {
+                    ZillitTheme.typography.titleSmall
+                } else {
+                    ZillitTheme.typography.bodyMedium
+                },
+                color = ZillitTheme.colors.textPrimary,
+                maxLines = 1,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            // Inline, the web's way — not a trailing tag.
+            if (contact.isAdmin) {
+                ZillitText(
+                    text = "(Admin)",
+                    style = ZillitTheme.typography.labelSmall,
+                    color = ZillitTheme.colors.textSecondary,
+                    maxLines = 1,
+                )
+            }
+        }
+        if (!stamp.isNullOrBlank()) {
+            // Lit with the badge: an unread row's clock is the second
+            // thing the eye asks for after "how many".
+            ZillitText(
+                text = stamp,
+                style = ZillitTheme.typography.labelSmall,
+                color = if (unread) ZillitTheme.colors.accentText else ZillitTheme.colors.textMuted,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
 /** The row's right edge: how much is waiting, and the star. */
 @Composable
 private fun RowTrailing(
@@ -956,6 +1032,25 @@ private fun RowTrailing(
             size = STAR_SIZE,
         )
     }
+}
+
+/**
+ * The row's one-line reading of a preview: "You: …" for one's own line,
+ * the writer's first name in a room, the bare words from the other end of
+ * a DM — who wrote it is the name over the row.
+ */
+private fun ChatPreview.line(
+    selfId: String?,
+    inRoom: Boolean,
+    nameFor: (String) -> String? = { null },
+): String {
+    val words = text.lineSequence().firstOrNull().orEmpty().trim()
+    val by = when {
+        selfId != null && senderId == selfId -> "You"
+        inRoom -> nameFor(senderId)?.substringBefore(' ')
+        else -> null
+    }
+    return if (by == null) words else "$by: $words"
 }
 
 /** The user rows' third line — `last_entry: Aug 19, 2026`, the web's. */
@@ -998,13 +1093,18 @@ private fun DirectoryTabs(
     )
 }
 
-/** The listing's five chips, one always lit; they wrap, never crush. */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+/**
+ * The listing's five chips, one always lit, on one line.
+ *
+ * The line scrolls sideways rather than wrapping: at the pane's 320dp the
+ * fifth chip used to drop to a second row on its own, which cost a row of
+ * list for one word. The last chip peeking past the edge is the hint.
+ */
 @Composable
 private fun FilterChips(chosen: ChatFilter, onPick: (ChatFilter) -> Unit) {
-    androidx.compose.foundation.layout.FlowRow(
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
         ChatFilter.entries.forEach { entry ->
             ZillitChoiceChip(
@@ -1155,6 +1255,8 @@ private fun PaneMessage(
 
 private val LIST_WIDTH = 320.dp
 private val HAIRLINE = 1.dp
+private val ROW_AVATAR = 40.dp
+private const val ROW_TINT_MILLIS = 120
 private val CARD_MAX_WIDTH = 380.dp
 private val CARD_EDGE = 6.dp
 private val CARD_AVATAR = 72.dp

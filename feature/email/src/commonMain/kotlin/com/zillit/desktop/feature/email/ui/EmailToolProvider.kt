@@ -100,6 +100,8 @@ class EmailToolProvider(
                 editing = composer.draftId?.let(::draftById),
                 addressedTo = composer.addressedTo,
                 about = composer.about,
+                bodyHtml = composer.bodyHtml,
+                attachments = composer.attachments,
             )
         },
     )
@@ -190,6 +192,8 @@ class EmailToolProvider(
                         replyTo = null,
                         addressedTo = request.addressedTo,
                         about = request.about,
+                        bodyHtml = request.bodyHtml,
+                        attachments = request.attachments,
                     )
                 }
             }

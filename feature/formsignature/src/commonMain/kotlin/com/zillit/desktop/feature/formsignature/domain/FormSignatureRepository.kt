@@ -1,6 +1,5 @@
 package com.zillit.desktop.feature.formsignature.domain
 
-import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -36,9 +35,11 @@ enum class UploadPurpose {
 }
 
 /**
- * The Documents & Signature REST surface, all on the documents service.
+ * The Documents & Signature REST surface — the documents service, plus the
+ * one unit-host route the discussion room lives on.
  *
- * The V2 web tool is the reference. Notable transcription choices:
+ * The V2 web tool (`ContractSignatureV2/`) is the reference. Notable
+ * transcription choices:
  *
  *  - both standard-forms tabs come through [standardForms]; the repository
  *    folds the `your-forms` spelling (`sender_documents`, `sender_id`) into
@@ -52,50 +53,36 @@ interface FormSignatureRepository {
     /**
      * Which list a socket `document:*` event says to refetch — the web's
      * two pages refresh independently (`StandardFormsV2.jsx` the forms
-     * list, `DocumentsForSignature.jsx`/`FormPage.jsx` the for-signature
-     * list), so the kind travels with the pulse and the view model reloads
-     * only what is on screen. Defaulted empty for tests and hosts without
-     * a socket.
+     * list, `DocumentsForSignature.jsx` the for-signature list), so the kind
+     * travels with the pulse and the view model reloads only what is on
+     * screen. Defaulted empty for tests and hosts without a socket.
      */
     val refreshes: Flow<FormSignRefresh> get() = emptyFlow()
 
     suspend fun standardForms(selfAssigned: Boolean): ZillitResult<List<StandardForm>>
 
-    /** Adds a library form to the caller's own list. */
-    suspend fun selfAssign(documentId: String): ZillitResult<Unit>
+    /** Adds a library form to the caller's own list ("Add to My Downloads"). */
+    suspend fun selfAssign(documentId: String): ZillitResult<String>
 
     suspend fun deleteStandardForm(documentId: String): ZillitResult<Unit>
 
     /** Publishes an uploaded file into the standard library. */
-    suspend fun addStandardForm(
-        document: StoredDocument,
-        type: StandardFormType,
-        note: String,
-    ): ZillitResult<Unit>
-
-    suspend fun history(documentId: String): ZillitResult<List<HistoryEntry>>
+    suspend fun addStandardForm(document: StoredDocument, type: StandardFormType): ZillitResult<Unit>
 
     suspend fun documents(tab: SignDocumentTab): ZillitResult<List<SignDocument>>
 
-    /** Uploads-and-sends: the sender's document with its placed spots. */
+    /**
+     * Uploads-and-sends: the sender's document with its placed spots.
+     * [signingDocument] is the copy the sender already stamped their own
+     * marks into, when they were asked to sign as well.
+     */
     suspend fun sendForSignature(
         document: StoredDocument,
+        signingDocument: StoredDocument?,
         signers: List<DocumentSigner>,
         onlySignatureRequired: Boolean,
         userSignatureRequired: Boolean,
     ): ZillitResult<Unit>
-
-    /**
-     * Changes who must sign a document that has already gone out
-     * (`POST /v2/sign-document/send-document`).
-     *
-     * **[signerIds] replaces the list, it does not add to it.** The web sends
-     * the existing signers *and* the new ones together
-     * (`AddSignerDrawer.jsx:103-111`); sending only the additions would quietly
-     * drop everyone already waiting to sign.
-     */
-    suspend fun updateSigners(documentId: String, signerIds: List<String>): ZillitResult<Unit> =
-        ZillitResult.Failure(ZillitError.Unknown("changing signers is not wired"))
 
     suspend fun deleteDocument(documentId: String): ZillitResult<Unit>
 
@@ -122,6 +109,9 @@ interface FormSignatureRepository {
 
     /** Everyone the tool offers as a signer, with their tool rights. */
     suspend fun signerOptions(): ZillitResult<List<SignerOption>>
+
+    /** The discussion room; null when the production has none yet. */
+    suspend fun chatUnit(): ZillitResult<ChatUnit?> = ZillitResult.Success(null)
 }
 
 /** The two lists a socket event can point at; see [FormSignatureRepository.refreshes]. */

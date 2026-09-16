@@ -84,6 +84,9 @@ internal class PoEntryActions(
     private fun openDetail(id: String) {
         val row = vm.ui.orderById(id)
         vm.update { copy(detail = row, detailLoading = true, history = emptyList()) }
+        // Opening the order reads its badge on every tab but the approval
+        // queue, where the decision is the read (ZL-20775).
+        if (vm.ui.destination != PoDestination.ApprovalQueue) vm.readOrderBadge(id)
         // A row that exists only here has no record to read and no history.
         if (id.startsWith(com.zillit.desktop.feature.purchaseorder.data.LOCAL_ID_PREFIX)) {
             vm.update { copy(detailLoading = false) }

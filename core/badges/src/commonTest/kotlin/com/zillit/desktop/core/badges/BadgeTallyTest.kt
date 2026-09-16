@@ -55,7 +55,7 @@ class BadgeTallyTest {
             listOf(
                 row("t1", BadgeSections.TOOLS, tool = "call_sheet_label"),
                 row("t2", BadgeSections.TOOLS, tool = "call_sheet_label"),
-                row("t3", BadgeSections.TOOLS, tool = "location_tool_label"),
+                row("t3", BadgeSections.TOOLS, tool = "location_tool_label", unit = "loc-unit"),
                 row("t4", BadgeSections.TOOLS, tool = "ad_dashboard_label"),
             ),
         )
@@ -63,6 +63,21 @@ class BadgeTallyTest {
         assertEquals(2, counts["callsheet_tool"])
         assertEquals(1, counts["location_tool"])
         assertEquals(0, counts["ad_dashboard_tool"])
+    }
+
+    @Test
+    fun `a board tool's rows badge their units, so the tab strip inside the tool lights`() {
+        val counts = tallyBadges(
+            listOf(
+                row("a1", BadgeSections.TOOLS, tool = "accounts_label", unit = "unit-a"),
+                row("a2", BadgeSections.TOOLS, tool = "accounts_label", unit = "unit-a"),
+                row("c1", BadgeSections.TOOLS, tool = "catering_label", unit = "unit-c"),
+                row("noUnit", BadgeSections.TOOLS, tool = "map_label"),
+            ),
+        )
+        assertEquals(2, counts.unit("unit-a"))
+        assertEquals(1, counts.unit("unit-c"))
+        assertEquals(0, counts.unit(""))
     }
 
     @Test

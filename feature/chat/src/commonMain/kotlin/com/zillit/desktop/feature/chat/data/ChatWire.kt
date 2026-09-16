@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions") // One function per wire shape; the file IS the wire.
+
 package com.zillit.desktop.feature.chat.data
 
 import com.zillit.desktop.core.socket.SocketEventName
@@ -279,6 +281,52 @@ private fun readReactions(obj: JsonObject): List<com.zillit.desktop.feature.chat
  * One person's reaction on one message; an empty [emoji] takes it back —
  * Android's removal spelling, so every platform agrees what "none" is.
  */
+/**
+ * The `private-chat:edit` / `group-chat:edit` emit — the web's
+ * `editPrivateChat` payload (`MyMessage.jsx:272-276`): the row's `_id` and
+ * the new words twice over, `message` and `message_translation`, both
+ * encrypted. The web puts a machine translation in `message` when the
+ * device and production languages differ; this client writes the same
+ * cipher to both, as it does on a send.
+ *
+ * A group edit also re-derives `message_elements` from the tags in the new
+ * body (`cncEmit.js:190-200`); the desktop keeps tags as `@{{id}}` in the
+ * body, which every reader resolves itself, so nothing rides beside it.
+ */
+fun editEnvelope(messageId: String, cipherBody: String): JsonObject = buildJsonObject {
+    put("_id", messageId)
+    put("message", cipherBody)
+    put("message_translation", cipherBody)
+}
+
+/**
+ * `GET group-chat/readby/{id}`'s answer: `data.message_read_by` rows with
+ * `userId`, `read_time`, `delivered`; `data.message_unread_by` rows with
+ * `userId`, `delivered` (`ReadByUsers.jsx:60-99`). Read tolerantly — an
+ * answer without the wrapper still yields its lists.
+ */
+fun readByFrom(body: JsonElement): com.zillit.desktop.feature.chat.domain.ReadByReport {
+    val outer = body as? JsonObject ?: return com.zillit.desktop.feature.chat.domain.ReadByReport()
+    val data = (outer["data"] as? JsonObject) ?: outer
+    fun rows(key: String) = (data[key] as? kotlinx.serialization.json.JsonArray).orEmpty().mapNotNull { row ->
+        val obj = row as? JsonObject ?: return@mapNotNull null
+        val userId = obj.str("userId") ?: obj.str("user_id") ?: return@mapNotNull null
+        val delivered = obj["delivered"] as? JsonPrimitive
+        com.zillit.desktop.feature.chat.domain.ReadByRow(
+            userId = userId,
+            readAtMillis = obj.long("read_time"),
+            deliveredAtMillis = delivered?.longOrNull,
+            // A stamp, a literal `true`, or a "1" — anything the web's `if`
+            // would take as delivered.
+            isDelivered = (delivered?.longOrNull ?: 0L) != 0L || delivered?.booleanOrNull == true,
+        )
+    }
+    return com.zillit.desktop.feature.chat.domain.ReadByReport(
+        read = rows("message_read_by"),
+        unread = rows("message_unread_by"),
+    )
+}
+
 /** What a deletion sends: the rows to drop, scoped to the production. */
 fun deleteEnvelope(messageIds: List<String>, projectId: String): JsonObject = buildJsonObject {
     put("message_ids", kotlinx.serialization.json.buildJsonArray {

@@ -3,6 +3,8 @@
 package com.zillit.desktop.feature.esignature.ui
 
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.feature.esignature.domain.EsignBadges
+import com.zillit.desktop.feature.esignature.domain.EsignUnread
 import com.zillit.desktop.core.permissions.RightsKind
 import com.zillit.desktop.core.permissions.RightsRequestBus
 import com.zillit.desktop.core.permissions.rightsRefusalMessage
@@ -49,6 +51,8 @@ class EsignViewModel(
     override val now: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
     /** Carries a refused press to the app frame, which offers to ask an admin. */
     private val rights: RightsRequestBus? = null,
+    /** The ledger's rows for this tool, and its read. */
+    private val badges: EsignBadges = EsignBadges.None,
 ) : ZillitViewModel<EsignUiState, EsignEvent, EsignEffect>(EsignUiState()), EsignStore {
 
     private val lists = ListsFlow(this)
@@ -87,11 +91,60 @@ class EsignViewModel(
         if (listening) return
         listening = true
         launch {
+            badges.leaves.collect { leaves ->
+                setState { copy(unread = EsignUnread(leaves)) }
+                readSettledTab()
+            }
+        }
+        launch {
             repository.refreshes.collect {
                 lists.loadBoth()
                 if (currentState.page == EsignPageKind.Detail) detail.refresh()
             }
         }
+    }
+
+    /**
+     * The settled tabs read themselves on entry — the web's `markBucketAsRead`
+     * for the sender's Completed / Rejected and the signer's Completed /
+     * Rejected: one read per envelope on the tab that still has rows. The
+     * live tabs (Sent, Draft, Action Required) are read per envelope as each
+     * is opened, so a badge there means something still to look at.
+     */
+    private fun readSettledTab() {
+        val s = currentState
+        if (s.page != EsignPageKind.Lists) return
+        when (s.surface) {
+            EsignSurface.Manage -> {
+                val bucket = when (s.manage.outer) {
+                    ManageOuterTab.Completed -> ManageBuckets.COMPLETED
+                    ManageOuterTab.Rejected -> ManageBuckets.REJECTED
+                    ManageOuterTab.Active -> return
+                }
+                s.manage.visibleRows
+                    .filter { s.unread.manageEnvelope(it.id, bucket) > 0 }
+                    .forEach { badges.readEnvelope(EsignBadges.UNIT_MANAGE, it.id) }
+            }
+            EsignSurface.Sign -> {
+                if (s.signList.tab == SignBucket.Action) return
+                s.signList.visibleRows
+                    .filter { s.unread.signEnvelope(it.id) > 0 }
+                    .forEach { badges.readEnvelope(EsignBadges.UNIT_SIGN, it.id) }
+            }
+            EsignSurface.Templates, EsignSurface.Bulk -> Unit
+        }
+    }
+
+    /** An envelope opened — its rows under both units, the web's per-envelope read on open. */
+    override fun readEnvelopeBadges(envelopeId: String) {
+        val unread = currentState.unread
+        if (unread.manageEnvelope(envelopeId, ManageBuckets.SENT) + unread.manageEnvelope(envelopeId, ManageBuckets.DRAFT) +
+            unread.manageEnvelope(envelopeId, ManageBuckets.COMPLETED) +
+            unread.manageEnvelope(envelopeId, ManageBuckets.REJECTED) > 0
+        ) {
+            badges.readEnvelope(EsignBadges.UNIT_MANAGE, envelopeId)
+        }
+        if (unread.signEnvelope(envelopeId) > 0) badges.readEnvelope(EsignBadges.UNIT_SIGN, envelopeId)
     }
 
     // ---------------------------------------------------------------- store
@@ -145,7 +198,10 @@ class EsignViewModel(
             EsignEvent.Back -> back()
 
             // manage list
-            is EsignEvent.SwitchOuterTab -> setState { copy(manage = manage.copy(outer = event.tab)) }
+            is EsignEvent.SwitchOuterTab -> {
+                setState { copy(manage = manage.copy(outer = event.tab)) }
+                readSettledTab()
+            }
             is EsignEvent.SwitchInnerTab -> setState { copy(manage = manage.copy(inner = event.tab)) }
             is EsignEvent.SetSentFilter -> setState { copy(manage = manage.copy(sentFilter = event.filter)) }
             is EsignEvent.SearchManage -> setState { copy(manage = manage.copy(search = event.query)) }
@@ -155,13 +211,25 @@ class EsignViewModel(
             EsignEvent.ConfirmDeleteDraft -> lists.deleteDraft()
 
             // sign list
-            is EsignEvent.SwitchSignBucket -> setState { copy(signList = signList.copy(tab = event.bucket)) }
+            is EsignEvent.SwitchSignBucket -> {
+                setState { copy(signList = signList.copy(tab = event.bucket)) }
+                readSettledTab()
+            }
             is EsignEvent.SearchSign -> setState { copy(signList = signList.copy(search = event.query)) }
 
             // opening
-            is EsignEvent.OpenEnvelope -> lists.open(event.envelope, editor, detail)
-            is EsignEvent.OpenDetail -> detail.open(event.envelopeId)
-            is EsignEvent.OpenSigning -> signing.open(event.envelope, event.mode, event.fromDetail)
+            is EsignEvent.OpenEnvelope -> {
+                readEnvelopeBadges(event.envelope.id)
+                lists.open(event.envelope, editor, detail)
+            }
+            is EsignEvent.OpenDetail -> {
+                readEnvelopeBadges(event.envelopeId)
+                detail.open(event.envelopeId)
+            }
+            is EsignEvent.OpenSigning -> {
+                readEnvelopeBadges(event.envelope.id)
+                signing.open(event.envelope, event.mode, event.fromDetail)
+            }
 
             // detail
             EsignEvent.RefreshDetail -> detail.refresh()

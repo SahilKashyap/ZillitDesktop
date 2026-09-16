@@ -27,6 +27,8 @@ import com.zillit.desktop.feature.cardexpenses.domain.UploadHeadroom
 data class CardUiState(
     val viewer: CardViewer,
     val destination: CardDestination,
+    /** Unread notifications per `level_1` key — the sidebar's red chips. */
+    val unread: Map<String, Int> = emptyMap(),
     val loading: Boolean = false,
     val error: ZillitError? = null,
     val busy: Boolean = false,

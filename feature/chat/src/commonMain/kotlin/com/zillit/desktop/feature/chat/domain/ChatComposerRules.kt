@@ -55,6 +55,27 @@ object ChatComposerRules {
     fun bodyTooLong(body: String): Boolean = body.length > MAX_BODY_CHARS
 
     /**
+     * Two hours — how long after posting a message its author may still
+     * rewrite or withdraw it (`cncUtil.js` `isWithin2HoursRange`, ZL-17418).
+     * The web shows Edit and Delete regardless and refuses on the click with
+     * [REWRITE_WINDOW_CLOSED]; this client does the same.
+     */
+    const val REWRITE_WINDOW_MILLIS = 2L * 60 * 60 * 1000
+
+    /** The web's `message_modal_to_stop_edit_after_two_hour` (`utils/language/en.js:8071`). */
+    const val REWRITE_WINDOW_CLOSED = "You are allowed to edit or delete within 2 hours of posting the message."
+
+    /**
+     * Whether a message posted at [createdMillis] may still be edited or
+     * deleted at [nowMillis]. An admin's clock never runs out — the web's
+     * edit path (`MyMessage.jsx:426`); its delete path lifts the clock for
+     * admins on personal productions only (`commonUtils.js:119`), a
+     * distinction this client cannot draw and so lifts for admins everywhere.
+     */
+    fun canRewrite(createdMillis: Long, nowMillis: Long, isAdmin: Boolean): Boolean =
+        isAdmin || nowMillis - createdMillis <= REWRITE_WINDOW_MILLIS
+
+    /**
      * Why this file cannot be sent, or null when it can.
      *
      * Size first: a 200 MB `.exe` is refused for being an executable either

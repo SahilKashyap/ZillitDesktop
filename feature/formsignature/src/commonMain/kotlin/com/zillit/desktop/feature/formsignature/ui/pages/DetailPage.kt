@@ -1,222 +1,270 @@
+@file:Suppress("MagicNumber") // The web's 800-wide document column and its small offsets.
+
 package com.zillit.desktop.feature.formsignature.ui.pages
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
 import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.feature.formsignature.domain.PdfPageImage
-import com.zillit.desktop.feature.formsignature.domain.SignSpot
-import com.zillit.desktop.feature.formsignature.domain.SignSpotKind
+import com.zillit.desktop.feature.formsignature.ui.DetailSource
 import com.zillit.desktop.feature.formsignature.ui.DetailState
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureEvent
-import com.zillit.desktop.feature.formsignature.ui.FormSignatureUiState
-import com.zillit.desktop.feature.formsignature.ui.decodeImageBitmap
+import com.zillit.desktop.feature.formsignature.ui.components.DraggableBox
+import com.zillit.desktop.feature.formsignature.ui.components.InfoBand
+import com.zillit.desktop.feature.formsignature.ui.components.MarkImage
+import com.zillit.desktop.feature.formsignature.ui.components.PageCanvas
+import com.zillit.desktop.feature.formsignature.ui.components.PlaceholderBox
+import com.zillit.desktop.feature.formsignature.ui.components.spotEdge
 
 /**
- * An open document: its pages, the boxes waiting for this reader, and the
- * act of signing.
- *
- * Boxes are drawn from the same PDF-point numbers the server sent, converted
- * to pixels per page — the one place the two coordinate spaces meet.
+ * An open document — the web's `FormDetailsV2`: Download and Print on the
+ * right, the guidance band, one page at a time with Previous/Next, the
+ * placeholders to click (or the mark to drag), and the footer's buttons.
  */
 @Composable
-internal fun DetailPage(
-    detail: DetailState,
-    onEvent: (FormSignatureEvent) -> Unit,
-) {
-    ZillitPageHeader(
-        eyebrow = "Documents & Signature",
-        title = detail.title,
-        actions = {
-            ZillitButton(
-                text = "Back",
-                onClick = { onEvent(FormSignatureEvent.CloseDetail) },
-                variant = ButtonVariant.Tertiary,
-                size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.ArrowLeft,
-            )
-            if (detail.canSign) {
-                ZillitButton(
-                    text = if (detail.mySpots.isEmpty()) "Sign here first" else "Sign document",
-                    onClick = { onEvent(FormSignatureEvent.SignOpenDocument) },
-                    size = ButtonSize.Small,
-                    leadingIcon = ZillitIcons.Edit,
-                    enabled = detail.readyToSign,
-                    loading = detail.signing,
-                )
+internal fun DetailPage(detail: DetailState, onEvent: (FormSignatureEvent) -> Unit) {
+    val colors = ZillitTheme.colors
+    Box(Modifier.fillMaxSize().background(colors.canvas)) {
+        when {
+            detail.loadingPages -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ZillitSpinner() }
+            else -> ZillitScrollColumn(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = ZillitTheme.spacing.lg),
+            ) {
+                Column(
+                    modifier = Modifier.width(COLUMN_WIDTH.dp),
+                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+                ) {
+                    TopActions(detail, onEvent)
+                    Guidance(detail)
+                    if (detail.notPdf) NotPdfCard(detail) else Pages(detail, onEvent)
+                    Footer(detail, onEvent)
+                }
             }
-        },
-    )
-
-    SigningNotice(detail)
-    DetailBody(detail, onEvent)
+        }
+        if (detail.busy) {
+            Box(
+                Modifier.fillMaxSize().background(colors.scrim.copy(alpha = 0.25f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                ZillitSpinner()
+            }
+        }
+    }
 }
 
 @Composable
-private fun SigningNotice(detail: DetailState) {
+private fun TopActions(detail: DetailState, onEvent: (FormSignatureEvent) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm, Alignment.End),
+    ) {
+        ZillitButton(
+            text = "Download in device",
+            onClick = { onEvent(FormSignatureEvent.DownloadDetail) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Download,
+        )
+        if (!detail.notPdf) {
+            ZillitButton(
+                text = "Print",
+                onClick = { onEvent(FormSignatureEvent.PrintDetail) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Print,
+            )
+        }
+    }
+}
+
+/** ZL-17530: the signing guidance, for both flows. */
+@Composable
+private fun Guidance(detail: DetailState) {
     when {
         detail.alreadySigned -> ZillitNotice(
             text = "You have signed this document.",
             tone = StatusTone.Done,
             icon = ZillitIcons.Tick,
         )
-
-        detail.canSign && detail.mySpots.isNotEmpty() -> ZillitNotice(
-            text = "${detail.mySpots.size} box(es) are waiting for your signature — " +
-                "shown outlined on the pages. Signing stamps your saved marks into " +
-                "every one of them.",
-            tone = StatusTone.Pending,
-            icon = ZillitIcons.Info,
-        )
-
-        detail.canSign -> ZillitNotice(
-            text = "No boxes were placed for you — click on a page where your " +
-                "signature should go, then sign.",
-            tone = StatusTone.Pending,
-            icon = ZillitIcons.Info,
-        )
-    }
-}
-
-@Composable
-private fun DetailBody(detail: DetailState, onEvent: (FormSignatureEvent) -> Unit) {
-    when {
-        detail.notPdf -> ZillitNotice(
-            text = "This document is not a PDF, so it cannot be previewed or " +
-                "signed here.",
-            tone = StatusTone.Neutral,
-            icon = ZillitIcons.Warning,
-        )
-
-        detail.loadingPages -> ZillitSpinner()
-
-        else -> ZillitScrollColumn(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            detail.pages.forEach { page ->
-                DocumentPage(
-                    page = page,
-                    spots = detail.mySpots.filter { it.page == page.page } +
-                        listOfNotNull(detail.freeSpot?.takeIf { it.page == page.page }),
-                    tappable = detail.canSign && detail.mySpots.isEmpty(),
-                    onTap = { x, y ->
-                        onEvent(FormSignatureEvent.PlaceFreeSpot(page.page, x, y))
-                    },
-                )
-            }
+        detail.offersSend && detail.placeholderFlow -> InfoBand {
+            ZillitText(
+                "Click on the highlighted placeholder boxes to add your signature or initials. " +
+                    "The placeholders show where signatures are required.",
+                style = ZillitTheme.typography.bodySmall,
+            )
+        }
+        detail.offersSend -> InfoBand {
+            ZillitText(
+                "If you need to place the same signature on the following pages, navigate to the next page. " +
+                    "Drag and drop the highlighted signature to the desired location, then click the Sign button " +
+                    "below to set the signature where it was placed.",
+                style = ZillitTheme.typography.bodySmall,
+            )
         }
     }
 }
 
-/** One page image with its overlay boxes; shared with the send flow. */
 @Composable
-internal fun DocumentPage(
-    page: PdfPageImage,
-    spots: List<SignSpot>,
-    tappable: Boolean,
-    onTap: (Float, Float) -> Unit,
-    spotLabel: (SignSpot) -> String = { it.kind.label },
-    onSpotTap: ((SignSpot) -> Unit)? = null,
-) {
-    val bitmap = remember(page.page, page.imageBytes.size) { decodeImageBitmap(page.imageBytes) }
-        ?: return
-    val density = LocalDensity.current
-
-    // Rendered at the source pixel width so the pixel rectangles line up 1:1
-    // with the image — scaling the image without scaling the overlay is the
-    // classic way to draw boxes in the wrong place.
-    val widthDp = with(density) { page.widthPx.toDp() }
-    val heightDp = with(density) { page.heightPx.toDp() }
-
-    Box(
-        modifier = Modifier
-            .width(widthDp)
-            .border(1.dp, ZillitTheme.colors.border)
-            .background(Color.White)
-            .pointerInput(tappable, page.page) {
-                if (tappable) {
-                    detectTapGestures { offset -> onTap(offset.x, offset.y) }
-                }
-            },
+private fun Pages(detail: DetailState, onEvent: (FormSignatureEvent) -> Unit) {
+    val page = detail.current ?: return
+    val paging = detail.freeMark == null
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        Image(
-            bitmap = bitmap,
-            contentDescription = "Page ${page.page}",
-            modifier = Modifier.size(widthDp, heightDp),
-            contentScale = ContentScale.FillBounds,
+        ZillitText("Page", style = ZillitTheme.typography.bodyMedium, color = ZillitTheme.colors.textSecondary)
+        ZillitText(
+            "${detail.page + 1} / ${detail.pageCount}",
+            style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
         )
-        spots.forEach { spot ->
-            val rect = page.pixelRect(spot)
-            val x = with(density) { rect[0].toDp() }
-            val y = with(density) { rect[1].toDp() }
-            val w = with(density) { rect[2].toDp() }
-            val h = with(density) { rect[3].toDp() }
-            Box(
-                modifier = Modifier
-                    .offset(x = x, y = y)
-                    .size(w, h)
-                    .background(spotFill(spot.kind))
-                    .border(1.dp, spotEdge(spot.kind))
-                    .let { base ->
-                        if (onSpotTap == null) {
-                            base
-                        } else {
-                            base.clickable { onSpotTap(spot) }
-                        }
-                    },
-                contentAlignment = Alignment.Center,
+        Spacer(Modifier.weight(1f))
+        ZillitIconButton(
+            icon = ZillitIcons.ChevronLeft,
+            contentDescription = "Previous page",
+            enabled = paging && detail.page > 0,
+            onClick = { onEvent(FormSignatureEvent.TurnPage(-1)) },
+        )
+        ZillitIconButton(
+            icon = ZillitIcons.ChevronRight,
+            contentDescription = "Next page",
+            enabled = paging && detail.page < detail.pageCount - 1,
+            onClick = { onEvent(FormSignatureEvent.TurnPage(1)) },
+        )
+    }
+    PageCanvas(page = page) {
+        if (detail.placeholderFlow && detail.offersSend) {
+            detail.placeholders.filter { it.page == page.page }.forEach { spot ->
+                PlaceholderBox(page, spot) { onEvent(FormSignatureEvent.TapPlaceholder(spot)) }
+            }
+        }
+        detail.freeMark?.takeIf { it.page == page.page }?.let { mark ->
+            DraggableBox(
+                x = mark.x,
+                y = mark.y,
+                width = mark.width,
+                height = mark.height,
+                edge = Color(0xFFFC9404),
+                aspect = mark.aspect,
+                onMove = { x, y, w, _ -> onEvent(FormSignatureEvent.MoveFreeMark(x, y, w)) },
+                onConfirm = { onEvent(FormSignatureEvent.ConfirmFreeMark) },
+                onCancel = { onEvent(FormSignatureEvent.CancelFreeMark) },
             ) {
-                ZillitText(
-                    text = spotLabel(spot),
-                    style = ZillitTheme.typography.bodySmall,
-                    color = spotEdge(spot.kind),
-                )
+                MarkImage(mark.png)
             }
         }
     }
 }
 
-// Blue for signatures, amber for initials — the web's overlay colours.
-private val SIGNATURE_FILL = Color(0x332B6BD8)
-private val SIGNATURE_EDGE = Color(0xFF2B6BD8)
-private val INITIALS_FILL = Color(0x33D8912B)
-private val INITIALS_EDGE = Color(0xFFD8912B)
-
-private fun spotFill(kind: SignSpotKind): Color = when (kind) {
-    SignSpotKind.Signature -> SIGNATURE_FILL
-    SignSpotKind.Initials -> INITIALS_FILL
+/** A Word document: the web's card with the document icon and its name. */
+@Composable
+private fun NotPdfCard(detail: DetailState) {
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ZillitTheme.shapes.medium)
+            .background(colors.surface)
+            .border(1.dp, colors.border, ZillitTheme.shapes.medium)
+            .padding(ZillitTheme.spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+    ) {
+        Box(
+            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFE3ECFF)),
+            contentAlignment = Alignment.Center,
+        ) {
+            ZillitText(
+                detail.stored?.extension?.take(4) ?: "DOC",
+                style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.Bold),
+                color = Color(0xFF2B6BD8),
+            )
+        }
+        Column {
+            ZillitText(detail.title, style = ZillitTheme.typography.titleSmall)
+            ZillitText(
+                if (detail.stored?.isWord == true) {
+                    "A Word document — it is converted to PDF when you add a signature."
+                } else {
+                    "This file cannot be shown here. Download it to view it."
+                },
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textSecondary,
+            )
+        }
+    }
 }
 
-private fun spotEdge(kind: SignSpotKind): Color = when (kind) {
-    SignSpotKind.Signature -> SIGNATURE_EDGE
-    SignSpotKind.Initials -> INITIALS_EDGE
+/** The web's `getFooterButtons`, branch for branch. */
+@Composable
+private fun Footer(detail: DetailState, onEvent: (FormSignatureEvent) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        if (detail.source == DetailSource.LibraryAll) {
+            ZillitButton(
+                text = "Transfer this form to your My Downloads",
+                onClick = { onEvent(FormSignatureEvent.TransferToDownloads) },
+                variant = ButtonVariant.Secondary,
+                loading = detail.transferring,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (detail.offersFreeSign) {
+            val placing = detail.freeMark != null
+            ZillitButton(
+                text = if (placing) "Sign Document" else "Add Signature",
+                onClick = {
+                    onEvent(if (placing) FormSignatureEvent.ConfirmFreeMark else FormSignatureEvent.AddSignature)
+                },
+                variant = ButtonVariant.Secondary,
+                enabled = !detail.busy,
+                leadingIcon = if (placing) ZillitIcons.Tick else ZillitIcons.Signature,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (detail.offersSend) {
+            ZillitButton(
+                text = "Send Document",
+                onClick = { onEvent(FormSignatureEvent.AskSendSigned) },
+                enabled = detail.readyToSend,
+                loading = detail.sending,
+                leadingIcon = ZillitIcons.Send,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
 }
+
+private const val COLUMN_WIDTH = 800

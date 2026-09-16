@@ -96,6 +96,12 @@ data class ProjectSnapshot(
      * pressing it will do.
      */
     val markedForDeletion: Boolean = false,
+    /**
+     * `language_code`: the production's working language (`en`, `fr`…).
+     * Null when the server sent none; readers fall back to English, as the
+     * web's `getProjectLanguage` does.
+     */
+    val languageCode: String? = null,
 )
 
 data class UserSnapshot(
@@ -230,6 +236,7 @@ class ProjectCache(database: ZillitDatabase, private val nowMillis: () -> Long) 
                 .joinToString(";") { (name, id) -> "$name=$id" },
             parentName = project.parentName,
             markedForDeletion = if (project.markedForDeletion) 1L else 0L,
+            languageCode = project.languageCode,
             cachedAt = nowMillis(),
         )
     }
@@ -251,6 +258,7 @@ class ProjectCache(database: ZillitDatabase, private val nowMillis: () -> Long) 
                     .associate { entry -> entry.substringBefore('=') to entry.substringAfter('=') },
                 parentName = it.parentName,
                 markedForDeletion = it.markedForDeletion != 0L,
+                languageCode = it.languageCode,
             )
         }
 

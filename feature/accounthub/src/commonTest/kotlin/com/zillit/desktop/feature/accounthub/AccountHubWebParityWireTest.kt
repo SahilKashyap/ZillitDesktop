@@ -43,12 +43,17 @@ class AccountHubWebParityWireTest {
     fun `a company carries its legal name and the UK payroll references`() {
         val companies = decodeCompanies(
             """{"value":[{"id":"co-1","name":"Zillit Films","legal_name":"Zillit Films Limited",
-               "uk":{"paye_ref":"120/AB12345","accounts_office_ref":"120PA00012345"}}]}""",
+               "uk":{"paye_ref":"120/AB12345","accounts_office_ref":"120PA00012345",
+               "pension_provider":"NEST","pension_scheme_ref":"SCH-000123"}}]}""",
         )
         val company = companies.single()
         assertEquals("Zillit Films Limited", company.legalName)
         assertEquals("120/AB12345", company.ukPayeRef)
         assertEquals("120PA00012345", company.ukAccountsOfficeRef)
+        // The pension pair (backend 2026-09-12) rides the same block; a client
+        // that does not read it clears it on every save.
+        assertEquals("NEST", company.ukPensionProvider)
+        assertEquals("SCH-000123", company.ukPensionSchemeRef)
     }
 
     @Test
