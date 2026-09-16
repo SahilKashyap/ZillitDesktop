@@ -36,7 +36,10 @@ data class SideNavItem(
     val id: String,
     val label: String,
     val icon: ImageVector,
+    /** Work waiting on the page — an amber count from the page's own data. */
     val count: Int = 0,
+    /** Unread notifications filed under the page — the red chip the web's sidebar wears. */
+    val unread: Int = 0,
 )
 
 /** A titled group of [SideNavItem]s. A null [title] renders ungrouped. */
@@ -140,13 +143,14 @@ private fun NavRow(item: SideNavItem, active: Boolean, onClick: () -> Unit) {
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
+        if (item.unread > 0) ZillitBadge(count = item.unread)
         if (item.count > 0) {
             ZillitBadge(
                 count = item.count,
                 background = colors.warningSoft,
                 contentColor = colors.warning,
             )
-        } else {
+        } else if (item.unread <= 0) {
             Spacer(Modifier)
         }
     }

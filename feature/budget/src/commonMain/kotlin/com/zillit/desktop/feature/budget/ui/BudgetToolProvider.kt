@@ -14,29 +14,23 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
 import com.zillit.desktop.feature.budget.domain.BudgetDocument
 
 /**
- * The Budget tool.
+ * One budget tile.
  *
- * Registered twice — once per tile. `main_budget_tool` and
- * `department_budget_tool` are separate rights rows and separate tiles in the
- * grid, but one screen serves both, exactly as the web's `/budget` page does:
- * which sections it shows is a question of rights, not of which tile you came
- * through. The box-schedule tool takes the same two-paths-one-screen shape.
+ * Registered twice with two view models — `main_budget_tool` at
+ * [MAIN_BUDGET_PATH] and `department_budget_tool` at [DEPARTMENT_BUDGET_PATH]
+ * — exactly as the web mounts `FullBudget` and `DepartmentBudget` on two
+ * routes over one shared body (`toolRegistry.js:177-178`).
  */
 class BudgetToolProvider(
     private val viewModel: BudgetViewModel,
     override val path: String,
-    override val title: String = "Budget",
     /** Hands a budget's file to the host to show or save. */
     private val onOpenFile: (BudgetDocument, Boolean) -> Unit = { _, _ -> },
-    /**
-     * The conversation for whichever budget is selected — the chat tool's own
-     * thread, scoped to this tool and department. The document on screen is
-     * passed so the host can open the right room; null hides the pane.
-     */
-    private val conversation: (@Composable (BudgetDocument?, Boolean) -> Unit)? = null,
+    private val seams: BudgetScreenSeams = BudgetScreenSeams(),
 ) : ToolProvider {
 
-    override val icon = ZillitToolIcons.Account
+    override val title: String get() = viewModel.mode.title
+    override val icon = ZillitToolIcons.Budget
     override val openMode: OpenMode = OpenMode.Maximized
     override val hostsOwnRoutes: Boolean = true
     override val defaultSize: DpSize = DpSize(1180.dp, 820.dp)
@@ -56,13 +50,7 @@ class BudgetToolProvider(
             }
         }
 
-        BudgetScreen(
-            state = state,
-            onEvent = viewModel::onEvent,
-            conversation = conversation?.let { pane ->
-                { pane(state.selected, state.canPostHere) }
-            },
-        )
+        BudgetScreen(state = state, onEvent = viewModel::onEvent, seams = seams)
     }
 }
 

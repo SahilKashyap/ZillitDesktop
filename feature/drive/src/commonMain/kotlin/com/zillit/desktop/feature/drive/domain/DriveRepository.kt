@@ -15,53 +15,56 @@ data class UploadRequest(
     val mimeType: String,
     val folderId: String?,
     val description: String = "",
+    /** Per-user file grants chosen before the upload (`file_access`). */
+    val fileAccess: List<DriveAccessEntry> = emptyList(),
 )
 
 /**
  * Everything the Drive asks the server for.
  *
- * Mirrors the web's `api/driveApi/driveApi.js` route for route. **The paths in
- * that file, not the ones in `docs/Drive_Requirements.md`** — the two disagree
- * in five places (versions, file access, bulk, trash restore, favourites) and
- * the client is what actually runs. Each is noted at the method it affects.
+ * Mirrors the web's `api/driveApi` clients route for route. **The paths in
+ * those files, not the ones in `docs/Drive_Requirements.md`** — the two
+ * disagree in five places (versions, file access, bulk, trash restore,
+ * favourites) and the client is what actually runs. Each is noted at the
+ * method it affects.
  *
  * One interface rather than eight, because they are one service with one
  * authorisation model, and splitting them means eight fakes in every test.
+ * Methods added after the first port carry defaults so an older fake still
+ * compiles; a real repository overrides every one.
  */
 @Suppress("TooManyFunctions") // One suspend fun per server operation; see detekt.yml.
 interface DriveRepository {
 
     /**
-     * A pulse per delete another client announced — file, folder or bulk
-     * (`DriveManagement.jsx:1591-1596`, which refetches the current view;
-     * deletes run even before its own-events guard, ZL-18490). The listener
-     * reloads the open destination so a row the user can no longer see, or
-     * a corrected trash count, lands without a manual refresh. Defaulted
-     * empty for tests and hosts without a socket.
+     * A pulse per change another client announced — file, folder, bulk or
+     * share (`DriveManagement.jsx` socket handlers). The listener reloads the
+     * open scope so a row the user can no longer see, or one just shared
+     * with them, lands without a manual refresh. Defaulted empty for tests
+     * and hosts without a socket.
      */
     val refreshes: Flow<Unit> get() = emptyFlow()
 
     // -- browsing ----------------------------------------------------------
 
     /**
-     * Files and folders of one location, merged and paged.
-     *
-     * `GET /drive/folders/contents` rather than the two separate list routes:
-     * one call returns both, already ordered against the same sort, which is
-     * the only way a "name A–Z" listing can interleave correctly. The separate
-     * `/files` and `/folders` routes exist and are what the web mostly uses,
-     * at the cost of sorting two lists against each other on the client.
+     * Every file and folder of one scope — `GET /drive/files` and
+     * `GET /drive/folders` with the same `quick_filter`, as the web's
+     * `fetchDriveData` issues them together. Narrowing to a folder is the
+     * caller's; see [DriveListQuery].
      */
-    suspend fun contents(query: DriveQuery): ZillitResult<DrivePage>
+    suspend fun listing(query: DriveListQuery): ZillitResult<DriveListing>
 
     suspend fun item(id: String, kind: DriveItemKind): ZillitResult<DriveItem>
 
-
     // -- mutations ---------------------------------------------------------
 
-    suspend fun createFolder(name: String, parentId: String?, description: String = ""):
-        ZillitResult<DriveItem>
+    suspend fun createFolder(folder: NewFolder): ZillitResult<DriveItem>
 
+    /**
+     * Renames and re-describes. [description] null leaves the description
+     * alone; the endpoint clears a field it is sent as an empty string.
+     */
     suspend fun rename(ref: DriveRef, name: String, description: String?): ZillitResult<Unit>
 
     suspend fun move(ref: DriveRef, targetFolderId: String?): ZillitResult<Unit>
@@ -93,13 +96,30 @@ interface DriveRepository {
     /** A presigned URL suitable for seeking, for video and audio. */
     suspend fun streamUrl(fileId: String): ZillitResult<String>
 
-    /** A public link. The server fixes the expiry at 24 hours. */
+    /** A bare presigned public link. The server fixes the expiry at 24 hours. */
     suspend fun shareLink(fileId: String): ZillitResult<String>
 
+    // -- email share links -------------------------------------------------
+
+    /** The live links on one file (`GET /files/{id}/email-share-links`). */
+    suspend fun shareLinks(fileId: String): ZillitResult<List<DriveShareLink>> =
+        ZillitResult.Success(emptyList())
+
     /**
-     * The open file requests on one folder
-     * (`GET /v2/drive/folders/{id}/file-requests`).
+     * Makes a tracked link, emailing it when [DriveShareLinkDraft.recipients]
+     * is non-empty (`POST /files/{id}/email-share-link`). **Not**
+     * `/share-link` — that older route answers a presigned S3 URL instead and
+     * silently swallowed the web's calls until it was renamed.
      */
+    suspend fun createShareLink(fileId: String, draft: DriveShareLinkDraft): ZillitResult<DriveShareLink> =
+        ZillitResult.Failure(ZillitError.Unknown("share links are not wired"))
+
+    suspend fun revokeShareLink(linkId: String): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("share links are not wired"))
+
+    // -- file requests -----------------------------------------------------
+
+    /** The open file requests on one folder (`GET /v2/drive/folders/{id}/file-requests`). */
     suspend fun fileRequests(folderId: String): ZillitResult<List<DriveFileRequest>> =
         ZillitResult.Success(emptyList())
 
@@ -134,6 +154,8 @@ interface DriveRepository {
     suspend fun completeUpload(
         uploadId: String,
         parts: List<UploadPart>,
+        fileName: String = "",
+        description: String = "",
     ): ZillitResult<DriveItem>
 
     suspend fun abortUpload(uploadId: String): ZillitResult<Unit>
@@ -162,8 +184,6 @@ interface DriveRepository {
 
     /** One route for both directions — the server flips whatever it finds. */
     suspend fun toggleFavourite(ref: DriveRef): ZillitResult<Unit>
-
-    suspend fun favourites(): ZillitResult<List<DriveItem>>
 
     /**
      * Just the ids, for drawing the star on a listing.
@@ -194,11 +214,27 @@ interface DriveRepository {
         applyToChildren: Boolean = false,
     ): ZillitResult<Unit>
 
+    /**
+     * Who may be given access at all — the ids with view rights on the drive
+     * tool (`access/users?toolIdentifier=drive_tool&viewing_access=true`,
+     * ZL-18292). Null means "could not tell"; the caller then offers the
+     * whole crew rather than nobody.
+     */
+    suspend fun viewAccessUserIds(): ZillitResult<Set<String>?> = ZillitResult.Success(null)
+
     // -- metadata ----------------------------------------------------------
 
-    suspend fun storage(): ZillitResult<StorageUsage>
-
+    /** The trail for one item — the details panel's timeline. */
     suspend fun activity(itemId: String?): ZillitResult<List<DriveActivity>>
+
+    /** One page of the whole drive's trail, newest first — the Activity Log drawer. */
+    suspend fun activityPage(limit: Int, offset: Int): ZillitResult<DriveActivityPage> =
+        activity(null).let { result ->
+            when (result) {
+                is ZillitResult.Success -> ZillitResult.Success(DriveActivityPage(result.data, result.data.size))
+                is ZillitResult.Failure -> ZillitResult.Failure(result.error)
+            }
+        }
 
     suspend fun comments(fileId: String): ZillitResult<List<DriveComment>>
 
@@ -208,16 +244,23 @@ interface DriveRepository {
         parentId: String? = null,
     ): ZillitResult<Unit>
 
+    suspend fun updateComment(commentId: String, text: String): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("comment edits are not wired"))
+
     suspend fun deleteComment(commentId: String): ZillitResult<Unit>
 
     suspend fun tags(): ZillitResult<List<DriveTag>>
 
-    suspend fun createTag(name: String, color: String): ZillitResult<Unit>
+    /** Creates a tag; the answer carries its id when the service sends one. */
+    suspend fun createTag(name: String, color: String): ZillitResult<DriveTag?>
 
     suspend fun deleteTag(tagId: String): ZillitResult<Unit>
 
     /** The tags already on one item — the project list says nothing about which are applied. */
     suspend fun itemTags(ref: DriveRef): ZillitResult<List<DriveTag>>
+
+    /** Every item carrying [tagId], for the header's tag filter (`items-by-tag`). */
+    suspend fun itemsByTag(tagId: String): ZillitResult<Set<String>> = ZillitResult.Success(emptySet())
 
     suspend fun assignTag(tagId: String, ref: DriveRef): ZillitResult<Unit>
 

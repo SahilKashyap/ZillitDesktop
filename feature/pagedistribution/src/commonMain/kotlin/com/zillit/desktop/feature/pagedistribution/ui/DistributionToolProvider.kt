@@ -7,14 +7,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
+import com.zillit.desktop.core.designsystem.component.ZillitToast
+import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
 import com.zillit.desktop.core.workspace.WorkspaceRoute
+import com.zillit.desktop.feature.pagedistribution.ui.dod.ProvideDodFaces
 
 /**
  * One of the three distribution tools as a workspace tool. Three instances,
@@ -29,6 +32,8 @@ class DistributionToolProvider(
     private val onPickPdf: (onPicked: (Pair<String, ByteArray>?) -> Unit) -> Unit,
     /** A user id shown as "Name (Designation)". */
     private val resolveUser: (String) -> String?,
+    /** A user id's crew photo, for the D.O.D cards; null draws initials. */
+    private val loadAvatar: suspend (String) -> ImageBitmap? = { null },
 ) : ToolProvider {
 
     override val openMode: OpenMode = OpenMode.Maximized
@@ -54,8 +59,10 @@ class DistributionToolProvider(
             }
         }
 
-        DistributionScreen(state = state, onEvent = viewModel::onEvent, resolveUser = resolveUser)
-        ZillitErrorToast(message = notice, onDismiss = { notice = null })
+        ProvideDodFaces(load = loadAvatar) {
+            DistributionScreen(state = state, onEvent = viewModel::onEvent, resolveUser = resolveUser)
+        }
+        ZillitToast(message = notice, onDismiss = { notice = null }, tone = ZillitToastTone.Success)
     }
 
     companion object {

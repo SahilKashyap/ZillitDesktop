@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.timecard.ui
 
+import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.common.ZillitError
@@ -53,6 +54,20 @@ enum class TimecardDestination(val slug: String, val label: String) {
         Processing, Outstanding -> viewer.isFinalApprover
         MyWeeks, Edit -> true
     }
+
+    /**
+     * The units the notification service files this page's rows under
+     * (`constants.js:107-116`: `tool=timecard_label`, `unit=<tile>`). The web
+     * has a tile per unit; the desktop folds the three crew tiles into My
+     * Timecards, and the accountant's disputes into Payroll Processing.
+     */
+    val badgeKeys: List<String>
+        get() = when (this) {
+            MyWeeks -> listOf("my_timecards", "assigned_timecards", "received_inbox")
+            ApprovalQueue -> listOf("approval_queue_label")
+            Processing -> listOf("crew_timecard_dispute")
+            Edit, Outstanding -> emptyList()
+        }
 }
 
 /** Everything the timecard tool is showing. */
@@ -65,6 +80,8 @@ data class TimecardUiState(
     val notice: String? = null,
     val timecards: List<Timecard> = emptyList(),
     val history: List<TimecardHistoryEntry> = emptyList(),
+    /** Unread notifications per unit — the tabs' red chips. */
+    val unread: Map<String, Int> = emptyMap(),
     val selectedId: String? = null,
     val selection: Set<String> = emptySet(),
     val search: String = "",
@@ -196,6 +213,8 @@ class TimecardViewModel(
      */
     private val offline: OfflineSupport? = null,
     private val nowMillis: () -> Long = { kotlin.time.Clock.System.now().toEpochMilliseconds() },
+    /** The ledger's rows for this tool per unit, and the page read. */
+    private val badges: TabBadgeSource = TabBadgeSource.None,
 ) : ZillitViewModel<TimecardUiState, TimecardEvent, TimecardEffect>(
     TimecardUiState(viewer = viewer()),
 ) {
@@ -204,6 +223,12 @@ class TimecardViewModel(
     private var draftSaveJob: Job? = null
     private var syncWatch: Job? = null
     private var started = false
+    private var watchingBadges = false
+
+    /** The page on screen is its read — every unit it is filed under that has rows. */
+    private fun readPage(destination: TimecardDestination) {
+        destination.badgeKeys.filter { (currentState.unread[it] ?: 0) > 0 }.forEach(badges::read)
+    }
     private val json = Json { ignoreUnknownKeys = true }
 
     fun start() {
@@ -211,6 +236,16 @@ class TimecardViewModel(
         started = true
         watchSync()
         listenOnce()
+        if (!watchingBadges) {
+            watchingBadges = true
+            launch {
+                badges.counts.collect { counts ->
+                    setState { copy(unread = counts) }
+                    // A row landing on the open page is read as it lands.
+                    readPage(currentState.destination)
+                }
+            }
+        }
         launch {
             val identity = viewer()
             val metadata = repository.metadata().rememberOrRecall(METADATA_CACHE, TimecardMetadata.serializer())
@@ -293,6 +328,7 @@ class TimecardViewModel(
             is TimecardEvent.Open -> {
                 setState { copy(destination = event.destination, selectedId = null, error = null, staleSince = null) }
                 load(event.destination)
+                readPage(event.destination)
             }
 
             is TimecardEvent.Search -> setState { copy(search = event.query) }

@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.calls
 import com.zillit.desktop.feature.calls.data.readCallLog
 import com.zillit.desktop.feature.calls.data.readCallLogs
 import com.zillit.desktop.feature.calls.domain.CallLine
+import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallLogDirection
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallType
@@ -108,8 +109,20 @@ class CallLogWireTest {
         assertFalse(groupNoRoom?.isRedialable == true)
         val direct = read("""{"call_uuid":"u1","incomingCall":true,"caller_device_id":"d1"}""")
         assertTrue(direct?.isRedialable == true)
-        val directNoDevice = read("""{"call_uuid":"u1","incomingCall":true}""")
-        assertFalse(directNoDevice?.isRedialable == true)
+        // Line 1 and Line 3 rows name the person and no device (Android
+        // `RecentCallFragment.kt:527-539`); the host finds the device.
+        val directByUser = read("""{"call_uuid":"u1","incomingCall":true,"from_user_id":"aisha","line":"livekit"}""")
+        assertTrue(directByUser?.isRedialable == true)
+        val directNobody = read("""{"call_uuid":"u1","incomingCall":true}""")
+        assertFalse(directNobody?.isRedialable == true)
+    }
+
+    @Test
+    fun `a line tag turns back into the provider a redial takes`() {
+        assertEquals(CallProvider.Mediasoup, CallLine.One.provider)
+        assertEquals(CallProvider.Agora, CallLine.Two.provider)
+        assertEquals(CallProvider.LiveKit, CallLine.Three.provider)
+        assertEquals(listOf(CallLine.Two, CallLine.One), CallLine.DEFAULT)
     }
 
     @Test

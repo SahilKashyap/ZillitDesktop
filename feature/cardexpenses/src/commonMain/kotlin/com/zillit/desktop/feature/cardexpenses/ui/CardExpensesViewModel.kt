@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.cardexpenses.ui
 
+import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
@@ -44,6 +45,8 @@ class CardExpensesViewModel(
     private val people: suspend () -> List<CardPerson> = { emptyList() },
     /** Picks a file and stores it; null leaves every attach button disabled. */
     private val uploader: CardAttachmentUploader? = null,
+    /** The ledger's rows for this tool per page key, and the page read. */
+    private val badges: TabBadgeSource = TabBadgeSource.None,
     /** Read at start, not at construction — see the cash module's equivalent. */
     private val viewer: () -> CardViewer,
 ) : ZillitViewModel<CardUiState, CardEvent, CardEffect>(
@@ -57,6 +60,12 @@ class CardExpensesViewModel(
     private var loadJob: Job? = null
     private var started = false
     private var listening = false
+    private var watchingBadges = false
+
+    /** The page on screen is its read — every key it is filed under that has rows. */
+    private fun readPage(destination: CardDestination) {
+        destination.badgeKeys.filter { (currentState.unread[it] ?: 0) > 0 }.forEach(badges::read)
+    }
 
     /** The register's own actions; see [CardRegisterActions]. */
     private val register = CardRegisterActions(this)
@@ -106,6 +115,16 @@ class CardExpensesViewModel(
         if (started) return
         started = true
         startInternal()
+        if (!watchingBadges) {
+            watchingBadges = true
+            launch {
+                badges.counts.collect { counts ->
+                    setState { copy(unread = counts) }
+                    // A row landing on the open page is read as it lands.
+                    readPage(currentState.destination)
+                }
+            }
+        }
 
         // Somebody else's approval, coding or import. Only the page on screen
         // reloads. `listening` outlives `started`, which onProjectChanged
@@ -201,6 +220,7 @@ class CardExpensesViewModel(
                     )
                 }
                 load(event.destination)
+                readPage(event.destination)
             }
 
             is CardEvent.Search -> setState { copy(search = event.query) }

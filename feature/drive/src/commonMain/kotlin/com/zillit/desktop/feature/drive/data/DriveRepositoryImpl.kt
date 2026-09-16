@@ -17,14 +17,17 @@ import com.zillit.desktop.feature.drive.domain.DriveFileRequest
 import com.zillit.desktop.feature.drive.domain.DriveFileRequestDraft
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveItemKind
-import com.zillit.desktop.feature.drive.domain.DrivePage
-import com.zillit.desktop.feature.drive.domain.DriveQuery
+import com.zillit.desktop.feature.drive.domain.DriveActivityPage
+import com.zillit.desktop.feature.drive.domain.DriveListQuery
+import com.zillit.desktop.feature.drive.domain.DriveListing
+import com.zillit.desktop.feature.drive.domain.DriveShareLink
+import com.zillit.desktop.feature.drive.domain.DriveShareLinkDraft
+import com.zillit.desktop.feature.drive.domain.NewFolder
 import com.zillit.desktop.feature.drive.domain.DriveRef
 import com.zillit.desktop.feature.drive.domain.DriveRepository
 import com.zillit.desktop.feature.drive.domain.DriveTag
 import com.zillit.desktop.feature.drive.domain.DriveVersion
 import com.zillit.desktop.feature.drive.domain.EditorSession
-import com.zillit.desktop.feature.drive.domain.StorageUsage
 import com.zillit.desktop.feature.drive.domain.UploadPart
 import com.zillit.desktop.feature.drive.domain.UploadRequest
 import com.zillit.desktop.feature.drive.domain.UploadSession
@@ -104,11 +107,31 @@ class DriveRepositoryImpl(
 
     private val base = "${config.baseUrl(ZillitService.Drive)}/api/v2/drive"
 
+    /** `access/users` on the core host — who may open the tool (ZL-18292). */
+    private val accessUsers = config.apiV2() + "access/users"
+
     // -- browsing ----------------------------------------------------------
 
-    override suspend fun contents(query: DriveQuery): ZillitResult<DrivePage> =
-        get("$base/folders/contents", DrivePageDto.serializer(), query.toParameters())
-            .map { dto -> dto.toDomain().let { page -> page.copy(items = page.items.named()) } }
+    /**
+     * `GET /files` and `GET /folders` with the same `quick_filter`, as the
+     * web's `fetchDriveData` fires them together. Not `/folders/contents`:
+     * that route pages one folder at a time, and a folder created at the
+     * root never appeared in its `root=true` answer (seen live 2026-08-27)
+     * while the two list routes showed it at once.
+     */
+    override suspend fun listing(query: DriveListQuery): ZillitResult<DriveListing> {
+        val params = query.toParameters()
+        val files = get("$base/files", ItemListSerializer, params)
+        val folders = get("$base/folders", ItemListSerializer, params)
+        return files.flatMap { f ->
+            folders.map { d ->
+                DriveListing(
+                    files = f.rows(DriveItemKind.File).named(),
+                    folders = d.rows(DriveItemKind.Folder).named(),
+                )
+            }
+        }
+    }
 
     override suspend fun item(id: String, kind: DriveItemKind): ZillitResult<DriveItem> {
         val url = if (kind == DriveItemKind.Folder) "$base/folders/$id" else "$base/files/$id"
@@ -120,21 +143,23 @@ class DriveRepositoryImpl(
 
     // -- mutations ---------------------------------------------------------
 
-    override suspend fun createFolder(
-        name: String,
-        parentId: String?,
-        description: String,
-    ): ZillitResult<DriveItem> = apiClient.request(
+    /** `POST /folders` — `handleCreateFolder`'s payload, access entries included. */
+    override suspend fun createFolder(folder: NewFolder): ZillitResult<DriveItem> = apiClient.request(
         verb = HttpVerb.Post,
         url = "$base/folders",
         serializer = DriveItemDto.serializer(),
         module = RequestModule.ProjectUser,
         options = callOptions(),
         body = buildJsonObject {
-            put("folder_name", JsonPrimitive(name.trim()))
-            put("name", JsonPrimitive(name.trim()))
-            if (description.isNotBlank()) put("description", JsonPrimitive(description.trim()))
-            put("parent_folder_id", parentId.orJsonNull())
+            put("folder_name", JsonPrimitive(folder.name.trim()))
+            put("name", JsonPrimitive(folder.name.trim()))
+            if (folder.description.isNotBlank()) put("description", JsonPrimitive(folder.description.trim()))
+            put("parent_folder_id", folder.parentId.orJsonNull())
+            if (folder.color.isNotBlank()) put("folder_color", JsonPrimitive(folder.color))
+            if (folder.access.isNotEmpty()) {
+                put("folder_access", folder.access.toRoleEntries())
+                put("inheritToChildren", JsonPrimitive(folder.inheritToChildren))
+            }
         },
     ).flatMap { dto ->
         dto.toDomain(DriveItemKind.Folder)?.let { ZillitResult.Success(it) }
@@ -149,7 +174,11 @@ class DriveRepositoryImpl(
         HttpVerb.Put,
         "${collection(ref.kind)}/${ref.id}",
         buildJsonObject {
+            // `folder_name` / `file_name` are what the web sends
+            // (`handleEditSubmit` renames the key); `name` rides along for the
+            // deployments that read that spelling.
             put("name", JsonPrimitive(name.trim()))
+            put(if (ref.kind == DriveItemKind.Folder) "folder_name" else "file_name", JsonPrimitive(name.trim()))
             // Only when supplied. The endpoint clears a field it is sent as an
             // empty string, so a rename that always writes description wipes a
             // description the user did not touch.
@@ -237,6 +266,41 @@ class DriveRepositoryImpl(
         // client's intent explicit and survives a future default change.
         body = buildJsonObject { put("expiry", JsonPrimitive(SHARE_EXPIRY)) },
     ).flatMap { it.required("share link") }
+
+    override suspend fun shareLinks(fileId: String): ZillitResult<List<DriveShareLink>> =
+        get("$base/files/$fileId/email-share-links", ListSerializer(ShareLinkDto.serializer()))
+            .map { rows -> rows.mapNotNull { it.toDomain() } }
+
+    override suspend fun createShareLink(
+        fileId: String,
+        draft: DriveShareLinkDraft,
+    ): ZillitResult<DriveShareLink> = apiClient.request(
+        verb = HttpVerb.Post,
+        url = "$base/files/$fileId/email-share-link",
+        serializer = ShareLinkDto.serializer(),
+        module = RequestModule.ProjectUser,
+        options = callOptions(),
+        body = buildJsonObject {
+            put(
+                "recipients",
+                buildJsonArray {
+                    draft.recipients.forEach { email ->
+                        add(buildJsonObject { put("email", JsonPrimitive(email)) })
+                    }
+                },
+            )
+            put("permission", JsonPrimitive(draft.permission.wire))
+            put("expires_in_ms", JsonPrimitive(draft.expiresInMillis))
+            put("max_views", JsonPrimitive(draft.maxViews))
+            draft.message.trim().takeIf { it.isNotBlank() }?.let { put("message", JsonPrimitive(it)) }
+        },
+    ).flatMap { dto ->
+        dto.toDomain()?.let { ZillitResult.Success(it) }
+            ?: ZillitResult.Failure(ZillitError.Serialization("the share link came back without an id"))
+    }
+
+    override suspend fun revokeShareLink(linkId: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/email-share-links/$linkId/revoke", null)
 
     /** `GET /v2/drive/folders/{id}/file-requests` — what is open on a folder. */
     override suspend fun fileRequests(folderId: String): ZillitResult<List<DriveFileRequest>> =
@@ -338,6 +402,7 @@ class DriveRepositoryImpl(
                 if (request.description.isNotBlank()) {
                     put("description", JsonPrimitive(request.description))
                 }
+                put("file_access", request.fileAccess.toFlagEntries())
             },
         ).flatMap { dto ->
             dto.toDomain(request.sizeBytes)?.let { ZillitResult.Success(it) }
@@ -347,6 +412,8 @@ class DriveRepositoryImpl(
     override suspend fun completeUpload(
         uploadId: String,
         parts: List<UploadPart>,
+        fileName: String,
+        description: String,
     ): ZillitResult<DriveItem> = apiClient.request(
         verb = HttpVerb.Post,
         url = "$base/uploads/$uploadId/complete",
@@ -354,6 +421,10 @@ class DriveRepositoryImpl(
         module = RequestModule.ProjectUser,
         options = callOptions(),
         body = buildJsonObject {
+            // The web's completion body carries the name and description
+            // again (`useFileUpload.js:484-487`); sent when known.
+            if (fileName.isNotBlank()) put("file_name", JsonPrimitive(fileName))
+            if (description.isNotBlank()) put("description", JsonPrimitive(description))
             put(
                 "parts",
                 buildJsonArray {
@@ -386,7 +457,7 @@ class DriveRepositoryImpl(
     // -- trash -------------------------------------------------------------
 
     override suspend fun trash(): ZillitResult<List<DriveItem>> =
-        get("$base/trash", DrivePageDto.serializer()).map { it.toDomain().items.named() }
+        get("$base/trash", ItemListSerializer, mapOf("limit" to TRASH_LIMIT)).map { it.rows().named() }
 
     override suspend fun restore(ref: DriveRef): ZillitResult<Unit> = mutate(
         HttpVerb.Post,
@@ -413,9 +484,6 @@ class DriveRepositoryImpl(
             put("item_type", JsonPrimitive(ref.kind.wire))
         },
     )
-
-    override suspend fun favourites(): ZillitResult<List<DriveItem>> =
-        get("$base/favorites", DrivePageDto.serializer()).map { it.toDomain().items.named() }
 
     /**
      * A **bare array** of ids, with no wrapper object.
@@ -457,36 +525,11 @@ class DriveRepositoryImpl(
             HttpVerb.Put,
             url,
             buildJsonObject {
-                put(
-                    "entries",
-                    buildJsonArray {
-                        entries.forEach { entry ->
-                            add(
-                                buildJsonObject {
-                                    put("user_id", JsonPrimitive(entry.userId))
-                                    if (folder) {
-                                        put("role", JsonPrimitive(entry.role.wire))
-                                    } else {
-                                        put("can_view", JsonPrimitive(entry.permissions.canView))
-                                        put("can_edit", JsonPrimitive(entry.permissions.canEdit))
-                                        put(
-                                            "can_download",
-                                            JsonPrimitive(entry.permissions.canDownload),
-                                        )
-                                        put(
-                                            "can_delete",
-                                            JsonPrimitive(entry.permissions.canDelete),
-                                        )
-                                    }
-                                },
-                            )
-                        }
-                    },
-                )
+                put("entries", if (folder) entries.toRoleEntries() else entries.toFlagEntries())
                 // The endpoint replaces rather than patches — an entry left out
                 // is revoked. Stated on the wire as well as in the interface
                 // doc, because the default here is not obvious from the name.
-                put("replace_existing", JsonPrimitive(true))
+                if (folder) put("replace_existing", JsonPrimitive(true))
             },
         )
         // Inheritance is a second call, and deliberately after: it walks every
@@ -502,17 +545,45 @@ class DriveRepositoryImpl(
         return result
     }
 
-    // -- metadata ----------------------------------------------------------
+    /**
+     * `GET access/users?toolIdentifier=drive_tool&viewing_access=true` — the
+     * web's `fetchuserapproveringrights({ view_access: true })` (ZL-18292).
+     * A failure answers null: the picker then offers the whole crew rather
+     * than nobody, which is what the web does when its call fails too.
+     */
+    override suspend fun viewAccessUserIds(): ZillitResult<Set<String>?> =
+        when (
+            val got = get(
+                accessUsers,
+                IdListSerializer,
+                mapOf("toolIdentifier" to TOOL_IDENTIFIER, "viewing_access" to "true"),
+            )
+        ) {
+            is ZillitResult.Success -> ZillitResult.Success(got.data.ids())
+            is ZillitResult.Failure -> ZillitResult.Success(null)
+        }
 
-    override suspend fun storage(): ZillitResult<StorageUsage> =
-        get("$base/storage", StorageDto.serializer()).map { it.toDomain() }
+    // -- metadata ----------------------------------------------------------
 
     override suspend fun activity(itemId: String?): ZillitResult<List<DriveActivity>> = get(
         "$base/activity",
         ActivityPageDto.serializer(),
-        itemId?.let { mapOf("item_id" to it) }.orEmpty(),
-    ).map { page ->
-        page.items.mapNotNull { row ->
+        buildMap {
+            itemId?.let { put("item_id", it) }
+            put("limit", DETAIL_ACTIVITY_LIMIT)
+        },
+    ).map { page -> page.items.named() }
+
+    override suspend fun activityPage(limit: Int, offset: Int): ZillitResult<DriveActivityPage> = get(
+        "$base/activity",
+        ActivityPageDto.serializer(),
+        mapOf("limit" to limit, "offset" to offset),
+    ).map { page -> DriveActivityPage(items = page.items.named(), total = page.total ?: page.items.size) }
+
+    /** The actors named from the crew list; see [resolveUserName]. */
+    @JvmName("namedActivity")
+    private fun List<ActivityDto>.named(): List<DriveActivity> =
+        mapNotNull { row ->
             // The name is filled in here rather than in the DTO: the crew list
             // is the caller's, and a DTO that reached for it would put a
             // session dependency inside the wire mapping.
@@ -524,13 +595,26 @@ class DriveRepositoryImpl(
                 }
             }
         }
-    }
 
     override suspend fun comments(fileId: String): ZillitResult<List<DriveComment>> = get(
         "$base/comments",
         CommentsSerializer,
         mapOf("file_id" to fileId),
-    ).map { page -> page.rows().mapNotNull { it.toDomain() } }
+    ).map { page ->
+        page.rows().mapNotNull { it.toDomain() }.map { comment ->
+            if (comment.authorName.isNotBlank() || comment.authorId.isBlank()) {
+                comment
+            } else {
+                comment.copy(authorName = resolveUserName(comment.authorId).orEmpty())
+            }
+        }
+    }
+
+    override suspend fun updateComment(commentId: String, text: String): ZillitResult<Unit> = mutate(
+        HttpVerb.Put,
+        "$base/comments/$commentId",
+        buildJsonObject { put("text", JsonPrimitive(text.trim())) },
+    )
 
     override suspend fun addComment(
         fileId: String,
@@ -553,14 +637,35 @@ class DriveRepositoryImpl(
         get("$base/tags", ListSerializer(TagDto.serializer()))
             .map { rows -> rows.mapNotNull { it.toDomain() } }
 
-    override suspend fun createTag(name: String, color: String): ZillitResult<Unit> = mutate(
-        HttpVerb.Post,
-        "$base/tags",
-        buildJsonObject {
+    /** The answer carries the new tag when the service sends it (`resp.data._id`); a bare envelope is fine too. */
+    override suspend fun createTag(name: String, color: String): ZillitResult<DriveTag?> = apiClient.request(
+        verb = HttpVerb.Post,
+        url = "$base/tags",
+        serializer = TagDto.serializer(),
+        module = RequestModule.ProjectUser,
+        options = callOptions(),
+        body = buildJsonObject {
             put("name", JsonPrimitive(name.trim()))
             if (color.isNotBlank()) put("color", JsonPrimitive(color))
         },
-    )
+    ).map { it.toDomain() }
+
+    /** `GET /tags/items-by-tag?tag_id=&item_type=` — asked for both kinds, as the web does. */
+    override suspend fun itemsByTag(tagId: String): ZillitResult<Set<String>> {
+        val ids = mutableSetOf<String>()
+        for (kind in DriveItemKind.entries) {
+            val rows = get(
+                "$base/tags/items-by-tag",
+                ListSerializer(ItemTagDto.serializer()),
+                mapOf("tag_id" to tagId, "item_type" to kind.wire),
+            )
+            when (rows) {
+                is ZillitResult.Success -> ids += rows.data.mapNotNull { it.itemId() }
+                is ZillitResult.Failure -> return rows
+            }
+        }
+        return ZillitResult.Success(ids)
+    }
 
     override suspend fun deleteTag(tagId: String): ZillitResult<Unit> =
         mutate(HttpVerb.Delete, "$base/tags/$tagId", null)
@@ -703,6 +808,37 @@ class DriveRepositoryImpl(
 
     private companion object {
         const val SHARE_EXPIRY = "24h"
+        const val TOOL_IDENTIFIER = "drive_tool"
+        /** The web's `getTrashForDrive({ limit: 200 })`. */
+        const val TRASH_LIMIT = 200
+        /** The web's details-panel fetch (`getActivityForDrive({ item_id, limit: 20 })`). */
+        const val DETAIL_ACTIVITY_LIMIT = 20
+    }
+}
+
+/** Folder grants — `{ user_id, role }` rows. */
+private fun List<DriveAccessEntry>.toRoleEntries(): JsonArray = buildJsonArray {
+    forEach { entry ->
+        add(
+            buildJsonObject {
+                put("user_id", JsonPrimitive(entry.userId))
+                put("role", JsonPrimitive(entry.role.wire))
+            },
+        )
+    }
+}
+
+/** File grants — `{ user_id, can_view, can_edit, can_download }` rows. */
+private fun List<DriveAccessEntry>.toFlagEntries(): JsonArray = buildJsonArray {
+    forEach { entry ->
+        add(
+            buildJsonObject {
+                put("user_id", JsonPrimitive(entry.userId))
+                put("can_view", JsonPrimitive(entry.permissions.canView))
+                put("can_edit", JsonPrimitive(entry.permissions.canEdit))
+                put("can_download", JsonPrimitive(entry.permissions.canDownload))
+            },
+        )
     }
 }
 

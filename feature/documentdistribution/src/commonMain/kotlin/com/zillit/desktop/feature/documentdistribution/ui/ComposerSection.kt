@@ -13,6 +13,9 @@ import com.zillit.desktop.feature.documentdistribution.domain.MAX_TOTAL_ATTACHME
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
 import com.zillit.desktop.feature.documentdistribution.domain.SupportedUploads
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkLine
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
+import com.zillit.desktop.feature.documentdistribution.domain.patchAgainst
+import com.zillit.desktop.feature.documentdistribution.domain.withDefaults
 import com.zillit.desktop.feature.documentdistribution.domain.summariseFileNames
 
 /**
@@ -99,6 +102,7 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
                     listId = listId,
                     attachments = attachments,
                     watermarked = attachments.filter { it.isWatermarkable }.map { it.id }.toSet(),
+                    watermark = WatermarkStyle().withDefaults(watermarkDefaults),
                 ),
             )
         }
@@ -334,6 +338,24 @@ internal class ComposerSection(private val vm: VmScope, private val library: Lib
             return vm.fail("Enter the custom text for line 2")
         }
         edit { copy(watermark = draft, wizardDraft = null) }
+        shareAppearance(draft)
+    }
+
+    /**
+     * The wizard's Size / Colour / Opacity are the production's, not the
+     * send's: saving them here makes them every crew member's starting point
+     * (`PUT watermark-settings`). Only the fields that changed go, so two
+     * people adjusting different controls at once both land. The send itself
+     * is not held up — a refusal is reported and the stamp stays as drawn.
+     */
+    private fun shareAppearance(draft: WatermarkStyle) {
+        val patch = draft.patchAgainst(vm.state.watermarkDefaults)
+        if (patch.isEmpty) return
+        vm.run {
+            vm.onSuccess(vm.repository.updateWatermarkSettings(patch)) { saved ->
+                vm.update { copy(watermarkDefaults = saved) }
+            }
+        }
     }
 
     fun openWatermarkPreview(documentId: String?) {

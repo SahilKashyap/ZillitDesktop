@@ -4,12 +4,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
+import com.zillit.desktop.core.designsystem.component.ZillitToast
+import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
@@ -33,20 +35,38 @@ class RecceToolProvider(
     @Composable
     override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
         val state by viewModel.state.collectAsState()
-        var notice by remember { mutableStateOf<String?>(null) }
+        var toast by remember { mutableStateOf<Pair<String, ZillitToastTone>?>(null) }
+        var scrollToTop by remember { mutableIntStateOf(0) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {
-                    is RecceEffect.Notice -> notice = effect.text
+                    is RecceEffect.Notice ->
+                        toast = effect.text to if (effect.success) ZillitToastTone.Success else ZillitToastTone.Danger
                     is RecceEffect.OpenUrl -> onOpenUrl(effect.url)
+                    RecceEffect.ScrollToTop -> scrollToTop++
                 }
             }
         }
 
-        RecceScreen(state = state, onEvent = viewModel::onEvent)
-        ZillitErrorToast(message = notice, onDismiss = { notice = null })
+        // The window follows the page: the recce's title on its tab, and the
+        // unsaved-edits mark while the form is dirty.
+        val windowTitle = when (val page = state.route) {
+            ReccePage.Index -> title
+            is ReccePage.Detail -> state.selected?.title?.takeIf { it.isNotBlank() }?.let { "$it · Recce" } ?: title
+            is ReccePage.Form -> if (page.id == null) "Create Recce" else "Edit Recce"
+        }
+        LaunchedEffect(windowTitle) { navigator.setTitle(windowTitle) }
+        val dirty = state.editor?.dirty == true
+        LaunchedEffect(dirty) { navigator.setDirty(dirty) }
+
+        RecceScreen(state = state, onEvent = viewModel::onEvent, scrollToTop = scrollToTop)
+        ZillitToast(
+            message = toast?.first,
+            onDismiss = { toast = null },
+            tone = toast?.second ?: ZillitToastTone.Success,
+        )
     }
 
     companion object {

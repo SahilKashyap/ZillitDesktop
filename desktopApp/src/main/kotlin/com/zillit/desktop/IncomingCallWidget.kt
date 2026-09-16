@@ -96,12 +96,14 @@ internal fun ApplicationScope.IncomingCallWidget(
         focusable = false,
     ) {
         ZillitTheme(darkTheme = darkTheme) {
-            IncomingCallCard(
-                current = current,
-                onAccept = { calls.onEvent(CallEvent.Accept) },
-                onDecline = { calls.onEvent(CallEvent.Decline) },
-                showMain = showMain,
-            )
+            AvatarFaces(ready) {
+                IncomingCallCard(
+                    current = current,
+                    onAccept = { calls.onEvent(CallEvent.Accept) },
+                    onDecline = { calls.onEvent(CallEvent.Decline) },
+                    showMain = showMain,
+                )
+            }
         }
     }
 }

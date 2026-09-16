@@ -157,7 +157,7 @@ private fun TeamRow(state: InvoicesUiState, row: InvoiceTeamRow, onEvent: (Invoi
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        PersonCell(name, member?.role.orEmpty(), Modifier.weight(TEAM_NAME_WEIGHT))
+        PersonCell(name, row.userId, member?.role.orEmpty(), Modifier.weight(TEAM_NAME_WEIGHT))
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
                 text = row.limitLabel(state.projectCurrency),
@@ -198,13 +198,13 @@ private fun TeamRow(state: InvoicesUiState, row: InvoiceTeamRow, onEvent: (Invoi
 
 /** An avatar, a name and the role under it — the team table's first cell. */
 @Composable
-private fun PersonCell(name: String, role: String, modifier: Modifier) {
+private fun PersonCell(name: String, userId: String, role: String, modifier: Modifier) {
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = name, size = AVATAR)
+        ZillitAvatar(name = name, userId = userId, size = AVATAR)
         Column {
             ZillitText(
                 text = name,
@@ -378,7 +378,7 @@ private fun ApproverChip(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        ZillitAvatar(name = name, size = CHIP_AVATAR)
+        ZillitAvatar(name = name, userId = userId, size = CHIP_AVATAR)
         ZillitText(text = name, style = ZillitTheme.typography.bodySmall, maxLines = 1)
         person?.role?.takeIf { it.isNotBlank() }?.let { Hint(it) }
         ZillitIconButton(
@@ -752,7 +752,7 @@ internal fun RunAuthPickerSheet(state: InvoicesUiState, onEvent: (InvoicesEvent)
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
-                ZillitAvatar(name = person.name, size = AVATAR)
+                ZillitAvatar(name = person.name, userId = person.id, size = AVATAR)
                 Column(modifier = Modifier.weight(1f)) {
                     ZillitText(text = person.name, style = ZillitTheme.typography.bodyMedium, maxLines = 1)
                     Hint(person.role)

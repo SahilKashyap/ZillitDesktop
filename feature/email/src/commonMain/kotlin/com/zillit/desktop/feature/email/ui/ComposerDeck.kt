@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.email.ui
 
 import com.zillit.desktop.feature.email.domain.ComposeMode
 import com.zillit.desktop.feature.email.domain.EmailMessage
+import com.zillit.desktop.feature.email.domain.StoredFile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,6 +34,9 @@ data class OpenComposer(
     /** Prefilled for a message the app offered to start. See [ComposeViewModel]. */
     val addressedTo: String = "",
     val about: String = "",
+    /** Words and files another tool handed over — chat's Share. See [ComposeRequest]. */
+    val bodyHtml: String = "",
+    val attachments: List<StoredFile> = emptyList(),
 ) {
     /** The workspace route a popped-out composer lives at. */
     val routePath: String get() = "$COMPOSE_POPOUT_PATH/$id"
@@ -83,7 +87,15 @@ class ComposerDeck(
      * replies to one mail is a thing people genuinely do, and silently
      * focusing the first would look like the second click did nothing.
      */
-    fun open(mode: ComposeMode, replyTo: EmailMessage?, addressedTo: String = "", about: String = ""): OpenComposer =
+    @Suppress("LongParameterList") // Every seed a composer can open with.
+    fun open(
+        mode: ComposeMode,
+        replyTo: EmailMessage?,
+        addressedTo: String = "",
+        about: String = "",
+        bodyHtml: String = "",
+        attachments: List<StoredFile> = emptyList(),
+    ): OpenComposer =
         place(
             OpenComposer(
                 id = newId(),
@@ -91,6 +103,8 @@ class ComposerDeck(
                 replyTo = replyTo,
                 addressedTo = addressedTo,
                 about = about,
+                bodyHtml = bodyHtml,
+                attachments = attachments,
             ),
         )
 
@@ -139,8 +153,18 @@ class ComposerDeck(
     }
 }
 
-/** A message another screen asked the mailbox to start — the crew list's "write to", the help page. */
-data class ComposeRequest(val addressedTo: String, val about: String = "")
+/**
+ * A message another screen asked the mailbox to start — the crew list's
+ * "write to", the help page, and chat's Share, which brings the words as
+ * HTML and the line's file already in storage
+ * (the web's `openCompose({ emailBody, attachments })`).
+ */
+data class ComposeRequest(
+    val addressedTo: String,
+    val about: String = "",
+    val bodyHtml: String = "",
+    val attachments: List<StoredFile> = emptyList(),
+)
 
 /**
  * The queue other screens post compose requests to.
@@ -154,8 +178,13 @@ class ComposeRequests {
     private val _pending = MutableStateFlow<ComposeRequest?>(null)
     val pending: StateFlow<ComposeRequest?> = _pending.asStateFlow()
 
-    fun post(addressedTo: String, about: String = "") {
-        _pending.value = ComposeRequest(addressedTo, about)
+    fun post(
+        addressedTo: String,
+        about: String = "",
+        bodyHtml: String = "",
+        attachments: List<StoredFile> = emptyList(),
+    ) {
+        _pending.value = ComposeRequest(addressedTo, about, bodyHtml, attachments)
     }
 
     /** Takes the waiting request, if any, leaving nothing behind. */

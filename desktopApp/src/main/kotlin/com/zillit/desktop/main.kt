@@ -220,7 +220,6 @@ import com.zillit.desktop.core.forms.FormModule
 import com.zillit.desktop.feature.bankrec.ui.BankRecViewModel
 import com.zillit.desktop.feature.taxfiling.ui.TaxFilingViewModel
 import com.zillit.desktop.feature.accounthub.ui.AccountHubViewModel
-import com.zillit.desktop.feature.budget.ui.BudgetViewModel
 import com.zillit.desktop.feature.weather.ui.WeatherViewModel
 import com.zillit.desktop.feature.budget.ui.DEPARTMENT_BUDGET_PATH
 import com.zillit.desktop.feature.budget.ui.MAIN_BUDGET_PATH
@@ -263,15 +262,13 @@ import com.zillit.desktop.feature.sides.ui.SidesToolProvider
 import com.zillit.desktop.feature.addashboard.ui.AdViewModel
 import com.zillit.desktop.feature.saportal.ui.SaPortalViewModel
 import com.zillit.desktop.feature.sides.ui.SidesViewModel
-import com.zillit.desktop.feature.formsignature.data.FormSignatureRepositoryImpl
 import com.zillit.desktop.feature.formsignature.data.PdfBoxWork
-import com.zillit.desktop.feature.formsignature.domain.FormSignatureViewer
-import com.zillit.desktop.feature.formsignature.ui.FormSignatureToolProvider
 import com.zillit.desktop.feature.formsignature.ui.FormSignatureViewModel
 import com.zillit.desktop.feature.documentdistribution.ui.DocDistViewModel
-import com.zillit.desktop.feature.drive.domain.DriveItemKind
-import com.zillit.desktop.feature.drive.domain.DriveQuery
+import com.zillit.desktop.feature.drive.domain.DriveListQuery
+import com.zillit.desktop.feature.drive.domain.DriveScope
 import com.zillit.desktop.feature.drive.domain.DriveViewer
+import com.zillit.desktop.feature.drive.ui.DriveHostSeams
 import com.zillit.desktop.feature.drive.ui.DriveToolProvider
 import com.zillit.desktop.feature.drive.ui.DriveViewModel
 import com.zillit.desktop.feature.payroll.domain.PayrollViewer
@@ -720,18 +717,20 @@ private fun ApplicationScope.ZillitWindows(
             // Inside the theme: the picker styles its page from the app's own
             // tokens. A no-op until the graph is Ready and until something
             // actually asks to pick — Chromium starts on first use.
-            LocationPickerMount(graph) {
-                ZillitContent(
-                    graph = graph,
-                    registry = registry,
-                    viewModels = viewModels,
-                    workspaceViewModel = viewModel,
-                    authViewModel = authViewModel,
-                    themeMode = themeMode,
-                    onThemeModeChange = { mode ->
-                        scope.launch { preferences.set(ZillitPreferences.ThemeMode, mode.name) }
-                    },
-                )
+            AvatarFaces(graph) {
+                LocationPickerMount(graph) {
+                    ZillitContent(
+                        graph = graph,
+                        registry = registry,
+                        viewModels = viewModels,
+                        workspaceViewModel = viewModel,
+                        authViewModel = authViewModel,
+                        themeMode = themeMode,
+                        onThemeModeChange = { mode ->
+                            scope.launch { preferences.set(ZillitPreferences.ThemeMode, mode.name) }
+                        },
+                    )
+                }
             }
         }
     }
@@ -808,6 +807,7 @@ private fun ApplicationScope.ZillitWindows(
         preferences = preferences,
         visible = widgetMount.switches.isOpen(ZillitWidget.Drive),
         darkTheme = isDark,
+        graph = graph,
         onClose = { widgetMount.switches.close(ZillitWidget.Drive) },
         showMain = widgetMount.showMain,
     )
@@ -822,6 +822,7 @@ private fun ApplicationScope.ZillitWindows(
         preferences = preferences,
         visible = widgetMount.switches.isOpen(ZillitWidget.Chat),
         darkTheme = isDark,
+        graph = graph,
         onClose = { widgetMount.switches.close(ZillitWidget.Chat) },
         showMain = widgetMount.showMain,
     )
@@ -836,6 +837,7 @@ private fun ApplicationScope.ZillitWindows(
         preferences = preferences,
         visible = widgetMount.switches.isOpen(ZillitWidget.Crew),
         darkTheme = isDark,
+        graph = graph,
         onClose = { widgetMount.switches.close(ZillitWidget.Crew) },
         showMain = widgetMount.showMain,
     )
@@ -1044,15 +1046,19 @@ private fun DockBadge(ready: AppGraph.Ready, viewModels: AppViewModels) {
 }
 
 /**
- * Reads a film tool's badge when its window comes to the front.
+ * Reads a film tool's badge whole when its window comes to the front — only
+ * for a tool that has no finer read of its own.
  *
- * Every client clears a tool's count from inside the tool; the desktop's
- * tools live in workspace windows, and "the window on top" is that moment.
- * The read is tool-wide (`notification:level:read` scoped by tool, iOS's
- * `emitForBadgeReadLevels` with no levels) — the finer per-tab reads inside
- * a tool are the tool screen's own business as it grows them, exactly as on
- * mobile; without this the grid's tiles and the Film Tools rail count could
- * never fall from here at all.
+ * The phones and the web never read a tool whole on open: each tab, folder
+ * and row is read as it is seen (iOS `emitForBadgeReadLevels` refuses a read
+ * with no unit), which is what lets the badges *inside* a tool show at all.
+ * This read used to fire for every tool, and it flipped every row of the
+ * tool before the screen could draw one inner badge — a call sheet's tab
+ * counts, a location's folder counts, the diary's history count were all
+ * gone by the time they were asked for. So a tool in [SELF_READING_TOOLS]
+ * is left to its own reads; the whole-tool read stays as the fallback for
+ * a tool whose desktop screen badges nothing inside yet, so its tile can
+ * still fall.
  */
 @Composable
 private fun ToolReadOnFocus(ready: AppGraph.Ready, viewModels: AppViewModels, workspace: WorkspaceViewModel) {
@@ -1064,9 +1070,34 @@ private fun ToolReadOnFocus(ready: AppGraph.Ready, viewModels: AppViewModels, wo
     }
     LaunchedEffect(identifier) {
         val tool = identifier ?: return@LaunchedEffect
+        if (tool in SELF_READING_TOOLS) return@LaunchedEffect
         emitToolRead(ready, tool)
     }
 }
+
+/**
+ * The tools whose screens read their own units, levels and rows — a board's
+ * unit as it is opened, a tab as it is shown, a folder or record as it is
+ * viewed — and so must not be read whole on front. Grid identifiers.
+ */
+private val SELF_READING_TOOLS: Set<String> = setOf(
+    // Boards: the visible unit is read when it loads (HomeFeedViewModel.selectUnit).
+    "info_tool", "confidential_info_tool", "catering_tool", "accounting_tool", "reports_tool", "script_notes_tool",
+    // Tabbed tools reading per unit/level.
+    "callsheet_tool", "production_report_tool", "continuity_tool", "deal_memo_tool", "account_hub_tool",
+    "purchase_order_tool", "card_expenses_tool", "cash_expenses_tool", "timecard_tool",
+    "supporting_artistes_extras_tool", "sa_portal_tool", "ad_dashboard_tool", "invoices_tool", "e_signature_tool",
+    "document_distribution_tool",
+    "main_budget_tool", "department_budget_tool", "transportation_tool", "map_tool",
+    "dod_tool", "schedule_distribution_tool", "script_distribution_tool",
+    // The diary reads its rows when History is opened (Pre-Production shares
+    // the screen but files under its own tool with no History read, so it
+    // keeps the whole-tool read — Android's `PreProduction`).
+    "box_schedule_tool",
+    // Folders and records read as they are viewed.
+    "location_tool", "casting_main_tool", "casting_background_tool", "wardrobe_main_tool", "wardrobe_background_tool",
+    "forms_and_signature_tool",
+)
 
 /**
  * The Admin rail badge, counted before anyone opens Admin.
@@ -1903,11 +1934,28 @@ private fun driveProvider(
     openWidget: () -> Unit,
 ) = DriveToolProvider(
     viewModel = viewModel,
-    onOpenUrl = ::openInBrowser,
+    host = driveHostSeams(viewModel, scope),
     onOpenWidget = openWidget,
+)
+
+/**
+ * The seams both the Drive tool and its widget hand the view model: the
+ * native pickers (launched on [scope] because the dialog blocks its own
+ * thread), the guarded browser, the clipboard, and the app's own Chromium
+ * for the editor and for video/audio — a presigned stream URL in the system
+ * browser would leave the app just as the editor token would.
+ */
+internal fun driveHostSeams(viewModel: DriveViewModel, scope: CoroutineScope) = DriveHostSeams(
+    onOpenUrl = ::openInBrowser,
     onPickFiles = { report ->
         scope.launch {
             val picked = DriveFilePicker().pick()
+            if (picked.isNotEmpty()) report(picked)
+        }
+    },
+    onPickFolder = { report ->
+        scope.launch {
+            val picked = DriveFilePicker().pickFolder()
             if (picked.isNotEmpty()) report(picked)
         }
     },
@@ -1929,6 +1977,15 @@ private fun driveProvider(
             onUnavailable = { reason -> viewModel.onEditorUnavailable(reason) },
         )
     },
+    onOpenMedia = { url, title ->
+        DocumentEditorWindow.open(
+            url = url,
+            fileName = title,
+            scope = scope,
+            onUnavailable = { _ -> openInBrowser(url) },
+        )
+    },
+    now = System::currentTimeMillis,
 )
 
 /** Puts [text] on the system clipboard. Failures are logged, never thrown. */
@@ -2038,6 +2095,7 @@ private suspend fun fetchProjectUnread(ready: AppGraph.Ready): Map<String, Int> 
 /** The C&C area's tool identifier — Android `Constants.CNC_CHAT_TYPE` (Constants.kt:1898). */
 private const val CNC_TOOL_IDENTIFIER = "cnc_section"
 
+@Suppress("LongParameterList") // One seam per host thing the chat needs; a bag would only rename them.
 private fun chatProvider(
     ready: AppGraph.Ready,
     viewModel: ChatViewModel?,
@@ -2047,9 +2105,14 @@ private fun chatProvider(
     /** One pane at a time — the Chat widget's copy. */
     compact: Boolean = false,
     onOpenWidget: (() -> Unit)? = null,
+    /** The mailbox the menu's Share hands a line to; null leaves Share off the menu. */
+    mail: EmailViewModel? = null,
 ) = ChatToolProvider(
     compact = compact,
     onOpenWidget = onOpenWidget,
+    shareAsEmail = mail?.let { mailbox ->
+        { message, navigator -> ready.shareChatMessageAsEmail(mailbox, message, navigator) }
+    },
     player = audioPlayer,
     loadAudio = { file -> fetchChatAudio(ready, file) },
     canDownload = canDownload,
@@ -2073,9 +2136,7 @@ private fun chatProvider(
                     // raw key it is on the wire, before translation hides it
                     // from the comparison.
                     designation = user.designationText(),
-                    department = user.department
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { Labels.translate(it) },
+                    department = user.departmentText(),
                     email = user.email,
                     isAdmin = user.isAdmin,
                     deviceId = user.deviceId,
@@ -2139,7 +2200,26 @@ private suspend fun fetchChatImage(
     ready: AppGraph.Ready,
     file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
     preview: Boolean,
-): androidx.compose.ui.graphics.ImageBitmap? =
+): androidx.compose.ui.graphics.ImageBitmap? {
+    val image = fetchChatBytes(ready, file, preview)?.let(::decodeImageBitmap)
+    if (image != null || !preview || !file.isPdf) return image
+    // No poster on the server — a Box production uploads none, a Drive
+    // share carries none, and the phones' `zillit-pdf-icon.png` placeholder
+    // is a key nothing answers — so page one is drawn here from the file
+    // itself, the way the upload path draws it before sending. Capped so a
+    // bubble never pulls a whole script down for a 240dp tile.
+    if (file.sizeBytes > PDF_POSTER_MAX_BYTES) return null
+    val pdf = fetchChatBytes(ready, file, preview = false) ?: return null
+    return withContext(Dispatchers.Default) {
+        pdfThumbnailJpeg(pdf)?.jpegBytes?.let(::decodeImageBitmap)
+    }
+}
+
+private suspend fun fetchChatBytes(
+    ready: AppGraph.Ready,
+    file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
+    preview: Boolean,
+): ByteArray? =
     (
         ready.noticeMedia.fetch(
             com.zillit.desktop.feature.home.domain.NoticeAttachment(
@@ -2151,7 +2231,10 @@ private suspend fun fetchChatImage(
             ),
             preview = preview,
         ) as? com.zillit.desktop.core.common.ZillitResult.Success
-        )?.data?.let(::decodeImageBitmap)
+        )?.data
+
+/** A PDF larger than this keeps its chip rather than being fetched whole for a poster. */
+private const val PDF_POSTER_MAX_BYTES = 15L * 1024 * 1024
 
 /**
  * Who this person is, as the two finance tools need to know it.
@@ -2177,7 +2260,7 @@ private fun AppGraph.Ready.cashAssignees(): List<AssigneeOption> {
         AssigneeOption(
             userId = user.userId,
             fullName = user.fullName,
-            designation = user.designation.orEmpty(),
+            designation = user.designationText().orEmpty(),
         )
     }
 }
@@ -2306,6 +2389,10 @@ private fun AppGraph.Ready.accountHubViewer(permissions: ProjectPermissions): Ac
     )
 }
 
+/** The crew as the share pickers list them — id, name, designation. */
+private fun AppGraph.Ready.driveCrew(): List<com.zillit.desktop.feature.drive.domain.DrivePerson> =
+    projectContext?.context?.value?.users.orEmpty().map { it.toDrivePerson() }
+
 private fun AppGraph.Ready.driveViewer(permissions: ProjectPermissions): DriveViewer {
     val context = projectContext?.context?.value
     return DriveViewer.from(
@@ -2430,8 +2517,8 @@ internal class AppViewModels(
     val costReportAnalytics: com.zillit.desktop.feature.costreport.ui.analytics.AnalyticsViewModel?,
     val saPortal: SaPortalViewModel?,
     val adDashboard: AdViewModel?,
-    /** One screen for both budget tiles — see BudgetToolProvider. */
-    val budget: BudgetViewModel?,
+    /** The two budget tiles, one view model each — see BudgetToolProvider. */
+    val budget: BudgetViewModels?,
     /** The forecast where the unit is. */
     val weather: WeatherViewModel?,
     /** Characters and who is up for them — one board, both casting lists. */
@@ -2561,6 +2648,11 @@ private fun rememberAppViewModels(
                     onCallsViewed = {
                         emitSegmentRead(it, segment = "call_label", module = "cnc_label")
                     },
+                    // The bubble menu's clocks and Translate: an admin's
+                    // Edit/Delete never time out; Translate shows when the
+                    // production's language is not this computer's.
+                    isAdmin = { it.projectContext?.context?.value?.isAdmin == true },
+                    translator = AppChatTranslator(it, scope.chatUiLanguage(preferences)),
                 )
             },
             homeFeed = ready?.let { buildHomeFeed(it, permissions) },
@@ -2629,6 +2721,14 @@ private fun rememberAppViewModels(
                     // As with purchase orders: the float request form's
                     // configuration is the account hub's document.
                     formTemplate = graph.formTemplateFor(FormModule.CashExpenses),
+                    // An accountant's rows file under the account hub, everyone
+                    // else's under the cash tool (`constants.js:229-246`).
+                    badges = graph.tabBadges("level_1") {
+                        TabBadgeScope(
+                            tool = if (graph.cashViewer().isAccountant) "account_hub_label" else "cash_expenses_label",
+                            unit = "cash_expenses_label",
+                        )
+                    },
                 )
             },
             cardExpenses = ready?.let { graph ->
@@ -2640,6 +2740,14 @@ private fun rememberAppViewModels(
                     // neither. See CardExpensesWiring.
                     people = { graph.cardPeople() },
                     uploader = graph.cardAttachmentUploader(),
+                    // An accountant's rows file under the account hub, a
+                    // cardholder's under the card tool (`constants.js:189-193`).
+                    badges = graph.tabBadges("level_1") {
+                        TabBadgeScope(
+                            tool = if (graph.cardViewer().isAccountant) "account_hub_label" else "card_expenses_label",
+                            unit = "card_expenses_label",
+                        )
+                    },
                     viewer = { graph.cardViewer() },
                 )
             },
@@ -2663,6 +2771,7 @@ private fun rememberAppViewModels(
                     // An order's own paperwork: the same store, a wider accept
                     // rule than the terms document's.
                     attachmentFiles = graph.poAttachmentFiles(),
+                    badges = graph.purchaseOrderBadges(),
                 )
             },
             timecards = ready?.let { graph ->
@@ -2671,6 +2780,9 @@ private fun rememberAppViewModels(
                     viewer = { graph.timecardViewer() },
                     currentWeekStarting = ::currentWeekStarting,
                     offline = graph.offlineSupport,
+                    // Every timecard and dispute event files under the tool with
+                    // the tile as its unit (`constants.js:107-116`).
+                    badges = graph.tabBadges("unit") { TabBadgeScope(tool = "timecard_label") },
                 )
             },
             payroll = ready?.let { graph ->
@@ -2704,6 +2816,7 @@ private fun rememberAppViewModels(
                     // The console renders the other film tools inside its
                     // shell, as the web does — see `AccountHubToolProvider.tools`.
                     embedsTools = true,
+                    readToolRow = { itemId, isAccountant -> graph.readHubToolRow(itemId, isAccountant) },
                 )
             },
             taxFiling = ready?.buildTaxFiling(),
@@ -2720,23 +2833,7 @@ private fun rememberAppViewModels(
                     online = graph.connectivity.online,
                 )
             },
-            formSignature = ready?.let { graph ->
-                FormSignatureViewModel(
-                    repository = FormSignatureRepositoryImpl(
-                        graph.apiClient,
-                        graph.config,
-                        bus = graph.socketEvents,
-                    ),
-                    transfer = graph.formSignatureTransfer(),
-                    pdfWork = PdfBoxWork(),
-                    resolveViewer = { FormSignatureViewer.from(permissions()) },
-                    currentUserId = {
-                        graph.projectContext?.context?.value?.profile?.userId.orEmpty()
-                    },
-                    newId = { UUID.randomUUID().toString() },
-                    rights = graph.rightsRequests,
-                )
-            },
+            formSignature = ready?.let { graph -> graph.buildFormSignature(permissions) },
             esignature = ready?.let { graph ->
                 EsignViewModel(
                     repository = EsignRepositoryImpl(
@@ -2761,6 +2858,7 @@ private fun rememberAppViewModels(
                         graph.projectContext?.context?.value?.profile?.email.orEmpty()
                     },
                     rights = graph.rightsRequests,
+                    badges = graph.esignBadges(),
                 )
             },
             callSheet = ready?.buildCallSheet(permissions),
@@ -2773,7 +2871,7 @@ private fun rememberAppViewModels(
                     repository = SidesRepositoryImpl(
                         apiClient = graph.apiClient,
                         config = graph.config,
-                        rawScenes = graph.sidesRawGet(),
+                        rawGet = graph.sidesRawGet(),
                         bus = graph.socketEvents,
                     ),
                     transfer = graph.sidesTransfer(),
@@ -2785,6 +2883,7 @@ private fun rememberAppViewModels(
                             displayName = context?.profile?.fullName.orEmpty(),
                         )
                     },
+                    rights = graph.rightsRequests,
                 )
             },
             permissionGrid = ready?.let { graph ->
@@ -2855,6 +2954,7 @@ private fun rememberAppViewModels(
                     today = ::today,
                     rights = graph.rightsRequests,
                     host = AppDocDistHost(graph.signatureRepository),
+                    badges = graph.docDistBadges(),
                 )
             },
             drive = ready?.let { graph ->
@@ -2865,8 +2965,11 @@ private fun rememberAppViewModels(
                     // not carry the API's encrypted headers. See
                     // MultipartDriveUploader.
                     uploader = MultipartDriveUploader(graph.driveRepository, graph.httpClient),
+                    previewHost = AppDrivePreviewHost(graph.httpClient),
+                    crew = { graph.driveCrew() },
                     newUploadId = { UUID.randomUUID().toString() },
                     rights = graph.rightsRequests,
+                    now = System::currentTimeMillis,
                 ).also(driveHolder::set)
             },
         )
@@ -2981,11 +3084,13 @@ private fun buildRegistry(
         (graph as? AppGraph.Ready)?.mapToolProvider(vm) ?: MapToolProvider(vm, onOpenUrl = ::openInBrowser)
     }
     val recce = viewModels.recce?.let { RecceToolProvider(it, onOpenUrl = ::openInBrowser) }
-    val externalUsers = viewModels.externalUsers?.let {
-        com.zillit.desktop.feature.externalusers.ui.ExternalUsersToolProvider(it)
+    val externalUsers = viewModels.externalUsers?.let { vm ->
+        (graph as? AppGraph.Ready)?.externalUsersProvider(vm, viewModels)
+            ?: com.zillit.desktop.feature.externalusers.ui.ExternalUsersToolProvider(vm)
     }
-    val distributionList = viewModels.distribution?.let {
-        com.zillit.desktop.feature.distribution.ui.DistributionToolProvider(it)
+    val distributionList = viewModels.distribution?.let { vm ->
+        (graph as? AppGraph.Ready)?.distributionListProvider(vm, viewModels)
+            ?: com.zillit.desktop.feature.distribution.ui.DistributionToolProvider(vm, onOpenUrl = ::openInBrowser)
     }
     val crewList = viewModels.crewList?.let { vm ->
         (graph as? AppGraph.Ready)?.crewListProvider(vm, viewModels, onOpenWidget = { openWidget(ZillitWidget.Crew) })
@@ -3025,13 +3130,13 @@ private fun buildRegistry(
                 .map { path -> readyGraph.castBoardProvider(vm, path) }
         }
     }.orEmpty()
-    // Both budget tiles open the same screen; which halves it shows is a
-    // question of rights, as on the web.
-    val mainBudget = viewModels.budget?.let { vm ->
-        (graph as? AppGraph.Ready)?.budgetProvider(vm, MAIN_BUDGET_PATH, scope)
+    // The two budget tiles: one screen shape, two view models — as the web
+    // mounts FullBudget and DepartmentBudget on two routes over one body.
+    val mainBudget = viewModels.budget?.let { vms ->
+        (graph as? AppGraph.Ready)?.budgetProvider(vms.main, MAIN_BUDGET_PATH, scope, audioPlayer)
     }
-    val departmentBudget = viewModels.budget?.let { vm ->
-        (graph as? AppGraph.Ready)?.budgetProvider(vm, DEPARTMENT_BUDGET_PATH, scope)
+    val departmentBudget = viewModels.budget?.let { vms ->
+        (graph as? AppGraph.Ready)?.budgetProvider(vms.department, DEPARTMENT_BUDGET_PATH, scope, audioPlayer)
     }
     val invoices = viewModels.invoices?.let { invoicesProvider(it) }
     // Schedule Full & One Line, Script & Pages, Schedule D.O.D — the same
@@ -3120,6 +3225,7 @@ private fun buildRegistry(
         chatProvider(
             it, chatViewModel, viewModels.calls, audioPlayer, cncDownloadRight(viewModels),
             onOpenWidget = { openWidget(ZillitWidget.Chat) },
+            mail = emailViewModel,
         )
     }
     val signatures = (graph as? AppGraph.Ready)?.let {
@@ -3351,9 +3457,12 @@ private fun buildRegistry(
     // The picker runs on IO and answers back on the caller's thread; a null
     // answer is a cancelled dialog and is passed through as such.
     val formSignature = viewModels.formSignature?.let { vm ->
-        FormSignatureToolProvider(vm) { onPicked ->
-            scope.launch { onPicked(pickPdf()) }
-        }
+        (graph as? AppGraph.Ready)?.formSignatureProvider(
+            viewModel = vm,
+            permissions = { viewModels.home?.state?.value?.permissions ?: ProjectPermissions.Empty },
+            scope = scope,
+            board = boardContext,
+        )
     }
     val esignature = viewModels.esignature?.let { vm ->
         EsignToolProvider(vm) { kind, onPicked ->
@@ -3364,8 +3473,10 @@ private fun buildRegistry(
     val sides = viewModels.sides?.let { vm ->
         SidesToolProvider(
             viewModel = vm,
-            onPickPdf = { onPicked -> scope.launch { onPicked(pickPdf()) } },
+            onPickFile = { pdfOnly, onPicked -> scope.launch { onPicked(pickSidesDocument(pdfOnly)) } },
             onOpenUrl = ::openInBrowser,
+            onSaveFile = { fileName, bytes -> scope.launch { saveSidesFile(fileName, bytes) } },
+            loadAvatar = (graph as? AppGraph.Ready)?.let { crewFaceLoader(it) } ?: { null },
         )
     }
     val permissionGrid = viewModels.permissionGrid?.let { vm ->
@@ -3413,6 +3524,7 @@ private fun buildRegistry(
                 graph as AppGraph.Ready, it, viewModels.calls, audioPlayer,
                 canDownload = cncDownloadRight(viewModels),
                 compact = true,
+                mail = emailViewModel,
             )
         },
         crewWidget = viewModels.crewList?.let { CrewListToolProvider(it, compact = true) },
@@ -3563,7 +3675,8 @@ private fun ProjectContext.crewContacts(): List<EmailContact> =
             address = address,
             name = if (user.keepNamePrivate) "" else user.fullName,
             source = ContactSource.ProjectUser,
-            subtitle = user.department.orEmpty(),
+            userId = user.userId,
+            subtitle = user.departmentText().orEmpty(),
         )
     }
 
@@ -3664,6 +3777,7 @@ private fun buildSettings(
         // administration entry out of the rail for everyone.
         account = ready?.projectContext?.context?.map {
             AccountSummary(
+                userId = it.profile?.userId.orEmpty(),
                 fullName = it.profile?.fullName.orEmpty(),
                 email = it.profile?.email.orEmpty(),
                 productionName = it.project?.name.orEmpty(),
@@ -3678,6 +3792,7 @@ private fun buildSettings(
             ),
             unit = UnitSelection(selectedId = context?.profile?.joinUnitId),
             account = AccountSummary(
+                userId = context?.profile?.userId.orEmpty(),
                 fullName = context?.profile?.fullName.orEmpty(),
                 email = context?.profile?.email.orEmpty(),
                 productionName = context?.project?.name.orEmpty(),
@@ -3740,6 +3855,7 @@ private fun buildAccount(ready: AppGraph.Ready): AccountViewModel =
         seed = ready.projectContext?.context?.map { context ->
             val profile = context.profile
             ProfileSeed(
+                userId = profile?.userId.orEmpty(),
                 firstName = profile?.firstName.orEmpty(),
                 lastName = profile?.lastName.orEmpty(),
                 email = profile?.email.orEmpty(),
@@ -3867,8 +3983,8 @@ private const val CRASH_TAG = "Crash"
 
 /** The Drive's folders under [parentId] (null = the root), as the email-rules picker lists them. */
 private suspend fun AppGraph.Ready.driveFolderOptions(parentId: String?): ZillitResult<List<DriveFolderOption>> =
-    driveRepository.contents(DriveQuery(folderId = parentId)).map { page ->
-        page.items.filter { it.kind == DriveItemKind.Folder }.map { DriveFolderOption(it.id, it.name) }
+    driveRepository.listing(DriveListQuery(scope = DriveScope.Mine)).map { listing ->
+        listing.folders.filter { it.parentFolderId == parentId }.map { DriveFolderOption(it.id, it.name) }
     }
 
 /**

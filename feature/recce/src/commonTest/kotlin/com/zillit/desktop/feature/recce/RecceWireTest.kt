@@ -9,7 +9,7 @@ import com.zillit.desktop.feature.recce.domain.RecceStatus
 import com.zillit.desktop.feature.recce.domain.RecceStop
 import com.zillit.desktop.feature.recce.domain.StopKind
 import com.zillit.desktop.feature.recce.domain.Weather
-import com.zillit.desktop.feature.recce.ui.pages.parseLatLngFromUrl
+import com.zillit.desktop.core.common.MapsLink
 import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -125,9 +125,9 @@ class RecceWireTest {
 
     @Test
     fun `maps links yield coordinates`() {
-        assertEquals(51.5 to -0.12, parseLatLngFromUrl("https://www.google.com/maps/@51.5,-0.12,15z"))
-        assertEquals(1.0 to 2.0, parseLatLngFromUrl("https://maps.google.com/?q=1.0,2.0"))
-        assertEquals(3.25 to 4.5, parseLatLngFromUrl("https://www.google.com/maps/place/x/!3d3.25!4d4.5"))
-        assertNull(parseLatLngFromUrl("https://goo.gl/maps/abc"))
+        assertEquals(51.5 to -0.12, MapsLink.parseLatLng("https://www.google.com/maps/@51.5,-0.12,15z"))
+        assertEquals(1.0 to 2.0, MapsLink.parseLatLng("https://maps.google.com/?q=1.0,2.0"))
+        assertEquals(3.25 to 4.5, MapsLink.parseLatLng("https://www.google.com/maps/place/x/!3d3.25!4d4.5"))
+        assertNull(MapsLink.parseLatLng("https://goo.gl/maps/abc"))
     }
 }

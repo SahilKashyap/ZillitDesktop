@@ -1,19 +1,21 @@
 package com.zillit.desktop.feature.drive.data
 
 import com.zillit.desktop.core.common.toEpochMillisOrNull
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
 import com.zillit.desktop.feature.drive.domain.DriveActivity
 import com.zillit.desktop.feature.drive.domain.DriveComment
 import com.zillit.desktop.feature.drive.domain.DriveFileRequest
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveItemKind
-import com.zillit.desktop.feature.drive.domain.DrivePage
 import com.zillit.desktop.feature.drive.domain.DrivePermissions
 import com.zillit.desktop.feature.drive.domain.DriveRole
 import com.zillit.desktop.feature.drive.domain.DriveTag
 import com.zillit.desktop.feature.drive.domain.DriveVersion
+import com.zillit.desktop.feature.drive.domain.DriveShareLink
+import com.zillit.desktop.feature.drive.domain.LinkPermission
+import com.zillit.desktop.feature.drive.domain.LinkRecipient
 import com.zillit.desktop.feature.drive.domain.EditorSession
-import com.zillit.desktop.feature.drive.domain.StorageUsage
 import com.zillit.desktop.feature.drive.domain.UploadPart
 import com.zillit.desktop.feature.drive.domain.UploadPlan
 import com.zillit.desktop.feature.drive.domain.UploadSession
@@ -61,6 +63,8 @@ internal data class DriveItemDto(
     @SerialName("description") val description: String? = null,
 
     @SerialName("type") val type: String? = null,
+    /** The trash route's discriminator — `file` or `folder`. */
+    @SerialName("item_type") val itemType: String? = null,
     @SerialName("is_folder") val isFolder: Boolean? = null,
 
     @SerialName("parent_folder") val parentFolder: String? = null,
@@ -74,6 +78,7 @@ internal data class DriveItemDto(
     @SerialName("created_at") val createdAt: JsonPrimitive? = null,
     @SerialName("created_on") val createdOn: JsonPrimitive? = null,
     @SerialName("updated_at") val updatedAt: JsonPrimitive? = null,
+    @SerialName("updated_on") val updatedOn: JsonPrimitive? = null,
     @SerialName("deleted_on") val deletedOn: JsonPrimitive? = null,
 
     @SerialName("created_by") val createdBy: String? = null,
@@ -87,6 +92,17 @@ internal data class DriveItemDto(
     @SerialName("can_download") val canDownload: Boolean? = null,
     @SerialName("can_delete") val canDelete: Boolean? = null,
     @SerialName("role") val role: String? = null,
+    /**
+     * What the server resolved for *this* user on this row — the web reads
+     * `record._userPermissions` and falls back to ownership only when it is
+     * absent. The four bare flags above are an older spelling some routes
+     * still use; both are read.
+     */
+    @SerialName("_userPermissions") val userPermissions: UserPermissionsDto? = null,
+    /** Who the owner has shared this with (`_accessUserIds`) — the Sharing column. */
+    @SerialName("_accessUserIds") val accessUserIds: List<JsonElement> = emptyList(),
+    @SerialName("_accessCount") val accessCount: Int? = null,
+    @SerialName("folder_color") val folderColor: String? = null,
 
     @SerialName("is_favorite") val isFavourite: Boolean? = null,
     @SerialName("is_shared") val isShared: Boolean? = null,
@@ -105,15 +121,23 @@ internal data class DriveItemDto(
     private fun kind(default: DriveItemKind?): DriveItemKind = when {
         isFolder == true -> DriveItemKind.Folder
         isFolder == false -> DriveItemKind.File
+        itemType != null -> DriveItemKind.from(itemType)
         type != null -> DriveItemKind.from(type)
         default != null -> default
         !folderName.isNullOrBlank() && fileName.isNullOrBlank() -> DriveItemKind.Folder
         else -> DriveItemKind.File
     }
 
-    private val identifier: String?
-        get() = listOf(underscoreId, id, fileId, folderId)
-            .firstOrNull { !it.isNullOrBlank() }
+    /**
+     * `folder_id` is a **file's parent**, not its id, so it only names the row
+     * on a folder join; a file's own id lives under `file_id` when `_id` is
+     * absent.
+     */
+    private fun identifier(resolved: DriveItemKind): String? = listOf(
+        underscoreId,
+        id,
+        if (resolved == DriveItemKind.Folder) folderId else fileId,
+    ).firstOrNull { !it.isNullOrBlank() }
 
     /**
      * [known] is what the calling endpoint already established.
@@ -121,9 +145,10 @@ internal data class DriveItemDto(
      * `GET /folders` returns folders whatever their fields say, so the caller
      * passing that in is more reliable than any inference from the payload.
      */
+    @Suppress("CyclomaticComplexMethod") // One fallback per field the wire spells two ways.
     fun toDomain(known: DriveItemKind? = null): DriveItem? {
-        val itemId = identifier ?: return null
         val resolved = kind(known)
+        val itemId = identifier(resolved) ?: return null
         val displayName = listOf(name, fileName, folderName)
             .firstOrNull { !it.isNullOrBlank() }
             ?: if (resolved == DriveItemKind.Folder) "Untitled folder" else "Untitled"
@@ -133,22 +158,31 @@ internal data class DriveItemDto(
             kind = resolved,
             name = displayName,
             description = description.orEmpty(),
-            parentFolderId = (parentFolder ?: parentFolderId)?.takeIf { it.isNotBlank() },
+            // A file's parent is `folder_id` (`file.folder_id === currentFolder`
+            // on the web); a folder's is `parent_folder_id`. Reading only the
+            // latter left every file at the root, whatever folder it was in.
+            parentFolderId = listOf(parentFolder, parentFolderId, folderId.takeIf { resolved == DriveItemKind.File })
+                .firstOrNull { !it.isNullOrBlank() },
             sizeBytes = sizeBytes ?: 0,
             extension = extension.orEmpty().ifBlank {
                 displayName.substringAfterLast('.', "")
             }.lowercase(),
             mimeType = mimeType ?: fileType,
-            createdAt = (createdAt ?: createdOn).epochMillis(),
-            updatedAt = updatedAt.epochMillis(),
+            createdAt = (createdOn ?: createdAt).epochMillis(),
+            updatedAt = (updatedOn ?: updatedAt).epochMillis(),
             uploadedByName = listOf(uploadedByName, createdByName)
                 .firstOrNull { !it.isNullOrBlank() }.orEmpty(),
             uploadedById = (uploadedBy ?: createdBy).orEmpty(),
+            createdById = (createdBy ?: uploadedBy).orEmpty(),
             permissions = permissions(),
+            hasExplicitPermissions = userPermissions != null ||
+                listOf(canView, canEdit, canDownload, canDelete).any { it != null },
             isFavourite = isFavourite ?: false,
-            isShared = isShared ?: false,
+            isShared = (isShared ?: false) || (accessCount ?: 0) > 0 || accessUserIds.isNotEmpty(),
+            accessUserIds = accessUserIds.mapNotNull { it.identifier()?.takeIf(String::isNotBlank) },
             tagIds = tagIds,
             itemCount = itemCount,
+            folderColor = folderColor.orEmpty(),
             deletedAt = deletedOn.epochMillis(),
             deletedByName = deletedByName.orEmpty(),
         )
@@ -163,6 +197,7 @@ internal data class DriveItemDto(
      * would 403 on.
      */
     private fun permissions(): DrivePermissions {
+        userPermissions?.let { return it.toDomain() }
         val explicit = listOf(canView, canEdit, canDownload, canDelete).any { it != null }
         if (explicit) {
             return DrivePermissions(
@@ -174,6 +209,22 @@ internal data class DriveItemDto(
         }
         return role?.let { DriveRole.from(it).permissions } ?: DrivePermissions.ViewOnly
     }
+}
+
+/** `_userPermissions` — the server's resolved grant for the requesting user. */
+@Serializable
+internal data class UserPermissionsDto(
+    @SerialName("can_view") val canView: Boolean? = null,
+    @SerialName("can_edit") val canEdit: Boolean? = null,
+    @SerialName("can_download") val canDownload: Boolean? = null,
+    @SerialName("can_delete") val canDelete: Boolean? = null,
+) {
+    fun toDomain() = DrivePermissions(
+        canView = canView ?: true,
+        canEdit = canEdit ?: false,
+        canDownload = canDownload ?: false,
+        canDelete = canDelete ?: false,
+    )
 }
 
 /**
@@ -190,15 +241,16 @@ internal data class DrivePageDto(
     @SerialName("folders") val folders: List<DriveItemDto> = emptyList(),
     @SerialName("total") val total: Int? = null,
 ) {
-    fun toDomain(): DrivePage {
-        // Folders and files arrive under their own keys when the route splits
-        // them, and merged under `items` when it does not. Both are read and
-        // concatenated; a route that sends `items` sends the other two empty.
-        val rows = items.mapNotNull { it.toDomain() } +
+    /**
+     * Folders and files arrive under their own keys when the route splits
+     * them, and merged under `items` when it does not. Both are read and
+     * concatenated; a route that sends `items` sends the other two empty.
+     * [known] is what the calling route established about the `items`.
+     */
+    fun rows(known: DriveItemKind? = null): List<DriveItem> =
+        items.mapNotNull { it.toDomain(known) } +
             folders.mapNotNull { it.toDomain(DriveItemKind.Folder) } +
             files.mapNotNull { it.toDomain(DriveItemKind.File) }
-        return DrivePage(items = rows, total = total ?: rows.size)
-    }
 }
 
 @Serializable
@@ -247,29 +299,6 @@ internal data class UploadSessionDto(
 }
 
 @Serializable
-internal data class StorageDto(
-    @SerialName("total_size_bytes") val totalBytes: Long? = null,
-    @SerialName("used_bytes") val usedBytes: Long? = null,
-    @SerialName("total_files") val totalFiles: Int? = null,
-    @SerialName("file_count") val fileCount: Int? = null,
-    @SerialName("trash_size_bytes") val trashBytes: Long? = null,
-    @SerialName("quota_bytes") val quotaBytes: Long? = null,
-    @SerialName("by_type") val byType: Map<String, JsonElement> = emptyMap(),
-) {
-    fun toDomain(): StorageUsage = StorageUsage(
-        usedBytes = usedBytes ?: totalBytes ?: 0,
-        fileCount = fileCount ?: totalFiles ?: 0,
-        trashBytes = trashBytes ?: 0,
-        byType = byType.mapNotNull { (key, value) ->
-            (value as? JsonPrimitive)?.content?.toLongOrNull()?.let { key to it }
-        }.toMap(),
-        // Zero is not a quota. A meter drawn against it reads as full, which is
-        // the opposite of what "no allowance configured" means.
-        quotaBytes = quotaBytes?.takeIf { it > 0 },
-    )
-}
-
-@Serializable
 internal data class TagDto(
     @SerialName("_id") val id: String? = null,
     @SerialName("name") val name: String? = null,
@@ -295,7 +324,11 @@ internal data class TagDto(
 @Serializable
 internal data class ItemTagDto(
     @SerialName("tag_id") val tagId: JsonElement? = null,
+    /** The tagged item, on the `items-by-tag` answer. */
+    @SerialName("item_id") val item: JsonElement? = null,
 ) {
+    fun itemId(): String? = item.identifier()?.takeIf { it.isNotBlank() }
+
     fun toDomain(): DriveTag? = when (val value = tagId) {
         is JsonObject -> TagDto(
             id = value["_id"]?.jsonPrimitive?.contentOrNull,
@@ -321,17 +354,22 @@ internal data class CommentDto(
     @SerialName("text") val text: String? = null,
     @SerialName("content") val content: String? = null,
     @SerialName("user_name") val userName: String? = null,
+    /** The author, as an id or a populated user — the web resolves it against the crew. */
+    @SerialName("user_id") val user: JsonElement? = null,
     @SerialName("created_on") val createdOn: JsonPrimitive? = null,
     @SerialName("created_at") val createdAt: JsonPrimitive? = null,
+    @SerialName("updated_on") val updatedOn: JsonPrimitive? = null,
     @SerialName("parent_comment_id") val parentId: String? = null,
 ) {
     fun toDomain(): DriveComment? = id?.takeIf { it.isNotBlank() }?.let {
         DriveComment(
             id = it,
             fileId = fileId.orEmpty(),
-            authorName = userName.orEmpty().ifBlank { "Someone" },
+            authorName = userName.orEmpty().ifBlank { user.personName() },
+            authorId = user.identifier().orEmpty(),
             text = (text ?: content).orEmpty(),
             createdAt = (createdOn ?: createdAt).epochMillis(),
+            updatedAt = updatedOn.epochMillis(),
             parentId = parentId?.takeIf { parent -> parent.isNotBlank() },
         )
     }
@@ -342,6 +380,7 @@ internal data class ActivityDto(
     @SerialName("_id") val id: String? = null,
     @SerialName("action") val action: String? = null,
     @SerialName("item_name") val itemName: String? = null,
+    @SerialName("item_type") val itemType: String? = null,
     /**
      * The actor, as an **id** — this service does not send a name.
      *
@@ -372,6 +411,7 @@ internal data class ActivityDto(
             id = it,
             action = action.orEmpty().ifBlank { "updated" },
             itemName = itemName.orEmpty(),
+            itemType = itemType.orEmpty(),
             userName = userName.orEmpty(),
             userId = userId.orEmpty(),
             at = (createdOn ?: createdAt).epochMillis(),
@@ -451,6 +491,7 @@ internal data class AccessDto(
         DriveAccessEntry(
             userId = it,
             userName = userName.orEmpty().ifBlank { user.personName() },
+            designation = user.designation(),
             role = resolved,
             // File-level rows carry flags and no role; folder-level rows carry
             // a role and no flags. Whichever came, the other is derived so the
@@ -564,6 +605,18 @@ private fun JsonElement?.identifier(): String? = when (this) {
     else -> null
 }
 
+/**
+ * `designation_name` off a populated user document — a label key, so it goes
+ * through the dictionary, as the web's `getUserRoleName` does.
+ */
+private fun JsonElement?.designation(): String = (this as? JsonObject)
+    ?.let { row -> (row["designation_name"] as? JsonPrimitive)?.content }
+    .orEmpty()
+    .localised()
+    .split(' ')
+    .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
+    .trim()
+
 /** The name off a populated user document, when there is one. */
 private fun JsonElement?.personName(): String = (this as? JsonObject)
     ?.let { row ->
@@ -665,4 +718,69 @@ private fun JsonPrimitive?.stamp(): Long {
         ?: text.toEpochMillisOrNull()
         ?: runCatching { Instant.parse(text).toEpochMilliseconds() }.getOrNull()
         ?: 0
+}
+
+/**
+ * An email-tracked share link (`ShareViaLink.jsx`'s `ActiveLinkRow`): the
+ * create answers `{ url, token, … }`, the list answers the same rows.
+ */
+@Serializable
+internal data class ShareLinkDto(
+    @SerialName("_id") val id: String? = null,
+    @SerialName("token") val token: String? = null,
+    @SerialName("url") val url: String? = null,
+    @SerialName("permission") val permission: String? = null,
+    @SerialName("expires_on") val expiresOn: JsonPrimitive? = null,
+    @SerialName("max_views") val maxViews: Int? = null,
+    @SerialName("view_count") val viewCount: Int? = null,
+    @SerialName("created_on") val createdOn: JsonPrimitive? = null,
+    @SerialName("revoked") val revoked: Boolean? = null,
+    @SerialName("recipients") val recipients: List<ShareLinkRecipientDto> = emptyList(),
+) {
+    fun toDomain(): DriveShareLink? {
+        val identifier = id?.takeIf { it.isNotBlank() } ?: return null
+        if (revoked == true) return null
+        return DriveShareLink(
+            id = identifier,
+            token = token.orEmpty(),
+            url = url.orEmpty(),
+            permission = LinkPermission.from(permission),
+            expiresOn = expiresOn.stamp(),
+            maxViews = maxViews ?: 0,
+            viewCount = viewCount ?: 0,
+            recipients = recipients.mapNotNull { it.toDomain() },
+            createdOn = createdOn.stamp(),
+        )
+    }
+}
+
+@Serializable
+internal data class ShareLinkRecipientDto(
+    @SerialName("email") val email: String? = null,
+    @SerialName("view_count") val viewCount: Int? = null,
+) {
+    fun toDomain(): LinkRecipient? =
+        email?.takeIf { it.isNotBlank() }?.let { LinkRecipient(it, viewCount ?: 0) }
+}
+
+/** Both list routes, `/files` and `/folders`, answer a bare array or `{ items }`. */
+internal object ItemListSerializer :
+    JsonTransformingSerializer<DrivePageDto>(DrivePageDto.serializer()) {
+    override fun transformDeserialize(element: JsonElement): JsonElement =
+        if (element is JsonArray) buildJsonObject { put("items", element) } else element
+}
+
+/** A bare array of ids or a wrapped one — `access/users` has answered both. */
+internal object IdListSerializer :
+    JsonTransformingSerializer<IdListDto>(IdListDto.serializer()) {
+    override fun transformDeserialize(element: JsonElement): JsonElement =
+        if (element is JsonArray) buildJsonObject { put("items", element) } else element
+}
+
+@Serializable
+internal data class IdListDto(
+    @SerialName("items") val items: List<JsonElement> = emptyList(),
+    @SerialName("data") val data: List<JsonElement> = emptyList(),
+) {
+    fun ids(): Set<String> = (items + data).mapNotNullTo(mutableSetOf()) { it.identifier()?.takeIf(String::isNotBlank) }
 }

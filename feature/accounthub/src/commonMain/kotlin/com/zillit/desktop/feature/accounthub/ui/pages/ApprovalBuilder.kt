@@ -458,7 +458,7 @@ private fun ApproverChip(userId: String, state: AccountHubUiState, onRemove: () 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = name, image = rememberHubFace(userId), size = CHIP_AVATAR)
+        ZillitAvatar(name = name, image = rememberHubFace(userId), userId = userId, size = CHIP_AVATAR)
         ZillitText(
             text = name,
             style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
@@ -619,7 +619,7 @@ private fun PickerRow(user: HubUser, added: Boolean, picked: Boolean, onToggle: 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitAvatar(name = name, image = rememberHubFace(user.id), size = PICKER_AVATAR)
+        ZillitAvatar(name = name, image = rememberHubFace(user.id), userId = user.id, size = PICKER_AVATAR)
         Column(modifier = Modifier.weight(1f)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

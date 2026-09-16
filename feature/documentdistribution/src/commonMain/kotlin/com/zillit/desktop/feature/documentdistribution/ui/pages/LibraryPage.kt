@@ -44,6 +44,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitEmptyState
@@ -596,7 +597,10 @@ private fun FolderListRow(folder: LibraryFolder, state: DocDistUiState, onEvent:
                 text = folder.name,
                 style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 maxLines = 1,
+                modifier = Modifier.weight(1f, fill = false),
             )
+            // The folder's bubble: every unread row filed under it (`Library.jsx:854`).
+            ZillitBadge(count = state.unread.folder(folder.id))
         }
         CellText(prettyIsoDate(folder.folderDate), Modifier.width(DATE_COLUMN.dp))
         CellText(folder.description.ifBlank { "—" }, Modifier.weight(DESCRIPTION_WEIGHT))
@@ -618,7 +622,9 @@ private fun FileListRow(document: LibraryDocument, state: DocDistUiState, onEven
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FileGlyph(document, size = 28.dp)
-            ZillitText(text = document.name, maxLines = 1)
+            ZillitText(text = document.name, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+            // The file's dot: its own unread events (`Library.jsx:929`).
+            ZillitBadge(count = state.unread.file(document.id))
         }
         CellText(prettyIsoDate(document.documentDate), Modifier.width(DATE_COLUMN.dp))
         CellText("—", Modifier.weight(DESCRIPTION_WEIGHT))
@@ -789,6 +795,7 @@ private fun GridView(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
                 when (row) {
                     is LibraryRow.Folder -> GridCard(
                         title = row.folder.name,
+                        unread = state.unread.folder(row.id),
                         sub = listOf(row.folder.description, prettyIsoDate(row.folder.folderDate))
                             .filter { it.isNotBlank() && it != "—" }
                             .joinToString(" · "),
@@ -800,6 +807,7 @@ private fun GridView(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
                     )
                     is LibraryRow.File -> GridCard(
                         title = row.document.name,
+                        unread = state.unread.file(row.id),
                         sub = formatBytes(row.document.sizeBytes) +
                             prettyIsoDate(row.document.documentDate).takeIf { it != "—" }?.let { " · $it" }.orEmpty(),
                         selected = row.id in state.selectedDocumentIds,
@@ -826,6 +834,7 @@ private fun GridCard(
     onToggle: () -> Unit,
     glyph: @Composable () -> Unit,
     actions: @Composable (visible: Boolean) -> Unit,
+    unread: Int = 0,
 ) {
     val c = ZillitTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -843,6 +852,7 @@ private fun GridCard(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             ZillitCheckbox(checked = selected, onCheckedChange = { onToggle() })
             Box(Modifier.weight(1f))
+            ZillitBadge(count = unread)
         }
         Column(
             modifier = Modifier.fillMaxWidth(),

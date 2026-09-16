@@ -1,25 +1,7 @@
 package com.zillit.desktop.feature.drive
 
-import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.feature.drive.data.DRIVE_SYNC_EVENTS
-import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
-import com.zillit.desktop.feature.drive.domain.DriveActivity
-import com.zillit.desktop.feature.drive.domain.DriveComment
-import com.zillit.desktop.feature.drive.domain.DriveCrumb
-import com.zillit.desktop.feature.drive.domain.DriveItem
-import com.zillit.desktop.feature.drive.domain.DriveItemKind
-import com.zillit.desktop.feature.drive.domain.DrivePage
-import com.zillit.desktop.feature.drive.domain.DriveQuery
-import com.zillit.desktop.feature.drive.domain.DriveRef
-import com.zillit.desktop.feature.drive.domain.DriveRepository
-import com.zillit.desktop.feature.drive.domain.DriveTag
-import com.zillit.desktop.feature.drive.domain.DriveVersion
 import com.zillit.desktop.feature.drive.domain.DriveViewer
-import com.zillit.desktop.feature.drive.domain.StorageUsage
-import com.zillit.desktop.feature.drive.domain.UploadPart
-import com.zillit.desktop.feature.drive.domain.UploadRequest
-import com.zillit.desktop.feature.drive.domain.UploadSession
 import com.zillit.desktop.feature.drive.ui.DriveViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -50,62 +32,7 @@ class DriveSyncTest {
 
     @AfterTest fun tearDown() = Dispatchers.resetMain()
 
-    @Suppress("TooManyFunctions") // One override per repository operation.
-    private class FakeRepo(override val refreshes: Flow<Unit>) : DriveRepository {
-        var browseLoads = 0
-        override suspend fun contents(query: DriveQuery): ZillitResult<DrivePage> {
-            browseLoads++
-            return ZillitResult.Success(DrivePage(emptyList(), total = 0))
-        }
-        override suspend fun item(id: String, kind: DriveItemKind): ZillitResult<DriveItem> = unused()
-        override suspend fun createFolder(name: String, parentId: String?, description: String):
-            ZillitResult<DriveItem> = unused()
-        override suspend fun rename(ref: DriveRef, name: String, description: String?) = ok()
-        override suspend fun move(ref: DriveRef, targetFolderId: String?) = ok()
-        override suspend fun delete(ref: DriveRef) = ok()
-        override suspend fun bulkDelete(refs: List<DriveRef>) = ok()
-        override suspend fun bulkMove(refs: List<DriveRef>, targetFolderId: String?) = ok()
-        override suspend fun bulkDownloadUrls(fileIds: List<String>) =
-            ZillitResult.Success(emptyList<String>())
-        override suspend fun downloadUrl(fileId: String) = ZillitResult.Success("u")
-        override suspend fun previewUrl(fileId: String) = ZillitResult.Success("u")
-        override suspend fun streamUrl(fileId: String) = ZillitResult.Success("u")
-        override suspend fun shareLink(fileId: String) = ZillitResult.Success("u")
-        override suspend fun editorUrl(fileId: String, editable: Boolean) = ZillitResult.Success("u")
-        override suspend fun initiateUpload(request: UploadRequest): ZillitResult<UploadSession> = unused()
-        override suspend fun completeUpload(uploadId: String, parts: List<UploadPart>):
-            ZillitResult<DriveItem> = unused()
-        override suspend fun abortUpload(uploadId: String) = ok()
-        override suspend fun remainingParts(uploadId: String) =
-            ZillitResult.Success(emptyList<UploadPart>())
-        override suspend fun trash() = ZillitResult.Success(emptyList<DriveItem>())
-        override suspend fun restore(ref: DriveRef) = ok()
-        override suspend fun purge(ref: DriveRef) = ok()
-        override suspend fun emptyTrash() = ok()
-        override suspend fun toggleFavourite(ref: DriveRef) = ok()
-        override suspend fun favourites() = ZillitResult.Success(emptyList<DriveItem>())
-        override suspend fun favouriteIds() = ZillitResult.Success(emptySet<String>())
-        override suspend fun access(ref: DriveRef) = ZillitResult.Success(emptyList<DriveAccessEntry>())
-        override suspend fun updateAccess(ref: DriveRef, entries: List<DriveAccessEntry>, applyToChildren: Boolean) =
-            ok()
-        override suspend fun storage() = ZillitResult.Success(StorageUsage())
-        override suspend fun activity(itemId: String?) = ZillitResult.Success(emptyList<DriveActivity>())
-        override suspend fun comments(fileId: String) = ZillitResult.Success(emptyList<DriveComment>())
-        override suspend fun addComment(fileId: String, text: String, parentId: String?) = ok()
-        override suspend fun deleteComment(commentId: String) = ok()
-        override suspend fun tags() = ZillitResult.Success(emptyList<DriveTag>())
-        override suspend fun createTag(name: String, color: String) = ok()
-        override suspend fun deleteTag(tagId: String) = ok()
-        override suspend fun itemTags(ref: DriveRef) = ZillitResult.Success(emptyList<DriveTag>())
-        override suspend fun assignTag(tagId: String, ref: DriveRef) = ok()
-        override suspend fun removeTag(tagId: String, ref: DriveRef) = ok()
-        override suspend fun versions(fileId: String) = ZillitResult.Success(emptyList<DriveVersion>())
-        override suspend fun versionDownloadUrl(fileId: String, versionId: String) = ZillitResult.Success("u")
-        override suspend fun restoreVersion(fileId: String, versionId: String) = ok()
-
-        private fun ok() = ZillitResult.Success(Unit)
-        private fun <T> unused(): ZillitResult<T> = ZillitResult.Failure(ZillitError.Unknown("unused"))
-    }
+    private class FakeRepo(refreshes: Flow<Unit>) : FakeDriveRepository(refreshes)
 
     // -- which wire events are subscribed ----------------------------------
 
@@ -172,18 +99,20 @@ class DriveSyncTest {
 
         model.start()
         runCurrent()
-        assertEquals(1, repo.browseLoads, "start loads the browser once")
+        // The "Shared with me" landing, empty, falls back to My Drive
+        // (ZL-21229) — so a cold start is two loads, never more.
+        assertEquals(2, repo.browseLoads, "start loads shared, then falls back to My Drive")
 
         events.emit(Unit)
         runCurrent()
-        assertEquals(2, repo.browseLoads, "the pulse re-runs exactly one load")
+        assertEquals(3, repo.browseLoads, "the pulse re-runs exactly one load")
 
         model.onProjectChanged()
         runCurrent()
-        assertEquals(3, repo.browseLoads)
+        assertEquals(5, repo.browseLoads)
 
         events.emit(Unit)
         runCurrent()
-        assertEquals(4, repo.browseLoads, "a project switch must not stack a second collector")
+        assertEquals(6, repo.browseLoads, "a project switch must not stack a second collector")
     }
 }

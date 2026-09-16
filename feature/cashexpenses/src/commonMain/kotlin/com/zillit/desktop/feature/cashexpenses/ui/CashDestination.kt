@@ -60,6 +60,31 @@ enum class CashDestination(
         get() = if (section.isOutOfPocket) ExpenseType.OutOfPocket else ExpenseType.PettyCash
 
     /**
+     * The `level_1` keys the notification service files this page's rows
+     * under — the web's `TAB_BADGE_CONFIG` (`CashExpensesModule.jsx:92-120`),
+     * keyed by the same slugs. Empty for a page that carries no chip
+     * (overviews, Payment Routing, History, Settings — notification-only).
+     */
+    val badgeKeys: List<String>
+        get() = when (this) {
+            AuditQueue -> listOf("cash_audit_queue")
+            ApprovalQueue -> listOf("receipt_approval", "float_approval")
+            CodingQueue -> listOf("cash_coding_queue")
+            PostLedger -> listOf("pc_post_ledger")
+            ActiveFloats, FloatRequest -> listOf("pc_float")
+            TopUps -> listOf("pc_topups")
+            CashReconciliation -> listOf("pc_recon")
+            PettyCashSignOff -> listOf("pc_signoff")
+            OutOfPocketPost -> listOf("oop_post_ledger")
+            OutOfPocketSignOff -> listOf("oop_signoff")
+            ClaimReview -> listOf("receipt_approval")
+            ReceiptsHistory -> listOf("pc_history")
+            CashExtension -> listOf("cash_extension")
+            OutOfPocketHistory -> listOf("oop_history")
+            else -> emptyList()
+        }
+
+    /**
      * Whether [viewer] may open this page.
      *
      * The rules are the web's, consolidated:

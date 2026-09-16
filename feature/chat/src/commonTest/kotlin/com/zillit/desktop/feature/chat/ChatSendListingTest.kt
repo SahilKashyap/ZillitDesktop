@@ -66,7 +66,7 @@ class ChatSendListingTest {
 
         // No advanceUntilIdle: the ack has not resolved, and the listing must
         // already have moved — that is what optimistic means for the shelf.
-        assertEquals("On the way up", model.currentState.previews[aisha.userId])
+        assertEquals("On the way up", model.currentState.previews[aisha.userId]?.text)
         assertEquals(NOW, model.currentState.activity[aisha.userId])
         assertEquals(aisha.userId, model.currentState.recents.first())
     }
@@ -98,7 +98,7 @@ class ChatSendListingTest {
             repository.rememberArrival(fromOther)
             model.onEvent(ChatEvent.Arrived(fromOther))
 
-            assertEquals("On the way up", model.currentState.previews[aisha.userId])
+            assertEquals("On the way up", model.currentState.previews[aisha.userId]?.text)
             assertEquals(NOW, model.currentState.activity[aisha.userId])
         }
 
@@ -120,7 +120,7 @@ class ChatSendListingTest {
         // The bubble is gone and the shelf no longer echoes the withdrawn
         // line — it recomputes from the caches, which forgot it first.
         assertEquals(0, model.currentState.messages.count { it.id == sent.id })
-        assertEquals(null, model.currentState.previews[aisha.userId])
+        assertEquals(null, model.currentState.previews[aisha.userId]?.text)
     }
 
     @Test
@@ -137,7 +137,7 @@ class ChatSendListingTest {
         // The bubble says "Not sent"; the shelf still reflects the attempt —
         // the newest thing in that conversation is the failure, not the
         // peer's old line.
-        assertEquals("On the way up", model.currentState.previews[aisha.userId])
+        assertEquals("On the way up", model.currentState.previews[aisha.userId]?.text)
         assertEquals(
             ChatSendState.Failed,
             model.currentState.messages.last().sendState,
@@ -146,6 +146,36 @@ class ChatSendListingTest {
 
     private companion object {
         const val NOW = 1_786_507_000_000L
+    }
+
+    /**
+     * A room's line is keyed by the room, not by whoever wrote it. It used
+     * to land under the writer's id — lifting, badging and previewing their
+     * DM row while the room's row sat still.
+     */
+    @Test
+    fun `a room's arrival previews and stamps the room, not the writer`() = runTest(dispatcher) {
+        val repository = FakeChatRepository()
+        val model = viewModel(repository)
+        advanceUntilIdle()
+
+        val inRoom = ChatMessage(
+            id = "m-room",
+            uniqueId = "m-room",
+            senderId = "u-vivek",
+            receiverId = "room-1",
+            body = "sound rolling",
+            timestampMillis = NOW + 1,
+            isMine = false,
+            isGroup = true,
+        )
+        model.onEvent(ChatEvent.Arrived(inRoom))
+
+        assertEquals("sound rolling", model.currentState.previews["room-1"]?.text)
+        assertEquals("u-vivek", model.currentState.previews["room-1"]?.senderId)
+        assertEquals(NOW + 1, model.currentState.activity["room-1"])
+        assertEquals(null, model.currentState.previews["u-vivek"])
+        assertEquals(null, model.currentState.activity["u-vivek"])
     }
 }
 

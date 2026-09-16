@@ -243,6 +243,10 @@ private fun SplitPill(
     val group = if (off) CallPalette.offPill else CallPalette.controlGroup
     val caret = if (off) CallPalette.offCaret else if (caretActive) CallPalette.control else CallPalette.caret
     val glyph = if (off) CallPalette.onOffPill else CallPalette.text
+    // The caret sits on the pill's dark end: off, that end is deep red, and
+    // the deep-red glyph the toggle wears vanished into it — the chevron
+    // takes the pill's pale tone there instead.
+    val caretGlyph = if (off) CallPalette.offPill else CallPalette.text
     Row(
         modifier = Modifier
             .height(DOCK_BUTTON)
@@ -263,7 +267,7 @@ private fun SplitPill(
                 ZillitIcon(
                     icon = ZillitIcons.ChevronUp,
                     contentDescription = caretLabel,
-                    tint = glyph,
+                    tint = caretGlyph,
                     size = CARET_ICON,
                 )
             }

@@ -7,20 +7,35 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 
 /**
- * The two boards. "My Department" (intra) is where a crew member uploads;
- * "All Departments" is what has been forwarded for the whole production,
- * grouped by the uploading department. (The web also wires an
- * inter-department tab, commented out of its tab bar — not ported.)
+ * The two boards — the web's `tabArray` (`Continuity.jsx:44-63`). "My
+ * Department" (intra) is where a crew member uploads; "All Departments" is
+ * what has been forwarded for the whole production, grouped by the
+ * uploading department. (The web also wires an inter-department tab,
+ * commented out of its tab bar — not ported.)
+ *
+ * [wireLabel] is the delete route's segment and the share body's
+ * `visibility`; [readSegment] is the badge ledger's `unit` for the tab and
+ * the `segment` a read names (`IntraDepartment.jsx:494-508`).
  */
 enum class ContinuityTab(val label: String, val wireLabel: String, val readSegment: String) {
     MyDepartment("My Department", "intra", "continuity_intra_label"),
     AllDepartments("All Departments", "all", "continuity_all_label"),
+    ;
+
+    /** The web's `note :` line under the header (`contunityMy_Notes` / `contunityAll_Notes`). */
+    val note: String
+        get() = when (this) {
+            MyDepartment ->
+                "You need to upload in ‘My Department’ folder in order to forward to ‘All Departments’ folder"
+            AllDepartments ->
+                "Pictures shown in ‘All Departments’ folder must be forwarded from ‘My Department’ folder."
+        }
 }
 
 /** One department that has media for a scene, on the All Departments board. */
 data class ContinuityDepartment(val id: String, val name: String)
 
-/** A `label: value` line of the card's "More info". */
+/** A `label: value` line of the card's "More info" — the web's `talent_info` rows. */
 data class TalentInfo(val label: String, val value: String)
 
 /**
@@ -50,6 +65,9 @@ data class ContinuityAttachment(
     val isVideo: Boolean get() = contentType == "video"
     val isDocument: Boolean get() = contentType == "document"
     val isPdf: Boolean get() = isDocument && contentSubtype == "pdf"
+
+    /** Whether the cards can show a picture of it: an image, or a video with a poster frame. */
+    val hasPoster: Boolean get() = isImage || (isVideo && thumbnail.isNotBlank())
 }
 
 /** One card: a file with its scene details. */
@@ -78,6 +96,19 @@ data class ContinuityScene(
         ContinuityTab.MyDepartment -> visibleIntra && !deletedIntra
         ContinuityTab.AllDepartments -> visibleAll && !deletedAll
     }
+
+    /**
+     * The message body a forwarded card travels with — the web's
+     * `generateCaption` (`ContinuityDrawer.jsx:60-83`, ZL-12939): the scene
+     * number, then the description, the episode on television, then every
+     * detail row.
+     */
+    fun forwardCaption(isTelevision: Boolean): String = buildString {
+        appendLine("Scene Number: $sceneNumber")
+        if (notes.isNotBlank()) appendLine("Scene Description: $notes")
+        if (episode.isNotBlank() && isTelevision) appendLine("Episode Number : $episode")
+        talentInfo.forEach { appendLine("${it.label}: ${it.value}") }
+    }.trim()
 }
 
 /** What the Add/Edit dialog collects. */
@@ -93,8 +124,32 @@ data class PickedContinuityFile(val name: String, val contentType: String, val b
     val isImage: Boolean get() = contentType.startsWith("image/")
     val isVideo: Boolean get() = contentType.startsWith("video/")
 
+    /** What the web's `handleUnitChatUploadFiles` lets through: pictures, videos and office documents. */
+    val isAccepted: Boolean
+        get() = isImage || isVideo || name.substringAfterLast('.', "").lowercase() in DOCUMENT_EXTENSIONS
+
     override fun equals(other: Any?): Boolean = other is PickedContinuityFile && other.name == name
     override fun hashCode(): Int = name.hashCode()
+
+    companion object {
+        /** `fileUtils.jsx:114-145` — the document extensions the web accepts. */
+        val DOCUMENT_EXTENSIONS: Set<String> = setOf(
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "rtf", "odt", "ods", "odp",
+        )
+    }
+}
+
+/** A crew member who can be forwarded a card — the web's `ShowUsers` rows. */
+data class ContinuityCrewMember(
+    val userId: String,
+    val name: String,
+    /** Already translated; blank when the record has none worth showing. */
+    val designation: String = "",
+) {
+    fun matches(query: String): Boolean {
+        val needle = query.trim().lowercase()
+        return needle.isEmpty() || name.lowercase().contains(needle) || designation.lowercase().contains(needle)
+    }
 }
 
 /** Who is looking, from the production's rights on `continuity_tool`. */
@@ -109,6 +164,10 @@ data class ContinuityViewer(
     val ready: Boolean = false,
 ) {
     val isBlocked: Boolean get() = ready && !canView && !isAdmin
+
+    /** Posting, or an administrator's blanket bypass. */
+    val mayPost: Boolean get() = canPost || isAdmin
+    val mayDownload: Boolean get() = canDownload || isAdmin
 
     companion object {
         const val TOOL_IDENTIFIER = "continuity_tool"
@@ -134,6 +193,45 @@ data class ContinuityViewer(
                 ready = true,
             )
         }
+    }
+}
+
+/**
+ * The unread counts the boards wear — the web's `getContinuityIntraDepartment`
+ * / `getContinuityAllDepartment` slices of the badge tree
+ * (`TabsComponents.jsx:753-797`): the service files a continuity row under
+ * `tool=continuity_label`, `unit=<tab segment>`, `level_1=<scene folder>`,
+ * `level_2=<department id>`.
+ */
+data class ContinuityUnread(
+    /** Per tab segment. */
+    val tabs: Map<String, Int> = emptyMap(),
+    /** Per tab segment, per scene folder. */
+    val folders: Map<String, Map<String, Int>> = emptyMap(),
+    /** On the All board: per scene folder, per department id. */
+    val departments: Map<String, Map<String, Int>> = emptyMap(),
+) {
+    fun tab(tab: ContinuityTab): Int = tabs[tab.readSegment] ?: 0
+    fun folder(tab: ContinuityTab, sceneFolder: String): Int = folders[tab.readSegment]?.get(sceneFolder) ?: 0
+    fun department(sceneFolder: String, departmentId: String): Int = departments[sceneFolder]?.get(departmentId) ?: 0
+
+    companion object {
+        val Empty = ContinuityUnread()
+    }
+}
+
+/** The badge ledger's view of continuity, and the reads the boards send. */
+interface ContinuityBadges {
+    val unread: Flow<ContinuityUnread> get() = emptyFlow()
+
+    /**
+     * A folder opened (`IntraDepartment.jsx:494-508`) or, with [departmentId],
+     * a department within it on the All board (`DepartmentList.jsx:37-56`).
+     */
+    fun markRead(tab: ContinuityTab, sceneFolder: String, departmentId: String? = null) {}
+
+    companion object {
+        val None: ContinuityBadges = object : ContinuityBadges {}
     }
 }
 
@@ -178,8 +276,8 @@ interface ContinuityRepository {
     /**
      * Moves scenes into the file cabinet (`PUT /v2/continuity/archive`).
      *
-     * The web calls this "File Cabinet status updated" — an archive that
-     * takes a board's scenes off it without deleting the work.
+     * The web hides its File Cabinet button (ZL-19912, commented not removed)
+     * and so does this board; the call stays wired for when it returns.
      */
     suspend fun archive(sceneIds: List<String>): ZillitResult<Unit> =
         ZillitResult.Failure(ZillitError.Unknown("archiving is not wired"))
@@ -187,7 +285,9 @@ interface ContinuityRepository {
     /**
      * Distributes the board (`POST /v2/continuity/distribute`), narrowed by
      * whichever of visibility, scene number and department are given — the
-     * web omits a blank rather than sending it empty.
+     * web omits a blank rather than sending it empty. Hidden on the web
+     * ("Distribute option hidden per requirement — keep logic, do not
+     * render") and here alike.
      */
     suspend fun distribute(
         visibility: String,
@@ -199,9 +299,25 @@ interface ContinuityRepository {
     suspend fun delete(tab: ContinuityTab, id: String): ZillitResult<Unit>
 }
 
-/** The host's file seams: S3 up, signed fetch down, save to Downloads. */
+/** The host's file seams: S3 up, signed fetch down, save to Downloads, open in the system player. */
 interface ContinuityTransfer {
     suspend fun upload(file: PickedContinuityFile): ZillitResult<ContinuityAttachment>
     suspend fun fetch(attachment: ContinuityAttachment, preview: Boolean): ZillitResult<ByteArray>
     suspend fun saveAndOpen(fileName: String, bytes: ByteArray): ZillitResult<Unit>
+
+    /**
+     * Plays or opens a file without filing it in Downloads — what the web's
+     * inline `<video>` and non-PDF document click amount to on a desktop.
+     * Defaults to [saveAndOpen] for hosts that make no distinction.
+     */
+    suspend fun open(fileName: String, bytes: ByteArray): ZillitResult<Unit> = saveAndOpen(fileName, bytes)
+}
+
+/**
+ * "Forward → Select Users": one private chat message per card per person,
+ * the card's file as the attachment and its details as the body
+ * (`ContinuityDrawer.jsx:85-133`).
+ */
+fun interface ContinuityForwarder {
+    suspend fun forward(scene: ContinuityScene, toUserId: String, caption: String): ZillitResult<Unit>
 }

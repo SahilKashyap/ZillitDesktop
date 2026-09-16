@@ -56,6 +56,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
+import com.zillit.desktop.core.designsystem.component.rememberAvatar
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.dealmemo.domain.DealStatus
 import kotlin.math.absoluteValue
@@ -523,6 +524,8 @@ fun DmPersonAvatar(
     val photo by produceState<ImageBitmap?>(null, userId) {
         value = userId?.takeIf { it.isNotBlank() }?.let { runCatching { loader(it) }.getOrNull() }
     }
+    // The app-wide loader stands in when the tool's own is not in scope.
+    val shared = rememberAvatar(userId)
     val tone = AVATAR_TONES[(avatarHash(name).absoluteValue) % AVATAR_TONES.size]
     Box(
         modifier = modifier
@@ -532,7 +535,7 @@ fun DmPersonAvatar(
             .border(1.dp, tone.third, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        val image = photo
+        val image = photo ?: shared
         if (image != null) {
             Image(
                 bitmap = image,

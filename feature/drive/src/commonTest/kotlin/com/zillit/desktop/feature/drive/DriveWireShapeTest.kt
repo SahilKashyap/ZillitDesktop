@@ -66,7 +66,7 @@ class DriveWireShapeTest {
         assertEquals(1_754_000_000_000, page.single().at)
         assertEquals("u-1", page.single().userId)
         // No name on the wire; the repository fills it from the crew list.
-        assertEquals("Someone", page.single().displayName)
+        assertEquals("Unknown", page.single().displayName)
     }
 
     @Test

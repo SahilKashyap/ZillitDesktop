@@ -155,7 +155,11 @@ private fun Console(state: PoUiState, onEvent: (PoEvent) -> Unit) {
 private fun TabBar(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     val tabs = state.mainTabs + state.registerTabs
     ZillitTabStrip(
-        tabs = tabs.map { ZillitTab(it.slug, it.label) },
+        tabs = tabs.map { tab ->
+            // The web's tab chips: the four badged tabs by their slice, Invoices by its unit.
+            val count = if (tab == PoDestination.Invoices) state.unread.invoices else state.unread.tab(tab.badgeScope)
+            ZillitTab(tab.slug, tab.label, count = count)
+        },
         activeId = state.destination.slug,
         onSelect = { slug -> tabs.firstOrNull { it.slug == slug }?.let { onEvent(PoEvent.Open(it)) } },
         size = TabStripSize.Primary,

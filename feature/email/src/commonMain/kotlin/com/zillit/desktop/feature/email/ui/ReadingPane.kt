@@ -87,7 +87,13 @@ data class ReadingPaneHooks(
 /** Who has read a sent message and who has not — `email-sent-log/read-by`. */
 data class MailReadBy(val read: List<MailReadReceipt>, val unread: List<MailReadReceipt>)
 
-data class MailReadReceipt(val name: String, val designation: String = "", val readAtMillis: Long = 0)
+data class MailReadReceipt(
+    val name: String,
+    val designation: String = "",
+    val readAtMillis: Long = 0,
+    /** For the reader's picture; blank when the row named nobody the crew list knows. */
+    val userId: String = "",
+)
 
 /**
  * The third pane: the open conversation, or the web's empty state before
@@ -801,7 +807,7 @@ private fun ReadByList(title: String, receipts: List<MailReadReceipt>, showTime:
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
-                ZillitAvatar(name = receipt.name, size = READ_BY_AVATAR)
+                ZillitAvatar(name = receipt.name, userId = receipt.userId, size = READ_BY_AVATAR)
                 Column(Modifier.weight(1f)) {
                     ZillitText(text = receipt.name, style = ZillitTheme.typography.bodyMedium)
                     if (receipt.designation.isNotBlank()) {

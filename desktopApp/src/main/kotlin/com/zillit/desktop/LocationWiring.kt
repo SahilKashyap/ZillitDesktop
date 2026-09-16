@@ -1,5 +1,6 @@
 package com.zillit.desktop
 
+import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.feature.email.data.AwsCredentials
@@ -8,6 +9,10 @@ import com.zillit.desktop.feature.email.data.FilePicker
 import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.feature.home.domain.NoticeAttachment
 import com.zillit.desktop.feature.location.data.LocationRepositoryImpl
+import com.zillit.desktop.feature.location.domain.LocationBadgeLeaf
+import com.zillit.desktop.feature.location.domain.LocationBadges
+import com.zillit.desktop.feature.location.domain.LocationPick
+import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.LocationTransfer
 import com.zillit.desktop.feature.location.domain.LocationViewer
 import com.zillit.desktop.feature.location.domain.MediaAttachment
@@ -16,6 +21,11 @@ import com.zillit.desktop.feature.location.ui.LocationToolProvider
 import com.zillit.desktop.feature.location.ui.LocationViewModel
 import com.zillit.desktop.feature.location.ui.decodeImageBitmap
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -106,7 +116,53 @@ internal fun AppGraph.Ready.buildLocation(permissions: () -> ProjectPermissions)
         )
     },
     nowMillis = System::currentTimeMillis,
+    badges = locationBadges(),
 )
+
+/**
+ * The tool's ledger rows as leaves, and its two reads.
+ *
+ * Every unread row of `location_tool_label` becomes one leaf: the status
+ * list from its unit, the place / scene / episode from its levels, and — for
+ * a comment on a record — the record from the row's chat unit id. The
+ * screen sums leaves per tab, folder, gallery and record; the same rows at
+ * every grain, so a tab's number is its folders' numbers added up, as the
+ * web's `fetchBadgesForFirstTime` sums the combined-level rows.
+ */
+private fun AppGraph.Ready.locationBadges(): LocationBadges = object : LocationBadges {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    override val leaves: Flow<List<LocationBadgeLeaf>> = badgeStore.counts.map { leavesNow() }.distinctUntilChanged()
+
+    private fun leavesNow(): List<LocationBadgeLeaf> =
+        badgeStore.unreadRows(BadgeSections.TOOLS)
+            .filter { it.tool == LocationBadges.TOOL }
+            .groupingBy { row -> row.unit to LocationLeafKey(row.level1, row.level2, row.level3, row.chatUnitId) }
+            .eachCount()
+            .mapNotNull { (key, count) ->
+                val status = LocationBadges.statusOf(key.first) ?: return@mapNotNull null
+                val at = key.second
+                LocationBadgeLeaf(status, at.location, at.scene, at.episode, at.recordId, count)
+            }
+
+    override fun readGallery(status: LocationStatus, pick: LocationPick) {
+        scope.launch {
+            emitLevelRead(
+                tool = LocationBadges.TOOL,
+                unit = LocationBadges.unitOf(status),
+                level1 = pick.location,
+                level2 = pick.scene,
+                level3 = pick.episode.takeIf { it.isNotBlank() },
+            )
+        }
+    }
+
+    override fun readRecord(recordId: String) {
+        scope.launch { emitRecordChatRead(LocationBadges.TOOL, recordId) }
+    }
+}
+
+private data class LocationLeafKey(val location: String, val scene: String, val episode: String, val recordId: String)
 
 internal fun AppGraph.Ready.locationProvider(viewModel: LocationViewModel,
     scope: CoroutineScope) = LocationToolProvider(

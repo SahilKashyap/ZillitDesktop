@@ -10,17 +10,19 @@ import com.zillit.desktop.core.permissions.ProjectPermissions
  *  - **view access is the door.** Without it the web bounces the route back
  *    to Film Tools; here the screen renders its refusal instead.
  *  - **posting access is authorship.** It gates uploading a standard
- *    document, deleting one, uploading a document to send for signature, and
- *    the "my sent documents" area as a whole.
- *  - **Everything else is open to any viewer**: reading, self-assigning a
- *    form to your own list, checking history, downloading, and *signing* —
- *    a view-only crew member must be able to sign what is sent to them,
- *    which is most of what this tool exists for.
+ *    document, deleting one, and the whole Documents for Signature tile
+ *    (`ContractSignatureTiles.jsx`: `visible: isPostingRights && …`).
+ *  - **Everything else is open to any viewer**: reading, adding a form to
+ *    your downloads, checking history, downloading, and *signing*.
+ *  - **A pending member sees only the signature block** — both document
+ *    tiles hide while `project.status === 'pending'`.
  */
 data class FormSignatureViewer(
     val canView: Boolean = true,
     val canPost: Boolean = true,
     val isAdmin: Boolean = false,
+    /** This person has not been accepted onto the production yet. */
+    val isPending: Boolean = false,
     /** False until the production's tools call has answered. */
     val ready: Boolean = false,
 ) {
@@ -38,16 +40,17 @@ data class FormSignatureViewer(
          * "empty grid = still loading" resolution — see the identical
          * reasoning on the drive and budget-builder viewers.
          */
-        fun from(permissions: ProjectPermissions): FormSignatureViewer {
+        fun from(permissions: ProjectPermissions, isPending: Boolean = false): FormSignatureViewer {
             val access = permissions.access(TOOL_IDENTIFIER)
             if (!access.enabled && permissions.visibleTools.isEmpty()) {
-                return FormSignatureViewer(ready = false)
+                return FormSignatureViewer(ready = false, isPending = isPending)
             }
             val post = access.enabled && access.canPost
             return FormSignatureViewer(
                 canView = post || (access.enabled && access.canView),
                 canPost = post,
                 isAdmin = permissions.isAdmin,
+                isPending = isPending,
                 ready = true,
             )
         }

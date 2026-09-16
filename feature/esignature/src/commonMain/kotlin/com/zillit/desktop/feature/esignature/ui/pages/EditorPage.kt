@@ -720,7 +720,7 @@ private fun PeoplePicker(editor: EditorState, onEvent: (EsignEvent) -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    ZillitAvatar(name = option.fullName, size = 28.dp)
+                    ZillitAvatar(name = option.fullName, userId = option.userId, size = 28.dp)
                     Column(Modifier.weight(1f)) {
                         ZillitText(
                             option.fullName.ifBlank { option.email },

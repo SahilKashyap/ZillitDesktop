@@ -72,6 +72,15 @@ class ChatToolProvider(
     private val compact: Boolean = false,
     /** Opens the Chat widget — the tool's own way to it, as Drive has. */
     private val onOpenWidget: (() -> Unit)? = null,
+    /**
+     * The menu's Share: the line into a mailbox composer, answering a
+     * refusal or null. Given this window's navigator so the host can open
+     * the mailbox beside posting the request. Null hides the item — see
+     * [ChatSeams.shareAsEmail].
+     */
+    private val shareAsEmail: (
+        (message: com.zillit.desktop.feature.chat.domain.ChatMessage, navigator: WindowNavigator) -> String?
+    )? = null,
 ) : ToolProvider {
 
     override val path: String = "/cnc"
@@ -91,6 +100,7 @@ class ChatToolProvider(
                 clipboard = clipboard,
                 loadFullImage = loadFullImage,
                 onOpenUrl = onOpenUrl,
+                shareAsEmail = shareAsEmail?.let { share -> { message -> share(message, navigator) } },
             ),
         ) {
             ChatScreen(

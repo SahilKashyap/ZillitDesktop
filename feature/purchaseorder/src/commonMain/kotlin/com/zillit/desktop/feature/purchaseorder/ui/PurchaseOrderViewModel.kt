@@ -19,6 +19,8 @@ import com.zillit.desktop.feature.purchaseorder.domain.PoSettingsPeople
 import com.zillit.desktop.feature.purchaseorder.domain.PoSortDirection
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.domain.PoTermsFiles
+import com.zillit.desktop.feature.purchaseorder.domain.PoBadges
+import com.zillit.desktop.feature.purchaseorder.domain.PoUnread
 import com.zillit.desktop.feature.purchaseorder.domain.PoViewer
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrderRepository
@@ -54,7 +56,7 @@ import kotlinx.serialization.json.Json
  * good copy, dated. A raise that fails because the request never left the
  * machine is queued too — that is not a refusal.
  */
-@Suppress("TooManyFunctions") // One handler per user action, plus the offline seams.
+@Suppress("TooManyFunctions", "LongParameterList") // One handler per user action, one host seam per concern.
 class PurchaseOrderViewModel(
     internal val repository: PurchaseOrderRepository,
     private val viewer: () -> PoViewer,
@@ -85,6 +87,8 @@ class PurchaseOrderViewModel(
     private val projectSettings: PoProjectSettings? = null,
     /** Picking and uploading an order's paperwork; null leaves the attach button off. */
     internal val attachmentFiles: PoTermsFiles? = null,
+    /** The ledger's rows for this tool, and its read. */
+    internal val badges: PoBadges = PoBadges.None,
 ) : ZillitViewModel<PoUiState, PoEvent, PoEffect>(PoUiState(viewer = viewer())) {
 
     // The base class keeps its reducers protected; the collaborators work
@@ -136,6 +140,7 @@ class PurchaseOrderViewModel(
     private fun listenOnce() {
         if (listening) return
         listening = true
+        launch { badges.leaves.collect { leaves -> setState { copy(unread = PoUnread(leaves)) } } }
         launch {
             repository.refreshes.collect { kind ->
                 syncJobs.remove(kind)?.cancel()
@@ -300,6 +305,7 @@ class PurchaseOrderViewModel(
             return
         }
         if (destination == PoDestination.Invoices) {
+            if (currentState.unread.invoices > 0) badges.readInvoices()
             sendEffect(PoEffect.OpenInvoices)
             return
         }
@@ -581,7 +587,9 @@ class PurchaseOrderViewModel(
         }
         when (prompt) {
             is PoPrompt.Confirm -> when (prompt.action) {
-                PoConfirmAction.Approve -> act("Order approved") { repository.approve(prompt.targetId, null) }
+                PoConfirmAction.Approve -> act("Order approved", readsBadgeOf = prompt.targetId) {
+                    repository.approve(prompt.targetId, null)
+                }
                 PoConfirmAction.Post -> act("Order posted") { repository.post(prompt.targetId, null) }
                 PoConfirmAction.Delete -> act("Order deleted") {
                     repository.delete(prompt.targetId)
@@ -617,16 +625,29 @@ class PurchaseOrderViewModel(
             return
         }
         when (prompt.action) {
-            PoReasonAction.Reject -> act("Order rejected") { repository.reject(prompt.targetId, answer) }
+            PoReasonAction.Reject -> act("Order rejected", readsBadgeOf = prompt.targetId) {
+                repository.reject(prompt.targetId, answer)
+            }
             PoReasonAction.NameTemplate -> formActions.saveTemplate(answer)
         }
     }
 
-    internal fun act(success: String, block: suspend () -> ZillitResult<Unit>) = launch {
+    /**
+     * [readsBadgeOf]: an order whose badge the act settles — a decision on
+     * the approval queue reads its rows only once the server has taken it
+     * (ZL-20775: a failed approve or reject leaves the badge lit, because the
+     * order is still waiting on one).
+     */
+    internal fun act(
+        success: String,
+        readsBadgeOf: String? = null,
+        block: suspend () -> ZillitResult<Unit>,
+    ) = launch {
         setState { copy(busy = true) }
         when (val result = block()) {
             is ZillitResult.Success -> {
                 setState { copy(busy = false, notice = success) }
+                readsBadgeOf?.let { readOrderBadge(it) }
                 load(currentState.destination)
             }
 
@@ -635,6 +656,16 @@ class PurchaseOrderViewModel(
                 sendEffect(PoEffect.Failed(result.error.localised()))
             }
         }
+    }
+
+    /**
+     * An order's rows on the open tab are read — when its detail opens on any
+     * badged tab (`PODetailModal`'s `readScope`), or when it is decided on the
+     * approval queue. Nothing to read is nothing to send.
+     */
+    internal fun readOrderBadge(orderId: String) {
+        val scope = currentState.destination.badgeScope ?: return
+        if (currentState.unread.order(scope, orderId) > 0) badges.readOrder(scope.tool, scope.level1, orderId)
     }
 
     /** Keyed by what is fetched, not which tab asked — several tabs share one list. */

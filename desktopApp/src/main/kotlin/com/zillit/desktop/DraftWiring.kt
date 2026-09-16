@@ -105,7 +105,7 @@ internal class DesktopDraftHost(private val drive: () -> DriveViewModel?) : Draf
                 .also { it.writeBytes(bytes) }
         }
         viewModel.onEvent(
-            DriveEvent.Upload(
+            DriveEvent.AddUploadFiles(
                 listOf(
                     PickedFile(
                         path = temp.absolutePath,

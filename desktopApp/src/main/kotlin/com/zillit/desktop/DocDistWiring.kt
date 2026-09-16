@@ -1,5 +1,7 @@
 package com.zillit.desktop
 
+import com.zillit.desktop.core.badges.BadgeSections
+import com.zillit.desktop.core.badges.NotificationRecord
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
@@ -12,6 +14,8 @@ import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.headersFor
 import com.zillit.desktop.core.session.ProjectContextLoader
 import com.zillit.desktop.core.remoteconfig.RemoteConfigRepository
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistBadgeLeaf
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistBadges
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistHost
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistSignature
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistTransfer
@@ -38,8 +42,19 @@ import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -240,3 +255,63 @@ internal fun docDistTransfer(
 /** Anything but `LOCAL` stores in S3 — the phones' rule. */
 internal fun ProjectContextLoader?.docDistUsesS3(): Boolean =
     this?.context?.value?.project?.storageType?.equals("LOCAL", ignoreCase = true) != true
+
+// Badges --------------------------------------------------------------------------------------------
+
+/**
+ * The tool's ledger rows as leaves, and its three reads.
+ *
+ * Every unread `document_distribution_label` row becomes one leaf with the
+ * folder path it sits in, read off the wire row the way
+ * `getDocumentDistributionBadgeCounts` reads it: `level_1..3` (skipping the
+ * `root` marker), the `levels[]` tail (`level_4:<id>` strings, or objects),
+ * and — for a folder's own event — its `reference_id`. The reads are the
+ * web's `emitScopedRead` (`Library.jsx:157-165`): the folder's own events
+ * on entry, one file's on preview, a whole unit for a side section — the
+ * entity reads sent as `notification:read`, which honours `reference_id`
+ * (ZL-18873), rather than the level read the web still sends.
+ */
+internal fun AppGraph.Ready.docDistBadges(): DocDistBadges = object : DocDistBadges {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    override val leaves: Flow<List<DocDistBadgeLeaf>> = badgeStore.counts.map { leavesNow() }.distinctUntilChanged()
+
+    private fun leavesNow(): List<DocDistBadgeLeaf> =
+        badgeStore.unreadRows(BadgeSections.TOOLS)
+            .filter { it.tool == DocDistBadges.TOOL }
+            .groupingBy { row -> Triple(row.unit, row.referenceId, row.docDistAncestry()) }
+            .eachCount()
+            .map { (key, count) -> DocDistBadgeLeaf(key.first, key.second, key.third, count) }
+
+    override fun readFolder(folderId: String) {
+        scope.launch { emitReferenceRead(DocDistBadges.TOOL, folderId, unit = DocDistBadges.UNIT_FOLDER) }
+    }
+
+    override fun readFile(fileId: String) {
+        scope.launch { emitReferenceRead(DocDistBadges.TOOL, fileId) }
+    }
+
+    override fun readUnit(unit: String) {
+        scope.launch { emitLevelRead(tool = DocDistBadges.TOOL, unit = unit) }
+    }
+}
+
+/** Every folder id a row is filed under — see [docDistBadges]. */
+private fun NotificationRecord.docDistAncestry(): Set<String> {
+    val ids = mutableSetOf<String>()
+    listOf(level1, level2, level3).forEach { if (it.isNotBlank() && it != DOC_DIST_ROOT) ids += it }
+    val row = runCatching { Json.parseToJsonElement(raw) }.getOrNull() as? JsonObject
+    (row?.get("levels") as? JsonArray)?.forEach { entry ->
+        val id = when (entry) {
+            is JsonPrimitive -> entry.contentOrNull?.substringAfter(':')
+            is JsonObject -> entry.values.lastOrNull()?.let { (it as? JsonPrimitive)?.contentOrNull }
+            else -> null
+        }
+        if (!id.isNullOrBlank() && id != DOC_DIST_ROOT) ids += id
+    }
+    val ownFolder = unit == DocDistBadges.UNIT_FOLDER && referenceId.isNotBlank() && referenceId != DOC_DIST_ROOT
+    if (ownFolder) ids += referenceId
+    return ids
+}
+
+private const val DOC_DIST_ROOT = "root"

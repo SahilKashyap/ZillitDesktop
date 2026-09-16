@@ -19,6 +19,8 @@ internal fun AppGraph.Ready.buildSaPortal(permissions: () -> ProjectPermissions)
     repository = SaPortalRepositoryImpl(apiClient, config),
     viewer = { saViewer(permissions()) },
     events = socketEvents,
+    // The artiste's own bell: one unit per portal tab (`sa-portal-badge-helpers.js`).
+    badges = tabBadges("unit") { TabBadgeScope(tool = "supporting_artistes_extras_label") },
 )
 
 private fun AppGraph.Ready.saViewer(permissions: ProjectPermissions): SaViewer {

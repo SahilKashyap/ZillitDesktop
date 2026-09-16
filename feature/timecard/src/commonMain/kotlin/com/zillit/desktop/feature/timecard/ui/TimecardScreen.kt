@@ -100,7 +100,9 @@ fun TimecardScreen(
                     },
                 )
                 ZillitTabStrip(
-                    tabs = state.visibleDestinations.map { ZillitTab(it.slug, it.label) },
+                    tabs = state.visibleDestinations.map { tab ->
+                        ZillitTab(tab.slug, tab.label, count = tab.badgeKeys.sumOf { state.unread[it] ?: 0 })
+                    },
                     activeId = state.destination.slug,
                     onSelect = { slug ->
                         TimecardDestination.entries.firstOrNull { it.slug == slug }
@@ -312,7 +314,7 @@ private fun TimecardDetail(state: TimecardUiState, card: Timecard, onEvent: (Tim
                 ZillitText(text = card.crewName.ifBlank { card.userId }, style = ZillitTheme.typography.titleMedium)
                 ZillitText(
                     text = "Week of ${EpochDate.date(card.weekStarting).ifEmpty { "—" }}" +
-                        (card.designation?.let { " · $it" } ?: ""),
+                        (card.designation?.let { " · ${it.localised()}" } ?: ""),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )

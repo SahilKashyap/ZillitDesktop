@@ -52,6 +52,7 @@ import com.zillit.desktop.feature.esignature.domain.EnvelopeStatus
 import com.zillit.desktop.feature.esignature.domain.EsignFormat
 import com.zillit.desktop.feature.esignature.ui.EsignEvent
 import com.zillit.desktop.feature.esignature.ui.EsignSurface
+import com.zillit.desktop.feature.esignature.ui.ManageBuckets
 import com.zillit.desktop.feature.esignature.ui.EsignUiState
 import com.zillit.desktop.feature.esignature.ui.ListLayout
 import com.zillit.desktop.feature.esignature.ui.ManageInnerTab
@@ -60,6 +61,7 @@ import com.zillit.desktop.feature.esignature.ui.SentFilter
 import com.zillit.desktop.feature.esignature.ui.SignBucket
 import com.zillit.desktop.feature.esignature.ui.SigningMode
 import com.zillit.desktop.feature.esignature.ui.components.ConfirmDialog
+import com.zillit.desktop.feature.esignature.ui.components.CountBadge
 import com.zillit.desktop.feature.esignature.ui.components.CountChip
 import com.zillit.desktop.feature.esignature.ui.components.DeliveryPill
 import com.zillit.desktop.feature.esignature.ui.components.DocTile
@@ -77,7 +79,15 @@ internal fun ManageListPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         ZillitTabStrip(
             size = TabStripSize.Primary,
-            tabs = ManageOuterTab.entries.map { tab -> ZillitTab(tab.name, tab.label) },
+            // The web's outer pills: each tab's bucket(s) of unread manage rows.
+            tabs = ManageOuterTab.entries.map { tab ->
+                val count = when (tab) {
+                    ManageOuterTab.Active -> state.unread.manageBucket(ManageBuckets.SENT, ManageBuckets.DRAFT)
+                    ManageOuterTab.Completed -> state.unread.manageBucket(ManageBuckets.COMPLETED)
+                    ManageOuterTab.Rejected -> state.unread.manageBucket(ManageBuckets.REJECTED)
+                }
+                ZillitTab(tab.name, tab.label, count = count)
+            },
             activeId = manage.outer.name,
             onSelect = { id ->
                 ManageOuterTab.entries.firstOrNull { it.name == id }?.let { onEvent(EsignEvent.SwitchOuterTab(it)) }
@@ -106,7 +116,8 @@ internal fun ManageListPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) 
             ZillitTabStrip(
                 tabs = ManageInnerTab.entries.map { tab ->
                     val count = if (tab == ManageInnerTab.Sent) manage.sent.size else manage.drafts.size
-                    ZillitTab(tab.name, "${tab.label}  ·  $count")
+                    val bucket = if (tab == ManageInnerTab.Sent) ManageBuckets.SENT else ManageBuckets.DRAFT
+                    ZillitTab(tab.name, "${tab.label}  ·  $count", count = state.unread.manageBucket(bucket))
                 },
                 activeId = manage.inner.name,
                 onSelect = { id ->
@@ -210,11 +221,13 @@ internal fun SignListPage(state: EsignUiState, onEvent: (EsignEvent) -> Unit) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
         ZillitTabStrip(
             size = TabStripSize.Primary,
+            // Action Required wears the signer's unread rows (the web's `signDocuments.total`);
+            // the settled tabs read themselves on entry and wear nothing.
             tabs = SignBucket.entries.map { bucket ->
                 ZillitTab(
                     bucket.name,
                     bucket.label,
-                    count = if (bucket == SignBucket.Action) list.rows(bucket).size else 0,
+                    count = if (bucket == SignBucket.Action) state.unread.sign else 0,
                 )
             },
             activeId = list.tab.name,
@@ -342,11 +355,19 @@ private fun EnvelopeTable(
                         ) {
                             DocTile(size = 30.dp)
                             Column {
-                                ZillitText(
-                                    envelope.title.ifBlank { envelope.document?.name ?: "(untitled)" },
-                                    style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    maxLines = 1,
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    ZillitText(
+                                        envelope.title.ifBlank { envelope.document?.name ?: "(untitled)" },
+                                        style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        maxLines = 1,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                    )
+                                    // The row's unread on this tab — the web's Details-button badge.
+                                    CountBadge(state.rowUnread(envelope, kind))
+                                }
                                 envelope.document?.name?.takeIf { it.isNotBlank() && it != envelope.title }?.let {
                                     ZillitText(
                                         it,
@@ -524,11 +545,15 @@ private fun EnvelopeCard(envelope: Envelope, kind: RowKind, state: EsignUiState,
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             DocTile()
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                ZillitText(
-                    envelope.title.ifBlank { envelope.document?.name ?: "(untitled)" },
-                    style = ZillitTheme.typography.titleSmall,
-                    maxLines = 2,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ZillitText(
+                        envelope.title.ifBlank { envelope.document?.name ?: "(untitled)" },
+                        style = ZillitTheme.typography.titleSmall,
+                        maxLines = 2,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    CountBadge(state.rowUnread(envelope, kind))
+                }
                 ZillitText(
                     buildString {
                         append(EsignFormat.date(envelope.sentOn ?: envelope.lastActivity))
@@ -589,5 +614,25 @@ private fun EnvelopeCard(envelope: Envelope, kind: RowKind, state: EsignUiState,
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End), modifier = Modifier.fillMaxWidth()) {
             RowActions(envelope, kind, state, onEvent)
         }
+    }
+}
+
+/**
+ * One row's unread for the tab it is on: a manage row counts only its own
+ * bucket's rows (`byEnvelopeByBucket`), a signer's row every row about it.
+ */
+private fun EsignUiState.rowUnread(envelope: Envelope, kind: RowKind): Int = when (kind) {
+    RowKind.Received -> unread.signEnvelope(envelope.id)
+    RowKind.Sent -> unread.manageEnvelope(envelope.id, ManageBuckets.SENT)
+    RowKind.Draft -> unread.manageEnvelope(envelope.id, ManageBuckets.DRAFT)
+    RowKind.Completed -> if (surface == EsignSurface.Sign) {
+        unread.signEnvelope(envelope.id)
+    } else {
+        unread.manageEnvelope(envelope.id, ManageBuckets.COMPLETED)
+    }
+    RowKind.Rejected -> if (surface == EsignSurface.Sign) {
+        unread.signEnvelope(envelope.id)
+    } else {
+        unread.manageEnvelope(envelope.id, ManageBuckets.REJECTED)
     }
 }

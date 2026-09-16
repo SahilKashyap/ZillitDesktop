@@ -2,194 +2,249 @@ package com.zillit.desktop.feature.budget
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.feature.budget.domain.BudgetActivity
+import com.zillit.desktop.feature.budget.domain.BudgetActivityRow
+import com.zillit.desktop.feature.budget.domain.BudgetChatEntry
+import com.zillit.desktop.feature.budget.domain.BudgetDepartment
 import com.zillit.desktop.feature.budget.domain.BudgetDocument
 import com.zillit.desktop.feature.budget.domain.BudgetFile
-import com.zillit.desktop.feature.budget.domain.BudgetMember
+import com.zillit.desktop.feature.budget.domain.BudgetMode
 import com.zillit.desktop.feature.budget.domain.BudgetType
 import com.zillit.desktop.feature.budget.domain.BudgetViewer
+import com.zillit.desktop.feature.budget.ui.BudgetActivityDialog
+import com.zillit.desktop.feature.budget.ui.BudgetContext
+import com.zillit.desktop.feature.budget.ui.BudgetDepartmentDrawer
+import com.zillit.desktop.feature.budget.ui.BudgetEvent
+import com.zillit.desktop.feature.budget.ui.BudgetMembersDialog
+import com.zillit.desktop.feature.budget.ui.BudgetPerson
 import com.zillit.desktop.feature.budget.ui.BudgetScreen
-import com.zillit.desktop.feature.budget.ui.BudgetTab
 import com.zillit.desktop.feature.budget.ui.BudgetUiState
+import com.zillit.desktop.feature.budget.ui.BudgetUnread
+import com.zillit.desktop.feature.budget.ui.BudgetUploadDraft
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 /**
  * Composes the real screen in every state it can reach, light and dark.
  *
  * These catch what unit tests cannot: a layout that throws on infinite
- * constraints, or a pane that composes at zero size.
+ * constraints, a menu that crashes on open, or a pane that composes at zero
+ * size.
  */
 @OptIn(ExperimentalTestApi::class)
 class BudgetScreenRenderTest {
 
-    /** Both budgets, a file on each — the everyday case. */
+    /** The everyday case: the full budget, a version open, two conversations. */
     @Test
-    fun `the loaded screen draws in both themes`() {
+    fun `the full budget draws in both themes`() {
         listOf(false, true).forEach { dark ->
             runComposeUiTest {
                 setContent {
                     ZillitTheme(darkTheme = dark) {
-                        BudgetScreen(state = loaded(), onEvent = {})
+                        BudgetScreen(state = versions(), onEvent = {})
                     }
                 }
-                onNodeWithText("Budget").assertExists()
-                onNodeWithText("Main.pdf").assertExists()
+                onNodeWithText("Budget (Full)").assertExists()
+                onNodeWithText("Budget (Full) -SEP 05, 2026").assertExists()
+                onNodeWithText("v2.pdf").assertExists()
+                onNodeWithText("Ravi Menon").assertExists()
+                onNodeWithText("Camera crew").assertExists()
+                onNodeWithText("Pick a conversation").assertExists()
             }
         }
     }
 
-    /** The department half: a list beside the chosen department's file. */
+    /** The version picker opens with its rows — the DropdownMenu-in-a-lazy-list trap. */
     @Test
-    fun `the department tab draws its list`() {
+    fun `the version picker opens and lists every version`() {
         runComposeUiTest {
+            val events = mutableListOf<BudgetEvent>()
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    BudgetScreen(state = versions().copy(versionMenuOpen = true), onEvent = events::add)
+                }
+            }
+            onNodeWithText("Budget (Full) -SEP 04, 2026").assertExists()
+            onNodeWithText("Budget (Full) -SEP 04, 2026").performClick()
+            assertEquals(BudgetEvent.SelectVersion("v1"), events.last())
+        }
+    }
+
+    /** The department directory: rows with their badges, and the placeholder beside it. */
+    @Test
+    fun `the department directory draws its rows`() {
+        runComposeUiTest {
+            val events = mutableListOf<BudgetEvent>()
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    BudgetScreen(state = directory(), onEvent = events::add)
+                }
+            }
+            onNodeWithText("Budget (Department)").assertExists()
+            onNodeWithText("Camera").assertExists()
+            onNodeWithText("Art").assertExists()
+            onNodeWithText("Pick a department").assertExists()
+            onNodeWithText("Camera").performClick()
+            assertEquals(BudgetEvent.OpenDepartment("cam"), events.last())
+        }
+    }
+
+    /** A department open: the breadcrumb leads back. */
+    @Test
+    fun `an open department wears its breadcrumb`() {
+        runComposeUiTest {
+            val events = mutableListOf<BudgetEvent>()
             setContent {
                 ZillitTheme(darkTheme = false) {
                     BudgetScreen(
-                        state = loaded().copy(tab = BudgetTab.Department, selectedId = "b2"),
-                        onEvent = {},
+                        state = versions().copy(
+                            mode = BudgetMode.Department,
+                            viewer = BudgetViewer(canViewDepartment = true, canPostDepartment = true, resolved = true),
+                            openDepartment = BudgetDepartment("cam", "Camera"),
+                        ),
+                        onEvent = events::add,
                     )
                 }
             }
-            // "Camera" itself is on screen twice — the list row and the card
-            // title — so match what appears once.
-            onNodeWithText("Budget attached").assertExists()
-            onNodeWithText("Camera.xlsx").assertExists()
+            onNodeWithText("Department List").assertExists()
+            onNodeWithText("Department List").performClick()
+            assertEquals(BudgetEvent.BackToDirectory, events.last())
         }
     }
 
-    /** Nothing uploaded yet, and the viewer may fix that. */
+    /** Every dialog composes over the screen. */
     @Test
-    fun `an empty budget invites an upload`() {
+    fun `the dialogs draw`() {
         runComposeUiTest {
             setContent {
                 ZillitTheme(darkTheme = false) {
                     BudgetScreen(
-                        state = BudgetUiState(viewer = viewer(), mainBudget = null),
-                        onEvent = {},
-                    )
-                }
-            }
-            onNodeWithText("No budget uploaded").assertExists()
-        }
-    }
-
-    /** No rights at all: one honest sentence, no empty furniture. */
-    @Test
-    fun `a viewer with no access is told plainly`() {
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    BudgetScreen(
-                        state = BudgetUiState(
-                            viewer = BudgetViewer(resolved = true),
+                        state = versions().copy(
+                            upload = BudgetUploadDraft(fileName = "New.pdf", bytes = ByteArray(3)),
                         ),
                         onEvent = {},
                     )
                 }
             }
-            onNodeWithText("No budget access").assertExists()
+            onNodeWithText("Upload budget").assertExists()
+            onNodeWithText("New.pdf").assertExists()
         }
-    }
-
-    /** The members dialog composes over the screen. */
-    @Test
-    fun `the members dialog draws its people`() {
         runComposeUiTest {
             setContent {
                 ZillitTheme(darkTheme = false) {
                     BudgetScreen(
-                        state = loaded().copy(
-                            membersOpen = true,
-                            members = listOf(
-                                BudgetMember(userId = "u1", fullName = "Ravi Menon", departmentName = "Camera"),
+                        state = versions().copy(
+                            members = BudgetMembersDialog(
+                                kind = BudgetMembersDialog.Kind.Group,
+                                loading = false,
+                                candidates = listOf(BudgetPerson("u9", "Anita Rao", "Producer")),
                             ),
                         ),
                         onEvent = {},
                     )
                 }
             }
-            onNodeWithText("Ravi Menon").assertExists()
+            onNodeWithText("Group name").assertExists()
+            onNodeWithText("Anita Rao").assertExists()
         }
     }
 
-    /**
-     * The conversation pane is the host's to supply; the screen must lay out
-     * around it without the documents collapsing.
-     */
+    /** The admin's count sheet and the department drawer. */
     @Test
-    fun `the conversation pane sits beside the documents`() {
+    fun `the sheets draw`() {
         runComposeUiTest {
             setContent {
                 ZillitTheme(darkTheme = false) {
                     BudgetScreen(
-                        state = loaded(),
+                        state = versions().copy(
+                            activity = BudgetActivityDialog(
+                                activity = BudgetActivity.View,
+                                loading = false,
+                                rows = listOf(BudgetActivityRow("u2", viewCount = 4)),
+                            ),
+                        ),
                         onEvent = {},
-                        conversation = {
-                            com.zillit.desktop.core.designsystem.component.ZillitText(
-                                text = "Discussion goes here",
-                                style = ZillitTheme.typography.bodyMedium,
-                                color = ZillitTheme.colors.textPrimary,
-                            )
-                        },
                     )
                 }
             }
-            onNodeWithText("Discussion goes here").assertExists()
-            onNodeWithText("Main.pdf").assertExists()
+            onNodeWithText("View count : 4").assertExists()
         }
-    }
-
-    private fun viewer() = BudgetViewer(
-        canViewMain = true,
-        canPostMain = true,
-        canViewDepartment = true,
-        canPostDepartment = true,
-        canDownloadMain = true,
-        canDownloadDepartment = true,
-        resolved = true,
-    )
-
-    private fun loaded() = BudgetUiState(
-        viewer = viewer(),
-        mainBudget = BudgetDocument(
-            id = "b1",
-            type = BudgetType.Main,
-            file = BudgetFile(media = "k/main.pdf", name = "Main.pdf", sizeBytes = 2_400_000),
-            uploadedByName = "Aisha Khan",
-        ),
-        departmentBudgets = listOf(
-            BudgetDocument(
-                id = "b2",
-                type = BudgetType.Department,
-                departmentId = "d9",
-                departmentName = "Camera",
-                file = BudgetFile(media = "k/cam.xlsx", name = "Camera.xlsx"),
-            ),
-        ),
-        viewCount = 12,
-        downloadCount = 3,
-    )
-
-
-    /**
-     * The flip: Upload budget stays for a reader who cannot post to this tab.
-     *
-     * `BudgetViewModel.refusesPost` answers the press by offering to ask an
-     * admin, and names the tab that refused — posting rights here are granted
-     * per tab, main and department separately.
-     */
-    @Test
-    fun `a reader without posting rights still sees Upload budget`() {
-        val reader = viewer().copy(canPostMain = false, canPostDepartment = false)
-
         runComposeUiTest {
             setContent {
                 ZillitTheme(darkTheme = false) {
-                    BudgetScreen(state = loaded().copy(viewer = reader), onEvent = {})
+                    BudgetScreen(
+                        state = directory().copy(
+                            drawer = BudgetDepartmentDrawer(departments = listOf(BudgetDepartment("snd", "Sound"))),
+                        ),
+                        onEvent = {},
+                    )
                 }
             }
-            onNodeWithText("Upload budget").assertExists()
+            onNodeWithText("Sound").assertExists()
         }
     }
+
+    /** Nothing uploaded yet, and no rights: the screen says so instead of an empty list. */
+    @Test
+    fun `empty and refused states draw`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    BudgetScreen(state = versions().copy(documents = emptyList(), selectedId = null), onEvent = {})
+                }
+            }
+            onNodeWithText("No budget uploaded yet").assertExists()
+        }
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    BudgetScreen(
+                        state = BudgetUiState(viewer = BudgetViewer(resolved = true)),
+                        onEvent = {},
+                    )
+                }
+            }
+            onNodeWithText("No access to Budget (Full)").assertExists()
+        }
+    }
+
+    private fun versions() = BudgetUiState(
+        mode = BudgetMode.Main,
+        viewer = BudgetViewer(
+            canViewMain = true, canPostMain = true, canDownloadMain = true, isAdmin = true, resolved = true,
+        ),
+        context = BudgetContext(userId = "me", departmentId = "cam"),
+        documents = listOf(
+            document("v2", "Budget (Full) -SEP 05, 2026", updated = 20),
+            document("v1", "Budget (Full) -SEP 04, 2026", updated = 10),
+        ),
+        selectedId = "v2",
+        chats = listOf(
+            BudgetChatEntry.Person("u2", "Ravi Menon", designation = "Gaffer", isAdmin = true),
+            BudgetChatEntry.Group("r1", "Camera crew", memberIds = listOf("u2", "u3")),
+        ),
+        unread = BudgetUnread(chats = mapOf("v2" to mapOf("u2" to 2))),
+    )
+
+    private fun directory() = BudgetUiState(
+        mode = BudgetMode.Department,
+        viewer = BudgetViewer(canViewDepartment = true, canPostDepartment = true, canViewMain = true, resolved = true),
+        showingDirectory = true,
+        directory = listOf(BudgetDepartment("cam", "Camera"), BudgetDepartment("art", "Art")),
+        unread = BudgetUnread(departments = mapOf("cam" to 3)),
+    )
+
+    private fun document(id: String, title: String, updated: Long) = BudgetDocument(
+        id = id,
+        type = BudgetType.Main,
+        title = title,
+        file = BudgetFile(media = "k/$id.pdf", name = "$id.pdf", sizeBytes = 120_000),
+        uploadedById = "u1",
+        uploadedByName = "Ravi Menon",
+        createdMillis = 1_788_609_600_000L,
+        updatedMillis = updated,
+    )
 }

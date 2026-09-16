@@ -39,6 +39,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
@@ -241,6 +242,7 @@ private fun InvoiceSidebar(state: InvoicesUiState, nowMs: Long, onEvent: (Invoic
                         page = page,
                         active = page == state.page,
                         badge = state.sidebarBadge(page),
+                        unread = page.badgeKey?.let(state.unread::get) ?: 0,
                         onEvent = onEvent,
                     )
                 }
@@ -280,6 +282,7 @@ private fun SidebarRow(
     active: Boolean,
     badge: Int?,
     onEvent: (InvoicesEvent) -> Unit,
+    unread: Int = 0,
 ) {
     val colors = ZillitTheme.colors
     val ink = if (active) colors.accentText else colors.textSecondary
@@ -303,6 +306,8 @@ private fun SidebarRow(
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
+        // Unread notifications filed under the page — the web's red sidebar chip.
+        ZillitBadge(count = unread)
         if (badge != null && badge > 0) {
             ZillitText(
                 text = badge.toString(),

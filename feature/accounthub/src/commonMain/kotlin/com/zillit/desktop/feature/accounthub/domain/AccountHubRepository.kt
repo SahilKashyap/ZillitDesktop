@@ -112,6 +112,16 @@ interface AccountHubRepository {
     /** Replaces the whole slice; all three lists go every time. */
     suspend fun saveNonUnionPay(value: NonUnionPay): ZillitResult<NonUnionPay>
 
+    // -- importing union rules into the breakdown (the deal-memo service) --
+
+    /** The territories with a published agreement, lower-cased ids. */
+    suspend fun coveredTerritories(): ZillitResult<Set<String>>
+
+    suspend fun unionAgreements(territory: String): ZillitResult<List<UnionAgreementSummary>>
+
+    /** One agreement's rule tables, projected into the breakdown's shape — see `AgreementRuleImport`. */
+    suspend fun unionAgreementRules(identifier: String): ZillitResult<ImportedRules>
+
     suspend fun invoicesSetup(): ZillitResult<InvoicesSetup>
 
     /** Saves the accounts-payable team, its alerts and the run chain. */

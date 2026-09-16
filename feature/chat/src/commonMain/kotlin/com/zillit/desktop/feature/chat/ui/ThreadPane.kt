@@ -1,5 +1,10 @@
 package com.zillit.desktop.feature.chat.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.hoverable
@@ -16,6 +21,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -48,6 +54,7 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
@@ -94,7 +101,7 @@ import kotlinx.datetime.toLocalDateTime
 
 /** One open conversation: header, the bubbles, and the composer. */
 @Composable
-@Suppress("LongParameterList")
+@Suppress("LongParameterList", "LongMethod") // The thread, its dialogs and its toasts, in one frame.
 internal fun ThreadPane(
     state: ChatUiState,
     onEvent: (ChatEvent) -> Unit,
@@ -103,6 +110,12 @@ internal fun ThreadPane(
     resolveMention: (String) -> String? = { null },
     /** A tapped tag — the host opens that person. */
     onOpenUser: (String) -> Unit = {},
+    /** The crew member behind an id — the readers panel's names and roles. */
+    resolveContact: (String) -> com.zillit.desktop.feature.chat.domain.CrewContact? = { null },
+    /** Who Forward can send to, besides the rooms the state already lists. */
+    forwardPeople: List<com.zillit.desktop.feature.chat.domain.CrewContact> = emptyList(),
+    /** The signed-in user — dropped from the readers list, as the web drops them. */
+    selfId: String? = null,
     onOpenAttachment: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit = {},
     loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap? = { null },
     loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) ->
@@ -129,8 +142,15 @@ internal fun ThreadPane(
     val gatedOpen: (ChatAttachment) -> Unit = { file ->
         if (seams.canDownload()) onOpenAttachment(file) else refused = true
     }
+    // The picture being drawn on for an Image Reply; null keeps the editor shut.
+    var imageReply by androidx.compose.runtime.remember {
+        androidx.compose.runtime.mutableStateOf<ChatMessage?>(null)
+    }
 
-    Box(Modifier.fillMaxSize()) {
+    // Painted here, not left to the host: the pane is also embedded inside
+    // other tools, and a thread with no ground of its own showed whatever
+    // was behind it.
+    Box(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         Column(Modifier.fillMaxSize()) {
             ThreadHeader(state, peer, loadAvatar, onCall, lines, onEvent)
             Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
@@ -148,10 +168,18 @@ internal fun ThreadPane(
             Messages(
                 state, resolveName, MentionHooks(resolveMention, onOpenUser),
                 media, loadAvatar, onEvent, Modifier.weight(1f),
+                onImageReply = { imageReply = it },
             )
 
-            if (state.peerTyping) {
-                TypingIndicator(peer.fullName.substringBefore(' '))
+            // Slides up from the composer and fades back: the one line that
+            // is about right now should arrive and leave like it.
+            AnimatedVisibility(
+                visible = state.peerTyping,
+                enter = fadeIn() + slideInVertically { it / 2 },
+                exit = fadeOut() + slideOutVertically { it / 2 },
+            ) {
+                // A room's typing signal names nobody, so neither does the line.
+                TypingIndicator(if (state.peerIsGroup) "Someone" else peer.fullName.substringBefore(' '))
             }
 
             if (refused) {
@@ -189,6 +217,37 @@ internal fun ThreadPane(
         }
 
         ChatPreviewHost(state, onEvent)
+
+        // The bubble menu's dialogs, over the thread.
+        EditMessageDialog(state, onEvent)
+        ForwardDialog(state, forwardPeople, onEvent)
+        ReadByDialog(state, selfId, resolveContact, onEvent)
+        ChatImageReplyDialog(
+            target = imageReply,
+            loadImage = { file -> seams.loadFullImage?.invoke(file) ?: loadThumbnail(file) },
+            onPost = { name, type, bytes, caption ->
+                imageReply = null
+                onEvent(ChatEvent.ImageReply(name, type, bytes, caption))
+            },
+            onDismiss = { imageReply = null },
+        )
+
+        // Refusals and confirmations float at the foot, as the web's
+        // `message.error` / `message.success` do. The state carried an
+        // error for a long time with nothing drawing it — a refused send or
+        // delete simply looked like nothing happened.
+        // Lifted clear of the composer, which the toast would otherwise sit on.
+        com.zillit.desktop.core.designsystem.component.ZillitErrorToast(
+            message = state.error,
+            onDismiss = { onEvent(ChatEvent.DismissError) },
+            modifier = Modifier.padding(bottom = TOAST_CLEARANCE),
+        )
+        com.zillit.desktop.core.designsystem.component.ZillitToast(
+            message = state.info,
+            onDismiss = { onEvent(ChatEvent.DismissInfo) },
+            tone = com.zillit.desktop.core.designsystem.component.ZillitToastTone.Success,
+            modifier = Modifier.padding(bottom = TOAST_CLEARANCE),
+        )
     }
 }
 
@@ -418,6 +477,7 @@ private fun ThreadHeader(
                 icon = ZillitIcons.Phone,
                 label = "Start call",
                 tint = ZillitTheme.colors.success,
+                disc = ZillitTheme.colors.successSoft,
                 lines = lines,
                 onPick = { line -> onCall(false, line) },
             )
@@ -425,9 +485,11 @@ private fun ThreadHeader(
                 icon = ZillitIcons.Camera,
                 label = "Start video call",
                 tint = ZillitTheme.colors.accentText,
+                disc = ZillitTheme.colors.accentSoft,
                 lines = lines,
                 onPick = { line -> onCall(true, line) },
             )
+            Spacer(Modifier.width(ZillitTheme.spacing.xs))
         }
         ZillitIconButton(
             icon = ZillitIcons.Close,
@@ -450,20 +512,30 @@ private fun ThreadHeader(
  * every deployment has, and the one the desktop has carried longest.
  */
 @Composable
+@Suppress("LongParameterList") // One button's look and its menu.
 private fun CallLineButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     tint: androidx.compose.ui.graphics.Color,
+    /** The tinted disc under the glyph — the header's two actions, not two more grey icons. */
+    disc: androidx.compose.ui.graphics.Color,
     lines: List<CallLine>,
     onPick: (line: CallLine) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
-    Box {
+    Box(
+        modifier = Modifier
+            .size(CALL_DISC)
+            .clip(CircleShape)
+            .background(disc),
+        contentAlignment = Alignment.Center,
+    ) {
         ZillitIconButton(
             icon = icon,
             contentDescription = label,
             onClick = { open = true },
             tint = tint,
+            size = CALL_DISC,
         )
         // Each line's row: the line's number and nothing else. It used to
         // carry the media stack's name beside it — "Agora", "Mediasoup" — on
@@ -637,8 +709,11 @@ private fun Messages(
     loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap?,
     onEvent: (ChatEvent) -> Unit,
     modifier: Modifier = Modifier,
+    /** The menu's Image Reply — the pane owns the editor, the list only asks for it. */
+    onImageReply: (ChatMessage) -> Unit = {},
 ) {
     val listState = rememberLazyListState()
+    val seams = LocalChatSeams.current
 
     // Reversed layout pins the visual bottom by construction: media bubbles
     // above can inflate as thumbnails load without shoving the newest message
@@ -679,38 +754,64 @@ private fun Messages(
         // Newest at index 0, pinned to the visual bottom — see the note on
         // FollowLatestReversed above. The rows are built reversed to match.
         reverseLayout = true,
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        // Tight by default — a run's lines sit together — and the run's first
+        // line (and the day chip) add their own room; see IncomingAware.
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             vertical = ZillitTheme.spacing.md,
         ),
     ) {
         items(rows, key = ThreadRow::key) { row ->
-            when (row) {
-                is ThreadRow.DayMark -> DayChip(row.label)
-
-                // Incoming rows carry the writer's face like the home board;
-                // rooms also name them — a DM's name would say the obvious.
-                is ThreadRow.Message -> IncomingAware(
-                    message = row.message,
-                    senderName = if (state.peerIsGroup && !row.message.isMine) {
-                        resolveName(row.message.senderId)
-                    } else {
-                        null
-                    },
-                    loadAvatar = loadAvatar,
-                    media = media,
-                    onReact = { emoji -> onEvent(ChatEvent.React(row.message.id, emoji)) },
-                    onDelete = { onEvent(ChatEvent.Delete(row.message.id)) },
-                    onReply = { onEvent(ChatEvent.StartReply(row.message.id)) },
-                    onJumpTo = jumpTo,
-                    uploadPercent = state.uploads[row.message.uniqueId],
-                    resolveName = resolveName,
-                    mentions = mentions,
-                )
+            // A new line slides the rest up rather than snapping them: the
+            // thread should look like it is moving, not reloading.
+            Box(Modifier.animateItem()) {
+                when (row) {
+                    is ThreadRow.DayMark -> DayChip(row.label)
+                    is ThreadRow.Message -> MessageRow(
+                        row, state, resolveName, mentions, media, loadAvatar,
+                        actions = bubbleActions(row.message, state, seams, onEvent, onImageReply),
+                        onJumpTo = jumpTo,
+                    )
+                }
             }
         }
         olderPager(state, onEvent)
     }
+}
+
+/**
+ * One message row. Incoming rows in a room carry the writer's face and
+ * name; in a DM both would say the obvious, so the bubble stands alone.
+ */
+@Composable
+@Suppress("LongParameterList") // The list's shared hooks, handed down once per row.
+private fun MessageRow(
+    row: ThreadRow.Message,
+    state: ChatUiState,
+    resolveName: (String) -> String?,
+    mentions: MentionHooks,
+    media: BubbleMedia,
+    loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap?,
+    actions: BubbleActions,
+    onJumpTo: (String) -> Unit,
+) {
+    IncomingAware(
+        message = row.message,
+        senderName = if (state.peerIsGroup && !row.message.isMine) {
+            resolveName(row.message.senderId)
+        } else {
+            null
+        },
+        run = row.run,
+        loadAvatar = loadAvatar,
+        media = media,
+        actions = actions,
+        onJumpTo = onJumpTo,
+        uploadPercent = state.uploads[row.message.uniqueId],
+        resolveName = resolveName,
+        mentions = mentions,
+        translation = state.translations[row.message.id],
+    )
 }
 
 /**
@@ -749,11 +850,31 @@ private fun androidx.compose.foundation.lazy.LazyListScope.olderPager(
 internal sealed interface ThreadRow {
     val key: String
 
-    data class Message(val message: ChatMessage) : ThreadRow {
+    data class Message(val message: ChatMessage, val run: RunPosition = RunPosition.ALONE) : ThreadRow {
         override val key: String get() = message.uniqueId
     }
 
     data class DayMark(val label: String, override val key: String) : ThreadRow
+}
+
+/**
+ * Where a message sits in a run of consecutive lines from one writer.
+ *
+ * Lines from the same person within [RUN_GAP_MILLIS] of each other read as
+ * one turn of speech, so only the run's last bubble wears the tail and only
+ * its first names the writer — every chat client's convention, and the
+ * difference between a conversation and a stack of labelled cards.
+ */
+internal enum class RunPosition(val first: Boolean, val last: Boolean) {
+    ALONE(first = true, last = true),
+    FIRST(first = true, last = false),
+    MIDDLE(first = false, last = false),
+    LAST(first = false, last = true),
+    ;
+
+    companion object {
+        fun of(first: Boolean, last: Boolean): RunPosition = entries.first { it.first == first && it.last == last }
+    }
 }
 
 /**
@@ -771,7 +892,8 @@ internal fun threadRows(
 ): List<ThreadRow> {
     val rows = ArrayList<ThreadRow>(messages.size + DAY_ROOM)
     var lastDay: kotlinx.datetime.LocalDate? = null
-    messages.forEach { message ->
+    messages.forEachIndexed { index, message ->
+        var newDay = false
         if (message.timestampMillis > 0) {
             val day = kotlin.time.Instant.fromEpochMilliseconds(message.timestampMillis)
                 .toLocalDateTime(zone).date
@@ -781,17 +903,41 @@ internal fun threadRows(
                     key = "day-$day",
                 )
                 lastDay = day
+                newDay = true
             }
         }
-        rows += ThreadRow.Message(message)
+        // A day chip breaks a run: the first line after it starts fresh.
+        val first = newDay || !continuesRun(messages.getOrNull(index - 1), message)
+        val next = messages.getOrNull(index + 1)
+        val last = next == null || !continuesRun(message, next) || next.startsNewDay(message, zone)
+        rows += ThreadRow.Message(message, RunPosition.of(first, last))
     }
     return rows.asReversed()
+}
+
+/** [later] continues [earlier]'s run: same writer, same side, close in time. */
+private fun continuesRun(earlier: ChatMessage?, later: ChatMessage): Boolean =
+    earlier != null &&
+        earlier.senderId == later.senderId &&
+        earlier.isMine == later.isMine &&
+        later.timestampMillis > 0 &&
+        earlier.timestampMillis > 0 &&
+        later.timestampMillis - earlier.timestampMillis in 0..RUN_GAP_MILLIS
+
+private fun ChatMessage.startsNewDay(previous: ChatMessage, zone: kotlinx.datetime.TimeZone): Boolean {
+    if (timestampMillis <= 0 || previous.timestampMillis <= 0) return false
+    val mine = kotlin.time.Instant.fromEpochMilliseconds(timestampMillis).toLocalDateTime(zone).date
+    val theirs = kotlin.time.Instant.fromEpochMilliseconds(previous.timestampMillis).toLocalDateTime(zone).date
+    return mine != theirs
 }
 
 /** The day, centred on its own quiet line — every chat client's convention. */
 @Composable
 private fun DayChip(label: String) {
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm),
+        contentAlignment = Alignment.Center,
+    ) {
         ZillitText(
             text = label,
             style = ZillitTheme.typography.labelSmall,
@@ -850,40 +996,129 @@ private fun EmptyThread(peerName: String, modifier: Modifier = Modifier) {
 private fun IncomingAware(
     message: ChatMessage,
     senderName: String?,
+    run: RunPosition = RunPosition.ALONE,
     loadAvatar: suspend (String) -> androidx.compose.ui.graphics.ImageBitmap?,
     media: BubbleMedia,
-    onReact: (String) -> Unit,
-    onDelete: () -> Unit = {},
-    onReply: () -> Unit = {},
+    actions: BubbleActions,
     onJumpTo: (String) -> Unit = {},
     uploadPercent: Int? = null,
     resolveName: (String) -> String? = { null },
     mentions: MentionHooks = MentionHooks(),
+    translation: String? = null,
 ) {
-    if (message.isMine) {
-        Bubble(
-            message, senderName, media, onReact, onDelete, onReply, onJumpTo,
-            uploadPercent, resolveName, mentions,
-        )
+    // A run's first line stands a little clear of the turn before it; the
+    // rest sit tight, so a turn of speech reads as one block.
+    val runGap = Modifier.padding(top = if (run.first) ZillitTheme.spacing.sm else 0.dp)
+    if (message.isMine || senderName == null) {
+        Box(runGap) {
+            Bubble(
+                message, senderName, run, media, actions, onJumpTo,
+                uploadPercent, resolveName, mentions, translation,
+            )
+        }
         return
     }
+    // A room's line: the writer's face beside the run's last bubble, the
+    // others indented to meet it. Names ride the first bubble instead.
     Row(
+        modifier = runGap,
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        val face = androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(
-            initialValue = null,
-            message.senderId,
-        ) { value = loadAvatar(message.senderId) }.value
-        ZillitAvatar(name = senderName ?: "?", image = face, size = ROW_AVATAR)
+        if (run.last) {
+            val face = androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(
+                initialValue = null,
+                message.senderId,
+            ) { value = loadAvatar(message.senderId) }.value
+            ZillitAvatar(name = senderName, image = face, size = ROW_AVATAR)
+        } else {
+            Spacer(Modifier.width(ROW_AVATAR))
+        }
         Bubble(
-            message, senderName, media, onReact,
-            onReply = onReply,
+            message, senderName.takeIf { run.first }, run, media, actions,
             onJumpTo = onJumpTo,
             resolveName = resolveName,
             mentions = mentions,
+            translation = translation,
         )
     }
+}
+
+/**
+ * What one bubble's menu can do, gathered once. A null verb is one the
+ * menu leaves out — the Home board's rule of showing nothing it would only
+ * refuse, applied a step earlier than the web's show-then-refuse.
+ */
+@Suppress("LongParameterList") // One slot per verb the menu can show.
+internal class BubbleActions(
+    val onReact: (String) -> Unit,
+    val onReply: () -> Unit,
+    /** Our own delivered line — Edit for words or a caption, Delete for any. */
+    val onEdit: (() -> Unit)? = null,
+    val onDelete: (() -> Unit)? = null,
+    val onForward: (() -> Unit)? = null,
+    /** Hands the line to the mailbox composer; null when the host has none. */
+    val onShare: (() -> Unit)? = null,
+    /** A room's line only. */
+    val onReadBy: (() -> Unit)? = null,
+    /** Someone's words, when the production and this computer disagree on language. */
+    val onTranslate: (() -> Unit)? = null,
+    val translating: Boolean = false,
+    /** Set once a translation is on screen; takes it back. */
+    val onShowOriginal: (() -> Unit)? = null,
+    /** A picture — the pen editor. */
+    val onImageReply: (() -> Unit)? = null,
+)
+
+/**
+ * The verbs for one line, decided as the web decides its `items`
+ * (`MyMessage.jsx:205-563`, `SenderMessage.jsx:229-322`), with the
+ * differences the two menus have from each other kept:
+ *
+ * - Edit: our own line with words (a media caption counts; a location and
+ *   a bare file do not) — `MyMessage.jsx:478-528`.
+ * - Delete: our own line. The web's menu on someone else's line in a room
+ *   shows Delete and refuses the click with "no permission"
+ *   (`SenderMessage.jsx:366-372`); it is left out here.
+ * - Forward and Share: any delivered line, ours or theirs.
+ * - Read by: a room's line — `if (!isprivate)` on both menus.
+ * - Translate: someone else's words, not yet translated, when the languages
+ *   differ (`SenderMessage.jsx:253-260`, ZL-16953).
+ * - Image Reply: a picture, ours or theirs.
+ *
+ * A line the server has not taken yet (its id still our unique id) gets
+ * React and Reply's guard only: nothing else can address it.
+ */
+private fun bubbleActions(
+    message: ChatMessage,
+    state: ChatUiState,
+    seams: ChatSeams,
+    onEvent: (ChatEvent) -> Unit,
+    onImageReply: (ChatMessage) -> Unit,
+): BubbleActions {
+    val delivered = message.id.isNotBlank() && message.id != message.uniqueId
+    val hasWords = message.body.isNotBlank() && message.location == null
+    val isPicture = message.attachment?.kind == "image" && message.location == null
+    val translated = message.id in state.translations
+    return BubbleActions(
+        onReact = { emoji -> onEvent(ChatEvent.React(message.id, emoji)) },
+        onReply = { onEvent(ChatEvent.StartReply(message.id)) },
+        onEdit = { onEvent(ChatEvent.StartEdit(message.id)) }.takeIf { message.isMine && delivered && hasWords },
+        onDelete = { onEvent(ChatEvent.Delete(message.id)) }.takeIf { message.isDeletable },
+        onForward = { onEvent(ChatEvent.StartForward(message.id)) }.takeIf { delivered },
+        onShare = seams.shareAsEmail?.let { share ->
+            {
+                val refusal = share(message)
+                if (refusal != null) onEvent(ChatEvent.Refused(refusal))
+            }
+        }?.takeIf { delivered },
+        onReadBy = { onEvent(ChatEvent.ShowReadBy(message.id)) }.takeIf { state.peerIsGroup && delivered },
+        onTranslate = { onEvent(ChatEvent.Translate(message.id)) }
+            .takeIf { state.translateOffered && !message.isMine && hasWords && delivered && !translated },
+        translating = message.id in state.translating,
+        onShowOriginal = { onEvent(ChatEvent.ShowOriginal(message.id)) }.takeIf { translated },
+        onImageReply = { onImageReply(message) }.takeIf { isPicture && delivered },
+    )
 }
 
 /** The tag affordances, carried together so the bubble chain stays short. */
@@ -1038,16 +1273,17 @@ private fun QuotedLine(
 private fun Bubble(
     message: ChatMessage,
     senderName: String? = null,
+    run: RunPosition = RunPosition.ALONE,
     media: BubbleMedia,
-    onReact: (String) -> Unit = {},
-    onDelete: () -> Unit = {},
-    onReply: () -> Unit = {},
+    actions: BubbleActions,
     onJumpTo: (String) -> Unit = {},
     uploadPercent: Int? = null,
     resolveName: (String) -> String? = { null },
     mentions: MentionHooks = MentionHooks(),
+    translation: String? = null,
 ) {
     val mine = message.isMine
+    val onReact = actions.onReact
     val hover = androidx.compose.runtime.remember {
         androidx.compose.foundation.interaction.MutableInteractionSource()
     }
@@ -1092,9 +1328,7 @@ private fun Bubble(
                     onDismiss = { menuOpen = false },
                     message = message,
                     media = media,
-                    onReact = onReact,
-                    onDelete = onDelete,
-                    onReply = onReply,
+                    actions = actions,
                     alignEnd = mine,
                 )
             }
@@ -1115,7 +1349,7 @@ private fun Bubble(
         ) {
             if (mine) {
                 Row(Modifier.alpha(if (revealed) 1f else 0f)) {
-                    if (message.isDeletable) DeleteAffordance(onDelete)
+                    actions.onDelete?.let { DeleteAffordance(it) }
                     ReactAffordance(
                         open = reactOpen,
                         onOpenChange = { reactOpen = it },
@@ -1126,7 +1360,8 @@ private fun Bubble(
             }
             BubbleBody(
                 message, senderName, media, onReact, mine,
-                uploadPercent, resolveName, mentions, onJumpTo,
+                uploadPercent, resolveName, mentions, onJumpTo, translation,
+                tail = run.last,
             )
             if (!mine) {
                 Box(Modifier.alpha(if (revealed) 1f else 0f)) {
@@ -1154,6 +1389,10 @@ private fun BubbleBody(
     resolveName: (String) -> String? = { null },
     mentions: MentionHooks = MentionHooks(),
     onJumpTo: (String) -> Unit = {},
+    /** The menu's translation of the words, drawn under them. */
+    translation: String? = null,
+    /** The run's last line wears the tail; the others are plain pills. */
+    tail: Boolean = true,
 ) {
     Column(
         modifier = Modifier
@@ -1165,14 +1404,12 @@ private fun BubbleBody(
                 androidx.compose.foundation.shape.RoundedCornerShape(
                     topStart = BUBBLE_RADIUS,
                     topEnd = BUBBLE_RADIUS,
-                    bottomStart = if (mine) BUBBLE_RADIUS else BUBBLE_TAIL,
-                    bottomEnd = if (mine) BUBBLE_TAIL else BUBBLE_RADIUS,
+                    bottomStart = if (mine || !tail) BUBBLE_RADIUS else BUBBLE_TAIL,
+                    bottomEnd = if (!mine || !tail) BUBBLE_RADIUS else BUBBLE_TAIL,
                 ),
             )
-            .background(
-                if (mine) ZillitTheme.colors.accentSoft else ZillitTheme.colors.surface,
-            )
-            .padding(ZillitTheme.spacing.sm),
+            .background(bubbleFill(mine))
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.sm),
     ) {
         message.replyTo?.let { quoted ->
             QuotedLine(quoted, resolveName) { onJumpTo(quoted.messageId) }
@@ -1200,6 +1437,21 @@ private fun BubbleBody(
         if (place == null && message.body.isNotBlank()) {
             MentionedBody(message.body, mentions)
         }
+        // The web replaces the words with "original / rule / Translated
+        // Message: / translation" (`unitChatUtils.js` `generateTranslatedMessage`);
+        // here the original stays and the translation reads beneath it.
+        // No full-width rule between them: the bubble is content-sized,
+        // and a fillMaxWidth child would stretch every translated line to
+        // the bubble's ceiling (seen in the first render).
+        if (translation != null) {
+            ZillitText(
+                text = "Translated message",
+                style = ZillitTheme.typography.labelSmall,
+                color = ZillitTheme.colors.textMuted,
+                modifier = Modifier.padding(top = ZillitTheme.spacing.xs),
+            )
+            ZillitText(text = translation, style = ZillitTheme.typography.bodyMedium)
+        }
         BubbleFooter(message)
         ReactionChips(message, onReact, resolveName)
     }
@@ -1224,12 +1476,17 @@ private fun AttachmentBody(
         // A picture opens the in-app viewer; saving stays gated behind its
         // Download (QA #11).
         file.kind == "image" -> MediaThumb(file, media.loadThumbnail, media.onView)
-        file.thumbnail.isNotBlank() ->
+        // A PDF is asked for its poster whether or not the row names one —
+        // the host draws page one itself when the server has nothing (a
+        // Box production, a Drive share, the phones' placeholder key). The
+        // name rides under the page: a cover page rarely says which file.
+        file.thumbnail.isNotBlank() || file.isPdf ->
             MediaThumb(
                 file,
                 media.loadThumbnail,
                 media.onOpen,
                 playBadge = file.kind == "video",
+                namePlate = file.kind == "document",
             )
         else -> FileChip(file, media.onOpen)
     }
@@ -1317,10 +1574,13 @@ private fun androidx.compose.foundation.layout.ColumnScope.ReactionChips(
 }
 
 /**
- * The bubble's menu: the quick reactions in a row, then Reply, Copy for
- * words, Copy image and Download for a file, Delete for our own delivered
- * lines — the phones' long-press sheet reduced to what this client can do
- * (no forward, edit or translate here yet).
+ * The bubble's menu: the quick reactions in a row, then the web's list in
+ * the web's order — Edit and Image Reply first (both menus `unshift` them),
+ * Reply, Forward, Copy / Copy image / Download, Translate, Share, then Delete
+ * and Read by at the end (`MyMessage.jsx:466-561`, `SenderMessage.jsx:274-322`).
+ * Which of them a given line gets is [bubbleActions]' decision. Not here:
+ * "Forward to Remote Projects", which needs another production's crew and
+ * identity — nothing this client holds.
  *
  * A shared place loses the two file actions; see the note at that branch.
  * Copy stays, because it is gated on the body being non-empty and Android
@@ -1331,18 +1591,18 @@ private fun androidx.compose.foundation.layout.ColumnScope.ReactionChips(
  * wire authority rather than the browser there.
  */
 @Composable
-@Suppress("LongParameterList", "LongMethod") // The sheet is a flat list of its actions.
+// The sheet is a flat list of its actions; each verb is one branch.
+@Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 private fun BubbleMenu(
     open: Boolean,
     onDismiss: () -> Unit,
     message: ChatMessage,
     media: BubbleMedia,
-    onReact: (String) -> Unit,
-    onDelete: () -> Unit,
-    onReply: () -> Unit = {},
+    actions: BubbleActions,
     alignEnd: Boolean = false,
 ) {
     val seams = LocalChatSeams.current
+    val onReact = actions.onReact
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     ZillitMenuSurface(
         expanded = open,
@@ -1379,11 +1639,14 @@ private fun BubbleMenu(
         }
         ZillitMenuDivider()
         val entries = buildList {
+            actions.onEdit?.let { add(menuLine("Edit", ZillitIcons.Edit, ZillitMenuTone.Primary, it)) }
+            actions.onImageReply?.let { add(menuLine("Image Reply", ZillitIcons.Photo, ZillitMenuTone.Primary, it)) }
             // Only a line the server can address can be quoted: a just-sent
             // bubble still wears its local id (see isDeletable's reasoning).
             if (message.id.isNotBlank() && (!message.isMine || message.id != message.uniqueId)) {
-                add(menuLine("Reply", ZillitIcons.Reply, ZillitMenuTone.Primary, onReply))
+                add(menuLine("Reply", ZillitIcons.Reply, ZillitMenuTone.Primary, actions.onReply))
             }
+            actions.onForward?.let { add(menuLine("Forward", ZillitIcons.Forward, onClick = it)) }
             if (message.body.isNotBlank()) {
                 add(
                     menuLine("Copy", ZillitIcons.Copy) {
@@ -1416,9 +1679,14 @@ private fun BubbleMenu(
                 }
                 add(menuLine("Download", ZillitIcons.Download) { media.onOpen(file) })
             }
-            if (message.isDeletable) {
-                add(menuLine("Delete for everyone", ZillitIcons.Trash, ZillitMenuTone.Danger, onDelete))
+            actions.onTranslate?.let { translate ->
+                val label = if (actions.translating) "Translating…" else "Translate"
+                add(menuLine(label, ZillitIcons.Globe, onClick = translate))
             }
+            actions.onShowOriginal?.let { add(menuLine("Show original", ZillitIcons.Globe, onClick = it)) }
+            actions.onShare?.let { add(menuLine("Share", ZillitIcons.Mail, onClick = it)) }
+            actions.onDelete?.let { add(menuLine("Delete for everyone", ZillitIcons.Trash, ZillitMenuTone.Danger, it)) }
+            actions.onReadBy?.let { add(menuLine("Read by", ZillitIcons.Eye, onClick = it)) }
         }
         ZillitMenuEntries(entries = entries, onDismiss = onDismiss)
     }
@@ -1708,27 +1976,72 @@ private fun MediaThumb(
     androidx.compose.ui.graphics.ImageBitmap?,
     onOpen: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     playBadge: Boolean = false,
+    /** The file's chip under the picture — a document's name and open verb. */
+    namePlate: Boolean = false,
 ) {
-    val image = androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(
-        initialValue = null,
+    // Three states, not two: "still fetching" must keep the tile's size, and
+    // only a definite miss falls back to the chip. Fetched-or-not as a
+    // nullable bitmap conflated them, and the bubble grew from chip to
+    // picture the moment the bytes landed — which, in a reversed list, is a
+    // visible jump of everything above it, timed (S3 round trip) to land
+    // right as a trackpad fling dies.
+    val poster by androidx.compose.runtime.produceState<PosterState>(
+        initialValue = PosterState.Loading,
         file.media,
-    ) { value = loadThumbnail(file) }.value
+    ) { value = PosterState.Done(loadThumbnail(file)) }
 
-    if (image == null) {
+    val image = (poster as? PosterState.Done)?.image
+    if (poster is PosterState.Done && image == null) {
         FileChip(file, onOpen)
         return
     }
-    Box(contentAlignment = Alignment.Center) {
-        androidx.compose.foundation.Image(
-            bitmap = image,
-            contentDescription = file.name,
-            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            modifier = Modifier
-                .sizeIn(maxWidth = THUMB_MAX, maxHeight = THUMB_MAX)
-                .clip(ZillitTheme.shapes.small)
-                .clickable { onOpen(file) },
-        )
-        if (playBadge) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        PosterTile(image, file, onOpen, playBadge)
+        if (namePlate) FileChip(file, onOpen)
+    }
+}
+
+private sealed interface PosterState {
+    data object Loading : PosterState
+
+    /** Fetched; a null [image] is a miss the chip stands in for. */
+    data class Done(val image: androidx.compose.ui.graphics.ImageBitmap?) : PosterState
+}
+
+/**
+ * The picture, at a size fixed before the bytes arrive.
+ *
+ * The frame comes from the row's own `width`/`height` when the wire carries
+ * them (the phones send the picture's, and a poster's page), else a
+ * document-shaped or picture-shaped default; the bitmap is cropped into it
+ * rather than sizing it. So the layout is settled on the first frame and
+ * the arrival of the image changes pixels, never positions.
+ */
+@Composable
+private fun PosterTile(
+    image: androidx.compose.ui.graphics.ImageBitmap?,
+    file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
+    onOpen: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
+    playBadge: Boolean,
+) {
+    val frame = posterFrame(file.widthPx, file.heightPx, portraitDefault = file.kind == "document")
+    Box(
+        modifier = Modifier
+            .size(frame)
+            .clip(ZillitTheme.shapes.small)
+            .background(ZillitTheme.colors.surfaceSunken)
+            .clickable { onOpen(file) },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (image != null) {
+            androidx.compose.foundation.Image(
+                bitmap = image,
+                contentDescription = file.name,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        if (playBadge && image != null) {
             // The board's rule: the poster says what it is, the badge says
             // it moves.
             Box(
@@ -1747,6 +2060,32 @@ private fun MediaThumb(
             }
         }
     }
+}
+
+/**
+ * The tile a poster gets: the wire's aspect fitted into [THUMB_MAX], with
+ * the short edge never under [THUMB_MIN] (a panorama still reads as a
+ * picture, cropped); a page-shaped or picture-shaped default without one.
+ */
+internal fun posterFrame(
+    widthPx: Long,
+    heightPx: Long,
+    portraitDefault: Boolean,
+): androidx.compose.ui.unit.DpSize {
+    if (widthPx <= 0 || heightPx <= 0) {
+        return if (portraitDefault) {
+            androidx.compose.ui.unit.DpSize(THUMB_MAX * PAGE_RATIO, THUMB_MAX)
+        } else {
+            androidx.compose.ui.unit.DpSize(THUMB_MAX, THUMB_MAX * PAGE_RATIO)
+        }
+    }
+    val ratio = widthPx.toFloat() / heightPx.toFloat()
+    val width = if (ratio >= 1f) THUMB_MAX else THUMB_MAX * ratio
+    val height = if (ratio >= 1f) THUMB_MAX / ratio else THUMB_MAX
+    return androidx.compose.ui.unit.DpSize(
+        width = if (width < THUMB_MIN) THUMB_MIN else width,
+        height = if (height < THUMB_MIN) THUMB_MIN else height,
+    )
 }
 
 /**
@@ -1845,8 +2184,33 @@ private fun FileChip(
     }
 }
 
+/**
+ * The two bubble tints.
+ *
+ * Light: the writer's own lines in the pale accent, the other side's on
+ * white — the surface the canvas already frames. Dark: the canvas and the
+ * surface are two near-blacks a shade apart, so the other side's lines
+ * take the raised surface to stand off the page at all, and one's own take
+ * the accent laid over it rather than over black, which read as mud.
+ */
+@Composable
+private fun bubbleFill(mine: Boolean): androidx.compose.ui.graphics.Color {
+    val colors = ZillitTheme.colors
+    return when {
+        !colors.isDark && mine -> colors.accentSoft
+        !colors.isDark -> colors.surface
+        mine -> colors.accent.copy(alpha = OWN_BUBBLE_DARK_ALPHA).compositeOver(colors.surfaceRaised)
+        else -> colors.surfaceRaised
+    }
+}
+
 private val HAIRLINE = 1.dp
 private val BUBBLE_MAX_WIDTH = 420.dp
+private val CALL_DISC = 34.dp
+private const val OWN_BUBBLE_DARK_ALPHA = 0.22f
+
+/** Lines from one writer this close together read as one turn of speech. */
+internal const val RUN_GAP_MILLIS = 5 * 60 * 1000L
 private val BUBBLE_RADIUS = 16.dp
 private val BUBBLE_TAIL = 4.dp
 private val HEADER_AVATAR = 40.dp
@@ -1862,6 +2226,10 @@ private const val DAY_ROOM = 8
 private val STATUS_ICON = 14.dp
 private val ROW_AVATAR = 26.dp
 private val THUMB_MAX = 240.dp
+private val THUMB_MIN = 96.dp
+
+/** A page-shaped tile's short edge as a share of its long one — near A4. */
+private const val PAGE_RATIO = 0.72f
 private val PLAY_BADGE = 40.dp
 private val VOICE_MIN_WIDTH = 220.dp
 private val REACT_BUTTON = 24.dp
@@ -1869,6 +2237,9 @@ private val REACT_MENU_WIDTH = 232.dp
 
 /** The menu's gap under its anchor — the design system's own, restated for the aimed offsets. */
 private val MENU_DROP = 4.dp
+
+/** The composer's height, so a toast floats above it rather than on it. */
+private val TOAST_CLEARANCE = 72.dp
 private val UPLOAD_BAR_WIDTH = 220.dp
 private val QUOTE_BAR = 3.dp
 private val LOCATION_PIN = 16.dp

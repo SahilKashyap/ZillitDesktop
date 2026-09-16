@@ -2,15 +2,28 @@
 
 package com.zillit.desktop.feature.recce.ui.pages
 
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,170 +31,245 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.common.MapsLink
+import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitDateField
+import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
-import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
-import com.zillit.desktop.core.designsystem.component.ZillitSectionCard
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
+import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.core.locationpicker.PickedLocation
-import com.zillit.desktop.core.locationpicker.ZillitLocationField
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.units.ProductionUnit
 import com.zillit.desktop.feature.recce.domain.RecceCrewMember
 import com.zillit.desktop.feature.recce.domain.RecceStatus
 import com.zillit.desktop.feature.recce.domain.StopKind
 import com.zillit.desktop.feature.recce.domain.Weather
-import com.zillit.desktop.feature.recce.ui.ErrorNotice
 import com.zillit.desktop.feature.recce.ui.PersonEditor
 import com.zillit.desktop.feature.recce.ui.RecceEditor
 import com.zillit.desktop.feature.recce.ui.RecceEvent
+import com.zillit.desktop.feature.recce.ui.RecceField
 import com.zillit.desktop.feature.recce.ui.RecceUiState
 import com.zillit.desktop.feature.recce.ui.StopEditor
+import com.zillit.desktop.feature.recce.ui.components.DashedAddRow
+import com.zillit.desktop.feature.recce.ui.components.Labelled
+import com.zillit.desktop.feature.recce.ui.components.MutedText
+import com.zillit.desktop.feature.recce.ui.components.RecceBody
+import com.zillit.desktop.feature.recce.ui.components.RecceCanvas
+import com.zillit.desktop.feature.recce.ui.components.RecceCard
+import com.zillit.desktop.feature.recce.ui.components.RecceColors
+import com.zillit.desktop.feature.recce.ui.components.RecceLocationControl
+import com.zillit.desktop.feature.recce.ui.components.RecceTimeField
+import com.zillit.desktop.feature.recce.ui.components.RecceToolHeader
+import com.zillit.desktop.feature.recce.ui.components.SectionNumber
 
 /**
- * The create/edit form: the web's three numbered sections and its sticky
- * footer. Coordinates come from the address field's map picker, as the web's
- * `RecceLocationField.jsx` does; they stay typeable, and a pasted Google Maps
- * link still fills them for a host with no map of its own.
+ * The create / edit form — the web's `RecceForm`: three numbered sections
+ * and a sticky footer. The recce day is a date field and every clock value
+ * a time field; all are recombined to local epoch-ms on save. Publish
+ * validates the four required fields; Save as Draft validates nothing.
  */
 @Composable
-internal fun RecceFormPage(state: RecceUiState, onEvent: (RecceEvent) -> Unit, editing: Boolean) {
-    val editor = state.editor ?: return
-    val colors = ZillitTheme.colors
+internal fun RecceFormPage(
+    state: RecceUiState,
+    onEvent: (RecceEvent) -> Unit,
+    editing: Boolean,
+    scroll: ScrollState = rememberScrollState(),
+) {
+    val editor = state.editor
     Column(Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(ZillitTheme.spacing.lg),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        ) {
-            ZillitPageHeader(
-                title = if (editing) "Edit recce" else "Create recce",
-                actions = {
-                    ZillitButton(
-                        text = "Cancel",
-                        onClick = { onEvent(RecceEvent.CancelEdit) },
-                        variant = ButtonVariant.Tertiary,
-                    )
-                },
-            )
+        RecceToolHeader(
+            title = if (editing) "Edit Recce" else "Create Recce",
+            onBack = { onEvent(RecceEvent.RequestCancel) },
+        )
+        if (editor == null) {
+            RecceCanvas { ZillitSpinner() }
+            return@Column
+        }
+        RecceBody(modifier = Modifier.weight(1f), narrow = true, scroll = scroll) {
             ErrorNotice(state, onEvent)
             ImportantSection(state, editor, onEvent)
-            ScheduleSection(editor, onEvent)
+            ScheduleSection(state, editor, onEvent)
             PersonnelSection(state.crew, editor, onEvent)
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            ZillitText(
-                text = "${editor.stops.count { it.kind != StopKind.Lunch }} stops · " +
-                    "${editor.personnel.size} personnel",
-                style = ZillitTheme.typography.bodySmall,
-                color = colors.textMuted,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitButton(
-                text = "Save as Draft",
-                onClick = { onEvent(RecceEvent.SaveDraft) },
-                variant = ButtonVariant.Secondary,
-                loading = editor.saving == RecceStatus.Draft,
-                enabled = editor.saving == null,
-            )
-            ZillitButton(
-                text = "Publish recce",
-                onClick = { onEvent(RecceEvent.Publish) },
-                loading = editor.saving == RecceStatus.Published,
-                enabled = editor.saving == null,
-            )
+        Footer(editor, onEvent)
+    }
+}
+
+/** A numbered card with a title and a description — the web's `FormSection`. */
+@Composable
+private fun FormSection(
+    n: Int,
+    title: String,
+    description: String,
+    action: (@Composable () -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    RecceCard(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+        Column(Modifier.padding(24.dp)) {
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionNumber(n)
+                Column(Modifier.weight(1f)) {
+                    ZillitText(
+                        text = title,
+                        style = ZillitTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = ZillitTheme.colors.textPrimary,
+                    )
+                    MutedText(description, Modifier.padding(top = 2.dp))
+                }
+                action?.invoke()
+            }
+            Spacer(Modifier.height(18.dp))
+            content()
         }
     }
 }
 
+// ---------------------------------------------------------- 1 · important
+
 @Composable
 private fun ImportantSection(state: RecceUiState, editor: RecceEditor, onEvent: (RecceEvent) -> Unit) {
-    ZillitSectionCard(title = "1. Important information") {
-        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    FormSection(1, "Important information", "Rendezvous, nearest station and conditions for the day.") {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
                 ZillitTextField(
                     value = editor.title,
                     onValueChange = { onEvent(RecceEvent.EditorChanged(title = it)) },
                     label = "Recce title",
-                    modifier = Modifier.weight(TITLE_WEIGHT),
+                    placeholder = "e.g. Stunt Recce — City Bridges",
+                    errorText = editor.errors[RecceField.Title],
+                    modifier = Modifier.weight(1f),
                 )
-                Column(Modifier.weight(1f)) {
-                    ZillitText(
-                        text = "Unit",
-                        style = ZillitTheme.typography.bodySmall,
-                        color = ZillitTheme.colors.textMuted,
-                    )
-                    ZillitSelect(
-                        value = state.units.firstOrNull { it.id == editor.unit }
-                            ?: editor.unit.takeIf { it.isNotBlank() }?.let { ProductionUnit(it, it) },
-                        options = listOf<ProductionUnit?>(null) + state.units,
-                        onSelect = { onEvent(RecceEvent.EditorChanged(unit = it?.id, clearUnit = it == null)) },
-                        label = { it?.name ?: "No unit" },
-                        modifier = Modifier.fillMaxWidth(),
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Labelled(label = "Unit", modifier = Modifier.weight(1f)) {
+                        val chosen = state.units.firstOrNull { it.id == editor.unit }
+                            ?: editor.unit.takeIf { it.isNotBlank() }?.let { ProductionUnit(it, it) }
+                        ZillitSelect(
+                            value = chosen,
+                            options = listOf<ProductionUnit?>(null) + state.units,
+                            onSelect = { onEvent(RecceEvent.EditorChanged(unit = it?.id, clearUnit = it == null)) },
+                            label = { it?.name?.localised() ?: "Select unit…" },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    ZillitDateField(
+                        value = editor.dateYmd,
+                        onValueChange = { onEvent(RecceEvent.EditorChanged(dateYmd = it)) },
+                        label = "Date",
+                        errorText = editor.errors[RecceField.Date],
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitTextField(
-                    value = editor.dateYmd,
-                    onValueChange = { onEvent(RecceEvent.EditorChanged(dateYmd = it)) },
-                    label = "Date",
-                    placeholder = "YYYY-MM-DD",
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitTextField(
-                    value = editor.rdv.time,
-                    onValueChange = { onEvent(RecceEvent.EditorChanged(rdv = editor.rdv.copy(time = it))) },
-                    label = "RDV time",
-                    placeholder = "HH:mm",
-                    modifier = Modifier.weight(1f),
-                )
+            RecceTimeField(
+                value = editor.rdv.time,
+                onValueChange = { onEvent(RecceEvent.EditorChanged(rdv = editor.rdv.copy(time = it))) },
+                label = "RDV time",
+                errorText = editor.errors[RecceField.RdvTime],
+                modifier = Modifier.width(RDV_TIME_WIDTH),
+            )
+            RecceLocationControl(
+                stop = editor.rdv,
+                onChange = { onEvent(RecceEvent.EditorChanged(rdv = it)) },
+                preview = editor.rdv.pin?.let { state.previews[it] },
+                previewKnown = editor.rdv.pin?.let { it in state.previews } ?: false,
+                onNeedPreview = { onEvent(RecceEvent.NeedPreview(it)) },
+                onOpenUrl = { onEvent(RecceEvent.OpenUrl(it)) },
+                label = "Rendezvous point",
+                namePlaceholder = "e.g. Notes Coffee — Kings Cross",
+                errorText = editor.errors[RecceField.RdvPlace],
+            )
+            W3WField(
+                value = editor.rdv.w3w,
+                onValueChange = { onEvent(RecceEvent.EditorChanged(rdv = editor.rdv.copy(w3w = it))) },
+                hint = "Display-only: shown on the report and tappable to satnav. The map uses the pin above.",
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
                 ZillitTextField(
                     value = editor.station,
                     onValueChange = { onEvent(RecceEvent.EditorChanged(station = it)) },
                     label = "Nearest station",
-                    modifier = Modifier.weight(TITLE_WEIGHT),
+                    placeholder = "Kings Cross Station",
+                    modifier = Modifier.weight(1f),
                 )
+                Labelled(label = "Weather", modifier = Modifier.weight(WEATHER_WEIGHT)) {
+                    WeatherControl(editor.weather) { onEvent(RecceEvent.EditorChanged(weather = it)) }
+                }
             }
-            LocationFields(
-                label = "Rendezvous point",
-                stop = editor.rdv,
-                onChange = { onEvent(RecceEvent.EditorChanged(rdv = it)) },
-            )
-            WeatherFields(editor.weather) { onEvent(RecceEvent.EditorChanged(weather = it)) }
         }
     }
 }
 
+/** The What3Words input with its red `///` prefix — the web's `W3WControl`. */
 @Composable
-private fun WeatherFields(weather: Weather, onChange: (Weather) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.Bottom) {
+private fun W3WField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    hint: String? = null,
+) {
+    val colors = ZillitTheme.colors
+    Labelled(label = "What3Words — satnav code (optional)", modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .height(W3W_PREFIX_HEIGHT)
+                    .clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
+                    .background(colors.surfaceSunken)
+                    .border(1.dp, colors.border, RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
+                    .padding(horizontal = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                ZillitText(
+                    text = "///",
+                    style = ZillitTheme.typography.label.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 13.sp,
+                    ),
+                    color = RecceColors.w3wRed(),
+                )
+            }
+            ZillitTextField(
+                value = value,
+                onValueChange = { onValueChange(it.removePrefix("///").trim()) },
+                placeholder = "leaned.sushi.port",
+                modifier = Modifier.weight(1f),
+            )
+        }
+        hint?.let { MutedText(it, size = 12.sp) }
+    }
+}
+
+/**
+ * Weather is one free-text string in the model, entered through a builder so
+ * the reader picks °C/°F rather than typing the symbol — the web's
+ * `WeatherControl`.
+ */
+@Composable
+private fun WeatherControl(weather: Weather, onChange: (Weather) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ZillitTextField(
             value = weather.low,
-            onValueChange = { onChange(weather.copy(low = it)) },
-            label = "Weather low",
-            modifier = Modifier.width(NUMBER_WIDTH),
+            onValueChange = { onChange(weather.copy(low = it.filterNumber())) },
+            placeholder = "Min",
+            modifier = Modifier.width(TEMP_WIDTH),
         )
+        MutedText("to")
         ZillitTextField(
             value = weather.high,
-            onValueChange = { onChange(weather.copy(high = it)) },
-            label = "High",
-            modifier = Modifier.width(NUMBER_WIDTH),
+            onValueChange = { onChange(weather.copy(high = it.filterNumber())) },
+            placeholder = "Max",
+            modifier = Modifier.width(TEMP_WIDTH),
         )
         ZillitSelect(
             value = weather.unit,
@@ -193,102 +281,31 @@ private fun WeatherFields(weather: Weather, onChange: (Weather) -> Unit) {
         ZillitTextField(
             value = weather.conditions,
             onValueChange = { onChange(weather.copy(conditions = it)) },
-            label = "Conditions",
-            placeholder = "light cloud",
+            placeholder = "conditions — e.g. light cloud",
             modifier = Modifier.weight(1f),
         )
     }
 }
 
-/**
- * A place: name, address, W3W, and coordinates.
- *
- * The address is a map picker, and one pick fills all three — the recce wire
- * carries the numbers (`lat` and, longitude spelled `long`, on the rendezvous
- * and on every itinerary stop: web `recce/RecceForm.jsx:298-317`, ours
- * `RecceRepositoryImpl.kt:159-176`), so they are persisted rather than merely
- * displayed. The picked venue's name fills the place only when it is still
- * empty — the web's own `place: name || place`
- * (`recce/RecceLocationField.jsx:84-87`) — so a stop already called "Unit
- * base" is never renamed by looking up its address.
- *
- * Typing still works, and both map-less paths stay: the coordinate fields are
- * editable, and a pasted Google Maps link fills them — the web's own trick.
- */
-@Composable
-private fun LocationFields(label: String, stop: StopEditor, onChange: (StopEditor) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            ZillitTextField(
-                value = stop.place,
-                onValueChange = { onChange(stop.copy(place = it)) },
-                label = label,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitLocationField(
-                text = stop.address,
-                onTextChange = { onChange(stop.copy(address = it)) },
-                onPicked = { picked ->
-                    onChange(
-                        stop.copy(
-                            place = stop.place.ifBlank { picked.name },
-                            address = picked.address.ifBlank { picked.name },
-                            latText = picked.lat.toString(),
-                            lngText = picked.lng.toString(),
-                        ),
-                    )
-                },
-                label = "Address",
-                initial = stop.pickedAt(),
-                modifier = Modifier.weight(TITLE_WEIGHT),
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            ZillitTextField(
-                value = stop.w3w,
-                onValueChange = { onChange(stop.copy(w3w = it.removePrefix("///"))) },
-                label = "What3Words",
-                placeholder = "word.word.word",
-                modifier = Modifier.weight(1f),
-            )
-            ZillitTextField(
-                value = stop.latText,
-                onValueChange = { onChange(stop.copy(latText = it)) },
-                label = "Latitude",
-                modifier = Modifier.weight(1f),
-            )
-            ZillitTextField(
-                value = stop.lngText,
-                onValueChange = { onChange(stop.copy(lngText = it)) },
-                label = "Longitude",
-                modifier = Modifier.weight(1f),
-            )
-            // Its own text, so a link typed or pasted in pieces still parses
-            // once whole; the coordinates land in the fields beside it and
-            // the link stays visible as the source until the field is cleared.
-            var link by remember { mutableStateOf("") }
-            ZillitTextField(
-                value = link,
-                onValueChange = { typed ->
-                    link = typed
-                    parseLatLngFromUrl(typed)?.let { (lat, lng) ->
-                        onChange(stop.copy(latText = lat.toString(), lngText = lng.toString()))
-                    }
-                },
-                label = "Paste a Google Maps link",
-                placeholder = "https://www.google.com/maps/@…",
-                helperText = "No coordinates in that link"
-                    .takeIf { link.isNotBlank() && parseLatLngFromUrl(link) == null },
-                modifier = Modifier.weight(TITLE_WEIGHT),
-            )
+/** A temperature: digits, one sign, one point — what `InputNumber` lets through. */
+private fun String.filterNumber(): String = buildString {
+    this@filterNumber.forEachIndexed { index, c ->
+        when {
+            c.isDigit() -> append(c)
+            c == '-' && index == 0 -> append(c)
+            c == '.' && !contains('.') -> append(c)
         }
     }
 }
 
+// ----------------------------------------------------------- 2 · schedule
+
 @Composable
-private fun ScheduleSection(editor: RecceEditor, onEvent: (RecceEvent) -> Unit) {
-    ZillitSectionCard(
-        title = "2. Schedule",
+private fun ScheduleSection(state: RecceUiState, editor: RecceEditor, onEvent: (RecceEvent) -> Unit) {
+    FormSection(
+        n = 2,
+        title = "Schedule",
+        description = "Each stop carries its own What3Words. Recipients tap it to route to satnav.",
         action = {
             ZillitButton(
                 text = "Add stop",
@@ -299,141 +316,187 @@ private fun ScheduleSection(editor: RecceEditor, onEvent: (RecceEvent) -> Unit) 
             )
         },
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ZillitTextField(
                 value = editor.crewNote,
                 onValueChange = { onEvent(RecceEvent.EditorChanged(crewNote = it)) },
-                label = "Crew note",
-                placeholder = "Shown under the schedule header",
+                label = "Crew note (optional)",
+                placeholder = "All crew to drive themselves to location independently",
+                helperText = "Shown under the schedule header, " +
+                    "e.g. “All crew to drive themselves to location independently”.",
                 modifier = Modifier.fillMaxWidth(),
             )
             editor.stops.forEachIndexed { index, stop ->
-                StopCard(index, stop, editor.stops.size, onEvent)
+                StopCard(state, index, stop, editor.stops.size, onEvent)
             }
+            // Add another stop without scrolling back up to the section header.
+            DashedAddRow(text = "Add stop", onClick = { onEvent(RecceEvent.AddStop) })
         }
     }
 }
 
 @Composable
-private fun StopCard(index: Int, stop: StopEditor, count: Int, onEvent: (RecceEvent) -> Unit) {
+private fun StopCard(state: RecceUiState, index: Int, stop: StopEditor, count: Int, onEvent: (RecceEvent) -> Unit) {
+    val colors = ZillitTheme.colors
     val change = { updated: StopEditor -> onEvent(RecceEvent.StopChanged(index, updated)) }
-    ZillitSectionCard(title = "Stop ${index + 1}") {
-        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.surfaceSunken)
+            .border(1.dp, colors.border, RoundedCornerShape(8.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+            RecceTimeField(
+                value = stop.time,
+                onValueChange = { change(stop.copy(time = it)) },
+                label = "Time",
+                modifier = Modifier.width(STOP_TIME_WIDTH),
+            )
+            Labelled(label = "Type", modifier = Modifier.width(KIND_WIDTH)) {
+                ZillitSelect(
+                    value = stop.kind,
+                    options = StopKind.entries,
+                    onSelect = { change(stop.copy(kind = it)) },
+                    label = { it.wire },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.weight(1f))
             Row(
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.Bottom,
+                modifier = Modifier.padding(top = ACTIONS_TOP),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                ZillitTextField(
-                    value = stop.time,
-                    onValueChange = { change(stop.copy(time = it)) },
-                    label = "Time",
-                    placeholder = "HH:mm",
-                    modifier = Modifier.width(NUMBER_WIDTH),
-                )
-                ZillitTextField(
-                    value = stop.endTime,
-                    onValueChange = { change(stop.copy(endTime = it)) },
-                    label = "End time",
-                    placeholder = "HH:mm",
-                    modifier = Modifier.width(NUMBER_WIDTH),
-                )
-                Column(Modifier.width(KIND_WIDTH)) {
-                    ZillitText(
-                        text = "Type",
-                        style = ZillitTheme.typography.bodySmall,
-                        color = ZillitTheme.colors.textMuted,
-                    )
-                    ZillitSelect(
-                        value = stop.kind,
-                        options = StopKind.entries,
-                        onSelect = { change(stop.copy(kind = it)) },
-                        label = { it.wire },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                ZillitTextField(
-                    value = stop.contact,
-                    onValueChange = { change(stop.copy(contact = it)) },
-                    label = "Location contact",
-                    placeholder = "Name - phone",
-                    modifier = Modifier.weight(1f),
-                )
                 ZillitIconButton(
-                    icon = ZillitIcons.ArrowLeft,
-                    contentDescription = "Move up",
+                    icon = ZillitIcons.ChevronUp,
+                    contentDescription = "Move stop up",
                     onClick = { onEvent(RecceEvent.MoveStop(index, -1)) },
                     enabled = index > 0,
                 )
                 ZillitIconButton(
-                    icon = ZillitIcons.ArrowRight,
-                    contentDescription = "Move down",
+                    icon = ZillitIcons.ChevronDown,
+                    contentDescription = "Move stop down",
                     onClick = { onEvent(RecceEvent.MoveStop(index, 1)) },
                     enabled = index < count - 1,
                 )
-                ZillitIconButton(
-                    icon = ZillitIcons.Trash,
-                    contentDescription = "Remove stop",
-                    onClick = { onEvent(RecceEvent.RemoveStop(index)) },
-                )
-            }
-            LocationFields(label = "Location", stop = stop, onChange = change)
-            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitTextField(
-                    value = stop.description,
-                    onValueChange = { change(stop.copy(description = it)) },
-                    label = "Notes",
-                    singleLine = false,
-                    modifier = Modifier.weight(1f),
-                )
-                ZillitTextField(
-                    value = stop.travel,
-                    onValueChange = { change(stop.copy(travel = it)) },
-                    label = "Travel note to next stop",
-                    modifier = Modifier.weight(1f),
-                )
+                RemoveButton("Remove stop") { onEvent(RecceEvent.RemoveStop(index)) }
             }
         }
+        RecceLocationControl(
+            stop = stop,
+            onChange = change,
+            preview = stop.pin?.let { state.previews[it] },
+            previewKnown = stop.pin?.let { it in state.previews } ?: false,
+            onNeedPreview = { onEvent(RecceEvent.NeedPreview(it)) },
+            onOpenUrl = { onEvent(RecceEvent.OpenUrl(it)) },
+        )
+        W3WField(
+            value = stop.w3w,
+            onValueChange = { change(stop.copy(w3w = it)) },
+            modifier = Modifier.widthIn(max = W3W_MAX_WIDTH),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+            ZillitTextField(
+                value = stop.contact,
+                onValueChange = { change(stop.copy(contact = it)) },
+                label = "Location contact (optional)",
+                placeholder = "e.g. James Crawley - 07760660009",
+                modifier = Modifier.weight(1f),
+            )
+            RecceTimeField(
+                value = stop.endTime,
+                onValueChange = { change(stop.copy(endTime = it)) },
+                label = "End time (optional)",
+                modifier = Modifier.width(KIND_WIDTH),
+            )
+        }
+        ZillitTextField(
+            value = stop.description,
+            onValueChange = { change(stop.copy(description = it)) },
+            label = "Notes (optional)",
+            placeholder = "Anything the crew should know at this stop",
+            singleLine = false,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        ZillitTextField(
+            value = stop.travel,
+            onValueChange = { change(stop.copy(travel = it)) },
+            label = "Travel note to next stop",
+            placeholder = "e.g. Travel on the tube from Temple to Monument",
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
+/** The bordered trash button beside a stop's header — the web's outlined remove. */
+@Composable
+private fun RemoveButton(description: String, onClick: () -> Unit) {
+    val colors = ZillitTheme.colors
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.border, RoundedCornerShape(6.dp)),
+    ) {
+        ZillitIconButton(icon = ZillitIcons.Trash, contentDescription = description, onClick = onClick)
+    }
+}
+
+// ---------------------------------------------------------- 3 · personnel
+
 @Composable
 private fun PersonnelSection(crew: List<RecceCrewMember>, editor: RecceEditor, onEvent: (RecceEvent) -> Unit) {
-    ZillitSectionCard(
-        title = "3. Recce personnel",
+    FormSection(
+        n = 3,
+        title = "Recce personnel",
+        description = "Everyone on the scout, with contact numbers.",
         action = {
-            ZillitButton(
-                text = "Add person",
-                onClick = { onEvent(RecceEvent.AddPerson) },
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.Add,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val available = crew.filter { member -> editor.personnel.none { it.userId == member.userId } }
+                if (crew.isNotEmpty()) {
+                    CrewPicker(available) { onEvent(RecceEvent.AddCrewMember(it.userId)) }
+                }
+                ZillitButton(
+                    text = "Add person",
+                    onClick = { onEvent(RecceEvent.AddPerson) },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Add,
+                )
+            }
         },
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-            val available = crew.filter { member -> editor.personnel.none { it.userId == member.userId } }
-            if (available.isNotEmpty()) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-                ) {
+        val colors = ZillitTheme.colors
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .border(1.dp, colors.border, RoundedCornerShape(8.dp)),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colors.surfaceSunken)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf("Name", "Role", "Email", "Contact", "Note").forEach { column ->
                     ZillitText(
-                        text = "Add from project crew",
-                        style = ZillitTheme.typography.bodySmall,
-                        color = ZillitTheme.colors.textMuted,
-                    )
-                    ZillitSelect(
-                        value = null,
-                        options = listOf<RecceCrewMember?>(null) + available,
-                        onSelect = { it?.let { member -> onEvent(RecceEvent.AddCrewMember(member.userId)) } },
-                        label = { member ->
-                            member?.let { "${it.name} · ${it.role}".trimEnd(' ', '·') } ?: "Pick a crew member…"
-                        },
-                        modifier = Modifier.width(CREW_WIDTH),
+                        text = column,
+                        style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                        color = colors.textSecondary,
+                        modifier = Modifier.weight(1f),
                     )
                 }
+                Spacer(Modifier.width(ROW_ACTION_WIDTH))
             }
-            editor.personnel.forEachIndexed { index, person -> PersonRow(index, person, onEvent) }
+            editor.personnel.forEachIndexed { index, person ->
+                Box(Modifier.fillMaxWidth().height(1.dp).background(colors.divider))
+                PersonRow(index, person, onEvent)
+            }
         }
     }
 }
@@ -441,57 +504,204 @@ private fun PersonnelSection(crew: List<RecceCrewMember>, editor: RecceEditor, o
 @Composable
 private fun PersonRow(index: Int, person: PersonEditor, onEvent: (RecceEvent) -> Unit) {
     val change = { updated: PersonEditor -> onEvent(RecceEvent.PersonChanged(index, updated)) }
-    Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm), verticalAlignment = Alignment.Bottom) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         ZillitTextField(
             value = person.name,
             onValueChange = { change(person.copy(name = it)) },
-            label = "Name",
+            placeholder = "Full name",
             modifier = Modifier.weight(1f),
         )
         ZillitTextField(
             value = person.role,
             onValueChange = { change(person.copy(role = it)) },
-            label = "Role",
+            placeholder = "Role",
             modifier = Modifier.weight(1f),
         )
         ZillitTextField(
             value = person.email,
             onValueChange = { change(person.copy(email = it)) },
-            label = "Email",
+            placeholder = "name@email.com",
             modifier = Modifier.weight(1f),
         )
         ZillitTextField(
             value = person.contact,
             onValueChange = { change(person.copy(contact = it)) },
-            label = "Contact",
+            placeholder = "07xxx xxx xxx",
             modifier = Modifier.weight(1f),
         )
         ZillitTextField(
             value = person.note,
             onValueChange = { change(person.copy(note = it)) },
-            label = "Note",
+            placeholder = "e.g. Joining at Waterloo",
             modifier = Modifier.weight(1f),
         )
-        ZillitIconButton(
-            icon = ZillitIcons.Trash,
-            contentDescription = "Remove person",
-            onClick = { onEvent(RecceEvent.RemovePerson(index)) },
-        )
+        Box(Modifier.width(ROW_ACTION_WIDTH), contentAlignment = Alignment.Center) {
+            ZillitIconButton(
+                icon = ZillitIcons.Trash,
+                contentDescription = "Remove person",
+                onClick = { onEvent(RecceEvent.RemovePerson(index)) },
+            )
+        }
     }
 }
 
-/** The web's `parseLatLngFromUrl`, shared with Transportation. */
-internal fun parseLatLngFromUrl(url: String): Pair<Double, Double>? = MapsLink.parseLatLng(url)
-
-/** Where the map should open: where this stop already is, when it has been placed. */
-private fun StopEditor.pickedAt(): PickedLocation? {
-    val at = latText.trim().toDoubleOrNull() ?: return null
-    val to = lngText.trim().toDoubleOrNull() ?: return null
-    return PickedLocation(name = place, address = address, lat = at, lng = to)
+/**
+ * "+ Add from project crew…" — a searchable dropdown over the crew not yet
+ * on the list, each option two lines (name; designation · contact), the
+ * web's `recce-crew-select`: on-brand outline and tint so it reads as a
+ * tappable picker rather than a greyed-out field.
+ */
+@Composable
+private fun CrewPicker(available: List<RecceCrewMember>, onPick: (RecceCrewMember) -> Unit) {
+    val colors = ZillitTheme.colors
+    var open by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    Box {
+        Row(
+            modifier = Modifier
+                .width(CREW_PICKER_WIDTH)
+                .height(32.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(colors.accentSoft)
+                .border(1.dp, if (hovered) RecceColors.BrandStrong else RecceColors.Brand, RoundedCornerShape(8.dp))
+                .hoverable(interaction)
+                .clickable {
+                    query = ""
+                    open = true
+                }
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ZillitText(
+                text = "+ Add from project crew…",
+                style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.accentText,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+            ZillitIcon(icon = ZillitIcons.ChevronDown, tint = colors.accentText, size = 14.dp)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Column(Modifier.width(CREW_PICKER_WIDTH).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                ZillitTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = "Search name, designation or number",
+                    leadingIcon = ZillitIcons.Search,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                val needle = query.trim()
+                val matches = available.filter { member ->
+                    needle.isEmpty() || listOf(member.name, member.role.localised(), member.contact)
+                        .any { it.contains(needle, ignoreCase = true) }
+                }
+                if (matches.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                        MutedText(if (available.isEmpty()) "Everyone is already on the list" else "No crew match")
+                    }
+                }
+                // A FIXED height: a lazy list inside a menu measures against infinity otherwise.
+                LazyColumn(Modifier.fillMaxWidth().height(CREW_LIST_HEIGHT)) {
+                    items(matches.size) { index ->
+                        val member = matches[index]
+                        CrewOption(member) {
+                            onPick(member)
+                            open = false
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
-private val NUMBER_WIDTH = 96.dp
-private val UNIT_WIDTH = 80.dp
-private val KIND_WIDTH = 140.dp
-private val CREW_WIDTH = 320.dp
-private const val TITLE_WEIGHT = 2f
+@Composable
+private fun CrewOption(member: RecceCrewMember, onClick: () -> Unit) {
+    val colors = ZillitTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
+    val meta = listOf(member.role.localised(), member.contact).filter { it.isNotBlank() }.joinToString(" · ")
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (hovered) colors.surfaceHover else colors.surfaceRaised)
+            .hoverable(interaction)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+        ZillitText(
+            text = member.name,
+            style = ZillitTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = colors.textPrimary,
+            maxLines = 1,
+        )
+        if (meta.isNotBlank()) MutedText(meta, size = 12.sp)
+    }
+}
+
+// --------------------------------------------------------------- footer
+
+/** The sticky footer: the counter, Cancel, Save as Draft, Publish recce. */
+@Composable
+private fun Footer(editor: RecceEditor, onEvent: (RecceEvent) -> Unit) {
+    val colors = ZillitTheme.colors
+    Column {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+        Box(Modifier.fillMaxWidth().background(colors.surface).padding(horizontal = 28.dp, vertical = 12.dp)) {
+            Row(
+                modifier = Modifier.widthIn(max = FOOTER_WIDTH).fillMaxWidth().align(Alignment.Center),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ZillitText(
+                    text = "${editor.stopCount} stops · ${editor.personnel.size} personnel",
+                    style = ZillitTheme.typography.bodyMedium,
+                    color = colors.textMuted,
+                )
+                Spacer(Modifier.weight(1f))
+                ZillitButton(
+                    text = "Cancel",
+                    onClick = { onEvent(RecceEvent.RequestCancel) },
+                    variant = ButtonVariant.Tertiary,
+                    enabled = editor.saving == null,
+                )
+                ZillitButton(
+                    text = "Save as Draft",
+                    onClick = { onEvent(RecceEvent.SaveDraft) },
+                    variant = ButtonVariant.Secondary,
+                    loading = editor.saving == RecceStatus.Draft,
+                    enabled = editor.saving == null,
+                )
+                ZillitButton(
+                    text = "Publish recce",
+                    onClick = { onEvent(RecceEvent.Publish) },
+                    leadingIcon = ZillitIcons.Check,
+                    loading = editor.saving == RecceStatus.Published,
+                    enabled = editor.saving == null,
+                )
+            }
+        }
+    }
+}
+
+private val RDV_TIME_WIDTH = 160.dp
+private val W3W_PREFIX_HEIGHT = 32.dp
+private val TEMP_WIDTH = 84.dp
+private val UNIT_WIDTH = 90.dp
+private val STOP_TIME_WIDTH = 160.dp
+private val ACTIONS_TOP = 20.dp
+private val KIND_WIDTH = 170.dp
+private val W3W_MAX_WIDTH = 360.dp
+private val ROW_ACTION_WIDTH = 36.dp
+private val CREW_PICKER_WIDTH = 260.dp
+private val CREW_LIST_HEIGHT = 220.dp
+private val FOOTER_WIDTH = 1200.dp
+private const val WEATHER_WEIGHT = 1.6f

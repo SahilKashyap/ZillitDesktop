@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.calls.data.livekit
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.calls.domain.CallDirection
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallParticipant
@@ -488,9 +489,10 @@ fun readLiveKitRoster(data: JsonElement?, callerId: String): List<CallParticipan
             // Omitted when not on hold — read absent as false, never unknown.
             onHold = state.bool("onHold") ?: false,
             isGuest = state.bool("isGuest") ?: userId.startsWith(GUEST_PREFIX),
-            // Spellings vary by backend; the web reads all three.
-            designation = state.text("designationName") ?: state.text("designation_name")
-                ?: state.text("designation").orEmpty(),
+            // Spellings vary by backend; the web reads all three. A label key
+            // (`gaffer_label`) on every one of them, so it goes through the dictionary.
+            designation = (state.text("designationName") ?: state.text("designation_name")
+                ?: state.text("designation").orEmpty()).localised(),
         )
     }
 }

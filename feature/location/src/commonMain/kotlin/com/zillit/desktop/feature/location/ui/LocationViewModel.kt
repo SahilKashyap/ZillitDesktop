@@ -8,12 +8,15 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.location.domain.GroupBy
 import com.zillit.desktop.feature.location.domain.Folders
+import com.zillit.desktop.feature.location.domain.LocationBadges
 import com.zillit.desktop.feature.location.domain.LocationFolder
+import com.zillit.desktop.feature.location.domain.LocationInfo
 import com.zillit.desktop.feature.location.domain.LocationMedia
 import com.zillit.desktop.feature.location.domain.LocationPick
 import com.zillit.desktop.feature.location.domain.LocationRepository
 import com.zillit.desktop.feature.location.domain.LocationStatus
 import com.zillit.desktop.feature.location.domain.LocationTransfer
+import com.zillit.desktop.feature.location.domain.LocationUnread
 import com.zillit.desktop.feature.location.domain.LocationViewer
 import com.zillit.desktop.feature.location.domain.MediaAttachment
 import kotlinx.coroutines.flow.conflate
@@ -27,6 +30,7 @@ class LocationViewModel(
     private val transfer: LocationTransfer,
     private val resolveViewer: () -> LocationViewer,
     private val nowMillis: () -> Long,
+    private val badges: LocationBadges = LocationBadges.None,
 ) : ZillitViewModel<LocationUiState, LocationEvent, LocationEffect>(LocationUiState()) {
 
     fun start() {
@@ -55,6 +59,15 @@ class LocationViewModel(
             // raises a spinner, which is right when opening a record and
             // wrong for every line that arrives after.
             repository.discussionRefreshes.conflate().collect { refreshDiscussion() }
+        }
+        launch {
+            badges.leaves.collect { leaves ->
+                setState { copy(unread = LocationUnread(leaves)) }
+                // A comment landing on the open record is read as it lands —
+                // the web re-reads on every line while the thread is on screen.
+                val open = currentState.viewing?.id ?: return@collect
+                if (LocationUnread(leaves).record(open) > 0) badges.readRecord(open)
+            }
         }
     }
 
@@ -118,6 +131,8 @@ class LocationViewModel(
             LocationEvent.PdfSelected -> pdfSelected()
             is LocationEvent.View -> {
                 setState { copy(viewing = event.record, discussion = emptyList(), discussionDraft = "") }
+                // The record's thread on screen reads its comment rows.
+                if (currentState.unread.record(event.record.id) > 0) badges.readRecord(event.record.id)
                 loadDiscussion(event.record.id)
             }
             LocationEvent.CloseView -> setState {
@@ -161,7 +176,20 @@ class LocationViewModel(
         launch {
             val rows = repository.info(state.value.status).orError()
             setState { copy(loading = false, info = rows ?: info) }
+            if (rows != null) sweepOrphans(rows)
         }
+    }
+
+    /**
+     * Rows of the loaded list filed under places no folder shows are read —
+     * a deleted or renamed location's rows would badge the tab for good.
+     */
+    private fun sweepOrphans(rows: List<LocationInfo>) {
+        val s = currentState
+        s.unread.orphans(s.status, rows.map { it.location })
+            .map { LocationPick(it.location, it.scene, it.episode) }
+            .distinct()
+            .forEach { badges.readGallery(s.status, it) }
     }
 
     /**
@@ -184,6 +212,19 @@ class LocationViewModel(
     private fun openGallery(pick: LocationPick, closeIfEmpty: Boolean = false) {
         val s = state.value
         setState { copy(gallery = OpenGallery(pick), loading = true) }
+        // The gallery on screen is the folder read — Android's `markReadFolder`
+        // on the library page, scoped to the place, scene and episode — plus
+        // the place's rows under scenes no gallery lists any more, which
+        // would otherwise badge the folder for good (see `strayScenes`).
+        if (!closeIfEmpty) {
+            if (s.unread.pick(s.status, pick) > 0) badges.readGallery(s.status, pick)
+            val listed = s.info.filter { it.location.trim() == pick.location.trim() }
+                .flatMap { it.sceneNumbers }
+                .map(Folders::normaliseScene)
+            s.unread.strayScenes(s.status, pick.location, listed).forEach { stray ->
+                badges.readGallery(s.status, LocationPick(pick.location, stray))
+            }
+        }
         launch {
             val rows = repository.media(
                 status = s.status,

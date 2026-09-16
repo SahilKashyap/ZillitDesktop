@@ -1,6 +1,8 @@
 package com.zillit.desktop.feature.externalusers
 
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.externalusers.domain.Creator
+import com.zillit.desktop.feature.externalusers.domain.DialCode
 import com.zillit.desktop.feature.externalusers.domain.ExternalUser
 import com.zillit.desktop.feature.externalusers.domain.ExternalUserBucket
 import com.zillit.desktop.feature.externalusers.domain.ExternalUsersRepository
@@ -65,13 +67,57 @@ class ExternalUsersViewModelTest {
         repository: FakeRepository,
         viewer: ExternalUsersViewer = poster,
         projectId: () -> String? = { "prod-a" },
+        crew: List<Creator> = emptyList(),
+        dialCodes: List<DialCode> = emptyList(),
     ) = ExternalUsersViewModel(
         repository = repository,
         resolveViewer = { viewer },
         loadDepartments = { emptyList() },
         nowMillis = { 0L },
         projectId = projectId,
+        loadCrew = { crew },
+        loadDialCodes = { dialCodes },
     )
+
+    @Test
+    fun `start names the creator from the crew and keeps the dial codes across a production switch`() = runTest {
+        val repository = FakeRepository()
+        repository.answers += listOf(rowA)
+        repository.answers += emptyList<ExternalUser>()
+        var project = "prod-a"
+        val viewModel = viewModel(
+            repository,
+            projectId = { project },
+            crew = listOf(Creator("me", "Sam Coordinator", "Production Coordinator")),
+            dialCodes = listOf(DialCode("United Kingdom", "+44", "GB")),
+        )
+
+        viewModel.start()
+        runCurrent()
+        assertEquals("Sam Coordinator", viewModel.state.value.creatorOf(rowA)?.fullName)
+        assertEquals("+44", viewModel.state.value.dialCodes.single().dialCode)
+
+        project = "prod-b"
+        viewModel.onProjectChanged()
+        // Wiped with the roster: the crew is the production's. Kept: the codes are the world's.
+        assertNull(viewModel.state.value.creatorOf(rowA))
+        assertEquals(1, viewModel.state.value.dialCodes.size)
+    }
+
+    @Test
+    fun `a clicked address becomes a compose effect, a blank one nothing`() = runTest {
+        val repository = FakeRepository()
+        val viewModel = viewModel(repository)
+        val effects = mutableListOf<ExternalUsersEffect>()
+        val collector = launch { viewModel.effects.collect { effects += it } }
+
+        viewModel.onEvent(ExternalUsersEvent.WriteTo("ops@griphire.example"))
+        viewModel.onEvent(ExternalUsersEvent.WriteTo("  "))
+        runCurrent()
+
+        assertEquals(listOf<ExternalUsersEffect>(ExternalUsersEffect.ComposeEmail("ops@griphire.example")), effects)
+        collector.cancel()
+    }
 
     @Test
     fun `switching productions wipes the roster before the refetch answers`() = runTest {

@@ -34,6 +34,8 @@ import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
 import com.zillit.desktop.feature.documentdistribution.domain.PublishTarget
 import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettings
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettingsPatch
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistTransfer
 import com.zillit.desktop.feature.documentdistribution.domain.HistoryPage
@@ -91,10 +93,15 @@ class DocDistRepositoryImpl(
     private val isS3Storage: () -> Boolean = { true },
     /** Injected for the storage key: common code has no UUID of its own. */
     private val newUniqueId: () -> String = { "" },
+    /** This device's id, to drop the echo of its own watermark-settings save. */
+    selfDeviceId: () -> String? = { null },
 ) : DocDistRepository {
 
     /** See [DocDistRepository.refreshes] and [docDistRefreshes]. */
     override val refreshes: Flow<DocDistRefresh> = docDistRefreshes(bus)
+
+    /** See [DocDistRepository.watermarkSettingsUpdates] and [watermarkSettingsUpdates]. */
+    override val watermarkSettingsUpdates: Flow<WatermarkSettings> = watermarkSettingsUpdates(bus, selfDeviceId)
 
     private val base = "${config.baseUrl(ZillitService.DocDistribution)}/api/v2/document-distribution"
 
@@ -636,6 +643,30 @@ class DocDistRepositoryImpl(
             }.toMap()
         }
     }
+
+    // -- watermark settings ------------------------------------------------
+
+    override suspend fun watermarkSettings(): ZillitResult<WatermarkSettings> =
+        get("$base/watermark-settings", WatermarkSettingsDto.serializer()).map { it.toDomain() }
+
+    /**
+     * Only the fields in the patch go on the wire: an absent key keeps the
+     * server's value, a present one replaces it, and the upsert is atomic per
+     * field. The answer is the settings after the save, which the caller
+     * takes over its cache rather than refetching.
+     */
+    override suspend fun updateWatermarkSettings(patch: WatermarkSettingsPatch): ZillitResult<WatermarkSettings> =
+        apiClient.request(
+            verb = HttpVerb.Put,
+            url = "$base/watermark-settings",
+            serializer = WatermarkSettingsDto.serializer(),
+            module = RequestModule.ProjectUser,
+            body = buildJsonObject {
+                patch.size?.let { put("size", JsonPrimitive(it.wire)) }
+                patch.color?.let { put("color", JsonPrimitive(it)) }
+                patch.opacity?.let { put("opacity", JsonPrimitive(it)) }
+            },
+        ).map { it.toDomain() }
 
     // -- publishing --------------------------------------------------------
 

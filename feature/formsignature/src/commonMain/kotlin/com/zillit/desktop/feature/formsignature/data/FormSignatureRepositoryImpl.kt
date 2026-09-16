@@ -1,17 +1,19 @@
 package com.zillit.desktop.feature.formsignature.data
 
+import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.feature.formsignature.domain.ChatUnit
 import com.zillit.desktop.feature.formsignature.domain.DocumentSigner
 import com.zillit.desktop.feature.formsignature.domain.FormSignRefresh
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureRepository
-import com.zillit.desktop.feature.formsignature.domain.HistoryEntry
 import com.zillit.desktop.feature.formsignature.domain.SignDocument
 import com.zillit.desktop.feature.formsignature.domain.SignDocumentTab
 import com.zillit.desktop.feature.formsignature.domain.SignatureBlock
@@ -24,18 +26,16 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.transform
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 /**
  * The Documents & Signature surface, all on the documents service
- * (`FORMS_BASE_URL`), transcribed from the web's V2 tool.
+ * (`FORMS_BASE_URL`) except the discussion room, transcribed from the web's
+ * V2 tool (`api/formSignatureApi/formSignatureApi.js`).
  *
  * ## Signing sends a file, not marks
  *
@@ -62,6 +62,9 @@ class FormSignatureRepositoryImpl(
     // develop, 2026-08-13.
     private val base = config.apiV2(ZillitService.Forms).trimEnd('/')
 
+    /** The discussion room lives on the unit host, like every other tool's board. */
+    private val units = config.apiV2(ZillitService.Units).trimEnd('/')
+
     /**
      * See [FormSignatureRepository.refreshes]. `signed`/`counter:signed`
      * fan out to both kinds, as both web lists refetch on them. Conflated:
@@ -82,31 +85,32 @@ class FormSignatureRepositoryImpl(
             module = RequestModule.ProjectUser,
         ).map { rows -> rows.mapNotNull { it.toDomain() } }
 
-    override suspend fun selfAssign(documentId: String): ZillitResult<Unit> = apiClient.request(
+    /** The answer's `message` is what the web pops in its success modal. */
+    override suspend fun selfAssign(documentId: String): ZillitResult<String> = written(
         verb = HttpVerb.Post,
         url = "$base/sign-document/general/self-assign",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
         body = buildJsonObject { put("document_id", documentId) },
-    ).map { }
+    ).map { envelope -> envelope.message.orEmpty() }
 
     override suspend fun deleteStandardForm(documentId: String): ZillitResult<Unit> =
-        apiClient.request(
+        write(
             verb = HttpVerb.Delete,
             url = "$base/sign-document/general-document/$documentId",
-            serializer = JsonElement.serializer(),
-            module = RequestModule.ProjectUser,
-        ).map { }
+            body = null,
+        )
 
+    /**
+     * `generatePostPayload(isArray = true, …)` — one document in a
+     * `documents[]`, `stakeholder: 'internal'` (the web's state default, never
+     * changed on this screen), `skip_counter_sign: false`, `pre_signed: false`,
+     * an empty `note` (the web's textarea is commented out).
+     */
     override suspend fun addStandardForm(
         document: StoredDocument,
         type: StandardFormType,
-        note: String,
-    ): ZillitResult<Unit> = apiClient.request(
+    ): ZillitResult<Unit> = write(
         verb = HttpVerb.Post,
         url = "$base/sign-document/general",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
         body = buildJsonObject {
             put(
                 "documents",
@@ -114,46 +118,17 @@ class FormSignatureRepositoryImpl(
                     add(
                         buildJsonObject {
                             put("document_type", type.wire)
-                            put("stakeholder", "")
+                            put("stakeholder", STAKEHOLDER_INTERNAL)
                             put("skip_counter_sign", false)
                             put("pre_signed", false)
                             put("document", document.toWire())
-                            put("note", note)
+                            put("note", "")
                         },
                     )
                 },
             )
         },
-    ).map { }
-
-    /**
-     * History arrives in more than one shape across this backend family —
-     * sometimes a bare array, sometimes an object holding one. Parsed
-     * tolerantly: whatever list can be found is rendered, and an
-     * unrecognisable payload is an empty history, not an error page.
-     */
-    override suspend fun history(documentId: String): ZillitResult<List<HistoryEntry>> =
-        apiClient.request(
-            verb = HttpVerb.Get,
-            url = "$base/sign-document/sent-document/$documentId/history",
-            serializer = JsonElement.serializer(),
-            module = RequestModule.ProjectUser,
-        ).map { element -> historyEntries(element) }
-
-    private fun historyEntries(element: JsonElement): List<HistoryEntry> {
-        val array: JsonArray = when {
-            element is JsonArray -> element
-            element is kotlinx.serialization.json.JsonObject -> {
-                element.values.firstOrNull { it is JsonArray }?.jsonArray ?: return emptyList()
-            }
-            else -> return emptyList()
-        }
-        return array.mapNotNull { row ->
-            runCatching {
-                json.decodeFromJsonElement(HistoryEntryDto.serializer(), row.jsonObject)
-            }.getOrNull()?.toDomain()
-        }
-    }
+    )
 
     override suspend fun documents(tab: SignDocumentTab): ZillitResult<List<SignDocument>> =
         apiClient.request(
@@ -165,14 +140,13 @@ class FormSignatureRepositoryImpl(
 
     override suspend fun sendForSignature(
         document: StoredDocument,
+        signingDocument: StoredDocument?,
         signers: List<DocumentSigner>,
         onlySignatureRequired: Boolean,
         userSignatureRequired: Boolean,
-    ): ZillitResult<Unit> = apiClient.request(
+    ): ZillitResult<Unit> = write(
         verb = HttpVerb.Post,
         url = "$base/document",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
         body = buildJsonObject {
             put("document", document.toWire())
             // The union of every signer's boxes, as the web sends it.
@@ -204,63 +178,38 @@ class FormSignatureRepositoryImpl(
             )
             put("only_signature_required", onlySignatureRequired)
             put("user_signature_required", userSignatureRequired)
+            // The sender signed first: their stamped copy rides beside the original.
+            signingDocument?.let { put("signing_document", it.toWire()) }
         },
-    ).map { }
-
-    /**
-     * `POST /v2/sign-document/send-document` with the *whole* signer list.
-     *
-     * The route's name says "send", but on an existing document it is how the
-     * signer list is edited — adding one means posting everyone.
-     */
-    override suspend fun updateSigners(
-        documentId: String,
-        signerIds: List<String>,
-    ): ZillitResult<Unit> = apiClient.envelope(
-        verb = HttpVerb.Post,
-        url = "$base/sign-document/send-document",
-        module = RequestModule.ProjectUser,
-        body = buildJsonObject {
-            put("document_id", JsonPrimitive(documentId))
-            put(
-                "signers",
-                buildJsonArray { signerIds.distinct().forEach { add(JsonPrimitive(it)) } },
-            )
-        },
-    ).map { }
+    )
 
     override suspend fun deleteDocument(documentId: String): ZillitResult<Unit> =
-        apiClient.request(
+        write(
             verb = HttpVerb.Delete,
             url = "$base/document/$documentId",
-            serializer = JsonElement.serializer(),
-            module = RequestModule.ProjectUser,
-        ).map { }
+            body = null,
+        )
 
     override suspend fun signDocument(
         documentId: String,
         signed: StoredDocument,
-    ): ZillitResult<Unit> = apiClient.request(
+    ): ZillitResult<Unit> = write(
         verb = HttpVerb.Put,
         url = "$base/document/$documentId/sign",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
         body = buildJsonObject { put("document", signed.toWire()) },
-    ).map { }
+    )
 
     override suspend fun signStandardForm(
         documentId: String,
         signed: StoredDocument,
-    ): ZillitResult<Unit> = apiClient.request(
+    ): ZillitResult<Unit> = write(
         verb = HttpVerb.Post,
         url = "$base/sign-document/received-document/sign",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
         body = buildJsonObject {
             put("document_id", documentId)
             put("document", signed.toWire())
         },
-    ).map { }
+    )
 
     override suspend fun signatures(): ZillitResult<List<SignatureBlock>> = apiClient.request(
         verb = HttpVerb.Get,
@@ -274,11 +223,9 @@ class FormSignatureRepositoryImpl(
         name: String,
         isSignature: Boolean,
         existingId: String?,
-    ): ZillitResult<Unit> = apiClient.request(
+    ): ZillitResult<Unit> = write(
         verb = HttpVerb.Post,
         url = "$base/signature",
-        serializer = JsonElement.serializer(),
-        module = RequestModule.ProjectUser,
         body = buildJsonObject {
             existingId?.let { put("signature_id", it) }
             // The typed name overwrites the file name on the descriptor —
@@ -286,15 +233,14 @@ class FormSignatureRepositoryImpl(
             put("signature", image.copy(name = name).toSignatureWire())
             put("is_signature", isSignature)
         },
-    ).map { }
+    )
 
     override suspend fun deleteSignature(signatureId: String): ZillitResult<Unit> =
-        apiClient.request(
+        write(
             verb = HttpVerb.Delete,
             url = "$base/signature/$signatureId",
-            serializer = JsonElement.serializer(),
-            module = RequestModule.ProjectUser,
-        ).map { }
+            body = null,
+        )
 
     override suspend fun signerOptions(): ZillitResult<List<SignerOption>> = apiClient.request(
         verb = HttpVerb.Get,
@@ -303,9 +249,57 @@ class FormSignatureRepositoryImpl(
         module = RequestModule.ProjectUser,
     ).map { rows -> rows.mapNotNull { it.toDomain() } }
 
+    /**
+     * `GET form-signature/unit` on the unit host answers a one-element array
+     * (the web reads `data[0]`). Tolerant of a bare object too.
+     */
+    override suspend fun chatUnit(): ZillitResult<ChatUnit?> = apiClient.request(
+        verb = HttpVerb.Get,
+        url = "$units/form-signature/unit",
+        serializer = JsonElement.serializer(),
+        module = RequestModule.ProjectUser,
+    ).map { element ->
+        val row = when (element) {
+            is kotlinx.serialization.json.JsonArray -> element.firstOrNull()
+            is kotlinx.serialization.json.JsonObject -> element
+            else -> null
+        } ?: return@map null
+        runCatching { json.decodeFromJsonElement(ChatUnitDto.serializer(), row.jsonObject) }
+            .getOrNull()?.toDomain()
+    }
+
+    /**
+     * A write, judged by the envelope's `status`: this service answers `200`
+     * with `status: 0` and a `message` for every refusal, and `request()`
+     * would read that as success (the whole family does this; see the
+     * account-hub notes). The message is the user-facing one the web pops.
+     */
+    private suspend fun written(
+        verb: HttpVerb,
+        url: String,
+        body: JsonElement?,
+    ): ZillitResult<ApiEnvelope> = when (
+        val answer = apiClient.envelope(verb = verb, url = url, module = RequestModule.ProjectUser, body = body)
+    ) {
+        is ZillitResult.Failure -> answer
+        is ZillitResult.Success -> if (answer.data.status == STATUS_OK) {
+            answer
+        } else {
+            ZillitResult.Failure(
+                ZillitError.Validation(answer.data.message?.ifBlank { null } ?: "The request was refused."),
+            )
+        }
+    }
+
+    private suspend fun write(verb: HttpVerb, url: String, body: JsonElement?): ZillitResult<Unit> =
+        written(verb, url, body).map { }
+
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
     private companion object {
+        const val STAKEHOLDER_INTERNAL = "internal"
+        const val STATUS_OK = 1
+
         /** The list routes under `document`, per tab. */
         val SignDocumentTab.route: String
             get() = when (this) {

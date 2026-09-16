@@ -28,6 +28,10 @@ data class DistributionUser(
     /** The web's row rule: accepted crew, or any external. */
     val isListed: Boolean get() = status == ACCEPTED || isExternal
 
+    /** The row's cell for [unitId] under [section], if the server sent one. */
+    fun cell(unitId: String, section: DistributionSection): DistributionUnit? =
+        units.firstOrNull { it.unitId == unitId && it.inSection(section) }
+
     companion object {
         const val ACCEPTED = "accepted"
         const val OUTSIDER = "outsider"
@@ -50,12 +54,39 @@ data class DistributionUnit(
     val isHome: Boolean = false,
     /** Android honours this for switch enablement; the web ignores it. */
     val toUpdatable: Boolean = true,
-)
+) {
+    fun inSection(section: DistributionSection): Boolean =
+        if (section == DistributionSection.Home) isHome else isTool
+}
 
 /** The section chooser — the wire's `type` values, verbatim. */
 enum class DistributionSection(val wire: String, val label: String) {
     Home("home", "Home"),
     Tools("tools", "Tools"),
+}
+
+/**
+ * What the grid knows about a person beyond the wire's row — the web's
+ * `usersList` (crew) merged with `useExternalUsers()` (outsiders), keyed by
+ * user id. The row carries only `user_name`; the face, department, designation
+ * and acceptance status come from here.
+ */
+data class DistributionPerson(
+    val userId: String,
+    val fullName: String = "",
+    val email: String = "",
+    /** A label key — translate before display. */
+    val department: String = "",
+    /** A label key — translate before display. */
+    val designation: String = "",
+    /** `accepted` and friends for crew; blank for an outsider. */
+    val status: String = "",
+    val isExternal: Boolean = false,
+)
+
+/** Where the people directory comes from — the crew list and the external users, merged by the host. */
+fun interface DistributionDirectory {
+    suspend fun people(): List<DistributionPerson>
 }
 
 /**
@@ -94,7 +125,8 @@ interface DistributionRepository {
 
     /**
      * Flips one cell. The body's `distributionEnable` is the new value;
-     * [section] is the wire's `home`/`tools`.
+     * [section] is the wire's `home`/`tools`. Answers the server's message —
+     * the web toasts it verbatim (`message[res.status ? 'success' : 'warning']`).
      */
     suspend fun setAccess(
         userId: String,
@@ -102,5 +134,5 @@ interface DistributionRepository {
         enabled: Boolean,
         section: DistributionSection,
         isExternal: Boolean,
-    ): ZillitResult<Unit>
+    ): ZillitResult<String?>
 }

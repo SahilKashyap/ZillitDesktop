@@ -17,6 +17,7 @@ kotlin {
             implementation(project(":core:localization"))
             implementation(project(":core:workspace"))
             implementation(project(":core:locationpicker"))
+            implementation(project(":core:media"))
             implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {

@@ -255,7 +255,7 @@ private fun ApprovalCard(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitAvatar(name = request.displayName, size = AVATAR)
+        ZillitAvatar(name = request.displayName, userId = request.userId, size = AVATAR)
 
         Column(
             modifier = Modifier.weight(1f),

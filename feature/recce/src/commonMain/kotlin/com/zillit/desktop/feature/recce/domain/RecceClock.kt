@@ -61,6 +61,19 @@ object RecceClock {
         return "$dow, ${d.dayOfMonth} $mon ${d.year}"
     }
 
+    /** "6 Mar" — the list's date column, the web's `fmtDateShort`. */
+    fun shortDate(epochMs: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
+        if (epochMs <= 0) return ""
+        val d = Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(zone).date
+        return "${d.dayOfMonth} ${d.month.name.title().take(ABBREV)}"
+    }
+
+    /** "Thursday" — under the list's date, the web's `fmtWeekday`. */
+    fun weekday(epochMs: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
+        if (epochMs <= 0) return ""
+        return Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(zone).date.dayOfWeek.name.title()
+    }
+
     /** "Friday, 6th March 2026" — the detail header, the web's ordinal form. */
     fun longDateLabel(epochMs: Long, zone: TimeZone = TimeZone.currentSystemDefault()): String {
         if (epochMs <= 0) return ""

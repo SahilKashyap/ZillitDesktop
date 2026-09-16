@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.flowOf
  * over values the user is about to overwrite.
  */
 data class ProfileSeed(
+    /** For the profile picture beside the name fields. */
+    val userId: String = "",
     val firstName: String = "",
     val lastName: String = "",
     val email: String = "",

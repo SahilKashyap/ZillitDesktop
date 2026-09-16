@@ -52,7 +52,7 @@ internal class VendorActions(private val vm: AccountHubViewModel) {
      * state, and it is left there rather than traded for an empty answer — a
      * picker with nothing in it would make the required country unanswerable.
      */
-    private fun loadCountries() {
+    internal fun loadCountries() {
         if (vm.setupState.vendors.countriesLoaded) return
         vm.runResult({ vm.repo.isdCodes() }, { rows ->
             vm.update {

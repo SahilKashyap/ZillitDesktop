@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.castboard.ui
 import com.zillit.desktop.feature.castboard.domain.BoardMessage
 import com.zillit.desktop.feature.castboard.domain.CastingEntry
 import com.zillit.desktop.feature.castboard.domain.CastingStatus
+import com.zillit.desktop.feature.castboard.domain.CastingUnread
 import com.zillit.desktop.feature.castboard.domain.CastingUnit
 import com.zillit.desktop.feature.castboard.domain.CastingViewer
 
@@ -22,6 +23,8 @@ data class CastingUiState(
     val discussionLoading: Boolean = false,
     val discussionDraft: String = "",
     val discussionSending: Boolean = false,
+    /** The board's unread rows — the list tabs', stage tabs' and entries' badges. */
+    val unread: CastingUnread = CastingUnread.None,
 ) {
 
     val hasNoAccess: Boolean get() = viewer.hasNoAccess

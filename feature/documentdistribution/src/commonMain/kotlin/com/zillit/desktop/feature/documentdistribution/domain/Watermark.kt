@@ -98,3 +98,56 @@ data class WatermarkStyle(
 
 private const val SMALL_SCALE = 0.65
 private const val LARGE_SCALE = 1.5
+
+/**
+ * The production's shared defaults for the wizard's Size, Colour and
+ * Opacity controls (`/api/v2/document-distribution/watermark-settings`).
+ *
+ * One set per project, seen by everyone using the tool. Until someone saves,
+ * the server answers the built-in values with [isDefault] true — which are
+ * exactly [WatermarkStyle]'s own defaults, so a project that has never saved
+ * looks the same as one whose settings failed to load.
+ */
+data class WatermarkSettings(
+    val size: WatermarkSize = WatermarkSize.Large,
+    val color: String = WatermarkStyle.DEFAULT_COLOR,
+    val opacity: Double = WatermarkStyle.DEFAULT_OPACITY,
+    /** True until the project saves for the first time. */
+    val isDefault: Boolean = true,
+    /** Project user id of the last person to save; null before the first save. */
+    val updatedBy: String? = null,
+    /** Epoch ms of the last save; 0 before the first. */
+    val updated: Long = 0,
+) {
+    companion object {
+        val BuiltIn = WatermarkSettings()
+    }
+}
+
+/**
+ * A partial save: only the fields sent change on the server, so a save
+ * carries what the sender actually touched and two people changing different
+ * controls at once do not overwrite each other.
+ */
+data class WatermarkSettingsPatch(
+    val size: WatermarkSize? = null,
+    val color: String? = null,
+    val opacity: Double? = null,
+) {
+    val isEmpty: Boolean get() = size == null && color == null && opacity == null
+}
+
+/** This style, with the appearance the production has agreed on. */
+fun WatermarkStyle.withDefaults(settings: WatermarkSettings): WatermarkStyle =
+    copy(size = settings.size, color = settings.color, opacity = settings.opacity)
+
+/**
+ * The appearance fields of this style that differ from [settings] — what a
+ * wizard save sends. Colour compares case-insensitively because the server
+ * stores `#RRGGBB` uppercase and the swatches are lowercase.
+ */
+fun WatermarkStyle.patchAgainst(settings: WatermarkSettings): WatermarkSettingsPatch = WatermarkSettingsPatch(
+    size = size.takeIf { it != settings.size },
+    color = color.takeIf { !it.equals(settings.color, ignoreCase = true) },
+    opacity = opacity.takeIf { it != settings.opacity },
+)

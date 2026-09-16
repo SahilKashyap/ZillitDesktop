@@ -119,7 +119,7 @@ private fun DocDistHeader(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit
         )
 
         ZillitTabStrip(
-            tabs = state.destinations.map { ZillitTab(it.slug, it.label) },
+            tabs = state.destinations.map { ZillitTab(it.slug, it.label, count = state.unread.unit(*it.badgeUnits.toTypedArray())) },
             activeId = state.destination.slug,
             onSelect = { slug ->
                 DocDistDestination.fromSlug(slug)?.let { onEvent(DocDistEvent.Open(it)) }

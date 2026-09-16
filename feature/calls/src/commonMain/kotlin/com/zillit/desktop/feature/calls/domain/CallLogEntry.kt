@@ -17,12 +17,28 @@ enum class CallLine(val label: String) {
     Three("Line 3"),
     ;
 
+    /** The plumbing a redial on this line takes — the row's tag turned back into a choice. */
+    val provider: CallProvider
+        get() = when (this) {
+            One -> CallProvider.Mediasoup
+            Two -> CallProvider.Agora
+            Three -> CallProvider.LiveKit
+        }
+
     companion object {
         fun ofWire(raw: String?): CallLine = when (raw?.trim()?.lowercase()) {
             "agora" -> Two
             "livekit" -> Three
             else -> One
         }
+
+        /**
+         * What every production offers a redial, in the order the thread
+         * header lists them: Line 2 first (every deployment has it), then
+         * Line 1. Line 3 is appended by the host where remote config lists
+         * the production.
+         */
+        val DEFAULT: List<CallLine> = listOf(Two, One)
     }
 }
 
@@ -70,6 +86,11 @@ data class CallLogParticipant(
  * [peerUserId] and [roomId] are what a redial needs: a 1:1 row rings the
  * person, a group row rings the room. Either can be blank on old rows, and a
  * row that can name neither simply is not redialable.
+ *
+ * [peerDeviceId] is a bonus, not a requirement: Line 1 and Line 3 rows carry
+ * NO `caller_device_id`/`receiver_device_id` at all (Android's
+ * `RecentCallFragment.kt:527-539` says so and resolves the device from the
+ * user id instead). Requiring it here made every Line 1/3 1:1 row unclickable.
  */
 data class CallLogEntry(
     val callUuid: String,
@@ -103,11 +124,16 @@ data class CallLogEntry(
     /** The legacy roster (`call_users`), status only. */
     val callUsers: List<CallLogParticipant> = emptyList(),
 ) {
-    /** Nothing to ring means nothing to redial; the row is still worth showing. */
+    /**
+     * Nothing to ring means nothing to redial; the row is still worth showing.
+     * A 1:1 row needs a person OR a device — the host looks the device up
+     * from the person when the row names only them (Android's
+     * `getUserDetailByUserId()?.deviceId`).
+     */
     val isRedialable: Boolean
         get() = when (mode) {
             CallMode.Group -> roomId.isNotBlank()
-            else -> peerDeviceId.isNotBlank()
+            else -> peerDeviceId.isNotBlank() || peerUserId.isNotBlank()
         }
 
     /**

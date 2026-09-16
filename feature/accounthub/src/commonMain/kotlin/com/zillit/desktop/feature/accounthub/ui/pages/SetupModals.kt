@@ -382,6 +382,7 @@ private fun ColumnScope.InvoicesModalBody(
                     val user = state.user(member.userId)
                     PersonChip(
                         name = user?.name ?: "Unknown user",
+                        userId = member.userId,
                         role = user?.roleLabel,
                         modifier = Modifier.weight(1f),
                     )
@@ -437,7 +438,7 @@ private fun ColumnScope.InvoicesModalBody(
                     ) {
                         if (tier.userIds.isEmpty()) FieldHint("Nobody yet")
                         tier.userIds.forEach {
-                            id -> PersonChip(name = state.userName(id), role = state.user(id)?.roleLabel)
+                            id -> PersonChip(name = state.userName(id), userId = id, role = state.user(id)?.roleLabel)
                         }
                     }
                     if (editable) {
@@ -525,6 +526,7 @@ private fun InvoiceMemberDialog(state: AccountHubUiState, onEvent: (AccountHubEv
         ) {
             if (member.userId.isBlank()) FieldHint("Nobody picked yet") else PersonChip(
                 name = state.userName(member.userId),
+                userId = member.userId,
                 role = state.user(member.userId)?.roleLabel,
             )
             ZillitButton(
@@ -712,6 +714,7 @@ private fun ColumnScope.PayrollModalBody(
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     PersonChip(
                         name = state.userName(id),
+                        userId = id,
                         role = state.user(id)?.roleLabel,
                         modifier = Modifier.weight(1f),
                     )
@@ -843,7 +846,7 @@ private fun ColumnScope.PayrollModalBody(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
-                    ZillitAvatar(name = state.userName(group.assigneeId), size = 28.dp)
+                    ZillitAvatar(name = state.userName(group.assigneeId), userId = group.assigneeId, size = 28.dp)
                     Column(modifier = Modifier.weight(1f)) {
                         ZillitText(
                             text = state.userName(group.assigneeId),

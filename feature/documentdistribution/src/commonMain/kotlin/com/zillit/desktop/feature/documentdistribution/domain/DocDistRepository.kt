@@ -214,6 +214,27 @@ interface DocDistRepository {
 
     suspend fun deleteDocument(documentId: String): ZillitResult<Unit>
 
+    // -- watermark settings ------------------------------------------------
+
+    /**
+     * The production's shared Size / Colour / Opacity defaults, as another
+     * client just saved them (`document_distribution:watermark_settings:updated`).
+     * The event carries the whole settings object, so the cache is replaced
+     * and nothing is refetched. A save from this very device is filtered out
+     * before it gets here — its PUT already answered the same object.
+     */
+    val watermarkSettingsUpdates: Flow<WatermarkSettings> get() = emptyFlow()
+
+    /** Always answers for a project member: the built-in values until someone saves. */
+    suspend fun watermarkSettings(): ZillitResult<WatermarkSettings>
+
+    /**
+     * Saves the fields in [patch]; the rest keep their value. Answers the
+     * settings after the save. An empty patch is refused by the server
+     * (`watermark_settings_required`), so callers skip it.
+     */
+    suspend fun updateWatermarkSettings(patch: WatermarkSettingsPatch): ZillitResult<WatermarkSettings>
+
     suspend fun moveDocuments(documentIds: List<String>, folderId: String?): ZillitResult<Unit>
 
     /**

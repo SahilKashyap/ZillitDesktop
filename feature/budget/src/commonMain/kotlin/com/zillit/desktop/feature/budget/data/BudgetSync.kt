@@ -8,18 +8,27 @@ import com.zillit.desktop.core.socket.SocketEventName
  * Two events, and they are the *document* family — not the budget chat. All
  * three clients carry them: Android's `_budgetObserver`, iOS's
  * `.updateBudgetPage`, the web's project-gated `budget_saved` /
- * `budget_deleted`. The desktop carried neither (audited 2026-09-07), so a
- * department budget uploaded by its HOD did not appear for the accountant
- * watching the list.
- *
- * The `budget:*chat*` family is **not** missing and is deliberately not here:
- * a budget conversation is the ordinary C&C thread with
- * `ChatScope.eventPrefix = "budget:"`, so `ChatRepository.scoped()` already
- * builds `budget:private_chat` and its nine siblings at runtime. They look
- * absent to any audit that greps for literals — which is exactly how they were
- * flagged — but they are subscribed.
+ * `budget_deleted` (`listenerSocket.js:1890-1897`). A department budget
+ * uploaded by its HOD appears for the accountant watching the list.
  */
 val BUDGET_SYNC_EVENTS: List<SocketEventName> = listOf(
     SocketEventName("budget:saved"),
     SocketEventName("budget:deleted"),
+)
+
+/**
+ * Live updates for the conversation list beside a budget.
+ *
+ * The rooms of a budget come and go on their own `budget:`-prefixed events
+ * (`listenerSocket.js:1060-1079` — "the budget chat group observers are
+ * coming differently from cnc chat observers"), and a first private message
+ * from someone new is a new row (`CommonBudget.jsx:'budget:private_chat'`).
+ * The list is re-asked rather than patched: the ack is one socket round trip
+ * and carries the names the payloads do not.
+ */
+val BUDGET_CHAT_LIST_EVENTS: List<SocketEventName> = listOf(
+    SocketEventName("budget:chat-room:create"),
+    SocketEventName("budget:chat-room:remove"),
+    SocketEventName("budget:chat-room:updated"),
+    SocketEventName("budget:private_chat"),
 )

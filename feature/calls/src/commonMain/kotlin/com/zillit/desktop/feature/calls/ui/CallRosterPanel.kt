@@ -93,7 +93,7 @@ private fun RosterRow(tile: CallTile, state: CallUiState?, onEvent: (CallEvent) 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = tile.name, size = ROW_AVATAR)
+        ZillitAvatar(name = tile.name, userId = tile.userId, size = ROW_AVATAR)
         Column(modifier = Modifier.weight(1f)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

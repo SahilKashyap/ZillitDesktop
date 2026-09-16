@@ -54,6 +54,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.documentdistribution.domain.DeliveryStatus
 import com.zillit.desktop.feature.documentdistribution.domain.Distribution
 import com.zillit.desktop.feature.documentdistribution.domain.RecipientKind
@@ -600,7 +601,7 @@ private fun SentByMenu(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
                                 checked = picked == 0 || sender.id in state.historySenderIds,
                                 onCheckedChange = { onEvent(DocDistEvent.ToggleHistorySender(sender.id)) },
                             )
-                            ZillitAvatar(name = sender.name.ifBlank { sender.id }, size = 24.dp)
+                            ZillitAvatar(name = sender.name.ifBlank { sender.id }, userId = sender.id, size = 24.dp)
                             Column {
                                 ZillitText(
                                     text = sender.name.ifBlank { sender.id },
@@ -608,7 +609,7 @@ private fun SentByMenu(state: DocDistUiState, onEvent: (DocDistEvent) -> Unit) {
                                     maxLines = 1,
                                 )
                                 if (sender.designation.isNotBlank()) ZillitText(
-                                    text = sender.designation,
+                                    text = sender.designation.localised(),
                                     style = ZillitTheme.typography.bodySmall,
                                     color = colors.textMuted,
                                     maxLines = 1,

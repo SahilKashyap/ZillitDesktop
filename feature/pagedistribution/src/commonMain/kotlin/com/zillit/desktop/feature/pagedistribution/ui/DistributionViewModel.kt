@@ -6,6 +6,9 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
+import com.zillit.desktop.core.permissions.RightsKind
+import com.zillit.desktop.core.permissions.RightsRequestBus
+import com.zillit.desktop.core.permissions.rightsRefusalMessage
 import com.zillit.desktop.feature.pagedistribution.data.dayMillis
 import com.zillit.desktop.feature.pagedistribution.data.ymd
 import com.zillit.desktop.feature.pagedistribution.domain.DistFolder
@@ -19,8 +22,9 @@ import com.zillit.desktop.feature.pagedistribution.domain.FolderKey
 import com.zillit.desktop.feature.pagedistribution.domain.ListMode
 import com.zillit.desktop.feature.pagedistribution.domain.PageColour
 import com.zillit.desktop.feature.pagedistribution.domain.ReadAction
-import com.zillit.desktop.feature.pagedistribution.domain.ScheduleType
 import com.zillit.desktop.feature.pagedistribution.domain.TabKind
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.datetime.TimeZone
 
 /**
@@ -30,6 +34,7 @@ import kotlinx.datetime.TimeZone
  * dialog, the viewer, download, delete, tallies, move (D.O.D) and publish
  * to Document Distribution.
  */
+@Suppress("LongParameterList") // One seam per host concern, each defaulted; see the other view models.
 class DistributionViewModel(
     private val tool: DistributionTool,
     private val repository: DistributionRepository,
@@ -38,6 +43,31 @@ class DistributionViewModel(
     private val nowMillis: () -> Long,
     /** Marks a list (or a folder) read — the web's `notification:read` emit. */
     private val onListViewed: suspend (module: String, segment: String) -> Unit = { _, _ -> },
+    /**
+     * Unread per folder key, live — what each D.O.D folder card wears. The
+     * host derives it from the badge ledger grouped by `unit` under the
+     * tool's wire label; defaulted empty for tools without folder badges.
+     */
+    private val folderUnread: Flow<Map<String, Int>> = emptyFlow(),
+    /**
+     * Unread per tab key, live — the chips on the tab strip. The host reads
+     * each tab's `badgeModule` off the ledger grouped by tool; defaulted
+     * empty for hosts without badges.
+     */
+    private val tabUnread: Flow<Map<String, Int>> = emptyFlow(),
+    /**
+     * Where a refused press asks an admin for the missing right — the web's
+     * `request_admin_for_posting_rights` confirm and
+     * `showPermissionRequestModal` on download. Null keeps the refusal a
+     * plain message.
+     */
+    private val rights: RightsRequestBus? = null,
+    /**
+     * The web's `distributeCncMessage` after every upload: a PDF past 25 MB
+     * is not auto-distributed by mail, and every admin is told so in a
+     * private chat message. Given the file's name and size; the host sends.
+     */
+    private val onOversizeUpload: suspend (fileName: String, sizeBytes: Long) -> Unit = { _, _ -> },
 ) : ZillitViewModel<DistributionUiState, DistributionEvent, DistributionEffect>(DistributionUiState(tool)) {
 
     fun start() {
@@ -62,6 +92,12 @@ class DistributionViewModel(
                 val open = state.value.openFolder
                 if (open == null) loadTab() else reloadOpenFolder(open)
             }
+        }
+        launch {
+            folderUnread.collect { counts -> setState { copy(folderUnread = counts) } }
+        }
+        launch {
+            tabUnread.collect { counts -> setState { copy(tabUnread = counts) } }
         }
     }
 
@@ -119,8 +155,14 @@ class DistributionViewModel(
                 loadTab()
             }
             DistributionEvent.LoadMore -> loadMore()
+            // Typing a scene drops the colour, as the web's scene input does
+            // (`setSelectedColor(null)`); the server would drop it anyway.
             is DistributionEvent.SearchChanged -> setState {
-                copy(searchScene = event.scene ?: searchScene, searchEpisode = event.episode ?: searchEpisode)
+                copy(
+                    searchScene = event.scene ?: searchScene,
+                    searchEpisode = event.episode ?: searchEpisode,
+                    searchColour = if (event.scene != null) null else searchColour,
+                )
             }
             is DistributionEvent.SearchColour -> {
                 setState { copy(searchColour = event.colour, searchScene = "", searchEpisode = "") }
@@ -130,6 +172,7 @@ class DistributionViewModel(
             DistributionEvent.ClearSearch -> clearSearch()
             is DistributionEvent.PickPdf -> guardPost { sendEffect(DistributionEffect.PickPdf(event.replaces)) }
             is DistributionEvent.PdfPicked -> openUpload(event)
+            is DistributionEvent.FilesDropped -> dropped(event.files)
             is DistributionEvent.UploadChanged -> setState {
                 copy(
                     upload = upload?.copy(
@@ -298,8 +341,9 @@ class DistributionViewModel(
                     sceneNumber = replaces?.sceneNumber ?: folderKey.takeIf { !isDod }.orEmpty(),
                     pageNumber = replaces?.pageNumber.orEmpty(),
                     colour = replaces?.let { PageColour.fromHex(it.colour) } ?: PageColour.White,
-                    scheduleType = replaces?.scheduleType ?: (tab.kind as? TabKind.Folders)
-                        ?.takeIf { it.scheduleTypeChoice }?.let { ScheduleType.FullSchedulePages },
+                    // A new schedule-pages upload starts with no kind chosen —
+                    // the web asks "Please select an option" before sending.
+                    scheduleType = replaces?.scheduleType,
                     name = folderKey.takeIf { isDod }.orEmpty(),
                     nameFromPick = folderKey != null && isDod,
                 ),
@@ -338,6 +382,10 @@ class DistributionViewModel(
                     sendEffect(DistributionEffect.Notice(done))
                     val open = state.value.openFolder
                     if (open != null) openFolder(open.folder.key) else loadTab()
+                    if (editor.bytes.size > AUTO_DISTRIBUTION_LIMIT_BYTES) {
+                        val storedName = (stored as? ZillitResult.Success)?.data?.name.orEmpty()
+                        onOversizeUpload(storedName.ifBlank { editor.fileName }, editor.bytes.size.toLong())
+                    }
                 }
             }
         }
@@ -359,9 +407,12 @@ class DistributionViewModel(
             if (scene.length > MAX_SCENE) return "The scene number is at most $MAX_SCENE characters"
             if (kind.scheduleTypeChoice && editor.scheduleType == null) return "Choose schedule pages or one line pages"
         }
-        if (kind is TabKind.Single && viewer.isTelevision && editor.episode.isBlank()) {
-            return "An episode number is required"
-        }
+        // The web's `EpisodeInput status={true}`: required on television
+        // productions on a single list, on D.O.D, and on a NEW page — a page
+        // replace has no episode field at all.
+        val episodeRequired = viewer.isTelevision &&
+            (kind is TabKind.Single || byName || (byScene && editor.replaces == null))
+        if (episodeRequired && editor.episode.isBlank()) return "An episode number is required"
         val badDate = editor.dateYmd.isNotBlank() && dayMillis(editor.dateYmd, TimeZone.currentSystemDefault()) == 0L
         return if (badDate) "The date must be YYYY-MM-DD" else null
     }
@@ -391,7 +442,9 @@ class DistributionViewModel(
 
     private fun download(document: DistDocument) {
         if (!state.value.viewer.mayDownload) {
-            setState { copy(error = "You do not have download rights for ${tool.title}") }
+            // The web's `showPermissionRequestModal` on a refused download.
+            rights?.ask(tool.title, RightsKind.Download)
+            setState { copy(error = rightsRefusalMessage(tool.title, RightsKind.Download, asked = rights != null)) }
             return
         }
         val tab = state.value.activeTab
@@ -510,7 +563,26 @@ class DistributionViewModel(
         if (state.value.viewer.mayPost) {
             block()
         } else {
-            setState { copy(error = "You do not have posting rights for ${tool.title}") }
+            // The web's `error()` confirm → `PermissionRequestModal`: the
+            // press is answered by asking an admin, not by a dead button.
+            rights?.ask(tool.title, RightsKind.Post)
+            setState { copy(error = rightsRefusalMessage(tool.title, RightsKind.Post, asked = rights != null)) }
+        }
+    }
+
+    /**
+     * The OS drop, the web's `handleDropEvent`: rights first (its
+     * `handleDrop` checks `unitPostingRightStatus`), then the first file,
+     * PDF or refused with `onlyPdfFilesAllowed`.
+     */
+    private fun dropped(files: List<Pair<String, ByteArray>>) {
+        val (name, bytes) = files.firstOrNull() ?: return
+        guardPost {
+            if (!name.endsWith(".pdf", ignoreCase = true)) {
+                setState { copy(error = "Only PDF files are allowed") }
+            } else {
+                openUpload(DistributionEvent.PdfPicked(name, bytes, replaces = null))
+            }
         }
     }
 
@@ -526,6 +598,9 @@ class DistributionViewModel(
     private companion object {
         const val VIEWER_WIDTH_PX = 1100
         const val MAX_SCENE = 15
+
+        /** The web's `checkFileLength` ceiling: past this, mail does not carry the file. */
+        const val AUTO_DISTRIBUTION_LIMIT_BYTES = 25L * 1024 * 1024
     }
 }
 

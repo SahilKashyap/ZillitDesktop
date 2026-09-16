@@ -13,7 +13,15 @@ import com.zillit.desktop.feature.pagedistribution.domain.ScheduleType
 import com.zillit.desktop.feature.pagedistribution.domain.TabKind
 import com.zillit.desktop.feature.pagedistribution.domain.UploadDraft
 
-/** The upload dialog — the picked PDF plus what the web's DocumentModal asks. */
+/**
+ * The upload dialog — the picked PDF plus what the web's DocumentModal asks.
+ *
+ * Plain data-class equality on purpose: the state flow conflates on
+ * `equals`, and an override that compared the file name alone made every
+ * keystroke in the form an "equal" state the flow dropped — the dialog
+ * could not be typed into. `bytes` compares by identity, which is cheap and
+ * right: the same picked file is the same array.
+ */
 data class UploadEditor(
     val fileName: String,
     val bytes: ByteArray,
@@ -42,10 +50,6 @@ data class UploadEditor(
         nameFromPick = nameFromPick,
         replaces = replaces,
     )
-
-    override fun equals(other: Any?): Boolean =
-        other is UploadEditor && other.fileName == fileName && other.replaces == replaces
-    override fun hashCode(): Int = fileName.hashCode()
 }
 
 /** A folder opened over the grid: its documents, paged by `created`. */
@@ -96,10 +100,24 @@ data class DistributionUiState(
     val move: MoveEditor? = null,
     val confirmDelete: DistDocument? = null,
     val confirmPublish: DistDocument? = null,
+    /**
+     * Unread per folder, keyed by the folder key — the web's
+     * `toolsUnitBadges[dod_label].data[unit == item.name].unread` on every
+     * D.O.D folder card. Empty for the tools whose folders carry no badge.
+     */
+    val folderUnread: Map<String, Int> = emptyMap(),
+    /**
+     * Unread per tab, keyed by the tab key — the web's `toolsUnitBadges`
+     * chips on the tab strip (`schedule_distribution_label`,
+     * `schedule_distribution_pages_tool_label`, `schedule_oneline_label`).
+     */
+    val tabUnread: Map<String, Int> = emptyMap(),
 ) {
     val activeTab: DistributionTab get() = tool.tabs.firstOrNull { it.key == activeTabKey } ?: tool.tabs.first()
     val isFolderTab: Boolean get() = activeTab.kind is TabKind.Folders
     val isDod: Boolean get() = tool.toolIdentifier == DistributionTool.ScheduleDod.toolIdentifier
+    val isSchedule: Boolean get() = tool.toolIdentifier == DistributionTool.ScheduleDistribution.toolIdentifier
+    val isScript: Boolean get() = tool.toolIdentifier == DistributionTool.ScriptDistribution.toolIdentifier
 
     /** Single-list documents, oldest first — the web's `a.created - b.created`. */
     val sortedDocuments: List<DistDocument> get() = documents.sortedBy { it.createdMs }
@@ -127,6 +145,13 @@ sealed interface DistributionEvent {
     /** Opens the OS picker; [replaces] carries the document a single-list upload replaces. */
     data class PickPdf(val replaces: DistDocument? = null) : DistributionEvent
     data class PdfPicked(val fileName: String, val bytes: ByteArray, val replaces: DistDocument?) : DistributionEvent
+
+    /**
+     * Files dropped onto the page from the OS — the web's body-level `drop`
+     * listener (`DoD.jsx:242-289`): the first file opens the upload dialog
+     * when it is a PDF, anything else is refused with the web's message.
+     */
+    data class FilesDropped(val files: List<Pair<String, ByteArray>>) : DistributionEvent
     data class UploadChanged(
         val dateYmd: String? = null,
         val episode: String? = null,

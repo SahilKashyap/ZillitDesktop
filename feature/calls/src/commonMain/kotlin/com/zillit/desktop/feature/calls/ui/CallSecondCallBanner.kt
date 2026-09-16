@@ -46,7 +46,7 @@ fun CallSecondCallBanner(waiting: CallSession, onEvent: (CallEvent) -> Unit, mod
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitAvatar(name = waiting.callerName.ifBlank { "?" }, size = AVATAR)
+        ZillitAvatar(name = waiting.callerName.ifBlank { "?" }, userId = waiting.displayUserId, size = AVATAR)
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
                 text = "${waiting.callerName.ifBlank { "Someone" }} is calling",

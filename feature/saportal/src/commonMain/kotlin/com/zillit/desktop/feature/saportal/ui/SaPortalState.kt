@@ -31,6 +31,19 @@ enum class SaDestination(val slug: String, val label: String) {
             Queries -> SaRefresh.Queries
             Profile -> SaRefresh.Profile
         }
+
+    /**
+     * The unit the notification service files this page's rows under — the
+     * web's `SA_UNIT_BY_NAV` (`sa-portal-badge-helpers.js:33`); null for a
+     * page nothing is filed under.
+     */
+    val badgeKey: String?
+        get() = when (this) {
+            Vouchers -> "my_vouchers_label"
+            Queries -> "query_label"
+            Profile -> "profile_label"
+            Dashboard, Pay -> null
+        }
 }
 
 /**
@@ -63,6 +76,8 @@ data class QueryDraft(
 data class SaUiState(
     val viewer: SaViewer = SaViewer(),
     val destination: SaDestination = SaDestination.Dashboard,
+    /** Unread notifications per unit — the tabs' red chips. */
+    val unread: Map<String, Int> = emptyMap(),
     val loading: Boolean = false,
     val error: String? = null,
     val notice: String? = null,

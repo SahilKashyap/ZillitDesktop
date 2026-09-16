@@ -38,6 +38,7 @@ import com.zillit.desktop.core.permissions.ProjectPermissions
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.feature.home.data.HomeFeedRepositoryImpl
 import com.zillit.desktop.feature.home.data.ReportUnitsSource
+import com.zillit.desktop.feature.home.domain.HomeFeedRepository
 import com.zillit.desktop.feature.home.domain.HomeUnit
 import java.util.UUID
 import com.zillit.desktop.core.database.UserSnapshot
@@ -70,6 +71,16 @@ internal fun UserSnapshot.designationText(): String? =
     designation
         ?.takeIf { it.isNotBlank() && it != MEMBER_DESIGNATION }
         ?.let { Labels.translate(it) }
+
+/**
+ * The department as words, or null when the record has none.
+ *
+ * Same trap as the designation: `camera_department_label` on the wire. Read
+ * [UserSnapshot.department] directly only to *match* it — against the
+ * accounts/transport identifiers, or a department list's keys — never to show it.
+ */
+internal fun UserSnapshot.departmentText(): String? =
+    department?.takeIf { it.isNotBlank() }?.let { Labels.translate(it) }
 
 /**
  * Whether this crew member belongs in people lists.
@@ -576,7 +587,8 @@ internal fun AppGraph.Ready.accountsFeed(permissions: () -> ProjectPermissions):
 private const val REPORTS_TOOL = "reports_tool"
 
 /** The board engine on any segment of any host, with the tabs handed in. */
-private fun AppGraph.Ready.boardFeed(
+@Suppress("LongParameterList") // One seam per way a board differs; a holder would rename, not reduce.
+internal fun AppGraph.Ready.boardFeed(
     board: String,
     toolIdentifier: String,
     units: suspend () -> ZillitResult<List<HomeUnit>>,
@@ -584,17 +596,24 @@ private fun AppGraph.Ready.boardFeed(
     /** The `notification:read` module; defaults to `<tool>_label`, which Accounts breaks. */
     readModule: String = "${toolIdentifier.removeSuffix("_tool")}_label",
     chatSegment: String = "chat",
+    /** The member an admin is answering, on rooms that route posts to one person. */
+    receiver: () -> String? = { null },
+    /** Wraps the repository — a room's own posting rule sits here. */
+    decorate: (HomeFeedRepository) -> HomeFeedRepository = { it },
 ): HomeFeedViewModel {
-    val repository = HomeFeedRepositoryImpl(
-        apiClient = apiClient,
-        config = config,
-        decrypt = noticeDecryptor,
-        isAdmin = { projectContext?.context?.value?.isAdmin == true },
-        nowMillis = System::currentTimeMillis,
-        board = board,
-        units = units,
-        service = service,
-        chatSegment = chatSegment,
+    val repository = decorate(
+        HomeFeedRepositoryImpl(
+            apiClient = apiClient,
+            config = config,
+            decrypt = noticeDecryptor,
+            isAdmin = { projectContext?.context?.value?.isAdmin == true },
+            nowMillis = System::currentTimeMillis,
+            board = board,
+            units = units,
+            service = service,
+            chatSegment = chatSegment,
+            receiver = receiver,
+        ),
     )
     return HomeFeedViewModel(
         repository = repository,

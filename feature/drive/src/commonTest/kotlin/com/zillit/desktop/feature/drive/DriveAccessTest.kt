@@ -9,7 +9,6 @@ import com.zillit.desktop.feature.drive.domain.DrivePermissions
 import com.zillit.desktop.feature.drive.domain.DriveRole
 import com.zillit.desktop.feature.drive.domain.DriveViewer
 import com.zillit.desktop.feature.drive.domain.eligible
-import com.zillit.desktop.feature.drive.ui.DriveDestination
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -25,11 +24,18 @@ import kotlin.test.assertTrue
  */
 class DriveAccessTest {
 
+    /** A row the server described with [permissions], or — by default — one it said nothing about. */
     private fun file(
         id: String = "f1",
-        permissions: DrivePermissions = DrivePermissions.ViewOnly,
+        permissions: DrivePermissions? = null,
         kind: DriveItemKind = DriveItemKind.File,
-    ) = DriveItem(id = id, kind = kind, name = "$id.pdf", permissions = permissions)
+    ) = DriveItem(
+        id = id,
+        kind = kind,
+        name = "$id.pdf",
+        permissions = permissions ?: DrivePermissions.ViewOnly,
+        hasExplicitPermissions = permissions != null,
+    )
 
     private fun viewer(
         canView: Boolean = true,
@@ -97,12 +103,27 @@ class DriveAccessTest {
     }
 
     @Test
-    fun `someone else's file with no explicit grant stays view-only`() {
+    fun `someone else's file with no explicit grant can be viewed and downloaded, no more`() {
+        // The web's fallback for a row without `_userPermissions`
+        // (`DriveManagement.combinedData`): view and download, never edit or
+        // delete.
         val actor = viewer()
-        val theirs = file(id = "theirs").copy(uploadedById = "u2")
+        val theirs = file(id = "theirs").copy(uploadedById = "u2", createdById = "u2")
 
-        assertFalse(actor.may(DriveAction.Delete, theirs))
         assertTrue(actor.may(DriveAction.View, theirs))
+        assertTrue(actor.may(DriveAction.Download, theirs))
+        assertFalse(actor.may(DriveAction.Edit, theirs))
+        assertFalse(actor.may(DriveAction.Delete, theirs))
+    }
+
+    @Test
+    fun `a described view-only row is view-only, and offers nothing else`() {
+        val actor = viewer()
+        val theirs = file(id = "theirs", permissions = DrivePermissions.ViewOnly).copy(createdById = "u2")
+
+        assertTrue(actor.isViewOnly(theirs))
+        assertFalse(actor.may(DriveAction.Download, theirs))
+        assertTrue(actor.isSharedWithMe(theirs))
     }
 
     @Test
@@ -136,15 +157,20 @@ class DriveAccessTest {
     }
 
     @Test
-    fun `sharing is an owner's act`() {
+    fun `sharing a folder is the owner's act, sharing a file any editor's`() {
         val editor = viewer()
-        val edited = file(permissions = DriveRole.Editor.permissions)
-        val owned = file(permissions = DriveRole.Owner.permissions)
+        val editedFolder = file(permissions = DriveRole.Editor.permissions, kind = DriveItemKind.Folder)
+            .copy(createdById = "u2")
+        val ownedFolder = file(permissions = DriveRole.Owner.permissions, kind = DriveItemKind.Folder)
+            .copy(createdById = "u2")
+        val editedFile = file(permissions = DriveRole.Editor.permissions).copy(createdById = "u2")
 
-        // Sharing rewrites who else can reach the file; the server models that
-        // as delete rights, which only owners and creators hold.
-        assertFalse(editor.may(DriveAction.Share, edited))
-        assertTrue(editor.may(DriveAction.Share, owned))
+        // The server 403s an editor sharing a folder; under "Shared with me"
+        // ownership is signalled by the full permission set, which editors
+        // lack. Files are the web's `canShare = perms.can_edit`.
+        assertFalse(editor.may(DriveAction.Share, editedFolder))
+        assertTrue(editor.may(DriveAction.Share, ownedFolder))
+        assertTrue(editor.may(DriveAction.Share, editedFile))
     }
 
     @Test
@@ -180,18 +206,16 @@ class DriveAccessTest {
         val blocked = viewer(canView = false, canPost = false, canDownload = false)
 
         assertTrue(blocked.isBlocked)
-        assertTrue(DriveDestination.entries.none { it.visibleTo(blocked) })
+        assertFalse(blocked.canCreate)
     }
 
     @Test
-    fun `trash is visible to everyone who can see the drive`() {
-        // The server shows a regular user only their own deleted items, which
-        // is what makes this safe. Hiding it from non-posters would strand
-        // anyone who deleted something by accident.
+    fun `a reader may browse but not create`() {
+        // The server shows a regular user only their own trash, so the trash
+        // stays open to readers; Upload and New folder do not.
         val readOnly = viewer(canPost = false)
 
-        assertTrue(DriveDestination.Trash.visibleTo(readOnly))
-        assertFalse(DriveDestination.Storage.visibleTo(readOnly))
-        assertEquals(DriveDestination.Browse, DriveDestination.landing(readOnly))
+        assertFalse(readOnly.isBlocked)
+        assertFalse(readOnly.canCreate)
     }
 }

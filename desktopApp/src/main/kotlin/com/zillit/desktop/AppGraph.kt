@@ -1339,35 +1339,40 @@ sealed interface AppGraph {
                         if (deviceId == null) {
                             null
                         } else {
-                            // The device record, as Android reads it
-                            // (`CallingHelper.getDeviceDetails`): the socket
-                            // names this device by the record's `_id` and its
-                            // account device by `primary_device_id`. The
-                            // header's id is the `device_id` form the REST
-                            // routes take, which the linked list does not
-                            // carry — so it matched no row and the old guess
-                            // (first row marked primary) stood in. Fetched
-                            // once per identification; the linked list stays
-                            // the fallback for a record that names no primary.
+                            // Both ids as the phones and the web send them.
+                            // `device_id` is the REST device id — Android's
+                            // `SharedPref.getDeviceID()` (`LiveKitIdentityBridge`),
+                            // the web's `localStorage.device_id` — the one the
+                            // backend registered this install under and rings
+                            // by. An earlier port sent the device record's `_id`
+                            // here instead; the server then knew the socket by
+                            // an id it had never registered, and no ring ever
+                            // reached it (2026-09-16). `primary_device_id` is
+                            // the account device off the device record
+                            // (Android `SharedPref.getPrimaryDeviceID()`), with
+                            // the linked list as the fallback for a record that
+                            // names none.
                             val record = handshakeRecord
                                 ?: (authRepository.deviceRecord() as? ZillitResult.Success)?.data
                                     ?.also { handshakeRecord = it }
-                            val socketDeviceId = record?.recordId?.takeIf { it.isNotBlank() } ?: deviceId
                             val fromRecord = primaryDeviceForHandshake ?: record?.primaryDeviceId
                                 ?.also { primaryDeviceForHandshake = it }
                             val primary = fromRecord
                                 ?: (accountRepository.linkedDevices() as? ZillitResult.Success)?.data
                                     ?.firstOrNull { it.isPrimary && !it.isThisDevice }?.id
                                     ?.also { primaryDeviceForHandshake = it }
-                                ?: socketDeviceId
+                                ?: deviceId
+                            // The plaintext ids, as Android logs them: the two
+                            // strings the server resolves this socket from are
+                            // the first thing to compare when a ring never lands.
                             ZillitLog.i("LiveKitLine") {
-                                "handshake primary from " + when {
+                                "handshake primary_device_id=$primary (from " + when {
                                     fromRecord != null -> "the device record"
-                                    primary != socketDeviceId -> "the linked list"
+                                    primary != deviceId -> "the linked list"
                                     else -> "this device"
-                                } + ", device id from " + if (socketDeviceId == deviceId) "the header" else "the record"
+                                } + ") device_id=$deviceId"
                             }
-                            val payload = """{"primary_device_id":"$primary","device_id":"$socketDeviceId"}"""
+                            val payload = """{"primary_device_id":"$primary","device_id":"$deviceId"}"""
                             (cryptoEngine.encryptToHex(payload) as? ZillitResult.Success)?.data
                         }
                     },
@@ -1571,6 +1576,7 @@ sealed interface AppGraph {
                     ),
                     isS3Storage = { projectContext.docDistUsesS3() },
                     newUniqueId = { java.util.UUID.randomUUID().toString() },
+                    selfDeviceId = { headerContext.value.deviceId.takeIf(String::isNotBlank) },
                 ),
                 driveRepository = DriveRepositoryImpl(
                     apiClient = apiClient,

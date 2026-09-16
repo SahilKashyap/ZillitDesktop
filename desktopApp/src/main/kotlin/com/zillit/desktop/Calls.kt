@@ -17,6 +17,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import com.zillit.desktop.core.session.ProjectContext
+import com.zillit.desktop.feature.calls.domain.CallLine
+import com.zillit.desktop.feature.calls.domain.CallLogEntry
 import com.zillit.desktop.feature.calls.domain.CallMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -245,22 +247,7 @@ internal fun CallLogTab(
                     ?: ready.projectContext?.context?.value?.profile?.userId
             },
             nowMillis = System::currentTimeMillis,
-            onRedial = { entry ->
-                calls.onEvent(
-                    CallEvent.Place(
-                        // A group row rings its room; a 1:1 row the device it
-                        // reached last time.
-                        chatRoomId = if (entry.mode == CallMode.Group) entry.roomId else "",
-                        receiverDeviceId =
-                            if (entry.mode == CallMode.Group) "" else entry.peerDeviceId,
-                        mode = entry.mode,
-                        type = entry.type,
-                        displayName = entry.displayTitle { id -> crewNameOf(ready, id) },
-                        projectId = otherProjectId,
-                        callerUserId = otherUserId,
-                    ),
-                )
-            },
+            onRedial = { entry, line -> redialFromLog(ready, calls, entry, line, otherProjectId, otherUserId) },
             projectId = otherProjectId,
             callerUserId = otherUserId,
             // The web's Ongoing rows: the calling socket's live list, and
@@ -288,8 +275,90 @@ internal fun CallLogTab(
         // Read once per composition rather than per row, so every row in one
         // frame decides "today" against the same instant.
         nowMillis = remember(state.entries) { System.currentTimeMillis() },
+        // The same lines the thread header offers: Line 3 where the
+        // roll-out list names this production.
+        lines = if (ready.lineThreeEnabled(projectId)) CallLine.DEFAULT + CallLine.Three else CallLine.DEFAULT,
     )
 }
+
+/**
+ * A history row rung again, on the line the picker chose — Android's
+ * `RecentCallFragment` call-back (`RecentCallFragment.kt:519-575`).
+ *
+ * A group row rings its room. A 1:1 row rings the person: the row's own
+ * device id when it has one (Line 2 rows do), else the person's current
+ * device off the crew list — Line 1 and Line 3 rows carry no device id at
+ * all, which is why they could not be rung from here before. Line 1 rings
+ * by user id regardless (`CallEvent.Place.receiverUserId`), and someone no
+ * longer on the production is refused with Android's `user_not_active_txt`
+ * rather than rung into silence.
+ *
+ * Answers the refusal, or null once the call is being placed.
+ */
+@Suppress("LongParameterList") // The row, the line, and the widget's other-production pair.
+private fun redialFromLog(
+    ready: AppGraph.Ready,
+    calls: CallViewModel,
+    entry: CallLogEntry,
+    line: CallLine,
+    otherProjectId: String?,
+    otherUserId: String,
+): String? {
+    val isGroup = entry.mode == CallMode.Group
+    val receiverDeviceId = if (isGroup) {
+        ""
+    } else {
+        when (val target = ready.directTarget(entry, otherProjectId)) {
+            is DirectTarget.Device -> target.deviceId
+            is DirectTarget.Refused -> return target.reason
+        }
+    }
+    calls.onEvent(
+        CallEvent.Place(
+            chatRoomId = if (isGroup) entry.roomId else "",
+            receiverDeviceId = receiverDeviceId,
+            mode = entry.mode,
+            type = entry.type,
+            displayName = entry.displayTitle { id -> crewNameOf(ready, id) },
+            provider = line.provider,
+            receiverUserId = if (isGroup) "" else entry.peerUserId,
+            projectId = otherProjectId,
+            callerUserId = otherUserId,
+        ),
+    )
+    return null
+}
+
+/** What a 1:1 row resolves to: a device to ring, or why not. */
+private sealed interface DirectTarget {
+    data class Device(val deviceId: String) : DirectTarget
+    data class Refused(val reason: String) : DirectTarget
+}
+
+/**
+ * The device a 1:1 row rings: its own when it has one, else the person's
+ * current device off the crew list. The widget's other-production history
+ * has no crew list here, so the row's own device is all it can go on. A
+ * device may legitimately be blank for Line 3, which rings by user id.
+ */
+private fun AppGraph.Ready.directTarget(entry: CallLogEntry, otherProjectId: String?): DirectTarget {
+    if (otherProjectId != null) return DirectTarget.Device(entry.peerDeviceId)
+    val peer = projectContext?.context?.value?.user(entry.peerUserId)
+    val gone = peer == null || !peer.hasJoined() || peer.status in LEFT_STATUSES
+    if (gone) return DirectTarget.Refused(USER_NOT_ACTIVE)
+    val device = entry.peerDeviceId.ifBlank { peer.deviceId.orEmpty() }
+    if (device.isBlank() && entry.peerUserId.isBlank()) return DirectTarget.Refused(CALL_FAILED)
+    return DirectTarget.Device(device)
+}
+
+/** Crew rows that are still listed but cannot be rung — `ProjectUser.status`. */
+private val LEFT_STATUSES = setOf("left", "removed")
+
+/** Android's `user_not_active_txt` (`res/values/strings.xml:3431`). */
+private const val USER_NOT_ACTIVE = "User is not active in this project."
+
+/** Android's `txt_error_call` (`res/values/strings.xml:942`). */
+private const val CALL_FAILED = "Facing issues while starting a call."
 
 /** A crew member's name, honouring the keep-private flag the lists apply. */
 internal fun crewNameOf(ready: AppGraph.Ready, userId: String): String? =
@@ -346,7 +415,7 @@ internal fun AppGraph.Ready.callableCrew(): List<CallCrewEntry> {
                 userId = user.userId,
                 deviceId = device,
                 name = user.fullName,
-                designation = user.designation.orEmpty(),
+                designation = user.designationText().orEmpty(),
             )
         }
 }

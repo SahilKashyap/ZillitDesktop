@@ -15,6 +15,7 @@ import com.zillit.desktop.feature.esignature.domain.FieldType
 import com.zillit.desktop.feature.esignature.domain.SavedSignature
 import com.zillit.desktop.feature.esignature.domain.SignatureFont
 import com.zillit.desktop.feature.esignature.domain.SignerOptionLike
+import com.zillit.desktop.feature.esignature.domain.EsignUnread
 import com.zillit.desktop.feature.esignature.domain.StoredFile
 
 /** The four top-level segments (the web's Segmented control). */
@@ -483,6 +484,8 @@ data class BulkState(
 
 data class EsignUiState(
     val viewer: EsignViewer = EsignViewer(),
+    /** The tool's unread rows — the surfaces', buckets' and envelopes' badges. */
+    val unread: EsignUnread = EsignUnread.None,
     val currentUserId: String = "",
     val currentUserEmail: String = "",
     val surface: EsignSurface = EsignSurface.Manage,

@@ -231,7 +231,7 @@ private fun ApproverRow(approver: RightsApprover, onPick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = approver.name, size = ROW_AVATAR)
+        ZillitAvatar(name = approver.name, userId = approver.userId, size = ROW_AVATAR)
         Column(Modifier.weight(1f)) {
             ZillitText(text = approver.name, style = ZillitTheme.typography.bodyMedium, maxLines = 1)
             approver.designation?.takeIf { it.isNotBlank() }?.let {

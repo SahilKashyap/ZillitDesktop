@@ -35,5 +35,5 @@ internal fun Face(userId: String?, name: String, size: Dp, modifier: Modifier = 
     if (id.isNotBlank() && !faces.cache.containsKey(id)) {
         LaunchedEffect(id) { faces.cache[id] = runCatching { faces.load(id) }.getOrNull() }
     }
-    ZillitAvatar(name = name.ifBlank { "?" }, size = size, image = faces.cache[id], modifier = modifier)
+    ZillitAvatar(name = name.ifBlank { "?" }, size = size, image = faces.cache[id], userId = id, modifier = modifier)
 }

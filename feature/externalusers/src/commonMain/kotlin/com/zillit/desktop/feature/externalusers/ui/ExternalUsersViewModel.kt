@@ -7,6 +7,8 @@ import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.externalusers.data.EXTERNAL_USERS_SYNC_EVENTS
 import com.zillit.desktop.feature.externalusers.domain.CREW_TYPE
+import com.zillit.desktop.feature.externalusers.domain.Creator
+import com.zillit.desktop.feature.externalusers.domain.DialCode
 import com.zillit.desktop.feature.externalusers.domain.ExternalUser
 import com.zillit.desktop.feature.externalusers.domain.ExternalUserBucket
 import com.zillit.desktop.feature.externalusers.domain.ExternalUsersRepository
@@ -31,6 +33,10 @@ data class ExternalUsersUiState(
     val query: String = "",
     val viewer: ExternalUsersViewer = ExternalUsersViewer(),
     val departments: List<DepartmentOption> = emptyList(),
+    /** The form's country-code picker options — the world's, not the production's. */
+    val dialCodes: List<DialCode> = emptyList(),
+    /** The crew by id, for each card's "Created By" line. */
+    val crew: Map<String, Creator> = emptyMap(),
     /** The form when open; null otherwise. */
     val editing: EditingUser? = null,
     val confirmDelete: ExternalUser? = null,
@@ -44,6 +50,9 @@ data class ExternalUsersUiState(
         get() = users
             .filter { query.isBlank() || it.fullName.contains(query.trim(), ignoreCase = true) }
             .sortedBy { it.fullName.lowercase() }
+
+    /** Who added [user], when they are still on the crew; null reads as the web's bare fallback. */
+    fun creatorOf(user: ExternalUser): Creator? = crew[user.createdBy]
 }
 
 /**
@@ -72,6 +81,9 @@ data class EditingUser(
             departmentId = if (bucket == ExternalUserBucket.Crew) draft.departmentId else "",
             designationId = if (bucket == ExternalUserBucket.Crew) draft.designationId else "",
             otherInfo = draft.otherInfo.filter { it.label.isNotBlank() || it.value.isNotBlank() },
+            // The web's `normalize` on the email field: stray spaces never reach the wire.
+            email = draft.email.trim(),
+            fullName = draft.fullName.trim(),
         )
     }
 }
@@ -94,10 +106,16 @@ sealed interface ExternalUsersEvent {
     data object ConfirmDelete : ExternalUsersEvent
     data object CancelDelete : ExternalUsersEvent
     data object DismissError : ExternalUsersEvent
+
+    /** An email address on a card or the details view was clicked — the web's `EmailOpener`. */
+    data class WriteTo(val address: String) : ExternalUsersEvent
 }
 
 sealed interface ExternalUsersEffect {
     data class Notice(val text: String) : ExternalUsersEffect
+
+    /** Raise the mail composer addressed to [address]; the host decides how. */
+    data class ComposeEmail(val address: String) : ExternalUsersEffect
 }
 
 /**
@@ -109,6 +127,10 @@ class ExternalUsersViewModel(
     private val resolveViewer: () -> ExternalUsersViewer,
     private val loadDepartments: suspend () -> List<DepartmentOption>,
     private val nowMillis: () -> Long,
+    /** The ISD preset, or the bundled copy — the web's `getCountryDetails`. Empty in tests. */
+    private val loadDialCodes: suspend () -> List<DialCode> = { emptyList() },
+    /** The production's crew, so "Created By" can name a person rather than an id. */
+    private val loadCrew: suspend () -> List<Creator> = { emptyList() },
     /**
      * The socket, so a guest added or removed by another coordinator lands
      * without a refresh. Null in tests and on a build with no socket.
@@ -171,6 +193,16 @@ private val rights: RightsRequestBus? = null,
             val departments = loadDepartments()
             setState { copy(departments = departments) }
         }
+        launch {
+            val crew = loadCrew().associateBy { it.userId }
+            setState { copy(crew = crew) }
+        }
+        if (currentState.dialCodes.isEmpty()) {
+            launch {
+                val codes = loadDialCodes()
+                setState { copy(dialCodes = codes) }
+            }
+        }
     }
 
     /**
@@ -202,7 +234,8 @@ private val rights: RightsRequestBus? = null,
 
     private fun forgetRoster() {
         rosterGeneration++
-        setState { ExternalUsersUiState() }
+        // The dial codes are the world's, not the production's: they stay.
+        setState { ExternalUsersUiState(dialCodes = dialCodes) }
     }
 
     @Suppress("CyclomaticComplexMethod") // Event fan-out: one line per act.
@@ -247,6 +280,9 @@ private val rights: RightsRequestBus? = null,
             ExternalUsersEvent.ConfirmDelete -> delete()
             ExternalUsersEvent.CancelDelete -> setState { copy(confirmDelete = null) }
             ExternalUsersEvent.DismissError -> setState { copy(error = null) }
+            is ExternalUsersEvent.WriteTo -> {
+                if (event.address.isNotBlank()) sendEffect(ExternalUsersEffect.ComposeEmail(event.address))
+            }
         }
     }
 

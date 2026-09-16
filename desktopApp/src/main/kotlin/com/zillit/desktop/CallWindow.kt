@@ -80,31 +80,33 @@ internal fun ApplicationScope.CallWindow(
     ) {
         ZillitTheme(darkTheme = darkTheme) {
             val colors = ZillitTheme.colors
-            Box(Modifier.fillMaxSize().background(colors.canvas)) {
-                if (compact) {
-                    Column(Modifier.fillMaxSize()) {
-                        PipStrip(state, calls)
-                        // The picture. The same single component the stage
-                        // hosts; its factory hands it over and its disposal
-                        // parks it again, so the round trip out and back is
-                        // two re-parents, not a rebuild — never a dropped call.
-                        Box(Modifier.fillMaxSize().background(Color.Black)) {
-                            callVideoSurface(ready)?.invoke()
+            AvatarFaces(ready) {
+                Box(Modifier.fillMaxSize().background(colors.canvas)) {
+                    if (compact) {
+                        Column(Modifier.fillMaxSize()) {
+                            PipStrip(state, calls)
+                            // The picture. The same single component the stage
+                            // hosts; its factory hands it over and its disposal
+                            // parks it again, so the round trip out and back is
+                            // two re-parents, not a rebuild — never a dropped call.
+                            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                                callVideoSurface(ready)?.invoke()
+                            }
                         }
+                    } else {
+                        // The whole calling surface, in its own window: stage,
+                        // controls, roster and add-people, exactly as the overlay
+                        // drew them inside the app.
+                        CallOverlay(
+                            state = state,
+                            onEvent = calls::onEvent,
+                            loadAvatar = crewFaceLoader(ready),
+                            videoSurface = callVideoSurface(ready),
+                            // This window IS the call: it draws the stage and it
+                            // holds the browser component while it is open.
+                            ownsCall = true,
+                        )
                     }
-                } else {
-                    // The whole calling surface, in its own window: stage,
-                    // controls, roster and add-people, exactly as the overlay
-                    // drew them inside the app.
-                    CallOverlay(
-                        state = state,
-                        onEvent = calls::onEvent,
-                        loadAvatar = crewFaceLoader(ready),
-                        videoSurface = callVideoSurface(ready),
-                        // This window IS the call: it draws the stage and it
-                        // holds the browser component while it is open.
-                        ownsCall = true,
-                    )
                 }
             }
         }

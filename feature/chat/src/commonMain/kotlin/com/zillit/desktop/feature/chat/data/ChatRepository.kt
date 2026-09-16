@@ -107,6 +107,27 @@ interface ChatRepository {
         isGroup: Boolean = false,
     ): ZillitResult<List<String>>
 
+    /**
+     * Rewrites one of our own messages for everyone — `private-chat:edit` /
+     * `group-chat:edit` with the new words encrypted, answered with the row
+     * as saved (`edited` stamped). The caches take the answer before this
+     * returns, so a reopened thread shows the new text. Silent by default
+     * for a repository that has not adopted it (a fake in a test).
+     */
+    suspend fun editMessage(
+        messageId: String,
+        body: String,
+        isGroup: Boolean = false,
+    ): ZillitResult<ChatMessage> = ZillitResult.Failure(ZillitError.Unknown("editing is not available"))
+
+    /**
+     * Who has and has not read a group message —
+     * `GET group-chat/readby/{messageId}`, the web's `getReadBy`
+     * (`api/cnc/chat/cncAPI.js:65-72`).
+     */
+    suspend fun readBy(messageId: String): ZillitResult<com.zillit.desktop.feature.chat.domain.ReadByReport> =
+        ZillitResult.Failure(ZillitError.Unknown("read receipts are not available"))
+
     /** This session's copy of a thread, for instant reopen; null before load. */
     fun cached(otherUserId: String): List<ChatMessage>?
 
@@ -429,7 +450,10 @@ class ChatRepositoryImpl(
             bus.on(groupEdit).hereOnly().mapNotNull { message ->
                 message.payload?.let { readChatMessage(it, myUserId(), decrypt, isGroup = true) }
             },
-        )
+            // The caches take the new words too, or a reopened thread and
+            // the shelf's preview would show the old ones until the next
+            // history load.
+        ).map { edited -> edited.copy(isEdited = true).also(::remember) }
 
     override fun cached(otherUserId: String): List<ChatMessage>? =
         threads()[otherUserId] ?: projectId()?.let { project ->
@@ -491,7 +515,9 @@ class ChatRepositoryImpl(
         }
         if (peer.isBlank()) return
         val known = threads()[peer].orEmpty()
-        threads()[peer] = (known.filterNot { it.uniqueId == message.uniqueId } + message)
+        // Matched on either id: a send's ack still wears our unique id, an
+        // edit's ack may wear only the server's — one row either way.
+        threads()[peer] = (known.filterNot { it.uniqueId == message.uniqueId || it.id == message.id } + message)
             .sortedBy(ChatMessage::timestampMillis)
         projectId()?.let { project -> disk?.upsert(project, message.toRow(peer)) }
     }
@@ -523,6 +549,46 @@ class ChatRepositoryImpl(
             }
         }
     }
+
+    override suspend fun editMessage(
+        messageId: String,
+        body: String,
+        isGroup: Boolean,
+    ): ZillitResult<ChatMessage> {
+        val cipher = encrypt(body) ?: return ZillitResult.Failure(
+            ZillitError.Storage("message encryption failed"),
+        )
+        return bus.emitForAck(
+            if (isGroup) groupEdit else privateEdit,
+            editEnvelope(messageId, cipher),
+            JsonElement.serializer(),
+        ).flatMap { ack ->
+            val complaint = ackComplaint(ack)
+            if (complaint != null) {
+                ZillitLog.w(TAG) { "the server refused an edit: $complaint" }
+                ZillitResult.Failure(ZillitError.Unknown(complaint))
+            } else {
+                // The ack is the saved row (`edited` stamped, `message`
+                // re-encrypted by the server as it sees fit); the words we
+                // typed stand in if it does not decrypt — the web does the
+                // same, overwriting `ack.message` with its own `editedText`.
+                val saved = readChatMessage(ack, myUserId(), decrypt, isGroup)
+                    ?.let { row -> row.copy(body = row.body.ifBlank { body }, isEdited = true) }
+                    ?: return@flatMap ZillitResult.Failure(ZillitError.Serialization("no row in the edit ack"))
+                remember(saved)
+                ZillitResult.Success(saved)
+            }
+        }
+    }
+
+    override suspend fun readBy(messageId: String): ZillitResult<com.zillit.desktop.feature.chat.domain.ReadByReport> =
+        apiClient.request(
+            verb = HttpVerb.Get,
+            url = "${config.apiV2(ZillitService.Chat)}group-chat/readby/$messageId",
+            serializer = JsonElement.serializer(),
+            module = RequestModule.ProjectUser,
+            options = scoped(),
+        ).map(::readByFrom)
 
     /**
      * Only frames for the open production — or frames that name none.

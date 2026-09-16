@@ -175,7 +175,11 @@ internal fun SignerAvatarGroup(
                         .background(colors.surface),
                     contentAlignment = Alignment.Center,
                 ) {
-                    ZillitAvatar(name = recipient.name.ifBlank { recipient.email }, size = size)
+                    ZillitAvatar(
+                        name = recipient.name.ifBlank { recipient.email },
+                        userId = recipient.userId,
+                        size = size,
+                    )
                     if (recipient.signed) {
                         Box(
                             Modifier.align(Alignment.BottomEnd).size(10.dp).clip(CircleShape)

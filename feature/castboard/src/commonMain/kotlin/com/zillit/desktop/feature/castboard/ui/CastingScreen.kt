@@ -32,6 +32,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
+import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
@@ -48,8 +49,11 @@ import com.zillit.desktop.core.designsystem.component.ZillitToastTone
 import com.zillit.desktop.core.designsystem.component.ZillitToast
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.castboard.domain.BoardTool
+import com.zillit.desktop.feature.castboard.domain.CastingBadges
 import com.zillit.desktop.feature.castboard.domain.CastingEntry
 import com.zillit.desktop.feature.castboard.domain.CastingMedia
+import com.zillit.desktop.feature.castboard.domain.CastingStatus
+import com.zillit.desktop.feature.castboard.domain.CastingUnit
 
 /**
  * The Casting tool.
@@ -113,23 +117,16 @@ private fun Header(state: CastingUiState, onEvent: (CastingEvent) -> Unit, board
             },
         )
         // Only the lists this viewer has; one list needs no switch.
-        if (state.viewer.units.size > 1) {
-            ZillitTabStrip(
-                tabs = state.viewer.units.map { ZillitTab(id = it.unitId, label = it.label) },
-                activeId = state.unit?.unitId,
-                onSelect = { id ->
-                    state.viewer.units.firstOrNull { it.unitId == id }
-                        ?.let { onEvent(CastingEvent.UnitChanged(it)) }
-                },
-            )
-        }
+        if (state.viewer.units.size > 1) ListTabs(state, onEvent)
         Row(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
             ZillitTabStrip(
-                tabs = CastingViewModel.STATUSES.map { ZillitTab(id = it.wire, label = it.label) },
+                tabs = CastingViewModel.STATUSES.map {
+                    ZillitTab(id = it.wire, label = it.label, count = state.stageUnread(it))
+                },
                 activeId = state.status.wire,
                 onSelect = { wire ->
                     CastingViewModel.STATUSES.firstOrNull { it.wire == wire }
@@ -235,12 +232,7 @@ private fun EntryCard(
 ) {
     ZillitSectionCard(modifier = Modifier.fillMaxWidth()) {
         Photo(entry, loadPhoto)
-        ZillitButton(
-            text = "Discussion",
-            onClick = { onEvent(CastingEvent.OpenDiscussion(entry)) },
-            variant = ButtonVariant.Tertiary,
-            size = ButtonSize.Small,
-        )
+        DiscussionButton(entry, state.entryUnread(entry), onEvent)
         ZillitText(
             text = entry.characterName.ifBlank { "Unnamed character" },
             style = ZillitTheme.typography.bodyMedium,
@@ -415,3 +407,40 @@ private fun DiscussionDialog(state: CastingUiState, onEvent: (CastingEvent) -> U
         }
     }
 }
+
+/** The two lists, each with its unread — the web's tab chips. */
+@Composable
+private fun ListTabs(state: CastingUiState, onEvent: (CastingEvent) -> Unit) {
+    ZillitTabStrip(
+        tabs = state.viewer.units.map { ZillitTab(id = it.unitId, label = it.label, count = state.listUnread(it)) },
+        activeId = state.unit?.unitId,
+        onSelect = { id ->
+            state.viewer.units.firstOrNull { it.unitId == id }?.let { onEvent(CastingEvent.UnitChanged(it)) }
+        },
+    )
+}
+
+/** The thread button, with the character's unread — its folder rows and its thread, as the web's badges. */
+@Composable
+private fun DiscussionButton(entry: CastingEntry, unread: Int, onEvent: (CastingEvent) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        ZillitButton(
+            text = "Discussion",
+            onClick = { onEvent(CastingEvent.OpenDiscussion(entry)) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+        )
+        ZillitBadge(count = unread)
+    }
+}
+
+private fun CastingUiState.listUnread(unit: CastingUnit): Int = unread.tool(CastingBadges.toolOf(unit.kind))
+
+private fun CastingUiState.stageUnread(status: CastingStatus): Int =
+    unit?.let { unread.status(CastingBadges.toolOf(it.kind), status) } ?: 0
+
+private fun CastingUiState.entryUnread(entry: CastingEntry): Int =
+    unit?.let { unread.entry(CastingBadges.toolOf(it.kind), status, entry) } ?: 0

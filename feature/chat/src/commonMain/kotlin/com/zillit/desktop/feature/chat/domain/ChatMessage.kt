@@ -128,7 +128,19 @@ data class ChatAttachment(
     val widthPx: Long = 0,
     val heightPx: Long = 0,
     val durationMillis: Long = 0,
+    /** The wire's `file_size`; 0 when the row does not say. */
+    val sizeBytes: Long = 0,
 ) {
+    /**
+     * A PDF, by type or by name: the wire says `document`/`pdf` for one the
+     * phones sent and `application/pdf` for one picked here, and a Drive
+     * share can arrive with neither and only the extension.
+     */
+    val isPdf: Boolean
+        get() = contentType.equals("application/pdf", ignoreCase = true) ||
+            name.endsWith(".pdf", ignoreCase = true) ||
+            media.endsWith(".pdf", ignoreCase = true)
+
     /** Android's `message_type` word for this file. */
     val kind: String
         get() = when {

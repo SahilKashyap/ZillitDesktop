@@ -43,8 +43,15 @@ import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
+import com.zillit.desktop.core.designsystem.component.ZillitMenuEntry
+import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
+import com.zillit.desktop.feature.calls.domain.CallLine
 import com.zillit.desktop.feature.calls.domain.CallLogDirection
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
+import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallType
 
 /**
@@ -66,6 +73,12 @@ fun CallLogPane(
     nowMillis: Long,
     /** Names "You" in the detail sheet's roster; null leaves everyone by name. */
     selfUserId: String? = null,
+    /**
+     * The lines a call-back may go on — asked on the click, as the thread
+     * header asks and Android's `launchWithLineSelection` asks. The host
+     * appends Line 3 where the production has it.
+     */
+    lines: List<CallLine> = CallLine.DEFAULT,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
         PaneHeader(state, onEvent)
@@ -90,7 +103,7 @@ fun CallLogPane(
             state.entries.isEmpty() && state.missedOnly -> PaneNote("No missed calls.")
             state.entries.isEmpty() -> PaneNote("No calls yet.")
             shown.isEmpty() -> PaneNote("No calls match \"${state.query.trim()}\".")
-            else -> CallLogList(state, shown, onEvent, nameFor, nowMillis)
+            else -> CallLogList(state, shown, onEvent, nameFor, nowMillis, lines)
         }
     }
 
@@ -184,7 +197,12 @@ private fun OngoingSection(ongoing: List<OngoingCall>, onEvent: (CallLogEvent) -
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
-                ZillitAvatar(name = call.title, size = ROW_AVATAR)
+                ZillitAvatar(
+                    name = call.title,
+                    // A 1:1 call's face is whoever is in it — the row is titled after them.
+                    userId = call.inCall.singleOrNull()?.first.takeIf { call.mode != CallMode.Group },
+                    size = ROW_AVATAR,
+                )
                 Column(modifier = Modifier.weight(1f)) {
                     ZillitText(
                         text = call.title,
@@ -260,7 +278,7 @@ private fun JoinOngoingDialog(call: OngoingCall, selfUserId: String?, onEvent: (
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
-                    ZillitAvatar(name = name.ifBlank { "?" }, size = ROW_AVATAR)
+                    ZillitAvatar(name = name.ifBlank { "?" }, userId = id, size = ROW_AVATAR)
                     ZillitText(
                         text = name.ifBlank { "Someone" } + if (id == selfUserId) " (you)" else "",
                         style = ZillitTheme.typography.bodyMedium,
@@ -328,6 +346,7 @@ private fun CallLogList(
     onEvent: (CallLogEvent) -> Unit,
     nameFor: (String) -> String?,
     nowMillis: Long,
+    lines: List<CallLine>,
 ) {
     ZillitLazyColumn(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
         items(shown, key = CallLogEntry::callUuid) { entry ->
@@ -335,7 +354,8 @@ private fun CallLogList(
                 entry = entry,
                 nameFor = nameFor,
                 nowMillis = nowMillis,
-                onRedial = { onEvent(CallLogEvent.Redial(entry)) },
+                lines = lines,
+                onRedial = { line -> onEvent(CallLogEvent.Redial(entry, line)) },
                 onDetail = { onEvent(CallLogEvent.ShowDetail(entry)) },
             )
         }
@@ -361,70 +381,104 @@ private fun CallLogList(
     }
 }
 
+/**
+ * One history row. A click on a redialable row asks which line first — the
+ * same menu the thread header's call buttons open — for a group row and a
+ * 1:1 row alike; the call then goes out with the row's own type (audio or
+ * video), as Android's recents redial it.
+ */
 @Composable
+@Suppress("LongParameterList", "LongMethod") // The row's data plus its two verbs and the line picker.
 private fun CallLogRow(
     entry: CallLogEntry,
     nameFor: (String) -> String?,
     nowMillis: Long,
-    onRedial: () -> Unit,
+    lines: List<CallLine>,
+    onRedial: (CallLine) -> Unit,
     onDetail: () -> Unit,
 ) {
     val colors = ZillitTheme.colors
     val title = entry.displayTitle(nameFor)
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    // The line picker, anchored to the row. Its open state lives here, not
+    // in the trailing glyph: the popup steals the pointer and the row loses
+    // hover, so a menu owned by a hover-only control closes as it opens.
+    var pickingLine by remember { mutableStateOf(false) }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(ROW_CORNER))
-            .background(if (hovered) colors.surfaceHover else colors.surface)
-            .hoverable(interaction)
-            // Only rows that can actually ring something are pressable; a row
-            // whose peer left the production has nothing to redial.
-            .then(if (entry.isRedialable) Modifier.clickable(onClick = onRedial) else Modifier)
-            .padding(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        ZillitAvatar(name = title, size = ROW_AVATAR)
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-            ) {
-                ZillitText(
-                    text = title,
-                    style = ZillitTheme.typography.bodyMedium,
-                    // A missed call is the one row worth finding at a glance.
-                    color = if (entry.missed) colors.danger else colors.textPrimary,
-                    maxLines = 1,
-                    // Yields to the tag, never the other way round: a long name
-                    // ellipsises, and the line is still readable.
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                // Which line carried it, as the detail sheet already says and
-                // Android's rows leave to the sheet. On the row because the
-                // lines are different call stacks, and "which one rang me" is
-                // the first question when one of them is misbehaving. A tag,
-                // not a subtitle segment: the subtitle is one line at 320dp
-                // and the appended word is exactly what the ellipsis eats.
-                ZillitTag(entry.line.label, tone = TagTone.Neutral)
+    Box(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(ROW_CORNER))
+                .background(if (hovered || pickingLine) colors.surfaceHover else colors.surface)
+                .hoverable(interaction)
+                // Only rows that can actually ring something are pressable; a row
+                // whose peer left the production has nothing to redial.
+                .then(if (entry.isRedialable) Modifier.clickable { pickingLine = true } else Modifier)
+                .padding(ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitAvatar(
+                name = title,
+                userId = entry.peerUserId.takeIf { entry.mode != CallMode.Group },
+                size = ROW_AVATAR,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                ) {
+                    ZillitText(
+                        text = title,
+                        style = ZillitTheme.typography.bodyMedium,
+                        // A missed call is the one row worth finding at a glance.
+                        color = if (entry.missed) colors.danger else colors.textPrimary,
+                        maxLines = 1,
+                        // Yields to the tag, never the other way round: a long name
+                        // ellipsises, and the line is still readable.
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    // Which line carried it, as the detail sheet already says and
+                    // Android's rows leave to the sheet. On the row because the
+                    // lines are different call stacks, and "which one rang me" is
+                    // the first question when one of them is misbehaving. A tag,
+                    // not a subtitle segment: the subtitle is one line at 320dp
+                    // and the appended word is exactly what the ellipsis eats.
+                    ZillitTag(entry.line.label, tone = TagTone.Neutral)
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+                ) {
+                    DirectionMark(entry)
+                    ZillitText(
+                        text = entry.subtitle(nowMillis),
+                        style = ZillitTheme.typography.labelSmall,
+                        color = colors.textMuted,
+                        maxLines = 1,
+                    )
+                }
             }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-            ) {
-                DirectionMark(entry)
-                ZillitText(
-                    text = entry.subtitle(nowMillis),
-                    style = ZillitTheme.typography.labelSmall,
-                    color = colors.textMuted,
-                    maxLines = 1,
-                )
-            }
+            RowTrailing(entry, hovered || pickingLine, onDetail)
         }
-        RowTrailing(entry, hovered, onDetail)
+        // Each line by its number alone — the thread header's reasoning: the
+        // media stacks are our vendors, not the user's vocabulary.
+        ZillitActionMenu(
+            expanded = pickingLine,
+            onDismissRequest = { pickingLine = false },
+            entries = lines.map { line ->
+                ZillitMenuEntry.Action(
+                    label = line.label,
+                    icon = if (entry.type == CallType.Video) ZillitIcons.Camera else ZillitIcons.Phone,
+                    tone = ZillitMenuTone.Approve,
+                ) {
+                    pickingLine = false
+                    onRedial(line)
+                }
+            },
+        )
     }
 }
 

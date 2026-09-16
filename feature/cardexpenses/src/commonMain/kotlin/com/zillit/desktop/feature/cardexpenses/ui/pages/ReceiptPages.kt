@@ -1131,7 +1131,7 @@ private fun receiptColumns(
             TableColumn(
                 header = "Holder",
                 width = ColumnWidth.Weight(1.1f),
-                cell = { PersonCell(state.personName(it.holderId, it.holderName)) },
+                cell = { PersonCell(state.personName(it.holderId, it.holderName), userId = it.holderId) },
             ),
         )
     }
@@ -1464,7 +1464,7 @@ private fun transactionColumns(
         TableColumn(
             header = "Holder",
             width = ColumnWidth.Weight(1.1f),
-            cell = { PersonCell(state.personName(it.holderId, it.holderName)) },
+            cell = { PersonCell(state.personName(it.holderId, it.holderName), userId = it.holderId) },
         ),
     )
     add(textColumn("Amount", ColumnWidth.Weight(1f), numeric = true) { money(it.amount, it.currency) })

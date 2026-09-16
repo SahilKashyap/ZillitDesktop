@@ -881,7 +881,7 @@ fun cardColumns(
         TableColumn(
             header = "Holder",
             width = ColumnWidth.Weight(1.4f),
-            cell = { PersonCell(holderName(it)) },
+            cell = { PersonCell(holderName(it), userId = it.holderId) },
         ),
     )
     add(textColumn("Card", ColumnWidth.Weight(1f), muted = true) { cardLabel(it) })
@@ -926,7 +926,7 @@ fun topUpColumns(
             TableColumn(
                 header = "Holder",
                 width = ColumnWidth.Weight(1.3f),
-                cell = { PersonCell(holderName(it)) },
+                cell = { PersonCell(holderName(it), userId = it.holderId) },
             ),
         )
     }

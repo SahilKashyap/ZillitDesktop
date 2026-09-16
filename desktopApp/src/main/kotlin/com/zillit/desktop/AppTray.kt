@@ -12,7 +12,6 @@ import androidx.compose.ui.window.rememberTrayState
 import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.datastore.PreferenceStore
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.core.notifications.DesktopNotification
 import java.awt.Desktop
 
 /**
@@ -59,29 +58,6 @@ internal fun ApplicationScope.AppTray(
                     onClick = { widgets.toggle(widget) },
                 )
             }
-            Separator()
-            /*
-             * Posts a banner on demand, straight into TrayNotifier.
-             *
-             * Splits the question a silent notification cannot answer: this
-             * item exercises only delivery (helper, permission, macOS), while
-             * the socket pipeline behind real banners logs its own verdicts
-             * (ActivityAlerts / Notifications tags). If this shows a banner
-             * and a real event does not, the pipeline said why in the log;
-             * if this shows nothing, the machine is refusing delivery and no
-             * pipeline work will change that.
-             */
-            Item(
-                "Send test notification",
-                onClick = {
-                    TrayNotifier(trayState).post(
-                        DesktopNotification(
-                            title = "Zillit",
-                            body = "Notifications are working on this Mac.",
-                        ),
-                    )
-                },
-            )
             Separator()
             // Named, not just "Quit": in a menu bar full of other apps' icons,
             // an unqualified Quit is a coin flip about what is about to close.

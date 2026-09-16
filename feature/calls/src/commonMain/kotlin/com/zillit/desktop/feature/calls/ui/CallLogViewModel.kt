@@ -5,6 +5,7 @@ import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.calls.data.CallApi
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitActiveCall
+import com.zillit.desktop.feature.calls.domain.CallLine
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
 import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallType
@@ -95,7 +96,8 @@ sealed interface CallLogEvent {
     data object ShowMissed : CallLogEvent
     data object Refresh : CallLogEvent
     data object LoadMore : CallLogEvent
-    data class Redial(val entry: CallLogEntry) : CallLogEvent
+    /** A row's call-back, on the line the picker chose — Android's `launchWithLineSelection`. */
+    data class Redial(val entry: CallLogEntry, val line: CallLine = CallLine.Two) : CallLogEvent
 
     /** The search box moved. */
     data class Search(val query: String) : CallLogEvent
@@ -131,8 +133,12 @@ class CallLogViewModel(
     private val api: CallApi,
     private val selfUserId: () -> String?,
     private val nowMillis: () -> Long,
-    /** Rings a row again. The host owns what "ring" means. */
-    private val onRedial: (CallLogEntry) -> Unit,
+    /**
+     * Rings a row again on the chosen line. The host owns what "ring" means,
+     * and answers why it could not — the peer gone from the production, no
+     * device to reach — or null when the call is being placed.
+     */
+    private val onRedial: (CallLogEntry, CallLine) -> String?,
     /**
      * Whose history this is, when it is not the open production's — a widget
      * showing another production. Null is the ambient pair.
@@ -162,7 +168,9 @@ class CallLogViewModel(
             CallLogEvent.ShowMissed -> switchTo(missedOnly = true)
             CallLogEvent.Refresh -> launch { load(reset = true) }
             CallLogEvent.LoadMore -> launch { load(reset = false) }
-            is CallLogEvent.Redial -> onRedial(event.entry)
+            is CallLogEvent.Redial -> onRedial(event.entry, event.line)?.let { refusal ->
+                setState { copy(error = refusal) }
+            }
             is CallLogEvent.Search -> setState { copy(query = event.query) }
             CallLogEvent.DeleteAll, CallLogEvent.CancelDeleteAll, CallLogEvent.ConfirmDeleteAll -> onDeleteEvent(event)
             is CallLogEvent.ShowDetail -> setState { copy(detail = event.entry) }

@@ -405,7 +405,7 @@ private fun PersonPill(userId: String, state: BoxScheduleUiState) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        ZillitAvatar(name = name, image = rememberDiaryFace(userId), size = PILL_FACE)
+        ZillitAvatar(name = name, image = rememberDiaryFace(userId), userId = userId, size = PILL_FACE)
         ZillitText(name, style = ZillitTheme.typography.labelSmall, color = colors.textPrimary, maxLines = 1)
     }
 }
@@ -415,7 +415,7 @@ internal fun PersonLine(userId: String, state: BoxScheduleUiState) {
     val person = state.person(userId)
     val name = person?.fullName?.ifBlank { null } ?: "User"
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ZillitAvatar(name = name, image = rememberDiaryFace(userId), size = LINE_FACE)
+        ZillitAvatar(name = name, image = rememberDiaryFace(userId), userId = userId, size = LINE_FACE)
         Column {
             ZillitText(name, style = ZillitTheme.typography.label.copy(fontWeight = FontWeight.SemiBold), maxLines = 1)
             person?.subtitle?.takeIf { it.isNotBlank() }?.let {

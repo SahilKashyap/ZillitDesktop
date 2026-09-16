@@ -161,7 +161,7 @@ private fun TeamMemberRow(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ZillitAvatar(name = person?.name ?: member.userId)
+            ZillitAvatar(name = person?.name ?: member.userId, userId = member.userId)
             ZillitSelect(
                 value = person,
                 options = people,

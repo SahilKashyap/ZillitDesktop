@@ -56,6 +56,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitTab
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.avatarHue
+import com.zillit.desktop.core.designsystem.component.rememberAvatar
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.accounthub.domain.ApprovalModule
@@ -530,7 +531,7 @@ private fun ApproverLine(userId: String, state: AccountHubUiState) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = name, image = rememberHubFace(userId), size = LINE_AVATAR)
+        ZillitAvatar(name = name, image = rememberHubFace(userId), userId = userId, size = LINE_AVATAR)
         Column {
             ZillitText(
                 text = name,
@@ -595,7 +596,7 @@ private fun FaceStack(userIds: List<String>, state: AccountHubUiState) {
  */
 @Composable
 internal fun ApprovalMiniFace(name: String, userId: String?, size: Dp, modifier: Modifier = Modifier) {
-    val image = rememberHubFace(userId)
+    val image = rememberHubFace(userId) ?: rememberAvatar(userId)
     Box(
         modifier = modifier.size(size).clip(CircleShape).background(avatarHue(name)),
         contentAlignment = Alignment.Center,

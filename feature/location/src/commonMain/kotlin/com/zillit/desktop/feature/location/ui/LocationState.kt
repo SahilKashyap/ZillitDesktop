@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.location.domain.LocationMedia
 import com.zillit.desktop.feature.location.domain.LocationMessage
 import com.zillit.desktop.feature.location.domain.LocationPick
 import com.zillit.desktop.feature.location.domain.LocationStatus
+import com.zillit.desktop.feature.location.domain.LocationUnread
 import com.zillit.desktop.feature.location.domain.LocationViewer
 import com.zillit.desktop.feature.location.domain.PickedLocationFile
 
@@ -107,6 +108,8 @@ data class LocationUiState(
     val discussionLoading: Boolean = false,
     val discussionDraft: String = "",
     val discussionSending: Boolean = false,
+    /** The tool's unread rows — the tabs', folders', galleries' and records' badges. */
+    val unread: LocationUnread = LocationUnread.None,
 ) {
     val folders: List<LocationFolder> get() = Folders.search(Folders.group(info, groupBy), query)
 }

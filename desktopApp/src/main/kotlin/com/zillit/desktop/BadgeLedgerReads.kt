@@ -1,7 +1,9 @@
 package com.zillit.desktop
 
+import com.zillit.desktop.core.badges.BadgeDrilldownQuery
 import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.badges.BadgeStore
+import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.badges.LedgerRead
 import com.zillit.desktop.core.badges.MailFolderState
 import com.zillit.desktop.core.badges.isMailOf
@@ -17,12 +19,21 @@ import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HeaderContext
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.NotificationReadDto
+import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.email.data.MailboxProfileSource
 import com.zillit.desktop.feature.email.ui.MailFolderSync
 import com.zillit.desktop.feature.email.ui.MailRead
 import com.zillit.desktop.feature.notifications.domain.NotificationsRepository
 import com.zillit.desktop.feature.sos.domain.SosRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
@@ -369,4 +380,163 @@ class MailboxScopes(
 
     private fun openable(projectId: String): Set<String> =
         setOfNotNull(personal[projectId], accounts[projectId]?.takeIf { accountsOpenable() })
+}
+
+/**
+ * One level read — a tool's tab, folder or row seen — sent as the phones
+ * send it (`notification:level:read` scoped by tool, unit and levels; iOS
+ * `emitForBadgeReadLevels`, Android `markReadCommon(isLCW = true)`) and
+ * applied to the ledger at once, so the badge falls as the screen draws and
+ * not after the server's echo, which never comes for one's own read.
+ *
+ * A level left null is not scoped; the wire carries only the levels given.
+ * The ledger's [LedgerRead.Levels] compares the same way.
+ */
+@Suppress("LongParameterList") // The wire's own fields, one each.
+internal suspend fun AppGraph.Ready.emitLevelRead(
+    tool: String,
+    unit: String,
+    level1: String? = null,
+    level2: String? = null,
+    level3: String? = null,
+    action: String? = null,
+    /**
+     * One entity's rows, named by `reference_id` — the document distribution
+     * and drive reads (`Library.jsx:157-165`); the unit then narrows further
+     * when given, and a blank unit is "any".
+     */
+    referenceId: String? = null,
+) {
+    val projectId = projectContext?.context?.value?.project?.projectId ?: return
+    val now = System.currentTimeMillis()
+    runCatching {
+        socketEvents.emit(
+            ZillitSocketEvents.Badges.NotificationLevelRead,
+            NotificationReadDto(
+                projectId = projectId,
+                section = BadgeSections.TOOLS,
+                tool = tool,
+                module = tool,
+                unit = unit.takeIf { it.isNotBlank() },
+                segment = unit.takeIf { it.isNotBlank() },
+                level1 = level1,
+                level2 = level2,
+                level3 = level3,
+                action = action,
+                referenceId = referenceId,
+                timestamp = now,
+                readTime = now,
+            ),
+            NotificationReadDto.serializer(),
+        )
+    }.onFailure { ZillitLog.w(TAG_READS) { "level read not sent ($tool/$unit): ${it::class.simpleName}" } }
+    val read: LedgerRead = if (referenceId != null) {
+        LedgerRead.Reference(referenceId, unit.takeIf { it.isNotBlank() })
+    } else {
+        LedgerRead.Levels(tool = tool, unit = unit, level1 = level1, level2 = level2, level3 = level3, action = action)
+    }
+    val turned = badgeStore.markRead(read)
+    if (turned > 0) {
+        ZillitLog.d(TAG_READS) { "level read $tool/$unit [$level1|$level2|$level3|$action|$referenceId]: $turned rows" }
+    }
+}
+
+/**
+ * One entity's rows read by `reference_id` — `notification:read` with the
+ * tool as the segment, which the server scopes to the entity (ZL-18873: the
+ * level-read handler ignores `reference_id` and, given no levels, degrades
+ * to the whole tool — the drive learnt that the hard way, so a folder or
+ * file read goes this way). Locally the same: the rows naming the entity,
+ * narrowed to [unit] when one is given.
+ */
+internal suspend fun AppGraph.Ready.emitReferenceRead(tool: String, referenceId: String, unit: String? = null) {
+    val projectId = projectContext?.context?.value?.project?.projectId ?: return
+    if (referenceId.isBlank()) return
+    runCatching {
+        socketEvents.emit(
+            ZillitSocketEvents.Badges.NotificationRead,
+            NotificationReadDto(
+                projectId = projectId,
+                segment = tool,
+                module = tool,
+                unit = unit,
+                referenceId = referenceId,
+                timestamp = System.currentTimeMillis(),
+            ),
+            NotificationReadDto.serializer(),
+        )
+    }.onFailure { ZillitLog.w(TAG_READS) { "reference read not sent ($tool/$referenceId): ${it::class.simpleName}" } }
+    val turned = badgeStore.markRead(LedgerRead.Reference(referenceId, unit))
+    if (turned > 0) ZillitLog.d(TAG_READS) { "reference read $tool/$referenceId [$unit]: $turned rows" }
+}
+
+/**
+ * A record's own thread opened — a location photo, a casting entry, a
+ * standard form — read the way the web reads an LCW image chat
+ * (`LCWChatDiscussionV2.jsx:209`): `notification:read` naming the record as
+ * the segment under the `lcw_image_chat_label` module, and locally every
+ * row whose `reference_data.chat.unit_id` is the record ([LedgerRead.Board]
+ * matches a chat unit id as well as a unit).
+ */
+internal suspend fun AppGraph.Ready.emitRecordChatRead(
+    tool: String,
+    recordId: String,
+    module: String = LCW_IMAGE_CHAT,
+) {
+    val projectId = projectContext?.context?.value?.project?.projectId ?: return
+    if (recordId.isBlank()) return
+    runCatching {
+        socketEvents.emit(
+            ZillitSocketEvents.Badges.NotificationRead,
+            NotificationReadDto(
+                projectId = projectId,
+                segment = recordId,
+                tool = tool,
+                module = module,
+                timestamp = System.currentTimeMillis(),
+            ),
+            NotificationReadDto.serializer(),
+        )
+    }.onFailure { ZillitLog.w(TAG_READS) { "record read not sent ($tool/$recordId): ${it::class.simpleName}" } }
+    val turned = badgeStore.markRead(LedgerRead.Board(recordId))
+    if (turned > 0) ZillitLog.d(TAG_READS) { "record read $tool/$recordId: $turned rows" }
+}
+
+/** The web's module name for a record-level thread inside an LCW tool (`BADGE_CONSTANTS.lcw_image_chat_label`). */
+internal const val LCW_IMAGE_CHAT = "lcw_image_chat_label"
+
+private const val TAG_READS = "Badges"
+
+/**
+ * A tabbed tool's per-key unread over the ledger, and its tab reads.
+ *
+ * [scope] answers the rows' address — tool and unit — when asked, because the
+ * finance tools file an accountant's rows under the account hub and everyone
+ * else's under the tool itself, and who the viewer is resolves only once the
+ * production is open. [groupBy] is the field the keys are read from
+ * (`level_1` for a tab, `unit` for a tool whose tabs are units).
+ */
+internal fun AppGraph.Ready.tabBadges(groupBy: String, scope: () -> TabBadgeScope): TabBadgeSource =
+    object : TabBadgeSource {
+        private val reads = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+        override val counts: Flow<Map<String, Int>> = badgeStore.counts
+            .map { badgeStore.split(scope().query(groupBy)) }
+            .distinctUntilChanged()
+
+        override fun read(key: String) {
+            val at = scope()
+            reads.launch {
+                when (groupBy) {
+                    "unit" -> emitLevelRead(tool = at.tool, unit = key)
+                    else -> emitLevelRead(tool = at.tool, unit = at.unit.orEmpty(), level1 = key)
+                }
+            }
+        }
+    }
+
+/** Where a tabbed tool's rows live: its tool, and — when the tabs are levels — the unit under it. */
+internal data class TabBadgeScope(val tool: String, val unit: String? = null) {
+    fun query(groupBy: String) =
+        BadgeDrilldownQuery(groupBy = groupBy, section = BadgeSections.TOOLS, tool = tool, unit = unit)
 }

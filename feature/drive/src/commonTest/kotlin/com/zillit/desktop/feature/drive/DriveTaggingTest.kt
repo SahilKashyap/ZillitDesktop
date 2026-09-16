@@ -2,30 +2,17 @@ package com.zillit.desktop.feature.drive
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
-import com.zillit.desktop.feature.drive.domain.DriveActivity
-import com.zillit.desktop.feature.drive.domain.DriveComment
 import com.zillit.desktop.feature.drive.domain.DriveCrumb
 import com.zillit.desktop.feature.drive.domain.DriveItem
 import com.zillit.desktop.feature.drive.domain.DriveItemKind
-import com.zillit.desktop.feature.drive.domain.DrivePage
-import com.zillit.desktop.feature.drive.domain.DriveQuery
 import com.zillit.desktop.feature.drive.domain.DriveRef
-import com.zillit.desktop.feature.drive.domain.DriveRepository
 import com.zillit.desktop.feature.drive.domain.DriveTag
-import com.zillit.desktop.feature.drive.domain.DriveVersion
 import com.zillit.desktop.feature.drive.domain.DriveViewer
-import com.zillit.desktop.feature.drive.domain.StorageUsage
-import com.zillit.desktop.feature.drive.domain.UploadPart
-import com.zillit.desktop.feature.drive.domain.UploadRequest
-import com.zillit.desktop.feature.drive.domain.UploadSession
 import com.zillit.desktop.feature.drive.ui.DetailsState
 import com.zillit.desktop.feature.drive.ui.DriveEvent
 import com.zillit.desktop.feature.drive.ui.DriveViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -67,8 +54,7 @@ class DriveTaggingTest {
         uploadedById = "u1",
     )
 
-    private class FakeRepo(override val refreshes: Flow<Unit> = MutableSharedFlow()) : DriveRepository {
-        var browseLoads = 0
+    private class FakeRepo : FakeDriveRepository() {
         var projectTags = mutableListOf(DriveTag("t1", "Approved"), DriveTag("t2", "Legal"))
         var applied = mutableListOf<DriveTag>()
         val assigned = mutableListOf<Pair<String, String>>()
@@ -77,13 +63,7 @@ class DriveTaggingTest {
         var itemTagReads = 0
         var assignFails = false
         val versionUrlsAsked = mutableListOf<Pair<String, String>>()
-
-        var rows = emptyList<DriveItem>()
-
-        override suspend fun contents(query: DriveQuery): ZillitResult<DrivePage> {
-            browseLoads++
-            return ZillitResult.Success(DrivePage(rows, total = rows.size))
-        }
+        var renames = 0
 
         override suspend fun tags() = ZillitResult.Success(projectTags.toList())
 
@@ -92,10 +72,11 @@ class DriveTaggingTest {
             return ZillitResult.Success(applied.toList())
         }
 
-        override suspend fun createTag(name: String, color: String): ZillitResult<Unit> {
+        /** Answers no body, as the live service does: the new tag is found by name. */
+        override suspend fun createTag(name: String, color: String): ZillitResult<DriveTag?> {
             created += name
             projectTags += DriveTag("new-${created.size}", name)
-            return ok()
+            return ZillitResult.Success(null)
         }
 
         override suspend fun assignTag(tagId: String, ref: DriveRef): ZillitResult<Unit> {
@@ -111,61 +92,15 @@ class DriveTaggingTest {
             return ok()
         }
 
-        override suspend fun item(id: String, kind: DriveItemKind): ZillitResult<DriveItem> = unused()
-        override suspend fun createFolder(name: String, parentId: String?, description: String):
-            ZillitResult<DriveItem> = unused()
-        var renames = 0
-
         override suspend fun rename(ref: DriveRef, name: String, description: String?): ZillitResult<Unit> {
             renames++
             return ok()
         }
-        override suspend fun move(ref: DriveRef, targetFolderId: String?) = ok()
-        override suspend fun delete(ref: DriveRef) = ok()
-        override suspend fun bulkDelete(refs: List<DriveRef>) = ok()
-        override suspend fun bulkMove(refs: List<DriveRef>, targetFolderId: String?) = ok()
-        override suspend fun bulkDownloadUrls(fileIds: List<String>) = ZillitResult.Success(emptyList<String>())
-        override suspend fun downloadUrl(fileId: String) = ZillitResult.Success("u")
-        override suspend fun previewUrl(fileId: String) = ZillitResult.Success("u")
-        override suspend fun streamUrl(fileId: String) = ZillitResult.Success("u")
-        override suspend fun shareLink(fileId: String) = ZillitResult.Success("u")
-        override suspend fun editorUrl(fileId: String, editable: Boolean) = ZillitResult.Success("u")
-        override suspend fun initiateUpload(request: UploadRequest): ZillitResult<UploadSession> = unused()
-        override suspend fun completeUpload(uploadId: String, parts: List<UploadPart>):
-            ZillitResult<DriveItem> = unused()
-        override suspend fun abortUpload(uploadId: String) = ok()
-        override suspend fun remainingParts(uploadId: String) = ZillitResult.Success(emptyList<UploadPart>())
-        override suspend fun trash() = ZillitResult.Success(emptyList<DriveItem>())
-        override suspend fun restore(ref: DriveRef) = ok()
-        override suspend fun purge(ref: DriveRef) = ok()
-        override suspend fun emptyTrash() = ok()
-        override suspend fun toggleFavourite(ref: DriveRef) = ok()
-        override suspend fun favourites() = ZillitResult.Success(emptyList<DriveItem>())
-        override suspend fun favouriteIds() = ZillitResult.Success(emptySet<String>())
-        override suspend fun access(ref: DriveRef) = ZillitResult.Success(emptyList<DriveAccessEntry>())
-        override suspend fun updateAccess(
-            ref: DriveRef,
-            entries: List<DriveAccessEntry>,
-            applyToChildren: Boolean,
-        ) = ok()
-        override suspend fun storage() = ZillitResult.Success(StorageUsage())
-        override suspend fun activity(itemId: String?) = ZillitResult.Success(emptyList<DriveActivity>())
-        override suspend fun comments(fileId: String) = ZillitResult.Success(emptyList<DriveComment>())
-        override suspend fun addComment(fileId: String, text: String, parentId: String?) = ok()
-        override suspend fun deleteComment(commentId: String) = ok()
-        override suspend fun deleteTag(tagId: String) = ok()
-        override suspend fun versions(fileId: String) = ZillitResult.Success(emptyList<DriveVersion>())
-        override suspend fun versionDownloadUrl(
-            fileId: String,
-            versionId: String,
-        ): ZillitResult<String> {
+
+        override suspend fun versionDownloadUrl(fileId: String, versionId: String): ZillitResult<String> {
             versionUrlsAsked += fileId to versionId
             return ZillitResult.Success("u")
         }
-        override suspend fun restoreVersion(fileId: String, versionId: String) = ok()
-
-        private fun ok() = ZillitResult.Success(Unit)
-        private fun <T> unused(): ZillitResult<T> = ZillitResult.Failure(ZillitError.Unknown("unused"))
     }
 
     private fun model(repo: FakeRepo, canPost: Boolean = true) = DriveViewModel(
@@ -392,20 +327,14 @@ class DriveTaggingTest {
         assertEquals(all, DetailsState(item = file).unapplied(all))
     }
     /**
-     * The folder trail.
-     *
-     * Built as the user walks it. There was a `GET /drive/folders/:id/breadcrumb`
-     * call here until 2026-08-27 — a route the service does not have, on any
-     * verb, and neither reference client asks for one. Its failure was
-     * swallowed into an empty list, so every folder in the Drive showed no
-     * trail and nothing said why.
+     * The folder trail, rebuilt from the folders' own ancestry — the whole
+     * scope is in hand, so a folder reached by any route gets its full trail
+     * (ZL-20182), and the root clears it.
      */
     @Test
-    fun `the trail grows as folders are opened and truncates on the way back`() = runTest(dispatcher) {
+    fun `the trail is the folder's ancestry, and the root clears it`() = runTest(dispatcher) {
         val repo = FakeRepo()
-        // Both folders in every listing: the name of the folder being opened
-        // is read off the page it was clicked on.
-        repo.rows = listOf(folder("f1", "Scripts"), folder("f2", "Drafts"))
+        repo.rows = listOf(folder("f1", "Scripts"), folder("f2", "Drafts", parent = "f1"))
         val vm = model(repo)
         vm.start()
         runCurrent()
@@ -429,25 +358,54 @@ class DriveTaggingTest {
         assertEquals(emptyList(), vm.state.value.breadcrumb)
     }
 
-    private fun folder(id: String, name: String) =
-        DriveItem(id = id, name = name, kind = DriveItemKind.Folder)
+    private fun folder(id: String, name: String, parent: String? = null) =
+        DriveItem(
+            id = id,
+            name = name,
+            kind = DriveItemKind.Folder,
+            parentFolderId = parent,
+            uploadedById = "u1",
+            createdById = "u1",
+        )
 
     /**
-     * Creating, renaming and moving ran through `mutate`, which asks nothing —
-     * while delete, download, share and view are each checked in their own
-     * handler. `DriveScreen` offers New folder only on `canCreate`.
+     * Renaming goes through the edit drawer, which refuses to open without
+     * posting rights (ZL-18294) — so nothing reaches the server.
      */
     @Test
     fun `someone who may not edit cannot rename`() = runTest(dispatcher) {
         val repo = FakeRepo()
+        repo.rows = listOf(folder("f1", "Scripts"))
         val vm = model(repo, canPost = false)
         vm.start()
         runCurrent()
 
-        vm.onEvent(DriveEvent.Rename(DriveRef("f1", DriveItemKind.Folder), "Scripts", null))
+        vm.onEvent(DriveEvent.OpenEdit(folder("f1", "Scripts")))
+        vm.onEvent(DriveEvent.EditName("Drafts"))
+        vm.onEvent(DriveEvent.SubmitEdit)
         runCurrent()
 
         assertEquals(0, repo.renames, "a rename went through without the right")
+        assertEquals(null, vm.state.value.edit, "the edit drawer must not open for a reader")
     }
 
+    /** With the right, the drawer strips a file's extension for editing and puts it back on save. */
+    @Test
+    fun `a file is renamed without its extension, which is restored on save`() = runTest(dispatcher) {
+        val repo = FakeRepo()
+        repo.rows = listOf(file)
+        val vm = model(repo)
+        vm.start()
+        runCurrent()
+
+        vm.onEvent(DriveEvent.OpenEdit(file))
+        assertEquals("Scene 12", vm.state.value.edit?.name)
+
+        vm.onEvent(DriveEvent.EditName("Scene 13"))
+        vm.onEvent(DriveEvent.SubmitEdit)
+        runCurrent()
+
+        assertEquals(1, repo.renames)
+        assertEquals(null, vm.state.value.edit, "the drawer closes on success")
+    }
 }

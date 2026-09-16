@@ -23,25 +23,28 @@ enum class DriveItemKind(val wire: String) {
 /**
  * How a file previews, decided from its MIME type and extension.
  *
- * Ported from `driveItemUtils.inferPreviewType`. Kept as a domain concept
- * rather than a UI detail because the *repository* needs it too: a video asks
- * for a streaming URL and an image asks for a preview URL, and those are
- * different endpoints.
+ * Ported from `driveItemUtils.inferPreviewType` and `DriveManagement.getPreviewType`.
+ * Kept as a domain concept rather than a UI detail because the *repository*
+ * needs it too: a video asks for a streaming URL and an image asks for a
+ * preview URL, and those are different endpoints.
  */
 enum class PreviewKind {
     Image,
     Video,
     Audio,
+    Pdf,
+    Text,
     Document,
     ;
 
     companion object {
 
         private val images = setOf(
-            "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "heic", "heif",
+            "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "heic", "heif", "ico", "tiff", "tif",
         )
         private val videos = setOf("mp4", "mov", "mkv", "avi", "wmv", "flv", "webm", "m4v")
         private val audio = setOf("mp3", "wav", "aac", "flac", "ogg", "m4a", "mpeg")
+        private val text = setOf("txt", "md", "json", "xml", "csv", "log")
 
         /**
          * MIME first, extension second.
@@ -52,17 +55,22 @@ enum class PreviewKind {
          */
         fun of(mimeType: String?, fileName: String?, extension: String? = null): PreviewKind {
             val mime = mimeType.orEmpty().lowercase()
-            when {
-                mime.startsWith("image/") -> return Image
-                mime.startsWith("video/") -> return Video
-                mime.startsWith("audio/") -> return Audio
+            val byMime = when {
+                mime.startsWith("image/") -> Image
+                mime.startsWith("video/") -> Video
+                mime.startsWith("audio/") -> Audio
+                mime.contains("pdf") -> Pdf
+                else -> null
             }
-            val ext = extension?.lowercase()?.trimStart('.')
+            if (byMime != null) return byMime
+            val ext = extension?.lowercase()?.trimStart('.')?.takeIf { it.isNotBlank() }
                 ?: fileName.orEmpty().substringAfterLast('.', "").lowercase()
             return when (ext) {
                 in images -> Image
                 in videos -> Video
                 in audio -> Audio
+                "pdf" -> Pdf
+                in text -> Text
                 else -> Document
             }
         }
@@ -85,6 +93,17 @@ data class DrivePermissions(
     val canDownload: Boolean = false,
     val canDelete: Boolean = false,
 ) {
+    /**
+     * The web's "view only" test (`DriveManagement.getContextMenuItems`): a
+     * row the user may look at and nothing else — typical of a share made
+     * with view rights only. Such a row offers Open, Preview and Favourite and
+     * suppresses everything else.
+     */
+    val isViewOnly: Boolean get() = canView && !canEdit && !canDownload && !canDelete
+
+    /** The full set, which is how the server signals ownership on a shared folder. */
+    val isOwnerLevel: Boolean get() = canView && canEdit && canDownload && canDelete
+
     companion object {
         /** What an admin, or a file's own creator, gets. */
         val Owner = DrivePermissions(
@@ -106,10 +125,10 @@ data class DrivePermissions(
 }
 
 /** The three folder-level roles, which the server inherits down a tree. */
-enum class DriveRole(val wire: String, val label: String) {
-    Owner("owner", "Owner"),
-    Editor("editor", "Editor"),
-    Viewer("viewer", "Viewer"),
+enum class DriveRole(val wire: String, val label: String, val description: String) {
+    Owner("owner", "Owner", "Full access — view, edit, download, delete"),
+    Editor("editor", "Editor", "Can view, edit, and download"),
+    Viewer("viewer", "Viewer", "View only"),
     ;
 
     /** What this role grants once resolved onto an item. */
@@ -127,12 +146,41 @@ enum class DriveRole(val wire: String, val label: String) {
 }
 
 /**
+ * The cumulative file permission levels the web's pickers offer
+ * (`FilePermissionsPanel.FILE_PERMISSIONS`): Edit > Download > View. Each
+ * collapses into the `{can_view, can_edit, can_download}` flags the server
+ * takes, so no wire change is needed.
+ */
+enum class FileAccessLevel(val label: String, val description: String) {
+    View("View", "Can view only"),
+    Download("Download", "Can view and download"),
+    Edit("Edit", "Can view, edit, and download"),
+    ;
+
+    val permissions: DrivePermissions
+        get() = when (this) {
+            View -> DrivePermissions(canView = true)
+            Download -> DrivePermissions(canView = true, canDownload = true)
+            Edit -> DrivePermissions(canView = true, canEdit = true, canDownload = true)
+        }
+
+    companion object {
+        /** `flagsToLevel` — edit outranks download outranks view. */
+        fun of(permissions: DrivePermissions): FileAccessLevel = when {
+            permissions.canEdit -> Edit
+            permissions.canDownload -> Download
+            else -> View
+        }
+    }
+}
+
+/**
  * One row of the drive listing — a file or a folder.
  *
  * One type rather than two because every surface treats them together: the
- * table, the grid, multi-select, bulk move, bulk delete, the trash and the
- * favourites list all hold mixed collections. Two types would mean every one
- * of those carrying a sealed `when` and a pair of parallel lists.
+ * table, the grid, multi-select, bulk move, bulk delete and the trash all hold
+ * mixed collections. Two types would mean every one of those carrying a sealed
+ * `when` and a pair of parallel lists.
  */
 data class DriveItem(
     val id: String,
@@ -147,14 +195,23 @@ data class DriveItem(
     val createdAt: Long? = null,
     val updatedAt: Long? = null,
     val uploadedByName: String = "",
+    /** `uploaded_by`, else `created_by` — who put it here. */
     val uploadedById: String = "",
+    /** `created_by` — whose item it is; the web's "shared with you" test compares this. */
+    val createdById: String = "",
     val permissions: DrivePermissions = DrivePermissions.ViewOnly,
+    /** Whether the server sent `_userPermissions` for this row at all. */
+    val hasExplicitPermissions: Boolean = false,
     val isFavourite: Boolean = false,
     /** Shared with someone other than its owner — drives the shared indicator. */
     val isShared: Boolean = false,
+    /** `_accessUserIds` — who the owner has shared it with, for the Sharing column. */
+    val accessUserIds: List<String> = emptyList(),
     val tagIds: List<String> = emptyList(),
     /** Populated for folders the server counted; null when it did not. */
     val itemCount: Int? = null,
+    /** A hex colour the folder was given, or blank for the accent. */
+    val folderColor: String = "",
     /** When soft-deleted. Zero or null means live. */
     val deletedAt: Long? = null,
     /**
@@ -165,7 +222,12 @@ data class DriveItem(
 ) {
     val isFolder: Boolean get() = kind == DriveItemKind.Folder
 
+    val ref: DriveRef get() = DriveRef(id, kind)
+
     val previewKind: PreviewKind get() = PreviewKind.of(mimeType, name, extension)
+
+    /** `updated_on || created_on` — the "Date Modified" column. */
+    val modifiedAt: Long? get() = updatedAt ?: createdAt
 
     /**
      * Whether this can be opened in the document editor.
@@ -173,42 +235,31 @@ data class DriveItem(
      * Editing is a WOPI round trip through Collabora, and only the office
      * formats it serves are editable — offering "Edit" on a PDF opens a viewer
      * that cannot save, which reads as a broken feature rather than an
-     * unsupported one.
+     * unsupported one. The list is the web's `ONLYOFFICE_EDITABLE_EXTENSIONS`.
      */
     val isEditableDocument: Boolean
         get() = !isFolder && extension.lowercase() in EDITABLE
 
+    /** Who this row belongs to — the creator, else the uploader. */
+    val ownerId: String get() = createdById.ifBlank { uploadedById }
+
     private companion object {
         val EDITABLE = setOf(
             "docx", "xlsx", "pptx", "doc", "xls", "ppt",
-            "odt", "ods", "odp", "csv", "txt", "rtf",
+            "odt", "ods", "odp", "csv", "txt",
         )
     }
 }
 
-/** A step in the folder path, for the breadcrumb. */
+/** A step in the folder path, for the breadcrumb. Null id is the root. */
 data class DriveCrumb(val id: String?, val name: String)
 
-/** What the project is using, from `GET /drive/storage`. */
-data class StorageUsage(
-    val usedBytes: Long = 0,
-    val fileCount: Int = 0,
-    val trashBytes: Long = 0,
-    /** Bytes per broad file type — images, videos, documents, other. */
-    val byType: Map<String, Long> = emptyMap(),
-    /**
-     * The allowance, when the production has one.
-     *
-     * Null rather than zero for "no quota": a meter drawn against a zero quota
-     * reads as full, which is the opposite of what no quota means.
-     */
-    val quotaBytes: Long? = null,
+/** Files and folders of one scope, as the two list routes answer them together. */
+data class DriveListing(
+    val files: List<DriveItem> = emptyList(),
+    val folders: List<DriveItem> = emptyList(),
 ) {
-    /** 0..1 against the quota, or null when there is none to measure against. */
-    val fraction: Float?
-        get() = quotaBytes?.takeIf { it > 0 }?.let {
-            (usedBytes.toDouble() / it).coerceIn(0.0, 1.0).toFloat()
-        }
+    val isEmpty: Boolean get() = files.isEmpty() && folders.isEmpty()
 }
 
 /** A project-level label that can be put on files and folders. */
@@ -224,16 +275,22 @@ data class DriveComment(
     val id: String,
     val fileId: String,
     val authorName: String,
+    val authorId: String = "",
     val text: String,
     val createdAt: Long? = null,
+    val updatedAt: Long? = null,
     val parentId: String? = null,
-)
+) {
+    /** The web's "(edited)" marker: an update stamp that differs from creation. */
+    val edited: Boolean get() = updatedAt != null && createdAt != null && updatedAt != createdAt
+}
 
 /** One entry of the audit trail. */
 data class DriveActivity(
     val id: String,
     val action: String,
     val itemName: String,
+    val itemType: String = "",
     /**
      * Blank on the wire — this service sends [userId] and nothing else.
      *
@@ -246,14 +303,48 @@ data class DriveActivity(
     val at: Long? = null,
     val detail: String = "",
 ) {
-    /** What the Activity table shows in its "who" column. */
-    val displayName: String get() = userName.ifBlank { "Someone" }
+    /** What the Activity list shows in its "who" line. */
+    val displayName: String get() = userName.ifBlank { "Unknown" }
 
-    /** `file.deleted` → "File deleted". The server sends dotted action keys. */
+    /**
+     * `file_created` → "File uploaded", the web's `ACTION_LABELS`; anything
+     * unlisted is de-snaked. The server sends underscore action keys.
+     */
     val label: String
-        get() = action.replace('.', ' ').replace('_', ' ').trim()
+        get() = LABELS[action] ?: action.replace('.', ' ').replace('_', ' ').trim()
             .replaceFirstChar { it.uppercase() }
+
+    /** The web's filter chips: which family a row belongs to. */
+    val category: ActivityCategory
+        get() = when {
+            action.startsWith("file") -> ActivityCategory.Files
+            action.startsWith("folder") -> ActivityCategory.Folders
+            action.startsWith("access") -> ActivityCategory.Access
+            else -> ActivityCategory.Other
+        }
+
+    private companion object {
+        val LABELS = mapOf(
+            "file_created" to "File uploaded",
+            "file_updated" to "File updated",
+            "file_deleted" to "File deleted",
+            "file_moved" to "File moved",
+            "file_restored" to "File restored",
+            "folder_created" to "Folder created",
+            "folder_updated" to "Folder updated",
+            "folder_deleted" to "Folder deleted",
+            "folder_moved" to "Folder moved",
+            "folder_restored" to "Folder restored",
+            "access_updated" to "Access updated",
+            "access_inherited" to "Access inherited",
+        )
+    }
 }
+
+enum class ActivityCategory { Files, Folders, Access, Other }
+
+/** One page of the activity log — `{ items, total }`. */
+data class DriveActivityPage(val items: List<DriveActivity>, val total: Int)
 
 /** A previous revision of a file, snapshotted before an edit overwrote it. */
 data class DriveVersion(
@@ -270,8 +361,65 @@ data class DriveVersion(
 data class DriveAccessEntry(
     val userId: String,
     val userName: String = "",
+    val designation: String = "",
     val role: DriveRole = DriveRole.Viewer,
     val permissions: DrivePermissions = DrivePermissions.ViewOnly,
+)
+
+/** A crew member, as the share and permission pickers list them. */
+data class DrivePerson(
+    val id: String,
+    val name: String,
+    val designation: String = "",
+    val avatarUrl: String? = null,
+)
+
+/** The link's grant — the web's `PERMISSION_OPTIONS`. */
+enum class LinkPermission(val wire: String, val label: String) {
+    View("view", "View only"),
+    ViewDownload("view_download", "View + download"),
+    ;
+
+    companion object {
+        fun from(wire: String?): LinkPermission = entries.firstOrNull { it.wire == wire } ?: View
+    }
+}
+
+/** One person a share link was emailed to, and whether they opened it. */
+data class LinkRecipient(val email: String, val viewCount: Int = 0)
+
+/**
+ * A public, email-tracked link to one file
+ * (`driveShareLinkApi.js`, `ShareViaLink.jsx`).
+ *
+ * Distinct from [DriveRepository.shareLink], which is a bare presigned S3
+ * address good for a day. This one is revocable, view-counted and can be sent
+ * by the service to recipients who have no Zillit account.
+ */
+data class DriveShareLink(
+    val id: String,
+    val token: String,
+    val url: String,
+    val permission: LinkPermission = LinkPermission.View,
+    /** Epoch millis; zero means never. */
+    val expiresOn: Long = 0,
+    val maxViews: Int = 0,
+    val viewCount: Int = 0,
+    val recipients: List<LinkRecipient> = emptyList(),
+    val createdOn: Long = 0,
+) {
+    fun isExpired(now: Long): Boolean = expiresOn > 0 && now > expiresOn
+}
+
+/** What the share-via-link form sends. */
+data class DriveShareLinkDraft(
+    val recipients: List<String> = emptyList(),
+    val permission: LinkPermission = LinkPermission.View,
+    /** Zero means never expires. */
+    val expiresInMillis: Long = 0,
+    /** Zero means unlimited. */
+    val maxViews: Int = 0,
+    val message: String = "",
 )
 
 /**
@@ -307,4 +455,14 @@ data class DriveFileRequestDraft(
     val requireUploaderName: Boolean = false,
     val requireUploaderEmail: Boolean = false,
     val recipients: List<String> = emptyList(),
+)
+
+/** What the create-folder drawer sends (`handleCreateFolder`). */
+data class NewFolder(
+    val name: String,
+    val parentId: String?,
+    val description: String = "",
+    val access: List<DriveAccessEntry> = emptyList(),
+    val inheritToChildren: Boolean = false,
+    val color: String = "",
 )

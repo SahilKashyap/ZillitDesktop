@@ -65,6 +65,31 @@ enum class CardDestination(
         else -> viewer.isAccountant
     }
 
+    /**
+     * The `level_1` keys the notification service files this page's rows
+     * under (`constants.js:201-224`, card-expenses-badges.xlsx). Empty for a
+     * page nothing is filed under; the non-accountant approval queue sums
+     * its two (cards, and receipts / transactions).
+     */
+    val badgeKeys: List<String>
+        get() = when (this) {
+            CardRegister -> listOf("card_register")
+            ReceiptInbox -> listOf("receipt_inbox")
+            AllTransactions -> listOf("all_transactions")
+            PendingCoding -> listOf("pending_coding")
+            ApprovalQueue -> listOf("approval_queue")
+            ProcessQueue -> listOf("process_queue")
+            BulkProcess -> listOf("bulk_process")
+            TopUpQueue -> listOf("topup_todo")
+            Alerts -> listOf("smart_alerts")
+            MyTransactions -> listOf("my_transactions")
+            MyCards -> listOf("my_cards")
+            CardExtension -> listOf("card_extension")
+            CardsForApproval -> listOf("card_approval_queue", "receipt_approval_queue")
+            CodingQueue -> listOf("coding_queue")
+            else -> emptyList()
+        }
+
     companion object {
         fun fromSlug(slug: String?): CardDestination? = entries.firstOrNull { it.slug == slug }
 

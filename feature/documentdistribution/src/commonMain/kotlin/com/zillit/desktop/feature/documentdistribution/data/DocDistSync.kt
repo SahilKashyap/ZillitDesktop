@@ -3,9 +3,11 @@ package com.zillit.desktop.feature.documentdistribution.data
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.feature.documentdistribution.domain.DocDistRefresh
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.mapNotNull
 
 /**
@@ -70,4 +72,26 @@ internal fun docDistRefreshes(bus: SocketEventBus?): Flow<DocDistRefresh> =
     bus?.onAny(DOC_DIST_REFRESH_BY_EVENT.keys)
         ?.mapNotNull { DOC_DIST_REFRESH_BY_EVENT[it.event] }
         ?.conflate()
+        ?: emptyFlow()
+
+/** The one doc-dist event that carries state rather than a stale-listing hint. */
+internal val WATERMARK_SETTINGS_UPDATED = SocketEventName("document_distribution:watermark_settings:updated")
+
+/**
+ * The project's watermark defaults as other devices save them.
+ *
+ * Every device the saver's user has gets the event, the saving one included;
+ * the spec says to drop it when `data.device_id` is your own, because the PUT
+ * that caused it already answered the same object. Filtered here, at the
+ * seam, so the view model only ever sees news. A frame without the settings
+ * object is dropped too — replacing the cache with the built-in values on a
+ * malformed event would undo a real save.
+ */
+internal fun watermarkSettingsUpdates(
+    bus: SocketEventBus?,
+    selfDeviceId: () -> String?,
+): Flow<WatermarkSettings> =
+    bus?.on(WATERMARK_SETTINGS_UPDATED, WatermarkSettingsEventDto.serializer())
+        ?.filter { event -> event.deviceId.isNullOrBlank() || event.deviceId != selfDeviceId() }
+        ?.mapNotNull { event -> event.settings?.toDomain() }
         ?: emptyFlow()

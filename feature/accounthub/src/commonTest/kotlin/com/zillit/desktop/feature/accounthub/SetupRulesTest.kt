@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.accounthub
 
 import com.zillit.desktop.feature.accounthub.domain.BankAccount
+import com.zillit.desktop.feature.accounthub.domain.BankAccounts
 import com.zillit.desktop.feature.accounthub.domain.Companies
 import com.zillit.desktop.feature.accounthub.domain.Company
 import com.zillit.desktop.feature.accounthub.domain.CurrencySettings
@@ -12,6 +13,7 @@ import com.zillit.desktop.feature.accounthub.domain.VendorPhone
 import com.zillit.desktop.feature.accounthub.domain.ProjectCurrency
 import com.zillit.desktop.feature.accounthub.domain.SortCode
 import com.zillit.desktop.feature.accounthub.domain.TaxType
+import com.zillit.desktop.feature.accounthub.domain.UkPayrollRefs
 import com.zillit.desktop.feature.accounthub.domain.validationError
 import com.zillit.desktop.feature.accounthub.domain.ProductionSchedule
 import com.zillit.desktop.feature.accounthub.domain.ProjectBudget
@@ -112,9 +114,13 @@ class SetupRulesTest {
         assertEquals("204891", SortCode.digits("2048912345"))
     }
 
-    /** Dropping the default currency clears the default rather than orphaning it. */
+    /**
+     * Dropping the default hands it to the first currency left, as the web
+     * does — a list with currencies and no default pre-fills nothing on the
+     * next purchase order. With nothing left there is nothing to hand it to.
+     */
     @Test
-    fun `removing the default currency clears the default`() {
+    fun `removing the default currency hands it to the next one`() {
         val settings = CurrencySettings(
             currencies = listOf(ProjectCurrency("GBP"), ProjectCurrency("USD")),
             defaultCode = "GBP",
@@ -123,7 +129,92 @@ class SetupRulesTest {
         val without = settings.without("GBP")
 
         assertEquals(listOf("USD"), without.currencies.map { it.code })
-        assertNull(without.defaultCode)
+        assertEquals("USD", without.defaultCode)
+        assertNull(without.without("USD").defaultCode)
+    }
+
+    /** A catalogue tile toggles; the first currency picked becomes the default. */
+    @Test
+    fun `toggling a tile adds then removes, and the first pick is the default`() {
+        val gbp = ProjectCurrency("GBP")
+        val usd = ProjectCurrency("USD")
+
+        val one = CurrencySettings().toggled(gbp)
+        assertEquals("GBP", one.defaultCode)
+
+        val two = one.toggled(usd)
+        assertEquals(listOf("GBP", "USD"), two.currencies.map { it.code })
+        assertEquals("GBP", two.defaultCode)
+
+        assertEquals(listOf("USD"), two.toggled(gbp).currencies.map { it.code })
+    }
+
+    /**
+     * A company's banks are read from both sides of the link (ZL-20605).
+     *
+     * The bank editor writes the holder as `entity_id` on the bank and never
+     * touches the company's `bank_ids`, so a bank created from the Bank
+     * Accounts section read as "0 accounts" on its company.
+     */
+    @Test
+    fun `a company's banks come from entity_id as well as bank_ids`() {
+        val banks = listOf(
+            BankAccount(id = "b1", entityId = "a"),
+            // A legacy row: linked only by the company's list.
+            BankAccount(id = "b2"),
+            // Claimed by someone else through entity_id: the stale list entry loses.
+            BankAccount(id = "b3", entityId = "other"),
+        )
+        val company = Company(id = "a", bankIds = listOf("b2", "b3"))
+
+        assertEquals(listOf("b1", "b2"), Companies.linkedBankIds(company, banks))
+    }
+
+    /** The editor's gate: a name, a country, and no malformed UK reference — checked only for a UK company. */
+    @Test
+    fun `a company needs a name and a country, and valid UK refs only when it is UK`() {
+        assertEquals("Give the company a name.", Companies.problem(Company(id = "a")))
+        assertEquals("Pick the company's country.", Companies.problem(Company(id = "a", name = "A")))
+        val uk = Company(id = "a", name = "A", country = "United Kingdom", countryCode = "gb", ukPayeRef = "nope")
+        assertEquals(UkPayrollRefs.PAYE_ERROR, Companies.problem(uk))
+        assertNull(Companies.problem(uk.copy(ukPayeRef = "123/AB456", ukAccountsOfficeRef = "123PA00012345")))
+        assertEquals(
+            UkPayrollRefs.ACCOUNTS_OFFICE_ERROR,
+            Companies.problem(uk.copy(ukPayeRef = "", ukAccountsOfficeRef = "123456")),
+        )
+        // Moved elsewhere, the block is kept but no longer checked.
+        assertNull(Companies.problem(uk.copy(countryCode = "FR", country = "France")))
+        // Empty is never invalid: presence is optional, correctness is not.
+        assertNull(Companies.problem(uk.copy(ukPayeRef = "")))
+    }
+
+    /**
+     * What goes out: bank ids that no longer resolve are dropped and a blank
+     * legal name falls back to the trading one, because this PATCH rewrites
+     * every row and a blank would otherwise be rewritten forever.
+     */
+    @Test
+    fun `the wire list drops dead bank ids and backfills the legal name`() {
+        val banks = listOf(BankAccount(id = "b1"))
+        val companies = listOf(
+            Company(id = "a", name = " Acme ", bankIds = listOf("b1", "gone")),
+            Company(id = "b", name = "", country = "France"),
+        )
+
+        val wire = Companies.forWire(companies, banks)
+
+        assertEquals(1, wire.size)
+        assertEquals("Acme", wire.single().name)
+        assertEquals("Acme", wire.single().legalName)
+        assertEquals(listOf("b1"), wire.single().bankIds)
+    }
+
+    @Test
+    fun `an account number is digits only as typed, and compared without spaces`() {
+        assertEquals("40183762", BankAccounts.typedAccountNumber("4018-3762 "))
+        val banks = listOf(BankAccount(id = "b1", accountNumber = "12 34 56 78"))
+        assertTrue(BankAccounts.duplicateNumber(BankAccount(id = "", accountNumber = "12345678"), banks))
+        assertFalse(BankAccounts.duplicateNumber(BankAccount(id = "b1", accountNumber = "12345678"), banks))
     }
 
     @Test

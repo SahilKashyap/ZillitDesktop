@@ -23,6 +23,7 @@ import com.zillit.desktop.feature.documentdistribution.domain.SendStatus
 import com.zillit.desktop.feature.documentdistribution.domain.SentAttachment
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkLine
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSize
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettings
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.SerialName
@@ -345,6 +346,42 @@ internal data class WatermarkConfigDto(
         opacity = opacity ?: WatermarkStyle.DEFAULT_OPACITY,
     )
 }
+
+/**
+ * `GET|PUT watermark-settings` → `data`, and the socket event's
+ * `watermark_settings`. The server stores colour as `#RRGGBB` uppercase; it
+ * is lowercased here so the one spelling the swatches use is the one the
+ * app holds, and a never-saved project decodes equal to the built-ins.
+ */
+@Serializable
+internal data class WatermarkSettingsDto(
+    @SerialName("size") val size: String? = null,
+    @SerialName("color") val color: String? = null,
+    @SerialName("opacity") val opacity: Double? = null,
+    @SerialName("is_default") val isDefault: Boolean? = null,
+    @SerialName("updated_by") val updatedBy: String? = null,
+    @SerialName("updated") val updated: Long? = null,
+) {
+    fun toDomain(): WatermarkSettings = WatermarkSettings(
+        size = WatermarkSize.from(size),
+        color = color?.takeIf { it.isNotBlank() }?.lowercase() ?: WatermarkStyle.DEFAULT_COLOR,
+        opacity = opacity ?: WatermarkStyle.DEFAULT_OPACITY,
+        isDefault = isDefault ?: true,
+        updatedBy = updatedBy?.takeIf { it.isNotBlank() },
+        updated = updated ?: 0,
+    )
+}
+
+/**
+ * `document_distribution:watermark_settings:updated` — the saver's device
+ * travels with it so that device can ignore its own echo.
+ */
+@Serializable
+internal data class WatermarkSettingsEventDto(
+    @SerialName("project_id") val projectId: String? = null,
+    @SerialName("device_id") val deviceId: String? = null,
+    @SerialName("watermark_settings") val settings: WatermarkSettingsDto? = null,
+)
 
 @Serializable
 internal data class DistributionDto(

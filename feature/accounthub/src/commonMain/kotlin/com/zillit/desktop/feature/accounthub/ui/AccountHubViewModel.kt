@@ -12,6 +12,7 @@ import com.zillit.desktop.feature.accounthub.domain.AgreementFiles
 import com.zillit.desktop.feature.accounthub.domain.DayTypes
 import com.zillit.desktop.feature.accounthub.domain.HubArea
 import com.zillit.desktop.feature.accounthub.domain.HubBadgeCounts
+import com.zillit.desktop.feature.accounthub.domain.HubBadges
 import com.zillit.desktop.feature.accounthub.domain.HubDepartment
 import com.zillit.desktop.feature.accounthub.domain.HubDocumentOpener
 import com.zillit.desktop.feature.accounthub.domain.HubExporter
@@ -116,6 +117,14 @@ class AccountHubViewModel(
      * own window.
      */
     private val embedsTools: Boolean = false,
+    /**
+     * A sidebar tool row taken: the host reads the row's ledger rows where
+     * the tool behind it has no finer read of its own (the spend and invoice
+     * modules), so the sidebar's count falls the way the web's does once the
+     * module is on screen. Purchase Orders and Bank Reconciliation read their
+     * own tabs and rows and are left alone here.
+     */
+    private val readToolRow: (itemId: String, isAccountant: Boolean) -> Unit = { _, _ -> },
 ) : ZillitViewModel<AccountHubUiState, AccountHubEvent, AccountHubEffect>(AccountHubUiState()) {
 
     private var started = false
@@ -125,6 +134,7 @@ class AccountHubViewModel(
     private val setupSections = SetupSections(this)
     private val setupUi = SetupUiActions(this)
     private val setupModal = SetupModalActions(this)
+    private val ruleImport = RuleImportActions(this)
     private val chartActions = ChartActions(this)
     private val vendorActions = VendorActions(this)
     private val agreementActions = AgreementActions(this, agreementFiles)
@@ -142,6 +152,7 @@ class AccountHubViewModel(
         tourActions::onEvent,
         setupUi::onEvent,
         setupModal::onEvent,
+        ruleImport::onEvent,
         ::onSetupEvent,
         agreementActions::onEvent,
         budgetImportActions::onEvent,
@@ -318,6 +329,8 @@ class AccountHubViewModel(
      */
     private fun handOff(event: AccountHubEvent.OpenTool) {
         val target = event.item.target as? HubTarget.Tool ?: return
+        val badge = HubBadges.countFor(event.item.id, currentState.viewer.isAccountant, currentState.badges)
+        if (badge > 0) readToolRow(event.item.id, currentState.viewer.isAccountant)
         show(target.toolPath, event.item.label)
     }
 
@@ -466,6 +479,9 @@ class AccountHubViewModel(
                 setState { copy(setup = setup.copy(countryTaxes = rows)) }
             }, ::report)
         }
+        // The company editor's country picker reads the ISD list the vendor
+        // form reads (ZL-20594) — one row per country, not per currency.
+        vendorActions.loadCountries()
     }
 
     // One line per setup event; a map keyed by event type would hide which

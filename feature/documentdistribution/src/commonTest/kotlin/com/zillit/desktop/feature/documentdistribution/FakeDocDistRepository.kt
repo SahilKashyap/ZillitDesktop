@@ -21,6 +21,8 @@ import com.zillit.desktop.feature.documentdistribution.domain.PublicationCategor
 import com.zillit.desktop.feature.documentdistribution.domain.PublishDraft
 import com.zillit.desktop.feature.documentdistribution.domain.PublishedFile
 import com.zillit.desktop.feature.documentdistribution.domain.Recipient
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettings
+import com.zillit.desktop.feature.documentdistribution.domain.WatermarkSettingsPatch
 import com.zillit.desktop.feature.documentdistribution.domain.WatermarkStyle
 import com.zillit.desktop.feature.documentdistribution.domain.ZipRecipient
 import kotlinx.coroutines.flow.Flow
@@ -91,6 +93,10 @@ internal open class FakeDocDistRepository(
         style: WatermarkStyle,
     ): ZillitResult<ByteArray> =
         ZillitResult.Failure(ZillitError.Unknown("unused"))
+    override suspend fun watermarkSettings(): ZillitResult<WatermarkSettings> =
+        ZillitResult.Success(WatermarkSettings.BuiltIn)
+    override suspend fun updateWatermarkSettings(patch: WatermarkSettingsPatch): ZillitResult<WatermarkSettings> =
+        ZillitResult.Success(WatermarkSettings.BuiltIn)
     override suspend fun deleteDocument(documentId: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
     override suspend fun moveDocuments(documentIds: List<String>, folderId: String?): ZillitResult<Unit> =
         ZillitResult.Success(

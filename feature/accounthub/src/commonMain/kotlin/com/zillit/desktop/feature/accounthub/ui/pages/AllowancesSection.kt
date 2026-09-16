@@ -1,19 +1,24 @@
 package com.zillit.desktop.feature.accounthub.ui.pages
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
-import com.zillit.desktop.core.designsystem.component.ZillitSelect
+import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.accounthub.domain.AllowanceApplies
 import com.zillit.desktop.feature.accounthub.domain.AllowancesRentals
 import com.zillit.desktop.feature.accounthub.domain.EntitlementRow
@@ -22,29 +27,33 @@ import com.zillit.desktop.feature.accounthub.domain.RentalApplies
 import com.zillit.desktop.feature.accounthub.ui.AccountHubEvent
 import com.zillit.desktop.feature.accounthub.ui.AccountHubUiState
 import com.zillit.desktop.feature.accounthub.ui.SetupSection
+import com.zillit.desktop.feature.accounthub.ui.components.CalcField
 import com.zillit.desktop.feature.accounthub.ui.components.CoaCodeField
-import com.zillit.desktop.feature.accounthub.ui.components.quickCreateHandler
+import com.zillit.desktop.feature.accounthub.ui.components.FieldHint
 import com.zillit.desktop.feature.accounthub.ui.components.GhostAddButton
+import com.zillit.desktop.feature.accounthub.ui.components.HubSelect
+import com.zillit.desktop.feature.accounthub.ui.components.MonoLabel
 import com.zillit.desktop.feature.accounthub.ui.components.SectionShell
 import com.zillit.desktop.feature.accounthub.ui.components.SubCard
-
-private const val NAME_WIDTH = 200
-private const val AMOUNT_WIDTH = 110
-private const val NOMINAL_WIDTH = 110
+import com.zillit.desktop.feature.accounthub.ui.components.quickCreateHandler
 
 /**
- * The production's default allowances and equipment rentals.
+ * The production's default allowances and equipment rentals — the web's
+ * `AllowancesRentalsSection`.
  *
  * These seed a new deal memo's entitlements step, which is why the basis
  * catalogue is shared with it: an option offered here and not there saves a
  * row the wizard renders as a blank required field.
  *
  * Rentals come first, as on the web — they are the larger, more-edited list.
+ * Each list is a header band over rows of label-less cells, the web's grid,
+ * with the columns weighted the way it weights them.
  *
  * No per-row enable toggle, deliberately: this is the *defaults* surface,
  * where an unwanted default is deleted rather than switched off. A stored
  * `enable: false` from the deal wizard round-trips untouched all the same.
  */
+@Suppress("LongMethod") // A screen, read top to bottom; the order is the reading order.
 @Composable
 internal fun AllowancesSection(
     state: AccountHubUiState,
@@ -64,9 +73,11 @@ internal fun AllowancesSection(
         onSave = { onEvent(AccountHubEvent.SaveSection(SetupSection.Allowances)) },
         onCancel = { onEvent(AccountHubEvent.RevertSection(SetupSection.Allowances)) },
         editable = editable,
+        leftPanel = { AtAGlance(value) },
     ) {
-        SubCard(title = "Equipment Rentals / Box Rental") {
-            if (value.rentals.isEmpty()) EmptyLine("No rentals yet — add the first one below.")
+        SubCard(title = "Equipment Rentals / Box Rental", padded = false) {
+            HeaderBand(rental = true)
+            if (value.rentals.isEmpty()) EmptyRow("No rentals yet — add the first one below.")
             value.rentals.forEachIndexed { index, row ->
                 EntitlementRowFields(
                     row = row,
@@ -79,14 +90,18 @@ internal fun AllowancesSection(
                 )
             }
             if (editable) {
-                GhostAddButton("Add custom rental", onClick = {
-                    onEvent(edit(value.copy(rentals = value.rentals + newRow("rental", value.rentals.size))))
-                })
+                Box(Modifier.padding(ZillitTheme.spacing.md)) {
+                    GhostAddButton("Add custom rental", onClick = {
+                        val added = value.rentals + newRow("rental", value.rentals.size, "week")
+                        onEvent(edit(value.copy(rentals = added)))
+                    })
+                }
             }
         }
 
-        SubCard(title = "Allowances") {
-            if (value.allowances.isEmpty()) EmptyLine("No allowances yet — add the first one below.")
+        SubCard(title = "Allowances", padded = false) {
+            HeaderBand(rental = false)
+            if (value.allowances.isEmpty()) EmptyRow("No allowances yet — add the first one below.")
             value.allowances.forEachIndexed { index, row ->
                 EntitlementRowFields(
                     row = row,
@@ -101,11 +116,38 @@ internal fun AllowancesSection(
                 )
             }
             if (editable) {
-                GhostAddButton("Add custom allowance", onClick = {
-                    onEvent(edit(value.copy(allowances = value.allowances + newRow("allow", value.allowances.size))))
-                })
+                Box(Modifier.padding(ZillitTheme.spacing.md)) {
+                    GhostAddButton("Add custom allowance", onClick = {
+                        val added = value.allowances + newRow("allow", value.allowances.size, "day")
+                        onEvent(edit(value.copy(allowances = added)))
+                    })
+                }
             }
         }
+    }
+}
+
+/** The left column's count of named rows in each list — the web's `AtAGlance`. */
+@Composable
+private fun AtAGlance(value: AllowancesRentals) {
+    Column(
+        modifier = Modifier.padding(top = ZillitTheme.spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        MonoLabel("At a glance")
+        GlanceLine("Rentals", value.rentals.count { it.name.isNotBlank() })
+        GlanceLine("Allowances", value.allowances.count { it.name.isNotBlank() })
+    }
+}
+
+@Composable
+private fun GlanceLine(label: String, count: Int) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        ZillitText(text = label, style = ZillitTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+        ZillitText(
+            text = count.toString(),
+            style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+        )
     }
 }
 
@@ -117,19 +159,53 @@ private fun List<EntitlementRow>.replaced(index: Int, row: EntitlementRow) =
 private fun List<EntitlementRow>.without(index: Int) = filterIndexed { i, _ -> i != index }
 
 /**
- * A new row's id.
+ * A new row's id and basis.
  *
- * Client-side and stable for the life of the edit — the server keeps whatever
- * id it is given, and the row has to be addressable before it is ever saved.
+ * The id is client-side and stable for the life of the edit — the server
+ * keeps whatever id it is given, and the row has to be addressable before
+ * it is ever saved. The basis is the web's default for the list: rentals are
+ * usually weekly, allowances daily.
  */
-private fun newRow(kind: String, at: Int) = EntitlementRow(id = "$kind-new-$at")
+private fun newRow(kind: String, at: Int, basis: String) = EntitlementRow(id = "$kind-new-$at", basis = basis)
+
+/** The column titles over each list, weighted exactly as the rows below them. */
+@Composable
+private fun HeaderBand(rental: Boolean) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ZillitTheme.colors.surfaceSunken)
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HeaderCell("Name", NAME_WEIGHT)
+        HeaderCell("Amount", AMOUNT_WEIGHT)
+        HeaderCell("Frequency", BASIS_WEIGHT)
+        HeaderCell("Applies to", APPLIES_WEIGHT)
+        if (rental) HeaderCell("Cap", CAP_WEIGHT)
+        MonoLabel("GL", modifier = Modifier.width(NOMINAL_WIDTH))
+        Box(Modifier.width(REMOVE_WIDTH))
+    }
+}
+
+@Composable
+private fun RowScope.HeaderCell(text: String, weight: Float) {
+    MonoLabel(text, modifier = Modifier.weight(weight))
+}
+
+@Composable
+private fun EmptyRow(text: String) {
+    Box(Modifier.padding(ZillitTheme.spacing.md)) { FieldHint(text) }
+}
 
 /**
  * One row of either list.
  *
  * The cap pair is rendered for a rental only, because only a rental has one on
  * the wire — an allowance sent with `cap_type` is a field the validator does
- * not know.
+ * not know. The cap amount stacks under its select inside the same cell, as
+ * the web's does: side by side there is no room for a usable input.
  */
 @Suppress("LongMethod") // One row of fields, read left to right.
 @Composable
@@ -143,86 +219,110 @@ private fun EntitlementRowFields(
     onRemove: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
         ZillitTextField(
             value = row.name,
             onValueChange = { onChange(row.copy(name = it)) },
-            label = "Name",
+            placeholder = if (rental) "Rental name" else "Allowance name",
             enabled = editable,
-            modifier = Modifier.width(NAME_WIDTH.dp),
+            modifier = Modifier.weight(NAME_WEIGHT),
         )
-        ZillitTextField(
+        CalcField(
             value = row.amount,
             onValueChange = { onChange(row.copy(amount = it)) },
-            label = "Amount",
             placeholder = "0.00",
             enabled = editable,
-            modifier = Modifier.width(AMOUNT_WIDTH.dp),
+            modifier = Modifier.weight(AMOUNT_WEIGHT),
         )
         // A retired basis stays selectable-as-shown rather than blanking: the
         // stored value is somebody's agreed cadence, and losing it silently is
         // worse than showing a value that has to be re-picked.
-        ZillitSelect(
-            value = row.basis,
+        // The picker rather than the design system's select: that one carries
+        // a 170dp minimum and overflowed the row, which is why the two cells
+        // once drew as empty slivers.
+        HubSelect(
+            value = row.basis.takeIf { it.isNotBlank() },
             options = PayBasis.entries.map { it.wire }.let { live ->
                 if (row.basis.isNotBlank() && row.basis !in live) live + row.basis else live
             },
-            onSelect = { onChange(row.copy(basis = it)) },
-            label = { if (it.isBlank()) "Frequency" else PayBasis.labelFor(it) },
+            onSelect = { picked -> if (picked != null) onChange(row.copy(basis = picked)) },
+            label = { PayBasis.labelFor(it) },
+            placeholder = "Frequency",
+            searchable = false,
             enabled = editable,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(BASIS_WEIGHT),
         )
-        ZillitSelect(
-            value = row.appliesTo,
+        HubSelect(
+            value = row.appliesTo.takeIf { it.isNotBlank() },
             options = if (rental) {
                 RentalApplies.entries.map { it.wire }
             } else {
                 AllowanceApplies.entries.map { it.wire }
             },
-            onSelect = { onChange(row.copy(appliesTo = it)) },
+            onSelect = { picked -> if (picked != null) onChange(row.copy(appliesTo = picked)) },
             label = { wire -> appliesLabel(wire, rental) },
+            placeholder = "— applies to —",
+            searchable = false,
             enabled = editable,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(APPLIES_WEIGHT),
         )
         if (rental) {
-            ZillitCheckbox(
-                checked = row.capped,
-                onCheckedChange = { onChange(row.copy(capped = it)) },
-                label = "Capped",
-                enabled = editable,
-            )
-            if (row.capped) {
-                ZillitTextField(
-                    value = row.capAmount,
-                    onValueChange = { onChange(row.copy(capAmount = it)) },
-                    label = "Cap",
-                    placeholder = "cap amount",
+            Column(
+                modifier = Modifier.weight(CAP_WEIGHT),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+            ) {
+                HubSelect(
+                    value = row.capped,
+                    options = listOf(false, true),
+                    onSelect = { picked -> if (picked != null) onChange(row.copy(capped = picked)) },
+                    label = { if (it) "Capped" else "Uncapped" },
+                    searchable = false,
                     enabled = editable,
-                    modifier = Modifier.width(AMOUNT_WIDTH.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 )
+                if (row.capped) {
+                    CalcField(
+                        value = row.capAmount,
+                        onValueChange = { onChange(row.copy(capAmount = it)) },
+                        placeholder = "cap amount",
+                        enabled = editable,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
         CoaCodeField(
             value = row.nominalCode,
             onValueChange = { onChange(row.copy(nominalCode = it)) },
             accounts = state.chart.accounts,
-            label = "GL",
             placeholder = "GL",
             enabled = editable,
-            modifier = Modifier.width(NOMINAL_WIDTH.dp),
+            modifier = Modifier.width(NOMINAL_WIDTH),
             onCreate = quickCreateHandler(state, onEvent),
         )
-        if (editable) {
-            ZillitIconButton(icon = ZillitIcons.Trash, contentDescription = "Remove row", onClick = onRemove)
+        Box(Modifier.width(REMOVE_WIDTH), contentAlignment = Alignment.Center) {
+            if (editable) {
+                ZillitIconButton(icon = ZillitIcons.Close, contentDescription = "Remove row", onClick = onRemove)
+            }
         }
     }
 }
 
 private fun appliesLabel(wire: String, rental: Boolean): String = when {
-    wire.isBlank() -> "— applies to —"
     rental -> RentalApplies.entries.firstOrNull { it.wire == wire }?.label ?: wire
     else -> AllowanceApplies.entries.firstOrNull { it.wire == wire }?.label ?: wire
 }
+
+// The web's grid: `1.4fr 0.9fr 1fr 1.2fr [1.1fr] 110px 36px`.
+private const val NAME_WEIGHT = 1.4f
+private const val AMOUNT_WEIGHT = 0.9f
+private const val BASIS_WEIGHT = 1f
+private const val APPLIES_WEIGHT = 1.2f
+private const val CAP_WEIGHT = 1.1f
+private val NOMINAL_WIDTH = 96.dp
+private val REMOVE_WIDTH = 32.dp

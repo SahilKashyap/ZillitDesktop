@@ -96,12 +96,134 @@ internal fun ColumnScope.NonUnionPaySection(state: AccountHubUiState, onEvent: (
     ) {
         ApplyScope(state, value, editable, onEvent)
         DayTypesEditor(state, onEvent)
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            FieldLabel("Rules", modifier = Modifier.weight(1f))
+            // The web's editor offers this beside its grid: a union agreement's
+            // tables dropped straight into the three lists, saved at once.
+            if (editable) {
+                ZillitButton(
+                    text = "Import union rules",
+                    onClick = { onEvent(AccountHubEvent.OpenRuleImport) },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Download,
+                )
+            }
+        }
         PayRuleKind.entries.forEach { kind -> RuleList(kind, value, editable, state, onEvent) }
     }
-
-    PayRuleDialog(state, onEvent)
-    DepartmentPickerDialog(state, value, onEvent)
 }
+
+/**
+ * The section's three dialogs, composed by the page rather than the section.
+ *
+ * The dialog shell is an overlay only where it can fill its parent: inside
+ * the page's scrolling column its scrim measured to its content and the
+ * "dialog" drew inline at the foot of the section, scrolled out of sight.
+ */
+@Composable
+internal fun NonUnionPayDialogs(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+    PayRuleDialog(state, onEvent)
+    DepartmentPickerDialog(state, state.setup.nonUnionPay.edited, onEvent)
+    ImportRulesDialog(state, onEvent)
+}
+
+/**
+ * The "Import union rules" dialog — the web's `ImportAgreementRulesModal`.
+ *
+ * Territory, then agreement, then a read-only preview of every rule the
+ * import will add; all of them import, there is no per-row pick. The
+ * button says how many, so nobody imports forty rules by surprise.
+ */
+@Suppress("LongMethod", "CyclomaticComplexMethod") // A screen, read top to bottom; the order is the reading order.
+@Composable
+private fun ImportRulesDialog(state: AccountHubUiState, onEvent: (AccountHubEvent) -> Unit) {
+    val dialog = state.setup.ruleImport
+    val total = dialog?.total ?: 0
+    ZillitDialogShell(
+        title = "Import union rules",
+        subtitle = "Copy an agreement's overtimes, premiums and penalties into this breakdown.",
+        visible = dialog != null,
+        onDismiss = { onEvent(AccountHubEvent.DismissRuleImport) },
+        icon = ZillitIcons.Download,
+        width = IMPORT_WIDTH,
+        actions = {
+            ZillitButton(
+                text = "Cancel",
+                onClick = { onEvent(AccountHubEvent.DismissRuleImport) },
+                variant = ButtonVariant.Tertiary,
+                enabled = dialog?.importing != true,
+            )
+            ZillitButton(
+                text = if (total > 0) "Import $total rule${if (total == 1) "" else "s"}" else "Import",
+                onClick = { onEvent(AccountHubEvent.ConfirmRuleImport) },
+                enabled = total > 0 && dialog?.importing != true,
+                loading = dialog?.importing == true,
+            )
+        },
+    ) {
+        if (dialog == null) return@ZillitDialogShell
+        HubSelect(
+            value = dialog.territories.firstOrNull { it.id == dialog.territory },
+            options = dialog.territories,
+            label = { it.label },
+            secondary = { it.id.uppercase() },
+            onSelect = { picked -> if (picked != null) onEvent(AccountHubEvent.PickImportTerritory(picked.id)) },
+            placeholder = "Select a territory…",
+            fieldLabel = "Territory",
+            modifier = Modifier.fillMaxWidth(),
+        )
+        HubSelect(
+            value = dialog.agreement,
+            options = dialog.agreements,
+            label = { it.name },
+            onSelect = { picked ->
+                if (picked != null) onEvent(AccountHubEvent.PickImportAgreement(picked.identifier))
+            },
+            placeholder = when {
+                dialog.territory == null -> "Pick a territory first"
+                dialog.agreementsLoading -> "Loading agreements…"
+                dialog.agreements.isEmpty() -> "No agreements published for this territory"
+                else -> "Select an agreement…"
+            },
+            fieldLabel = "Agreement",
+            enabled = dialog.territory != null && dialog.agreements.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        when {
+            dialog.rulesLoading -> FieldHint("Reading the agreement's rule tables…")
+            dialog.rules == null -> FieldHint("The agreement's rules are previewed here before anything is imported.")
+            total == 0 -> ZillitNotice(
+                text = "This agreement publishes no overtime, premium or penalty rules.",
+                tone = StatusTone.Neutral,
+                icon = ZillitIcons.Info,
+            )
+            else -> PayRuleKind.entries.forEach { kind ->
+                val rows = dialog.rules.rulesFor(kind)
+                if (rows.isNotEmpty()) {
+                    SubCard(title = "${kind.label} · ${rows.size}", padded = false) {
+                        rows.forEach { rule ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.xs),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+                            ) {
+                                RuleSummary(rule, state, Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        FieldHint(
+            "Imported rules are appended below the ones already here and saved straight away; each gets a fresh id.",
+        )
+    }
+}
+
+private val IMPORT_WIDTH = 720.dp
 
 /**
  * Who every rule in this breakdown pays — the web's two option cards.

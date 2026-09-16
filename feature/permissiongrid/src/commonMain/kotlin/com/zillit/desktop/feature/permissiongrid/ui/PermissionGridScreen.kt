@@ -292,7 +292,7 @@ private fun SubjectRow(
             .height(IntrinsicSize.Min),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SubjectCell(row)
+        SubjectCell(row, isPerson = state.axis == GridAxis.Crew)
         FreezeLine()
         Row(Modifier.horizontalScroll(across)) {
             state.columns.forEach { unitName ->
@@ -324,13 +324,14 @@ private fun SubjectRow(
 
 /** The frozen half of a row: a face for the name, the name, its context. */
 @Composable
-private fun SubjectCell(row: GridRow) {
+private fun SubjectCell(row: GridRow, isPerson: Boolean) {
     Row(
         modifier = Modifier.width(SUBJECT_WIDTH).padding(vertical = ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = row.subject.name, size = SUBJECT_AVATAR)
+        // Only the crew axis names people; a department's id is nobody's face.
+        ZillitAvatar(name = row.subject.name, userId = row.subject.id.takeIf { isPerson }, size = SUBJECT_AVATAR)
         Column {
             ZillitText(
                 text = row.subject.name,

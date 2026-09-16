@@ -1,5 +1,7 @@
 package com.zillit.desktop.feature.documentdistribution.ui
 
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistBadges
+import com.zillit.desktop.feature.documentdistribution.domain.DocDistUnread
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
@@ -54,6 +56,8 @@ class DocDistViewModel(
     private val rights: RightsRequestBus? = null,
     /** The machine: file dialogs, PDF rendering, Downloads, the clipboard. */
     private val host: DocDistHost = DocDistHost.None,
+    /** The ledger's rows for this tool, and its reads. */
+    private val badges: DocDistBadges = DocDistBadges.None,
 ) : ZillitViewModel<DocDistUiState, DocDistEvent, DocDistEffect>(
     DocDistUiState(viewer = viewer()),
 ) {
@@ -79,10 +83,33 @@ class DocDistViewModel(
     fun start() {
         if (started) return
         started = true
+        launch {
+            badges.leaves.collect { leaves ->
+                setState { copy(unread = DocDistUnread(leaves)) }
+                // A row landing on the open section is read as it lands.
+                readSection(currentState.destination)
+            }
+        }
         val identity = viewer()
         setState { copy(viewer = identity, today = today(), destination = DocDistDestination.landing(identity)) }
-        if (!identity.isBlocked) load(currentState.destination)
+        if (!identity.isBlocked) {
+            load(currentState.destination)
+            loadWatermarkDefaults()
+        }
         listenOnce()
+    }
+
+    /**
+     * The shared stamp appearance, once per production open. A failure keeps
+     * the built-in values, which are what the server answers for a project
+     * that has never saved — so nothing is reported.
+     */
+    private fun loadWatermarkDefaults() {
+        launch {
+            (repository.watermarkSettings() as? ZillitResult.Success)?.let { settings ->
+                setState { copy(watermarkDefaults = settings.data) }
+            }
+        }
     }
 
     /**
@@ -97,6 +124,10 @@ class DocDistViewModel(
                 val here = currentState.destination
                 if (kind.destination == here && !currentState.viewer.isBlocked) load(here)
             }
+        }
+        launch {
+            // Only the cache: an open wizard keeps the draft its user is editing.
+            repository.watermarkSettingsUpdates.collect { settings -> setState { copy(watermarkDefaults = settings) } }
         }
     }
 
@@ -140,6 +171,7 @@ class DocDistViewModel(
             is DocDistEvent.Open -> {
                 setState { copy(destination = event.destination, error = null) }
                 load(event.destination)
+                readSection(event.destination)
             }
             else -> route(event)
         }
@@ -197,7 +229,11 @@ class DocDistViewModel(
             is DocDistEvent.DropFiles ->
                 if (currentState.composer.open) composer.attachDropped(event.files) else library.dropFiles(event.files)
             is DocDistEvent.DragHover -> setState { copy(dragHover = event.hovering && currentFolder != null) }
-            is DocDistEvent.OpenDocument -> library.openPreview(event.documentId)
+            is DocDistEvent.OpenDocument -> {
+                // The preview is the file's read (`Library.jsx:282-290`).
+                if (currentState.unread.file(event.documentId) > 0) badges.readFile(event.documentId)
+                library.openPreview(event.documentId)
+            }
             DocDistEvent.ClosePreview -> setState { copy(
                 preview = null,
                 composer = composer.copy(watermarkPreview = null),
@@ -400,7 +436,15 @@ class DocDistViewModel(
         }
     }
 
+    /** A side section opened clears its units' events — the web's modal-open read. */
+    private fun readSection(destination: DocDistDestination) {
+        destination.badgeUnits.filter { currentState.unread.unit(it) > 0 }.forEach(badges::readUnit)
+    }
+
     private fun openFolder(folderId: String?) {
+        // Entering a folder reads the folder's own events (`Library.jsx:228-234`);
+        // the files inside stay unread until each is opened.
+        if (folderId != null && currentState.unread.folder(folderId) > 0) badges.readFolder(folderId)
         setState {
             copy(
                 currentFolderId = folderId,

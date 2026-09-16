@@ -29,8 +29,8 @@ import com.zillit.desktop.feature.formsignature.domain.FormSignRefresh
  * form assigned to this user is exactly what a signing surface must show
  * without being reopened. Corrected 2026-09-09.
  *
- * Deliberately absent: the chat family (`document:message:*`) — the desktop
- * tool has no discussion surface.
+ * Deliberately absent: the chat family (`document:message:*`) — the
+ * discussion room is the Home board engine, which listens for itself.
  */
 internal val FORM_SIGN_SYNC_EVENTS: List<SocketEventName> = listOf(
     SocketEventName("document:added:general"),

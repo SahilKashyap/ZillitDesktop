@@ -10,6 +10,7 @@ import com.zillit.desktop.core.datastore.ZillitPreferences
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.network.jsonBody
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.email.domain.MailboxKind
 import com.zillit.desktop.feature.email.domain.MailboxPreferences
 import com.zillit.desktop.feature.email.ui.MailReadBy
@@ -94,8 +95,9 @@ internal suspend fun readByForSentMail(ready: AppGraph.Ready, messageId: String)
                 ?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() }
                 ?: 0L
             MailReadReceipt(
+                userId = userId,
                 name = row.string("user_name") ?: user?.fullName ?: userId,
-                designation = row.string("designation_name") ?: user?.designation.orEmpty(),
+                designation = row.string("designation_name")?.localised() ?: user?.designationText().orEmpty(),
                 // Some rows carry seconds where the rest of this API is millis.
                 readAtMillis = if (rawTime in 1 until MILLIS_FLOOR) rawTime * MILLIS_PER_SECOND else rawTime,
             )

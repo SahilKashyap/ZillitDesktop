@@ -36,6 +36,7 @@ import com.zillit.desktop.feature.accounthub.domain.HubSection
 import com.zillit.desktop.feature.accounthub.domain.HubUser
 import com.zillit.desktop.feature.accounthub.domain.InvoiceTeamMember
 import com.zillit.desktop.feature.accounthub.domain.InvoicesSetup
+import com.zillit.desktop.feature.accounthub.domain.ImportedRules
 import com.zillit.desktop.feature.accounthub.domain.IsdCountries
 import com.zillit.desktop.feature.accounthub.domain.IsdCountry
 import com.zillit.desktop.feature.accounthub.domain.IsoDate
@@ -60,6 +61,9 @@ import com.zillit.desktop.feature.accounthub.domain.SchedulePhase
 import com.zillit.desktop.feature.accounthub.domain.SetupGap
 import com.zillit.desktop.feature.accounthub.domain.SetupSnapshot
 import com.zillit.desktop.feature.accounthub.domain.TaxType
+import com.zillit.desktop.feature.accounthub.domain.UnionAgreementSummary
+import com.zillit.desktop.feature.accounthub.domain.UnionTerritories
+import com.zillit.desktop.feature.accounthub.domain.UnionTerritory
 import com.zillit.desktop.feature.accounthub.domain.Vendor
 import com.zillit.desktop.feature.accounthub.domain.VendorBank
 import com.zillit.desktop.feature.accounthub.domain.VendorChange
@@ -381,7 +385,21 @@ data class SetupState(
     val currencyCatalogue: List<ProjectCurrency> = emptyList(),
     val countryTaxes: List<CountryTaxes> = emptyList(),
     val companyDraft: Company? = null,
+    /**
+     * The company editor was opened from inside the bank editor's "+ Add
+     * company": it then hides its own bank block (no bank → company → bank
+     * nesting) and, once saved, becomes that bank's holder.
+     */
+    val companyDraftFromBank: Boolean = false,
+    /** Bumped on every open, so the dialog's own scratch state (the legal-name tick) starts fresh each time. */
+    val companyDraftSession: Int = 0,
     val bankDraft: BankAccount? = null,
+    /**
+     * The bank editor was opened from inside the company editor's "Add bank
+     * account": the holder is that company when it already exists, and a
+     * newly created bank is linked onto the draft when the save lands.
+     */
+    val bankDraftFromCompany: Boolean = false,
     val bankSaving: Boolean = false,
     /** Which bank card has been revealed; the card re-masks itself after five seconds. */
     val revealedBankId: String? = null,
@@ -400,11 +418,10 @@ data class SetupState(
     // -- section-local UI --
     val currencyFilter: CurrencyFilter = CurrencyFilter.All,
     val currencySearch: String = "",
-    val currencyPickerOpen: Boolean = false,
-    /** The country whose catalogue rates the tax section is showing, by code. */
-    val taxCountry: String? = null,
     val tagDraft: String = "",
     val ruleEditor: PayRuleEditor? = null,
+    /** The "Import union rules" dialog, while open. */
+    val ruleImport: RuleImportState? = null,
     val departmentPickerOpen: Boolean = false,
     val departmentPickerSearch: String = "",
     val removal: SetupRemoval? = null,
@@ -445,18 +462,33 @@ data class SetupState(
             null -> false
         }
 
-    /** The catalogue rows the currency picker shows, filtered and searched, chosen ones removed. */
+    /**
+     * The catalogue tiles the currency picker shows, filtered and searched.
+     *
+     * Chosen currencies stay in the grid and read as selected, as on the web:
+     * a tile is a toggle, and a list that hides what was picked cannot show
+     * where a currency went.
+     */
     val currencyChoices: List<ProjectCurrency>
         get() {
-            val chosen = currencies.edited.currencies.map { it.code }.toSet()
             val needle = currencySearch.trim()
             return currencyCatalogue
-                .filter { it.code !in chosen }
                 .filter { currencyFilter == CurrencyFilter.All || it.code in CurrencySettings.MAJOR_CODES }
                 .filter {
-                    needle.isEmpty() || it.code.contains(needle, true) || it.name.contains(needle, true)
+                    needle.isEmpty() || it.code.contains(needle, true) || it.name.contains(needle, true) ||
+                        it.country.contains(needle, true) || it.symbol.contains(needle, true)
                 }
         }
+
+    /** A chosen currency as the catalogue describes it — a stored row carries no country. */
+    fun currencyMeta(currency: ProjectCurrency): ProjectCurrency =
+        currencyCatalogue.firstOrNull { it.code == currency.code }?.let { meta ->
+            currency.copy(
+                name = currency.name.ifBlank { meta.name },
+                symbol = currency.symbol.ifBlank { meta.symbol },
+                country = currency.country.ifBlank { meta.country },
+            )
+        } ?: currency
 
     /** The tour's view of what is set up. Nothing counts until the setup has loaded. */
     fun snapshot(coaReady: Boolean, coaEmpty: Boolean): SetupSnapshot = SetupSnapshot(
@@ -475,6 +507,32 @@ data class SetupState(
         conditions = dealConditions.saved.size,
         bureaus = payrollBureaus.saved.size,
     )
+}
+
+/**
+ * The "Import union rules" dialog — the web's `ImportAgreementRulesModal`.
+ *
+ * Pick a territory, its agreements load; pick an agreement, its rule tables
+ * are projected and previewed; Import appends the lot to the breakdown and
+ * saves. Read-only preview, all rules import — no per-row selection.
+ */
+data class RuleImportState(
+    /** Null until the registry answers; the whole catalogue is offered meanwhile (fail open). */
+    val covered: Set<String>? = null,
+    val territory: String? = null,
+    val agreements: List<UnionAgreementSummary> = emptyList(),
+    val agreementsLoading: Boolean = false,
+    val agreementId: String? = null,
+    val rules: ImportedRules? = null,
+    val rulesLoading: Boolean = false,
+    /** The breakdown is being saved with the imported rules appended. */
+    val importing: Boolean = false,
+) {
+    val territories: List<UnionTerritory> get() = UnionTerritories.offered(covered, keep = territory)
+
+    val agreement: UnionAgreementSummary? get() = agreements.firstOrNull { it.identifier == agreementId }
+
+    val total: Int get() = rules?.total ?: 0
 }
 
 // -- vendors --------------------------------------------------------------------

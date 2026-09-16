@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.budget.data
 
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.network.ApiClient
@@ -9,15 +10,19 @@ import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.core.socket.SocketEventBus
+import com.zillit.desktop.core.socket.ZillitSocketEvents
 import com.zillit.desktop.feature.budget.domain.BudgetActivity
+import com.zillit.desktop.feature.budget.domain.BudgetActivityRow
+import com.zillit.desktop.feature.budget.domain.BudgetChatEntry
 import com.zillit.desktop.feature.budget.domain.BudgetDocument
-import com.zillit.desktop.feature.budget.domain.BudgetFile
 import com.zillit.desktop.feature.budget.domain.BudgetMembers
+import com.zillit.desktop.feature.budget.domain.BudgetMode
 import com.zillit.desktop.feature.budget.domain.BudgetRepository
 import com.zillit.desktop.feature.budget.domain.BudgetType
+import com.zillit.desktop.feature.budget.domain.BudgetUpload
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * The budget service.
@@ -34,6 +39,10 @@ import kotlinx.serialization.json.jsonPrimitive
 class BudgetRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** The chat socket — the conversation list is a socket ask, not a route. Null: no list. */
+    private val socket: SocketEventBus? = null,
+    private val projectId: () -> String? = { null },
+    private val userId: () -> String? = { null },
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) : BudgetRepository {
 
@@ -49,19 +58,15 @@ class BudgetRepositoryImpl(
         type: BudgetType,
         departmentId: String,
     ): ZillitResult<List<BudgetDocument>> =
-        get("$base/budget/${type.wire}/$departmentId")
+        get("$base/budget/${type.wire}/$departmentId", cacheAs = "$base/budget/${type.wire}/$departmentId")
             .mapData { documentsOf(it, json) }
 
     /** `POST /v2/budget` (`budgetApi/api.js:5-13`). */
-    override suspend fun post(
-        type: BudgetType,
-        departmentId: String,
-        file: BudgetFile,
-    ): ZillitResult<BudgetDocument> = apiClient.envelope(
+    override suspend fun post(upload: BudgetUpload): ZillitResult<BudgetDocument> = apiClient.envelope(
         verb = HttpVerb.Post,
         url = "$base/budget",
         module = RequestModule.ProjectUser,
-        body = postBody(type, departmentId, file),
+        body = postBody(upload),
     ).mapData { documentsOf(it, json).firstOrNull() }
         .flatMapNotNull("the budget was saved but came back empty")
 
@@ -80,8 +85,8 @@ class BudgetRepositoryImpl(
                 runCatching { json.decodeFromJsonElement(BudgetMembersDto.serializer(), it) }.getOrNull()
             }
             BudgetMembers(
-                main = dto?.main.orEmpty().mapNotNull { it.toMember() },
-                department = dto?.department.orEmpty().mapNotNull { it.toMember() },
+                main = dto?.main.toMembers(json),
+                department = dto?.department.toMembers(json),
             )
         }
 
@@ -92,20 +97,52 @@ class BudgetRepositoryImpl(
         module = RequestModule.ProjectUser,
     ).mapData { }
 
-    /** `GET /v2/budget/view-download/count/{id}?action=` (`budgetApi/api.js:133-140`). */
-    override suspend fun activityCount(
+    /** `GET /v2/budget/view-download/{action}/{id}` (`budgetApi/api.js:116-123`). */
+    override suspend fun record(documentId: String, activity: BudgetActivity): ZillitResult<BudgetDocument?> =
+        get("$base/budget/view-download/${activity.wire}/$documentId")
+            .mapData { documentsOf(it, json).firstOrNull() }
+
+    /** `GET /v2/budget/view-download/count/{id}?action=` (`budgetApi/api.js:125-132`). */
+    override suspend fun activity(
         documentId: String,
-        action: BudgetActivity,
-    ): ZillitResult<Int> = get(
+        activity: BudgetActivity,
+    ): ZillitResult<List<BudgetActivityRow>> = get(
         url = "$base/budget/view-download/count/$documentId",
-        query = mapOf("action" to action.wire),
-    ).mapData { data ->
-        val dto = data?.let {
-            runCatching { json.decodeFromJsonElement(BudgetCountDto.serializer(), it) }.getOrNull()
-        }
-        dto?.count
-            ?: data?.let { runCatching { it.jsonPrimitive.content.toInt() }.getOrNull() }
-            ?: 0
+        query = mapOf("action" to activity.wire),
+    ).mapData { activityRowsOf(it) }
+
+    /** The socket's `budget:recent:list` (`cncEmit.js:482-511`). */
+    override suspend fun chats(
+        mode: BudgetMode,
+        departmentId: String,
+        documentId: String,
+    ): ZillitResult<List<BudgetChatEntry>> {
+        val bus = socket ?: return ZillitResult.Success(emptyList())
+        val project = projectId() ?: return ZillitResult.Failure(ZillitError.Unauthorized("no open project"))
+        val me = userId() ?: return ZillitResult.Failure(ZillitError.Unauthorized("no signed-in user"))
+        return bus.emitForAck(
+            ZillitSocketEvents.Budget.RecentList,
+            chatListBody(mode, project, me, departmentId, documentId),
+            JsonElement.serializer(),
+        ).map { ack -> chatEntriesOf(ack) }
+    }
+
+    /** `POST /v2/chat-room` (`budgetApi/api.js:91-98`, body from `CommonBudget.jsx:createGroup`). */
+    override suspend fun createRoom(
+        mode: BudgetMode,
+        departmentId: String,
+        documentId: String,
+        name: String,
+        memberIds: List<String>,
+    ): ZillitResult<BudgetChatEntry.Group> {
+        val me = userId() ?: return ZillitResult.Failure(ZillitError.Unauthorized("no signed-in user"))
+        return apiClient.envelope(
+            verb = HttpVerb.Post,
+            url = "$base/chat-room",
+            module = RequestModule.ProjectUser,
+            body = createRoomBody(mode, departmentId, documentId, me, name, memberIds),
+        ).mapData { createdGroupOf(it) }
+            .flatMapNotNull("the room was created but came back empty")
     }
 
     // -- plumbing ------------------------------------------------------------
@@ -119,7 +156,7 @@ class BudgetRepositoryImpl(
         url = url,
         module = RequestModule.ProjectUser,
         queryParameters = query,
-        // The list is worth keeping for a train tunnel; the per-document
+        // The lists are worth keeping for a train tunnel; the per-document
         // reads are not, and a stale count is worse than no count.
         options = cacheAs?.let { CallOptions(cacheAs = it) } ?: CallOptions(),
     )

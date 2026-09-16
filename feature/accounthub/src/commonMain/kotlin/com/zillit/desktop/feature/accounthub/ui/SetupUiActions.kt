@@ -30,18 +30,20 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
     @Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per action; every one delegates.
     fun onEvent(event: AccountHubEvent): Boolean {
         when (event) {
-            is AccountHubEvent.EditCompany -> vm.update {
-                copy(setup = setup.copy(companyDraft = event.company ?: Company(id = vm.newLocalId("co"))))
-            }
+            is AccountHubEvent.EditCompany -> editCompany(event.company, event.fromBank)
             is AccountHubEvent.UpdateCompanyDraft -> vm.update {
                 copy(setup = setup.copy(companyDraft = event.company))
             }
-            AccountHubEvent.DismissCompanyDraft -> vm.update { copy(setup = setup.copy(companyDraft = null)) }
+            AccountHubEvent.DismissCompanyDraft -> vm.update {
+                copy(setup = setup.copy(companyDraft = null, companyDraftFromBank = false))
+            }
             AccountHubEvent.CommitCompanyDraft -> commitCompanyDraft()
             is AccountHubEvent.RemoveCompany -> removeCompany(event.id)
-            is AccountHubEvent.EditBank -> editBank(event.account)
+            is AccountHubEvent.EditBank -> editBank(event.account, event.fromCompany)
             is AccountHubEvent.UpdateBankDraft -> vm.update { copy(setup = setup.copy(bankDraft = event.account)) }
-            AccountHubEvent.DismissBankDraft -> vm.update { copy(setup = setup.copy(bankDraft = null)) }
+            AccountHubEvent.DismissBankDraft -> vm.update {
+                copy(setup = setup.copy(bankDraft = null, bankDraftFromCompany = false))
+            }
             AccountHubEvent.CommitBankDraft -> commitBankDraft()
             is AccountHubEvent.DeleteBank -> deleteBank(event.id)
             is AccountHubEvent.RevealBank -> revealBank(event.id)
@@ -49,9 +51,6 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
                 copy(setup = setup.copy(currencyFilter = event.filter))
             }
             is AccountHubEvent.SearchCurrencies -> vm.update { copy(setup = setup.copy(currencySearch = event.term)) }
-            is AccountHubEvent.ToggleCurrencyPicker ->
-                vm.update { copy(setup = setup.copy(currencyPickerOpen = event.open, currencySearch = "")) }
-            is AccountHubEvent.PickTaxCountry -> vm.update { copy(setup = setup.copy(taxCountry = event.countryCode)) }
             is AccountHubEvent.EditTagDraft -> vm.update { copy(setup = setup.copy(tagDraft = event.text)) }
             AccountHubEvent.CommitTagDraft -> commitTags()
             is AccountHubEvent.ComposePayRule -> composePayRule(event.kind, event.index)
@@ -77,54 +76,142 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
     // -- companies ----------------------------------------------------------
 
     /**
-     * Folds the drafted company back into the list.
+     * Opens the editor over a draft, never the list: dismissing it must leave
+     * the section clean. An existing company's bank links are seeded from
+     * both sides of the link (see [Companies.linkedBankIds]) so the next save
+     * converges `bank_ids` onto the banks that already point here.
+     */
+    private fun editCompany(company: Company?, fromBank: Boolean) {
+        val setup = vm.setupState.setup
+        val draft = company?.copy(bankIds = Companies.linkedBankIds(company, setup.banks))
+            ?: Company(id = vm.newLocalId("co"))
+        vm.update {
+            copy(
+                setup = this.setup.copy(
+                    companyDraft = draft,
+                    companyDraftFromBank = fromBank,
+                    companyDraftSession = this.setup.companyDraftSession + 1,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Folds the drafted company into the list and saves it straight away —
+     * the web's Done hits the API itself, so nobody has to find the section's
+     * Save button afterwards. On failure the dialog stays open for a retry
+     * and the section is left dirty, so Save changes reappears as a fallback.
      *
      * The bank re-assignment happens here rather than in the dialog because it
      * touches *other* companies: a bank moved without being taken from its
      * previous owner ends up owned twice. See [Companies.linking].
      */
     private fun commitCompanyDraft() {
-        val draft = vm.setupState.setup.companyDraft ?: return
-        if (draft.name.isBlank()) {
-            vm.sendSideEffect(AccountHubEffect.Failed("Give the company a name."))
+        val setup = vm.setupState.setup
+        val draft = setup.companyDraft ?: return
+        val existing = setup.companies.edited
+        val isNew = existing.none { it.id == draft.id }
+        // A brand-new draft with no name is the same as cancel.
+        if (isNew && draft.name.isBlank()) {
+            vm.update { copy(setup = this.setup.copy(companyDraft = null, companyDraftFromBank = false)) }
             return
         }
-        vm.update {
-            val existing = setup.companies.edited
-            val merged = if (existing.any { it.id == draft.id }) {
-                existing.map { if (it.id == draft.id) draft else it }
-            } else {
-                existing + draft
-            }
+        Companies.problem(draft)?.let { return vm.sendSideEffect(AccountHubEffect.Failed(it)) }
+        if (!vm.mayEdit()) return
+        val merged = if (isNew) existing + draft else existing.map { if (it.id == draft.id) draft else it }
+        val next = Companies.linking(merged, draft.id, draft.bankIds)
+        val fromBank = setup.companyDraftFromBank
+        saveCompanies(next, notice = if (isNew) "Company added." else "Company saved.", shownFirst = true) {
             copy(
-                setup = setup.copy(
-                    companies = setup.companies.edit(Companies.linking(merged, draft.id, draft.bankIds)),
+                setup = this.setup.copy(
                     companyDraft = null,
+                    companyDraftFromBank = false,
+                    // The bank editor underneath takes the new company as its holder.
+                    bankDraft = if (fromBank) {
+                        this.setup.bankDraft?.copy(entityId = draft.id, accountHolderName = draft.name.trim())
+                    } else {
+                        this.setup.bankDraft
+                    },
                 ),
             )
         }
     }
 
-    private fun removeCompany(id: String) = vm.update {
-        val remaining = setup.companies.edited.filterNot { it.id == id }
-        copy(setup = setup.copy(companies = setup.companies.edit(remaining), removal = null))
+    /**
+     * Saves the list without the company, and only then drops it from the
+     * screen (ZL-20382): an optimistic removal would strand the row when the
+     * server refuses because a purchase order still references the company.
+     */
+    private fun removeCompany(id: String) {
+        val setup = vm.setupState.setup
+        if (!vm.mayEdit()) return
+        val next = setup.companies.edited.filterNot { it.id == id }
+        saveCompanies(next, notice = "Company removed.", shownFirst = false) {
+            copy(
+                setup = this.setup.copy(
+                    removal = null,
+                    companyDraft = this.setup.companyDraft?.takeIf { it.id != id },
+                ),
+            )
+        }
+    }
+
+    /**
+     * [shownFirst] puts [next] on screen before the call — an edit that
+     * fails then stays as an unsaved edit the section's own Save can retry.
+     * A removal is not shown first: a row that vanished and then could not
+     * be removed is a row the person believes is gone.
+     */
+    private fun saveCompanies(
+        next: List<Company>,
+        notice: String,
+        shownFirst: Boolean,
+        onSaved: AccountHubUiState.() -> AccountHubUiState,
+    ) {
+        val banks = vm.setupState.setup.banks
+        vm.update {
+            val edited = if (shownFirst) setup.companies.edit(next) else setup.companies
+            copy(setup = setup.copy(companies = edited.copy(saving = true)))
+        }
+        vm.runResult(
+            { vm.repo.saveCompanies(Companies.forWire(next, banks)) },
+            { rows ->
+                vm.update { copy(setup = setup.copy(companies = setup.companies.committed(rows))).onSaved() }
+                vm.update { copy(notice = notice) }
+            },
+            { error ->
+                vm.update { copy(setup = setup.copy(companies = setup.companies.copy(saving = false))) }
+                vm.report(error)
+            },
+        )
     }
 
     // -- banks --------------------------------------------------------------
 
-    private fun editBank(account: BankAccount?) {
+    /**
+     * Opens the bank editor. Added from inside a company's own editor, the
+     * holder is that company when it already exists on the server — a company
+     * still being created has only a client-side id, which must never become
+     * a dangling `entity_id` on the bank, so the picker stays for it.
+     */
+    private fun editBank(account: BankAccount?, fromCompany: Boolean) {
         val setup = vm.setupState.setup
+        val host = setup.companyDraft?.takeIf { draft ->
+            fromCompany && setup.companies.saved.any { it.id == draft.id }
+        }
+        val holder = host ?: setup.companies.edited.singleOrNull()
         val draft = account ?: BankAccount(
             id = "",
             // A production with one company banks with it; pre-filled so the
             // holder reads right before anything is typed.
-            entityId = setup.companies.edited.singleOrNull()?.id,
+            entityId = holder?.id,
+            accountHolderName = holder?.name.orEmpty(),
             currencyCode = setup.currencies.edited.defaultCode.orEmpty(),
         ).let { fresh ->
             val currency = setup.currencies.edited.default
             if (currency != null) fresh.copy(currencyName = currency.name, currencySymbol = currency.symbol) else fresh
         }
-        vm.update { copy(setup = this.setup.copy(bankDraft = draft)) }
+        vm.update { copy(setup = this.setup.copy(bankDraft = draft, bankDraftFromCompany = fromCompany)) }
     }
 
     /**
@@ -157,12 +244,22 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
             apClearanceNominalCode = known?.let { BankAccounts.wrapNominal(draft.apClearanceNominalCode, it) }
                 ?: draft.apClearanceNominalCode,
         )
+        val isNew = outgoing.id.isBlank()
+        val fromCompany = state.setup.bankDraftFromCompany
         vm.update { copy(setup = setup.copy(bankSaving = true)) }
         vm.runResult(
-            { if (outgoing.id.isBlank()) vm.repo.createBankAccount(outgoing) else vm.repo.updateBankAccount(outgoing) },
-            {
+            { if (isNew) vm.repo.createBankAccount(outgoing) else vm.repo.updateBankAccount(outgoing) },
+            { saved ->
                 vm.update {
-                    copy(setup = setup.copy(bankDraft = null, bankSaving = false), notice = "Bank account saved.")
+                    copy(
+                        setup = setup.copy(
+                            bankDraft = null,
+                            bankDraftFromCompany = false,
+                            bankSaving = false,
+                            companyDraft = setup.companyDraft?.linkedTo(saved, fromCompany && isNew),
+                        ),
+                        notice = "Bank account saved.",
+                    )
                 }
                 vm.loadBanks()
             },
@@ -172,6 +269,14 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
             },
         )
     }
+
+    /**
+     * A bank created from inside a company's editor was made for that
+     * company: it is linked onto the draft at once. An edit, or a bank added
+     * from the section, leaves the selection alone.
+     */
+    private fun Company.linkedTo(saved: BankAccount, created: Boolean): Company =
+        if (created && saved.id.isNotBlank() && saved.id !in bankIds) copy(bankIds = bankIds + saved.id) else this
 
     private fun deleteBank(id: String) {
         if (!vm.mayEdit()) return
@@ -212,7 +317,12 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
         vm.update { copy(setup = setup.copy(ruleEditor = PayRuleEditor(kind, index, rule))) }
     }
 
-    /** A new rule starts on its list's usual condition, "Basic + OT on top" as the web does. */
+    /**
+     * A new rule starts on its list's usual condition and is *not* an
+     * enhancement: the web's rules editor starts "Add on top" unticked, and
+     * the flag is what decides base × a against base × (1 + a) — a default of
+     * true made a 1.5× overtime bill 2.5× on the web once.
+     */
     private fun newRule(kind: PayRuleKind, at: Int): PayRule {
         val template = PayRuleTemplate.defaultFor(kind)
         return PayRule(
@@ -227,7 +337,7 @@ internal class SetupUiActions(private val vm: AccountHubViewModel) {
                 dayKinds = emptyList(),
                 carrying = PayTrigger(),
             )),
-            isEnhancement = true,
+            isEnhancement = false,
         )
     }
 

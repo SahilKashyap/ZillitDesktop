@@ -263,7 +263,7 @@ private fun RecipientCard(
                 Modifier.size(34.dp).clip(CircleShape).border(2.dp, hue, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                ZillitAvatar(name = recipient.name.ifBlank { recipient.email }, size = 28.dp)
+                ZillitAvatar(name = recipient.name.ifBlank { recipient.email }, userId = recipient.userId, size = 28.dp)
             }
             Column(Modifier.weight(1f)) {
                 Row(

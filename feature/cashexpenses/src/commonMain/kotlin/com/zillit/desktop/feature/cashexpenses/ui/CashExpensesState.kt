@@ -33,6 +33,8 @@ import com.zillit.desktop.feature.cashexpenses.domain.Reconciliation
 data class CashUiState(
     val viewer: CashViewer,
     val destination: CashDestination,
+    /** Unread notifications per `level_1` key — the tabs' red chips. */
+    val unread: Map<String, Int> = emptyMap(),
     /** Which pipeline the sub-navigation is showing. */
     val pipeline: ExpenseType = ExpenseType.PettyCash,
     val loading: Boolean = false,

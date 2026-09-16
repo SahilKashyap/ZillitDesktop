@@ -1,7 +1,16 @@
 package com.zillit.desktop
 
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.badges.BadgeSections
 import com.zillit.desktop.core.common.ZillitResult
+import com.zillit.desktop.feature.esignature.domain.EsignBadgeLeaf
+import com.zillit.desktop.feature.esignature.domain.EsignBadges
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import com.zillit.desktop.core.network.HttpClientFactory
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
@@ -292,3 +301,29 @@ internal fun AppGraph.Ready.esignSignerOptions(): List<SignerOptionLike> {
 /** Today as the sign builder's `DD/MM/YYYY` — the web's default label. */
 internal fun esignToday(): String = java.time.LocalDate.now()
     .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+
+/**
+ * The tool's ledger rows as leaves, and its read.
+ *
+ * Every unread `e_signature_label` row becomes one leaf keyed by unit,
+ * bucket (`level_1`) and envelope (`level_3`) — the web's
+ * `getESignatureBadgesFromDB` split. The read is the web's
+ * `markBucketAsRead` / per-envelope open read: `notification:level:read`
+ * scoped to the unit and the envelope (`DocuSignPanel.jsx:250-275`).
+ */
+internal fun AppGraph.Ready.esignBadges(): EsignBadges = object : EsignBadges {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    override val leaves: Flow<List<EsignBadgeLeaf>> = badgeStore.counts.map { leavesNow() }.distinctUntilChanged()
+
+    private fun leavesNow(): List<EsignBadgeLeaf> =
+        badgeStore.unreadRows(BadgeSections.TOOLS)
+            .filter { it.tool == EsignBadges.TOOL }
+            .groupingBy { Triple(it.unit, it.level1, it.level3) }
+            .eachCount()
+            .map { (key, count) -> EsignBadgeLeaf(key.first, key.second, key.third, count) }
+
+    override fun readEnvelope(unit: String, envelopeId: String) {
+        scope.launch { emitLevelRead(tool = EsignBadges.TOOL, unit = unit, level3 = envelopeId) }
+    }
+}

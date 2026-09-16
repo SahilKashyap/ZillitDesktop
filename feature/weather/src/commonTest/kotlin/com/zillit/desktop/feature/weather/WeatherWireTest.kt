@@ -69,15 +69,17 @@ class WeatherWireTest {
     }
 
     /**
-     * Today is already the big reading at the top, so the week below starts
-     * tomorrow — the same slice the web takes (`WeatherMain.jsx:177`).
+     * The week is headed by today, so the "Today" row the web labels its
+     * first row with (`SevendayForecastCard.jsx:17`) is true here — the web
+     * slices from tomorrow and mislabels it.
      */
     @Test
-    fun `the week ahead starts tomorrow`() = runTest {
+    fun `the week ahead starts today`() = runTest {
         val report = (repository(body).forecast(place) as ZillitResult.Success).data
 
-        assertEquals(1, report.daily.size)
-        assertEquals("scattered clouds", report.daily.single().condition.summary)
+        assertEquals(2, report.daily.size)
+        assertEquals("haze", report.daily.first().condition.summary)
+        assertEquals("scattered clouds", report.daily.last().condition.summary)
     }
 
     /** A refused key is a failure with a sentence, not an empty screen. */

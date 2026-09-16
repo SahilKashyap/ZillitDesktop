@@ -23,6 +23,12 @@ import com.zillit.desktop.core.workspace.WorkspaceRoute
  */
 class ExternalUsersToolProvider(
     private val viewModel: ExternalUsersViewModel,
+    /**
+     * Where a clicked address goes — the web's `EmailOpener` raises the
+     * production's composer, or `mailto:` on a personal production. Null
+     * (tests, previews) turns the click into a notice.
+     */
+    private val onEmail: ((address: String, navigator: WindowNavigator) -> Unit)? = null,
 ) : ToolProvider {
 
     override val path: String = EXTERNAL_USERS_PATH
@@ -43,6 +49,10 @@ class ExternalUsersToolProvider(
             viewModel.effects.collect { effect ->
                 when (effect) {
                     is ExternalUsersEffect.Notice -> notice = effect.text
+                    is ExternalUsersEffect.ComposeEmail -> {
+                        val open = onEmail
+                        if (open == null) notice = "Mail is not available here." else open(effect.address, navigator)
+                    }
                 }
             }
         }
