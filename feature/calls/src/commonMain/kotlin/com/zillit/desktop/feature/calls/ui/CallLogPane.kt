@@ -51,6 +51,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.feature.calls.domain.CallLine
 import com.zillit.desktop.feature.calls.domain.CallLogDirection
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
+import com.zillit.desktop.feature.calls.domain.CallMode
 import com.zillit.desktop.feature.calls.domain.CallType
 
 /**
@@ -196,7 +197,12 @@ private fun OngoingSection(ongoing: List<OngoingCall>, onEvent: (CallLogEvent) -
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             ) {
-                ZillitAvatar(name = call.title, size = ROW_AVATAR)
+                ZillitAvatar(
+                    name = call.title,
+                    // A 1:1 call's face is whoever is in it — the row is titled after them.
+                    userId = call.inCall.singleOrNull()?.first.takeIf { call.mode != CallMode.Group },
+                    size = ROW_AVATAR,
+                )
                 Column(modifier = Modifier.weight(1f)) {
                     ZillitText(
                         text = call.title,
@@ -272,7 +278,7 @@ private fun JoinOngoingDialog(call: OngoingCall, selfUserId: String?, onEvent: (
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
-                    ZillitAvatar(name = name.ifBlank { "?" }, size = ROW_AVATAR)
+                    ZillitAvatar(name = name.ifBlank { "?" }, userId = id, size = ROW_AVATAR)
                     ZillitText(
                         text = name.ifBlank { "Someone" } + if (id == selfUserId) " (you)" else "",
                         style = ZillitTheme.typography.bodyMedium,
@@ -414,7 +420,11 @@ private fun CallLogRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            ZillitAvatar(name = title, size = ROW_AVATAR)
+            ZillitAvatar(
+                name = title,
+                userId = entry.peerUserId.takeIf { entry.mode != CallMode.Group },
+                size = ROW_AVATAR,
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

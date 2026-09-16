@@ -38,6 +38,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.formsignature.domain.FormSignatureHost
 import com.zillit.desktop.feature.formsignature.domain.HistoryPerson
 import com.zillit.desktop.feature.formsignature.ui.ConfirmState
@@ -170,7 +171,8 @@ private fun HistoryRow(person: HistoryPerson) {
     ) {
         PersonChip(
             name = person.fullName.ifBlank { "—" },
-            subtitle = person.designation.removeSuffix("_label").replace('_', ' ').replaceFirstChar { it.uppercase() },
+            userId = person.userId,
+            subtitle = person.designation.localised(),
             modifier = Modifier.weight(1f),
         )
         ZillitText(
@@ -227,7 +229,12 @@ internal fun ReceiverPickerDialog(state: FormSignatureUiState, onEvent: (FormSig
                             .padding(horizontal = ZillitTheme.spacing.sm, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        PersonChip(name = option.label, subtitle = option.designation, modifier = Modifier.weight(1f))
+                        PersonChip(
+                            name = option.label,
+                            userId = option.userId,
+                            subtitle = option.designation,
+                            modifier = Modifier.weight(1f),
+                        )
                         if (selected) ZillitIcon(ZillitIcons.Tick, tint = ZillitTheme.colors.accent)
                     }
                 }

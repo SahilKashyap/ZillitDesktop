@@ -197,7 +197,7 @@ internal fun AppGraph.Ready.formSignatureHost(): FormSignatureHost = object : Fo
         projectContext?.context?.value?.user(userId)?.let { user ->
             CrewPerson(
                 fullName = user.fullName,
-                designation = user.designation.orEmpty(),
+                designation = user.designationText().orEmpty(),
                 status = user.status.orEmpty(),
             )
         }

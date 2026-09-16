@@ -23,6 +23,11 @@ import kotlin.math.absoluteValue
  * A person as a circle: their profile picture when one loaded, their initials
  * until then — and instead, when they never uploaded one.
  *
+ * The picture comes one of two ways: handed in as [image] by a caller that
+ * already has it, or fetched here by [userId] through the [LocalAvatarLoader]
+ * in scope. Initials are only ever the fallback — never what a screen shows
+ * because it forgot to ask.
+ *
  * The initials' colour is derived from the name, so one person is the same
  * colour in every list, every session — an identity cue, not decoration.
  */
@@ -32,17 +37,19 @@ fun ZillitAvatar(
     modifier: Modifier = Modifier,
     size: Dp = AVATAR_SIZE,
     image: ImageBitmap? = null,
+    userId: String? = null,
 ) {
     val cleaned = name.trim()
     val background = avatarHue(cleaned)
+    val shown = image ?: rememberAvatar(userId)
 
     Box(
         modifier = modifier.size(size).clip(CircleShape).background(background),
         contentAlignment = Alignment.Center,
     ) {
-        if (image != null) {
+        if (shown != null) {
             Image(
-                bitmap = image,
+                bitmap = shown,
                 contentDescription = null,
                 modifier = Modifier.size(size),
                 contentScale = ContentScale.Crop,

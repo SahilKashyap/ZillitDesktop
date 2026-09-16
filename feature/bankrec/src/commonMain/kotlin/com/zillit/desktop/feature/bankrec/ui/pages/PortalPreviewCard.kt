@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.bankrec.ui.pages
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -32,6 +34,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitDivider
 import com.zillit.desktop.core.designsystem.component.ZillitSkeletonBar
 import com.zillit.desktop.core.designsystem.component.ZillitText
+import com.zillit.desktop.core.designsystem.component.rememberAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.bankrec.domain.BankRecFormat
@@ -625,12 +628,23 @@ private fun SignOffNote(preview: PortalPreview) {
             .padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // The signer's picture when they have one; the web's initials otherwise.
+        val face = rememberAvatar(period.signedBy)
         Box(Modifier.size(36.dp).clip(CircleShape).background(colors.accentSoft), contentAlignment = Alignment.Center) {
-            ZillitText(
-                BankRecPerson(name).initials.ifBlank { BankRecFormat.DASH },
-                style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                color = colors.accentText,
-            )
+            if (face != null) {
+                Image(
+                    bitmap = face,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(36.dp),
+                )
+            } else {
+                ZillitText(
+                    BankRecPerson(name).initials.ifBlank { BankRecFormat.DASH },
+                    style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = colors.accentText,
+                )
+            }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             ZillitText("Sign-off Note", style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))

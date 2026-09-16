@@ -399,7 +399,7 @@ internal fun RailFace(name: String, userId: String, loadAvatar: suspend (String)
     val image by androidx.compose.runtime.produceState<ImageBitmap?>(null, userId) {
         value = runCatching { loadAvatar(userId) }.getOrNull()
     }
-    ZillitAvatar(name = name, size = INITIAL_SIZE, image = image)
+    ZillitAvatar(name = name, size = INITIAL_SIZE, image = image, userId = userId)
 }
 
 @Composable

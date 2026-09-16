@@ -390,8 +390,12 @@ private fun readAttachment(
         widthPx = file.long("width") ?: 0,
         heightPx = file.long("height") ?: 0,
         durationMillis = file.long("duration") ?: 0,
+        sizeBytes = file.fileSize(),
     )
 }
+
+/** `file_size` is a string on the phones' rows ("173419"), a number elsewhere. */
+private fun JsonObject.fileSize(): Long = long("file_size") ?: str("file_size")?.toLongOrNull() ?: 0
 
 fun chatRows(body: JsonElement): List<JsonElement> = when (body) {
     is kotlinx.serialization.json.JsonArray -> body

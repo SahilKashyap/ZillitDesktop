@@ -37,13 +37,19 @@ import com.zillit.desktop.feature.accounthub.domain.HubUsers
 
 /** A person as a small avatar and their name — the web's `PersonAvatar` beside a label. */
 @Composable
-fun PersonChip(name: String, modifier: Modifier = Modifier, role: String? = null, size: Dp = 24.dp) {
+fun PersonChip(
+    name: String,
+    modifier: Modifier = Modifier,
+    role: String? = null,
+    size: Dp = 24.dp,
+    userId: String? = null,
+) {
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = name, size = size)
+        ZillitAvatar(name = name, userId = userId, size = size)
         Column {
             ZillitText(text = name, style = ZillitTheme.typography.bodyMedium, maxLines = 1)
             if (!role.isNullOrBlank()) FieldHint(role)
@@ -133,7 +139,7 @@ fun UserPickerDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
-                    ZillitAvatar(name = user.name, size = 28.dp)
+                    ZillitAvatar(name = user.name, userId = user.id, size = 28.dp)
                     Column(modifier = Modifier.weight(1f)) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),

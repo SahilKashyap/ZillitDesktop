@@ -383,7 +383,7 @@ private fun SuggestionRow(contact: EmailContact, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitAvatar(name = contact.label, size = SUGGESTION_AVATAR)
+        ZillitAvatar(name = contact.label, userId = contact.userId, size = SUGGESTION_AVATAR)
         Column {
             ZillitText(text = contact.label, style = ZillitTheme.typography.bodyMedium)
             // The address is the second line unless it is already the first,

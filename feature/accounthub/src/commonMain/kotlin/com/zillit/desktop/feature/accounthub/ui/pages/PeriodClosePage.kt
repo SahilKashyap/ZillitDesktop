@@ -897,7 +897,7 @@ private fun PackageCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                         ) {
-                            ZillitAvatar(name = person.name.ifBlank { "Unnamed" }, size = 30.dp)
+                            ZillitAvatar(name = person.name.ifBlank { "Unnamed" }, userId = person.id, size = 30.dp)
                             Column(modifier = Modifier.weight(1f)) {
                                 ZillitText(
                                     text = person.name.ifBlank { "Unnamed" },

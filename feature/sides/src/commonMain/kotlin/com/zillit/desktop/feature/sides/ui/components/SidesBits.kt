@@ -103,7 +103,7 @@ internal fun CreatorAvatar(userId: String, name: String, size: Dp = 22.dp) {
     val load = LocalSidesFaces.current
     var image by remember(userId) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(userId) { if (userId.isNotBlank()) image = load(userId) }
-    ZillitAvatar(name = name.ifBlank { "?" }, size = size, image = image)
+    ZillitAvatar(name = name.ifBlank { "?" }, size = size, image = image, userId = userId)
 }
 
 /** An icon + text pair in the muted meta line. */

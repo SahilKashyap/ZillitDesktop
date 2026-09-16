@@ -74,6 +74,7 @@ internal fun ApplicationScope.ToolWidgetWindow(
     preferences: PreferenceStore,
     visible: Boolean,
     darkTheme: Boolean,
+    graph: AppGraph,
     onClose: () -> Unit,
     /** Raises the main window — the sign-in page when signed out. */
     showMain: () -> Unit,
@@ -84,6 +85,7 @@ internal fun ApplicationScope.ToolWidgetWindow(
         preferences = preferences,
         visible = visible,
         darkTheme = darkTheme,
+        graph = graph,
         onClose = onClose,
     ) { chrome ->
         WidgetToolContent(

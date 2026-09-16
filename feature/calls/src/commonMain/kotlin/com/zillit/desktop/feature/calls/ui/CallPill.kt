@@ -151,7 +151,7 @@ private fun PillControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
 private fun FaceStack(tiles: List<CallTile>) {
     Row(horizontalArrangement = Arrangement.spacedBy(-FACE_OVERLAP)) {
         tiles.take(FACE_CAP).forEach { tile ->
-            ZillitAvatar(name = tile.name, size = FACE_SIZE)
+            ZillitAvatar(name = tile.name, userId = tile.userId, size = FACE_SIZE)
         }
     }
 }

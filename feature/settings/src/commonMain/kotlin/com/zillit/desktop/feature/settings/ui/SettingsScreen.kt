@@ -123,7 +123,7 @@ private fun AccountCard(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitAvatar(name = displayName, size = ACCOUNT_AVATAR)
+        ZillitAvatar(name = displayName, userId = account.userId, size = ACCOUNT_AVATAR)
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),

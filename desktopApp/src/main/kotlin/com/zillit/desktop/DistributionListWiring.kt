@@ -48,8 +48,8 @@ private fun AppGraph.Ready.distributionDirectory(): DistributionDirectory {
                 userId = user.userId,
                 fullName = user.fullName,
                 email = user.email.orEmpty(),
-                department = user.department.orEmpty(),
-                designation = user.designation.orEmpty(),
+                department = user.departmentText().orEmpty(),
+                designation = user.designationText().orEmpty(),
                 status = user.status.orEmpty(),
             )
         }

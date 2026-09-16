@@ -252,7 +252,7 @@ private fun PersonCell(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = name, size = PERSON_AVATAR, image = face)
+        ZillitAvatar(name = name, size = PERSON_AVATAR, image = face, userId = row.userId)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

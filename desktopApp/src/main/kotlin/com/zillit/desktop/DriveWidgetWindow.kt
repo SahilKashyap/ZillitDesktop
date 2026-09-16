@@ -62,6 +62,7 @@ internal fun ApplicationScope.DriveWidgetWindow(
     preferences: PreferenceStore,
     visible: Boolean,
     darkTheme: Boolean,
+    graph: AppGraph,
     onClose: () -> Unit,
     /** Raises the main window — the sign-in page when signed out. */
     showMain: () -> Unit,
@@ -72,6 +73,7 @@ internal fun ApplicationScope.DriveWidgetWindow(
         preferences = preferences,
         visible = visible,
         darkTheme = darkTheme,
+        graph = graph,
         onClose = onClose,
     ) { chrome ->
         WidgetContent(

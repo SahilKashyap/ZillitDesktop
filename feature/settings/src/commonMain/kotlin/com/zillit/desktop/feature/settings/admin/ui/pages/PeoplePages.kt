@@ -96,7 +96,7 @@ private fun CrewRow(person: CrewMember, onEvent: (AdminEvent) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitAvatar(name = person.fullName)
+        ZillitAvatar(name = person.fullName, userId = person.userId)
 
         Column(Modifier.weight(1f)) {
             Row(
@@ -415,7 +415,7 @@ fun SosPage(state: AdminUiState, onEvent: (AdminEvent) -> Unit, onBack: () -> Un
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 ) {
-                    ZillitAvatar(name = recipient.name)
+                    ZillitAvatar(name = recipient.name, userId = recipient.userId)
                     Column(Modifier.weight(1f)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

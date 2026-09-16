@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.formsignature.data
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.formsignature.domain.ChatMember
 import com.zillit.desktop.feature.formsignature.domain.ChatUnit
 import com.zillit.desktop.feature.formsignature.domain.DocumentSigner
@@ -279,7 +280,7 @@ internal data class SignerOptionDto(
             email = userEmail ?: email ?: "",
             canPost = postingAccess.asBoolean(),
             canView = viewAccess.asBoolean() || postingAccess.asBoolean(),
-            designation = designationName.orEmpty(),
+            designation = designationName.orEmpty().localised(),
             status = status.orEmpty(),
         )
     }

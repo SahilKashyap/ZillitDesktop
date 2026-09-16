@@ -51,7 +51,11 @@ internal fun AppGraph.Ready.buildExternalUsers(
     },
     loadCrew = {
         projectContext?.context?.value?.users.orEmpty().map { member ->
-            Creator(userId = member.userId, fullName = member.fullName, designation = member.designation.orEmpty())
+            Creator(
+                userId = member.userId,
+                fullName = member.fullName,
+                designation = member.designationText().orEmpty(),
+            )
         }
     },
     // The service's list, or the web's own copy when the service cannot be reached.

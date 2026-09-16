@@ -220,7 +220,11 @@ private fun GridCard(
             ) {
                 if (state.viewer.isSharedWithMe(item)) {
                     ZillitTooltip(text = "Owned by ${item.uploadedByName.ifBlank { "Unknown" }}") {
-                        ZillitAvatar(name = item.uploadedByName.ifBlank { "?" }, size = TINY_AVATAR)
+                        ZillitAvatar(
+                            name = item.uploadedByName.ifBlank { "?" },
+                            userId = item.uploadedById,
+                            size = TINY_AVATAR,
+                        )
                     }
                 }
                 ZillitText(

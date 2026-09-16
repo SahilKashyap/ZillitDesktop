@@ -415,7 +415,7 @@ internal fun AppGraph.Ready.callableCrew(): List<CallCrewEntry> {
                 userId = user.userId,
                 deviceId = device,
                 name = user.fullName,
-                designation = user.designation.orEmpty(),
+                designation = user.designationText().orEmpty(),
             )
         }
 }

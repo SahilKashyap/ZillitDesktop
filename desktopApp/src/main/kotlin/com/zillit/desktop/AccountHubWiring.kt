@@ -301,7 +301,7 @@ internal suspend fun AppGraph.Ready.hubUsers(): List<HubUser> {
             // matches "accounts" against; it doubles as the display name.
             department = user.department.orEmpty(),
             departmentIdentifier = user.department.orEmpty(),
-            designation = user.designation.orEmpty(),
+            designation = user.designationText().orEmpty(),
             isAdmin = user.isAdmin,
             status = (standing[user.userId] ?: CrewStatus.Accepted).wire.ifBlank { HubUser.ACCEPTED },
             avatarUrl = user.avatarUrl,

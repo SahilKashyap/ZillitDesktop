@@ -717,18 +717,20 @@ private fun ApplicationScope.ZillitWindows(
             // Inside the theme: the picker styles its page from the app's own
             // tokens. A no-op until the graph is Ready and until something
             // actually asks to pick — Chromium starts on first use.
-            LocationPickerMount(graph) {
-                ZillitContent(
-                    graph = graph,
-                    registry = registry,
-                    viewModels = viewModels,
-                    workspaceViewModel = viewModel,
-                    authViewModel = authViewModel,
-                    themeMode = themeMode,
-                    onThemeModeChange = { mode ->
-                        scope.launch { preferences.set(ZillitPreferences.ThemeMode, mode.name) }
-                    },
-                )
+            AvatarFaces(graph) {
+                LocationPickerMount(graph) {
+                    ZillitContent(
+                        graph = graph,
+                        registry = registry,
+                        viewModels = viewModels,
+                        workspaceViewModel = viewModel,
+                        authViewModel = authViewModel,
+                        themeMode = themeMode,
+                        onThemeModeChange = { mode ->
+                            scope.launch { preferences.set(ZillitPreferences.ThemeMode, mode.name) }
+                        },
+                    )
+                }
             }
         }
     }
@@ -805,6 +807,7 @@ private fun ApplicationScope.ZillitWindows(
         preferences = preferences,
         visible = widgetMount.switches.isOpen(ZillitWidget.Drive),
         darkTheme = isDark,
+        graph = graph,
         onClose = { widgetMount.switches.close(ZillitWidget.Drive) },
         showMain = widgetMount.showMain,
     )
@@ -819,6 +822,7 @@ private fun ApplicationScope.ZillitWindows(
         preferences = preferences,
         visible = widgetMount.switches.isOpen(ZillitWidget.Chat),
         darkTheme = isDark,
+        graph = graph,
         onClose = { widgetMount.switches.close(ZillitWidget.Chat) },
         showMain = widgetMount.showMain,
     )
@@ -833,6 +837,7 @@ private fun ApplicationScope.ZillitWindows(
         preferences = preferences,
         visible = widgetMount.switches.isOpen(ZillitWidget.Crew),
         darkTheme = isDark,
+        graph = graph,
         onClose = { widgetMount.switches.close(ZillitWidget.Crew) },
         showMain = widgetMount.showMain,
     )
@@ -2131,9 +2136,7 @@ private fun chatProvider(
                     // raw key it is on the wire, before translation hides it
                     // from the comparison.
                     designation = user.designationText(),
-                    department = user.department
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { Labels.translate(it) },
+                    department = user.departmentText(),
                     email = user.email,
                     isAdmin = user.isAdmin,
                     deviceId = user.deviceId,
@@ -2197,7 +2200,26 @@ private suspend fun fetchChatImage(
     ready: AppGraph.Ready,
     file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
     preview: Boolean,
-): androidx.compose.ui.graphics.ImageBitmap? =
+): androidx.compose.ui.graphics.ImageBitmap? {
+    val image = fetchChatBytes(ready, file, preview)?.let(::decodeImageBitmap)
+    if (image != null || !preview || !file.isPdf) return image
+    // No poster on the server — a Box production uploads none, a Drive
+    // share carries none, and the phones' `zillit-pdf-icon.png` placeholder
+    // is a key nothing answers — so page one is drawn here from the file
+    // itself, the way the upload path draws it before sending. Capped so a
+    // bubble never pulls a whole script down for a 240dp tile.
+    if (file.sizeBytes > PDF_POSTER_MAX_BYTES) return null
+    val pdf = fetchChatBytes(ready, file, preview = false) ?: return null
+    return withContext(Dispatchers.Default) {
+        pdfThumbnailJpeg(pdf)?.jpegBytes?.let(::decodeImageBitmap)
+    }
+}
+
+private suspend fun fetchChatBytes(
+    ready: AppGraph.Ready,
+    file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
+    preview: Boolean,
+): ByteArray? =
     (
         ready.noticeMedia.fetch(
             com.zillit.desktop.feature.home.domain.NoticeAttachment(
@@ -2209,7 +2231,10 @@ private suspend fun fetchChatImage(
             ),
             preview = preview,
         ) as? com.zillit.desktop.core.common.ZillitResult.Success
-        )?.data?.let(::decodeImageBitmap)
+        )?.data
+
+/** A PDF larger than this keeps its chip rather than being fetched whole for a poster. */
+private const val PDF_POSTER_MAX_BYTES = 15L * 1024 * 1024
 
 /**
  * Who this person is, as the two finance tools need to know it.
@@ -2235,7 +2260,7 @@ private fun AppGraph.Ready.cashAssignees(): List<AssigneeOption> {
         AssigneeOption(
             userId = user.userId,
             fullName = user.fullName,
-            designation = user.designation.orEmpty(),
+            designation = user.designationText().orEmpty(),
         )
     }
 }
@@ -3650,7 +3675,8 @@ private fun ProjectContext.crewContacts(): List<EmailContact> =
             address = address,
             name = if (user.keepNamePrivate) "" else user.fullName,
             source = ContactSource.ProjectUser,
-            subtitle = user.department.orEmpty(),
+            userId = user.userId,
+            subtitle = user.departmentText().orEmpty(),
         )
     }
 
@@ -3751,6 +3777,7 @@ private fun buildSettings(
         // administration entry out of the rail for everyone.
         account = ready?.projectContext?.context?.map {
             AccountSummary(
+                userId = it.profile?.userId.orEmpty(),
                 fullName = it.profile?.fullName.orEmpty(),
                 email = it.profile?.email.orEmpty(),
                 productionName = it.project?.name.orEmpty(),
@@ -3765,6 +3792,7 @@ private fun buildSettings(
             ),
             unit = UnitSelection(selectedId = context?.profile?.joinUnitId),
             account = AccountSummary(
+                userId = context?.profile?.userId.orEmpty(),
                 fullName = context?.profile?.fullName.orEmpty(),
                 email = context?.profile?.email.orEmpty(),
                 productionName = context?.project?.name.orEmpty(),
@@ -3827,6 +3855,7 @@ private fun buildAccount(ready: AppGraph.Ready): AccountViewModel =
         seed = ready.projectContext?.context?.map { context ->
             val profile = context.profile
             ProfileSeed(
+                userId = profile?.userId.orEmpty(),
                 firstName = profile?.firstName.orEmpty(),
                 lastName = profile?.lastName.orEmpty(),
                 email = profile?.email.orEmpty(),

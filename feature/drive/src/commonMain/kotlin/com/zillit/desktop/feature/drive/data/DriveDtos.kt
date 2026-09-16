@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.drive.data
 
 import com.zillit.desktop.core.common.toEpochMillisOrNull
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.drive.domain.DriveAccessEntry
 import com.zillit.desktop.feature.drive.domain.DriveActivity
 import com.zillit.desktop.feature.drive.domain.DriveComment
@@ -604,12 +605,14 @@ private fun JsonElement?.identifier(): String? = when (this) {
     else -> null
 }
 
-/** `designation_name` off a populated user document, de-snaked as the web shows it. */
+/**
+ * `designation_name` off a populated user document — a label key, so it goes
+ * through the dictionary, as the web's `getUserRoleName` does.
+ */
 private fun JsonElement?.designation(): String = (this as? JsonObject)
     ?.let { row -> (row["designation_name"] as? JsonPrimitive)?.content }
     .orEmpty()
-    .removeSuffix("_label")
-    .replace('_', ' ')
+    .localised()
     .split(' ')
     .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
     .trim()

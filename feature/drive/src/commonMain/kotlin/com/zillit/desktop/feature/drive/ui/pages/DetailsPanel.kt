@@ -275,7 +275,7 @@ private fun AccessRow(entry: DriveAccessEntry, forFolder: Boolean, state: DriveU
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitAvatar(name = name, size = ACCESS_AVATAR)
+        ZillitAvatar(name = name, userId = entry.userId, size = ACCESS_AVATAR)
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(text = name, style = ZillitTheme.typography.label, maxLines = 1)
             if (entry.designation.isNotBlank()) {
@@ -464,7 +464,7 @@ private fun CommentRow(comment: DriveComment, state: DriveUiState, onEvent: (Dri
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ZillitAvatar(name = comment.authorName, size = ACCESS_AVATAR)
+            ZillitAvatar(name = comment.authorName, userId = comment.authorId, size = ACCESS_AVATAR)
             ZillitText(
                 text = comment.authorName,
                 style = ZillitTheme.typography.label,

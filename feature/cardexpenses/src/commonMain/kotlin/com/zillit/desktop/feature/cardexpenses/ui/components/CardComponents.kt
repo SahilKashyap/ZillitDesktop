@@ -169,7 +169,7 @@ fun AttachmentSlot(
  * truncated name, which a narrow holder column will always produce.
  */
 @Composable
-fun PersonCell(name: String, modifier: Modifier = Modifier) {
+fun PersonCell(name: String, modifier: Modifier = Modifier, userId: String? = null) {
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
@@ -177,7 +177,7 @@ fun PersonCell(name: String, modifier: Modifier = Modifier) {
     ) {
         // An em dash is "nobody could be named", not a person — drawing initials
         // for it would invent one.
-        if (name != EM_DASH) ZillitAvatar(name = name, size = CELL_AVATAR)
+        if (name != EM_DASH) ZillitAvatar(name = name, userId = userId, size = CELL_AVATAR)
         ZillitText(
             text = name,
             style = ZillitTheme.typography.bodyMedium,

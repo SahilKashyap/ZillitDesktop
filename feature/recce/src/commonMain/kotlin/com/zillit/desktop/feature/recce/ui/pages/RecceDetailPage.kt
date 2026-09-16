@@ -455,7 +455,7 @@ private fun PersonnelCard(recce: Recce) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(11.dp),
             ) {
-                ZillitAvatar(name = person.name.ifBlank { "?" }, size = 32.dp)
+                ZillitAvatar(name = person.name.ifBlank { "?" }, userId = person.userId, size = 32.dp)
                 // The note goes under the role rather than beside the name —
                 // the rail is 360dp and the phone number sits on the right,
                 // so a name and a tag on one line would truncate the name.

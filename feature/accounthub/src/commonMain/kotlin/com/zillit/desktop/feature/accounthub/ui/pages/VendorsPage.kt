@@ -240,7 +240,7 @@ private fun vendorColumns(
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ZillitAvatar(name = user.name, size = 22.dp)
+                    ZillitAvatar(name = user.name, userId = user.id, size = 22.dp)
                     Column {
                         ZillitText(text = user.name, style = ZillitTheme.typography.bodySmall, maxLines = 1)
                         // A job title arrives as a key too (`director_label`).
@@ -435,7 +435,7 @@ private fun AuditRow(label: String, userId: String?, at: Long?, state: AccountHu
         MonoLabel(label, modifier = Modifier.width(AUDIT_LABEL))
         val name = userId?.let { state.userName(it) } ?: UNKNOWN_PERSON
         // Initials for a dash would invent a person.
-        if (name != UNKNOWN_PERSON) ZillitAvatar(name = name, size = 22.dp)
+        if (name != UNKNOWN_PERSON) ZillitAvatar(name = name, userId = userId, size = 22.dp)
         ZillitText(text = name, style = ZillitTheme.typography.bodySmall, modifier = Modifier.weight(1f))
         FieldHint(EpochDate.dateTime(at).ifBlank { "" })
     }

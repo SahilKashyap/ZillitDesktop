@@ -48,6 +48,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.recce.domain.Recce
+import com.zillit.desktop.feature.recce.domain.ReccePerson
 import com.zillit.desktop.feature.recce.domain.StopKind
 
 /** The web's `recce.css` colours that the theme has no token for. */
@@ -247,10 +248,10 @@ internal fun RecceLink(
 
 /** Up to five overlapping initials, ringed in the surface colour — the web's `AvatarStack`. */
 @Composable
-internal fun AvatarStack(names: List<String>, modifier: Modifier = Modifier, max: Int = 5) {
+internal fun AvatarStack(people: List<ReccePerson>, modifier: Modifier = Modifier, max: Int = 5) {
     val surface = ZillitTheme.colors.surface
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        names.take(max).forEachIndexed { index, name ->
+        people.take(max).forEachIndexed { index, person ->
             Box(
                 modifier = Modifier
                     .offset(x = if (index == 0) 0.dp else (-9 * index).dp)
@@ -258,7 +259,7 @@ internal fun AvatarStack(names: List<String>, modifier: Modifier = Modifier, max
                     .background(surface, CircleShape)
                     .padding(2.dp),
             ) {
-                ZillitAvatar(name = name.ifBlank { "?" }, size = 26.dp)
+                ZillitAvatar(name = person.name.ifBlank { "?" }, userId = person.userId, size = 26.dp)
             }
         }
     }

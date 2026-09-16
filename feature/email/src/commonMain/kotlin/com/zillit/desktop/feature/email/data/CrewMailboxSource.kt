@@ -53,6 +53,7 @@ internal fun readCrewContact(row: JsonElement, viewerIsAdmin: Boolean): EmailCon
         address = address,
         name = row.crewName().orEmpty(),
         source = ContactSource.ProjectUser,
+        userId = row.str("user_id") ?: row.str("_id").orEmpty(),
         subtitle = row.str("designation_name") ?: row.str("designation")
             ?: row.str("department_name") ?: row.str("department").orEmpty(),
     )

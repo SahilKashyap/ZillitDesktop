@@ -5,6 +5,7 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.common.map
 import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.network.ApiClient
 import com.zillit.desktop.core.network.CallOptions
 import com.zillit.desktop.core.network.HttpVerb
@@ -854,7 +855,7 @@ internal fun readReadBy(row: JsonElement): ReadBy {
             ReadReceipt(
                 userId = userId,
                 userName = receipt.string("user_name"),
-                designation = receipt.string("designation_name"),
+                designation = receipt.string("designation_name")?.localised(),
                 readTimeMillis = if (rawTime in 1 until MILLIS_FLOOR) {
                     rawTime * MILLIS_PER_SECOND
                 } else {

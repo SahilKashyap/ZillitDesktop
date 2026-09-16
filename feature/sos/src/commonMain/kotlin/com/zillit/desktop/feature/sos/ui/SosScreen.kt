@@ -380,7 +380,7 @@ private fun AlertCard(
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
-        ZillitAvatar(name = name, size = AVATAR)
+        ZillitAvatar(name = name, userId = alert.senderId, size = AVATAR)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
             AlertHead(name, sent)
             ZillitText(text = alert.text, style = ZillitTheme.typography.bodyMedium)

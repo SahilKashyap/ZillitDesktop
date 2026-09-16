@@ -7,6 +7,7 @@ import com.zillit.desktop.core.media.PickRefusal
 import com.zillit.desktop.core.media.PickedFile
 import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.media.contentTypeFor
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.cardexpenses.domain.CardAttachment
 import com.zillit.desktop.feature.cardexpenses.domain.CardAttachmentUploader
 import com.zillit.desktop.feature.cardexpenses.domain.CardPerson
@@ -28,8 +29,9 @@ internal suspend fun AppGraph.Ready.cardPeople(): List<CardPerson> =
         CardPerson(
             id = user.id,
             name = user.name,
-            designation = user.designation,
-            department = user.department,
+            // Label keys off the hub roster; the settings page prints both.
+            designation = user.designation.localised(),
+            department = user.department.localised(),
             departmentId = user.departmentId,
         )
     }

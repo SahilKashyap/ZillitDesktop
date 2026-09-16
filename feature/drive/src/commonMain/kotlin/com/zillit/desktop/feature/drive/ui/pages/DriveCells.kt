@@ -176,7 +176,7 @@ internal fun SharingCell(item: DriveItem, state: DriveUiState) {
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ZillitAvatar(name = name, size = SMALL_AVATAR)
+            ZillitAvatar(name = name, userId = item.uploadedById, size = SMALL_AVATAR)
             ZillitText(
                 text = name,
                 style = ZillitTheme.typography.bodySmall,
@@ -195,15 +195,15 @@ internal fun SharingCell(item: DriveItem, state: DriveUiState) {
         )
         return
     }
-    val names = others.map { id -> state.crew.firstOrNull { it.id == id }?.name ?: "User" }
-    val shown = names.take(MAX_STACKED)
-    val overflow = names.size - shown.size
-    ZillitTooltip(text = names.joinToString(", ")) {
+    val people = others.map { id -> id to (state.crew.firstOrNull { it.id == id }?.name ?: "User") }
+    val shown = people.take(MAX_STACKED)
+    val overflow = people.size - shown.size
+    ZillitTooltip(text = people.joinToString(", ") { (_, name) -> name }) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            shown.forEach { name -> ZillitAvatar(name = name, size = SMALL_AVATAR) }
+            shown.forEach { (id, name) -> ZillitAvatar(name = name, userId = id, size = SMALL_AVATAR) }
             if (overflow > 0) {
                 Box(
                     modifier = Modifier

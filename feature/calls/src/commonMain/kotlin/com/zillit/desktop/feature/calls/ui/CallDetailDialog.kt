@@ -22,6 +22,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.calls.domain.CallLogEntry
+import com.zillit.desktop.feature.calls.domain.CallMode
 
 /**
  * The Call activity sheet — Android's `CallActivityDetailSheet`, opened from a
@@ -54,7 +55,11 @@ fun CallDetailDialog(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            ZillitAvatar(name = title, size = HEADER_AVATAR)
+            ZillitAvatar(
+                name = title,
+                userId = entry.peerUserId.takeIf { entry.mode != CallMode.Group },
+                size = HEADER_AVATAR,
+            )
             Column {
                 ZillitText(text = title, style = ZillitTheme.typography.titleMedium)
                 ZillitText(
@@ -143,7 +148,7 @@ private fun ParticipantRow(row: CallDetailParticipant) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = row.name, size = ROW_AVATAR)
+        ZillitAvatar(name = row.name, userId = row.userId, size = ROW_AVATAR)
         Column(Modifier.weight(1f)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

@@ -73,6 +73,16 @@ internal fun UserSnapshot.designationText(): String? =
         ?.let { Labels.translate(it) }
 
 /**
+ * The department as words, or null when the record has none.
+ *
+ * Same trap as the designation: `camera_department_label` on the wire. Read
+ * [UserSnapshot.department] directly only to *match* it — against the
+ * accounts/transport identifiers, or a department list's keys — never to show it.
+ */
+internal fun UserSnapshot.departmentText(): String? =
+    department?.takeIf { it.isNotBlank() }?.let { Labels.translate(it) }
+
+/**
  * Whether this crew member belongs in people lists.
  *
  * Android's Members filter keeps `approved`, `accepted`, `left` and `removed`

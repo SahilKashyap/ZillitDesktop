@@ -46,6 +46,27 @@ class ChatWireTest {
     }
 
     @Test
+    fun `an attachment reads its size and knows a PDF by type or by name`() {
+        val row = readChatMessage(
+            Json.parseToJsonElement(
+                """{"_id":"m3","sender":"alice","receiver":"bob","message":"","created":1,
+                   "attachment":{"media":"chat/file/p/x.pdf","name":"x.pdf","content_type":"document",
+                   "content_subtype":"pdf","thumbnail":"","bucket":"b","region":"r","file_size":"173419"}}""",
+            ),
+            myUserId = "bob",
+            decrypt = ::decrypt,
+        )!!
+        assertEquals(173419L, row.attachment?.sizeBytes)
+        assertTrue(row.attachment!!.isPdf, "a document/pdf row is a PDF")
+        val word = com.zillit.desktop.feature.chat.domain.ChatAttachment(
+            media = "k",
+            name = "a.docx",
+            contentType = "document",
+        )
+        assertTrue(!word.isPdf)
+    }
+
+    @Test
     fun `a row without ids or sender is dropped, not thrown`() {
         assertNull(readChatMessage(Json.parseToJsonElement("""{"message":"x"}"""), "me", ::decrypt))
         assertNull(readChatMessage(Json.parseToJsonElement(""""just a string""""), "me", ::decrypt))

@@ -155,7 +155,7 @@ private fun columns(
         )
     },
     TableColumn(header = "Uploaded By", width = ColumnWidth.Weight(1.2f)) { document ->
-        PersonChip(name = document.uploaderName())
+        PersonChip(name = document.uploaderName(), userId = document.uploadedBy)
     },
     textColumn(header = "Uploaded On", width = ColumnWidth.Fixed(DATE_WIDTH.dp), muted = true) {
         formDateTime(it.createdOn)

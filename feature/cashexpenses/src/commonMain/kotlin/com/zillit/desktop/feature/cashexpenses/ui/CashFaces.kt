@@ -83,7 +83,7 @@ fun CashPerson(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = shown, image = rememberFace(userId), size = size)
+        ZillitAvatar(name = shown, image = rememberFace(userId), userId = userId, size = size)
         if (secondary.isNullOrBlank()) {
             ZillitText(
                 text = shown,

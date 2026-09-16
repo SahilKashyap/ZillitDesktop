@@ -259,6 +259,7 @@ internal fun DodDocumentCard(
             ZillitAvatar(
                 name = uploader.substringBefore(" ("),
                 image = rememberDodFace(document.createdBy),
+                userId = document.createdBy,
                 size = CARD_AVATAR,
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
@@ -696,6 +697,7 @@ internal fun DodCountsDialog(
                         ZillitAvatar(
                             name = name.substringBefore(" ("),
                             image = rememberDodFace(row.userId),
+                            userId = row.userId,
                             size = COUNT_AVATAR,
                         )
                         Column(Modifier.weight(1f)) {

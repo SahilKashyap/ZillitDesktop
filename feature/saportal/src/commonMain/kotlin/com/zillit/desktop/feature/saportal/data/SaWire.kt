@@ -1,6 +1,7 @@
 package com.zillit.desktop.feature.saportal.data
 
 import com.zillit.desktop.core.common.CurrencyCodeSerializer
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.saportal.domain.AccountCheck
 import com.zillit.desktop.feature.saportal.domain.ArtisteBank
 import com.zillit.desktop.feature.saportal.domain.ArtisteQuery
@@ -373,7 +374,7 @@ internal data class MessageDto(
         text = text.orEmpty(),
         at = at?.toLong(),
         authorName = who?.name.orEmpty(),
-        authorRole = who?.designation.orEmpty(),
+        authorRole = who?.designation.orEmpty().localised(),
         whoType = whoType.orEmpty(),
     )
 }

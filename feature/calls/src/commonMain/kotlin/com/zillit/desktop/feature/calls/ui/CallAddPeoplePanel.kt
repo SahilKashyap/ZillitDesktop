@@ -105,7 +105,7 @@ private fun CrewRow(entry: CallCrewEntry, onPick: (CallCrewEntry) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = entry.name, size = ROW_AVATAR)
+        ZillitAvatar(name = entry.name, userId = entry.userId, size = ROW_AVATAR)
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(
                 text = entry.name,

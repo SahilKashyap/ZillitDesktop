@@ -29,6 +29,8 @@ data class EmailContact(
     val source: ContactSource = ContactSource.Saved,
     /** Department or company, shown as the second line to tell two Amits apart. */
     val subtitle: String = "",
+    /** The crew member's id, for their picture; blank for a saved address. */
+    val userId: String = "",
 ) {
     /** What the composer inserts: `Name <addr>`, or the bare address. */
     val asRecipient: String get() = if (name.isBlank()) address else "$name <$address>"

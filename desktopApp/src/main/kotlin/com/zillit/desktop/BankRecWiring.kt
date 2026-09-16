@@ -134,7 +134,7 @@ private fun bankRecFiles() = BankRecFiles { fileName, bytes ->
 private fun AppGraph.Ready.bankRecDirectory(): BankRecDirectory = object : BankRecDirectory {
     override fun person(userId: String): BankRecPerson? =
         projectContext?.context?.value?.user(userId)?.let { user ->
-            BankRecPerson(name = user.fullName, designation = user.designation.orEmpty())
+            BankRecPerson(name = user.fullName, designation = user.designationText().orEmpty())
                 .takeIf { it.name.isNotBlank() }
         }
 
@@ -144,7 +144,7 @@ private fun AppGraph.Ready.bankRecDirectory(): BankRecDirectory = object : BankR
         val crew = context.user(profile.userId)
         return BankRecPerson(
             name = profile.fullName.ifBlank { crew?.fullName.orEmpty() },
-            designation = crew?.designation.orEmpty(),
+            designation = crew?.designationText().orEmpty(),
         ).takeIf { it.name.isNotBlank() }
     }
 }

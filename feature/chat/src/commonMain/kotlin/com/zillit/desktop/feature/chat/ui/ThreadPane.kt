@@ -1476,12 +1476,17 @@ private fun AttachmentBody(
         // A picture opens the in-app viewer; saving stays gated behind its
         // Download (QA #11).
         file.kind == "image" -> MediaThumb(file, media.loadThumbnail, media.onView)
-        file.thumbnail.isNotBlank() ->
+        // A PDF is asked for its poster whether or not the row names one —
+        // the host draws page one itself when the server has nothing (a
+        // Box production, a Drive share, the phones' placeholder key). The
+        // name rides under the page: a cover page rarely says which file.
+        file.thumbnail.isNotBlank() || file.isPdf ->
             MediaThumb(
                 file,
                 media.loadThumbnail,
                 media.onOpen,
                 playBadge = file.kind == "video",
+                namePlate = file.kind == "document",
             )
         else -> FileChip(file, media.onOpen)
     }
@@ -1971,27 +1976,72 @@ private fun MediaThumb(
     androidx.compose.ui.graphics.ImageBitmap?,
     onOpen: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     playBadge: Boolean = false,
+    /** The file's chip under the picture — a document's name and open verb. */
+    namePlate: Boolean = false,
 ) {
-    val image = androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(
-        initialValue = null,
+    // Three states, not two: "still fetching" must keep the tile's size, and
+    // only a definite miss falls back to the chip. Fetched-or-not as a
+    // nullable bitmap conflated them, and the bubble grew from chip to
+    // picture the moment the bytes landed — which, in a reversed list, is a
+    // visible jump of everything above it, timed (S3 round trip) to land
+    // right as a trackpad fling dies.
+    val poster by androidx.compose.runtime.produceState<PosterState>(
+        initialValue = PosterState.Loading,
         file.media,
-    ) { value = loadThumbnail(file) }.value
+    ) { value = PosterState.Done(loadThumbnail(file)) }
 
-    if (image == null) {
+    val image = (poster as? PosterState.Done)?.image
+    if (poster is PosterState.Done && image == null) {
         FileChip(file, onOpen)
         return
     }
-    Box(contentAlignment = Alignment.Center) {
-        androidx.compose.foundation.Image(
-            bitmap = image,
-            contentDescription = file.name,
-            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            modifier = Modifier
-                .sizeIn(maxWidth = THUMB_MAX, maxHeight = THUMB_MAX)
-                .clip(ZillitTheme.shapes.small)
-                .clickable { onOpen(file) },
-        )
-        if (playBadge) {
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
+        PosterTile(image, file, onOpen, playBadge)
+        if (namePlate) FileChip(file, onOpen)
+    }
+}
+
+private sealed interface PosterState {
+    data object Loading : PosterState
+
+    /** Fetched; a null [image] is a miss the chip stands in for. */
+    data class Done(val image: androidx.compose.ui.graphics.ImageBitmap?) : PosterState
+}
+
+/**
+ * The picture, at a size fixed before the bytes arrive.
+ *
+ * The frame comes from the row's own `width`/`height` when the wire carries
+ * them (the phones send the picture's, and a poster's page), else a
+ * document-shaped or picture-shaped default; the bitmap is cropped into it
+ * rather than sizing it. So the layout is settled on the first frame and
+ * the arrival of the image changes pixels, never positions.
+ */
+@Composable
+private fun PosterTile(
+    image: androidx.compose.ui.graphics.ImageBitmap?,
+    file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
+    onOpen: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
+    playBadge: Boolean,
+) {
+    val frame = posterFrame(file.widthPx, file.heightPx, portraitDefault = file.kind == "document")
+    Box(
+        modifier = Modifier
+            .size(frame)
+            .clip(ZillitTheme.shapes.small)
+            .background(ZillitTheme.colors.surfaceSunken)
+            .clickable { onOpen(file) },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (image != null) {
+            androidx.compose.foundation.Image(
+                bitmap = image,
+                contentDescription = file.name,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        if (playBadge && image != null) {
             // The board's rule: the poster says what it is, the badge says
             // it moves.
             Box(
@@ -2010,6 +2060,32 @@ private fun MediaThumb(
             }
         }
     }
+}
+
+/**
+ * The tile a poster gets: the wire's aspect fitted into [THUMB_MAX], with
+ * the short edge never under [THUMB_MIN] (a panorama still reads as a
+ * picture, cropped); a page-shaped or picture-shaped default without one.
+ */
+internal fun posterFrame(
+    widthPx: Long,
+    heightPx: Long,
+    portraitDefault: Boolean,
+): androidx.compose.ui.unit.DpSize {
+    if (widthPx <= 0 || heightPx <= 0) {
+        return if (portraitDefault) {
+            androidx.compose.ui.unit.DpSize(THUMB_MAX * PAGE_RATIO, THUMB_MAX)
+        } else {
+            androidx.compose.ui.unit.DpSize(THUMB_MAX, THUMB_MAX * PAGE_RATIO)
+        }
+    }
+    val ratio = widthPx.toFloat() / heightPx.toFloat()
+    val width = if (ratio >= 1f) THUMB_MAX else THUMB_MAX * ratio
+    val height = if (ratio >= 1f) THUMB_MAX / ratio else THUMB_MAX
+    return androidx.compose.ui.unit.DpSize(
+        width = if (width < THUMB_MIN) THUMB_MIN else width,
+        height = if (height < THUMB_MIN) THUMB_MIN else height,
+    )
 }
 
 /**
@@ -2150,6 +2226,10 @@ private const val DAY_ROOM = 8
 private val STATUS_ICON = 14.dp
 private val ROW_AVATAR = 26.dp
 private val THUMB_MAX = 240.dp
+private val THUMB_MIN = 96.dp
+
+/** A page-shaped tile's short edge as a share of its long one — near A4. */
+private const val PAGE_RATIO = 0.72f
 private val PLAY_BADGE = 40.dp
 private val VOICE_MIN_WIDTH = 220.dp
 private val REACT_BUTTON = 24.dp

@@ -232,6 +232,34 @@ class ThreadPaneRenderTest {
         assertTrue(pasted.any { it.name == "shot.png" }, "the paste reached the view model")
     }
 
+    /**
+     * A PDF asks for its poster even when the row names no thumbnail — the
+     * host draws page one itself — and the page carries the file's chip
+     * beneath it. It used to be a bare chip unless the server had stored a
+     * poster, which a Box production and a Drive share never do.
+     */
+    @Test
+    fun `a PDF without a server thumbnail still shows a page, over its chip`() = runComposeUiTest {
+        val doc = theirs("").copy(
+            attachment = ChatAttachment(media = "s3/day12.pdf", name = "Day 12 schedule.pdf", contentType = "document"),
+        )
+        var asked = 0
+        setContent {
+            ZillitTheme {
+                ThreadPane(
+                    state = ChatUiState(peer = aisha, messages = listOf(doc)),
+                    onEvent = {},
+                    loadThumbnail = { asked++; ImageBitmap(4, 4) },
+                )
+            }
+        }
+
+        waitForIdle()
+        onNodeWithContentDescription("Day 12 schedule.pdf").assertExists("the page image")
+        onNodeWithText("Day 12 schedule.pdf").assertExists("the chip under it")
+        assertTrue(asked > 0, "the poster was asked for")
+    }
+
     @Test
     fun `a document chip refuses to save without the right`() = runComposeUiTest {
         val doc = theirs("").copy(

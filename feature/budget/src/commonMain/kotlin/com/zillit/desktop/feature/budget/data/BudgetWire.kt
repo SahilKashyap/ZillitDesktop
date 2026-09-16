@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.budget.data
 
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.budget.domain.BudgetActivityRow
 import com.zillit.desktop.feature.budget.domain.BudgetChatEntry
 import com.zillit.desktop.feature.budget.domain.BudgetDocument
@@ -278,7 +279,7 @@ internal fun chatEntryOf(row: JsonObject): BudgetChatEntry? {
         BudgetChatEntry.Person(
             userId = userId,
             name = row.text("full_name").orEmpty(),
-            designation = row.text("designation_name") ?: row.text("designation").orEmpty(),
+            designation = (row.text("designation_name") ?: row.text("designation").orEmpty()).localised(),
             isAdmin = (row["is_admin"] as? JsonPrimitive)?.booleanOrNull == true,
             deviceId = row.text("device_id").orEmpty(),
             hasLeft = row.text("status") in LEFT_STATUSES,

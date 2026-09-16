@@ -103,6 +103,8 @@ internal fun ApplicationScope.WidgetWindow(
     preferences: PreferenceStore,
     visible: Boolean,
     darkTheme: Boolean,
+    /** For the crew's faces — a widget on another production draws initials for its strangers. */
+    graph: AppGraph,
     onClose: () -> Unit,
     content: @Composable (WidgetChrome) -> Unit,
 ) {
@@ -130,13 +132,15 @@ internal fun ApplicationScope.WidgetWindow(
         ) {
             DesktopLayer(mode)
             ZillitTheme(darkTheme = darkTheme) {
-                Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
-                    // No title bar on the desktop: this strip is the handle
-                    // that moves the window, and carries its close.
-                    if (mode == WidgetMode.Desktop) {
-                        WindowDraggableArea { GripStrip(title = title, onClose = onClose) }
+                AvatarFaces(graph) {
+                    Column(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
+                        // No title bar on the desktop: this strip is the handle
+                        // that moves the window, and carries its close.
+                        if (mode == WidgetMode.Desktop) {
+                            WindowDraggableArea { GripStrip(title = title, onClose = onClose) }
+                        }
+                        content(WidgetChrome(mode = mode, onToggleMode = { mode = mode.toggled() }))
                     }
-                    content(WidgetChrome(mode = mode, onToggleMode = { mode = mode.toggled() }))
                 }
             }
         }

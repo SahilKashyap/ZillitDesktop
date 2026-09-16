@@ -283,7 +283,7 @@ internal fun PersonRow(person: DiaryPerson, selected: Boolean, onToggle: () -> U
     val colors = ZillitTheme.colors
     SelectRow(selected = selected, onClick = onToggle) {
         ZillitCheckbox(checked = selected, onCheckedChange = { onToggle() })
-        ZillitAvatar(name = person.fullName, image = rememberDiaryFace(person.id), size = 32.dp)
+        ZillitAvatar(name = person.fullName, image = rememberDiaryFace(person.id), userId = person.id, size = 32.dp)
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ZillitText(
@@ -407,7 +407,12 @@ internal fun PresetMembers(preset: UserPreset) {
         }
         preset.members.forEach { member ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ZillitAvatar(name = member.fullName, image = rememberDiaryFace(member.id), size = 26.dp)
+                ZillitAvatar(
+                    name = member.fullName,
+                    image = rememberDiaryFace(member.id),
+                    userId = member.id,
+                    size = 26.dp,
+                )
                 Column {
                     ZillitText(
                         member.fullName.ifBlank { "Unnamed user" },

@@ -584,7 +584,7 @@ private fun SnapshotMeta(header: SnapshotHeader, resolveUser: (String) -> String
         MetaItem("By") {
             Row(verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitAvatar(name = who, size = 24.dp)
+                ZillitAvatar(name = who, userId = header.postedBy, size = 24.dp)
                 ZillitText(
                     text = who,
                     style = ZillitTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),

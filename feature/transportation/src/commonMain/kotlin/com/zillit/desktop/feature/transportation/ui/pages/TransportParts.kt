@@ -91,7 +91,7 @@ internal fun Face(user: TransportUser?, name: String, size: Dp = FACE) {
     val image by produceState<ImageBitmap?>(initialValue = null, key1 = user?.userId, key2 = user?.avatar?.media) {
         value = user?.takeIf { it.avatar != null }?.let { slots.loadAvatar(it.userId) }
     }
-    ZillitAvatar(name = name.ifBlank { "?" }, size = size, image = image)
+    ZillitAvatar(name = name.ifBlank { "?" }, size = size, image = image, userId = user?.userId)
 }
 
 /**

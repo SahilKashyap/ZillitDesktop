@@ -14,6 +14,8 @@ import com.zillit.desktop.feature.settings.approvals.ApprovalQueue
  * a spinner where a name should be.
  */
 data class AccountSummary(
+    /** For the profile picture; blank before the profile arrives. */
+    val userId: String = "",
     val fullName: String = "",
     val email: String = "",
     val productionName: String = "",

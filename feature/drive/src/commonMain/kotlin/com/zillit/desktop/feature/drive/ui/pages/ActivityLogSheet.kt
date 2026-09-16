@@ -224,7 +224,7 @@ private fun ActivityCard(entry: DriveActivity) {
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ZillitAvatar(name = entry.displayName, size = META_AVATAR)
+                ZillitAvatar(name = entry.displayName, userId = entry.userId, size = META_AVATAR)
                 ZillitText(
                     text = entry.displayName,
                     style = ZillitTheme.typography.labelSmall,

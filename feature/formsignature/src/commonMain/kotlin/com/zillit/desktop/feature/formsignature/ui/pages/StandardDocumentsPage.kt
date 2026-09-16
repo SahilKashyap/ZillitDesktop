@@ -158,7 +158,7 @@ private fun columns(
         formDateTime(it.createdOn)
     },
     TableColumn(header = "Uploaded By", width = ColumnWidth.Weight(1.2f)) { form ->
-        PersonChip(name = form.uploaderName)
+        PersonChip(name = form.uploaderName, userId = form.uploaderId)
     },
     TableColumn(header = "Action", width = ColumnWidth.Fixed(ACTIONS_WIDTH.dp)) { form ->
         RowActions(state, form, onEvent)

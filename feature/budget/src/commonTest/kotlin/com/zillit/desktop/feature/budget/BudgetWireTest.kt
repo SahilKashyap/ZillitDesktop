@@ -138,7 +138,8 @@ class BudgetWireTest {
         val group = entries[1] as BudgetChatEntry.Group
         assertEquals("u2", person.key)
         assertTrue(person.isAdmin)
-        assertEquals("gaffer_label", person.designation)
+        // A label key on the wire; the row carries the words the list prints.
+        assertEquals("Gaffer", person.designation)
         assertEquals("r1", group.key)
         assertEquals(listOf("u1"), group.memberIds, "a disabled member is out of the room")
         assertEquals("k/pic.jpg", group.pictureMedia)

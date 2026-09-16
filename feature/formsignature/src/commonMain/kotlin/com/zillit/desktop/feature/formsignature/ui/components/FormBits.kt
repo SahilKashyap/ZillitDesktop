@@ -140,15 +140,20 @@ internal fun InfoBand(
     }
 }
 
-/** A person as the web's `UserChip` shows them: initials avatar and name. */
+/** A person as the web's `UserChip` shows them: their picture (initials without one) and name. */
 @Composable
-internal fun PersonChip(name: String, modifier: Modifier = Modifier, subtitle: String? = null) {
+internal fun PersonChip(
+    name: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    userId: String? = null,
+) {
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = name.ifBlank { "?" }, size = 28.dp)
+        ZillitAvatar(name = name.ifBlank { "?" }, userId = userId, size = 28.dp)
         Column {
             ZillitText(text = name.ifBlank { "—" }, style = ZillitTheme.typography.bodyMedium, maxLines = 1)
             if (!subtitle.isNullOrBlank()) {

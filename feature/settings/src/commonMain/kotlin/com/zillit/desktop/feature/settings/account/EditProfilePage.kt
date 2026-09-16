@@ -94,10 +94,12 @@ private fun NameCard(form: ProfileFormState, seed: ProfileSeed, onEvent: (Accoun
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
             // Redrawn from the typed name rather than the stored one, so the
-            // initials change as the field does — the cheapest possible preview
-            // of what the crew list is about to show.
+            // initials (for a profile without a picture) change as the field
+            // does — the cheapest possible preview of what the crew list is
+            // about to show.
             ZillitAvatar(
                 name = "${form.firstName} ${form.lastName}".trim().ifBlank { seed.email },
+                userId = seed.userId,
                 size = AVATAR,
             )
             ZillitTextField(

@@ -282,7 +282,7 @@ private fun PersonRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ZillitCheckbox(checked = selected, onCheckedChange = ::toggle, enabled = enabled)
-        ZillitAvatar(name = person.name, size = PERSON_AVATAR)
+        ZillitAvatar(name = person.name, userId = person.id, size = PERSON_AVATAR)
         Column(modifier = Modifier.weight(1f)) {
             ZillitText(text = person.name, style = ZillitTheme.typography.bodyMedium, maxLines = 1)
             if (person.designation.isNotBlank()) {

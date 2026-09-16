@@ -168,7 +168,7 @@ private fun MemberPicker(state: SosUiState, onEvent: (SosEvent) -> Unit) {
 @Composable
 private fun CrewRow(member: SosCrewMember, state: SosUiState, onEvent: (SosEvent) -> Unit) {
     HoverRow {
-        ZillitAvatar(name = member.fullName, size = ROW_AVATAR)
+        ZillitAvatar(name = member.fullName, userId = member.userId, size = ROW_AVATAR)
         Column(Modifier.weight(1f)) {
             ZillitText(text = member.fullName, style = ZillitTheme.typography.bodyMedium, maxLines = 1)
             if (state.showsDesignation && member.designation.isNotBlank()) {
@@ -350,7 +350,7 @@ private fun ContactsEmpty(text: String) {
 private fun ContactRow(row: SosContact, state: SosUiState, onEvent: (SosEvent) -> Unit) {
     val editing = row.id == state.contacts.editingId
     HoverRow(tint = if (editing) ZillitTheme.colors.accentSoft else null) {
-        ZillitAvatar(name = row.displayName, size = ROW_AVATAR)
+        ZillitAvatar(name = row.displayName, userId = row.userId, size = ROW_AVATAR)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
             ZillitText(text = row.displayName, style = ZillitTheme.typography.bodyMedium, maxLines = 1)
             ContactRowMeta(row, state.showsDesignation)

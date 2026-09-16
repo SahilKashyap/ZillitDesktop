@@ -232,7 +232,7 @@ private fun RecceRow(state: RecceUiState, recce: Recce, last: Boolean, onEvent: 
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 val crew = recce.realPersonnel
-                AvatarStack(crew.map { it.name })
+                AvatarStack(crew)
                 ZillitText(
                     text = crew.size.toString(),
                     style = ZillitTheme.typography.bodyMedium,

@@ -314,7 +314,7 @@ private fun TimecardDetail(state: TimecardUiState, card: Timecard, onEvent: (Tim
                 ZillitText(text = card.crewName.ifBlank { card.userId }, style = ZillitTheme.typography.titleMedium)
                 ZillitText(
                     text = "Week of ${EpochDate.date(card.weekStarting).ifEmpty { "—" }}" +
-                        (card.designation?.let { " · $it" } ?: ""),
+                        (card.designation?.let { " · ${it.localised()}" } ?: ""),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )

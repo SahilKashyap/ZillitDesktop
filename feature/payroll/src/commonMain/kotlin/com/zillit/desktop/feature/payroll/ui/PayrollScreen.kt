@@ -465,7 +465,7 @@ private fun lineColumns(
                 } else {
                     line.designation?.takeIf { it.isNotBlank() }?.let {
                         ZillitText(
-                            text = it,
+                            text = it.localised(),
                             style = ZillitTheme.typography.labelSmall,
                             color = ZillitTheme.colors.textMuted,
                             maxLines = 1,

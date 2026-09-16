@@ -177,6 +177,7 @@ internal fun ForwardDialog(
                     val target = ForwardTarget(person.userId, isGroup = false)
                     TargetRow(
                         name = person.fullName,
+                        userId = person.userId,
                         caption = person.designationLabel(),
                         checked = target in picked,
                         onToggle = { picked = picked.toggled(target) },
@@ -218,7 +219,14 @@ private fun SectionHeading(label: String) {
 }
 
 @Composable
-private fun TargetRow(name: String, caption: String?, checked: Boolean, onToggle: () -> Unit) {
+private fun TargetRow(
+    name: String,
+    caption: String?,
+    checked: Boolean,
+    onToggle: () -> Unit,
+    /** A person's id; a group has none and draws its initials. */
+    userId: String? = null,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -228,7 +236,7 @@ private fun TargetRow(name: String, caption: String?, checked: Boolean, onToggle
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitAvatar(name = name, size = TARGET_AVATAR)
+        ZillitAvatar(name = name, userId = userId, size = TARGET_AVATAR)
         Column(Modifier.weight(1f)) {
             ZillitText(text = name, style = ZillitTheme.typography.bodySmall, maxLines = 1)
             if (caption != null) {
@@ -393,7 +401,7 @@ private fun ReaderRow(reader: NamedReader, unread: Boolean) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            ZillitAvatar(name = reader.contact.fullName, size = TARGET_AVATAR)
+            ZillitAvatar(name = reader.contact.fullName, userId = reader.contact.userId, size = TARGET_AVATAR)
             Column(Modifier.weight(1f)) {
                 val role = reader.contact.designationLabel()
                 ZillitText(

@@ -260,6 +260,7 @@ internal fun ScriptDocumentCard(
             ZillitAvatar(
                 name = uploader.substringBefore(" ("),
                 image = rememberDodFace(document.createdBy),
+                userId = document.createdBy,
                 size = CARD_AVATAR,
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
