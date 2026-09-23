@@ -8306,4 +8306,15 @@
     <string name="desktop_sides_one_scene_selected">%1$d סצנה נבחרה</string>
     <string name="desktop_sides_n_scenes_selected">%1$d סצנות נבחרו</string>
     <string name="desktop_choose_a_department_prompt">בחירת מחלקה...</string>
+    <string name="desktop_call_section_in_call">בשיחה (%1$d)</string>
+    <string name="desktop_call_section_ringing">מצלצל (%1$d)</string>
+    <string name="desktop_call_section_left_declined">עזבו / דחו (%1$d)</string>
+    <string name="desktop_call_section_users">משתמשים (%1$d)</string>
+    <string name="desktop_call_you_are_presenting">אתם מציגים לכולם</string>
+    <string name="desktop_call_sharing_screen_title">אתם משתפים את המסך</string>
+    <string name="desktop_call_sharing_screen_body">כל המשתתפים בשיחה רואים את מה שאתם משתפים.</string>
+    <string name="desktop_call_name_is_presenting">%1$s מציג/ה</string>
+    <string name="desktop_call_back_to_call">חזרה לשיחה</string>
+    <string name="desktop_chat_drop_hint">כל קובץ נפתח בתצוגה מקדימה לפני שליחתו.</string>
+    <string name="desktop_screen_share_restart_needed">הקלטת מסך מותרת עכשיו עבור Zillit. צאו מ-Zillit ופתחו אותו מחדש כדי לשתף את המסך — macOS מחיל את השינוי רק אחרי הפעלה מחדש.</string>
 </resources>

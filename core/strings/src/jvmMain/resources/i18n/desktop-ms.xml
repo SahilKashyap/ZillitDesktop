@@ -1636,6 +1636,16 @@
     <string name="desktop_email_date_at_time">%1$s pada %2$s</string>
     <string name="desktop_email_no_recipient">(tiada penerima)</string>
     <string name="desktop_n_more">+%1$d lagi</string>
+    <string name="desktop_call_section_in_call">Dalam panggilan (%1$d)</string>
+    <string name="desktop_call_section_ringing">Berdering (%1$d)</string>
+    <string name="desktop_call_section_left_declined">Keluar / Menolak (%1$d)</string>
+    <string name="desktop_call_section_users">Pengguna (%1$d)</string>
+    <string name="desktop_call_you_are_presenting">Anda sedang membentangkan kepada semua</string>
+    <string name="desktop_call_sharing_screen_title">Anda sedang berkongsi skrin</string>
+    <string name="desktop_call_sharing_screen_body">Semua orang dalam panggilan boleh melihat apa yang anda kongsikan.</string>
+    <string name="desktop_call_name_is_presenting">%1$s sedang membentangkan</string>
+    <string name="desktop_call_back_to_call">Kembali ke panggilan</string>
+    <string name="desktop_chat_drop_hint">Setiap fail dibuka dalam pratonton sebelum dihantar.</string>
     <string name="desktop_location_picker_maps_key_rejected">Google menolak kunci Maps projek ini, jadi pemilih tidak dapat dimuatkan.</string>
     <string name="desktop_location_picker_error">Ralat pemilih peta</string>
     <string name="desktop_bs_event_past_date">Acara tidak boleh dicipta untuk tarikh yang telah berlalu</string>
@@ -8306,4 +8316,5 @@
     <string name="desktop_sides_one_scene_selected">%1$d adegan dipilih</string>
     <string name="desktop_sides_n_scenes_selected">%1$d adegan dipilih</string>
     <string name="desktop_choose_a_department_prompt">Pilih jabatan...</string>
+    <string name="desktop_screen_share_restart_needed">Rakaman Skrin kini dibenarkan untuk Zillit. Keluar dan buka semula Zillit untuk berkongsi skrin anda — macOS hanya menggunakannya selepas mula semula.</string>
 </resources>

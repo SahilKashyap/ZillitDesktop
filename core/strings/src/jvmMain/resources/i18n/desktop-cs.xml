@@ -8306,4 +8306,15 @@
     <string name="desktop_sides_one_scene_selected">Vybrána %1$d scéna</string>
     <string name="desktop_sides_n_scenes_selected">Vybrané scény: %1$d</string>
     <string name="desktop_choose_a_department_prompt">Vyberte oddělení...</string>
+    <string name="desktop_call_section_in_call">V hovoru (%1$d)</string>
+    <string name="desktop_call_section_ringing">Vyzvání (%1$d)</string>
+    <string name="desktop_call_section_left_declined">Odešli / Odmítli (%1$d)</string>
+    <string name="desktop_call_section_users">Uživatelé (%1$d)</string>
+    <string name="desktop_call_you_are_presenting">Prezentujete všem</string>
+    <string name="desktop_call_sharing_screen_title">Sdílíte svou obrazovku</string>
+    <string name="desktop_call_sharing_screen_body">Všichni v hovoru vidí, co sdílíte.</string>
+    <string name="desktop_call_name_is_presenting">%1$s prezentuje</string>
+    <string name="desktop_call_back_to_call">Zpět do hovoru</string>
+    <string name="desktop_chat_drop_hint">Každý soubor se před odesláním otevře v náhledu.</string>
+    <string name="desktop_screen_share_restart_needed">Nahrávání obrazovky je nyní pro Zillit povoleno. Ukončete Zillit a znovu jej otevřete, abyste mohli sdílet obrazovku — macOS změnu použije až po restartu.</string>
 </resources>

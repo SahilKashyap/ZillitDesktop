@@ -8306,4 +8306,15 @@
     <string name="desktop_sides_one_scene_selected">%1$d Szene ausgewählt</string>
     <string name="desktop_sides_n_scenes_selected">%1$d Szenen ausgewählt</string>
     <string name="desktop_choose_a_department_prompt">Abteilung wählen...</string>
+    <string name="desktop_call_section_in_call">Im Anruf (%1$d)</string>
+    <string name="desktop_call_section_ringing">Klingelt (%1$d)</string>
+    <string name="desktop_call_section_left_declined">Verlassen / Abgelehnt (%1$d)</string>
+    <string name="desktop_call_section_users">Benutzer (%1$d)</string>
+    <string name="desktop_call_you_are_presenting">Sie präsentieren für alle</string>
+    <string name="desktop_call_sharing_screen_title">Sie teilen Ihren Bildschirm</string>
+    <string name="desktop_call_sharing_screen_body">Alle Teilnehmer des Anrufs sehen, was Sie teilen.</string>
+    <string name="desktop_call_name_is_presenting">%1$s präsentiert</string>
+    <string name="desktop_call_back_to_call">Zurück zum Anruf</string>
+    <string name="desktop_chat_drop_hint">Jede Datei wird vor dem Senden in einer Vorschau geöffnet.</string>
+    <string name="desktop_screen_share_restart_needed">Bildschirmaufnahme ist jetzt für Zillit erlaubt. Beenden Sie Zillit und öffnen Sie es erneut, um Ihren Bildschirm zu teilen — macOS übernimmt die Änderung erst nach einem Neustart.</string>
 </resources>

@@ -8306,4 +8306,15 @@
     <string name="desktop_sides_one_scene_selected">Выбрана %1$d сцена</string>
     <string name="desktop_sides_n_scenes_selected">Выбрано сцен: %1$d</string>
     <string name="desktop_choose_a_department_prompt">Выберите отдел...</string>
+    <string name="desktop_call_section_in_call">В звонке (%1$d)</string>
+    <string name="desktop_call_section_ringing">Вызов (%1$d)</string>
+    <string name="desktop_call_section_left_declined">Вышли / Отклонили (%1$d)</string>
+    <string name="desktop_call_section_users">Пользователи (%1$d)</string>
+    <string name="desktop_call_you_are_presenting">Вы показываете экран всем</string>
+    <string name="desktop_call_sharing_screen_title">Вы демонстрируете свой экран</string>
+    <string name="desktop_call_sharing_screen_body">Все участники звонка видят то, что вы показываете.</string>
+    <string name="desktop_call_name_is_presenting">%1$s показывает экран</string>
+    <string name="desktop_call_back_to_call">Вернуться к звонку</string>
+    <string name="desktop_chat_drop_hint">Перед отправкой каждый файл открывается для предпросмотра.</string>
+    <string name="desktop_screen_share_restart_needed">Запись экрана теперь разрешена для Zillit. Закройте и снова откройте Zillit, чтобы показать экран: macOS применяет это изменение только после перезапуска.</string>
 </resources>

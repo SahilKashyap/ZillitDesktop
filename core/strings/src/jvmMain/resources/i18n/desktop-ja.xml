@@ -8306,4 +8306,15 @@
     <string name="desktop_sides_one_scene_selected">%1$d 件のシーンを選択中</string>
     <string name="desktop_sides_n_scenes_selected">%1$d 件のシーンを選択中</string>
     <string name="desktop_choose_a_department_prompt">部門を選択...</string>
+    <string name="desktop_call_section_in_call">通話中（%1$d）</string>
+    <string name="desktop_call_section_ringing">呼び出し中（%1$d）</string>
+    <string name="desktop_call_section_left_declined">退出 / 拒否（%1$d）</string>
+    <string name="desktop_call_section_users">ユーザー（%1$d）</string>
+    <string name="desktop_call_you_are_presenting">全員に画面を表示しています</string>
+    <string name="desktop_call_sharing_screen_title">画面を共有しています</string>
+    <string name="desktop_call_sharing_screen_body">通話の参加者全員に、共有している内容が表示されます。</string>
+    <string name="desktop_call_name_is_presenting">%1$s が画面を共有しています</string>
+    <string name="desktop_call_back_to_call">通話に戻る</string>
+    <string name="desktop_chat_drop_hint">各ファイルは送信前にプレビューで開きます。</string>
+    <string name="desktop_screen_share_restart_needed">Zillit の画面収録が許可されました。画面を共有するには Zillit を終了して再度開いてください。macOS はこの変更を再起動後にのみ適用します。</string>
 </resources>
