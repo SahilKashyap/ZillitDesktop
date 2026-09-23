@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,6 +30,7 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.invoices.domain.InvoiceAnalytics
+import com.zillit.desktop.feature.invoices.domain.VendorSpend
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 
 /**
@@ -52,9 +54,27 @@ internal fun ColumnScope.AnalyticsPage(state: InvoicesUiState) {
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
         StatRow(data)
-        SummaryRow(data)
-        DepartmentTable(state, data)
-        VendorSpendPanel(data)
+        // One panel, as the web's: the four figures, then the table by department.
+        SummaryRow(state, data)
+        // Two panels side by side, as the web's grid lays them out.
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md), verticalAlignment = Alignment.Top) {
+            SharePanel(
+                title = str(S.desktop_top_vendors_by_spend),
+                icon = ZillitIcons.Users,
+                rows = data.vendors,
+                empty = str(S.desktop_no_vendor_spend_yet),
+                nameOf = { it.ifBlank { str(S.desktop_unknown) } },
+                modifier = Modifier.weight(1f),
+            )
+            SharePanel(
+                title = str(S.ah_spend_by_department),
+                icon = ZillitIcons.File,
+                rows = data.departmentSpend,
+                empty = str(S.desktop_inv_no_department_data),
+                nameOf = { state.departmentName(it) },
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -102,7 +122,7 @@ private fun StatRow(data: InvoiceAnalytics) {
 }
 
 @Composable
-private fun SummaryRow(data: InvoiceAnalytics) {
+private fun SummaryRow(state: InvoicesUiState, data: InvoiceAnalytics) {
     val summary = data.summary
     ZillitSectionCard(title = str(S.desktop_cost_report_impact_of_ap), icon = ZillitIcons.Ledger) {
         StatGrid(
@@ -145,62 +165,69 @@ private fun SummaryRow(data: InvoiceAnalytics) {
                 },
             ),
         )
+        DepartmentRows(state, data)
     }
 }
 
+/** The web's per-department table under the figures: posted, pending, unattributed, projected, variance. */
 @Composable
-private fun DepartmentTable(state: InvoicesUiState, data: InvoiceAnalytics) {
-    ZillitSectionCard(title = str(S.ah_spend_by_department), icon = ZillitIcons.File) {
-        if (data.departments.isEmpty()) {
-            Muted(str(S.desktop_inv_nothing_attributed_to_department))
-            return@ZillitSectionCard
-        }
+private fun ColumnScope.DepartmentRows(state: InvoicesUiState, data: InvoiceAnalytics) {
+    if (data.departments.isEmpty()) {
+        Muted(str(S.desktop_inv_nothing_attributed_to_department))
+        return
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        Caption(str(S.department), Modifier.weight(2f))
+        Caption(str(S.ah_step_posted), Modifier.weight(1f))
+        Caption(str(S.pending), Modifier.weight(1f))
+        Caption(str(S.desktop_unattributed), Modifier.weight(1f))
+        Caption(str(S.desktop_projected), Modifier.weight(1f))
+        Caption(str(S.desktop_variance), Modifier.weight(1f))
+    }
+    data.departments.forEach { row ->
+        ZillitDivider()
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = ZillitTheme.spacing.xs),
+            // The web gives each cell `py-3`; rows with no breathing room
+            // read as one block of figures rather than a table.
+            modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
-            Caption(str(S.department), Modifier.weight(2f))
-            Caption(str(S.ah_step_posted), Modifier.weight(1f))
-            Caption(str(S.pending), Modifier.weight(1f))
-            Caption(str(S.desktop_unattributed), Modifier.weight(1f))
-            Caption(str(S.desktop_projected), Modifier.weight(1f))
-            Caption(str(S.desktop_variance), Modifier.weight(1f))
-        }
-        data.departments.forEach { row ->
-            ZillitDivider()
-            Row(
-                // The web gives each cell `py-3`; rows with no breathing room
-                // read as one block of figures rather than a table.
-                modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-            ) {
-                Cell(state.departmentName(row.name.ifBlank { row.code }), Modifier.weight(2f))
-                Cell(row.posted, Modifier.weight(1f))
-                Cell(row.pending, Modifier.weight(1f))
-                Cell(row.unknown, Modifier.weight(1f))
-                Cell(row.projected, Modifier.weight(1f))
-                Box(Modifier.weight(1f)) {
-                    if (row.isOver) {
-                        ZillitStatusPill(label = row.variance.ifBlank { "over" }, tone = StatusTone.Rejected)
-                    } else {
-                        Cell(row.variance)
-                    }
+            Cell(state.departmentName(row.name.ifBlank { row.code }), Modifier.weight(2f))
+            Cell(row.posted, Modifier.weight(1f))
+            Cell(row.pending, Modifier.weight(1f))
+            Cell(row.unknown, Modifier.weight(1f))
+            Cell(row.projected, Modifier.weight(1f))
+            Box(Modifier.weight(1f)) {
+                if (row.isOver) {
+                    ZillitStatusPill(label = row.variance.ifBlank { "over" }, tone = StatusTone.Rejected)
+                } else {
+                    Cell(row.variance)
                 }
             }
         }
     }
 }
 
-/** Each vendor's share, as a bar the width of its own percentage. */
+/** Each row's share — a vendor's, or a department's — as a bar the width of its own percentage. */
 @Composable
-private fun VendorSpendPanel(data: InvoiceAnalytics) {
-    ZillitSectionCard(title = str(S.desktop_top_vendors_by_spend), icon = ZillitIcons.Users) {
-        if (data.vendors.isEmpty()) {
-            Muted(str(S.desktop_no_vendor_spend_yet))
+private fun SharePanel(
+    title: String,
+    icon: ImageVector,
+    rows: List<VendorSpend>,
+    empty: String,
+    nameOf: (String) -> String,
+    modifier: Modifier = Modifier,
+) {
+    ZillitSectionCard(title = title, icon = icon, modifier = modifier) {
+        if (rows.isEmpty()) {
+            Muted(empty)
             return@ZillitSectionCard
         }
-        data.vendors.forEachIndexed { index, vendor ->
+        rows.forEachIndexed { index, vendor ->
             Column(
                 modifier = Modifier.padding(top = if (index == 0) 0.dp else ZillitTheme.spacing.md),
                 verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
@@ -211,7 +238,7 @@ private fun VendorSpendPanel(data: InvoiceAnalytics) {
                     horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
                 ) {
                     ZillitText(
-                        text = vendor.name.ifBlank { str(S.desktop_unknown) },
+                        text = nameOf(vendor.name),
                         style = ZillitTheme.typography.bodyMedium,
                         maxLines = 1,
                         modifier = Modifier.weight(1f),

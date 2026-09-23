@@ -1,18 +1,15 @@
 package com.zillit.desktop.feature.invoices
 
 import com.zillit.desktop.feature.invoices.domain.CurrencyRates
-import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.invoices.domain.Approval
 import com.zillit.desktop.feature.invoices.domain.ApprovalStatus
 import com.zillit.desktop.feature.invoices.domain.ApprovalTierConfig
 import com.zillit.desktop.feature.invoices.domain.BankAccount
-import com.zillit.desktop.feature.invoices.domain.DepartmentUpload
 import com.zillit.desktop.feature.invoices.domain.EnteredInvoice
 import com.zillit.desktop.feature.invoices.domain.HistoryEntry
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
-import com.zillit.desktop.feature.invoices.domain.InvoiceExtraction
 import com.zillit.desktop.feature.invoices.domain.InvoiceFiles
 import com.zillit.desktop.feature.invoices.domain.InvoiceQuery
 import com.zillit.desktop.feature.invoices.domain.InvoiceSettings
@@ -24,14 +21,13 @@ import com.zillit.desktop.feature.invoices.domain.PickedInvoiceFile
 import com.zillit.desktop.feature.invoices.domain.TierLevel
 import com.zillit.desktop.feature.invoices.domain.TierRule
 import com.zillit.desktop.feature.invoices.domain.TierScope
-import com.zillit.desktop.feature.invoices.domain.UploadType
 import com.zillit.desktop.feature.invoices.domain.Vendor
 import com.zillit.desktop.feature.invoices.ui.AccountantPage
+import com.zillit.desktop.feature.invoices.ui.InboxEvent
 import com.zillit.desktop.feature.invoices.ui.DepartmentTab
 import com.zillit.desktop.feature.invoices.ui.EnterTab
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesViewModel
-import com.zillit.desktop.feature.invoices.ui.UploadStage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -43,6 +39,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -128,43 +125,38 @@ class InvoicesViewModelTest {
         assertEquals(false, vm.state.value.detail?.rejecting)
     }
 
+    /**
+     * The department's Upload Invoices is the web's bulk upload: every file is
+     * checked, the ones that pass go to storage and are handed over under one
+     * batch id, and a refused file never leaves the machine.
+     */
     @Test
-    fun `the upload flow stores the file, survives a failed extraction and sends the chosen type`() = runTest(
-        dispatcher,
-    ) {
-        val repo = FakeRepo(extractionFails = true)
-        val files = FakeFiles(picked = listOf(PickedInvoiceFile("acme.pdf", "application/pdf", ByteArray(10))))
+    fun `a department upload is a bulk batch, and a refused file never reaches storage`() = runTest(dispatcher) {
+        val repo = FakeRepo()
+        val files = FakeFiles(
+            picked = listOf(
+                PickedInvoiceFile("notes.txt", "text/plain", ByteArray(3)),
+                PickedInvoiceFile("acme.jpg", "image/jpeg", ByteArray(10)),
+            ),
+        )
         val vm = viewModel(repo, files)
         vm.onEvent(InvoicesEvent.UploadInvoice)
         advanceUntilIdle()
-        val flow = assertNotNull(vm.state.value.upload)
-        assertEquals(UploadStage.Ready, flow.stage)
-        assertTrue(flow.extractionFailed)
-        assertNotNull(flow.attachment)
+        val pick = assertNotNull(vm.state.value.bulkPick)
+        assertEquals(1, pick.sendable)
+        assertFalse(pick.allowPaid, "only the accountant's upload offers Paid")
 
-        vm.onEvent(InvoicesEvent.SendUpload)
+        vm.onEvent(InboxEvent.SubmitBulk)
         advanceUntilIdle()
-        assertTrue(repo.uploads.isEmpty(), "no type chosen yet")
-
-        vm.onEvent(InvoicesEvent.ChooseUploadType(UploadType.Cheque))
-        vm.onEvent(InvoicesEvent.SendUpload)
-        advanceUntilIdle()
-        val sent = repo.uploads.single()
-        assertEquals(UploadType.Cheque, sent.type)
-        assertEquals("d-cam", sent.departmentId)
-        assertEquals("GBP", sent.projectCurrency)
-        assertNull(vm.state.value.upload)
-    }
-
-    @Test
-    fun `a rejected file type never reaches S3`() = runTest(dispatcher) {
-        val files = FakeFiles(picked = listOf(PickedInvoiceFile("notes.txt", "text/plain", ByteArray(3))))
-        val vm = viewModel(FakeRepo(), files)
-        vm.onEvent(InvoicesEvent.UploadInvoice)
-        advanceUntilIdle()
-        assertEquals(0, files.uploaded)
-        assertNull(vm.state.value.upload)
-        assertNotNull(vm.state.value.error)
+        assertEquals(1, files.uploaded)
+        val sent = repo.bulk.single()
+        assertTrue(sent.first.startsWith("inv-bulk-"))
+        assertEquals("acme.jpg", sent.second)
+        assertNull(vm.state.value.bulkPick)
+        assertEquals(DepartmentTab.Uploads, vm.state.value.departmentTab)
+        val batch = vm.state.value.bulkBatches.single()
+        assertTrue(batch.postingDone)
+        assertEquals(1, batch.sentCount)
     }
 
     @Test
@@ -214,18 +206,38 @@ class InvoicesViewModelTest {
         assertNull(vm.state.value.enter)
     }
 
+    /**
+     * One `POST /:id/override`, not the two PATCHes that walked past the
+     * server's permission gate — and Override & Pay takes the same route.
+     */
     @Test
-    fun `override runs both patches and delete removes the row`() = runTest(dispatcher) {
-        val repo = FakeRepo()
-        val vm = viewModel(repo, viewer = accountant.copy(overrideFlag = true))
+    fun `override is one call to the override route and delete removes the row`() = runTest(dispatcher) {
+        // Override rights come from the settings document's `me` block.
+        val repo = FakeRepo(settings = InvoiceSettings(canOverride = true))
+        val vm = viewModel(repo, viewer = accountant)
         vm.onEvent(InvoicesEvent.Override(repo.pending))
         advanceUntilIdle()
-        assertEquals(listOf(InvoiceStatus.Override, InvoiceStatus.Approved), repo.patches.map { it.second })
+        assertEquals(listOf("i-pending"), repo.overrides)
+
+        vm.onEvent(InvoicesEvent.OverrideAndPay(repo.pending))
+        advanceUntilIdle()
+        assertEquals(listOf("i-pending", "i-pending"), repo.overrides)
 
         vm.onEvent(InvoicesEvent.RequestDelete(repo.pending))
         vm.onEvent(InvoicesEvent.ConfirmDelete)
         advanceUntilIdle()
         assertEquals(listOf("i-pending"), repo.deleted)
+    }
+
+    /** The button hides without override rights; the handler refuses as well. */
+    @Test
+    fun `override without override rights sends nothing`() = runTest(dispatcher) {
+        val repo = FakeRepo()
+        val vm = viewModel(repo, viewer = accountant)
+        vm.onEvent(InvoicesEvent.Override(repo.pending))
+        vm.onEvent(InvoicesEvent.OverrideAndPay(repo.pending))
+        advanceUntilIdle()
+        assertTrue(repo.overrides.isEmpty())
     }
 
     // -- fakes -----------------------------------------------------------------
@@ -247,14 +259,27 @@ class InvoicesViewModelTest {
         )
     }
 
-    private class FakeRepo(private val extractionFails: Boolean = false) : InvoicesRepository {
+    private class FakeRepo(
+        private val settings: InvoiceSettings = InvoiceSettings(),
+    ) : InvoicesRepository {
+        val bulk = mutableListOf<Pair<String, String>>()
+
+        override suspend fun bulkUpload(
+            batchId: String,
+            attachment: InvoiceAttachment,
+            size: Long,
+            paid: Boolean,
+        ): ZillitResult<Unit> {
+            bulk += batchId to attachment.name
+            return ZillitResult.Success(Unit)
+        }
+
         val calls = mutableListOf<String>()
         val queries = mutableListOf<InvoiceQuery>()
         val approvals = mutableListOf<Pair<String, Pair<Int, Int>>>()
         val rejections = mutableListOf<Pair<String, String>>()
-        val patches = mutableListOf<Pair<String, InvoiceStatus>>()
+        val overrides = mutableListOf<String>()
         val deleted = mutableListOf<String>()
-        val uploads = mutableListOf<DepartmentUpload>()
         val entered = mutableListOf<EnteredInvoice>()
 
         val pending = Invoice(
@@ -284,21 +309,13 @@ class InvoicesViewModelTest {
         }
         override suspend fun invoice(id: String): ZillitResult<Invoice> =
             ZillitResult.Success(if (id == mine.id) mine else pending)
-        override suspend fun createFromUpload(upload: DepartmentUpload): ZillitResult<Invoice?> {
-            uploads += upload
-            return ZillitResult.Success(null)
-        }
         override suspend fun createEntered(entered: EnteredInvoice): ZillitResult<Invoice?> {
             this.entered += entered
             return ZillitResult.Success(null)
         }
-        override suspend fun patchStatus(
-            id: String,
-            status: InvoiceStatus,
-            approvalStatus: ApprovalStatus,
-        ): ZillitResult<Invoice?> {
-            patches += id to status
-            return ZillitResult.Success(null)
+        override suspend fun override(id: String): ZillitResult<Unit> {
+            overrides += id
+            return ZillitResult.Success(Unit)
         }
         override suspend fun delete(id: String): ZillitResult<Unit> {
             deleted += id
@@ -315,13 +332,7 @@ class InvoicesViewModelTest {
         override suspend fun chase(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
         override suspend fun history(id: String): ZillitResult<List<HistoryEntry>> =
             ZillitResult.Success(listOf(HistoryEntry("created", "someone", 1L)))
-        override suspend fun extract(attachment: InvoiceAttachment): ZillitResult<InvoiceExtraction> =
-            if (extractionFails) {
-                ZillitResult.Failure(ZillitError.Http(200, "Extraction failed: unreadable"))
-            } else {
-                ZillitResult.Success(InvoiceExtraction(supplierName = "Acme", gross = 50.0))
-            }
-        override suspend fun settings(): ZillitResult<InvoiceSettings> = ZillitResult.Success(InvoiceSettings())
+        override suspend fun settings(): ZillitResult<InvoiceSettings> = ZillitResult.Success(settings)
         override suspend fun approvalTiers(): ZillitResult<List<ApprovalTierConfig>> = ZillitResult.Success(
             listOf(
                 ApprovalTierConfig(

@@ -16,6 +16,11 @@ import com.zillit.desktop.feature.invoices.domain.Accrual
 import com.zillit.desktop.feature.invoices.domain.AccrualFilter
 import com.zillit.desktop.feature.invoices.domain.CreditNote
 import com.zillit.desktop.feature.invoices.domain.CreditNoteFilter
+import com.zillit.desktop.feature.invoices.domain.CreditNotes
+import com.zillit.desktop.feature.invoices.domain.DateWindow
+import com.zillit.desktop.feature.invoices.domain.OpenItemRow
+import com.zillit.desktop.feature.invoices.domain.LineDraft
+import com.zillit.desktop.feature.invoices.domain.LineEdit
 import com.zillit.desktop.feature.invoices.domain.AssignmentReason
 import com.zillit.desktop.feature.invoices.domain.EntryFilter
 import com.zillit.desktop.feature.invoices.domain.EntrySort
@@ -24,24 +29,31 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceAlert
 import com.zillit.desktop.feature.invoices.domain.InvoiceAssignmentRule
 import com.zillit.desktop.feature.invoices.domain.InvoiceTeamRow
 import com.zillit.desktop.feature.invoices.domain.PoSuggestion
-import com.zillit.desktop.feature.invoices.domain.PoSuggestions
 import com.zillit.desktop.feature.invoices.domain.InvoiceAssignee
 import com.zillit.desktop.feature.invoices.domain.canAccessEntryRow
 import com.zillit.desktop.feature.invoices.domain.InvoiceAnalytics
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
-import com.zillit.desktop.feature.invoices.domain.InvoiceExtraction
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.InvoiceViewer
 import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.domain.PaymentGroup
+import com.zillit.desktop.feature.invoices.domain.BulkBatch
+import com.zillit.desktop.feature.invoices.domain.BulkRow
+import com.zillit.desktop.feature.invoices.domain.BulkUploads
+import com.zillit.desktop.feature.invoices.domain.Company
+import com.zillit.desktop.feature.invoices.domain.ServerBatch
 import com.zillit.desktop.feature.invoices.domain.PaymentRun
+import com.zillit.desktop.feature.invoices.domain.PeriodLock
+import com.zillit.desktop.feature.invoices.domain.TaxType
+import com.zillit.desktop.feature.invoices.domain.PaymentRunDetail
+import com.zillit.desktop.feature.invoices.domain.RunApprovalDecision
+import com.zillit.desktop.feature.invoices.domain.RunAuthLevel
 import com.zillit.desktop.feature.invoices.domain.PaymentRuns
 import com.zillit.desktop.feature.invoices.domain.PaymentTab
 import com.zillit.desktop.feature.invoices.domain.SalesInvoice
 import com.zillit.desktop.feature.invoices.domain.PickedInvoiceFile
-import com.zillit.desktop.feature.invoices.domain.UploadType
 import com.zillit.desktop.feature.invoices.domain.Vendor
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -51,6 +63,9 @@ enum class DepartmentTab(val id: String, private val labelKey: String, private v
     ApprovalQueue("all", S.ah_approval_queue, S.desktop_inv_no_awaiting_your_approval),
     MyDepartment("dept", S.intradepartment, S.desktop_inv_none_in_your_department),
     MyInvoices("my", S.desktop_my_invoices, S.desktop_inv_none_uploaded_yet),
+
+    /** The bulk uploads being extracted — not a list of invoices. */
+    Uploads("uploads", S.desktop_inv_ongoing_uploads, S.desktop_inv_uploads_empty),
     ;
 
     val label: String get() = str(labelKey)
@@ -61,7 +76,7 @@ enum class DepartmentTab(val id: String, private val labelKey: String, private v
         get() = when (this) {
             ApprovalQueue -> "invoice_approval_queue"
             MyInvoices -> "my_invoices"
-            MyDepartment -> null
+            MyDepartment, Uploads -> null
         }
 }
 
@@ -131,11 +146,11 @@ enum class AccountantPage(
     val label: String get() = str(labelKey)
 
     /**
-     * The kicker above the page title — the web's `PageHeader` eyebrow.
-     *
-     * It names the stage rather than the screen ("Enter", "Pay", "Match"), so
-     * the header reads as a place in the lifecycle.
+     * The page's segment in the web's URL — `/invoices/<segment>`. The row id
+     * everywhere but Entry, whose row is `process` and whose route is `entry`.
      */
+    val segment: String get() = if (this == Entry) "entry" else id
+
     /** The `level_1` the service files this page's rows under (`constants.js:176-186`); null for none. */
     val badgeKey: String?
         get() = when (this) {
@@ -150,6 +165,12 @@ enum class AccountantPage(
             else -> null
         }
 
+    /**
+     * The kicker above the page title — the web's `PageHeader` eyebrow.
+     *
+     * It names the stage rather than the screen ("Enter", "Pay", "Match"), so
+     * the header reads as a place in the lifecycle.
+     */
     val eyebrow: String
         get() = when (this) {
             Overview -> str(S.desktop_inv_eyebrow_invoices_ap)
@@ -218,8 +239,26 @@ enum class AccountantPage(
         /** A route the server handed back (`/invoices/register`), or null when it names nothing here. */
         fun forHref(href: String): AccountantPage? {
             val segment = href.trim('/').substringAfterLast("invoices/", "").substringBefore('/')
-            return entries.firstOrNull { it.id == segment }
+            return forSegment(segment)
         }
+
+        /**
+         * The page a tool route opens — `/film-tools/invoices/<segment>`.
+         *
+         * The bare path, and any segment this module does not own, land on
+         * Overview: the web redirects both `/` and `*` there
+         * (`InvoicesModule.jsx`), so a stale bookmark still arrives somewhere.
+         */
+        fun forRoute(path: String): AccountantPage {
+            val tail = path.substringAfter(ROUTE_ROOT, missingDelimiterValue = "")
+            return forSegment(tail.trim('/').substringBefore('/')) ?: Overview
+        }
+
+        /** The web's URL segment, or the row id — they differ only for Entry. */
+        private fun forSegment(segment: String): AccountantPage? =
+            entries.firstOrNull { it.segment == segment } ?: entries.firstOrNull { it.id == segment }
+
+        private const val ROUTE_ROOT = "/invoices"
 
         fun visibleTo(viewer: InvoiceViewer): List<AccountantPage> =
             entries.filter { !it.seniorOnly || viewer.isSenior }
@@ -282,6 +321,23 @@ data class ProcessRequest(
     fun countFor(method: PayMethod): Int = invoices.count { it.payMethod == method }
 }
 
+/**
+ * One payment run opened from the Active Runs tab — the web's run detail:
+ * what it pays, why it was turned down if it was, and the footer that
+ * cancels, rejects or signs it.
+ */
+data class RunDetailView(
+    val run: PaymentRun,
+    val detail: PaymentRunDetail? = null,
+    val loading: Boolean = true,
+    val busy: Boolean = false,
+    /** The "Cancel payment run?" confirmation is up. */
+    val confirmCancel: Boolean = false,
+) {
+    /** The freshest copy of the run: the detail read once it is in, the row until then. */
+    val shown: PaymentRun get() = detail?.run?.takeIf { it.id.isNotBlank() } ?: run
+}
+
 /** Turning a run down needs a reason — the web refuses an empty one. */
 data class RunRejection(
     val run: PaymentRun,
@@ -296,20 +352,25 @@ data class SalesInvoiceDraft(
     val clientName: String = "",
     val reference: String = "",
     val description: String = "",
-    val amount: String = "",
     val currency: String = "",
-    /** `YYYY-MM-DD` as typed; blank is allowed, a wrong date is not. */
+    /** `YYYY-MM-DD`; the web opens the form on today. */
+    val invoiceDate: String = "",
+    /** `YYYY-MM-DD` as typed; blank sends today plus the 30-day terms, a wrong date is refused. */
     val dueDate: String = "",
+    /** The lines, whose gross is the invoice's — the web's `LineItemsEditor`. */
+    val lines: LineDraft = LineDraft(),
+    /** The save's refusal of the lines, in the web's words. */
+    val lineError: String? = null,
     val busy: Boolean = false,
 ) {
-    val amountValue: Double? get() = amount.trim().replace(",", "").toDoubleOrNull()
-
     val dueDateMs: Long? get() = InvoiceFormat.parseDateInput(dueDate)
 
     val dateIsWrong: Boolean get() = dueDate.isNotBlank() && dueDateMs == null
 
+    val invoiceDateIsWrong: Boolean get() = InvoiceFormat.parseDateInput(invoiceDate) == null
+
     val isReady: Boolean
-        get() = clientName.isNotBlank() && (amountValue ?: 0.0) > 0.0 && !dateIsWrong
+        get() = clientName.isNotBlank() && !invoiceDateIsWrong && !dateIsWrong
 }
 
 /** The posted page's status filter — the web's three options. */
@@ -359,23 +420,14 @@ data class InvoiceDetail(
     val rejectReason: String = "",
     val acting: Boolean = false,
     val opening: Boolean = false,
+    /**
+     * False when opened from the Register: the web's register is a history
+     * surface and passes its detail modal no approve, reject or override.
+     */
+    val decisions: Boolean = true,
 ) {
     fun nameOf(userId: String): String = names[userId] ?: userId.ifBlank { str(S.desktop_unknown) }
 }
-
-enum class UploadStage { Uploading, Extracting, Ready }
-
-/** The department's Upload Invoice flow: pick → S3 → extraction → type sheet → send. */
-data class UploadFlow(
-    val file: PickedInvoiceFile,
-    val stage: UploadStage = UploadStage.Uploading,
-    val attachment: InvoiceAttachment? = null,
-    val extraction: InvoiceExtraction? = null,
-    val extractionFailed: Boolean = false,
-    val uploadFailed: String? = null,
-    val type: UploadType? = null,
-    val sending: Boolean = false,
-)
 
 enum class EnterTab(val id: String, private val labelKey: String) {
     Upload("upload", S.ah_upload_invoice),
@@ -391,9 +443,6 @@ data class EnterInvoiceForm(
     val file: PickedInvoiceFile? = null,
     val attachment: InvoiceAttachment? = null,
     val uploading: Boolean = false,
-    val extracting: Boolean = false,
-    val extraction: InvoiceExtraction? = null,
-    val extractionFailed: Boolean = false,
     val vendorId: String = "",
     val vendorQuery: String = "",
     val invoiceNumber: String = "",
@@ -411,8 +460,12 @@ data class EnterInvoiceForm(
     val currency: String = "",
     val payMethod: PayMethod = PayMethod.Bacs,
     val bankId: String = "",
+    /** The legal entity (Production Setup → Companies); blank lets the server fill it from a PO. */
+    val companyId: String = "",
     val episode: String = "",
     val poNumber: String = "",
+    /** Already settled: the server takes it straight to ready-to-pay, never into the inbox. */
+    val paid: Boolean = false,
     val mismatchAcknowledged: Boolean = false,
     val saving: Boolean = false,
     val error: String? = null,
@@ -430,7 +483,7 @@ data class EnterInvoiceForm(
             return kotlin.math.abs(n + t - g) > MISMATCH_TOLERANCE
         }
 
-    val busy: Boolean get() = uploading || extracting || saving
+    val busy: Boolean get() = uploading || saving
 
     private companion object {
         const val MISMATCH_TOLERANCE = 0.011
@@ -460,6 +513,8 @@ data class InvoicesUiState(
     val registerChip: RegisterChip = RegisterChip.All,
     /** Department `_id`; null = every department. */
     val registerDepartment: String? = null,
+    /** The Register's Date filter, on the invoice date — the web's "All dates" select. */
+    val registerDate: DateWindow = DateWindow.All,
     val postedFilter: PostedFilter = PostedFilter.All,
     /** The pre-approval queue's hold dialog, over the rows it will hold. */
     val holdFor: HoldRequest? = null,
@@ -470,17 +525,29 @@ data class InvoicesUiState(
     val creditNotes: List<CreditNote> = emptyList(),
     val creditNotesLoading: Boolean = false,
     val creditNoteFilter: CreditNoteFilter = CreditNoteFilter.All,
+    /** Credit Notes & Disputes' pickers, form, preview and dialogs. */
+    val credit: CreditNotesUi = CreditNotesUi(),
     val accruals: List<Accrual> = emptyList(),
     val accrualsLoading: Boolean = false,
     val accrualFilter: AccrualFilter = AccrualFilter.All,
     /** Payment Runs: the open tab, and the batches themselves. */
     val paymentTab: PaymentTab = PaymentTab.OpenItems,
+    /** Open Items' vendor groups the reader has shut; every group starts open, as on the web. */
+    val collapsedGroups: Set<String> = emptySet(),
     val paymentRuns: List<PaymentRun> = emptyList(),
+    /** The run authorisation chain from Settings — who signs a run at each tier. */
+    val runAuth: List<RunAuthLevel> = emptyList(),
+    /** Whether Settings gives anybody run access; false raises the web's "no authoriser" banner. */
+    val hasRunAuthoriser: Boolean = true,
+    /** The run open in its detail dialog. */
+    val runDetail: RunDetailView? = null,
     val runDraft: ProcessRequest? = null,
     val rejectRun: RunRejection? = null,
     /** Sales invoices, and the one being written. */
     val salesInvoices: List<SalesInvoice> = emptyList(),
     val salesDraft: SalesInvoiceDraft? = null,
+    /** A draft sales invoice waiting on "delete it?" — the web confirms first. */
+    val confirmSalesDelete: SalesInvoice? = null,
     /** Invoice Entry: its own filter row, sort box and pay-method box. */
     val entryFilter: EntryFilter = EntryFilter.All,
     val entrySort: EntrySort = EntrySort.Default,
@@ -499,7 +566,6 @@ data class InvoicesUiState(
     val departmentNames: Map<String, String> = emptyMap(),
     // Dialogs and selections.
     val detail: InvoiceDetail? = null,
-    val upload: UploadFlow? = null,
     val enter: EnterInvoiceForm? = null,
     val confirmDelete: Invoice? = null,
     val selected: Set<String> = emptySet(),
@@ -510,14 +576,53 @@ data class InvoicesUiState(
     val review: ReviewOverlay? = null,
     /** The PO picker open on a pre-approval row, and what it found. */
     val poPicker: PoPicker? = null,
+    /** Invoice Entry's coding screen, when one invoice is open in it. */
+    val ledger: EntryLedger? = null,
+    /** A record's query thread, open in its side panel. */
+    val query: QueryView? = null,
+    /** Quick Entry's form, while it is up. */
+    val quickEntry: QuickEntryDraft? = null,
+    /** The cost report's close boundary; documents dated inside it are read-only. */
+    val periodLock: PeriodLock = PeriodLock(),
+    /** Production Setup's companies and tax types — the ledger's selects. */
+    val companies: List<Company> = emptyList(),
+    val taxTypes: List<TaxType> = emptyList(),
+    /** False until the tax types have been read, so the tax swap is not guessed at. */
+    val taxTypesKnown: Boolean = false,
+    /** Every active nominal on the chart — what decides whether a typed code is new. */
+    val chart: Set<String> = emptySet(),
+    /** The Inbox page's half on screen: the queue, or the uploads being extracted. */
+    val inboxTab: InboxTab = InboxTab.Queue,
+    /** One inbox invoice open for review. */
+    val inboxReview: InboxReview? = null,
+    /** The rows bulk Process refused, and what each is missing. */
+    val blockedProcess: List<BlockedEntry> = emptyList(),
+    /** Files picked for a bulk upload, not yet sent. */
+    val bulkPick: BulkPick? = null,
+    /** The client's half of every batch this session started. */
+    val bulkBatches: List<BulkBatch> = emptyList(),
+    /** The server's half — what it is still extracting, for everyone. */
+    val serverBatches: List<ServerBatch> = emptyList(),
+    /** Batch ids the server has listed at least once; one that then disappears has finished. */
+    val seenBatches: Set<String> = emptySet(),
 ) {
+    /** Ongoing Uploads: both halves of every batch, newest first. */
+    val uploadRows: List<BulkRow> get() = BulkUploads.rows(bulkBatches, serverBatches, seenBatches)
+
+    /** A document dated inside the closed cost-report period — `isDateLocked`. */
+    fun isLocked(invoice: Invoice): Boolean = periodLock.isLocked(invoice.effectiveDateMs)
+
     val isAccountant: Boolean get() = viewer.isAccountant
 
     /** Whether something over the page owns the keyboard, so the shortcuts stay out of its way. */
     val dialogOpen: Boolean
-        get() = detail != null || upload != null || enter != null || confirmDelete != null ||
+        get() = detail != null || enter != null || confirmDelete != null ||
             holdFor != null || runDraft != null || salesDraft != null || assignFor != null ||
-            rejectRun != null || review != null || setup.memberDraft != null ||
+            confirmSalesDelete != null || credit.form != null || credit.preview != null ||
+            credit.history != null || credit.confirmDelete != null ||
+            rejectRun != null || runDetail != null || review != null || setup.memberDraft != null ||
+            ledger != null || query != null || quickEntry != null ||
+            inboxReview != null || blockedProcess.isNotEmpty() || bulkPick != null ||
             setup.pickingForTier != null || setup.removingMember != null || setup.removingRule != null
 
     fun vendorName(invoice: Invoice): String =
@@ -546,19 +651,17 @@ data class InvoicesUiState(
             }
         }
 
-    /** The credit notes after the chips and the search box. */
-    val shownCreditNotes: List<CreditNote>
-        get() {
-            val needle = search.trim().lowercase()
-            return creditNotes.filter { note ->
-                creditNoteFilter.keeps(note) && (
-                    needle.isEmpty() ||
-                        note.reference.lowercase().contains(needle) ||
-                        note.vendorName.lowercase().contains(needle) ||
-                        note.reason.lowercase().contains(needle)
-                    )
-            }
-        }
+    /** The credit notes after the chips, the search box and the Date filter, in the Sort's order. */
+    fun shownCreditNotes(nowMs: Long): List<CreditNote> = credit.sort.sort(
+        creditNotes.filter { note ->
+            creditNoteFilter.keeps(note) && CreditNotes.matches(note, search) &&
+                credit.date.keeps(note.effectiveDateMs, nowMs)
+        },
+    )
+
+    /** The project's currency first, then every one it has a rate for — Production Setup's list. */
+    val currencyOptions: List<String>
+        get() = (listOf(projectCurrency) + rates.rates.keys).filter { it.isNotBlank() }.distinct()
 
     /** The accruals after the chips, the department filter and the search box. */
     val shownAccruals: List<Accrual>
@@ -576,25 +679,8 @@ data class InvoicesUiState(
             }
         }
 
-    /**
-     * The count beside a sidebar row — the web's `item.badge`.
-     *
-     * Only what is on screen can be counted: the lists are fetched per page,
-     * so a row that is not open has nothing to say and shows nothing.
-     */
     /** The key the page on screen is filed under: the accountant's page, or the department tab. */
     val openBadgeKey: String? get() = if (viewer.isAccountant) page.badgeKey else departmentTab.badgeKey
-
-    fun sidebarBadge(page: AccountantPage): Int? = when {
-        page != this.page -> null
-        page == AccountantPage.Credits -> creditNotes.size.takeIf { it > 0 }
-        page == AccountantPage.Accruals -> accruals.size.takeIf { it > 0 }
-        page == AccountantPage.Sales -> salesInvoices.size.takeIf { it > 0 }
-        // Vendors lists vendors; it reads every invoice only to add up spend.
-        page == AccountantPage.Vendors -> vendors.size.takeIf { it > 0 }
-        page.isInvoiceList -> invoices.size.takeIf { it > 0 }
-        else -> null
-    }
 
     /**
      * The entry queue as it is on screen: searched, filtered, then sorted.
@@ -622,9 +708,9 @@ data class InvoicesUiState(
     fun canAccessEntry(invoice: Invoice): Boolean =
         canAccessEntryRow(invoice, viewer.isSenior, viewer.userId)
 
-    /** What select-all covers: the rows this viewer may actually act on. */
+    /** What select-all covers: the rows this viewer may act on, and none in a closed period. */
     val entrySelectableIds: List<String>
-        get() = entryRows.filter { canAccessEntry(it) }.map { it.id }
+        get() = entryRows.filter { canAccessEntry(it) && !isLocked(it) }.map { it.id }
 
     /** The assignee's name for the Assigned column; blank id = nobody. */
     fun assigneeName(invoice: Invoice): String? = invoice.assignedTo.takeIf { it.isNotBlank() }?.let { id ->
@@ -673,8 +759,23 @@ data class InvoicesUiState(
     val openItemGroups: List<PaymentGroup>
         get() = PaymentRuns.groupByVendorCurrency(invoices, { vendorName(it) }, projectCurrency)
 
+    /** Open Items grouped by vendor and currency, each group open unless it was shut. */
+    val openItemRows: List<OpenItemRow>
+        get() = PaymentRuns.groupByVendorCurrency(paymentRows, { vendorName(it) }, projectCurrency).flatMap { group ->
+            val open = group.key !in collapsedGroups
+            val items = if (open) group.invoices.map { OpenItemRow.Item(it) } else emptyList()
+            listOf(OpenItemRow.Header(group, open)) + items
+        }
+
     /** The rows behind the ticks on the payments page. */
     val selectedPaymentRows: List<Invoice> get() = paymentRows.filter { it.id in selected }
+
+    /** Whether the reader may sign [run] now, and at which tier — the web's `resolveRunApproval`. */
+    fun runApproval(run: PaymentRun): RunApprovalDecision =
+        PaymentRuns.resolveApproval(runAuth, run.approvals, run.status, viewer.userId)
+
+    /** The web's "no authoriser" banner: nobody has run access, and the reader is not senior either. */
+    val showNoRunAuthoriser: Boolean get() = !viewer.hasSeniorDesignation && !hasRunAuthoriser
 
     /** The one method the whole selection shares, or null when it is mixed. */
     val selectedPayMethod: PayMethod?
@@ -699,12 +800,27 @@ sealed interface InvoicesEvent {
     data class SelectQuickFilter(val filter: QuickFilter) : InvoicesEvent
     data class SelectPage(val page: AccountantPage) : InvoicesEvent
 
+    /**
+     * The host's route — `/film-tools/invoices/<page>` — asked for on every
+     * entry and route change, so re-entry from the Account Hub lands on the
+     * page it names (the bare path lands on Overview).
+     */
+    data class OpenRoute(val path: String) : InvoicesEvent
+
     /** A duplicate flag: kept and marked real, or cleared. */
     data class ConfirmDuplicate(val flagId: String) : InvoicesEvent
 
     data class DismissDuplicate(val flagId: String) : InvoicesEvent
     data class SelectRegisterChip(val chip: RegisterChip) : InvoicesEvent
     data class SelectRegisterDepartment(val departmentId: String?) : InvoicesEvent
+    data class SelectRegisterDate(val window: DateWindow) : InvoicesEvent
+
+    /** Open Items: shut or open one vendor group, or tick all of it (or none, when all are). */
+    data class ToggleGroupOpen(val key: String) : InvoicesEvent
+    data class SelectGroup(val ids: List<String>) : InvoicesEvent
+
+    /** The Wires tab's per-row Mark Paid. */
+    data class MarkPaidOne(val invoice: Invoice) : InvoicesEvent
     data class SelectPostedFilter(val filter: PostedFilter) : InvoicesEvent
     data class SelectCreditNoteFilter(val filter: CreditNoteFilter) : InvoicesEvent
     data class SelectAccrualFilter(val filter: AccrualFilter) : InvoicesEvent
@@ -717,8 +833,16 @@ sealed interface InvoicesEvent {
     data object ToggleSelectAll : InvoicesEvent
 
     data object CancelPaymentRun : InvoicesEvent
+
+    /** A run's detail: opened from its row, closed, and signed at the next tier. */
+    data class OpenRun(val run: PaymentRun) : InvoicesEvent
+    data object CloseRun : InvoicesEvent
     data class ApproveRun(val run: PaymentRun) : InvoicesEvent
-    data class DeleteRun(val run: PaymentRun) : InvoicesEvent
+
+    /** Cancelling a run returns its invoices to open items — asked first, as the web does. */
+    data object RequestCancelRun : InvoicesEvent
+    data object ConfirmCancelRun : InvoicesEvent
+    data object KeepRun : InvoicesEvent
 
     /** Turning a run down: the sheet, what is typed in it, and the decision. */
     data class StartRejectRun(val run: PaymentRun) : InvoicesEvent
@@ -741,9 +865,6 @@ sealed interface InvoicesEvent {
     /** Null = every pay method. */
     data class SelectPayFilter(val method: PayMethod?) : InvoicesEvent
 
-    /** Posts everything ticked, one at a time, as the web does. */
-    data object PostSelected : InvoicesEvent
-
     /** Parks everything ticked for a second look. */
     data object ReviewSelected : InvoicesEvent
 
@@ -762,6 +883,9 @@ sealed interface InvoicesEvent {
     data class SendSalesInvoice(val invoice: SalesInvoice) : InvoicesEvent
     data class MarkSalesInvoicePaid(val invoice: SalesInvoice) : InvoicesEvent
     data class DeleteSalesInvoice(val invoice: SalesInvoice) : InvoicesEvent
+    data object ConfirmDeleteSales : InvoicesEvent
+    data object CancelDeleteSales : InvoicesEvent
+    data class EditSalesLines(val edit: LineEdit) : InvoicesEvent
 
     /** Works the accruals out again from the orders and invoices as they stand. */
     data object RegenerateAccruals : InvoicesEvent
@@ -864,11 +988,8 @@ sealed interface InvoicesEvent {
     data object ConfirmDelete : InvoicesEvent
     data object CancelDelete : InvoicesEvent
 
-    /** Department: opens the OS picker and runs the upload flow. */
+    /** Opens the OS picker for a bulk upload — the department's Upload Invoices. */
     data object UploadInvoice : InvoicesEvent
-    data class ChooseUploadType(val type: UploadType) : InvoicesEvent
-    data object SendUpload : InvoicesEvent
-    data object CancelUpload : InvoicesEvent
 
     /** Accountant: the Enter Invoice dialog. */
     data object OpenEnter : InvoicesEvent

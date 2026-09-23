@@ -1,7 +1,6 @@
 package com.zillit.desktop.feature.invoices.ui.pages
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
@@ -11,7 +10,6 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitDateField
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -19,7 +17,6 @@ import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.invoices.domain.AssignmentReason
 import com.zillit.desktop.feature.invoices.domain.InvoiceAssignee
-import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.domain.PaymentRuns
 import com.zillit.desktop.feature.invoices.ui.AssignRequest
@@ -27,7 +24,6 @@ import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 import com.zillit.desktop.feature.invoices.ui.ProcessRequest
 import com.zillit.desktop.feature.invoices.ui.RunRejection
-import com.zillit.desktop.feature.invoices.ui.SalesInvoiceDraft
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
@@ -216,93 +212,3 @@ private fun AssignSheetFields(
 /** Whoever already holds one of these invoices is not offered again. */
 private fun alreadyOn(state: InvoicesUiState, request: AssignRequest): Set<String> =
     state.invoices.filter { it.id in request.invoiceIds }.map { it.assignedTo }.filter { it.isNotBlank() }.toSet()
-
-/** Raising a sales invoice — money owed to the production, not by it. */
-@Composable
-internal fun SalesInvoiceSheet(
-    state: InvoicesUiState,
-    draft: SalesInvoiceDraft,
-    onEvent: (InvoicesEvent) -> Unit,
-) {
-    ZillitDialogShell(
-        title = str(S.desktop_raise_an_invoice),
-        subtitle = str(S.desktop_inv_raise_subtitle),
-        visible = true,
-        onDismiss = { if (!draft.busy) onEvent(InvoicesEvent.CancelSalesInvoice) },
-        icon = ZillitIcons.CreditCard,
-        actions = {
-            ZillitButton(
-                text = str(S.cancel),
-                onClick = { onEvent(InvoicesEvent.CancelSalesInvoice) },
-                variant = ButtonVariant.Tertiary,
-                enabled = !draft.busy,
-            )
-            ZillitButton(
-                text = str(S.create),
-                onClick = { onEvent(InvoicesEvent.ConfirmSalesInvoice) },
-                enabled = draft.isReady && !draft.busy,
-                loading = draft.busy,
-            )
-        },
-    ) {
-        SalesFields(state, draft, onEvent)
-    }
-}
-
-@Composable
-private fun ColumnScope.SalesFields(
-    state: InvoicesUiState,
-    draft: SalesInvoiceDraft,
-    onEvent: (InvoicesEvent) -> Unit,
-) {
-        ZillitTextField(
-            value = draft.clientName,
-            onValueChange = { onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(clientName = it))) },
-            label = str(S.desktop_client_required),
-            enabled = !draft.busy,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        ZillitTextField(
-            value = draft.reference,
-            onValueChange = { onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(reference = it))) },
-            label = str(S.desktop_reference),
-            enabled = !draft.busy,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        ZillitTextField(
-            value = draft.description,
-            onValueChange = { onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(description = it))) },
-            label = str(S.description),
-            singleLine = false,
-            enabled = !draft.busy,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            ZillitTextField(
-                value = draft.amount,
-                onValueChange = { onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(amount = it))) },
-                label = str(S.desktop_amount_required),
-                enabled = !draft.busy,
-                modifier = Modifier.weight(1f),
-            )
-            ZillitTextField(
-                value = draft.currency.ifBlank { state.projectCurrency },
-                onValueChange = { onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(currency = it))) },
-                label = str(S.asset_currency),
-                enabled = !draft.busy,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        ZillitDateField(
-            value = draft.dueDate,
-            onValueChange = { onEvent(InvoicesEvent.EditSalesInvoice(draft.copy(dueDate = it))) },
-            label = str(S.ah_run_detail_col_due),
-            enabled = !draft.busy,
-            errorText = str(S.desktop_that_is_not_a_date).takeIf { draft.dateIsWrong },
-            helperText = draft.dueDateMs?.let { str(S.desktop_due_on, InvoiceFormat.date(it)) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-}

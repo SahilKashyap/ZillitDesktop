@@ -2,10 +2,12 @@ package com.zillit.desktop.feature.invoices.domain
 
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.number
+import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.abs
 import kotlin.math.roundToLong
@@ -98,6 +100,11 @@ object InvoiceFormat {
         val d = Instant.fromEpochMilliseconds(nowMs).toLocalDateTime(zone).date
         return "${d.year}-${d.month.number.pad()}-${d.day.pad()}"
     }
+
+    /** `YYYY-MM-DD` moved on by [days]; an unreadable date comes back as it was. */
+    fun plusDays(ymd: String, days: Int): String =
+        runCatching { LocalDate.parse(ymd.trim().take(DATE_LENGTH)).plus(days, DateTimeUnit.DAY).toString() }
+            .getOrDefault(ymd)
 
     private fun Int.pad(): String = toString().padStart(2, '0')
 

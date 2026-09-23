@@ -28,6 +28,7 @@ kotlin {
             implementation(libs.pdfbox)
         }
         commonTest.dependencies {
+            implementation(libs.ktor.client.mock)
             implementation(libs.kotlinx.coroutines.test)
         }
         jvmTest.dependencies {

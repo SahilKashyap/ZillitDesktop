@@ -2,7 +2,6 @@ package com.zillit.desktop.feature.invoices.ui.pages
 
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -105,7 +104,7 @@ internal fun ColumnScope.VendorsPage(
     TableCard(
         title = str(S.ah_vendors),
         icon = ZillitIcons.Users,
-        meta = countMeta(rows.size, "vendor"),
+        meta = countMeta(rows.size, S.desktop_inv_one_vendor, S.ah_run_detail_summary_vendors),
     ) {
         ZillitDataTable(
             rows = rows,
@@ -187,7 +186,7 @@ internal fun ColumnScope.SalesInvoicesPage(
     TableCard(
         title = str(S.desktop_invoice_list),
         icon = ZillitIcons.CreditCard,
-        meta = countMeta(rows.size, "invoice"),
+        meta = countMeta(rows.size),
     ) {
         ZillitDataTable(
             rows = rows,
@@ -210,6 +209,9 @@ private fun salesColumns(
         str(S.desktop_client),
         ColumnWidth.Weight(WEIGHT_MEDIUM),
     ) { CellText(it.clientName.ifBlank { str(S.desktop_unknown) }) },
+    TableColumn(str(S.date), ColumnWidth.Fixed(DUE_WIDTH)) {
+        CellText(InvoiceFormat.date(it.invoiceDateMs ?: it.createdAtMs), muted = true)
+    },
     TableColumn(str(S.description), ColumnWidth.Weight(WEIGHT_WIDEST)) {
         CellText(it.description.ifBlank { "—" }, muted = it.description.isBlank())
     },

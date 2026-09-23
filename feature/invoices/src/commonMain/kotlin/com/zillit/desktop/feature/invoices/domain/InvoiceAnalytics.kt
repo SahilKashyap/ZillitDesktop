@@ -13,8 +13,11 @@ import com.zillit.desktop.core.strings.str
 data class InvoiceAnalytics(
     val stats: AnalyticsStats = AnalyticsStats(),
     val summary: AnalyticsSummary = AnalyticsSummary(),
+    /** `depts` — the Cost Report Impact of AP table. */
     val departments: List<DepartmentSpend> = emptyList(),
     val vendors: List<VendorSpend> = emptyList(),
+    /** `departments` — Spend by Department, a share bar per department, as the vendors have. */
+    val departmentSpend: List<VendorSpend> = emptyList(),
     val totals: SpendTotals = SpendTotals(),
 )
 

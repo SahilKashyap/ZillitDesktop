@@ -40,10 +40,31 @@ val INVOICE_ROW_SYNC_EVENTS: List<SocketEventName> = listOf(
     SocketEventName("invoice:assigned"),
     SocketEventName("invoice:paid"),
     SocketEventName("invoice:bulk_status_changed"),
+    // A bulk upload's extraction progress: its invoices land in the Inbox one
+    // by one, and Ongoing Uploads re-reads its counts (`UploadsTab`'s nudge).
+    SocketEventName("invoice:bulk_upload_progress"),
     SocketEventName("activeRun:rejected"),
     SocketEventName("activeRun:cancelled"),
     SocketEventName("creditNote:dispute_created"),
     SocketEventName("creditNote:dispute_resolved"),
+    // The pages that are not invoice lists re-read on their own streams too
+    // (`accountHubListeners.js` → `ah:credit_note:list`, `ah:sales_invoice:list`,
+    // `ah:accrual:list` and the runs' events), so no page needs a Refresh button:
+    // a refresh re-reads only the page that is open.
+    SocketEventName("activeRun:created"),
+    SocketEventName("activeRun:awaiting_approval"),
+    SocketEventName("activeRun:approved"),
+    SocketEventName("activeRun:approval_revoked"),
+    SocketEventName("creditNote:created"),
+    SocketEventName("creditNote:updated"),
+    SocketEventName("creditNote:deleted"),
+    SocketEventName("creditNote:applied"),
+    SocketEventName("creditNote:paid"),
+    SocketEventName("salesInvoice:created"),
+    SocketEventName("salesInvoice:sent"),
+    SocketEventName("salesInvoice:paid"),
+    SocketEventName("salesInvoice:overdue"),
+    SocketEventName("accruals:generated"),
 )
 
 /**

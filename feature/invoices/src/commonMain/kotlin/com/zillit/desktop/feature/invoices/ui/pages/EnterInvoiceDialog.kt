@@ -1,4 +1,4 @@
-// The accountant's Enter Invoice dialog: Upload (extraction-prefilled) and Manual tabs over one form.
+// The accountant's Enter Invoice dialog: Upload (the bulk upload) and Manual (the form) tabs.
 @file:Suppress("LongMethod", "TooManyFunctions", "CyclomaticComplexMethod")
 
 package com.zillit.desktop.feature.invoices.ui.pages
@@ -17,6 +17,7 @@ import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
 import com.zillit.desktop.core.designsystem.component.ZillitButton
+import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
@@ -34,6 +35,7 @@ import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.domain.Vendor
 import com.zillit.desktop.feature.invoices.ui.EnterInvoiceForm
 import com.zillit.desktop.feature.invoices.ui.EnterTab
+import com.zillit.desktop.feature.invoices.ui.InboxEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 
@@ -54,16 +56,27 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
                 variant = ButtonVariant.Tertiary,
                 enabled = !form.busy,
             )
-            ZillitButton(
-                text = if (form.mismatchAcknowledged && form.amountsMismatch) {
-                    str(S.desktop_create_anyway)
-                } else {
-                    str(S.desktop_submit_invoice)
-                },
-                onClick = { onEvent(InvoicesEvent.SubmitEnter) },
-                enabled = !form.busy,
-                loading = form.saving,
-            )
+            val pick = state.bulkPick
+            if (form.tab == EnterTab.Upload) {
+                // The web's Upload tab is the bulk upload; its footer is lifted up here.
+                ZillitButton(
+                    text = str(S.desktop_inv_upload_and_submit),
+                    onClick = { onEvent(InboxEvent.SubmitBulk) },
+                    leadingIcon = ZillitIcons.Upload,
+                    enabled = pick != null && pick.sendable > 0 && !pick.checking,
+                )
+            } else {
+                ZillitButton(
+                    text = if (form.mismatchAcknowledged && form.amountsMismatch) {
+                        str(S.desktop_create_anyway)
+                    } else {
+                        str(S.desktop_submit_invoice)
+                    },
+                    onClick = { onEvent(InvoicesEvent.SubmitEnter) },
+                    enabled = !form.busy,
+                    loading = form.saving,
+                )
+            }
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md)) {
@@ -72,22 +85,13 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
                 activeId = form.tab.id,
                 onSelect = { id -> onEvent(InvoicesEvent.SelectEnterTab(EnterTab.entries.first { it.id == id })) },
             )
+            if (form.tab == EnterTab.Upload) {
+                // Files only: extraction, the vendor and the invoice are the server's work.
+                state.bulkPick?.let { BulkPanel(it, onEvent) }
+                return@Column
+            }
             form.error?.let { ZillitNotice(text = it, tone = StatusTone.Rejected) }
             FileRow(form, onEvent)
-            if (form.tab == EnterTab.Upload && form.extraction != null) {
-                ZillitNotice(
-                    text = form.extraction.confidence?.let {
-                        str(S.desktop_inv_fields_prefilled_confidence, it.toInt())
-                    } ?: str(S.desktop_inv_fields_prefilled_check),
-                    tone = StatusTone.Ready,
-                )
-            }
-            if (form.tab == EnterTab.Upload && form.extractionFailed) {
-                ZillitNotice(
-                    text = str(S.desktop_inv_extraction_failed_fill_by_hand),
-                    tone = StatusTone.Pending,
-                )
-            }
             VendorRow(state, form, change)
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 ZillitTextField(
@@ -158,20 +162,45 @@ internal fun EnterInvoiceDialog(state: InvoicesUiState, form: EnterInvoiceForm, 
                     ZillitSelect(
                         value = form.bankId,
                         options = listOf("") + state.banks.map { it.id },
-                        onSelect = { change(form.copy(bankId = it)) },
+                        onSelect = { id ->
+                            // A picked bank brings its account holder, unless a company is already set.
+                            val holder = state.banks.firstOrNull { it.id == id }?.entityId.orEmpty()
+                            change(form.copy(bankId = id, companyId = form.companyId.ifBlank { holder }))
+                        },
                         label = { id -> state.banks.firstOrNull { it.id == id }?.displayName ?: str(S.none) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
-                ZillitTextField(
-                    value = form.currency,
-                    onValueChange = { change(form.copy(currency = it.uppercase())) },
-                    label = str(S.asset_currency),
-                    placeholder = state.projectCurrency,
-                    modifier = Modifier.width(CURRENCY_WIDTH),
-                )
+                LabelledSelect(label = str(S.company), modifier = Modifier.weight(1f)) {
+                    ZillitSelect(
+                        value = form.companyId,
+                        options = listOf("") + state.companies.map { it.id },
+                        onSelect = { change(form.copy(companyId = it)) },
+                        label = { id -> state.companies.firstOrNull { it.id == id }?.name ?: str(S.ah_select_company) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                LabelledSelect(label = str(S.asset_currency), modifier = Modifier.width(CURRENCY_WIDTH)) {
+                    val currency = form.currency.ifBlank { state.projectCurrency }
+                    ZillitSelect(
+                        value = currency,
+                        options = (state.currencyOptions + currency).distinct(),
+                        onSelect = { change(form.copy(currency = it)) },
+                        label = { it },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                LabelledSelect(label = str(S.desktop_paid), modifier = Modifier.width(PAID_WIDTH)) {
+                    ZillitCheckbox(
+                        checked = form.paid,
+                        onCheckedChange = { change(form.copy(paid = it)) },
+                        label = str(if (form.paid) S.desktop_already_paid else S.desktop_inv_not_paid),
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
                 ZillitTextField(
                     value = form.poNumber,
                     onValueChange = { change(form.copy(poNumber = it)) },
@@ -242,7 +271,6 @@ private fun FileRow(form: EnterInvoiceForm, onEvent: (InvoicesEvent) -> Unit) {
         )
         when {
             form.uploading -> StatusWithSpinner(str(S.ah_uploading))
-            form.extracting -> StatusWithSpinner(str(S.desktop_extracting))
             form.attachment != null -> ZillitStatusPill(label = str(S.sides_uploaded), tone = StatusTone.Done)
         }
     }
@@ -307,3 +335,4 @@ private fun LabelledSelect(label: String, modifier: Modifier, content: @Composab
 private const val VENDOR_LIMIT = 40
 private val ENTER_WIDTH = 960.dp
 private val CURRENCY_WIDTH = 120.dp
+private val PAID_WIDTH = 150.dp

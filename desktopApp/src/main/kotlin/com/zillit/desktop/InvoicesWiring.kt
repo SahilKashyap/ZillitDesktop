@@ -101,13 +101,16 @@ internal fun AppGraph.Ready.invoiceFiles(): InvoiceFiles = object : InvoiceFiles
             }
         }
 
-    /** The register and the accruals exports — a raw POST that answers a file. */
+    /** The register, accruals and credit-note exports — a raw POST that answers a file. */
     override suspend fun export(
         export: InvoiceExport,
         format: InvoiceExportFormat,
     ): ZillitResult<ByteArray> = postForBytes(
         "${config.apiV2(ZillitService.Invoices)}invoices/${export.path}",
-        buildJsonObject { put("format", JsonPrimitive(format.wire)) },
+        buildJsonObject {
+            put("format", JsonPrimitive(format.wire))
+            export.type?.let { put("type", JsonPrimitive(it)) }
+        },
     )
 }
 

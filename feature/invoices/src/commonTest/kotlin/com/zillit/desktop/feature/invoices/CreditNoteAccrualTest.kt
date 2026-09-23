@@ -93,6 +93,9 @@ class CreditNoteAccrualTest {
         assertFalse(AccrualFilter.Active.keeps(reversed))
         assertTrue(AccrualFilter.Reversed.keeps(reversed))
 
-        assertEquals(listOf("All", "Pending", "Applied", "Disputed"), CreditNoteFilter.entries.map { it.label })
+        assertEquals(
+            listOf("All", "Pending", "Applied", "Disputed", "Resolved"),
+            CreditNoteFilter.entries.map { it.label },
+        )
     }
 }

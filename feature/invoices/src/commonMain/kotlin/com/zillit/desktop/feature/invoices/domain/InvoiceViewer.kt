@@ -26,12 +26,27 @@ data class InvoiceViewer(
     val seniorFlag: Boolean? = null,
     val overrideFlag: Boolean? = null,
     val isRunApprover: Boolean = false,
+    /** Settings → Team's "Can authorise payment runs" for this person; false until read. */
+    val runAccessFlag: Boolean = false,
+    /** Settings → Team gives this person a posting limit; false until read. */
+    val postingRightFlag: Boolean = false,
 ) {
     /** The accounts department, matched loosely because productions name it differently. */
     val isAccountant: Boolean get() = departmentIdentifier.contains(ACCOUNTS, ignoreCase = true)
 
+    /**
+     * Production Accountant or Financial Controller — senior by role.
+     *
+     * Two exact designations, as the web's `isSeniorAccountant`
+     * (`utils/po-permissions.js`) — never a substring: an *Assistant*
+     * Production Accountant (`designation_assistant_production_accountant_accounts`)
+     * contains the words "production accountant" and is not senior. The
+     * already-translated names ("Production Accountant") are accepted too,
+     * exactly, because some endpoints hand this client the name rather than
+     * the identifier.
+     */
     val hasSeniorDesignation: Boolean
-        get() = designationIdentifier.lowercase().let { d -> SENIOR_DESIGNATIONS.any { d.contains(it) } }
+        get() = isSeniorDesignation(designationIdentifier)
 
     val isSenior: Boolean get() = seniorFlag == true || hasSeniorDesignation
 
@@ -51,16 +66,50 @@ data class InvoiceViewer(
     /** `if (isAdmin) setCanPost(true)` on the web, where that admin is PA/FC. */
     val mayPost: Boolean get() = canPost || hasSeniorDesignation
 
+    /**
+     * May create, pay and cancel payment runs — the web's
+     * `canAuthorisePaymentRuns`: a senior by designation always, anyone else
+     * only when Settings → Team gives them run access. Signing a run's tiers
+     * is a separate question, answered by the run's own chain
+     * ([PaymentRuns.resolveApproval]).
+     */
+    val canOperateRuns: Boolean get() = hasSeniorDesignation || runAccessFlag
+
+    /**
+     * May post an entered invoice to the ledger — the web's `canPostToLedger`:
+     * a senior (by the settings flag or by designation) always, anyone else
+     * only with a posting limit in Settings → Team. Seniority never waits on
+     * the settings read (ZL-20767).
+     */
+    val canPostToLedger: Boolean get() = isSenior || postingRightFlag
+
     fun withSettings(settings: InvoiceSettings): InvoiceViewer = copy(
         seniorFlag = settings.seniorFor(userId),
         overrideFlag = settings.overrideFor(userId),
         isRunApprover = userId in settings.runApprovers,
+        runAccessFlag = settings.runAccessFor(userId),
+        postingRightFlag = settings.postingRightFor(userId),
     )
 
     companion object {
         const val TOOL_IDENTIFIER = "invoices_tool"
         private const val ACCOUNTS = "accounts"
-        private val SENIOR_DESIGNATIONS = setOf("production_accountant", "financial_controller")
+        /** The web's `PO_FULL_ACCESS_DESIGNATIONS`. */
+        private val SENIOR_DESIGNATIONS = setOf(
+            "designation_production_accountant_accounts",
+            "designation_financial_controller_accounts",
+        )
+
+        /** The same two roles by their display names. */
+        private val SENIOR_NAMES = setOf("production accountant", "financial controller")
+
+        fun isSeniorDesignation(designation: String): Boolean {
+            val value = designation.trim().lowercase()
+            if (value in SENIOR_DESIGNATIONS) return true
+            val words = value.map { if (it.isLetterOrDigit()) it else ' ' }.joinToString("")
+                .split(' ').filter { it.isNotEmpty() }.joinToString(" ")
+            return words in SENIOR_NAMES
+        }
 
         fun from(
             permissions: ProjectPermissions,

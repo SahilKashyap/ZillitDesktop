@@ -19,7 +19,25 @@ data class PaymentRun(
     val currency: String = "",
     val invoiceCount: Int = 0,
     val status: PaymentRunStatus = PaymentRunStatus.Draft,
+    /** The tiers already signed — the run's `approval` array. */
+    val approvals: List<RunSignOff> = emptyList(),
+    /** Why, who and when, on a rejected run; blank otherwise. */
+    val rejectionReason: String = "",
+    val rejectedBy: String = "",
+    val rejectedAtMs: Long? = null,
 )
+
+/** One signed tier of a run: which tier, and who signed it. */
+data class RunSignOff(val tierNumber: Int, val userId: String)
+
+/** A run with the invoices it pays — what `GET /active-runs/:id` answers. */
+data class PaymentRunDetail(val run: PaymentRun, val invoices: List<Invoice> = emptyList())
+
+/**
+ * Whether the reader may sign the run now, and which tier that would be — the
+ * web's `resolveRunApproval` (`lib/paymentRunApproval.js`).
+ */
+data class RunApprovalDecision(val canApprove: Boolean, val nextTier: Int?, val totalTiers: Int)
 
 /** Where a run stands. Only a pending one can be authorised or turned down. */
 enum class PaymentRunStatus(val wire: String, private val labelKey: String) {
@@ -54,8 +72,28 @@ data class PaymentGroup(
     val ids: List<String> get() = invoices.map { it.id }
     val total: Double get() = invoices.sumOf { it.grossAmount }
 
+    /** `vendor_id|CURRENCY` — the web's stable group key. */
+    val key: String get() = "$vendorId|$currency"
+
     /** What the run is called on the ledger — the web's own wording. */
     val runName: String get() = "BACs Run — $vendorName ($currency)"
+}
+
+/**
+ * One line of Open Items as the web draws it: a vendor-and-currency header
+ * (tick for the whole group, count, total, open or shut), then — while it is
+ * open — that group's invoices.
+ */
+sealed interface OpenItemRow {
+    val key: String
+
+    data class Header(val group: PaymentGroup, val open: Boolean) : OpenItemRow {
+        override val key: String get() = "group:${group.key}"
+    }
+
+    data class Item(val invoice: Invoice) : OpenItemRow {
+        override val key: String get() = invoice.id
+    }
 }
 
 object PaymentRuns {
@@ -87,6 +125,34 @@ object PaymentRuns {
     fun nextNumber(runs: List<PaymentRun>, offset: Int = 0): String {
         val highest = runs.mapNotNull { run -> run.number.filter { it.isDigit() }.toIntOrNull() }.maxOrNull() ?: 0
         return "PR-" + (highest + 1 + offset).toString().padStart(RUN_NUMBER_DIGITS, '0')
+    }
+
+    /**
+     * Who may sign a run, and at which tier — `resolveRunApproval`, rule for
+     * rule.
+     *
+     * The next tier is the lowest one nobody has signed yet. The reader may
+     * sign it only while the run is pending and they are listed on that tier.
+     * Separation of duties (ZL-20472): somebody who has already signed any
+     * tier of this run may not sign again, even when the next tier lists them
+     * too — or one person could clear every tier from the same open dialog.
+     * A run with no chain configured has no next tier, so nobody signs it.
+     */
+    fun resolveApproval(
+        chain: List<RunAuthLevel>,
+        approvals: List<RunSignOff>,
+        status: PaymentRunStatus,
+        userId: String,
+    ): RunApprovalDecision {
+        val sorted = chain.sortedBy { it.tier }
+        val next = sorted.firstOrNull { level -> approvals.none { it.tierNumber == level.tier } }
+        val signedAlready = approvals.any { it.userId == userId }
+        val canApprove = next != null &&
+            status == PaymentRunStatus.Pending &&
+            userId.isNotBlank() &&
+            userId in next.userIds &&
+            !signedAlready
+        return RunApprovalDecision(canApprove = canApprove, nextTier = next?.tier, totalTiers = sorted.size)
     }
 
     private const val RUN_NUMBER_DIGITS = 3
@@ -121,7 +187,26 @@ data class SalesInvoice(
     val dueDateMs: Long? = null,
     val createdAtMs: Long? = null,
     val status: SalesInvoiceStatus = SalesInvoiceStatus.Draft,
+    val invoiceDateMs: Long? = null,
+    val lineItems: List<CodedLine> = emptyList(),
 )
+
+/**
+ * What raising a sales invoice sends — `SalesPage`'s `handleCreate`: the
+ * client, the dates as `YYYY-MM-DD`, and the lines, whose gross is the
+ * invoice's.
+ */
+data class SalesInvoiceWrite(
+    val reference: String,
+    val clientName: String,
+    val description: String,
+    val currency: String,
+    val invoiceDate: String,
+    val dueDate: String,
+    val lines: List<CodedLine>,
+) {
+    val gross: Double get() = EntryCoding.totals(lines).gross
+}
 
 /** A sales invoice's life: drafted, sent to the client, paid. */
 enum class SalesInvoiceStatus(val wire: String, private val labelKey: String) {

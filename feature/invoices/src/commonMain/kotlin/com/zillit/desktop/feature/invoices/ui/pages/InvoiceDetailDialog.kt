@@ -42,6 +42,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitSpinner
 import com.zillit.desktop.core.designsystem.component.ZillitStatusPill
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.feature.invoices.domain.HistoryEntry
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceRules
@@ -71,7 +72,7 @@ internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, 
                 onClick = { onEvent(InvoicesEvent.ShowHistory) },
                 variant = ButtonVariant.Tertiary,
             )
-            if (InvoiceRules.showApproveReject(invoice, tiers, viewer)) {
+            if (detail.decisions && InvoiceRules.showApproveReject(invoice, tiers, viewer)) {
                 ZillitButton(
                     text = str(S.reject),
                     onClick = { onEvent(InvoicesEvent.StartReject) },
@@ -84,7 +85,7 @@ internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, 
                     loading = detail.acting,
                 )
             }
-            if (InvoiceRules.showOverride(invoice, tiers, viewer)) {
+            if (detail.decisions && InvoiceRules.showOverride(invoice, tiers, viewer)) {
                 ZillitButton(
                     text = str(S.dm_nom_table_override),
                     onClick = { onEvent(InvoicesEvent.Override(invoice)) },
@@ -92,7 +93,7 @@ internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, 
                     loading = detail.acting,
                 )
             }
-            if (InvoiceRules.showOverrideAndPay(invoice, viewer) && !invoice.isApproved) {
+            if (detail.decisions && InvoiceRules.showOverrideAndPay(invoice, viewer) && !invoice.isApproved) {
                 ZillitButton(
                     text = str(S.desktop_override_and_pay),
                     onClick = { onEvent(InvoicesEvent.OverrideAndPay(invoice)) },
@@ -123,7 +124,7 @@ internal fun InvoiceDetailDialog(state: InvoicesUiState, detail: InvoiceDetail, 
  * not click "next page" to reach them.
  */
 @Composable
-private fun PreviewPages(pages: List<ImageBitmap>, name: String) {
+internal fun PreviewPages(pages: List<ImageBitmap>, name: String) {
     val scroll = rememberScrollState()
     Row(Modifier.fillMaxSize()) {
         Column(
@@ -467,23 +468,41 @@ private fun ApprovalChainPanel(detail: InvoiceDetail, tiers: List<ResolvedTier>)
 
 @Composable
 private fun HistoryDialog(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Unit) {
+    HistorySheet(
+        invoiceNumber = detail.invoice.displayNumber,
+        rows = detail.history,
+        loading = detail.historyLoading,
+        nameOf = detail::nameOf,
+        onClose = { onEvent(InvoicesEvent.HideHistory) },
+    )
+}
+
+/** An invoice's audit trail, newest first — shared by the detail dialog and the coding screen. */
+@Composable
+internal fun HistorySheet(
+    invoiceNumber: String,
+    rows: List<HistoryEntry>?,
+    loading: Boolean,
+    nameOf: (String) -> String,
+    onClose: () -> Unit,
+    subtitle: String? = null,
+) {
     val colors = ZillitTheme.colors
     ZillitDialogShell(
         title = str(S.history),
-        subtitle = str(S.desktop_invoice_named, detail.invoice.displayNumber),
-        onDismiss = { onEvent(InvoicesEvent.HideHistory) },
+        subtitle = subtitle ?: str(S.desktop_invoice_named, invoiceNumber),
+        onDismiss = onClose,
         visible = true,
         actions = {
             ZillitButton(
                 text = str(S.close),
-                onClick = { onEvent(InvoicesEvent.HideHistory) },
+                onClick = onClose,
                 variant = ButtonVariant.Tertiary,
             )
         },
     ) {
-        val rows = detail.history
         when {
-            detail.historyLoading || rows == null -> LoadingRow()
+            loading || rows == null -> LoadingRow()
             rows.isEmpty() -> ZillitText(
                 text = str(S.history_no_history),
                 style = ZillitTheme.typography.bodyMedium,
@@ -498,7 +517,7 @@ private fun HistoryDialog(detail: InvoiceDetail, onEvent: (InvoicesEvent) -> Uni
                             color = colors.textPrimary,
                         )
                         ZillitText(
-                            text = "${detail.nameOf(entry.actionBy)} · ${InvoiceFormat.dateTime(entry.actionAtMs)}",
+                            text = "${nameOf(entry.actionBy)} · ${InvoiceFormat.dateTime(entry.actionAtMs)}",
                             style = ZillitTheme.typography.bodySmall,
                             color = colors.textMuted,
                         )

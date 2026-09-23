@@ -2,9 +2,9 @@ package com.zillit.desktop.feature.invoices.ui.pages
 
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
@@ -35,6 +35,7 @@ import com.zillit.desktop.feature.invoices.domain.EntrySort
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.PayMethod
+import com.zillit.desktop.feature.invoices.ui.EntryEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
 
@@ -46,6 +47,7 @@ import com.zillit.desktop.feature.invoices.ui.InvoicesUiState
  * non-senior only sees their own assignments as actionable, and an
  * unassigned invoice is nobody's until a senior hands it over.
  */
+@Suppress("LongMethod") // Toolbar, bulk bar and table of one page; each part is a few lines.
 @Composable
 internal fun ColumnScope.EntryPage(
     state: InvoicesUiState,
@@ -77,20 +79,58 @@ internal fun ColumnScope.EntryPage(
             label = { it?.label ?: str(S.desktop_all_pay_methods) },
             modifier = Modifier.width(ENTRY_SELECT_WIDTH),
         )
+        Spacer(Modifier.weight(1f))
+        // The web's two floating buttons, in the toolbar: a full entry, or one line.
+        ZillitButton(
+            text = str(S.desktop_enter_invoice),
+            onClick = { onEvent(InvoicesEvent.OpenEnter) },
+            variant = ButtonVariant.Secondary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.File,
+        )
+        ZillitButton(
+            text = str(S.desktop_br_quick_entry),
+            onClick = { onEvent(EntryEvent.StartQuick) },
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Add,
+        )
     }
     EntryFilterRow(state, onEvent)
     val rows = state.entryRows
+    val selectable = state.entrySelectableIds
     EntryBulkBar(state, onEvent)
     TableCard(
         title = str(S.desktop_entry_queue),
         icon = ZillitIcons.File,
-        meta = countMeta(rows.size, "invoice"),
+        meta = countMeta(rows.size),
+        action = {
+            // The header tick: every row this reader may act on, or none.
+            ZillitButton(
+                text = if (selectable.isNotEmpty() && state.selected.containsAll(selectable)) {
+                    str(S.desktop_select_none)
+                } else {
+                    str(S.select_all)
+                },
+                onClick = { onEvent(InvoicesEvent.ToggleSelectAll) },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+                enabled = selectable.isNotEmpty(),
+            )
+        },
     ) {
         ZillitDataTable(
             rows = rows,
             columns = entryColumns(state, onEvent),
             key = { it.id },
-            onRowClick = { if (state.canAccessEntry(it)) onEvent(InvoicesEvent.Open(it)) },
+            // With a selection under way a click ticks, as the web's does; otherwise it opens
+            // the coding screen — for a row this reader may open.
+            onRowClick = { row ->
+                when {
+                    !state.canAccessEntry(row) -> Unit
+                    state.selected.isNotEmpty() -> onEvent(InvoicesEvent.ToggleSelect(row.id))
+                    else -> onEvent(EntryEvent.Open(row))
+                }
+            },
             isSelected = { it.id in state.selected },
             emptyTitle = str(S.desktop_nothing_awaiting_entry),
             emptyMessage = str(S.desktop_inv_entry_empty_message),
@@ -121,7 +161,14 @@ private fun EntryFilterRow(state: InvoicesUiState, onEvent: (InvoicesEvent) -> U
     }
 }
 
-/** What can be done to everything ticked, and only while something is. */
+/**
+ * What can be done to everything ticked — the web's selection bar: Assign,
+ * Submit for Review (not for a senior, who is the reviewer) and Clear.
+ *
+ * There is no bulk Post, on purpose: the web has none either, because posting
+ * is gated on the coding screen — a bank, an effective date, the lines
+ * reconciled and a nominal on every one — and a bulk post would skip them all.
+ */
 @Composable
 private fun EntryBulkBar(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
     if (state.selected.isEmpty()) return
@@ -140,19 +187,15 @@ private fun EntryBulkBar(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Uni
             variant = ButtonVariant.Secondary,
             size = ButtonSize.Small,
         )
-        ZillitButton(
-            text = str(S.desktop_submit_for_review),
-            onClick = { onEvent(InvoicesEvent.ReviewSelected) },
-            variant = ButtonVariant.Secondary,
-            size = ButtonSize.Small,
-            enabled = !state.busy,
-        )
-        ZillitButton(
-            text = str(S.ah_post_to_ledger),
-            onClick = { onEvent(InvoicesEvent.PostSelected) },
-            size = ButtonSize.Small,
-            enabled = !state.busy && state.viewer.mayPost,
-        )
+        if (!state.viewer.isSenior) {
+            ZillitButton(
+                text = str(S.desktop_submit_for_review),
+                onClick = { onEvent(InvoicesEvent.ReviewSelected) },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                enabled = !state.busy,
+            )
+        }
         ZillitButton(
             text = str(S.ah_clear),
             onClick = { onEvent(InvoicesEvent.ClearSelection) },
@@ -168,11 +211,13 @@ private fun entryColumns(
 ): List<TableColumn<Invoice>> = listOf(
     TableColumn("", ColumnWidth.Fixed(TICK_WIDTH)) { invoice ->
         // A row this viewer cannot open cannot be bulk-actioned either, or
-        // select-all would hand them invoices they are not allowed to see.
+        // select-all would hand them invoices they are not allowed to see; a
+        // row dated in a closed period cannot be ticked at all.
         if (state.canAccessEntry(invoice)) {
             ZillitCheckbox(
                 checked = invoice.id in state.selected,
                 onCheckedChange = { onEvent(InvoicesEvent.ToggleSelect(invoice.id)) },
+                enabled = !state.isLocked(invoice),
             )
         } else {
             CellText("—", muted = true)

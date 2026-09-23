@@ -43,6 +43,10 @@ class InvoicesToolProvider(
         var notice by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
+        // Every entry and route change names the page to show — the Account
+        // Hub re-enters with `/film-tools/invoices/<page>`; the bare path is
+        // Overview, as the web redirects it.
+        LaunchedEffect(route.path) { viewModel.onEvent(InvoicesEvent.OpenRoute(route.path)) }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {
@@ -52,7 +56,15 @@ class InvoicesToolProvider(
         }
 
         val nowMs = remember(state.invoices) { nowMillis() }
-        InvoicesScreen(state = state, onEvent = viewModel::onEvent, nowMs = nowMs)
+        InvoicesScreen(
+            state = state,
+            onEvent = viewModel::onEvent,
+            nowMs = nowMs,
+            // Inside the hub the navigator returns to the hub; standalone it
+            // closes the window. The hub shows this module full-bleed, so the
+            // sidebar's back chip is the only way out.
+            onBack = navigator::close,
+        )
         ZillitErrorToast(message = notice, onDismiss = { notice = null })
     }
 

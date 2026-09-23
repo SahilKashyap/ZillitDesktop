@@ -53,13 +53,8 @@ internal fun parseAnalytics(data: JsonElement?): InvoiceAnalytics {
                 isOver = row.flag("over") == true || row.flag("highlight") == true,
             )
         },
-        vendors = rowsOf(root.firstOf("suppliers", "vendors")).map { row ->
-            VendorSpend(
-                name = row.text("name"),
-                amount = row.text("amount"),
-                percent = row.number("pct", "percent") ?: 0.0,
-            )
-        },
+        vendors = parseShares(root.firstOf("suppliers", "vendors")),
+        departmentSpend = parseShares(root["departments"]),
         totals = SpendTotals(
             posted = totals.text("posted"),
             pending = totals.text("pending"),
@@ -72,3 +67,12 @@ internal fun parseAnalytics(data: JsonElement?): InvoiceAnalytics {
 /** A nested object, or an empty one so the reads above stay flat. */
 private fun JsonObject.child(vararg names: String): JsonObject =
     firstOf(*names) as? JsonObject ?: JsonObject(emptyMap())
+
+/** `{name, amount, pct}` rows — a vendor's or a department's share of the spend. */
+private fun parseShares(data: JsonElement?): List<VendorSpend> = rowsOf(data).map { row ->
+    VendorSpend(
+        name = row.text("name"),
+        amount = row.text("amount"),
+        percent = row.number("pct", "percent") ?: 0.0,
+    )
+}

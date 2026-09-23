@@ -13,7 +13,6 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceAssignee
 import com.zillit.desktop.feature.invoices.domain.InvoiceAssignmentRule
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
 import com.zillit.desktop.feature.invoices.domain.InvoiceDirectory
-import com.zillit.desktop.feature.invoices.domain.InvoiceExtraction
 import com.zillit.desktop.feature.invoices.domain.InvoiceFiles
 import com.zillit.desktop.feature.invoices.domain.InvoiceQuery
 import com.zillit.desktop.feature.invoices.domain.InvoiceSettings
@@ -33,7 +32,6 @@ import com.zillit.desktop.feature.invoices.ui.AccountantPage
 import com.zillit.desktop.feature.invoices.ui.InvoiceSetupSection
 import com.zillit.desktop.feature.invoices.ui.InvoicesEvent
 import com.zillit.desktop.feature.invoices.ui.InvoicesViewModel
-import com.zillit.desktop.feature.invoices.ui.TeamMemberDraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -340,23 +338,14 @@ class InvoiceSetupFlowTest {
             read += id
             return ZillitResult.Success(if (id == matching.id) matching else unmatched)
         }
-        override suspend fun createFromUpload(upload: com.zillit.desktop.feature.invoices.domain.DepartmentUpload) =
-            ZillitResult.Success<Invoice?>(null)
         override suspend fun createEntered(entered: com.zillit.desktop.feature.invoices.domain.EnteredInvoice) =
             ZillitResult.Success<Invoice?>(null)
-        override suspend fun patchStatus(
-            id: String,
-            status: InvoiceStatus,
-            approvalStatus: com.zillit.desktop.feature.invoices.domain.ApprovalStatus,
-        ) = ZillitResult.Success<Invoice?>(null)
         override suspend fun delete(id: String) = ZillitResult.Success(Unit)
         override suspend fun approve(id: String, tierNumber: Int, totalTiers: Int) =
             ZillitResult.Success<Invoice?>(null)
         override suspend fun reject(id: String, reason: String) = ZillitResult.Success<Invoice?>(null)
         override suspend fun chase(id: String) = ZillitResult.Success(Unit)
         override suspend fun history(id: String) = ZillitResult.Success(emptyList<HistoryEntry>())
-        override suspend fun extract(attachment: InvoiceAttachment) =
-            ZillitResult.Success(InvoiceExtraction())
         override suspend fun settings() = ZillitResult.Success(InvoiceSettings(isSenior = true))
         override suspend fun approvalTiers() = ZillitResult.Success(emptyList<ApprovalTierConfig>())
         override suspend fun vendors() = ZillitResult.Success(listOf(Vendor("v1", "Panavision")))

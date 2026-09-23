@@ -9,35 +9,39 @@ enum class BadgeTone { Neutral, Pending, Approved, Rejected, Override }
 data class InvoiceBadge(val label: String, val tone: BadgeTone)
 
 /**
- * The gating the web spreads over three pages, in one place. Every rule reads
- * exactly as `DepartmentInvoiceModule` / `ApprovalPage` / `InvoiceDetailModal`
- * do it — the server also enforces, but hiding a button the server would
- * accept is the more common bug.
- */
-/**
  * Why an invoice was held for query — the web's `HOLD_REASONS`.
  *
- * The first entry is its placeholder, so a reason is a real choice; the last
+ * [wire] is what the server stores: the web's fixed English wording
+ * (`HoldForQueryModal.jsx`), whatever language the screen is in. Sending the
+ * translated label would file the same reason under a different string per
+ * language, and every other client reads the English back. The last reason
  * demands the notes that explain it.
  */
-enum class HoldReason(private val labelKey: String) {
-    AdjustmentRequired(S.desktop_hold_invoice_adjustment_required),
-    AwaitingCreditNote(S.desktop_hold_awaiting_credit_note),
-    PoAmendmentNeeded("PO Amendment Needed"),
-    QueryingAmount(S.desktop_hold_querying_amount_with_vendor),
-    MissingDocumentation(S.desktop_hold_missing_supporting_documentation),
-    TaxQuery(S.desktop_hold_tax_query),
-    DuplicateCheck(S.desktop_hold_duplicate_invoice_check),
-    AwaitingHodConfirmation(S.desktop_hold_awaiting_hod_confirmation),
-    Other(S.desktop_other_specify_in_notes),
+enum class HoldReason(private val labelKey: String, val wire: String) {
+    AdjustmentRequired(S.desktop_hold_invoice_adjustment_required, "Invoice Adjustment Required"),
+    AwaitingCreditNote(S.desktop_hold_awaiting_credit_note, "Awaiting Credit Note"),
+    PoAmendmentNeeded(S.desktop_hold_po_amendment_needed, "PO Amendment Needed"),
+    QueryingAmount(S.desktop_hold_querying_amount_with_vendor, "Querying Amount with Vendor"),
+    MissingDocumentation(S.desktop_hold_missing_supporting_documentation, "Missing Supporting Documentation"),
+    TaxQuery(S.desktop_hold_tax_query, "Tax Query"),
+    DuplicateCheck(S.desktop_hold_duplicate_invoice_check, "Duplicate Invoice Check"),
+    AwaitingHodConfirmation(S.desktop_hold_awaiting_hod_confirmation, "Awaiting HoD Confirmation"),
+    Other(S.desktop_other_specify_in_notes, "Other (specify in notes)"),
     ;
 
+    /** What the picker shows, in the reader's language. */
     val label: String get() = str(labelKey)
 
     /** The web refuses "Other" with nothing written down. */
     fun needsNotes(): Boolean = this == Other
 }
 
+/**
+ * The gating the web spreads over three pages, in one place. Every rule reads
+ * exactly as `DepartmentInvoiceModule` / `ApprovalPage` / `InvoiceDetailModal`
+ * do it — the server also enforces, but hiding a button the server would
+ * accept is the more common bug.
+ */
 object InvoiceRules {
 
     /** The "Approval" column of the department tables. */

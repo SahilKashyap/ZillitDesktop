@@ -168,6 +168,7 @@ internal fun parsePoSuggestions(data: JsonElement?): PoSuggestions {
     return PoSuggestions(
         vendorPos = obj.arrayField("vendor_pos").mapNotNull(::parsePoSuggestion),
         userPos = obj.arrayField("user_pos").mapNotNull(::parsePoSuggestion),
+        allPos = obj.arrayField("all_pos").mapNotNull(::parsePoSuggestion),
     )
 }
 
@@ -215,6 +216,12 @@ internal fun parseLinkedPos(data: JsonElement?): List<LinkedPoDetail> = rowsOf(d
                     quantity = it.number("quantity", "qty"),
                     unitPrice = it.number("unit_price", "rate", "price"),
                     total = it.number("total", "line_total", "amount"),
+                    id = it.text("id"),
+                    account = it.text("account", "nominal_code"),
+                    taxRate = parseTaxRate(it["tax_rate"]),
+                    taxType = it.text("tax_type", "taxType"),
+                    expenditureType = it.text("expenditure_type", "expenditureType"),
+                    splitParentId = it.text("split_parent_id", "splitParentId").ifBlank { null },
                 )
             }
         },

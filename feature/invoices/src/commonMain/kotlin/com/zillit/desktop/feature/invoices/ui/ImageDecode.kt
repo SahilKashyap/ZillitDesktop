@@ -17,3 +17,10 @@ expect fun decodeImageBitmap(bytes: ByteArray): ImageBitmap?
  * with no picture in it. The pane says so rather than showing nothing.
  */
 expect fun decodePreviewPages(bytes: ByteArray): List<ImageBitmap>
+
+/**
+ * How many pages a PDF has, or null when it will not open (corrupted,
+ * password-protected). The bulk upload refuses a PDF past the extractor's
+ * page cap before anything is sent — the web's `validateInvoiceFile`.
+ */
+expect fun pdfPageCount(bytes: ByteArray): Int?

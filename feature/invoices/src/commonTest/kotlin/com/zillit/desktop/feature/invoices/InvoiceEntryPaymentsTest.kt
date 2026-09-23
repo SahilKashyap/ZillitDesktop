@@ -15,7 +15,6 @@ import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceAssignee
 import com.zillit.desktop.feature.invoices.domain.InvoiceDirectory
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
-import com.zillit.desktop.feature.invoices.domain.InvoiceExtraction
 import com.zillit.desktop.feature.invoices.domain.InvoiceQuery
 import com.zillit.desktop.feature.invoices.domain.InvoiceSettings
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
@@ -25,6 +24,7 @@ import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.domain.PaymentRun
 import com.zillit.desktop.feature.invoices.domain.PaymentRunStatus
 import com.zillit.desktop.feature.invoices.domain.PaymentRuns
+import com.zillit.desktop.feature.invoices.domain.RunAuthLevel
 import com.zillit.desktop.feature.invoices.domain.SalesInvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.Vendor
 import com.zillit.desktop.feature.invoices.domain.VendorSpendReport
@@ -140,17 +140,28 @@ class InvoiceEntryPaymentsTest {
         assertEquals(listOf("mine"), vm.state.value.entrySelectableIds)
     }
 
+    /**
+     * There is no bulk post — posting is gated on the coding screen — and the
+     * review hand-off is a junior's: a senior is the reviewer (ZL-20450).
+     */
     @Test
-    fun `posting the selection posts each row and clears the ticks`() = runTest(dispatcher) {
+    fun `a junior hands the selection off for review, a senior cannot, and nothing is posted`() = runTest(dispatcher) {
         val repo = EntryRepo()
-        val vm = open(repo, AccountantPage.Entry, senior())
+        val junior = open(repo, AccountantPage.Entry, junior())
         advanceUntilIdle()
-        vm.onEvent(InvoicesEvent.ToggleSelect("mine"))
-        vm.onEvent(InvoicesEvent.ToggleSelect("free"))
-        vm.onEvent(InvoicesEvent.PostSelected)
+        junior.onEvent(InvoicesEvent.ToggleSelect("mine"))
+        junior.onEvent(InvoicesEvent.ReviewSelected)
         advanceUntilIdle()
-        assertEquals(listOf("mine", "free"), repo.posted)
-        assertTrue(vm.state.value.selected.isEmpty())
+        assertEquals(listOf("mine"), repo.reviewed)
+        assertTrue(junior.state.value.selected.isEmpty())
+
+        val senior = open(repo, AccountantPage.Entry, senior())
+        advanceUntilIdle()
+        senior.onEvent(InvoicesEvent.ToggleSelect("free"))
+        senior.onEvent(InvoicesEvent.ReviewSelected)
+        advanceUntilIdle()
+        assertEquals(listOf("mine"), repo.reviewed)
+        assertTrue(repo.posted.isEmpty())
     }
 
     @Test
@@ -325,13 +336,16 @@ class InvoiceEntryPaymentsTest {
     // -- Sales Invoices -----------------------------------------------------
 
     @Test
-    fun `a sales invoice needs a client and a real amount`() {
+    fun `a sales invoice needs a client and an invoice date`() {
         assertFalse(SalesInvoiceDraft().isReady)
         assertFalse(SalesInvoiceDraft(clientName = "Channel 4").isReady)
-        assertFalse(SalesInvoiceDraft(clientName = "Channel 4", amount = "0").isReady)
-        assertTrue(SalesInvoiceDraft(clientName = "Channel 4", amount = "1,250.00").isReady)
+        assertTrue(SalesInvoiceDraft(clientName = "Channel 4", invoiceDate = "2026-09-23").isReady)
 
-        val wrongDate = SalesInvoiceDraft(clientName = "Channel 4", amount = "10", dueDate = "next Tuesday")
+        val wrongDate = SalesInvoiceDraft(
+            clientName = "Channel 4",
+            invoiceDate = "2026-09-23",
+            dueDate = "next Tuesday",
+        )
         assertTrue(wrongDate.dateIsWrong)
         assertFalse(wrongDate.isReady)
         assertNotNull(SalesInvoiceDraft(dueDate = "2026-10-01").dueDateMs)
@@ -445,6 +459,13 @@ class InvoiceEntryPaymentsTest {
             return ZillitResult.Success(Unit)
         }
 
+        val reviewed = mutableListOf<String>()
+
+        override suspend fun markUnderReview(id: String): ZillitResult<Unit> {
+            reviewed += id
+            return ZillitResult.Success(Unit)
+        }
+
         override suspend fun assign(id: String, userId: String, reason: String): ZillitResult<Unit> {
             assigned += Triple(id, userId, reason)
             return ZillitResult.Success(Unit)
@@ -488,6 +509,11 @@ class InvoiceEntryPaymentsTest {
             return ZillitResult.Success(Unit)
         }
 
+        // Rejecting answers to the run's own chain, so the reader signs tier one.
+        override suspend fun settings(): ZillitResult<InvoiceSettings> = ZillitResult.Success(
+            InvoiceSettings(runAuthorisation = listOf(RunAuthLevel(tier = 1, userIds = listOf("acc")))),
+        )
+
         override suspend fun vendors(): ZillitResult<List<Vendor>> = ZillitResult.Success(
             listOf(Vendor(id = "v1", name = "Acme Lighting"), Vendor(id = "v2", name = "Zed Trucks")),
         )
@@ -499,16 +525,8 @@ class InvoiceEntryPaymentsTest {
         override suspend fun approvalQueue(): ZillitResult<List<Invoice>> = ZillitResult.Success(emptyList())
         override suspend fun mine(): ZillitResult<List<Invoice>> = ZillitResult.Success(emptyList())
         override suspend fun invoice(id: String): ZillitResult<Invoice> = ZillitResult.Success(row(id))
-        override suspend fun createFromUpload(
-            upload: com.zillit.desktop.feature.invoices.domain.DepartmentUpload,
-        ): ZillitResult<Invoice?> = ZillitResult.Success(null)
         override suspend fun createEntered(
             entered: com.zillit.desktop.feature.invoices.domain.EnteredInvoice,
-        ): ZillitResult<Invoice?> = ZillitResult.Success(null)
-        override suspend fun patchStatus(
-            id: String,
-            status: InvoiceStatus,
-            approvalStatus: com.zillit.desktop.feature.invoices.domain.ApprovalStatus,
         ): ZillitResult<Invoice?> = ZillitResult.Success(null)
         override suspend fun delete(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
         override suspend fun approve(id: String, tierNumber: Int, totalTiers: Int): ZillitResult<Invoice?> =
@@ -517,8 +535,6 @@ class InvoiceEntryPaymentsTest {
         override suspend fun chase(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
         override suspend fun history(id: String): ZillitResult<List<HistoryEntry>> =
             ZillitResult.Success(emptyList())
-        override suspend fun extract(attachment: InvoiceAttachment): ZillitResult<InvoiceExtraction> =
-            ZillitResult.Success(InvoiceExtraction())
         override suspend fun settings(): ZillitResult<InvoiceSettings> = ZillitResult.Success(InvoiceSettings())
         override suspend fun approvalTiers(): ZillitResult<List<ApprovalTierConfig>> =
             ZillitResult.Success(emptyList())

@@ -1,7 +1,6 @@
 package com.zillit.desktop.feature.invoices
 
 import com.zillit.desktop.feature.invoices.data.approveBody
-import com.zillit.desktop.feature.invoices.data.departmentUploadBody
 import com.zillit.desktop.feature.invoices.data.enteredInvoiceBody
 import com.zillit.desktop.feature.invoices.data.parseBankAccounts
 import com.zillit.desktop.feature.invoices.data.parseHistory
@@ -9,23 +8,16 @@ import com.zillit.desktop.feature.invoices.data.parseInvoice
 import com.zillit.desktop.feature.invoices.data.parseSettings
 import com.zillit.desktop.feature.invoices.data.parseTierConfigs
 import com.zillit.desktop.feature.invoices.data.rowsOf
-import com.zillit.desktop.feature.invoices.data.statusPatchBody
-import com.zillit.desktop.feature.invoices.domain.ApprovalStatus
-import com.zillit.desktop.feature.invoices.domain.DepartmentUpload
 import com.zillit.desktop.feature.invoices.domain.EnteredInvoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
-import com.zillit.desktop.feature.invoices.domain.InvoiceExtraction
 import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.domain.TierScope
-import com.zillit.desktop.feature.invoices.domain.UploadType
 import com.zillit.desktop.feature.invoices.domain.Vendor
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -54,57 +46,6 @@ class InvoiceWireTest {
         assertEquals("faster", PayMethod.normalise("faster_payment"))
         assertTrue(PayMethod.Wire.isUrgent && PayMethod.Cheque.isUrgent && !PayMethod.Faster.isUrgent)
         assertTrue(PayMethod.Faster.isOverridePayable && !PayMethod.Bacs.isOverridePayable)
-    }
-
-    @Test
-    fun `department upload body follows invoiceUploadPayload for a wire request`() {
-        val body = departmentUploadBody(
-            DepartmentUpload(
-                type = UploadType.Wire,
-                fileName = "Acme March.pdf",
-                attachment = attachment,
-                extraction = InvoiceExtraction(
-                    uploadId = "up1",
-                    supplierName = "Acme Ltd",
-                    invoiceDate = "2026-08-01",
-                    gross = 1234.5,
-                    currency = "",
-                    poNumber = "PO-0087",
-                    payMethod = "bacs",
-                ),
-                departmentId = "d-cam",
-                projectCurrency = "USD",
-            ),
-        )
-        assertEquals("Invoice — Acme Ltd", body["description"]!!.jsonPrimitive.content)
-        assertEquals("2026-08-01", body["invoice_date"]!!.jsonPrimitive.content)
-        assertNull(body["due_date"])
-        assertEquals(1234.5, body["gross_amount"]!!.jsonPrimitive.content.toDouble())
-        assertEquals("PO-0087", body["po_number"]!!.jsonPrimitive.content)
-        assertEquals("wire", body["pay_method"]!!.jsonPrimitive.content, "the sheet's type wins over extraction")
-        assertEquals("d-cam", body["department_id"]!!.jsonPrimitive.content)
-        assertEquals("USD", body["currency"]!!.jsonPrimitive.content, "blank extraction currency → project default")
-        assertEquals("up1", body["upload_id"]!!.jsonPrimitive.content)
-        assertEquals(
-            "pdf",
-            body["attachments"]!!.jsonArray.single().jsonObject["content_subtype"]!!.jsonPrimitive.content,
-        )
-        assertNull(body["status"])
-        assertNull(body["vendor_id"])
-    }
-
-    @Test
-    fun `department upload body without extraction falls back to the file name and zero gross`() {
-        val body = departmentUploadBody(
-            DepartmentUpload(UploadType.Po, "scan 12.jpg", null, null, departmentId = null, projectCurrency = ""),
-        )
-        assertEquals("scan 12", body["description"]!!.jsonPrimitive.content)
-        assertEquals(0.0, body["gross_amount"]!!.jsonPrimitive.content.toDouble())
-        assertEquals("bacs", body["pay_method"]!!.jsonPrimitive.content)
-        assertEquals("GBP", body["currency"]!!.jsonPrimitive.content)
-        assertNull(body["department_id"])
-        assertNull(body["upload_id"])
-        assertEquals(0, body["attachments"]!!.jsonArray.size)
     }
 
     @Test
@@ -141,13 +82,10 @@ class InvoiceWireTest {
     }
 
     @Test
-    fun `approve and override bodies carry the tier arithmetic and both status flags`() {
+    fun `the approve body carries the tier arithmetic`() {
         val approve = approveBody(2, 0)
         assertEquals(2, approve["tier_number"]!!.jsonPrimitive.content.toInt())
         assertEquals(1, approve["total_tiers"]!!.jsonPrimitive.content.toInt(), "total_tiers is at least 1")
-        val patch = statusPatchBody(InvoiceStatus.Override, ApprovalStatus.Approved)
-        assertEquals("override", patch["status"]!!.jsonPrimitive.content)
-        assertEquals("approved", patch["approval_status"]!!.jsonPrimitive.content)
     }
 
     @Test

@@ -125,6 +125,13 @@ data class PoLine(
     val quantity: Double? = null,
     val unitPrice: Double? = null,
     val total: Double? = null,
+    /** The coding the order was raised with — what Invoice Entry starts from. */
+    val id: String = "",
+    val account: String = "",
+    val taxRate: Double? = null,
+    val taxType: String = "",
+    val expenditureType: String = "",
+    val splitParentId: String? = null,
 )
 
 /**
@@ -151,6 +158,8 @@ data class PoSuggestion(
 data class PoSuggestions(
     val vendorPos: List<PoSuggestion> = emptyList(),
     val userPos: List<PoSuggestion> = emptyList(),
+    /** Every other open order — the inbox review's "All Purchase Orders" search. */
+    val allPos: List<PoSuggestion> = emptyList(),
 ) {
     val total: Int get() = vendorPos.size + userPos.size
 
@@ -214,6 +223,9 @@ data class Vendor(
     val bankName: String = "",
     val defaultNominalCode: String = "",
     val currency: String = "",
+    /** The linked bank record; blank when the vendor has none on file. */
+    val bankId: String = "",
+    val contactPerson: String = "",
 ) {
     /** `net_30` → "30 days", the SLA column. */
     val slaLabel: String?
@@ -233,6 +245,12 @@ data class TeamMember(
     val overrideAccess: Boolean = false,
     val isSenior: Boolean = false,
     val runAccess: Boolean = false,
+    /**
+     * Settings gives this member a posting right: an unlimited limit (null,
+     * or the tolerated `"unlimited"`) or one above nothing. An absent limit is
+     * no grant — the web's `hasUnlimitedPostingLimit`.
+     */
+    val postingRight: Boolean = false,
 )
 
 /** The module settings — only the parts that gate buttons here. */
@@ -244,29 +262,24 @@ data class InvoiceSettings(
     val teamMembers: List<TeamMember> = emptyList(),
     /** Every user id in `run_authorization[].user`. */
     val runApprovers: Set<String> = emptySet(),
+    /** The run authorisation chain itself, tier by tier — who signs a run at each level. */
+    val runAuthorisation: List<RunAuthLevel> = emptyList(),
 ) {
     fun overrideFor(userId: String): Boolean =
         canOverride ?: teamMembers.firstOrNull { it.userId == userId }?.overrideAccess ?: false
 
     fun seniorFor(userId: String): Boolean =
         isSenior ?: teamMembers.firstOrNull { it.userId == userId }?.isSenior ?: false
-}
 
-/** What `POST /upload` read off the document. Every field optional; often the whole call fails. */
-data class InvoiceExtraction(
-    val uploadId: String = "",
-    val supplierName: String = "",
-    val invoiceNumber: String = "",
-    /** As sent: `YYYY-MM-DD`. */
-    val invoiceDate: String = "",
-    val dueDate: String = "",
-    val gross: Double? = null,
-    val currency: String = "",
-    val poNumber: String = "",
-    val payMethod: String = "",
-    /** 0–100. */
-    val confidence: Double? = null,
-)
+    /** Settings → Team gives this person a posting limit — the other half of `canPostToLedger`. */
+    fun postingRightFor(userId: String): Boolean = teamMembers.any { it.userId == userId && it.postingRight }
+
+    /** Settings → Team lists this person with "Can authorise payment runs". */
+    fun runAccessFor(userId: String): Boolean = teamMembers.any { it.userId == userId && it.runAccess }
+
+    /** Whether anybody at all may operate runs, bar the seniors who always can. */
+    val hasRunAuthoriser: Boolean get() = teamMembers.any { it.runAccess }
+}
 
 /** One supplier invoice. */
 data class Invoice(
@@ -311,6 +324,16 @@ data class Invoice(
     val createdAtMs: Long? = null,
     val updatedBy: String = "",
     val updatedAtMs: Long? = null,
+    /** The coded lines as saved, bar the reclaimable-tax line; empty until coded. */
+    val lineItems: List<CodedLine> = emptyList(),
+    /** The saved reclaimable-tax line, when there is one. */
+    val taxLine: TaxLine? = null,
+    /**
+     * `line_items` exactly as the server sent it, so a save can carry back
+     * every field this client does not edit (layers, tags, custom fields,
+     * rental dates) instead of dropping them.
+     */
+    val lineItemsJson: String = "",
 ) {
     val displayNumber: String get() = invoiceNumber.ifBlank { reference }.ifBlank { "—" }
 
@@ -318,6 +341,13 @@ data class Invoice(
         get() = if (status == InvoiceStatus.Unknown) statusRaw.ifBlank { str(S.desktop_unknown) } else status.label
 
     val hasPo: Boolean get() = linkedPos.isNotEmpty() || poId.isNotBlank() || poNumber.isNotBlank()
+
+    /**
+     * Pre-approval's rule — `linked_pos` or `po_id`, never a bare typed
+     * `po_number`: that one is unconfirmed, shown amber, and the row is still
+     * advanced as one with no PO (`MatchingPage.invoiceToRow`).
+     */
+    val hasMatchedPo: Boolean get() = linkedPos.isNotEmpty() || poId.isNotBlank()
 
     /** The PO column: "N POs", the number, or a truncated id; null = no PO. */
     val poLabel: String?
@@ -364,13 +394,3 @@ data class PickedInvoiceFile(val name: String, val contentType: String, val byte
     }
 }
 
-/** What the department's Upload Invoice sheet offers. */
-enum class UploadType(val wire: String, private val labelKey: String, private val hintKey: String) {
-    Po("po", S.desktop_against_purchase_order, S.desktop_inv_goes_to_accounts_for_matching),
-    Cheque("cheque", S.desktop_cheque_request, S.desktop_inv_cheque_request_hint),
-    Wire("wire", S.desktop_wire_request, S.desktop_inv_wire_request_hint),
-    ;
-
-    val label: String get() = str(labelKey)
-    val hint: String get() = str(hintKey)
-}

@@ -36,11 +36,21 @@ import com.zillit.desktop.core.strings.str
 internal fun ColumnScope.DepartmentPage(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
     ZillitTabStrip(
         tabs = DepartmentTab.entries.map { tab ->
-            ZillitTab(tab.id, tab.label, count = tab.badgeKey?.let(state.unread::get) ?: 0)
+            val count = if (tab == DepartmentTab.Uploads) {
+                state.uploadRows.size
+            } else {
+                tab.badgeKey?.let(state.unread::get)
+            }
+            ZillitTab(tab.id, tab.label, count = count ?: 0)
         },
         activeId = state.departmentTab.id,
         onSelect = { id -> onEvent(InvoicesEvent.SelectDepartmentTab(DepartmentTab.entries.first { it.id == id })) },
     )
+    // The web's fourth tab: the batches this department sent, still being extracted.
+    if (state.departmentTab == DepartmentTab.Uploads) {
+        UploadsCard(state, onEvent)
+        return
+    }
     if (state.departmentTab == DepartmentTab.MyDepartment && state.viewer.departmentId.isBlank()) {
         ZillitNotice(text = str(S.desktop_inv_no_department_board))
     }

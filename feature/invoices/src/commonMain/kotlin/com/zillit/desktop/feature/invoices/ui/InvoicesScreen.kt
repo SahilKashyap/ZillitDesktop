@@ -5,7 +5,6 @@ package com.zillit.desktop.feature.invoices.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,9 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -25,49 +22,50 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.utf16CodePoint
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.designsystem.ZillitDimens
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.StatusTone
-import com.zillit.desktop.core.designsystem.component.ZillitBadge
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitPageHeader
-import com.zillit.desktop.core.designsystem.component.ZillitScrollColumn
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
-import com.zillit.desktop.core.designsystem.component.ZillitTab
-import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.feature.invoices.domain.HoldReason
-import com.zillit.desktop.feature.invoices.domain.InvoiceFormat
 import com.zillit.desktop.feature.invoices.ui.pages.AccountantPageContent
 import com.zillit.desktop.feature.invoices.ui.pages.AssignSheet
 import com.zillit.desktop.feature.invoices.ui.pages.DeleteDialog
 import com.zillit.desktop.feature.invoices.ui.pages.DepartmentPage
 import com.zillit.desktop.feature.invoices.ui.pages.EnterInvoiceDialog
+import com.zillit.desktop.feature.invoices.ui.pages.BlockedProcessDialog
+import com.zillit.desktop.feature.invoices.ui.pages.BulkUploadSheet
+import com.zillit.desktop.feature.invoices.ui.pages.CreditDeleteDialog
+import com.zillit.desktop.feature.invoices.ui.pages.CreditHistorySheet
+import com.zillit.desktop.feature.invoices.ui.pages.CreditNotePreviewDialog
+import com.zillit.desktop.feature.invoices.ui.pages.InboxReviewDialog
 import com.zillit.desktop.feature.invoices.ui.pages.InvoiceDetailDialog
+import com.zillit.desktop.feature.invoices.ui.pages.LedgerHistorySheet
+import com.zillit.desktop.feature.invoices.ui.pages.QueryPanelSheet
+import com.zillit.desktop.feature.invoices.ui.pages.QuickEntrySheet
 import com.zillit.desktop.feature.invoices.ui.pages.PoReviewOverlay
 import com.zillit.desktop.feature.invoices.ui.pages.ProcessSheet
 import com.zillit.desktop.feature.invoices.ui.pages.RejectRunSheet
+import com.zillit.desktop.feature.invoices.ui.pages.RunDetailDialog
 import com.zillit.desktop.feature.invoices.ui.pages.RunAuthPickerSheet
+import com.zillit.desktop.feature.invoices.ui.pages.SalesDeleteDialog
 import com.zillit.desktop.feature.invoices.ui.pages.SalesInvoiceSheet
 import com.zillit.desktop.feature.invoices.ui.pages.SetupConfirmSheets
 import com.zillit.desktop.feature.invoices.ui.pages.TeamMemberSheet
-import com.zillit.desktop.feature.invoices.ui.pages.UploadDialog
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
@@ -81,6 +79,11 @@ fun InvoicesScreen(
     state: InvoicesUiState,
     onEvent: (InvoicesEvent) -> Unit,
     nowMs: Long,
+    /**
+     * Leaves the module — the sidebar's back chip. Inside the Account Hub the
+     * host returns to the hub; standalone it closes the tool's window.
+     */
+    onBack: () -> Unit = {},
 ) {
     val accountant = state.isAccountant
     val screenFocus = remember { FocusRequester() }
@@ -104,91 +107,62 @@ fun InvoicesScreen(
                 )
             },
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(ZillitTheme.spacing.lg),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        ) {
-            // The web gives every screen its own header — an eyebrow naming
-            // the stage, the screen's title and its own sentence — rather
-            // than one module heading over all sixteen.
-            ZillitPageHeader(
-                title = if (accountant) state.page.heading else str(S.ah_invoices),
-                eyebrow = state.page.eyebrow.takeIf { accountant },
-                description = if (accountant) {
-                    state.page.blurb
-                } else {
-                    str(S.desktop_inv_department_intro)
-                },
-                actions = {
-                    ZillitButton(
-                        text = str(S.refresh_text),
-                        onClick = { onEvent(InvoicesEvent.Refresh) },
-                        variant = ButtonVariant.Tertiary,
-                        loading = state.loading,
-                    )
-                    if (accountant && state.page == AccountantPage.Inbox) {
-                        ZillitButton(
-                            text = str(S.desktop_enter_invoice),
-                            onClick = { onEvent(InvoicesEvent.OpenEnter) },
-                            leadingIcon = ZillitIcons.Add,
-                        )
-                    }
-                    if (!accountant && state.viewer.mayPost) {
-                        ZillitButton(
-                            text = str(S.ah_upload_invoice),
-                            onClick = { onEvent(InvoicesEvent.UploadInvoice) },
-                            leadingIcon = ZillitIcons.Upload,
-                            enabled = state.upload == null,
-                        )
-                    }
-                },
-            )
-            if (state.viewer.isBlocked) ZillitNotice(text = str(S.desktop_inv_no_access))
-            state.error?.let { message ->
-                ZillitNotice(
-                    text = message,
-                    tone = StatusTone.Rejected,
-                    action = {
-                        ZillitButton(
-                            text = str(S.sync_action_dismiss),
-                            onClick = { onEvent(InvoicesEvent.DismissError) },
-                            variant = ButtonVariant.Tertiary,
-                            size = ButtonSize.Small,
-                        )
-                    },
-                )
-            }
-            if (accountant) {
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+        if (accountant) {
+            // The web's shell: the sidebar's cards down the left, and each
+            // page — its own header included — in the column beside them.
+            Row(modifier = Modifier.fillMaxSize()) {
+                InvoiceSideRail(state = state, onEvent = onEvent, onBack = onBack)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(ZillitTheme.spacing.lg),
+                    verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
                 ) {
-                    InvoiceSidebar(state, nowMs, onEvent)
-                    Column(
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-                    ) {
-                        AccountantPageContent(state, onEvent, nowMs, searchFocus)
-                    }
+                    // The coding screen carries its own top bar in the header's place.
+                    if (state.ledger == null && state.credit.form == null) InvoicesPageHeader(state, onEvent)
+                    InvoicesNotices(state, onEvent)
+                    AccountantPageContent(state, onEvent, nowMs, searchFocus)
                 }
-            } else {
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(ZillitTheme.spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
+            ) {
+                InvoicesPageHeader(state, onEvent)
+                InvoicesNotices(state, onEvent)
                 DepartmentPage(state, onEvent)
             }
         }
         state.detail?.let { InvoiceDetailDialog(state, it, onEvent) }
-        state.upload?.let { UploadDialog(state, it, onEvent) }
         state.enter?.let { EnterInvoiceDialog(state, it, onEvent) }
         state.confirmDelete?.let { DeleteDialog(state, it, onEvent) }
         state.runDraft?.let { ProcessSheet(state, it, onEvent) }
+        state.runDetail?.let { RunDetailDialog(state, it, onEvent) }
+        // After the run, not before: rejecting is reached from inside it.
         state.rejectRun?.let { RejectRunSheet(it, onEvent) }
         state.assignFor?.let { AssignSheet(state, it, onEvent) }
         state.salesDraft?.let { SalesInvoiceSheet(state, it, onEvent) }
+        state.confirmSalesDelete?.let { SalesDeleteDialog(it, onEvent) }
         state.review?.let { PoReviewOverlay(state, it, onEvent) }
         // After the review, not before: holding is reached from inside it, and
         // a dialog declared earlier would open behind the overlay that raised it.
         state.holdFor?.let { HoldDialog(it, onEvent) }
+        state.ledger?.takeIf { it.historyOpen }?.let { LedgerHistorySheet(state, it, onEvent) }
+        // Credit notes: the preview, then its history and the delete confirmation over it.
+        state.credit.preview?.let { CreditNotePreviewDialog(state, it, onEvent) }
+        CreditHistorySheet(state, onEvent)
+        state.credit.confirmDelete?.let { CreditDeleteDialog(it, onEvent) }
+        state.inboxReview?.let { InboxReviewDialog(state, it, onEvent) }
+        BlockedProcessDialog(state, onEvent)
+        // Enter Invoice hosts the upload panel on its own Upload tab; the sheet is the department's.
+        state.bulkPick?.takeIf { state.enter == null }?.let { BulkUploadSheet(it, onEvent) }
+        state.quickEntry?.let { QuickEntrySheet(state, it, onEvent) }
+        // Last of the record's sheets: a query is raised from over any of them.
+        state.query?.let { QueryPanelSheet(state, it, onEvent) }
         TeamMemberSheet(state, onEvent)
         RunAuthPickerSheet(state, onEvent)
         SetupConfirmSheets(state, onEvent)
@@ -197,161 +171,62 @@ fun InvoicesScreen(
 }
 
 /**
- * The accountant's sidebar — the web's `Sidebar.jsx`, part for part.
- *
- * Its own titled block at the top, an icon on every row, a hairline between
- * groups and the shortcut strip at the foot. Every row the web has is here;
- * the ones this build has not ported are dimmed rather than hidden, because a
- * shorter list would misrepresent the module.
+ * The page's own header — the web's `PageHeader`: an eyebrow naming the
+ * stage, the screen's title and its own sentence, rather than one module
+ * heading over all sixteen. It sits in the content column, beside the
+ * sidebar, as each web page renders its own.
  */
 @Composable
-private fun InvoiceSidebar(state: InvoicesUiState, nowMs: Long, onEvent: (InvoicesEvent) -> Unit) {
-    val colors = ZillitTheme.colors
-    val pages = AccountantPage.visibleTo(state.viewer)
-    Column(
-        modifier = Modifier
-            .width(SIDEBAR_WIDTH)
-            .fillMaxHeight()
-            .background(colors.surfaceSunken),
-    ) {
-        SidebarHeader(nowMs)
-        HairLine()
-        ZillitScrollColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(ZillitTheme.spacing.xs),
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-        ) {
-            InvoiceNavGroup.entries.forEachIndexed { index, group ->
-                val items = pages.filter { it.group == group }
-                if (items.isEmpty()) return@forEachIndexed
-                if (index > 0) {
-                    HairLine(Modifier.padding(horizontal = ZillitTheme.spacing.xs, vertical = ZillitTheme.spacing.xxs))
-                }
-                group.label?.let { heading ->
-                    ZillitText(
-                        text = heading.uppercase(),
-                        style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = colors.textMuted,
-                        modifier = Modifier.padding(
-                            start = ZillitTheme.spacing.sm,
-                            top = ZillitTheme.spacing.xs,
-                            bottom = ZillitTheme.spacing.xxs,
-                        ),
-                        maxLines = 1,
-                    )
-                }
-                items.forEach { page ->
-                    SidebarRow(
-                        page = page,
-                        active = page == state.page,
-                        badge = state.sidebarBadge(page),
-                        unread = page.badgeKey?.let(state.unread::get) ?: 0,
-                        onEvent = onEvent,
-                    )
-                }
-            }
-        }
-        HairLine()
-        SidebarFooter()
-    }
-}
-
-/** The module's name, and the period the figures on screen belong to. */
-@Composable
-private fun SidebarHeader(nowMs: Long) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),
-        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
-    ) {
-        ZillitText(
-            text = str(S.desktop_inv_accounts_payable),
-            style = ZillitTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-            maxLines = 2,
-        )
-        ZillitText(
-            // The web prints a fixed period here; this one is the real date,
-            // in the same shape.
-            text = InvoiceFormat.periodLabel(nowMs),
-            style = ZillitTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-            color = ZillitTheme.colors.accentText,
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
-private fun SidebarRow(
-    page: AccountantPage,
-    active: Boolean,
-    badge: Int?,
-    onEvent: (InvoicesEvent) -> Unit,
-    unread: Int = 0,
-) {
-    val colors = ZillitTheme.colors
-    val ink = if (active) colors.accentText else colors.textSecondary
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(ZillitTheme.shapes.medium)
-            .background(if (active) colors.accentSoft else Color.Transparent)
-            .clickable { onEvent(InvoicesEvent.SelectPage(page)) }
-            .padding(horizontal = ZillitTheme.spacing.sm, vertical = ZillitTheme.spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-    ) {
-        ZillitIcon(icon = page.icon, tint = ink, size = ZillitDimens.iconSmall)
-        ZillitText(
-            text = page.label,
-            style = ZillitTheme.typography.bodyMedium.copy(
-                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-            ),
-            color = ink,
-            maxLines = 1,
-            modifier = Modifier.weight(1f),
-        )
-        // Unread notifications filed under the page — the web's red sidebar chip.
-        ZillitBadge(count = unread)
-        if (badge != null && badge > 0) {
-            ZillitText(
-                text = badge.toString(),
-                style = ZillitTheme.typography.labelSmall.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                ),
-                color = if (active) colors.accentText else colors.textMuted,
-                maxLines = 1,
-            )
-        }
-    }
-}
-
-/** The web's keyboard strip. Only the keys this build actually answers are offered. */
-@Composable
-private fun SidebarFooter() {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-    ) {
-        InvoiceShortcut.entries.forEachIndexed { index, shortcut ->
-            if (index > 0) {
-                ZillitText(
-                    text = "·",
-                    style = ZillitTheme.typography.labelSmall,
-                    color = ZillitTheme.colors.textMuted,
+private fun InvoicesPageHeader(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
+    val accountant = state.isAccountant
+    ZillitPageHeader(
+        title = if (accountant) state.page.heading else str(S.ah_invoices),
+        eyebrow = state.page.eyebrow.takeIf { accountant },
+        description = if (accountant) {
+            state.page.blurb
+        } else {
+            str(S.desktop_inv_department_intro)
+        },
+        // No Refresh: every page re-reads on its own socket stream, as the web's do.
+        actions = {
+            if (accountant && state.page == AccountantPage.Inbox) {
+                ZillitButton(
+                    text = str(S.desktop_enter_invoice),
+                    onClick = { onEvent(InvoicesEvent.OpenEnter) },
+                    leadingIcon = ZillitIcons.Add,
                 )
             }
-            KeyCap(shortcut.key)
-            ZillitText(
-                text = shortcut.label,
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-                maxLines = 1,
-            )
-        }
-    }
+            if (!accountant && state.viewer.mayPost) {
+                ZillitButton(
+                    text = str(S.ah_upload_invoice),
+                    onClick = { onEvent(InvoicesEvent.UploadInvoice) },
+                    leadingIcon = ZillitIcons.Upload,
+                    enabled = state.bulkPick == null,
+                )
+            }
+        },
+    )
 }
 
-private val SIDEBAR_WIDTH = 250.dp
+/** The no-access notice and the page's error banner. */
+@Composable
+private fun InvoicesNotices(state: InvoicesUiState, onEvent: (InvoicesEvent) -> Unit) {
+    if (state.viewer.isBlocked) ZillitNotice(text = str(S.desktop_inv_no_access))
+    state.error?.let { message ->
+        ZillitNotice(
+            text = message,
+            tone = StatusTone.Rejected,
+            action = {
+                ZillitButton(
+                    text = str(S.sync_action_dismiss),
+                    onClick = { onEvent(InvoicesEvent.DismissError) },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                )
+            },
+        )
+    }
+}
 
 /**
  * Holding an invoice for query — the web's `HoldForQueryModal`.
@@ -407,12 +282,6 @@ private fun HoldDialog(request: HoldRequest, onEvent: (InvoicesEvent) -> Unit) {
             modifier = Modifier.fillMaxWidth(),
         )
     }
-}
-
-/** A hairline, as the web's `h-px bg-border` divides the sidebar's groups. */
-@Composable
-private fun HairLine(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().height(1.dp).background(ZillitTheme.colors.border))
 }
 
 /**

@@ -7,20 +7,12 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceExportFormat
 import com.zillit.desktop.feature.invoices.domain.InvoiceExport
 import com.zillit.desktop.core.badges.TabBadgeSource
 import com.zillit.desktop.core.localization.localised
-import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.feature.invoices.domain.ApprovalChain
-import com.zillit.desktop.feature.invoices.domain.DepartmentUpload
 import com.zillit.desktop.feature.invoices.domain.EnteredInvoice
-import com.zillit.desktop.feature.invoices.domain.CreditNote
-import com.zillit.desktop.feature.invoices.domain.CreditNoteStatus
 import com.zillit.desktop.feature.invoices.domain.Creditors
 import com.zillit.desktop.feature.invoices.domain.DuplicateFlag
-import com.zillit.desktop.feature.invoices.domain.PaymentRuns
-import com.zillit.desktop.feature.invoices.domain.PayMethod
-import com.zillit.desktop.feature.invoices.domain.PaymentRun
-import com.zillit.desktop.feature.invoices.domain.SalesInvoice
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
 import com.zillit.desktop.feature.invoices.domain.InvoiceFiles
@@ -29,6 +21,7 @@ import com.zillit.desktop.feature.invoices.domain.InvoiceAssignee
 import com.zillit.desktop.feature.invoices.domain.InvoiceDirectory
 import com.zillit.desktop.feature.invoices.domain.InvoiceQuery
 import com.zillit.desktop.feature.invoices.domain.InvoiceRefresh
+import com.zillit.desktop.feature.invoices.domain.InvoiceSettings
 import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.InvoiceViewer
 import com.zillit.desktop.feature.invoices.domain.InvoicesRepository
@@ -71,9 +64,26 @@ class InvoicesViewModel(
     private val payments = InvoicePayments(this)
     private val setup = InvoiceSetupActions(this)
     private val review = InvoiceReviewActions(this)
+    private val entry = InvoiceEntryActions(this)
+    private val queries = InvoiceQueryActions(this)
+    private val inbox = InvoiceInboxActions(this)
+    private val quick = InvoiceQuickEntryActions(this)
+    private val credits = InvoiceCreditActions(this)
+    private val sales = InvoiceSalesActions(this)
 
     /** Bumped per list load so a late answer for the previous tab is dropped. */
     private var loadToken = 0
+
+    /** A route asked for before [start] resolved who is looking; applied there. */
+    private var pendingRoute: String? = null
+    private var viewerResolved = false
+
+    /**
+     * A senior-only page a route asked for while seniority was still unknown
+     * (the settings document not yet read). Overview shows meanwhile; the page
+     * opens once the settings confirm it, unless the reader has moved on.
+     */
+    private var awaitingSenior: AccountantPage? = null
 
     fun start() {
         setState {
@@ -84,6 +94,9 @@ class InvoicesViewModel(
                 departmentNames = departmentNames + departments(),
             )
         }
+        viewerResolved = true
+        pendingRoute?.let(::applyRoute)
+        pendingRoute = null
         loadReference()
         listenOnce()
         refresh()
@@ -133,7 +146,9 @@ class InvoicesViewModel(
     override fun onEvent(event: InvoicesEvent) {
         // The Settings page and the review overlay own their own events; both
         // answer false for everything else, so the list below is unchanged.
-        if (setup.onEvent(event) || review.onEvent(event)) return
+        if (setup.onEvent(event) || review.onEvent(event) || entry.onEvent(event)) return
+        if (queries.onEvent(event) || inbox.onEvent(event) || quick.onEvent(event)) return
+        if (credits.onEvent(event) || sales.onEvent(event)) return
         when (event) {
             is InvoicesEvent.SelectDepartmentTab -> {
                 setState { copy(departmentTab = event.tab, invoices = emptyList(), selected = emptySet()) }
@@ -142,33 +157,57 @@ class InvoicesViewModel(
             }
             is InvoicesEvent.SelectQuickFilter -> setState { copy(quickFilter = event.filter) }
             is InvoicesEvent.SelectPage -> {
-                setState { copy(page = event.page, invoices = emptyList(), selected = emptySet(), search = "") }
-                refresh()
-                readOpenPage()
+                // The sidebar hides a senior-only row; the handler refuses it
+                // too, so no other path can open it for somebody else.
+                if (event.page.seniorOnly && !currentState.viewer.isSenior) return
+                awaitingSenior = null
+                showPage(event.page)
             }
+            is InvoicesEvent.OpenRoute -> openRoute(event.path)
             is InvoicesEvent.ConfirmDuplicate -> judgeDuplicate(event.flagId, confirmed = true)
             is InvoicesEvent.DismissDuplicate -> judgeDuplicate(event.flagId, confirmed = false)
             is InvoicesEvent.SelectRegisterChip -> setState { copy(registerChip = event.chip) }
             is InvoicesEvent.SelectRegisterDepartment -> setState { copy(registerDepartment = event.departmentId) }
+            is InvoicesEvent.SelectRegisterDate -> setState { copy(registerDate = event.window) }
+            is InvoicesEvent.ToggleGroupOpen -> setState {
+                copy(
+                    collapsedGroups = if (event.key in collapsedGroups) {
+                        collapsedGroups - event.key
+                    } else {
+                        collapsedGroups + event.key
+                    },
+                )
+            }
+            is InvoicesEvent.SelectGroup -> setState {
+                val all = selected.containsAll(event.ids)
+                copy(selected = if (all) selected - event.ids.toSet() else selected + event.ids)
+            }
+            is InvoicesEvent.MarkPaidOne -> payments.markPaidOne(event.invoice)
             is InvoicesEvent.SelectPostedFilter -> setState { copy(postedFilter = event.filter) }
             is InvoicesEvent.SelectCreditNoteFilter -> setState { copy(creditNoteFilter = event.filter) }
             is InvoicesEvent.SelectAccrualFilter -> setState { copy(accrualFilter = event.filter) }
             is InvoicesEvent.SelectPaymentTab -> setState { copy(paymentTab = event.tab, selected = emptySet()) }
-            InvoicesEvent.ToggleSelectAll -> payments.toggleSelectAll()
+            InvoicesEvent.ToggleSelectAll -> if (currentState.page == AccountantPage.Entry) {
+                // Select-all covers only what this reader may open, and nothing in a closed period.
+                val ids = currentState.entrySelectableIds.toSet()
+                setState { copy(selected = if (ids.isNotEmpty() && selected.containsAll(ids)) emptySet() else ids) }
+            } else {
+                payments.toggleSelectAll()
+            }
             is InvoicesEvent.ProcessSelected -> payments.processSelected(event.method)
             InvoicesEvent.CancelPaymentRun -> setState { copy(runDraft = null) }
-            is InvoicesEvent.ApproveRun -> payments.actOnRun(event.run, str(S.ah_run_approved_toast)) {
-                repository.approvePaymentRun(it)
-            }
-            is InvoicesEvent.StartRejectRun -> setState { copy(rejectRun = RunRejection(event.run)) }
+            is InvoicesEvent.OpenRun -> payments.openRun(event.run)
+            InvoicesEvent.CloseRun -> setState { copy(runDetail = null) }
+            is InvoicesEvent.ApproveRun -> payments.approveRun(event.run)
+            InvoicesEvent.RequestCancelRun -> payments.requestCancelRun()
+            InvoicesEvent.ConfirmCancelRun -> payments.confirmCancelRun()
+            InvoicesEvent.KeepRun -> setState { copy(runDetail = runDetail?.copy(confirmCancel = false)) }
+            is InvoicesEvent.StartRejectRun -> payments.startRejectRun(event.run)
             is InvoicesEvent.RejectRunReasonChanged -> setState {
                 copy(rejectRun = rejectRun?.copy(reason = event.reason))
             }
             InvoicesEvent.ConfirmRejectRun -> payments.confirmRejectRun()
             InvoicesEvent.CancelRejectRun -> setState { copy(rejectRun = null) }
-            is InvoicesEvent.DeleteRun -> payments.actOnRun(event.run, str(S.desktop_run_deleted)) {
-                repository.deletePaymentRun(it)
-            }
 
             is InvoicesEvent.PostInvoice -> actOn(
                 listOf(event.invoice),
@@ -183,32 +222,19 @@ class InvoicesViewModel(
             is InvoicesEvent.SelectEntryFilter -> setState { copy(entryFilter = event.filter, selected = emptySet()) }
             is InvoicesEvent.SelectEntrySort -> setState { copy(entrySort = event.sort) }
             is InvoicesEvent.SelectPayFilter -> setState { copy(payFilter = event.method, selected = emptySet()) }
-            InvoicesEvent.PostSelected -> actOn(
-                payments.selectedRows(),
-                str(S.ah_status_posted),
-            ) { repository.postInvoice(it.id) }
-            InvoicesEvent.ReviewSelected ->
-                actOn(payments.selectedRows(), str(S.desktop_sent_for_review)) { repository.markUnderReview(it.id) }
+            // Seniors are the reviewers, so the hand-off is not theirs (ZL-20450);
+            // a row in a closed period is never in the selection to begin with.
+            InvoicesEvent.ReviewSelected -> if (!currentState.viewer.isSenior) {
+                val rows = payments.selectedRows().filterNot { currentState.isLocked(it) }
+                actOn(rows, str(S.desktop_sent_for_review)) { repository.markUnderReview(it.id) }
+            }
 
             InvoicesEvent.StartAssign -> payments.startAssign()
             is InvoicesEvent.EditAssign -> setState { copy(assignFor = event.request) }
             InvoicesEvent.ConfirmAssign -> payments.confirmAssign()
             InvoicesEvent.CancelAssign -> setState { copy(assignFor = null) }
 
-            InvoicesEvent.StartSalesInvoice -> setState {
-                copy(salesDraft = SalesInvoiceDraft(currency = projectCurrency))
-            }
-            is InvoicesEvent.EditSalesInvoice -> setState { copy(salesDraft = event.draft) }
-            InvoicesEvent.ConfirmSalesInvoice -> payments.confirmSalesInvoice()
-            InvoicesEvent.CancelSalesInvoice -> setState { copy(salesDraft = null) }
-            is InvoicesEvent.SendSalesInvoice ->
-                payments.actOnSales(str(S.desktop_sent_to_the_client)) { repository.sendSalesInvoice(event.invoice.id) }
-            is InvoicesEvent.MarkSalesInvoicePaid ->
-                payments.actOnSales(str(S.desktop_marked_paid)) { repository.markSalesInvoicePaid(event.invoice.id) }
-            is InvoicesEvent.DeleteSalesInvoice ->
-                payments.actOnSales(str(S.drive_deleted_default)) { repository.deleteSalesInvoice(event.invoice.id) }
             InvoicesEvent.RegenerateAccruals -> regenerateAccruals()
-            is InvoicesEvent.ActOnCreditNote -> actOnCreditNote(event.note)
             is InvoicesEvent.SendToApproval -> sendToApproval(event.invoice)
             is InvoicesEvent.StartHold -> setState { copy(holdFor = HoldRequest(holdTargets(event.invoice))) }
             is InvoicesEvent.HoldReasonChanged -> setState { copy(holdFor = holdFor?.copy(reason = event.reason)) }
@@ -237,7 +263,9 @@ class InvoicesViewModel(
             InvoicesEvent.HideHistory -> setState { copy(detail = detail?.copy(historyOpen = false)) }
 
             is InvoicesEvent.Approve -> actions.approve(event.invoice)
-            InvoicesEvent.StartReject -> setState { copy(detail = detail?.copy(rejecting = true, rejectReason = "")) }
+            InvoicesEvent.StartReject -> setState {
+                copy(detail = detail?.takeIf { it.decisions }?.copy(rejecting = true, rejectReason = "") ?: detail)
+            }
             is InvoicesEvent.RejectReasonChanged -> setState {
                 copy(detail = detail?.copy(rejectReason = event.reason))
             }
@@ -246,8 +274,8 @@ class InvoicesViewModel(
             is InvoicesEvent.Override -> actions.override(event.invoice)
             is InvoicesEvent.OverrideAndPay -> actions.overrideAndPay(event.invoice)
             is InvoicesEvent.Chase -> actions.chase(event.invoice)
-            is InvoicesEvent.ToggleSelect -> setState {
-                copy(selected = if (event.id in selected) selected - event.id else selected + event.id)
+            is InvoicesEvent.ToggleSelect -> if (mayTick(event.id)) {
+                setState { copy(selected = if (event.id in selected) selected - event.id else selected + event.id) }
             }
             InvoicesEvent.ClearSelection -> setState { copy(selected = emptySet()) }
             InvoicesEvent.ApproveSelected -> actions.approveSelected()
@@ -256,14 +284,21 @@ class InvoicesViewModel(
             InvoicesEvent.ConfirmDelete -> actions.deleteConfirmed()
             InvoicesEvent.CancelDelete -> setState { copy(confirmDelete = null) }
 
-            InvoicesEvent.UploadInvoice -> forms.uploadInvoice()
-            is InvoicesEvent.ChooseUploadType -> setState { copy(upload = upload?.copy(type = event.type)) }
-            InvoicesEvent.SendUpload -> forms.sendUpload()
-            InvoicesEvent.CancelUpload -> setState { copy(upload = null) }
+            // The department sends documents; accounts codes them — the web's BulkUploadModal.
+            InvoicesEvent.UploadInvoice -> onEvent(InboxEvent.StartBulk(allowPaid = false))
 
-            InvoicesEvent.OpenEnter -> forms.openEnter()
-            InvoicesEvent.CloseEnter -> setState { copy(enter = null) }
-            is InvoicesEvent.SelectEnterTab -> setState { copy(enter = enter?.copy(tab = event.tab, error = null)) }
+            // Enter Invoice opens on its Upload tab, which is the bulk upload with Paid offered.
+            InvoicesEvent.OpenEnter -> {
+                forms.openEnter()
+                setState { copy(bulkPick = BulkPick(allowPaid = true)) }
+            }
+            InvoicesEvent.CloseEnter -> setState { copy(enter = null, bulkPick = null) }
+            is InvoicesEvent.SelectEnterTab -> setState {
+                copy(
+                    enter = enter?.copy(tab = event.tab, error = null),
+                    bulkPick = if (event.tab == EnterTab.Upload) bulkPick ?: BulkPick(allowPaid = true) else bulkPick,
+                )
+            }
             InvoicesEvent.EnterPickFile -> forms.enterPickFile()
             is InvoicesEvent.EnterChanged -> setState { copy(enter = event.form.copy(error = null)) }
             is InvoicesEvent.EnterNetChanged -> forms.netChanged(event.value)
@@ -275,6 +310,97 @@ class InvoicesViewModel(
         }
     }
 
+    /**
+     * Whether a row may join the selection: never one dated in a closed
+     * cost-report period, and on Invoice Entry never one the reader cannot
+     * open — select-all and a single tick hold the same line (ZL-20496).
+     */
+    private fun mayTick(id: String): Boolean {
+        val s = currentState
+        val row = s.invoices.firstOrNull { it.id == id } ?: return true
+        if (id in s.selected) return true
+        if (s.isLocked(row)) return false
+        return s.page != AccountantPage.Entry || s.canAccessEntry(row)
+    }
+
+    // -- routes --------------------------------------------------------------
+
+    private fun showPage(page: AccountantPage) {
+        setState {
+            copy(
+                page = page,
+                invoices = emptyList(),
+                selected = emptySet(),
+                search = "",
+                ledger = null,
+                inboxTab = InboxTab.Queue,
+                credit = credit.copy(form = null, preview = null, history = null, confirmDelete = null),
+            )
+        }
+        refresh()
+        readOpenPage()
+    }
+
+    private fun openRoute(path: String) {
+        if (!viewerResolved) {
+            pendingRoute = path
+            return
+        }
+        if (applyRoute(path)) {
+            refresh()
+            readOpenPage()
+        }
+    }
+
+    /**
+     * Puts the page a route names on screen, without loading it; true when
+     * the page changed.
+     *
+     * Only the accountant view has pages. A senior-only page is refused to
+     * anyone who is not senior — the web bounces `/settings` to Overview — but
+     * while seniority is still unknown the route is remembered rather than
+     * refused, because the settings document may yet confirm it.
+     */
+    private fun applyRoute(path: String): Boolean {
+        val s = currentState
+        if (!s.isAccountant) return false
+        val asked = AccountantPage.forRoute(path)
+        awaitingSenior = null
+        val page = when {
+            !asked.seniorOnly || s.viewer.isSenior -> asked
+            s.viewer.seniorFlag == null -> {
+                awaitingSenior = asked
+                AccountantPage.Overview
+            }
+            else -> AccountantPage.Overview
+        }
+        if (page == s.page) return false
+        setState { copy(page = page, invoices = emptyList(), selected = emptySet(), search = "") }
+        return true
+    }
+
+    /**
+     * Folds the settings document's rights into the viewer, then settles the
+     * page against them: a senior-only page the reader has just lost closes to
+     * Overview, and one a route was waiting on opens once it is confirmed.
+     */
+    private fun applySettings(settings: InvoiceSettings) {
+        setState {
+            copy(
+                viewer = viewer.withSettings(settings),
+                runAuth = settings.runAuthorisation,
+                hasRunAuthoriser = settings.hasRunAuthoriser,
+            )
+        }
+        val s = currentState
+        val waiting = awaitingSenior
+        awaitingSenior = null
+        when {
+            s.page.seniorOnly && !s.viewer.isSenior -> showPage(AccountantPage.Overview)
+            waiting != null && s.viewer.isSenior && s.page == AccountantPage.Overview -> showPage(waiting)
+        }
+    }
+
     // -- loading -------------------------------------------------------------
 
     /** True when [page] loaded itself, so the list read is skipped. */
@@ -283,9 +409,9 @@ class InvoicesViewModel(
             AccountantPage.Settings -> setup.load()
             AccountantPage.Overview -> loadOverview()
             AccountantPage.Analytics -> loadAnalytics()
-            AccountantPage.Credits -> loadCreditNotes()
+            AccountantPage.Credits -> credits.load()
             AccountantPage.Accruals -> loadAccruals()
-            AccountantPage.Sales -> payments.loadSalesInvoices()
+            AccountantPage.Sales -> sales.load()
             else -> return false
         }
         return true
@@ -299,8 +425,8 @@ class InvoicesViewModel(
                     // The spend rows name departments by id; the directory
                     // turns them into words, and an id nobody can resolve is
                     // shown as an em dash rather than printed raw.
-                    val named = result.data.departments
-                        .map { it.name.ifBlank { it.code } }
+                    val named = (result.data.departments.map { it.name.ifBlank { it.code } } +
+                        result.data.departmentSpend.map { it.name })
                         .filter { it.isNotBlank() }
                         .distinct()
                         .mapNotNull { id -> departmentName(id)?.let { id to it } }
@@ -361,43 +487,6 @@ class InvoicesViewModel(
             if (result is ZillitResult.Success) {
                 notice(str(S.desktop_accruals_recalculated))
                 loadAccruals()
-            }
-        }
-    }
-
-    private fun loadCreditNotes() {
-        setState { copy(loading = false, creditNotesLoading = true) }
-        launch {
-            when (val result = repository.creditNotes()) {
-                is ZillitResult.Success -> setState { copy(creditNotesLoading = false, creditNotes = result.data) }
-                is ZillitResult.Failure ->
-                    setState { copy(creditNotesLoading = false, error = result.error.localised()) }
-            }
-        }
-    }
-
-    /**
-     * The row's own button — the web's `STATUS_MAP.action`.
-     *
-     * A pending note is applied, a disputed one is resolved by disputing it
-     * again on the server's side; the rest only open, so nothing is sent.
-     */
-    private fun actOnCreditNote(note: CreditNote) {
-        if (!note.status.isActionable) return
-        setState { copy(busy = true) }
-        launch {
-            val result = when (note.status) {
-                CreditNoteStatus.Pending -> repository.applyCreditNote(note.id)
-                else -> repository.disputeCreditNote(note.id)
-            }
-            setState { copy(busy = false, error = (result as? ZillitResult.Failure)?.error?.localised()) }
-            if (result is ZillitResult.Success) {
-                notice(if (note.status == CreditNoteStatus.Pending) {
-                    str(S.desktop_credit_note_applied)
-                } else {
-                    str(S.desktop_dispute_raised)
-                })
-                loadCreditNotes()
             }
         }
     }
@@ -553,8 +642,8 @@ class InvoicesViewModel(
         launch {
             when (val r = repository.settings()) {
                 // Older backends have no settings; the buttons fall back to designation.
-                is ZillitResult.Failure -> Unit
-                is ZillitResult.Success -> setState { copy(viewer = viewer.withSettings(r.data)) }
+                is ZillitResult.Failure -> awaitingSenior = null
+                is ZillitResult.Success -> applySettings(r.data)
             }
         }
         launch {
@@ -571,28 +660,30 @@ class InvoicesViewModel(
             }
         }
         launch { (repository.bankAccounts() as? ZillitResult.Success)?.let { r -> setState { copy(banks = r.data) } } }
+        // Production Setup's companies and tax types, for the ledger's selects.
+        launch {
+            (repository.projectSettings() as? ZillitResult.Success)?.let { r ->
+                setState { copy(companies = r.data.companies, taxTypes = r.data.taxTypes, taxTypesKnown = true) }
+            }
+        }
+        // The close boundary: what it dates on or before is read-only everywhere.
+        launch {
+            (repository.periodLock() as? ZillitResult.Success)?.let { r -> setState { copy(periodLock = r.data) } }
+        }
     }
+
+    /** Re-reads the invoice open on the coding screen, after something changed it from outside. */
+    internal fun reloadLedger() = entry.reloadOpen()
 
     internal fun refresh() {
         val s = state.value
         // Three accountant pages are not invoice lists and fetch their own.
         if (s.isAccountant && loadOwnPage(s.page)) return
+        if (loadUploadsOnly(s)) return
         val token = ++loadToken
         setState { copy(loading = true) }
         launch {
-            val result = if (s.isAccountant) {
-                accountantRows(s.page)
-            } else {
-                when (s.departmentTab) {
-                    DepartmentTab.ApprovalQueue -> repository.approvalQueue()
-                    DepartmentTab.MyDepartment -> if (s.viewer.departmentId.isBlank()) {
-                        ZillitResult.Success(emptyList())
-                    } else {
-                        repository.list(InvoiceQuery(departmentId = s.viewer.departmentId))
-                    }
-                    DepartmentTab.MyInvoices -> repository.mine()
-                }
-            }
+            val result = if (s.isAccountant) accountantRows(s.page) else departmentRows(s)
             if (token != loadToken) return@launch
             when (result) {
                 is ZillitResult.Failure -> setState { copy(loading = false, error = result.error.localised()) }
@@ -617,6 +708,33 @@ class InvoicesViewModel(
         }
     }
 
+    /**
+     * Ongoing Uploads is batches, not invoices: the department's tab reads
+     * only those (true — nothing else to load); the Inbox's reads them beside
+     * its queue.
+     */
+    private fun loadUploadsOnly(s: InvoicesUiState): Boolean {
+        if (!s.isAccountant && s.departmentTab == DepartmentTab.Uploads) {
+            setState { copy(loading = false) }
+            inbox.loadUploads()
+            return true
+        }
+        if (s.isAccountant && s.page == AccountantPage.Inbox && s.inboxTab == InboxTab.Uploads) inbox.loadUploads()
+        return false
+    }
+
+    private suspend fun departmentRows(s: InvoicesUiState): ZillitResult<List<Invoice>> = when (s.departmentTab) {
+        DepartmentTab.ApprovalQueue -> repository.approvalQueue()
+        DepartmentTab.MyDepartment -> if (s.viewer.departmentId.isBlank()) {
+            ZillitResult.Success(emptyList())
+        } else {
+            repository.list(InvoiceQuery(departmentId = s.viewer.departmentId))
+        }
+        DepartmentTab.MyInvoices -> repository.mine()
+        // Read by loadUploadsOnly, as batches; never reaches here.
+        DepartmentTab.Uploads -> ZillitResult.Success(emptyList())
+    }
+
     private fun namesOfAssignees(rows: List<Invoice>): Map<String, String> =
         rows.map { it.assignedTo }.filter { it.isNotBlank() }.distinct()
             .mapNotNull { id -> resolveUser(id)?.let { id to it } }.toMap()
@@ -628,7 +746,10 @@ class InvoicesViewModel(
     // -- detail --------------------------------------------------------------
 
     internal fun openInvoice(invoice: Invoice) {
-        setState { copy(detail = InvoiceDetail(invoice = invoice, names = namesFor(invoice))) }
+        setState {
+            val register = isAccountant && page == AccountantPage.Register
+            copy(detail = InvoiceDetail(invoice = invoice, names = namesFor(invoice), decisions = !register))
+        }
         launch {
             when (val r = repository.invoice(invoice.id)) {
                 is ZillitResult.Failure -> setState {
@@ -754,6 +875,14 @@ class InvoicesViewModel(
 
     internal fun update(reducer: InvoicesUiState.() -> InvoicesUiState) = setState(reducer)
 
+    /** Puts names to user ids the screen is about to show — history actors, query authors. */
+    internal fun rememberNames(ids: Collection<String>) {
+        val known = state.value.userNames
+        val fresh = ids.filter { it.isNotBlank() && it !in known }.distinct()
+            .mapNotNull { id -> resolveUser(id)?.let { id to it } }
+        if (fresh.isNotEmpty()) setState { copy(userNames = userNames + fresh) }
+    }
+
     /** Puts a refusal in the page's own banner — every screen here shows errors that way. */
     internal fun fail(message: String) = setState { copy(error = message) }
 
@@ -765,9 +894,7 @@ class InvoicesViewModel(
      */
     internal fun reloadViewerRights() {
         launch {
-            (repository.settings() as? ZillitResult.Success)?.let { r ->
-                setState { copy(viewer = viewer.withSettings(r.data)) }
-            }
+            (repository.settings() as? ZillitResult.Success)?.let { r -> applySettings(r.data) }
         }
     }
 
@@ -781,8 +908,14 @@ class InvoicesViewModel(
 
     internal suspend fun upload(file: PickedInvoiceFile) = files.upload(file)
 
+    /** Every file the reader picks at once; empty when they cancel. */
+    internal suspend fun pickMany(): List<PickedInvoiceFile> = files.pick()
+
     /** The signed fetch of a stored file — the detail dialog's and the review overlay's. */
     internal suspend fun fetchAttachment(attachment: InvoiceAttachment) = files.fetch(attachment)
+
+    /** Saves a fetched file to Downloads and opens it — a credit note's attachments. */
+    internal suspend fun saveAndOpen(name: String, bytes: ByteArray) = files.saveAndOpen(name, bytes)
 
     internal val repo: InvoicesRepository get() = repository
 
@@ -793,15 +926,6 @@ class InvoicesViewModel(
         val exact = vendors.firstOrNull { it.name.trim().lowercase() == needle }
         return (exact ?: vendors.firstOrNull { it.name.lowercase().contains(needle) })?.id
     }
-
-    internal fun departmentUpload(flow: UploadFlow): DepartmentUpload = DepartmentUpload(
-        type = flow.type ?: error("type chosen"),
-        fileName = flow.file.name,
-        attachment = flow.attachment,
-        extraction = flow.extraction,
-        departmentId = state.value.viewer.departmentId.ifBlank { null },
-        projectCurrency = state.value.projectCurrency,
-    )
 
     internal fun entered(form: EnterInvoiceForm): EnteredInvoice? {
         val attachment = form.attachment ?: return null
@@ -821,10 +945,11 @@ class InvoicesViewModel(
             netAmount = form.netValue,
             taxAmount = form.taxValue,
             bankId = form.bankId.ifBlank { null },
+            companyId = form.companyId.ifBlank { null },
+            paid = form.paid,
             episode = form.episode.trim().ifBlank { null },
             departmentId = form.departmentId.ifBlank { null },
             poNumber = form.poNumber.trim().ifBlank { null },
-            uploadId = form.extraction?.uploadId?.ifBlank { null },
         )
     }
 

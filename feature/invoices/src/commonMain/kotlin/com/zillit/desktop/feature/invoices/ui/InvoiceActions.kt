@@ -3,9 +3,7 @@ package com.zillit.desktop.feature.invoices.ui
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.feature.invoices.domain.ApprovalChain
-import com.zillit.desktop.feature.invoices.domain.ApprovalStatus
 import com.zillit.desktop.feature.invoices.domain.Invoice
-import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
@@ -17,6 +15,8 @@ import com.zillit.desktop.core.strings.str
 internal class InvoiceActions(private val vm: InvoicesViewModel) {
 
     fun approve(invoice: Invoice) {
+        // A row dated in a closed cost-report period loses its mutating actions.
+        if (vm.state.value.isLocked(invoice) || readOnlyDetail(invoice)) return
         val tiers = vm.tiersFor(invoice)
         val next = ApprovalChain.nextTier(tiers, invoice.approvals) ?: 1
         val total = ApprovalChain.totalTiers(tiers).coerceAtLeast(1)
@@ -42,6 +42,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
 
     fun reject() {
         val d = vm.state.value.detail ?: return
+        if (vm.state.value.isLocked(d.invoice) || !d.decisions) return
         val reason = d.rejectReason.trim()
         if (reason.isEmpty()) {
             vm.update { copy(error = str(S.desktop_rejection_reason_required)) }
@@ -65,31 +66,36 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
         }
     }
 
-    /** Skip the chain: `override` first (the audit trail), then `approved`. */
-    fun override(invoice: Invoice) {
+    /**
+     * Skip the rest of the chain — `POST /:id/override`, one call.
+     *
+     * This used to be two PATCHes (`override`, then `approved`), which walked
+     * past the server's own gate (`override_permission_required`,
+     * `cannot_override_held_invoice`, `cannot_override_paid_invoice`), its
+     * bell fan-out and its auto-assignment: all three hang off this route, not
+     * off a status write (`invoices.js` `override`, `ApprovalPage.jsx`).
+     */
+    fun override(invoice: Invoice) = overrideWith(invoice, str(S.desktop_inv_approval_chain_overridden))
+
+    /**
+     * Override & Pay on an override or urgent row — the same route. The web
+     * sends all three override paths through it, so an invoice reaches a
+     * payable state one way, the checked way.
+     */
+    fun overrideAndPay(invoice: Invoice) = overrideWith(invoice, str(S.desktop_inv_approved_for_payment))
+
+    private fun overrideWith(invoice: Invoice, success: String) {
+        // The button is shown only with override rights; the handler holds
+        // the same line, so no other path reaches the write without them.
+        val s = vm.state.value
+        if (!s.viewer.canOverride || s.isLocked(invoice) || readOnlyDetail(invoice)) return
         vm.update { copy(busy = true, detail = detail?.copy(acting = true)) }
-        vm.run {
-            val first = vm.repo.patchStatus(invoice.id, InvoiceStatus.Override, ApprovalStatus.Approved)
-            val outcome = when (first) {
-                is ZillitResult.Failure -> first
-                is ZillitResult.Success -> vm.repo.patchStatus(
-                    invoice.id,
-                    InvoiceStatus.Approved,
-                    ApprovalStatus.Approved,
-                )
-            }
-            finish(outcome, invoice.id, str(S.desktop_inv_approval_chain_overridden))
-        }
+        vm.run { finish(vm.repo.override(invoice.id), invoice.id, success) }
     }
 
-    /** Release an override / urgent row: one PATCH straight to approved. */
-    fun overrideAndPay(invoice: Invoice) {
-        vm.update { copy(busy = true, detail = detail?.copy(acting = true)) }
-        vm.run {
-            val outcome = vm.repo.patchStatus(invoice.id, InvoiceStatus.Approved, ApprovalStatus.Approved)
-            finish(outcome, invoice.id, str(S.desktop_inv_approved_for_payment))
-        }
-    }
+    /** The Register's detail is read-only: no decision leaves it, whatever sent the event. */
+    private fun readOnlyDetail(invoice: Invoice): Boolean =
+        vm.state.value.detail?.takeIf { it.invoice.id == invoice.id }?.decisions == false
 
     fun chase(invoice: Invoice) {
         vm.run {
@@ -107,7 +113,7 @@ internal class InvoiceActions(private val vm: InvoicesViewModel) {
     fun approveSelected() {
         val s = vm.state.value
         val rows = s.shownInvoices.filter {
-            it.id in s.selected && ApprovalChain.canApprove(it, vm.tiersFor(it), s.viewer.userId)
+            it.id in s.selected && !s.isLocked(it) && ApprovalChain.canApprove(it, vm.tiersFor(it), s.viewer.userId)
         }
         if (rows.isEmpty()) {
             vm.update { copy(error = str(S.desktop_inv_none_selected_waiting_on_you)) }

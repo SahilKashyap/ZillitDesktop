@@ -3,7 +3,13 @@ package com.zillit.desktop.feature.invoices
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.unit.Density
+import java.io.File
+import kotlin.test.assertEquals
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.invoices.domain.ActivityRow
@@ -172,6 +178,51 @@ class InvoicesScreenRenderTest {
             onNodeWithText("Alert Preferences").assertExists()
             onNodeWithText("Run Authorization").assertExists()
             onNodeWithText("Auto-Assignment Rules").assertExists()
+        }
+    }
+
+    /**
+     * Inside the Account Hub this module is shown full-bleed, without the
+     * hub's sidebar — so the back chip on its own sidebar is the way out.
+     */
+    @Test
+    fun `the sidebar's back chip leaves the module`() {
+        var backs = 0
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    InvoicesScreen(state = dashboard(), onEvent = {}, nowMs = NOW, onBack = { backs++ })
+                }
+            }
+            onNodeWithContentDescription("Back to Account Hub").performClick()
+            // The web's title card, and the headed groups under it.
+            onNodeWithText("Invoices").assertExists()
+            onNodeWithText("RECEIVE & MATCH").assertExists()
+        }
+        assertEquals(1, backs)
+    }
+
+    /**
+     * Opt-in pictures of the shell for eyeballing: `INVOICES_SHOTS=<dir>`.
+     * The pane is the width the hub gives a full-bleed tool.
+     */
+    @Test
+    fun `shell screenshots when asked for`() {
+        val dir = System.getenv("INVOICES_SHOTS")?.takeIf { it.isNotBlank() } ?: return
+        listOf(false, true).forEach { dark ->
+            val scene = ImageComposeScene(width = 2560, height = 1500, density = Density(2f)) {
+                ZillitTheme(darkTheme = dark, animateThemeChange = false) {
+                    InvoicesScreen(
+                        state = dashboard().copy(unread = mapOf("invoice_inbox" to 3, "payment_runs" to 12)),
+                        onEvent = {},
+                        nowMs = NOW,
+                    )
+                }
+            }
+            repeat(3) { scene.render(it * 500_000_000L) }
+            val image = scene.render(2_000_000_000L)
+            File(dir, "invoices-shell-${if (dark) "dark" else "light"}.png").writeBytes(image.encodeToData()!!.bytes)
+            scene.close()
         }
     }
 

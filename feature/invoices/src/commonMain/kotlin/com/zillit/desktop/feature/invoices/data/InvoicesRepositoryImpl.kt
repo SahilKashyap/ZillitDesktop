@@ -12,19 +12,24 @@ import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
 import com.zillit.desktop.core.socket.SocketEventBus
 import com.zillit.desktop.feature.invoices.domain.Accrual
-import com.zillit.desktop.feature.invoices.domain.ApprovalStatus
 import com.zillit.desktop.feature.invoices.domain.ApprovalTierConfig
 import com.zillit.desktop.feature.invoices.domain.BankAccount
 import com.zillit.desktop.feature.invoices.domain.CreditNote
-import com.zillit.desktop.feature.invoices.domain.DepartmentUpload
+import com.zillit.desktop.feature.invoices.domain.CreditNoteWrite
 import com.zillit.desktop.feature.invoices.domain.DuplicateFlag
 import com.zillit.desktop.feature.invoices.domain.EnteredInvoice
+import com.zillit.desktop.feature.invoices.domain.EntryWrite
+import com.zillit.desktop.feature.invoices.domain.InvoiceProjectSettings
+import com.zillit.desktop.feature.invoices.domain.PeriodLock
+import com.zillit.desktop.feature.invoices.domain.QueryThread
+import com.zillit.desktop.feature.invoices.domain.QuickEntry
 import com.zillit.desktop.feature.invoices.domain.HistoryEntry
 import com.zillit.desktop.feature.invoices.domain.HoldReason
+import com.zillit.desktop.feature.invoices.domain.InboxAccept
+import com.zillit.desktop.feature.invoices.domain.ServerBatch
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceAnalytics
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
-import com.zillit.desktop.feature.invoices.domain.InvoiceExtraction
 import com.zillit.desktop.feature.invoices.domain.InvoiceOverview
 import com.zillit.desktop.feature.invoices.domain.InvoiceQuery
 import com.zillit.desktop.feature.invoices.domain.InvoiceRefresh
@@ -41,8 +46,12 @@ import com.zillit.desktop.feature.invoices.domain.PoSuggestion
 import com.zillit.desktop.feature.invoices.domain.PoSuggestions
 import com.zillit.desktop.feature.invoices.domain.RunAuthLevel
 import com.zillit.desktop.feature.invoices.domain.PaymentRun
+import com.zillit.desktop.feature.invoices.domain.PaymentRunDetail
 import com.zillit.desktop.feature.invoices.domain.SalesInvoice
+import com.zillit.desktop.feature.invoices.domain.SalesInvoiceWrite
 import com.zillit.desktop.feature.invoices.domain.Vendor
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.mapNotNull
@@ -50,6 +59,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlin.time.Clock
 
 /**
  * `api/v2/invoices` on the invoices service, plus the three Account Hub reads
@@ -69,6 +79,10 @@ class InvoicesRepositoryImpl(
 
     private val base = config.apiV2(ZillitService.Invoices).trimEnd('/') + "/invoices"
     private val hub = config.apiV2(ZillitService.AccountHub).trimEnd('/') + "/"
+    private val queries = "${hub}account-hub/queries"
+
+    /** The cost report's close boundary — the lock route on the cost-report service. */
+    private val lockUrl = config.apiV2(ZillitService.CostReport).trimEnd('/') + "/cost-reports/lock-period"
 
     /**
      * See [InvoicesRepository.refreshes]. Another production's frame is
@@ -110,20 +124,8 @@ class InvoicesRepositoryImpl(
         }
     }
 
-    override suspend fun createFromUpload(upload: DepartmentUpload): ZillitResult<Invoice?> =
-        mutate(HttpVerb.Post, base, departmentUploadBody(upload)).mapData { parseInvoice(it as? JsonObject) }
-
     override suspend fun createEntered(entered: EnteredInvoice): ZillitResult<Invoice?> =
         mutate(HttpVerb.Post, base, enteredInvoiceBody(entered)).mapData { parseInvoice(it as? JsonObject) }
-
-    override suspend fun patchStatus(
-        id: String,
-        status: InvoiceStatus,
-        approvalStatus: ApprovalStatus,
-    ): ZillitResult<Invoice?> =
-        mutate(HttpVerb.Patch, "$base/$id", statusPatchBody(status, approvalStatus)).mapData {
-            parseInvoice(it as? JsonObject)
-        }
 
     override suspend fun delete(id: String): ZillitResult<Unit> = mutate(HttpVerb.Delete, "$base/$id", null).unit()
 
@@ -141,12 +143,6 @@ class InvoicesRepositoryImpl(
     override suspend fun history(id: String): ZillitResult<List<HistoryEntry>> = get("$base/$id/history").mapData(
         ::parseHistory,
     )
-
-    override suspend fun extract(attachment: InvoiceAttachment): ZillitResult<InvoiceExtraction> = mutate(
-        HttpVerb.Post,
-        "$base/upload",
-        buildJsonObject { put("attachment", attachmentWire(attachment)) },
-    ).mapData(::parseExtraction)
 
     override suspend fun settings(): ZillitResult<InvoiceSettings> = get("$base/settings").mapData(::parseSettings)
 
@@ -205,7 +201,8 @@ class InvoicesRepositoryImpl(
         HttpVerb.Post,
         "$base/$id/hold",
         buildJsonObject {
-            put("holdReason", JsonPrimitive(reason.label))
+            // The fixed English value, never the translated label.
+            put("holdReason", JsonPrimitive(reason.wire))
             put("notes", JsonPrimitive(notes.trim()))
         },
     ).unit()
@@ -213,8 +210,9 @@ class InvoicesRepositoryImpl(
     override suspend fun release(id: String): ZillitResult<Unit> =
         mutate(HttpVerb.Post, "$base/$id/release", null).unit()
 
+    /** No payload: the server derives everything from the URL and the caller (`invoices.js`). */
     override suspend fun override(id: String): ZillitResult<Unit> =
-        mutate(HttpVerb.Post, "$base/$id/override", null).unit()
+        mutate(HttpVerb.Post, "$base/$id/override", buildJsonObject {}).unit()
 
     override suspend fun unmatch(id: String): ZillitResult<Unit> =
         mutate(HttpVerb.Post, "$base/$id/unmatch", null).unit()
@@ -237,6 +235,18 @@ class InvoicesRepositoryImpl(
 
     override suspend fun disputeCreditNote(id: String): ZillitResult<Unit> =
         mutate(HttpVerb.Post, "$base/credit-notes/$id/dispute", null).unit()
+
+    override suspend fun createCreditNote(write: CreditNoteWrite): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/credit-notes", creditNoteBody(write)).unit()
+
+    override suspend fun updateCreditNote(id: String, write: CreditNoteWrite): ZillitResult<Unit> =
+        mutate(HttpVerb.Patch, "$base/credit-notes/$id", creditNoteBody(write)).unit()
+
+    override suspend fun deleteCreditNote(id: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Delete, "$base/credit-notes/$id", null).unit()
+
+    override suspend fun creditNoteHistory(id: String): ZillitResult<List<HistoryEntry>> =
+        get("$base/credit-notes/$id/history").mapData(::parseHistory)
 
     override suspend fun analytics(): ZillitResult<InvoiceAnalytics> =
         get("$base/analytics").mapData(::parseAnalytics)
@@ -269,8 +279,11 @@ class InvoicesRepositoryImpl(
     ): ZillitResult<Unit> =
         mutate(HttpVerb.Post, "$base/active-runs", runBody(name, number, payMethod, invoiceIds)).unit()
 
-    override suspend fun approvePaymentRun(id: String): ZillitResult<Unit> =
-        mutate(HttpVerb.Post, "$base/active-runs/$id/approve", buildJsonObject {}).unit()
+    override suspend fun paymentRun(id: String): ZillitResult<PaymentRunDetail> =
+        get("$base/active-runs/$id").mapData(::parseRunDetail)
+
+    override suspend fun approvePaymentRun(id: String, tierNumber: Int, totalTiers: Int): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/active-runs/$id/approve", runApproveBody(tierNumber, totalTiers)).unit()
 
     override suspend fun rejectPaymentRun(id: String, reason: String): ZillitResult<Unit> = mutate(
         HttpVerb.Post,
@@ -289,7 +302,7 @@ class InvoicesRepositoryImpl(
     override suspend fun salesInvoices(): ZillitResult<List<SalesInvoice>> =
         get("$base/sales-invoices", mapOf("per_page" to SALES_PAGE)).mapData(::parseSalesInvoices)
 
-    override suspend fun createSalesInvoice(invoice: SalesInvoice): ZillitResult<Unit> =
+    override suspend fun createSalesInvoice(invoice: SalesInvoiceWrite): ZillitResult<Unit> =
         mutate(HttpVerb.Post, "$base/sales-invoices", salesInvoiceBody(invoice)).unit()
 
     override suspend fun sendSalesInvoice(id: String): ZillitResult<Unit> =
@@ -309,8 +322,87 @@ class InvoicesRepositoryImpl(
     override suspend fun returnToApproval(id: String): ZillitResult<Unit> =
         mutate(HttpVerb.Post, "$base/$id/return-to-approval", null).unit()
 
+    /** The web's bulk Submit for Review sends when it happened, too. */
     override suspend fun markUnderReview(id: String): ZillitResult<Unit> =
-        mutate(HttpVerb.Patch, "$base/$id", buildJsonObject { put("status", JsonPrimitive("under_review")) }).unit()
+        mutate(HttpVerb.Patch, "$base/$id", underReviewBody(Clock.System.now().toEpochMilliseconds())).unit()
+
+    // -- the ledger view -----------------------------------------------------
+
+    override suspend fun saveEntry(id: String, write: EntryWrite): ZillitResult<Unit> = mutate(
+        HttpVerb.Patch,
+        "$base/$id",
+        entryUpdateBody(
+            header = write.header,
+            lines = write.lines,
+            tax = write.taxLine,
+            taxAmount = write.taxAmount,
+            savedLinesJson = write.savedLinesJson,
+            chart = write.chart,
+            status = write.status,
+        ),
+    ).unit()
+
+    override suspend fun quickEntry(entry: QuickEntry): ZillitResult<Unit> = mutate(
+        HttpVerb.Post,
+        base,
+        quickEntryBody(entry),
+    ).unit()
+
+    override suspend fun projectSettings(): ZillitResult<InvoiceProjectSettings> =
+        get("${hub}account-hub/project-settings").mapData(::parseProjectSettings)
+
+    /**
+     * Two readings of one row, as the web's `useCrLock` takes them: the lock
+     * route and the settings document. The later date wins because the lock
+     * only moves forward; the settings reading stands in when the route fails.
+     */
+    override suspend fun periodLock(): ZillitResult<PeriodLock> = coroutineScope {
+        val route = async { get(lockUrl).mapData(::parsePeriodLock) }
+        val settings = async { projectSettings() }
+        val answered = route.await()
+        val merged = PeriodLock.later(
+            (answered as? ZillitResult.Success)?.data,
+            (settings.await() as? ZillitResult.Success)?.data?.lock,
+        )
+        when {
+            merged != null -> ZillitResult.Success(merged)
+            answered is ZillitResult.Failure -> answered
+            else -> ZillitResult.Success(PeriodLock())
+        }
+    }
+
+    override suspend fun chartCodes(): ZillitResult<Set<String>> =
+        get("${hub}account-hub/chart-of-accounts", mapOf("active_only" to "true")).mapData(::parseChartCodes)
+
+    // -- the inbox --------------------------------------------------------------
+
+    override suspend fun process(ids: List<String>, accept: InboxAccept?): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/process", processBody(ids, accept)).unit()
+
+    override suspend fun matchNote(id: String, poId: String, note: String): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/$id/match", matchNoteBody(poId, note)).unit()
+
+    override suspend fun bulkUpload(
+        batchId: String,
+        attachment: InvoiceAttachment,
+        size: Long,
+        paid: Boolean,
+    ): ZillitResult<Unit> =
+        mutate(HttpVerb.Post, "$base/bulk-upload", bulkUploadBody(batchId, attachment, size, paid)).unit()
+
+    override suspend fun bulkBatches(): ZillitResult<List<ServerBatch>> =
+        get("$base/bulk-upload/batches").mapData(::parseBulkBatches)
+
+    // -- queries ---------------------------------------------------------------
+
+    override suspend fun queryThread(invoiceId: String): ZillitResult<QueryThread> =
+        get("$queries/entity/$QUERY_ENTITY/$invoiceId").mapData(::parseQueryThread)
+
+    override suspend fun openQuery(invoiceId: String, text: String): ZillitResult<QueryThread> =
+        mutate(HttpVerb.Post, queries, queryOpenBody(invoiceId, text)).mapData(::parseQueryThread)
+
+    override suspend fun addQuery(threadId: String, text: String): ZillitResult<QueryThread> =
+        mutate(HttpVerb.Post, "$queries/$threadId/add", queryAddBody(text)).mapData(::parseQueryThread)
 
     override suspend fun assign(id: String, userId: String, reason: String): ZillitResult<Unit> = mutate(
         HttpVerb.Patch,

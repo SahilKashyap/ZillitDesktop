@@ -6,20 +6,16 @@ import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.socket.SocketEventName
 import com.zillit.desktop.feature.invoices.data.InvoiceSyncEnvelope
 import com.zillit.desktop.feature.invoices.data.invoiceRefreshFor
-import com.zillit.desktop.feature.invoices.domain.ApprovalStatus
 import com.zillit.desktop.feature.invoices.domain.ApprovalTierConfig
 import com.zillit.desktop.feature.invoices.domain.BankAccount
-import com.zillit.desktop.feature.invoices.domain.DepartmentUpload
 import com.zillit.desktop.feature.invoices.domain.EnteredInvoice
 import com.zillit.desktop.feature.invoices.domain.HistoryEntry
 import com.zillit.desktop.feature.invoices.domain.Invoice
 import com.zillit.desktop.feature.invoices.domain.InvoiceAttachment
-import com.zillit.desktop.feature.invoices.domain.InvoiceExtraction
 import com.zillit.desktop.feature.invoices.domain.InvoiceFiles
 import com.zillit.desktop.feature.invoices.domain.InvoiceQuery
 import com.zillit.desktop.feature.invoices.domain.InvoiceRefresh
 import com.zillit.desktop.feature.invoices.domain.InvoiceSettings
-import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.InvoiceViewer
 import com.zillit.desktop.feature.invoices.domain.InvoicesRepository
 import com.zillit.desktop.feature.invoices.domain.PickedInvoiceFile
@@ -159,20 +155,13 @@ class InvoicesSyncTest {
         }
 
         override suspend fun invoice(id: String): ZillitResult<Invoice> = unsupported()
-        override suspend fun createFromUpload(upload: DepartmentUpload): ZillitResult<Invoice?> = unsupported()
         override suspend fun createEntered(entered: EnteredInvoice): ZillitResult<Invoice?> = unsupported()
-        override suspend fun patchStatus(
-            id: String,
-            status: InvoiceStatus,
-            approvalStatus: ApprovalStatus,
-        ): ZillitResult<Invoice?> = unsupported()
         override suspend fun delete(id: String): ZillitResult<Unit> = unsupported()
         override suspend fun approve(id: String, tierNumber: Int, totalTiers: Int): ZillitResult<Invoice?> =
             unsupported()
         override suspend fun reject(id: String, reason: String): ZillitResult<Invoice?> = unsupported()
         override suspend fun chase(id: String): ZillitResult<Unit> = unsupported()
         override suspend fun history(id: String): ZillitResult<List<HistoryEntry>> = ZillitResult.Success(emptyList())
-        override suspend fun extract(attachment: InvoiceAttachment): ZillitResult<InvoiceExtraction> = unsupported()
         override suspend fun settings(): ZillitResult<InvoiceSettings> = ZillitResult.Success(InvoiceSettings())
         override suspend fun vendors(): ZillitResult<List<Vendor>> = ZillitResult.Success(emptyList())
         override suspend fun bankAccounts(): ZillitResult<List<BankAccount>> = ZillitResult.Success(emptyList())

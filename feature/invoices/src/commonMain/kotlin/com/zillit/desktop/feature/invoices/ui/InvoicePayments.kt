@@ -4,16 +4,16 @@ import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.feature.invoices.domain.Invoice
+import com.zillit.desktop.feature.invoices.domain.InvoiceStatus
 import com.zillit.desktop.feature.invoices.domain.PayMethod
 import com.zillit.desktop.feature.invoices.domain.PaymentRun
 import com.zillit.desktop.feature.invoices.domain.PaymentRuns
-import com.zillit.desktop.feature.invoices.domain.SalesInvoice
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
 /**
- * Paying, billing and handing on — the Payment Runs, Sales Invoices and
- * Invoice Entry mutations, split out of the ViewModel so it stays a router.
+ * Paying and handing on — the Payment Runs and assignment mutations, split
+ * out of the ViewModel so it stays a router.
  *
  * They share one shape: the server owns the transition, so every one of them
  * reloads what it changed rather than editing the list in place.
@@ -24,16 +24,6 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
     fun loadPaymentRuns() {
         vm.run {
             vm.repo.paymentRuns().getOrNull()?.let { runs -> vm.update { copy(paymentRuns = runs) } }
-        }
-    }
-
-    fun loadSalesInvoices() {
-        vm.update { copy(loading = false) }
-        vm.run {
-            when (val result = vm.repo.salesInvoices()) {
-                is ZillitResult.Success -> vm.update { copy(salesInvoices = result.data) }
-                is ZillitResult.Failure -> vm.update { copy(error = result.error.localised()) }
-            }
         }
     }
 
@@ -51,6 +41,8 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
      * button would have to guess which.
      */
     fun processSelected(method: PayMethod?) {
+        // The buttons are disabled without run access; so is the handler.
+        if (!vm.state.value.viewer.canOperateRuns) return
         val rows = vm.state.value.selectedPaymentRows
         if (rows.isEmpty()) {
             vm.update { copy(error = str(S.desktop_inv_tick_to_pay_first)) }
@@ -115,6 +107,14 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
         }
     }
 
+    /** The Wires tab's own row button: one wire or faster payment, settled at the bank. */
+    fun markPaidOne(invoice: Invoice) {
+        val state = vm.state.value
+        if (!state.viewer.canOperateRuns || state.busy) return
+        if (invoice.payMethod !in PaymentRuns.WIRE_METHODS || invoice.status != InvoiceStatus.ReadyToPay) return
+        markPaid(listOf(invoice.id))
+    }
+
     fun markPaid(ids: List<String>) {
         if (ids.isEmpty()) return
         vm.update { copy(busy = true, runDraft = runDraft?.copy(busy = PayMethod.Wire)) }
@@ -135,6 +135,71 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
         }
     }
 
+    // -- one run ------------------------------------------------------------
+
+    /** Opens a run's detail — `GET /active-runs/:id`, with the row shown until it answers. */
+    fun openRun(run: PaymentRun) {
+        vm.update { copy(runDetail = RunDetailView(run = run)) }
+        reloadRun(run.id)
+    }
+
+    private fun reloadRun(id: String) {
+        vm.run {
+            val result = vm.repo.paymentRun(id)
+            vm.update {
+                val open = runDetail?.takeIf { it.run.id == id } ?: return@update this
+                when (result) {
+                    is ZillitResult.Success -> copy(runDetail = open.copy(detail = result.data, loading = false))
+                    is ZillitResult.Failure -> copy(
+                        runDetail = open.copy(loading = false),
+                        error = result.error.localised(),
+                    )
+                }
+            }
+        }
+    }
+
+    /** The freshest copy of [run]: the open detail's when it is the same run. */
+    private fun latest(run: PaymentRun): PaymentRun =
+        vm.state.value.runDetail?.shown?.takeIf { it.id == run.id } ?: run
+
+    /**
+     * Signs the next tier — `{tier_number, total_tiers}`, as the web sends.
+     *
+     * Refused here, not only hidden: the tier comes from the run's own chain,
+     * so a reader who is not on the next tier, or who has signed an earlier
+     * one (separation of duties), or a run no longer pending, gets nothing.
+     */
+    fun approveRun(run: PaymentRun) {
+        val current = latest(run)
+        val decision = vm.state.value.runApproval(current)
+        val tier = decision.nextTier
+        if (!decision.canApprove || tier == null || vm.state.value.busy) return
+        vm.update { copy(busy = true, runDetail = runDetail?.copy(busy = true)) }
+        vm.run {
+            val result = vm.repo.approvePaymentRun(current.id, tier, decision.totalTiers)
+            vm.update {
+                copy(
+                    busy = false,
+                    runDetail = runDetail?.copy(busy = false),
+                    error = (result as? ZillitResult.Failure)?.error?.localised(),
+                )
+            }
+            if (result is ZillitResult.Success) {
+                vm.notice(str(S.ah_run_approved_toast))
+                // The web re-reads the run, so the next tier's signer sees it move on.
+                reloadRun(current.id)
+                loadPaymentRuns()
+            }
+        }
+    }
+
+    /** Rejecting sits beside Approve, so it answers to the same chain. */
+    fun startRejectRun(run: PaymentRun) {
+        if (!vm.state.value.runApproval(latest(run)).canApprove) return
+        vm.update { copy(rejectRun = RunRejection(latest(run))) }
+    }
+
     fun confirmRejectRun() {
         val request = vm.state.value.rejectRun ?: return
         if (!request.isReady || request.busy) return
@@ -142,8 +207,11 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
         vm.run {
             val result = vm.repo.rejectPaymentRun(request.run.id, request.reason)
             vm.update {
+                val landed = result is ZillitResult.Success
                 copy(
-                    rejectRun = if (result is ZillitResult.Success) null else rejectRun?.copy(busy = false),
+                    rejectRun = if (landed) null else rejectRun?.copy(busy = false),
+                    // The web closes the run once it is turned down.
+                    runDetail = if (landed) runDetail?.takeIf { it.run.id != request.run.id } else runDetail,
                     error = (result as? ZillitResult.Failure)?.error?.localised(),
                 )
             }
@@ -155,57 +223,33 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
         }
     }
 
-    fun actOnRun(run: PaymentRun, done: String, action: suspend (String) -> ZillitResult<Unit>) {
-        if (vm.state.value.busy) return
-        vm.update { copy(busy = true) }
-        vm.run {
-            val result = action(run.id)
-            vm.update { copy(busy = false, error = (result as? ZillitResult.Failure)?.error?.localised()) }
-            if (result is ZillitResult.Success) {
-                vm.notice(done)
-                loadPaymentRuns()
-            }
-        }
+    /** "Cancel run" asks first; only someone who may operate runs is offered it. */
+    fun requestCancelRun() {
+        if (!vm.state.value.viewer.canOperateRuns) return
+        vm.update { copy(runDetail = runDetail?.copy(confirmCancel = true)) }
     }
 
-    fun confirmSalesInvoice() {
-        val draft = vm.state.value.salesDraft ?: return
-        if (!draft.isReady || draft.busy) return
-        vm.update { copy(salesDraft = salesDraft?.copy(busy = true)) }
+    /** Cancelling deletes the run; its invoices go back to open items. */
+    fun confirmCancelRun() {
+        val open = vm.state.value.runDetail ?: return
+        if (!vm.state.value.viewer.canOperateRuns || open.busy) return
+        vm.update { copy(runDetail = runDetail?.copy(busy = true)) }
         vm.run {
-            val result = vm.repo.createSalesInvoice(
-                SalesInvoice(
-                    id = "",
-                    reference = draft.reference,
-                    clientName = draft.clientName,
-                    description = draft.description,
-                    grossAmount = draft.amountValue ?: 0.0,
-                    currency = draft.currency.ifBlank { vm.state.value.projectCurrency },
-                    dueDateMs = draft.dueDateMs,
-                ),
-            )
+            val result = vm.repo.deletePaymentRun(open.run.id)
             vm.update {
                 copy(
-                    salesDraft = if (result is ZillitResult.Success) null else salesDraft?.copy(busy = false),
+                    runDetail = if (result is ZillitResult.Success) {
+                        null
+                    } else {
+                        runDetail?.copy(busy = false, confirmCancel = false)
+                    },
                     error = (result as? ZillitResult.Failure)?.error?.localised(),
                 )
             }
             if (result is ZillitResult.Success) {
-                vm.notice(str(S.desktop_inv_sales_invoice_raised))
-                loadSalesInvoices()
-            }
-        }
-    }
-
-    fun actOnSales(done: String, action: suspend () -> ZillitResult<Unit>) {
-        if (vm.state.value.busy) return
-        vm.update { copy(busy = true) }
-        vm.run {
-            val result = action()
-            vm.update { copy(busy = false, error = (result as? ZillitResult.Failure)?.error?.localised()) }
-            if (result is ZillitResult.Success) {
-                vm.notice(done)
-                loadSalesInvoices()
+                vm.notice(str(S.desktop_run_deleted))
+                loadPaymentRuns()
+                vm.refresh()
             }
         }
     }
@@ -250,6 +294,8 @@ internal class InvoicePayments(private val vm: InvoicesViewModel) {
             if (failure == null) {
                 vm.notice(str(S.desktop_inv_assigned_n, request.invoiceIds.size))
                 vm.refresh()
+                // Assigned from the coding screen: its new owner shows there too.
+                vm.reloadLedger()
             }
         }
     }

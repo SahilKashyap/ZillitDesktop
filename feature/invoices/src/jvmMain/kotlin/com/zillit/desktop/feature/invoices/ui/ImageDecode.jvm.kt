@@ -15,6 +15,13 @@ actual fun decodePreviewPages(bytes: ByteArray): List<ImageBitmap> {
     return if (bytes.looksLikePdf()) pdfPages(bytes) else listOfNotNull(decodeImageBitmap(bytes))
 }
 
+actual fun pdfPageCount(bytes: ByteArray): Int? = try {
+    Loader.loadPDF(bytes).use { it.numberOfPages }
+} catch (@Suppress("TooGenericExceptionCaught") throwable: Throwable) {
+    ZillitLog.d(TAG) { "unreadable PDF: ${throwable::class.simpleName}" }
+    null
+}
+
 /** `%PDF` — the magic number, which is more honest than the file name. */
 private fun ByteArray.looksLikePdf(): Boolean =
     size > PDF_MAGIC.size && PDF_MAGIC.indices.all { this[it] == PDF_MAGIC[it] }

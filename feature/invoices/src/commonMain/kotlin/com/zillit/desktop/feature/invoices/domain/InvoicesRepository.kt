@@ -40,20 +40,16 @@ enum class InvoiceExportFormat(val wire: String, private val labelKey: String, v
 }
 
 /** What can be exported as a file — the web's two export menus. */
-enum class InvoiceExport(val path: String, val fileStem: String) {
+/**
+ * A register the server renders as a file. [type] is sent beside the format
+ * where one route serves two registers — credit notes and disputes.
+ */
+enum class InvoiceExport(val path: String, val fileStem: String, val type: String? = null) {
     Register("export", "invoice-register"),
     Accruals("accruals/export", "accruals"),
+    CreditNotes("credit-notes/export", "credit-notes", "credit_note"),
+    Disputes("credit-notes/export", "disputes", "dispute"),
 }
-
-/** What the department's Upload Invoice flow sends (`invoiceUploadPayload.js`). */
-data class DepartmentUpload(
-    val type: UploadType,
-    val fileName: String,
-    val attachment: InvoiceAttachment?,
-    val extraction: InvoiceExtraction?,
-    val departmentId: String?,
-    val projectCurrency: String,
-)
 
 /** What the accountant's Enter Invoice form sends (`EnterInvoiceModal.jsx`). */
 data class EnteredInvoice(
@@ -75,6 +71,8 @@ data class EnteredInvoice(
     val departmentId: String? = null,
     val poNumber: String? = null,
     val uploadId: String? = null,
+    /** Already paid: sent as `paid: true` instead of the inbox status — never both. */
+    val paid: Boolean = false,
 )
 
 /** Everything the screens ask the invoices service (and its two neighbours) for. */
@@ -100,12 +98,7 @@ interface InvoicesRepository {
     /** `GET /:id` — the full record; list rows omit linked POs and attachments. */
     suspend fun invoice(id: String): ZillitResult<Invoice>
 
-    suspend fun createFromUpload(upload: DepartmentUpload): ZillitResult<Invoice?>
-
     suspend fun createEntered(entered: EnteredInvoice): ZillitResult<Invoice?>
-
-    /** `PATCH /:id { status, approval_status }` — the override transitions. */
-    suspend fun patchStatus(id: String, status: InvoiceStatus, approvalStatus: ApprovalStatus): ZillitResult<Invoice?>
 
     suspend fun delete(id: String): ZillitResult<Unit>
 
@@ -118,8 +111,6 @@ interface InvoicesRepository {
     /** Newest first. */
     suspend fun history(id: String): ZillitResult<List<HistoryEntry>>
 
-    /** `POST /upload` — OCR over an already-stored attachment. Fails often; never fatal. */
-    suspend fun extract(attachment: InvoiceAttachment): ZillitResult<InvoiceExtraction>
 
     /**
      * Moves an invoice out of pre-approval and into the approval chain.
@@ -135,7 +126,13 @@ interface InvoicesRepository {
     /** Lifts a hold, putting it back in the queue. */
     suspend fun release(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
-    /** A senior accountant's override — past the rule that is blocking it. */
+    /**
+     * Skips the rest of the approval chain — `POST /:id/override`.
+     *
+     * The one route every override path takes (Override, Override & Pay, the
+     * review's Confirm & override): the server's permission gate, its bell
+     * fan-out and its auto-assignment all hang off it, not off a status PATCH.
+     */
     suspend fun override(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
     /** Takes the purchase order off an invoice, leaving it unmatched. */
@@ -164,7 +161,16 @@ interface InvoicesRepository {
         invoiceIds: List<String>,
     ): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
-    suspend fun approvePaymentRun(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
+    /** One run with the invoices it pays — `GET /invoices/active-runs/:id`. */
+    suspend fun paymentRun(id: String): ZillitResult<PaymentRunDetail> =
+        ZillitResult.Failure(ZillitError.Unknown("No run detail wired"))
+
+    /**
+     * Signs one tier of a run's authorisation chain — the web sends the tier
+     * it is signing and how many there are (`resolveRunApproval`).
+     */
+    suspend fun approvePaymentRun(id: String, tierNumber: Int, totalTiers: Int): ZillitResult<Unit> =
+        ZillitResult.Success(Unit)
 
     suspend fun rejectPaymentRun(id: String, reason: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
@@ -173,7 +179,7 @@ interface InvoicesRepository {
     /** Money owed to the production — `GET /invoices/sales-invoices`. */
     suspend fun salesInvoices(): ZillitResult<List<SalesInvoice>> = ZillitResult.Success(emptyList())
 
-    suspend fun createSalesInvoice(invoice: SalesInvoice): ZillitResult<Unit> = ZillitResult.Success(Unit)
+    suspend fun createSalesInvoice(invoice: SalesInvoiceWrite): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
     /** Sends it to the client. */
     suspend fun sendSalesInvoice(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
@@ -194,6 +200,62 @@ interface InvoicesRepository {
     /** Parks an entered invoice for a second pair of eyes — `status: under_review`. */
     suspend fun markUnderReview(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
+    // -- the ledger view (Invoice Entry) ----------------------------------------
+
+    /** Save, Post's first half and Submit for Review — `PATCH /invoices/:id`. */
+    suspend fun saveEntry(id: String, write: EntryWrite): ZillitResult<Unit> = ZillitResult.Success(Unit)
+
+    /** Quick Entry — `POST /invoices` straight to ready-to-pay. */
+    suspend fun quickEntry(entry: QuickEntry): ZillitResult<Unit> = ZillitResult.Success(Unit)
+
+    /** Production Setup's companies and tax types, and the boundary it stores — the hub's project settings. */
+    suspend fun projectSettings(): ZillitResult<InvoiceProjectSettings> = ZillitResult.Success(InvoiceProjectSettings())
+
+    /**
+     * The cost report's close boundary, read the way the web's `useCrLock`
+     * reads it: the lock route and the settings document, the later winning.
+     */
+    suspend fun periodLock(): ZillitResult<PeriodLock> = ZillitResult.Success(PeriodLock())
+
+    /** Every active code on the chart, for wrapping a new nominal as `[[code]]`. */
+    suspend fun chartCodes(): ZillitResult<Set<String>> = ZillitResult.Success(emptySet())
+
+    // -- the inbox ------------------------------------------------------------------
+
+    /**
+     * `POST /invoices/process` — inbox entries on to pre-approval: ids alone
+     * for the queue's bulk Process, ids plus the review's edits for Accept.
+     */
+    suspend fun process(ids: List<String>, accept: InboxAccept? = null): ZillitResult<Unit> =
+        ZillitResult.Success(Unit)
+
+    /** A note stored on a matched order's link — the review's Match Notes. */
+    suspend fun matchNote(id: String, poId: String, note: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
+
+    /** One file of a bulk upload, handed over under its batch id. */
+    suspend fun bulkUpload(
+        batchId: String,
+        attachment: InvoiceAttachment,
+        size: Long,
+        paid: Boolean,
+    ): ZillitResult<Unit> = ZillitResult.Success(Unit)
+
+    /** Every bulk batch the server is still tracking — Ongoing Uploads' server half. */
+    suspend fun bulkBatches(): ZillitResult<List<ServerBatch>> = ZillitResult.Success(emptyList())
+
+    // -- queries ------------------------------------------------------------------
+
+    /** The query thread on an invoice — empty when nobody has asked anything yet. */
+    suspend fun queryThread(invoiceId: String): ZillitResult<QueryThread> = ZillitResult.Success(QueryThread())
+
+    /** The first message, which opens the thread on the invoice. */
+    suspend fun openQuery(invoiceId: String, text: String): ZillitResult<QueryThread> =
+        ZillitResult.Success(QueryThread())
+
+    /** A reply on a thread that already exists. */
+    suspend fun addQuery(threadId: String, text: String): ZillitResult<QueryThread> =
+        ZillitResult.Success(QueryThread())
+
     /** Hands an invoice to a member of the accounts team, with the reason on the record. */
     suspend fun assign(id: String, userId: String, reason: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
@@ -206,11 +268,26 @@ interface InvoicesRepository {
     /** Credit notes and disputes — `GET /invoices/credit-notes`. */
     suspend fun creditNotes(): ZillitResult<List<CreditNote>> = ZillitResult.Success(emptyList())
 
-    /** Applies a pending credit note against what is owed. */
+    /**
+     * Applies a pending credit note against what is owed — and resolves a
+     * disputed one: the web's Apply and Resolve both call `/apply`
+     * (`CreditsPage.jsx`). `/dispute` would raise the dispute again.
+     */
     suspend fun applyCreditNote(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
 
-    /** Raises a dispute on it instead. */
+    /** Raises a dispute on it — `POST /credit-notes/:id/dispute`. */
     suspend fun disputeCreditNote(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
+
+    /** `POST /credit-notes` — a credit note (pending) or a dispute (disputed). */
+    suspend fun createCreditNote(write: CreditNoteWrite): ZillitResult<Unit> = ZillitResult.Success(Unit)
+
+    /** `PATCH /credit-notes/:id` — the whole form again, as the web sends it. */
+    suspend fun updateCreditNote(id: String, write: CreditNoteWrite): ZillitResult<Unit> = ZillitResult.Success(Unit)
+
+    suspend fun deleteCreditNote(id: String): ZillitResult<Unit> = ZillitResult.Success(Unit)
+
+    /** `GET /credit-notes/:id/history`, newest first. */
+    suspend fun creditNoteHistory(id: String): ZillitResult<List<HistoryEntry>> = ZillitResult.Success(emptyList())
 
     /** Spend by department and vendor — `GET /invoices/analytics`. */
     suspend fun analytics(): ZillitResult<InvoiceAnalytics> = ZillitResult.Success(InvoiceAnalytics())
