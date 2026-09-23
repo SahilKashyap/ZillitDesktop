@@ -30,7 +30,6 @@ sealed interface PoPrompt {
 
 enum class PoConfirmAction {
     Approve,
-    Post,
     Delete,
     DeleteTemplate,
     RemoveRule,
@@ -84,6 +83,14 @@ sealed interface PoEvent {
 
     /** Emails the order to its vendor. [allowResend] only on the processing page. */
     data class SendVendorEmail(val id: String, val allowResend: Boolean = false) : PoEvent
+
+    // -- the query thread -----------------------------------------------------
+
+    /** Opens an order's query thread — the web's Query button. */
+    data class OpenQuery(val orderId: String) : PoEvent
+    data class EditQuery(val text: String) : PoEvent
+    data object SendQuery : PoEvent
+    data object CloseQuery : PoEvent
 
     // -- prompts --------------------------------------------------------------
 
@@ -140,6 +147,10 @@ sealed interface PoEvent {
     data class EditEntry(val entry: PoEntryState) : PoEvent
     data object AddEntryLine : PoEvent
     data class RemoveEntryLine(val index: Int) : PoEvent
+
+    /** The processing page's two splits — evenly, or a rental line by its periods. */
+    data class SplitEntryLine(val index: Int) : PoEvent
+    data class SplitEntryLineByPeriod(val index: Int) : PoEvent
     data object SaveEntry : PoEvent
     data object PostEntry : PoEvent
     data object CloseEntry : PoEvent

@@ -126,6 +126,16 @@ enum class PoDestination(
         }
 
         /**
+         * The Queue's half a route names — `/queue/my` or `/queue/all`, the
+         * web's sub-tab addresses — or null when the route names none.
+         */
+        fun queueScopeFor(path: String): PoQueueScope? {
+            val segments = path.removePrefix(PURCHASE_ORDER_PATH).trim('/').split('/')
+            if (segments.firstOrNull() != Queue.segment) return null
+            return PoQueueScope.entries.firstOrNull { it.slug == segments.getOrNull(1) }
+        }
+
+        /**
          * Where a viewer lands when nothing was asked for.
          *
          * The web lands an accountant on their own queue (`/queue/my`) and

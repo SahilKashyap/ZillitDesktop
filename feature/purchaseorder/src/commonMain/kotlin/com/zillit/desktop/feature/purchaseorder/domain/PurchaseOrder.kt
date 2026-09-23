@@ -9,6 +9,9 @@ import com.zillit.desktop.core.strings.str
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 /**
  * A purchase order: a commitment to a vendor, approved before the money is
@@ -86,8 +89,17 @@ data class PurchaseOrder(
      * but wait, retry or discard.
      */
     val local: LocalCopy? = null,
+    /**
+     * `delivery_address` exactly as the server sent it — an object from the
+     * form, a plain string on older orders. Posting sends it back untouched
+     * (the web's `poDetails.delivery_address`), so neither shape is flattened.
+     */
+    val deliveryAddressRaw: JsonElement? = null,
 ) {
     val isLocalOnly: Boolean get() = local != null
+
+    /** The VAT treatment the processing page works under — `pending` until someone sets one (`mapApiPO`). */
+    val vatTreatmentOrPending: String get() = vatTreatment?.takeIf { it.isNotBlank() } ?: "pending"
 
     /** Sum of the lines, for checking the header total against its detail. */
     val lineTotal: Double get() = lines.sumOf { it.total }
@@ -117,20 +129,22 @@ data class PurchaseOrder(
 
     /**
      * The status as a list shows it, with the approval progress on a pending
-     * order — the web's `Pending (1/2)`.
+     * order — the web's `resolvePoStatus`, `Pending (1/2)`.
      *
-     * Counted off the chain the server sent rather than the project's tier
-     * configuration, which is what the web reads: the chain already carries one
-     * entry per tier, decided or not, so the count is available without a
-     * second fetch. An order with no chain reads plain "Pending", exactly as
-     * the web's `totalT > 0` fallback does.
+     * The two numbers come from two places, as they do on the web
+     * (`lib/poStatus.js`): how many tiers have approved is the order's own
+     * `approvals` (the server keeps one entry per *approved* tier, never a
+     * placeholder for a pending one), and how many there are is the project's
+     * tier configuration resolved for this order's department and amount. So
+     * the old reading — the chain's length as the total — reported every
+     * pending order as fully approved. With no configuration the label is
+     * plain "Pending", which is the web's `totalT > 0` fallback.
      */
-    val statusLabel: String
-        get() = if (status == PoStatus.AwaitingApproval && approvals.isNotEmpty()) {
-            str(S.ah_status_pending_progress, approvals.count { it.decided }, approvals.size)
-        } else {
-            status.label
-        }
+    fun statusLabel(tiers: PoApprovalTiers): String {
+        if (status != PoStatus.AwaitingApproval) return status.label
+        val total = tiers.resolve(departmentId, gross).size
+        return if (total > 0) str(S.ah_status_pending_progress, approvals.count { it.decided }, total) else status.label
+    }
 
     /**
      * Whether the header total and the lines disagree.
@@ -195,6 +209,16 @@ data class PoLine(
      * tax sums, counted by the gross — see [PoTotals].
      */
     val isTax: Boolean = false,
+    /**
+     * The line's analysis codes (`tracking_codes`, set id → node id) and its
+     * extra fields (`custom_fields`), kept exactly as the server sent them.
+     *
+     * This client edits neither, but the processing page rewrites the whole
+     * `line_items` array on every save — so anything a line carries that is not
+     * written back is deleted. Held raw for that reason alone.
+     */
+    val trackingCodes: JsonObject? = null,
+    val customFields: JsonArray? = null,
 ) {
     val total: Double get() = amount ?: (quantity * unitPrice)
 
@@ -274,9 +298,22 @@ enum class PoRelief(private val labelKey: String) {
 
     /** What the column and its chip show. */
     val label: String get() = str(labelKey)
+
+    /**
+     * Whether an order at this relief can still be closed — the web's Posted
+     * row rule (`open` or `partially_relieved`). A fully relieved order has no
+     * remaining commitment to release, so Close has nothing to do there.
+     */
+    val isCloseable: Boolean get() = this == Open || this == PartiallyRelieved
 }
 
-/** One step of a PO's approval chain, and whether it has been taken. */
+/**
+ * One step of a PO's approval chain, and whether it has been taken.
+ *
+ * The web's shape is `{ user_id, tier_number, approved_at }` — an entry exists
+ * only once that tier has approved — so [level] is the tier number and an entry
+ * with a time and no stated decision is an approval.
+ */
 @Serializable
 data class PoApproval(
     val userId: String?,
@@ -388,11 +425,19 @@ data class PoViewer(
      * (`isSeniorAccountant` in `accountHub/utils/po-permissions.js`): they are
      * final approver and payroll accountant across PO, invoices, card and cash
      * as well as here.
+     *
+     * **Exact**, never a substring. The web matches two identifiers with a set
+     * lookup, and its own test says `designation_assistant_production_accountant_accounts`
+     * is *not* senior. A `contains("production accountant")` handed every
+     * assistant the Posted and Settings tabs, full access and delete-any. The
+     * one allowance is spelling: the host passes the crew list's designation,
+     * which arrives as the identifier, a translation key
+     * (`production_accountant_label`) or a display name depending on the
+     * payload, so all three are reduced to the same bare role before the
+     * equality check — see [seniorRole].
      */
     val isSeniorAccountant: Boolean
-        get() = designationIdentifier.normalisedRole().let { value ->
-            value.isNotEmpty() && SENIOR_DESIGNATIONS.any { value.contains(it) }
-        }
+        get() = designationIdentifier.seniorRole() in SENIOR_DESIGNATIONS
 
     /**
      * Who sees every order on the production — and it is not one rule.
@@ -422,13 +467,39 @@ data class PoViewer(
 
     private companion object {
         const val ACCOUNTS = "accounts"
-        val SENIOR_DESIGNATIONS = setOf("production accountant", "financial controller")
+
+        /** The web's `PO_FULL_ACCESS_DESIGNATIONS`, as [seniorRole] reduces them. */
+        val SENIOR_DESIGNATIONS = setOf("production_accountant", "financial_controller")
     }
 }
 
 /** Lowercased words, from either an identifier or a display name. */
 internal fun String?.normalisedRole(): String =
     orEmpty().lowercase().map { if (it.isLetterOrDigit()) it else ' ' }.joinToString("").trim()
+
+/**
+ * A designation reduced to its bare role, for an **exact** comparison.
+ *
+ * `designation_production_accountant_accounts` (the web's identifier),
+ * `production_accountant_label` (the crew list's translation key) and
+ * `Production Accountant` (a display name) all become `production_accountant`;
+ * `designation_assistant_production_accountant_accounts` becomes
+ * `assistant_production_accountant`, which is a different role and stays one.
+ * Only the wrapper the three spellings add is stripped — never a word of the
+ * role itself.
+ */
+internal fun String?.seniorRole(): String {
+    val words = normalisedRole().split(' ').filter { it.isNotEmpty() }.toMutableList()
+    if (words.firstOrNull() == DESIGNATION_PREFIX) words.removeAt(0)
+    if (words.lastOrNull() == LABEL_SUFFIX) words.removeAt(words.lastIndex)
+    // The identifier's department suffix — never the whole role.
+    if (words.size > 1 && words.last() == ACCOUNTS_SUFFIX) words.removeAt(words.lastIndex)
+    return words.joinToString("_")
+}
+
+private const val DESIGNATION_PREFIX = "designation"
+private const val LABEL_SUFFIX = "label"
+private const val ACCOUNTS_SUFFIX = "accounts"
 
 /** A purchase order as the form filled it in. */
 @Serializable
@@ -472,10 +543,18 @@ data class NewPurchaseOrder(
     /** Net, tax and gross, for the form's footer. */
     val totals: PoTotals get() = PoTotals.of(lines)
 
-    /** The first reason this order cannot be raised, or null. */
+    /**
+     * The first reason this order cannot be raised, or null.
+     *
+     * Only the lines. Vendor and description are required **when the form
+     * template says so**, and that is judged beside the template (the form's
+     * `validate`) — the web's `POForm.validate` checks them only for a field the
+     * template shows and marks required. Requiring them here unconditionally
+     * made an order unsubmittable on any production whose Form Configuration
+     * hid either field: the rule refused it, and no control was on screen to
+     * satisfy it.
+     */
     fun validationError(): String? = when {
-        vendorName.isBlank() -> str(S.desktop_po_needs_vendor)
-        description.isBlank() -> str(S.desktop_po_needs_description)
         lines.isEmpty() -> str(S.desktop_po_needs_a_line)
         lines.any { it.description.isBlank() } -> str(S.desktop_po_line_needs_description)
         lines.any { it.total <= 0 } -> str(S.desktop_po_line_needs_qty_price)
@@ -610,13 +689,54 @@ interface PurchaseOrderRepository {
 
     suspend fun delete(id: String): ZillitResult<Unit>
 
-    suspend fun approve(id: String, note: String?): ZillitResult<Unit>
+    /**
+     * Approves the order's next tier — `{ tier_number, total_tiers }`, the web's
+     * body. The tier is the one the viewer was cleared to decide (see
+     * [PoApprovalTiers.visibility]); the server records one approval per tier.
+     */
+    suspend fun approve(id: String, tierNumber: Int, totalTiers: Int): ZillitResult<Unit>
 
     suspend fun reject(id: String, reason: String): ZillitResult<Unit>
 
-    suspend fun post(id: String, note: String?): ZillitResult<Unit>
+    /** Posts the coded order to the ledger, lines and header with it. */
+    suspend fun post(id: String, request: PoPostRequest): ZillitResult<Unit>
 
-    suspend fun close(id: String, note: String?): ZillitResult<Unit>
+    /**
+     * Closes one order — `{ reason, effective_date }`. The date is the period
+     * the released commitment lands in, which is the whole decision; the web's
+     * Close PO dialog asks for both and sends both.
+     */
+    suspend fun close(id: String, reason: String, effectiveDate: Long?): ZillitResult<Unit>
+
+    /** The processing page's Save — see [PoEntryUpdate]. */
+    suspend fun saveEntry(id: String, update: PoEntryUpdate): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("saving a processed order is not wired"))
+
+    /**
+     * Hands many orders to one accountant in one call — `PATCH /bulk` with
+     * `{ po_ids, data: { assigned_to, reassignment_reason } }`, the web's bulk
+     * Reassign. The server's 100-id cap is checked before the call.
+     */
+    suspend fun bulkReassign(ids: List<String>, userId: String, reason: String): ZillitResult<Unit> =
+        ZillitResult.Failure(ZillitError.Unknown("bulk reassigning is not wired"))
+
+    // -- the account hub's workflow reads: PoWorkflowSource's --------------------
+
+    /** Who approves which tier; empty when the production has configured none. */
+    suspend fun approvalTiers(): ZillitResult<PoApprovalTiers> = ZillitResult.Success(PoApprovalTiers())
+
+    /** The cost-report lock; unlocked when it cannot be read. */
+    suspend fun periodLock(): ZillitResult<PoPeriodLock> = ZillitResult.Success(PoPeriodLock())
+
+    /** The order's query thread, or null when nobody has asked anything yet. */
+    suspend fun queryThread(orderId: String): ZillitResult<PoQueryThread?> = ZillitResult.Success(null)
+
+    /** Sends a message, opening the thread when [threadId] is null. Answers the thread as it now stands. */
+    suspend fun sendQuery(orderId: String, threadId: String?, text: String): ZillitResult<PoQueryThread?> =
+        ZillitResult.Failure(ZillitError.Unknown("order queries are not wired"))
+
+    /** The rates a mixed-currency total converts through. */
+    suspend fun currencyRates(): ZillitResult<PoCurrencyRates> = ZillitResult.Success(PoCurrencyRates())
 
     /**
      * Sets one field across many orders (`PATCH /bulk`).

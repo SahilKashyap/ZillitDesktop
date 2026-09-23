@@ -40,6 +40,7 @@ import com.zillit.desktop.feature.purchaseorder.ui.PoEvent
 import com.zillit.desktop.feature.purchaseorder.ui.PoPrompt
 import com.zillit.desktop.feature.purchaseorder.ui.PoReassignState
 import com.zillit.desktop.feature.purchaseorder.ui.PoUiState
+import com.zillit.desktop.feature.purchaseorder.ui.mayQuery
 import com.zillit.desktop.feature.purchaseorder.domain.isoDayToUtcMidnight
 
 /** Every dialog this tool opens, hosted once so only one can be on screen. */
@@ -51,6 +52,8 @@ internal fun PoDialogs(state: PoUiState, onEvent: (PoEvent) -> Unit) {
     PoCloseOffDialog(state, onEvent)
     PoBulkDateDialog(state, onEvent)
     PoAddressDialog(state, onEvent)
+    // Over the detail and the processing page, which is where it is opened from.
+    PoQueryDialog(state, onEvent)
     PoPromptDialog(state, onEvent)
 }
 
@@ -86,7 +89,14 @@ private fun PoDetailDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 style = ZillitTheme.typography.displayLarge,
                 modifier = Modifier.weight(1f),
             )
-            ZillitStatusPill(label = order.statusLabel, tone = order.status.tone())
+            ZillitStatusPill(label = state.statusLabel(order), tone = order.status.tone())
+        }
+        if (state.isLocked(order)) {
+            ZillitNotice(
+                text = str(S.desktop_po_period_locked_banner, state.periodLock.lockedThrough),
+                tone = StatusTone.Pending,
+                icon = ZillitIcons.Lock,
+            )
         }
         if (order.isLocalOnly) {
             ZillitNotice(
@@ -120,7 +130,7 @@ private fun PoDetailDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             ZillitText(text = order.closureReason, style = ZillitTheme.typography.bodyMedium)
         }
         LineItems(order)
-        Approvals(order)
+        Approvals(state, order)
         Attachments(state, order, onEvent)
         History(state)
     }
@@ -221,26 +231,40 @@ private fun LineItems(order: PurchaseOrder) {
     }
 }
 
+/**
+ * The chain, tier by tier: who approved each tier that has, and the tiers the
+ * configuration still has waiting — the server keeps an entry only for a tier
+ * that *has* approved (`{ user_id, tier_number, approved_at }`), so the waiting
+ * ones come from the tier configuration, never from the order.
+ */
 @Composable
-private fun Approvals(order: PurchaseOrder) {
-    if (order.approvals.isEmpty()) return
+private fun Approvals(state: PoUiState, order: PurchaseOrder) {
+    val total = if (order.status == PoStatus.AwaitingApproval) state.approvalStep(order).totalTiers else 0
+    val tiers = (order.approvals.map { it.level } + (1..total)).distinct().sorted()
+    if (tiers.isEmpty()) return
     ZillitDivider()
     ZillitSectionLabel(str(S.desktop_po_approval_progress))
-    order.approvals.sortedBy { it.level }.forEach { step ->
+    tiers.forEach { tier ->
+        val step = order.approvals.firstOrNull { it.level == tier && it.decided }
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xxs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
         ) {
+            val who = step?.let { it.name.ifBlank { state.personName(it.userId) } }.orEmpty()
             ZillitText(
-                text = "${step.level}. " + step.name.ifBlank { str(S.desktop_po_no_approver_for_department) },
+                text = listOfNotNull(
+                    "$tier.",
+                    who.takeIf { it.isNotBlank() },
+                    EpochDate.date(step?.at).ifBlank { null },
+                ).joinToString(" "),
                 style = ZillitTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
             )
             ZillitStatusPill(
-                label = step.decision?.replaceFirstChar { it.uppercase() } ?: str(S.ah_run_detail_tier_waiting),
-                tone = if (step.decided) StatusTone.Done else StatusTone.Pending,
+                label = step?.decision?.replaceFirstChar { it.uppercase() } ?: str(S.ah_run_detail_tier_waiting),
+                tone = if (step != null) StatusTone.Done else StatusTone.Pending,
             )
         }
     }
@@ -311,12 +335,13 @@ private fun History(state: PoUiState) {
 private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEvent) -> Unit) {
     if (order.isLocalOnly) return
     val viewer = state.viewer
-    // The decision belongs to whoever the chain routed it to, which is what the
-    // approval queue is; offering Approve everywhere would offer it to people
-    // whose click the server refuses.
-    if (state.destination == com.zillit.desktop.feature.purchaseorder.ui.PoDestination.ApprovalQueue &&
-        order.status == PoStatus.AwaitingApproval
-    ) {
+    // Nothing that writes is offered on an order in the locked cost-report
+    // period — the web hides Edit, Delete, Process and the decision there.
+    val locked = state.isLocked(order)
+    // The decision belongs to whoever the chain routes this tier to — on any
+    // tab, as the web's `vis.canApprove` has it. Gating on the department
+    // Approval Queue alone hid it from every accountant who sits on a tier.
+    if (!locked && state.approvalStep(order).canApprove) {
         ZillitButton(
             text = str(S.ah_approve),
             onClick = {
@@ -357,7 +382,7 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
             enabled = !state.busy,
         )
     }
-    if (PoAccess.canEdit(order, viewer, state.projectSettings.allowAmendAfterApproval)) {
+    if (!locked && PoAccess.canEdit(order, viewer, state.projectSettings.allowAmendAfterApproval)) {
         ZillitButton(
             text = str(S.edit),
             onClick = { onEvent(PoEvent.EditOrder(order.id)) },
@@ -367,7 +392,16 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
             enabled = !state.busy,
         )
     }
-    if (PoAccess.canProcess(order, viewer)) {
+    if (state.mayQuery(order)) {
+        ZillitButton(
+            text = str(S.ah_query_label),
+            onClick = { onEvent(PoEvent.OpenQuery(order.id)) },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            leadingIcon = ZillitIcons.Chat,
+        )
+    }
+    if (!locked && PoAccess.canProcess(order, viewer)) {
         ZillitButton(
             text = str(S.ah_process),
             onClick = { onEvent(PoEvent.ProcessOrder(order.id)) },
@@ -397,7 +431,7 @@ private fun DetailActions(state: PoUiState, order: PurchaseOrder, onEvent: (PoEv
         leadingIcon = ZillitIcons.Download,
         enabled = !state.busy,
     )
-    if (PoAccess.canDelete(order, viewer)) {
+    if (!locked && PoAccess.canDelete(order, viewer)) {
         ZillitButton(
             text = str(S.desktop_po_delete_po),
             onClick = {
@@ -714,6 +748,79 @@ private fun PoAddressDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 modifier = Modifier.weight(1f),
             )
         }
+    }
+}
+
+/**
+ * An order's query thread — the web's `QueryPanel`: the messages oldest first,
+ * each with who asked and when, and one line to add to it. The first message
+ * opens the thread.
+ */
+@Suppress("LongMethod") // One thread: header, messages, composer.
+@Composable
+private fun PoQueryDialog(state: PoUiState, onEvent: (PoEvent) -> Unit) {
+    val query = state.query ?: return
+    ZillitDialogShell(
+        title = str(S.ah_query_label),
+        subtitle = query.title,
+        onDismiss = { onEvent(PoEvent.CloseQuery) },
+        visible = true,
+        icon = ZillitIcons.Chat,
+        actions = {
+            ZillitButton(
+                text = str(S.close),
+                onClick = { onEvent(PoEvent.CloseQuery) },
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+            )
+            ZillitButton(
+                text = str(S.send),
+                onClick = { onEvent(PoEvent.SendQuery) },
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Send,
+                loading = query.sending,
+                enabled = query.draft.isNotBlank() && !query.sending,
+            )
+        },
+    ) {
+        val messages = query.thread?.messages.orEmpty()
+        when {
+            query.loading -> ZillitNotice(
+                text = str(S.ah_loading),
+                tone = StatusTone.Progress,
+                icon = ZillitIcons.Clock,
+            )
+
+            messages.isEmpty() -> ZillitText(
+                text = str(S.ah_no_queries_yet),
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+
+            else -> messages.forEach { message ->
+                val mine = message.by == state.viewer.userId
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
+                ) {
+                    ZillitText(
+                        text = listOfNotNull(
+                            state.personName(message.by).ifBlank { null },
+                            EpochDate.dateTime(message.at).ifBlank { null },
+                        ).joinToString(" · "),
+                        style = ZillitTheme.typography.bodySmall,
+                        color = ZillitTheme.colors.textMuted,
+                    )
+                    ZillitText(text = message.text, style = ZillitTheme.typography.bodyMedium)
+                }
+            }
+        }
+        ZillitTextField(
+            value = query.draft,
+            onValueChange = { onEvent(PoEvent.EditQuery(it)) },
+            placeholder = str(S.type_a_message),
+            singleLine = false,
+        )
     }
 }
 

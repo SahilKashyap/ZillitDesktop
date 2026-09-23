@@ -57,6 +57,15 @@ data class TableColumn<T>(
     val width: ColumnWidth = ColumnWidth.Weight(1f),
     /** Money and counts read right-aligned; everything else left. */
     val numeric: Boolean = false,
+    /**
+     * Replaces the header's text when set — a sortable heading, a select-all
+     * checkbox. Null draws [header] as plain text, as every table did before.
+     *
+     * Declared before [cell] on purpose: every caller passes the cell as a
+     * trailing lambda, and a function-typed parameter after it would capture
+     * that lambda instead.
+     */
+    val headerContent: (@Composable () -> Unit)? = null,
     val cell: @Composable (T) -> Unit,
 )
 
@@ -259,6 +268,11 @@ private fun <T> TableHeader(columns: List<TableColumn<T>>) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         columns.forEach { column ->
+            val custom = column.headerContent
+            if (custom != null) {
+                Box(modifier = cellModifier(column.width)) { custom() }
+                return@forEach
+            }
             Box(modifier = cellModifier(column.width)) {
                 ZillitText(
                     text = column.header.uppercase(),

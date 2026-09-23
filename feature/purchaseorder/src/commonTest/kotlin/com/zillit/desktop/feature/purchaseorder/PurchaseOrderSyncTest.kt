@@ -9,6 +9,7 @@ import com.zillit.desktop.feature.purchaseorder.data.PO_SYNC_EVENTS
 import com.zillit.desktop.feature.purchaseorder.data.PO_VENDOR_SYNC_EVENTS
 import com.zillit.desktop.feature.purchaseorder.data.poRefreshFor
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
+import com.zillit.desktop.feature.purchaseorder.domain.PoPostRequest
 import com.zillit.desktop.feature.purchaseorder.domain.PoHistoryEntry
 import com.zillit.desktop.feature.purchaseorder.domain.PoRefresh
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
@@ -172,10 +173,11 @@ class PurchaseOrderSyncTest {
         override suspend fun create(order: NewPurchaseOrder): ZillitResult<Unit> = unsupported()
         override suspend fun update(id: String, order: NewPurchaseOrder): ZillitResult<Unit> = unsupported()
         override suspend fun delete(id: String): ZillitResult<Unit> = unsupported()
-        override suspend fun approve(id: String, note: String?): ZillitResult<Unit> = unsupported()
+        override suspend fun approve(id: String, tierNumber: Int, totalTiers: Int): ZillitResult<Unit> = unsupported()
         override suspend fun reject(id: String, reason: String): ZillitResult<Unit> = unsupported()
-        override suspend fun post(id: String, note: String?): ZillitResult<Unit> = unsupported()
-        override suspend fun close(id: String, note: String?): ZillitResult<Unit> = unsupported()
+        override suspend fun post(id: String, request: PoPostRequest): ZillitResult<Unit> = unsupported()
+        override suspend fun close(id: String, reason: String, effectiveDate: Long?): ZillitResult<Unit> =
+            unsupported()
         override suspend fun closeAll(ids: List<String>, effectiveDate: Long?): ZillitResult<Unit> = unsupported()
 
         private fun <T> unsupported(): ZillitResult<T> = ZillitResult.Failure(ZillitError.Unknown("not in this test"))

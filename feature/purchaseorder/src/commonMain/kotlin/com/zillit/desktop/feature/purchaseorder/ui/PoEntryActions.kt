@@ -6,12 +6,13 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
 import com.zillit.desktop.feature.purchaseorder.domain.PoLine
+import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrderRepository
 
 /**
- * The accountant's side of an order: opening one, processing it, and the four
- * dialogs that act on a selection.
+ * The accountant's side of an order: opening one, emailing it, and the four
+ * dialogs that act on a selection. The processing page is [PoProcessActions].
  *
  * Grouped because they share one rule that is easy to get wrong in pieces — an
  * order is always **re-read** before it is acted on. A list row can be minutes
@@ -30,22 +31,6 @@ internal class PoEntryActions(
             is PoEvent.OpenAttachment -> vm.emit(PoEffect.OpenAttachment(event.attachment))
             is PoEvent.ViewPdf -> viewPdf(event.id)
             is PoEvent.SendVendorEmail -> sendVendorEmail(event.id, event.allowResend)
-
-            is PoEvent.ProcessOrder -> process(event.id)
-            is PoEvent.EditEntry -> vm.update { copy(entry = event.entry) }
-            PoEvent.AddEntryLine -> withEntry { entry -> entry.copy(lines = entry.lines + blankLine()) }
-            is PoEvent.RemoveEntryLine -> withEntry { entry ->
-                entry.copy(lines = entry.lines.filterIndexed { index, _ -> index != event.index })
-            }
-
-            PoEvent.SaveEntry -> saveEntry(post = false)
-            PoEvent.PostEntry -> saveEntry(post = true)
-            // "Back to Queue" means the Queue, not an empty PO Entry tab — which
-            // is where it landed on the first live run.
-            PoEvent.CloseEntry -> {
-                vm.update { copy(entry = null, detail = null, destination = PoDestination.Queue) }
-                vm.load(PoDestination.Queue)
-            }
 
             is PoEvent.AskReassign -> askReassign(listOf(event.orderId))
             is PoEvent.AskBulkReassign -> askReassign(event.ids)
@@ -153,8 +138,19 @@ internal class PoEntryActions(
             vm.fail(str(S.desktop_po_cannot_send_to_vendor))
             return
         }
+        // From the processing page the page is saved first (the web's "Saves
+        // FIRST" decision): the vendor must receive what the accountant is
+        // looking at, and a refused save — unbalanced lines — sends nothing.
+        if (vm.ui.entry?.orderId == id) {
+            vm.processActions.save { saved -> deliver(saved.id) }
+            return
+        }
+        vm.launchWork { deliver(id) }
+    }
+
+    private suspend fun deliver(id: String) {
         vm.update { copy(busy = true, entry = entry?.copy(sending = true)) }
-        vm.launchWork {
+        run {
             when (val answer = repository.sendVendorEmail(id)) {
                 is ZillitResult.Success -> {
                     val receipt = answer.data
@@ -185,131 +181,6 @@ internal class PoEntryActions(
                     vm.update { copy(busy = false, entry = entry?.copy(sending = false)) }
                     vm.fail(answer.error.localised())
                 }
-            }
-        }
-    }
-
-    // -- the PO Entry page -----------------------------------------------------
-
-    /**
-     * Opens the processing page on an order.
-     *
-     * The ledger lines start as a copy of the order's own, minus any persisted
-     * tax row — that row is regenerated from the tax the accountant types, and
-     * carrying it in as an editable line would let it be counted twice.
-     */
-    private fun process(id: String) {
-        val order = vm.ui.orderById(id)
-        if (order != null && !PoAccess.canProcess(order, vm.ui.viewer)) {
-            vm.fail(str(S.desktop_po_not_yours_to_process))
-            return
-        }
-        vm.update { copy(busy = true) }
-        vm.launchWork {
-            when (val answer = repository.order(id)) {
-                is ZillitResult.Success -> {
-                    val fresh = answer.data.withVendorName(vm.ui)
-                    vm.update {
-                        copy(
-                            busy = false,
-                            destination = PoDestination.Entry,
-                            // The dialog opened this page; leaving it open would
-                            // put a second, stale copy of the order behind it.
-                            prompt = null,
-                            detail = fresh,
-                            entry = PoEntryState(
-                                orderId = id,
-                                lines = fresh.lines.filterNot { it.isTax },
-                                effectiveDate = fresh.effectiveDate,
-                                nominalCode = fresh.nominalCode.orEmpty(),
-                            ),
-                        )
-                    }
-                }
-
-                is ZillitResult.Failure -> {
-                    vm.update { copy(busy = false) }
-                    vm.fail(answer.error.localised())
-                }
-            }
-        }
-    }
-
-    private inline fun withEntry(crossinline reducer: (PoEntryState) -> PoEntryState) {
-        val current = vm.ui.entry ?: return
-        vm.update { copy(entry = reducer(current)) }
-    }
-
-    /**
-     * Saves the coded lines, and posts them when asked.
-     *
-     * Two refusals, both the web's and both worth stating rather than letting
-     * the server find: the coded lines must come to the order's own gross, and
-     * posting needs an effective date because the project enforces period
-     * close. Neither is a server error waiting to happen — they are questions
-     * only the person coding can answer.
-     */
-    private fun saveEntry(post: Boolean) {
-        val entry = vm.ui.entry ?: return
-        val order = vm.ui.detail?.takeIf { it.id == entry.orderId } ?: return
-        if (!entry.balances(order)) {
-            vm.fail(
-                if (post) {
-                    str(S.desktop_po_coded_lines_must_match_post)
-                } else {
-                    str(S.desktop_po_coded_lines_must_match_save)
-                },
-            )
-            return
-        }
-        if (post && entry.effectiveDate == null) {
-            vm.fail(str(S.desktop_po_effective_date_before_posting))
-            return
-        }
-        vm.update { copy(entry = entry.copy(saving = !post, posting = post)) }
-        vm.launchWork {
-            val request = order.toForm(PoFormMode.EditOrder)
-                .copy(
-                    lines = entry.lines,
-                    effectiveDate = entry.effectiveDate,
-                    nominalCode = entry.nominalCode,
-                )
-                .toRequest(status = null, layout = vm.ui.formLayout)
-            when (val saved = repository.update(order.id, request)) {
-                is ZillitResult.Success -> if (post) {
-                    postToLedger(order.id)
-                } else {
-                    vm.update { copy(entry = entry.copy(saving = false), notice = str(S.saved)) }
-                    vm.load(vm.ui.destination)
-                }
-
-                is ZillitResult.Failure -> {
-                    vm.update { copy(entry = entry.copy(saving = false, posting = false)) }
-                    vm.fail(saved.error.localised())
-                }
-            }
-        }
-    }
-
-    private suspend fun postToLedger(id: String) {
-        when (val posted = repository.post(id, null)) {
-            is ZillitResult.Success -> {
-                // `detail` goes with it: the dialog that started this still held
-                // the pre-post order and read "Acct Entered" over a posted one.
-                vm.update {
-                    copy(
-                        entry = null,
-                        detail = null,
-                        notice = str(S.desktop_order_posted),
-                        destination = PoDestination.Queue,
-                    )
-                }
-                vm.load(PoDestination.Queue)
-            }
-
-            is ZillitResult.Failure -> {
-                vm.update { copy(entry = entry?.copy(posting = false)) }
-                vm.fail(posted.error.localised())
             }
         }
     }
@@ -357,35 +228,31 @@ internal class PoEntryActions(
             vm.fail(str(S.desktop_a_reason_is_required))
             return
         }
+        // Re-checked on the rows as they stand now, not as they stood when the
+        // dialog opened: the handler is reachable without the dialog.
+        val ids = dialog.ids.filter { id ->
+            vm.ui.orderById(id)?.let { PoAccess.canReassign(it, vm.ui.viewer) } == true
+        }
+        if (ids.isEmpty()) {
+            vm.update { copy(reassign = null) }
+            vm.fail(str(S.desktop_po_none_can_be_reassigned))
+            return
+        }
         vm.update { copy(reassign = dialog.copy(saving = true)) }
         vm.launchWork {
-            // One call per order: there is no bulk reassign route, and the
-            // reason belongs on each record. The first refusal stops the run
-            // and says how far it got, rather than reporting a clean success
-            // over a half-done batch.
-            var done = 0
-            for (id in dialog.ids) {
-                when (val answer = repository.reassign(id, assignee, reason)) {
-                    is ZillitResult.Success -> done++
-                    is ZillitResult.Failure -> {
-                        vm.update { copy(reassign = null) }
-                        vm.fail(
-                            if (done == 0) {
-                                answer.error.localised()
-                            } else {
-                                str(
-                                    S.desktop_po_reassigned_then_failed,
-                                    done,
-                                    dialog.ids.size,
-                                    answer.error.localised(),
-                                )
-                            },
-                        )
-                        vm.load(vm.ui.destination)
-                        return@launchWork
-                    }
-                }
+            // One order is a PATCH of the record; a selection is one
+            // `PATCH /bulk` with the reason in `data` — the web's two paths.
+            val answer = if (ids.size == 1) {
+                repository.reassign(ids.first(), assignee, reason)
+            } else {
+                repository.bulkReassign(ids, assignee, reason)
             }
+            if (answer is ZillitResult.Failure) {
+                vm.update { copy(reassign = dialog.copy(saving = false)) }
+                vm.fail(answer.error.localised())
+                return@launchWork
+            }
+            val done = ids.size
             vm.update {
                 copy(
                     reassign = null,
@@ -405,15 +272,38 @@ internal class PoEntryActions(
 
     private fun askClose(id: String) {
         val order = vm.ui.orderById(id) ?: return
+        if (!canClose(order)) {
+            vm.fail(str(S.desktop_po_cannot_close_order))
+            return
+        }
         val number = order.number.ifBlank { str(S.desktop_po_this_order) }
         vm.update { copy(closePo = PoCloseState(orderId = id, number = number)) }
     }
 
+    /**
+     * Whether this order may be closed — the web's Posted-tab rule: a senior,
+     * an order that is open or partially relieved (a fully relieved order has
+     * nothing left to release), and not in the locked cost-report period.
+     */
+    private fun canClose(order: PurchaseOrder): Boolean =
+        vm.ui.viewer.isSeniorAccountant && order.relief.isCloseable && !vm.ui.isLocked(order)
+
     private fun closeOne() {
         val dialog = vm.ui.closePo ?: return
+        val order = vm.ui.orderById(dialog.orderId)
+        if (order != null && !canClose(order)) {
+            vm.update { copy(closePo = null) }
+            vm.fail(str(S.desktop_po_cannot_close_order))
+            return
+        }
+        if (dialog.date != null && vm.ui.periodLock.locks(dialog.date)) {
+            vm.fail(str(S.desktop_po_effective_date_locked, vm.ui.periodLock.lockedThrough))
+            return
+        }
         vm.update { copy(closePo = dialog.copy(saving = true)) }
         vm.launchWork {
-            when (val answer = repository.close(dialog.orderId, dialog.reason.takeIf { it.isNotBlank() })) {
+            // `{ reason, effective_date }`, both always — the web's Close PO.
+            when (val answer = repository.close(dialog.orderId, dialog.reason.trim(), dialog.date)) {
                 is ZillitResult.Success -> {
                     vm.update { copy(closePo = null, detail = null, notice = str(S.desktop_order_closed)) }
                     vm.load(vm.ui.destination)
@@ -441,15 +331,30 @@ internal class PoEntryActions(
             vm.fail(str(S.desktop_po_tick_confirmation_close_off))
             return
         }
+        // The web's closeable set, re-derived here: not already closed, and not
+        // in the locked cost-report period. A senior's act, as the button is.
+        val ids = dialog.ids.filter { id ->
+            val order = vm.ui.orderById(id)
+            order == null || (order.status != PoStatus.Closed && !vm.ui.isLocked(order))
+        }
+        if (!vm.ui.viewer.isSeniorAccountant || ids.isEmpty()) {
+            vm.update { copy(closeOff = null) }
+            vm.fail(str(S.desktop_po_cannot_close_order))
+            return
+        }
+        if (dialog.date != null && vm.ui.periodLock.locks(dialog.date)) {
+            vm.fail(str(S.desktop_po_effective_date_locked, vm.ui.periodLock.lockedThrough))
+            return
+        }
         vm.update { copy(closeOff = dialog.copy(saving = true)) }
         vm.launchWork {
-            when (val answer = repository.closeAll(dialog.ids, dialog.date)) {
+            when (val answer = repository.closeAll(ids, dialog.date)) {
                 is ZillitResult.Success -> {
                     vm.update {
                         copy(
                             closeOff = null,
                             selection = emptySet(),
-                            notice = str(S.desktop_po_orders_closed, dialog.ids.size),
+                            notice = str(S.desktop_po_orders_closed, ids.size),
                         )
                     }
                     vm.load(vm.ui.destination)
@@ -470,9 +375,16 @@ internal class PoEntryActions(
             vm.fail(str(S.desktop_po_pick_an_effective_date))
             return
         }
+        // The web caps this picker at the day after the lock, and never lets a
+        // locked row into the selection at all.
+        if (vm.ui.periodLock.locks(date)) {
+            vm.fail(str(S.desktop_po_effective_date_locked, vm.ui.periodLock.lockedThrough))
+            return
+        }
+        val ids = dialog.ids.filterNot { id -> vm.ui.orderById(id)?.let(vm.ui::isLocked) == true }
         vm.update { copy(bulkDate = dialog.copy(saving = true)) }
         vm.launchWork {
-            when (val answer = repository.bulkSetEffectiveDate(dialog.ids, date)) {
+            when (val answer = repository.bulkSetEffectiveDate(ids, date)) {
                 is ZillitResult.Success -> {
                     vm.update {
                         copy(bulkDate = null, selection = emptySet(), notice = str(S.desktop_po_effective_date_set))
@@ -490,15 +402,12 @@ internal class PoEntryActions(
 }
 
 /**
- * Whether the coded lines come to the order's own gross.
- *
- * Judged to the penny, because both sides are sums of converted decimals and
- * exact equality reports a balanced set of lines as broken.
+ * Whether the coded lines come to the order's own gross — with the consolidated
+ * tax line substituted in, as the page and both writes see it. See
+ * [PoEntryLedger.balances].
  */
-internal fun PoEntryState.balances(order: PurchaseOrder): Boolean =
-    kotlin.math.abs(ledgerTotal - order.gross) < PENNY
-
-private const val PENNY = 0.01
+internal fun PoEntryState.balances(order: PurchaseOrder, state: PoUiState): Boolean =
+    ledger(state).balances(order)
 
 /** Fills in the vendor's name from the picker, as the lists do. */
 internal fun PurchaseOrder.withVendorName(state: PoUiState): PurchaseOrder =

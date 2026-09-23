@@ -25,6 +25,8 @@ import com.zillit.desktop.feature.purchaseorder.domain.AssetFilters
 import com.zillit.desktop.feature.purchaseorder.domain.NewPurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.domain.PoAssignmentRule
 import com.zillit.desktop.feature.purchaseorder.domain.PoDescriptionFormat
+import com.zillit.desktop.feature.purchaseorder.domain.PoEntryUpdate
+import com.zillit.desktop.feature.purchaseorder.domain.PoPostRequest
 import com.zillit.desktop.feature.purchaseorder.domain.PoSplitType
 import com.zillit.desktop.feature.purchaseorder.domain.PoApproval
 import com.zillit.desktop.feature.purchaseorder.domain.PoHistoryEntry
@@ -76,6 +78,9 @@ class PurchaseOrderRepositoryImpl(
 
     /** The Templates and Delivery Addresses tabs — see [PoRegisterSource]. */
     private val registerSource = PoRegisterSource(apiClient, config)
+
+    /** Approval tiers, the period lock, queries and rates — see [PoWorkflowSource]. */
+    private val workflowSource = PoWorkflowSource(apiClient, config)
 
     /**
      * See [PurchaseOrderRepository.refreshes]. Another production's frame is
@@ -179,17 +184,46 @@ class PurchaseOrderRepositoryImpl(
     override suspend fun delete(id: String): ZillitResult<Unit> =
         apiClient.envelope(HttpVerb.Delete, "$base/$id", RequestModule.ProjectUser).map { }
 
-    override suspend fun approve(id: String, note: String?): ZillitResult<Unit> =
-        post("$base/$id/approve", noteBody(note))
+    /** `{ tier_number, total_tiers }` — the web's approve body; the server keys the approval on the tier. */
+    override suspend fun approve(id: String, tierNumber: Int, totalTiers: Int): ZillitResult<Unit> = post(
+        "$base/$id/approve",
+        buildJsonObject {
+            put("tier_number", JsonPrimitive(tierNumber))
+            put("total_tiers", JsonPrimitive(totalTiers))
+        },
+    )
 
     override suspend fun reject(id: String, reason: String): ZillitResult<Unit> =
         post("$base/$id/reject", buildJsonObject { put("reason", JsonPrimitive(reason)) })
 
-    override suspend fun post(id: String, note: String?): ZillitResult<Unit> =
-        post("$base/$id/post", noteBody(note))
+    override suspend fun post(id: String, request: PoPostRequest): ZillitResult<Unit> =
+        post("$base/$id/post", request.body())
 
-    override suspend fun close(id: String, note: String?): ZillitResult<Unit> =
-        post("$base/$id/close", noteBody(note))
+    /**
+     * `{ reason, effective_date }` — both, always, as the web's Posted tab sends
+     * them: a blank reason is `""` and an undated close is `null`, so the server
+     * never has to tell "unset" from "absent".
+     */
+    override suspend fun close(id: String, reason: String, effectiveDate: Long?): ZillitResult<Unit> = post(
+        "$base/$id/close",
+        buildJsonObject {
+            put("reason", JsonPrimitive(reason))
+            put("effective_date", effectiveDate?.let { JsonPrimitive(it) } ?: JsonNull)
+        },
+    )
+
+    override suspend fun saveEntry(id: String, update: PoEntryUpdate): ZillitResult<Unit> =
+        apiClient.envelope(HttpVerb.Patch, "$base/$id", RequestModule.ProjectUser, update.body()).map { }
+
+    /** `PATCH /bulk` with the assignee and the reason in `data` — one call for the whole selection. */
+    override suspend fun bulkReassign(ids: List<String>, userId: String, reason: String): ZillitResult<Unit> =
+        bulkPatch(
+            ids,
+            buildJsonObject {
+                put("assigned_to", JsonPrimitive(userId))
+                put("reassignment_reason", JsonPrimitive(reason))
+            },
+        )
 
     /**
      * `PATCH /bulk` with `{po_ids, data}`.
@@ -198,7 +232,10 @@ class PurchaseOrderRepositoryImpl(
      * answered here rather than round-tripped into a generic toast: the person
      * selecting 140 rows can act on the answer, a 400 tells them nothing.
      */
-    override suspend fun bulkSetEffectiveDate(ids: List<String>, effectiveDate: Long): ZillitResult<Unit> = when {
+    override suspend fun bulkSetEffectiveDate(ids: List<String>, effectiveDate: Long): ZillitResult<Unit> =
+        bulkPatch(ids, buildJsonObject { put("effective_date", JsonPrimitive(effectiveDate)) })
+
+    private suspend fun bulkPatch(ids: List<String>, data: JsonObject): ZillitResult<Unit> = when {
         ids.isEmpty() -> ZillitResult.Failure(ZillitError.Unknown(str(S.desktop_nothing_is_selected)))
         ids.size > BULK_LIMIT ->
             ZillitResult.Failure(ZillitError.Unknown("Bulk changes are limited to $BULK_LIMIT orders at a time."))
@@ -209,7 +246,7 @@ class PurchaseOrderRepositoryImpl(
             module = RequestModule.ProjectUser,
             body = buildJsonObject {
                 put("po_ids", buildJsonArray { ids.forEach { add(JsonPrimitive(it)) } })
-                put("data", buildJsonObject { put("effective_date", JsonPrimitive(effectiveDate)) })
+                put("data", data)
             },
         ).map { }
     }
@@ -299,6 +336,19 @@ class PurchaseOrderRepositoryImpl(
 
     override suspend fun assetTags() = settingsSource.assetTags()
 
+    // -- the hub's workflow reads: PoWorkflowSource's --------------------------
+
+    override suspend fun approvalTiers() = workflowSource.approvalTiers()
+
+    override suspend fun periodLock() = workflowSource.periodLock()
+
+    override suspend fun queryThread(orderId: String) = workflowSource.queryThread(orderId)
+
+    override suspend fun sendQuery(orderId: String, threadId: String?, text: String) =
+        workflowSource.sendQuery(orderId, threadId, text)
+
+    override suspend fun currencyRates() = workflowSource.currencyRates()
+
     private suspend fun list(url: String, query: Map<String, Any?> = emptyMap()) =
         apiClient.request(
             verb = HttpVerb.Get,
@@ -310,9 +360,6 @@ class PurchaseOrderRepositoryImpl(
 
     private suspend fun post(url: String, body: JsonObject?): ZillitResult<Unit> =
         apiClient.envelope(HttpVerb.Post, url, RequestModule.ProjectUser, body).map { }
-
-    private fun noteBody(note: String?): JsonObject? =
-        note?.takeIf { it.isNotBlank() }?.let { buildJsonObject { put("note", JsonPrimitive(it)) } }
 
     private companion object {
         const val VENDOR_LIMIT = 500
@@ -428,7 +475,10 @@ internal data class PoDto(
     @SerialName("reassigned_by") val reassignedBy: String? = null,
     @SerialName("reassigned_at") val reassignedAt: String? = null,
     @SerialName("delivery") val delivery: String? = null,
-    @SerialName("delivery_address") val deliveryAddressText: String? = null,
+    // An object from the form (`{ name, line1, postalCode, … }`), a plain string
+    // on older orders. Typed `String` it failed the whole decode on the first
+    // order raised with an address, which emptied the list it was in.
+    @SerialName("delivery_address") val deliveryAddressRaw: JsonElement? = null,
     @SerialName("delivery_address_id") val deliveryAddressId: String? = null,
     @SerialName("delivery_date") val deliveryDate: String? = null,
     @SerialName("paid_amount") val paidAmount: JsonElement? = null,
@@ -473,7 +523,8 @@ internal data class PoDto(
             raisedBy = raisedBy ?: createdBy,
             assignedTo = assignedTo ?: assigned,
             reassignmentReason = reassignmentReason,
-            deliveryAddress = deliveryAddressText?.takeIf { it.isNotBlank() } ?: delivery,
+            deliveryAddress = deliveryAddressRaw.addressText()?.takeIf { it.isNotBlank() } ?: delivery,
+            deliveryAddressRaw = deliveryAddressRaw?.takeUnless { it is JsonNull },
             lines = parsedLines,
             approvals = approvals.orEmpty().map { it.toDomain() },
             attachmentCount = attachments?.size ?: 0,
@@ -558,6 +609,8 @@ internal data class PoLineDto(
     @SerialName("tags") val tags: List<String>? = null,
     @SerialName("split_parent_id") val splitParentId: String? = null,
     @SerialName("is_tax") val isTax: Boolean? = null,
+    @SerialName("tracking_codes") val trackingCodes: JsonElement? = null,
+    @SerialName("custom_fields") val customFields: JsonElement? = null,
 ) {
     fun toDomain(): PoLine {
         // A line with no quantity is one item, not none: the wire omits the
@@ -584,29 +637,57 @@ internal data class PoLineDto(
             tags = tags.orEmpty(),
             splitParentId = splitParentId?.takeIf { it.isNotBlank() },
             isTax = isTax == true,
+            trackingCodes = trackingCodes as? JsonObject,
+            customFields = customFields as? JsonArray,
         )
     }
 }
 
+/**
+ * One entry of an order's `approvals`.
+ *
+ * The web reads `{ user_id, tier_number, approved_at }` (`approval-helpers.js`)
+ * and the server writes exactly that — one entry per tier that *has* approved.
+ * `level` / `decision` / `decided_at` are an older spelling, kept as fallbacks.
+ * An entry with an approval time and no stated decision is an approval: that
+ * is the only reason the server writes one.
+ */
 @Serializable
 internal data class PoApprovalDto(
     @SerialName("user_id") val userId: String? = null,
     @SerialName("name") val name: String? = null,
     @SerialName("full_name") val fullName: String? = null,
-    @SerialName("level") val level: Int? = null,
+    @SerialName("tier_number") val tierNumber: JsonElement? = null,
+    @SerialName("level") val level: JsonElement? = null,
     @SerialName("decision") val decision: String? = null,
     @SerialName("status") val status: String? = null,
     @SerialName("note") val note: String? = null,
-    @SerialName("decided_at") val decidedAt: String? = null,
+    @SerialName("approved_at") val approvedAt: JsonElement? = null,
+    @SerialName("decided_at") val decidedAt: JsonElement? = null,
 ) {
-    fun toDomain() = PoApproval(
-        userId = userId,
-        name = name?.takeIf { it.isNotBlank() } ?: fullName.orEmpty(),
-        level = level ?: 1,
-        decision = decision ?: status,
-        note = note,
-        at = decidedAt.toEpochMillisOrNull(),
-    )
+    fun toDomain(): PoApproval {
+        val at = approvedAt.toStampOrNull() ?: decidedAt.toStampOrNull()
+        return PoApproval(
+            userId = userId,
+            name = name?.takeIf { it.isNotBlank() } ?: fullName.orEmpty(),
+            level = (tierNumber.toAmountOrNull() ?: level.toAmountOrNull())?.toInt() ?: 1,
+            decision = decision?.takeIf { it.isNotBlank() }
+                ?: status?.takeIf { it.isNotBlank() }
+                ?: APPROVAL_DECISION.takeIf { at != null || approvedAt != null },
+            note = note,
+            at = at,
+        )
+    }
+}
+
+/** What an entry with an approval time and no stated decision records. */
+private const val APPROVAL_DECISION = "approved"
+
+/** A time the server sends as epoch millis or as an ISO string. */
+internal fun JsonElement?.toStampOrNull(): Long? {
+    val primitive = this as? JsonPrimitive ?: return null
+    val text = primitive.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+    return text.toLongOrNull() ?: text.toDoubleOrNull()?.toLong() ?: text.toEpochMillisOrNull()
 }
 
 @Serializable
@@ -689,6 +770,10 @@ internal fun PoLine.body(): JsonObject = buildJsonObject {
     putIfPresent("split_parent_id", splitParentId)
     if (isTax) put("is_tax", JsonPrimitive(true))
     if (tags.isNotEmpty()) put("tags", buildJsonArray { tags.forEach { add(JsonPrimitive(it)) } })
+    // Round-tripped, never edited here: a line's analysis codes and extra
+    // fields must survive a save that rewrites the whole array.
+    trackingCodes?.let { put("tracking_codes", it) }
+    customFields?.let { put("custom_fields", it) }
 }
 
 /** The files on an order, as the record's `attachments` column. */

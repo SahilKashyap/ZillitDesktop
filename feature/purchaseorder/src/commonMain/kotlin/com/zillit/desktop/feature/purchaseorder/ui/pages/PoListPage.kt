@@ -1,5 +1,6 @@
 package com.zillit.desktop.feature.purchaseorder.ui.pages
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,12 +39,15 @@ import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.purchaseorder.domain.PoAccess
+import com.zillit.desktop.feature.purchaseorder.domain.PoSortColumn
+import com.zillit.desktop.feature.purchaseorder.domain.PoSortDirection
 import com.zillit.desktop.feature.purchaseorder.domain.PoSortKey
 import com.zillit.desktop.feature.purchaseorder.domain.PoStatus
 import com.zillit.desktop.feature.purchaseorder.domain.PurchaseOrder
 import com.zillit.desktop.feature.purchaseorder.ui.PoDestination
 import com.zillit.desktop.feature.purchaseorder.ui.PoEvent
 import com.zillit.desktop.feature.purchaseorder.ui.PoUiState
+import com.zillit.desktop.feature.purchaseorder.ui.defaultCurrency
 
 /**
  * Every order list but the Queue and the Posted tab: All POs, My POs, My
@@ -66,7 +70,7 @@ internal fun PoListPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             contentPadding = PaddingValues(ZillitTheme.spacing.lg),
             verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
         ) {
-            PoStatRow(rows)
+            PoStatRow(state, rows)
             if (state.showsFilters) PoFilterRow(state, onEvent)
             ZillitSectionCard(
                 title = state.destination.label,
@@ -92,7 +96,7 @@ internal fun PoListPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
  * table showing 3 is a card nobody trusts again.
  */
 @Composable
-internal fun PoStatRow(rows: List<PurchaseOrder>) {
+internal fun PoStatRow(state: PoUiState, rows: List<PurchaseOrder>) {
     val pending = rows.count { it.status == PoStatus.AwaitingApproval }
     val approved = rows.count {
         it.status == PoStatus.Approved || it.status == PoStatus.Queued || it.status == PoStatus.AccountsEntered
@@ -128,7 +132,7 @@ internal fun PoStatRow(rows: List<PurchaseOrder>) {
         )
         ZillitStatTile(
             label = str(S.ah_total_value),
-            value = rows.totalValue(),
+            value = rows.totalValue(state),
             sub = rows.currencyNote(),
             tone = StatusTone.Progress,
             icon = ZillitIcons.Bank,
@@ -138,17 +142,21 @@ internal fun PoStatRow(rows: List<PurchaseOrder>) {
 }
 
 /**
- * The total on the "Total value" card.
+ * A set of orders' total, as every card and period header shows it — the web's
+ * `describeConvertedTotal`.
  *
- * Mixed currencies show the count rather than a sum: adding dollars to pounds
- * gives a number that is wrong in both, and the web says "Mixed" for the same
- * reason. Converting would need the project's rates, which this tool does not
- * read.
+ * One currency sums in that currency. Several are each converted into the
+ * project's default through the project currencies' rates (`exr`, foreign per
+ * default) and summed there; a currency with no rate is added at face value,
+ * which is also what the web does. It used to read "Mixed", which answered
+ * nothing an accountant asks a total for.
  */
-internal fun List<PurchaseOrder>.totalValue(): String {
-    val codes = map { it.currency.orEmpty().uppercase() }.filter { it.isNotBlank() }.distinct()
-    if (codes.size > 1) return str(S.desktop_dm_mixed)
-    return Money.format(sumOf { it.gross }, codes.firstOrNull())
+internal fun List<PurchaseOrder>.totalValue(state: PoUiState): String {
+    val default = (state.rates.defaultCode ?: state.defaultCurrency()).uppercase()
+    val codes = map { it.currency?.uppercase()?.takeIf { code -> code.isNotBlank() } ?: default }.distinct()
+    if (codes.size <= 1) return Money.format(sumOf { it.gross }, codes.firstOrNull() ?: default)
+    val total = sumOf { order -> state.rates.toDefault(order.gross, order.currency, default) ?: order.gross }
+    return Money.format(total, default)
 }
 
 internal fun List<PurchaseOrder>.currencyNote(): String? {
@@ -215,7 +223,7 @@ internal fun PoFilterRow(state: PoUiState, onEvent: (PoEvent) -> Unit) {
 internal fun PoOrderTable(state: PoUiState, rows: List<PurchaseOrder>, onEvent: (PoEvent) -> Unit) {
     ZillitDataTable(
         rows = rows,
-        columns = poColumns(state, onEvent),
+        columns = poColumns(state, rows, onEvent),
         key = { it.id },
         loading = state.loading,
         onRowClick = { onEvent(PoEvent.OpenOrder(it.id)) },
@@ -233,20 +241,62 @@ internal fun PoOrderTable(state: PoUiState, rows: List<PurchaseOrder>, onEvent: 
     )
 }
 
+/**
+ * A clickable column heading — the web's sortable `<th>`. The same column again
+ * flips the direction; the arrow says which way the rows run now.
+ */
+private fun sortHeading(
+    state: PoUiState,
+    column: PoSortColumn,
+    label: String,
+    onEvent: (PoEvent) -> Unit,
+): @Composable () -> Unit = {
+    val arrow = when {
+        state.sortColumn != column -> ""
+        state.sortDirection == PoSortDirection.Ascending -> " ↑"
+        else -> " ↓"
+    }
+    ZillitText(
+        text = label.uppercase() + arrow,
+        style = ZillitTheme.typography.columnHeader,
+        color = if (state.sortColumn == column) ZillitTheme.colors.textPrimary else ZillitTheme.colors.textMuted,
+        maxLines = 1,
+        modifier = Modifier.fillMaxWidth().clickable { onEvent(PoEvent.SortColumn(column)) },
+    )
+}
+
+/**
+ * The rows a bulk action may take: everything on screen except an order in the
+ * locked cost-report period, which the web never lets into a selection.
+ */
+internal fun PoUiState.selectable(rows: List<PurchaseOrder>): List<PurchaseOrder> =
+    rows.filterNot { it.isLocalOnly || isLocked(it) }
+
 @Suppress("LongMethod") // A column table; splitting it hides the shape.
 internal fun poColumns(
     state: PoUiState,
+    rows: List<PurchaseOrder>,
     onEvent: (PoEvent) -> Unit,
 ): List<TableColumn<PurchaseOrder>> = buildList {
     if (state.viewer.isAccountant) {
+        val selectable = state.selectable(rows).map { it.id }
         add(
             TableColumn(
                 header = "",
                 width = ColumnWidth.Fixed(TICK_WIDTH),
+                // All on, or all off — the view model's SelectAll toggles.
+                headerContent = {
+                    ZillitCheckbox(
+                        checked = selectable.isNotEmpty() && state.selection.containsAll(selectable),
+                        onCheckedChange = { onEvent(PoEvent.SelectAll(selectable)) },
+                        enabled = selectable.isNotEmpty(),
+                    )
+                },
                 cell = { order ->
                     ZillitCheckbox(
                         checked = order.id in state.selection,
                         onCheckedChange = { onEvent(PoEvent.ToggleSelection(order.id)) },
+                        enabled = !state.isLocked(order),
                     )
                 },
             ),
@@ -255,6 +305,7 @@ internal fun poColumns(
     add(
         TableColumn(
             header = str(S.ah_lbl_po_number),
+            headerContent = sortHeading(state, PoSortColumn.Number, str(S.ah_lbl_po_number), onEvent),
             width = ColumnWidth.Fixed(NUMBER_WIDTH),
             cell = { order ->
                 Column {
@@ -291,6 +342,7 @@ internal fun poColumns(
     add(
         TableColumn(
             header = str(S.ah_lbl_vendor),
+            headerContent = sortHeading(state, PoSortColumn.Vendor, str(S.ah_lbl_vendor), onEvent),
             cell = { order ->
                 Column {
                     ZillitText(
@@ -311,36 +363,43 @@ internal fun poColumns(
         ),
     )
     add(
-        textColumn(
+        textColumn<PurchaseOrder>(
             header = str(S.desktop_po_dept_column),
             width = ColumnWidth.Fixed(DEPT_COLUMN),
             muted = true,
-        ) { order -> state.departmentName(order.departmentId).ifBlank { "—" } },
+        ) { order -> state.departmentName(order.departmentId).ifBlank { "—" } }
+            .copy(headerContent = sortHeading(state, PoSortColumn.Department, str(S.desktop_po_dept_column), onEvent)),
     )
     add(
-        textColumn(
+        textColumn<PurchaseOrder>(
             header = str(S.amount),
             width = ColumnWidth.Fixed(AMOUNT_WIDTH),
             numeric = true,
-        ) { order -> Money.format(order.gross, order.currency) },
+        ) { order -> Money.format(order.gross, order.currency) }
+            .copy(headerContent = sortHeading(state, PoSortColumn.Amount, str(S.amount), onEvent)),
     )
     add(
-        textColumn(
+        textColumn<PurchaseOrder>(
             header = str(S.ah_row_eff_date_upper),
             width = ColumnWidth.Fixed(DATE_WIDTH),
             muted = true,
-        ) { order -> EpochDate.date(order.effectiveDate).ifBlank { "—" } },
+        ) { order -> EpochDate.date(order.effectiveDate).ifBlank { "—" } }
+            .copy(
+                headerContent = sortHeading(state, PoSortColumn.EffectiveDate, str(S.ah_row_eff_date_upper), onEvent),
+            ),
     )
     add(
         TableColumn(
             header = str(S.status),
+            headerContent = sortHeading(state, PoSortColumn.Status, str(S.status), onEvent),
             width = ColumnWidth.Fixed(STATUS_WIDTH),
-            cell = { order -> ZillitStatusPill(label = order.statusLabel, tone = order.status.tone()) },
+            cell = { order -> ZillitStatusPill(label = state.statusLabel(order), tone = order.status.tone()) },
         ),
     )
     add(
         TableColumn(
             header = str(S.assigned),
+            headerContent = sortHeading(state, PoSortColumn.Assigned, str(S.assigned), onEvent),
             width = ColumnWidth.Fixed(ASSIGNED_WIDTH),
             cell = { order ->
                 val name = state.assigneeName(order)
@@ -364,16 +423,18 @@ internal fun poColumns(
     )
 }
 
-/** A status's colour. Neutral for the ones that are neither good news nor bad. */
+/**
+ * A status's colour — the web's `PO_STATUS_TONE` (`lib/poStatus.js`): posted
+ * and approved green, rejected red, closed grey, and everything still moving
+ * amber (pending, Acct Entered in both spellings, draft). An unknown status is
+ * amber too, the web's fallback.
+ */
 internal fun PoStatus.tone(): StatusTone = when (this) {
-    PoStatus.Draft -> StatusTone.Neutral
-    PoStatus.AwaitingApproval -> StatusTone.Pending
-    PoStatus.Approved -> StatusTone.Ready
-    PoStatus.AccountsEntered, PoStatus.Queued -> StatusTone.Progress
-    PoStatus.Posted -> StatusTone.Done
+    PoStatus.Posted, PoStatus.Approved -> StatusTone.Done
     PoStatus.Rejected, PoStatus.Cancelled -> StatusTone.Rejected
     PoStatus.Closed -> StatusTone.Neutral
-    PoStatus.Unknown -> StatusTone.Neutral
+    PoStatus.AwaitingApproval, PoStatus.AccountsEntered, PoStatus.Queued, PoStatus.Draft, PoStatus.Unknown ->
+        StatusTone.Pending
 }
 
 /**
@@ -410,7 +471,7 @@ internal fun PoBulkBar(state: PoUiState, onEvent: (PoEvent) -> Unit, modifier: M
                     style = ZillitTheme.typography.titleSmall,
                 )
                 ZillitText(
-                    text = str(S.desktop_po_total_value, selected.totalValue()),
+                    text = str(S.desktop_po_total_value, selected.totalValue(state)),
                     style = ZillitTheme.typography.bodySmall,
                     color = ZillitTheme.colors.textSecondary,
                 )

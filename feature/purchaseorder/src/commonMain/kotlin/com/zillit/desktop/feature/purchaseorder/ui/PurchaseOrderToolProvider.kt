@@ -42,19 +42,12 @@ class PurchaseOrderToolProvider(
         var failure by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(viewModel) { viewModel.start() }
-        // A route that names a page — the Account Hub's "Create PO" hands off
-        // `/new` — opens it; the bare tool path keeps the role's own landing.
-        // The role is passed in because two of the web's segments mean
-        // different tabs in its two modules; see PoDestination.forRoute.
-        LaunchedEffect(route, state.viewer) {
-            val shown = viewModel.currentState
-            val page = PoDestination.forRoute(route.path, shown.viewer) ?: return@LaunchedEffect
-            if (page == PoDestination.Form) {
-                if (shown.form == null) viewModel.onEvent(PoEvent.CreateOrder)
-                return@LaunchedEffect
-            }
-            if (page != shown.destination && page.visibleTo(shown.viewer)) viewModel.onEvent(PoEvent.Open(page))
-        }
+        // Every composition and every route change applies the route — the
+        // hub re-embeds this tool on its bare path, and `start()` alone is
+        // idempotent, so a route read only there was ignored on re-entry.
+        // A page the viewer cannot see yet (rights still loading) is held by
+        // the view model and applied when they arrive; see openRoute.
+        LaunchedEffect(route) { viewModel.openRoute(route.path) }
         LaunchedEffect(viewModel) {
             viewModel.effects.collect { effect ->
                 when (effect) {

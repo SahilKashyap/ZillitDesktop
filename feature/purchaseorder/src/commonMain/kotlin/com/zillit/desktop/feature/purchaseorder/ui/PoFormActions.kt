@@ -171,34 +171,6 @@ internal class PoFormActions(
     }
 
     /**
-     * Halves a line into two children — the web's "Split Line".
-     *
-     * The parent stays and keeps the description; the children carry half the
-     * money each and a [PoLine.splitParentId] pointing at it, which is what
-     * keeps every total on this tool from counting the money twice. An odd
-     * penny goes to the first child, so the two children still add to the
-     * parent exactly.
-     */
-    private fun List<PoLine>.splitEvenly(index: Int): List<PoLine> {
-        val parent = getOrNull(index) ?: return this
-        if (parent.isSplitChild) return this
-        val parentKey = parent.id ?: "line-$index"
-        val pennies = kotlin.math.round(parent.total * PENNIES_PER_UNIT).toLong()
-        val first = (pennies / 2) + (pennies % 2)
-        val children = listOf(first, pennies - first).map { part ->
-            parent.copy(
-                id = null,
-                quantity = 1.0,
-                unitPrice = part / 100.0,
-                amount = part / 100.0,
-                splitParentId = parentKey,
-            )
-        }
-        val withKey = if (parent.id == null) parent.copy(id = parentKey) else parent
-        return take(index) + withKey + children + drop(index + 1)
-    }
-
-    /**
      * Divides a rental line across the periods of its own window — the web's
      * "Split by Period".
      *
@@ -215,33 +187,14 @@ internal class PoFormActions(
             vm.fail(str(S.desktop_po_period_split_needs_rent))
             return
         }
-        val periods = periodsIn(parent, vm.ui.projectSettings.splitCadence.days)
-        if (periods.size < 2) {
+        val split = form.lines.splitByPeriod(index, vm.ui.projectSettings.splitCadence.days)
+        if (split == null) {
             vm.fail(
                 str(S.desktop_po_rental_window_too_short, vm.ui.projectSettings.splitCadence.label.lowercase()),
             )
             return
         }
-        val parentKey = parent.id ?: "line-$index"
-        val pennies = kotlin.math.round(parent.total * PENNIES_PER_UNIT).toLong()
-        val each = pennies / periods.size
-        // The remainder rides the first child so the children still add to the
-        // parent to the penny — a rental split that loses 2p reconciles wrong.
-        val remainder = pennies - each * periods.size
-        val children = periods.mapIndexed { position, window ->
-            val part = each + if (position == 0) remainder else 0L
-            parent.copy(
-                id = null,
-                quantity = 1.0,
-                unitPrice = part / 100.0,
-                amount = part / 100.0,
-                rentalStart = window.first,
-                rentalEnd = window.second,
-                splitParentId = parentKey,
-            )
-        }
-        val withKey = if (parent.id == null) parent.copy(id = parentKey) else parent
-        edit(form.copy(lines = form.lines.take(index) + withKey + children + form.lines.drop(index + 1)))
+        edit(form.copy(lines = split))
     }
 
     // -- attachments -----------------------------------------------------------
@@ -421,20 +374,16 @@ internal class PoFormActions(
      * the person with nothing to put right. Those stay the server's to judge.
      */
     private fun validate(request: NewPurchaseOrder, form: PoFormState, layout: FormLayout): List<String> = buildList {
+        // Vendor and description first, as the web's panel lists them.
+        addAll(headerProblems(request, form, layout))
         request.validationError()?.let { add(it) }
         if (form.lines.any { it.isDivisibleRental && it.rentalEnd!! <= it.rentalStart!! }) {
             add(str(S.desktop_po_rental_end_after_start))
         }
         if (!layout.isLoaded) return@buildList
         val required = { label: String -> layout.isRequired(PoFormFields.DETAILS, label) }
-        if (required(PoFormFields.VENDOR) && form.vendorId.isNullOrBlank()) {
-            add(str(S.desktop_po_requires_vendor))
-        }
         if (required(PoFormFields.ACCOUNT_CODE) && form.nominalCode.isBlank()) {
             add(str(S.desktop_po_requires_nominal_code))
-        }
-        if (required(PoFormFields.DESCRIPTION) && form.description.isBlank()) {
-            add(str(S.desktop_po_requires_description))
         }
         if (required(PoFormFields.NOTES) && form.notes.isBlank()) {
             add(str(S.desktop_po_requires_note))
@@ -498,11 +447,104 @@ internal class PoFormActions(
 
 }
 
+/**
+ * Halves a line into two children — the web's "Split Line", on the form and on
+ * the processing page alike.
+ *
+ * The parent stays and keeps the description; the children carry half the
+ * money each and a [PoLine.splitParentId] pointing at it, which is what keeps
+ * every total on this tool from counting the money twice. An odd penny goes to
+ * the first child, so the two children still add to the parent exactly.
+ */
+internal fun List<PoLine>.splitEvenly(index: Int): List<PoLine> {
+    val parent = getOrNull(index) ?: return this
+    if (parent.isSplitChild) return this
+    val parentKey = parent.id ?: "line-$index"
+    val pennies = kotlin.math.round(parent.total * PENNIES_PER_UNIT).toLong()
+    val first = (pennies / 2) + (pennies % 2)
+    val children = listOf(first, pennies - first).map { part ->
+        parent.copy(
+            id = null,
+            quantity = 1.0,
+            unitPrice = part / PENNIES_PER_UNIT,
+            amount = part / PENNIES_PER_UNIT,
+            splitParentId = parentKey,
+        )
+    }
+    val withKey = if (parent.id == null) parent.copy(id = parentKey) else parent
+    return take(index) + withKey + children + drop(index + 1)
+}
+
+/**
+ * Divides a rental line across the periods of its own window, [days] apiece —
+ * the web's "Split by Period". Null when the window gives fewer than two
+ * periods, which the caller reports rather than approximating.
+ *
+ * The remainder rides the first child so the children still add to the parent
+ * to the penny — a rental split that loses 2p reconciles wrong.
+ */
+internal fun List<PoLine>.splitByPeriod(index: Int, days: Int): List<PoLine>? {
+    val parent = getOrNull(index)?.takeIf { it.isDivisibleRental } ?: return null
+    val periods = periodsIn(parent, days)
+    if (periods.size < 2) return null
+    val parentKey = parent.id ?: "line-$index"
+    val pennies = kotlin.math.round(parent.total * PENNIES_PER_UNIT).toLong()
+    val each = pennies / periods.size
+    val remainder = pennies - each * periods.size
+    val children = periods.mapIndexed { position, window ->
+        val part = each + if (position == 0) remainder else 0L
+        parent.copy(
+            id = null,
+            quantity = 1.0,
+            unitPrice = part / PENNIES_PER_UNIT,
+            amount = part / PENNIES_PER_UNIT,
+            rentalStart = window.first,
+            rentalEnd = window.second,
+            splitParentId = parentKey,
+        )
+    }
+    val withKey = if (parent.id == null) parent.copy(id = parentKey) else parent
+    return take(index) + withKey + children + drop(index + 1)
+}
+
 /** A list with one entry taken out, never emptied — a form with no lines has no add button. */
 private fun List<PoLine>.without(index: Int): List<PoLine> {
     val remaining = filterIndexed { position, _ -> position != index }
     return remaining.ifEmpty { listOf(blankLine()) }
 }
+
+/**
+ * Whether the form must refuse to raise an order without [field] (vendor or
+ * description) — the web's `POForm.validate`, which checks a system field only
+ * when the template **shows it and marks it required**.
+ *
+ * With the template read, that is the whole rule: a production whose Form
+ * Configuration hides the vendor or the description gets no rule for a control
+ * that is not on screen (hard-requiring both made such an order impossible to
+ * raise). With no template read — the fetch failed, and the form is showing
+ * every field — both stay required, because both controls are on screen and an
+ * order with no vendor is stored with no vendor.
+ */
+internal fun FormLayout.requiresHeader(field: String): Boolean =
+    if (isLoaded) isRequired(PoFormFields.DETAILS, field) else true
+
+/**
+ * The vendor and description refusals — only where the form can satisfy the
+ * rule ([requiresHeader]). With no template read, the rule and its words are
+ * the ones the order had before templates: a vendor *name*, and the two
+ * "needs" messages.
+ */
+private fun headerProblems(request: NewPurchaseOrder, form: PoFormState, layout: FormLayout): List<String> =
+    buildList {
+        val loaded = layout.isLoaded
+        val vendorMissing = if (loaded) form.vendorId.isNullOrBlank() else request.vendorName.isBlank()
+        if (layout.requiresHeader(PoFormFields.VENDOR) && vendorMissing) {
+            add(str(if (loaded) S.desktop_po_requires_vendor else S.desktop_po_needs_vendor))
+        }
+        if (layout.requiresHeader(PoFormFields.DESCRIPTION) && form.description.isBlank()) {
+            add(str(if (loaded) S.desktop_po_requires_description else S.desktop_po_needs_description))
+        }
+    }
 
 /** The production's default currency, or sterling where it has not said. */
 internal fun PoUiState.defaultCurrency(): String = currencies.firstOrNull() ?: "GBP"

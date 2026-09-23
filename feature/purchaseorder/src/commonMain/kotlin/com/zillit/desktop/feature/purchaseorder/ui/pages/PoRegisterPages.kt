@@ -166,7 +166,7 @@ internal fun PoDraftsPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
             )
             ZillitStatTile(
                 label = str(S.desktop_po_draft_value),
-                value = rows.totalValue(),
+                value = rows.totalValue(state),
                 sub = rows.currencyNote(),
                 tone = StatusTone.Pending,
                 icon = ZillitIcons.Wallet,

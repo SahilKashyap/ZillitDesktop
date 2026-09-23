@@ -106,6 +106,8 @@ class PurchaseOrderViewModel(
     private val settingsActions = PoSettingsActions(this, repository, people, termsFiles)
     internal val formActions = PoFormActions(this, repository)
     internal val entryActions = PoEntryActions(this, repository)
+    internal val processActions = PoProcessActions(this, repository)
+    private val queryActions = PoQueryActions(this, repository)
     internal val registerActions = PoRegisterActions(this, repository)
 
     private var loadJob: Job? = null
@@ -124,6 +126,7 @@ class PurchaseOrderViewModel(
         launch { loadTeam() }
         launch { loadProjectSettings() }
         launch { loadPoSettings() }
+        loadWorkflow()
         launch { formActions.restoreDraft() }
         watchSync()
         listenOnce()
@@ -218,12 +221,56 @@ class PurchaseOrderViewModel(
             )
         }
         if (moved) load(currentState.destination)
+        // A route asked for before the rights said who this is — `/queue`
+        // before the viewer was known to be in accounts — is honoured now.
+        pendingRoute?.let(::openRoute)
+    }
+
+    /**
+     * The route the host last asked for, while it names a page this viewer
+     * cannot see *yet* — re-applied when the rights arrive.
+     */
+    private var pendingRoute: String? = null
+
+    /**
+     * Honours a tool route — every time the host shows the tool, not only the
+     * first.
+     *
+     * The Account Hub re-embeds this tool on its bare path and hands off
+     * deeper ones (`/queue/my`, `/posted`, `/new`); [start] is idempotent, so a
+     * route applied only there was ignored on every re-entry and the tool
+     * stayed wherever it was left. The bare path is the role's landing, as the
+     * web's bare `/purchase-orders` is — except over a half-filled form or an
+     * open processing page, which a re-entry must not throw away.
+     */
+    fun openRoute(path: String) {
+        val state = currentState
+        val page = PoDestination.forRoute(path, state.viewer)
+        if (page == PoDestination.Form) {
+            pendingRoute = null
+            if (state.form == null) onEvent(PoEvent.CreateOrder)
+            return
+        }
+        if (page == null && (state.form != null || state.entry != null)) return
+        val target = page ?: PoDestination.landingFor(state.viewer)
+        if (!target.visibleTo(state.viewer)) {
+            pendingRoute = path
+            return
+        }
+        pendingRoute = null
+        // The landing is the web's `/queue/my`; a named half wins.
+        val scope = PoDestination.queueScopeFor(path) ?: PoQueueScope.Mine.takeIf { page == null }
+        if (scope != null && scope != state.queueScope) setState { copy(queueScope = scope) }
+        if (target != state.destination) open(target)
     }
 
     @Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per user action.
     override fun onEvent(event: PoEvent) {
         when (event) {
-            PoEvent.Refresh -> load(currentState.destination)
+            PoEvent.Refresh -> {
+                loadWorkflow()
+                load(currentState.destination)
+            }
             is PoEvent.Open -> open(event.destination)
             is PoEvent.OpenQueue -> {
                 setState { copy(queueScope = event.scope) }
@@ -249,14 +296,22 @@ class PurchaseOrderViewModel(
                 }
             }
 
+            // A row in the locked cost-report period never joins a selection —
+            // the web's `toggleOne` refuses it — so no bulk action can reach it.
             is PoEvent.ToggleSelection -> setState {
-                copy(selection = if (event.id in selection) selection - event.id else selection + event.id)
+                val locked = orderById(event.id)?.let(::isLocked) == true
+                when {
+                    event.id in selection -> copy(selection = selection - event.id)
+                    locked -> this
+                    else -> copy(selection = selection + event.id)
+                }
             }
 
             is PoEvent.SelectAll -> setState {
                 // All on, or all off: a header checkbox that only ever adds is
                 // a control with no way back.
-                copy(selection = if (selection.containsAll(event.ids)) emptySet() else event.ids.toSet())
+                val ids = event.ids.filterNot { id -> orderById(id)?.let(::isLocked) == true }
+                copy(selection = if (ids.isEmpty() || selection.containsAll(ids)) emptySet() else ids.toSet())
             }
 
             PoEvent.ClearSelection -> setState { copy(selection = emptySet()) }
@@ -275,10 +330,16 @@ class PurchaseOrderViewModel(
             PoEvent.OpenTermsDocument, PoEvent.AddRule, is PoEvent.EditRule, is PoEvent.RemoveRule,
             -> settingsActions.onEvent(event)
 
+            is PoEvent.ProcessOrder, is PoEvent.EditEntry, PoEvent.AddEntryLine, is PoEvent.RemoveEntryLine,
+            is PoEvent.SplitEntryLine, is PoEvent.SplitEntryLineByPeriod,
+            PoEvent.SaveEntry, PoEvent.PostEntry, PoEvent.CloseEntry,
+            -> processActions.onEvent(event)
+
+            is PoEvent.OpenQuery, is PoEvent.EditQuery, PoEvent.SendQuery, PoEvent.CloseQuery,
+            -> queryActions.onEvent(event)
+
             is PoEvent.OpenOrder, PoEvent.CloseOrder, is PoEvent.OpenAttachment, is PoEvent.ViewPdf,
-            is PoEvent.SendVendorEmail, is PoEvent.ProcessOrder, is PoEvent.EditEntry,
-            PoEvent.AddEntryLine, is PoEvent.RemoveEntryLine, PoEvent.SaveEntry, PoEvent.PostEntry,
-            PoEvent.CloseEntry, is PoEvent.AskReassign, is PoEvent.AskBulkReassign,
+            is PoEvent.SendVendorEmail, is PoEvent.AskReassign, is PoEvent.AskBulkReassign,
             is PoEvent.EditReassign, PoEvent.ConfirmReassign, PoEvent.DismissReassign,
             is PoEvent.AskClose, is PoEvent.EditClose, PoEvent.ConfirmClose, PoEvent.DismissClose,
             is PoEvent.AskCloseOff, is PoEvent.EditCloseOff, PoEvent.ConfirmCloseOff,
@@ -300,7 +361,15 @@ class PurchaseOrderViewModel(
         }
     }
 
-    /** Opens a tab, clearing the filters with it — the web resets to "All" on every switch. */
+    /**
+     * Opens a tab.
+     *
+     * The quick-filter chip goes back to "All" — each tab offers a different set
+     * of chips, so a chip carried across could match nothing there. The search,
+     * the department filter and the sort stay: the web keeps them in module
+     * state across tabs, and an accountant looking one vendor up across All POs,
+     * the Queue and Posted should not retype it three times.
+     */
     private fun open(destination: PoDestination) {
         if (destination == PoDestination.Vendors) {
             sendEffect(PoEffect.OpenVendors)
@@ -314,10 +383,7 @@ class PurchaseOrderViewModel(
         setState {
             copy(
                 destination = destination,
-                search = "",
                 quickFilter = com.zillit.desktop.feature.purchaseorder.domain.PoQuickFilter.All,
-                departmentFilter = null,
-                sortColumn = null,
                 selection = emptySet(),
                 error = null,
                 staleSince = null,
@@ -469,6 +535,32 @@ class PurchaseOrderViewModel(
     }
 
     /**
+     * The three account-hub reads the order workflow gates on: the approval
+     * tiers (who may approve which tier), the cost-report lock (which orders
+     * are read-only) and the currency rates (how a mixed total converts).
+     *
+     * Each is swallowed on failure and each failure is the conservative
+     * reading — no tiers is nobody approving, which is the web's answer too; no
+     * lock is the server's to enforce; no rates adds at face value. The tiers
+     * are retried a few times, as the web's module does, because an approver
+     * with no buttons has nothing on screen that says why.
+     */
+    private fun loadWorkflow() {
+        launch {
+            repeat(TIER_ATTEMPTS) { attempt ->
+                val tiers = repository.approvalTiers().getOrNull()
+                if (tiers != null) {
+                    setState { copy(tiers = tiers) }
+                    return@launch
+                }
+                if (attempt < TIER_ATTEMPTS - 1) delay(TIER_RETRY_MILLIS)
+            }
+        }
+        launch { repository.periodLock().getOrNull()?.let { lock -> setState { copy(periodLock = lock) } } }
+        launch { repository.currencyRates().getOrNull()?.let { rates -> setState { copy(rates = rates) } } }
+    }
+
+    /**
      * Fills in vendor names from the vendor list: the server keys an order on
      * `vendor_id` and sends no name, exactly as Android's `POMapper` resolves
      * `vendorObj?.name`. An order whose vendor is not in the list keeps blank.
@@ -563,21 +655,49 @@ class PurchaseOrderViewModel(
     /**
      * Whether this person may not carry out [prompt].
      *
-     * Posting is an accountant's, deleting follows [PoAccess.canDelete], and a
-     * rule is a senior's. Approve and reject are absent on purpose: the
-     * approval queue only ever holds what was routed to this person, so it is
-     * scoped by data rather than by a right.
+     * Every gate the screen draws is re-checked here, on the order as it now
+     * stands, because an event can arrive without the button:
+     *
+     * - **Approve / Reject** — the viewer must be an approver of the order's
+     *   *next* tier (the web's `getApprovalVisibility(...).canApprove`), and the
+     *   order must be outside the locked period. The old "the approval queue is
+     *   scoped by data" reasoning held for one tab only, and accountants who sit
+     *   on a tier never see that tab.
+     * - **Delete** — [PoAccess.canDelete], with the processing page's own rule
+     *   when the page is on that order, and never a locked order.
+     * - A rule is a senior's.
      */
     private fun refusesPrompt(prompt: PoPrompt): Boolean {
-        val confirm = prompt as? PoPrompt.Confirm ?: return false
-        val order = currentState.orders.firstOrNull { it.id == confirm.targetId }
-        val allowed = when (confirm.action) {
-            PoConfirmAction.Post -> currentState.viewer.isAccountant
-            PoConfirmAction.Delete -> order == null || PoAccess.canDelete(order, currentState.viewer)
-            PoConfirmAction.RemoveRule -> currentState.viewer.isSeniorAccountant
-            else -> true
+        val state = currentState
+        val targetId = when (prompt) {
+            is PoPrompt.Confirm -> prompt.targetId
+            is PoPrompt.WithReason -> prompt.targetId
+        }
+        val order = state.orderById(targetId)
+        val decides = { order != null && state.approvalStep(order).canApprove && !state.isLocked(order) }
+        val allowed = when (prompt) {
+            is PoPrompt.Confirm -> when (prompt.action) {
+                PoConfirmAction.Approve -> decides()
+                PoConfirmAction.Delete -> order != null && state.mayDelete(order)
+                PoConfirmAction.RemoveRule -> state.viewer.isSeniorAccountant
+                else -> true
+            }
+
+            is PoPrompt.WithReason -> prompt.action != PoReasonAction.Reject || decides()
         }
         return !allowed
+    }
+
+    /**
+     * [PoAccess.canDelete] from wherever the ask came — the processing page's
+     * own rule when the page is on this order — and never a locked order.
+     */
+    private fun PoUiState.mayDelete(order: PurchaseOrder): Boolean {
+        if (isLocked(order)) return false
+        if (PoAccess.canDelete(order, viewer, onProcessingPage = entry?.orderId == order.id)) return true
+        // A draft of one's own on the Drafts tab: the server lists only the
+        // viewer's drafts, and some of them carry no raiser.
+        return order.status == PoStatus.Draft && order.raisedBy == null
     }
 
     private fun resolvePrompt() {
@@ -589,13 +709,17 @@ class PurchaseOrderViewModel(
         }
         when (prompt) {
             is PoPrompt.Confirm -> when (prompt.action) {
-                PoConfirmAction.Approve -> act(str(S.desktop_order_approved), readsBadgeOf = prompt.targetId) {
-                    repository.approve(prompt.targetId, null)
+                PoConfirmAction.Approve -> approve(prompt.targetId)
+                PoConfirmAction.Delete -> {
+                    // Deleting the order the processing page is on leaves the
+                    // page, and lands where "Back to Queue" would have.
+                    val leavesEntry = currentState.entry?.orderId == prompt.targetId
+                    if (leavesEntry) {
+                        setState { copy(entry = null, destination = PoDestination.Queue) }
+                    }
+                    act(str(S.desktop_order_deleted)) { repository.delete(prompt.targetId) }
+                    setState { copy(detail = null) }
                 }
-                PoConfirmAction.Post -> act(str(S.desktop_order_posted)) { repository.post(prompt.targetId, null) }
-                PoConfirmAction.Delete -> act(str(S.desktop_order_deleted)) {
-                    repository.delete(prompt.targetId)
-                }.also { setState { copy(detail = null) } }
 
                 PoConfirmAction.DeleteTemplate -> registerActions.deleteTemplate(prompt.targetId)
                 PoConfirmAction.RemoveRule -> settingsActions.deleteRule(prompt.targetId)
@@ -627,11 +751,29 @@ class PurchaseOrderViewModel(
             return
         }
         when (prompt.action) {
-            PoReasonAction.Reject -> act(str(S.desktop_order_rejected), readsBadgeOf = prompt.targetId) {
-                repository.reject(prompt.targetId, answer)
+            PoReasonAction.Reject -> {
+                act(str(S.desktop_order_rejected), readsBadgeOf = prompt.targetId) {
+                    repository.reject(prompt.targetId, answer)
+                }
+                setState { copy(detail = null) }
             }
             PoReasonAction.NameTemplate -> formActions.saveTemplate(answer)
         }
+    }
+
+    /**
+     * Approves the order's next tier — the tier this viewer was cleared to
+     * decide, sent as `{ tier_number, total_tiers }` exactly as the web does.
+     * The dialog and the processing page both leave with it, as the web's
+     * `setDetailPO(null)`.
+     */
+    private fun approve(id: String) {
+        val order = currentState.orderById(id) ?: return
+        val step = currentState.approvalStep(order)
+        act(str(S.desktop_order_approved), readsBadgeOf = id) {
+            repository.approve(id, step.tierNumber, step.tierCount)
+        }
+        setState { copy(detail = null) }
     }
 
     /**
@@ -692,6 +834,10 @@ class PurchaseOrderViewModel(
 
         /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
         const val SYNC_DEBOUNCE_MILLIS = 500L
+
+        /** The web's tier-config retry: a few attempts, two seconds apart. */
+        private const val TIER_ATTEMPTS = 3
+        private const val TIER_RETRY_MILLIS = 2_000L
         internal const val DRAFT_SAVE_DEBOUNCE_MILLIS = 400L
         private const val LABEL_MAX = 80
     }

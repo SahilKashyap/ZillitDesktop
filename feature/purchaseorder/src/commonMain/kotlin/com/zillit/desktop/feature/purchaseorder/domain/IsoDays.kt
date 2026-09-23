@@ -52,6 +52,15 @@ internal fun utcMidnight(year: Int, month: Int, day: Int): Long =
 /** An ISO day as UTC midnight, or null when the string is not a date. */
 internal fun String.isoDayToUtcMidnight(): Long? = isoDayNumber()?.let { it.toLong() * MILLIS_PER_DAY }
 
+/**
+ * Epoch milliseconds as the UTC calendar day they fall in — the inverse of
+ * [isoDayToUtcMidnight], and the day the cost-report lock is compared on.
+ */
+internal fun Long.utcIsoDay(): String {
+    val days = this / MILLIS_PER_DAY - if (this % MILLIS_PER_DAY < 0) 1 else 0
+    return days.toInt().toIsoDay()
+}
+
 private fun Int.twoDigits() = toString().padStart(2, '0')
 
 private fun daysFromCivil(year: Int, month: Int, day: Int): Int {

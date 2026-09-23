@@ -8,7 +8,12 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.core.forms.FormLayout
 import com.zillit.desktop.core.forms.FormTemplate
 import com.zillit.desktop.feature.purchaseorder.domain.PoAddress
+import com.zillit.desktop.feature.purchaseorder.domain.PoApprovalStep
+import com.zillit.desktop.feature.purchaseorder.domain.PoApprovalTiers
 import com.zillit.desktop.feature.purchaseorder.domain.PoAttachment
+import com.zillit.desktop.feature.purchaseorder.domain.PoCurrencyRates
+import com.zillit.desktop.feature.purchaseorder.domain.PoPeriodLock
+import com.zillit.desktop.feature.purchaseorder.domain.PoQueryThread
 import com.zillit.desktop.feature.purchaseorder.domain.PoCompany
 import com.zillit.desktop.feature.purchaseorder.domain.PoDeliveryAddress
 import com.zillit.desktop.feature.purchaseorder.domain.PoDepartment
@@ -112,7 +117,31 @@ data class PoUiState(
     val staleSince: Long? = null,
     /** The Settings tab — its own reads and saves, none of them an order list. */
     val settings: PoSettingsState = PoSettingsState(),
+
+    // -- the account hub's workflow reads ----------------------------------------
+    /** Who approves which tier. Empty until read, and empty means nobody can approve — the web's rule. */
+    val tiers: PoApprovalTiers = PoApprovalTiers(),
+    /** The cost-report lock; orders dated inside it are read-only. */
+    val periodLock: PoPeriodLock = PoPeriodLock(),
+    /** The rates a mixed-currency total converts through. */
+    val rates: PoCurrencyRates = PoCurrencyRates(),
+    /** The open query thread, when one is. */
+    val query: PoQueryState? = null,
 ) {
+    /**
+     * The next approval decision on [order] and whether this viewer may take it
+     * — the web's `getApprovalVisibility`, which gates Approve and Reject on
+     * **every** surface, not only the department Approval Queue: an accountant
+     * who sits on a tier approves from the console like anybody else.
+     */
+    fun approvalStep(order: PurchaseOrder): PoApprovalStep = tiers.visibility(order, viewer.userId)
+
+    /** The status pill's words, with the tier progress on a pending order. */
+    fun statusLabel(order: PurchaseOrder): String = order.statusLabel(tiers)
+
+    /** Whether [order]'s saved effective date sits in the locked cost-report period. */
+    fun isLocked(order: PurchaseOrder): Boolean = periodLock.locks(order)
+
     /** The form's own rules — which fields show, and which must be filled in. */
     val formLayout: FormLayout get() = FormLayout(formTemplate)
 
@@ -390,18 +419,38 @@ fun blankLine(): PoLine = PoLine(
  */
 data class PoEntryState(
     val orderId: String,
+    /** The coded lines — never the consolidated tax row, which is [taxLine]. */
     val lines: List<PoLine> = emptyList(),
     val effectiveDate: Long? = null,
+    // -- the header the web's process surface lets the accountant correct -----
     val nominalCode: String = "",
+    val vendorId: String? = null,
+    val companyId: String? = null,
+    val departmentId: String? = null,
+    val currency: String? = null,
+    val deliveryDate: Long? = null,
+    val vatTreatment: String = "pending",
+    // -- the consolidated tax line ---------------------------------------------
+    /** The persisted `is_tax` row, kept for its id, tags and tracking codes. */
+    val taxLine: PoLine? = null,
+    /** A typed tax amount; null derives it from the lines. Sticky, like the web's `overridden`. */
+    val taxOverride: Double? = null,
+    /** The reclaim nominal the tax line posts to. */
+    val taxCode: String = "",
     val saving: Boolean = false,
     val posting: Boolean = false,
     val sending: Boolean = false,
     /** Whether the order's own document is shown beside the coding. */
     val previewOpen: Boolean = false,
+    /** Rows the last Post refused for want of a nominal, 1-based — flagged on screen. */
+    val missingCodes: List<Int> = emptyList(),
 ) {
     val totals: PoTotals get() = PoTotals.of(lines)
 
-    /** What the coded lines come to — the figure that must match the order. */
+    /**
+     * What the coded lines come to, before the consolidated tax substitution.
+     * The page itself reconciles through [ledger], which applies it.
+     */
     val ledgerTotal: Double get() = totals.gross
 }
 
@@ -456,6 +505,20 @@ data class PoCloseOffState(
     val date: Long? = null,
     val confirmed: Boolean = false,
     val saving: Boolean = false,
+)
+
+/**
+ * An order's query thread, open beside whatever surface asked for it — the
+ * web's `QueryPanel`.
+ */
+data class PoQueryState(
+    val orderId: String,
+    val title: String,
+    /** Null until read, and while nobody has asked anything. */
+    val thread: PoQueryThread? = null,
+    val loading: Boolean = true,
+    val draft: String = "",
+    val sending: Boolean = false,
 )
 
 /** Closing one order: a reason and the period it lands in. */

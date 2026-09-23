@@ -115,12 +115,32 @@ object PoAccess {
      */
     fun isAmendment(status: PoStatus): Boolean = status in FULLY_APPROVED && status != PoStatus.Posted
 
-    /** May [viewer] delete this order? The raiser before approval, or accounts. */
-    fun canDelete(order: PurchaseOrder, viewer: PoViewer): Boolean = when {
-        viewer.isSeniorAccountant -> true
-        order.raisedBy == viewer.userId -> order.status !in FULLY_APPROVED && order.status != PoStatus.Closed
-        else -> false
+    /**
+     * May [viewer] delete this order? The web's two gates, and nothing wider.
+     *
+     * - **The raiser**, before full approval — and not once it is rejected: the
+     *   required flow there is edit and resubmit, so the rejection trail stays
+     *   on the same number (`PODetailModal`'s `canDelete`). Closed and cancelled
+     *   are finished records and stay, which is stricter than the web by those
+     *   two statuses.
+     * - **Accounts**, only on an order they entered and have not posted (`Acct
+     *   Entered`): a senior from the detail, and the processing accountant from
+     *   the processing page ([onProcessingPage] — the web wires Delete there for
+     *   whoever may process it).
+     *
+     * Everything posted, closed or in flight is off-limits to everybody: the old
+     * "any senior, any status" let the ledger lose a posted order.
+     */
+    fun canDelete(order: PurchaseOrder, viewer: PoViewer, onProcessingPage: Boolean = false): Boolean {
+        val accountsEntered = order.status == PoStatus.AccountsEntered || order.status == PoStatus.Queued
+        if (onProcessingPage) return accountsEntered && canProcess(order, viewer)
+        val isCreator = order.raisedBy != null && order.raisedBy == viewer.userId
+        val raiserMay = isCreator && order.status !in FULLY_APPROVED && order.status !in RAISER_KEEPS
+        return raiserMay || (viewer.isSeniorAccountant && accountsEntered)
     }
+
+    /** Statuses the raiser may not delete even before approval — see [canDelete]. */
+    private val RAISER_KEEPS = setOf(PoStatus.Rejected, PoStatus.Closed, PoStatus.Cancelled)
 
     /**
      * Purchase-order amendments after approval: built, wired, and hidden.

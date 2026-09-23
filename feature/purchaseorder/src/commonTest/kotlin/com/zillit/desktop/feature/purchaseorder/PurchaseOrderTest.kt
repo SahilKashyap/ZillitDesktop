@@ -129,15 +129,17 @@ class PurchaseOrderTest {
         assertFalse(PoViewer("u", "department_accounts", "Assistant Accountant").hasFullAccess)
     }
 
+    /**
+     * The order's own rule is the lines. Vendor and description are the form
+     * template's to require (see `PoParityFixesTest`) — a production that hid
+     * either could not raise an order at all while this demanded them.
+     */
     @Test
-    fun `a new order names the first thing wrong with it`() {
+    fun `a new order names the first thing wrong with its lines`() {
         val blank = NewPurchaseOrder(null, "", "", null, null, null, null, null, null, null, emptyList())
-        assertEquals("Choose the vendor this order is with.", blank.validationError())
+        assertEquals("Add at least one line.", blank.validationError())
 
-        val noDescription = blank.copy(vendorName = "Panavision")
-        assertEquals("Describe what is being ordered.", noDescription.validationError())
-
-        val noLines = noDescription.copy(description = "Camera package")
+        val noLines = blank.copy(vendorName = "Panavision", description = "Camera package")
         assertEquals("Add at least one line.", noLines.validationError())
 
         val blankLine = noLines.copy(lines = listOf(line(1.0, 10.0).copy(description = "")))

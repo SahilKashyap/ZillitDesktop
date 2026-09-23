@@ -63,6 +63,16 @@ internal fun PoPostedPage(state: PoUiState, onEvent: (PoEvent) -> Unit) {
                 PoFilterRow(state, onEvent)
             }
         }
+        // Still reading: say so, rather than telling an accountant with a full
+        // ledger that nothing has been posted.
+        if (rows.isEmpty() && state.loading) {
+            ZillitEmptyState(
+                title = str(S.ah_loading),
+                message = str(S.desktop_po_orders_reach_posted_tab),
+                icon = ZillitIcons.Clock,
+            )
+            return@Column
+        }
         if (rows.isEmpty()) {
             ZillitEmptyState(
                 title = str(S.desktop_board_nothing_posted_yet),
@@ -93,9 +103,10 @@ private fun PeriodCard(
     onEvent: (PoEvent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Anything not already closed can be closed off. The button says so when
-    // there is nothing left, rather than going grey with no explanation.
-    val closeable = group.filterNot { it.status == PoStatus.Closed }.map { it.id }
+    // Anything not already closed, and not in the locked cost-report period, can
+    // be closed off — the web's closeable set. The button says so when there is
+    // nothing left, rather than going grey with no explanation.
+    val closeable = group.filterNot { it.status == PoStatus.Closed || state.isLocked(it) }.map { it.id }
     ZillitSectionCard(
         modifier = modifier.fillMaxWidth(),
         title = period,
@@ -103,7 +114,7 @@ private fun PeriodCard(
         meta = str(
             if (group.size == 1) S.desktop_po_group_meta_one else S.desktop_po_group_meta_other,
             group.size,
-            group.totalValue(),
+            group.totalValue(state),
         ),
         padded = false,
         action = {
@@ -165,7 +176,8 @@ private fun postedColumns(state: PoUiState, onEvent: (PoEvent) -> Unit): List<Ta
         width = ColumnWidth.Fixed(ACTION_WIDTH),
         cell = { order ->
             Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                if (PoAccess.canProcess(order, state.viewer)) {
+                val locked = state.isLocked(order)
+                if (!locked && PoAccess.canProcess(order, state.viewer)) {
                     ZillitButton(
                         text = str(S.ah_process),
                         onClick = { onEvent(PoEvent.ProcessOrder(order.id)) },
@@ -173,7 +185,10 @@ private fun postedColumns(state: PoUiState, onEvent: (PoEvent) -> Unit): List<Ta
                         size = ButtonSize.Small,
                     )
                 }
-                if (order.status != PoStatus.Closed && state.viewer.isSeniorAccountant) {
+                // Open or partially relieved only: a fully relieved order has
+                // nothing left to release (the web's row rule), and a locked
+                // period is read-only.
+                if (!locked && order.relief.isCloseable && state.viewer.isSeniorAccountant) {
                     ZillitButton(
                         text = str(S.close),
                         onClick = { onEvent(PoEvent.AskClose(order.id)) },
