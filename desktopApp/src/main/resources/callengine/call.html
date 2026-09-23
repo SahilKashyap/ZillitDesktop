@@ -143,6 +143,23 @@
             display: block;
         }
 
+        /* Line 2's picture. Agora appends its own player box to the tile's
+           face mount, beside the initials disc — and in the mount's centred
+           row that left the photo squashed at one side and the video at the
+           other (2026-09-23). Laid over the whole tile instead, as Lines 1
+           and 3 fill it; when the camera stops Agora removes the box and the
+           disc underneath is simply there again. */
+        .face > div[id^="agora-video-player-"] {
+            position: absolute !important;
+            inset: 0;
+            width: 100% !important;
+            height: 100% !important;
+            /* No z-index: later in the mount than the disc, it covers it, and
+               the tile's name chip and mute badge — later still — stay on top. */
+        }
+
+        .face > div[id^="agora-video-player-"] video { object-fit: cover; }
+
         /* The initials disc, shown until a video track arrives. */
         .face {
             position: absolute;
