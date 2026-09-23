@@ -1,254 +1,229 @@
 package com.zillit.desktop.feature.payroll
 
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
-import com.zillit.desktop.core.common.EpochDate
 import com.zillit.desktop.core.designsystem.ZillitTheme
-import com.zillit.desktop.feature.payroll.domain.BankAccount
-import com.zillit.desktop.feature.payroll.domain.NominalAllocation
-import com.zillit.desktop.feature.payroll.domain.PayrollLine
+import com.zillit.desktop.feature.payroll.domain.AuditEvent
+import com.zillit.desktop.feature.payroll.domain.ClaimLine
+import com.zillit.desktop.feature.payroll.domain.DeductionLine
+import com.zillit.desktop.feature.payroll.domain.PayLine
+import com.zillit.desktop.feature.payroll.domain.PayPeriod
+import com.zillit.desktop.feature.payroll.domain.PayrollMetadata
+import com.zillit.desktop.feature.payroll.domain.PayrollPerson
+import com.zillit.desktop.feature.payroll.domain.PayrollTimecard
 import com.zillit.desktop.feature.payroll.domain.PayrollViewer
-import com.zillit.desktop.feature.payroll.domain.Payslip
-import com.zillit.desktop.feature.payroll.domain.PayslipLine
+import com.zillit.desktop.feature.payroll.domain.TimecardDay
 import com.zillit.desktop.feature.payroll.domain.TimecardStatus
-import com.zillit.desktop.feature.payroll.ui.PayrollPrompt
+import com.zillit.desktop.feature.payroll.ui.AdjustmentDialog
+import com.zillit.desktop.feature.payroll.ui.AdjustmentKind
+import com.zillit.desktop.feature.payroll.ui.HistoryPost
+import com.zillit.desktop.feature.payroll.ui.HistoryState
+import com.zillit.desktop.feature.payroll.ui.HistoryTab
+import com.zillit.desktop.feature.payroll.ui.PayrollDestination
+import com.zillit.desktop.feature.payroll.ui.PayrollEvent
 import com.zillit.desktop.feature.payroll.ui.PayrollScreen
+import com.zillit.desktop.feature.payroll.ui.PayrollTile
 import com.zillit.desktop.feature.payroll.ui.PayrollUiState
+import com.zillit.desktop.feature.payroll.ui.ProcessingState
+import com.zillit.desktop.feature.payroll.ui.ProcessingView
+import com.zillit.desktop.feature.payroll.ui.RunState
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
-/** Composes the real Payroll screen across the week lifecycle. */
+/**
+ * Composes the real payroll screens — the landing, History, the Run with its
+ * journal, Processing in all four views — for both audiences and themes.
+ */
 @OptIn(ExperimentalTestApi::class)
 class PayrollScreenRenderTest {
 
-    private companion object {
-        const val WEEK = 1_754_000_000_000
-        const val WEEK_MILLIS = 7L * 24 * 60 * 60 * 1000
-    }
+    private val week = 1_785_715_200_000L
+    private val now = week + 9 * PayPeriod.DAY_MILLIS
 
-    private val controller = PayrollViewer(
-        userId = "user-1",
-        departmentIdentifier = "department_accounts",
-        designationIdentifier = "designation_financial_controller_accounts",
-    )
+    private val controller = PayrollViewer("me", "department_accounts", "designation_financial_controller_accounts")
+    private val producer = PayrollViewer("me", "department_production", null, canView = true, rightsLoaded = true)
 
-    private val producer = PayrollViewer("user-2", "department_production", null)
-
-    private fun line(id: String = "tc-1", status: TimecardStatus = TimecardStatus.Approved) = PayrollLine(
+    private fun card(id: String, status: TimecardStatus) = PayrollTimecard(
         id = id,
-        crewId = "crew-$id",
-        crewName = "Ada Lovelace",
-        departmentId = "dept-1",
-        departmentName = "Camera",
-        designation = "Gaffer",
+        userId = "u-$id",
         status = status,
+        weekStarting = week,
         currency = "GBP",
-        basicPay = 1_400.0,
-        overtimePay = 220.0,
-        allowances = 65.0,
-        deductions = 100.0,
-        gross = 1_685.0,
-        net = 1_585.0,
-        nominalCode = "7000",
-        queryNote = null,
-    )
-
-    private fun state(
-        status: TimecardStatus,
-        viewer: PayrollViewer = controller,
-    ) = PayrollUiState(
-        viewer = viewer,
-        weekStarting = WEEK,
-        weekOptions = (0 until 4).map { WEEK - it * WEEK_MILLIS },
-        lines = listOf(line(status = status), line("tc-2", TimecardStatus.Posted)),
-    )
-
-    @Test
-    fun `every timecard status composes for both audiences and both themes`() {
-        TimecardStatus.entries.forEach { status ->
-            listOf(controller to false, controller to true, producer to false).forEach { (viewer, dark) ->
-                runComposeUiTest {
-                    setContent {
-                        ZillitTheme(darkTheme = dark) {
-                            PayrollScreen(state = state(status, viewer), onEvent = {})
-                        }
-                    }
-                    onNodeWithText("Payroll Runs").assertIsDisplayed()
-                }
-            }
-        }
-    }
-
-    @Test
-    fun `the week picker is built from the week the server landed on`() {
-        // Not from a locally computed Monday: this week starts on a Friday, and
-        // every row under it must be a Friday too or the picker offers weeks
-        // that do not exist.
-        val friday = WEEK + 4 * 24 * 60 * 60 * 1000
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    PayrollScreen(
-                        state = PayrollUiState(
-                            viewer = controller,
-                            weekStarting = friday,
-                            weekOptions = (0 until 3).map { friday - it * WEEK_MILLIS },
-                        ),
-                        onEvent = {},
-                    )
-                }
-            }
-            onNodeWithText(EpochDate.date(friday)).assertExists()
-            onNodeWithText(EpochDate.date(friday - WEEK_MILLIS)).assertExists()
-        }
-    }
-
-    @Test
-    fun `an empty tool says so rather than showing a void`() {
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    PayrollScreen(state = PayrollUiState(viewer = controller), onEvent = {})
-                }
-            }
-            onNodeWithText("No timecards this week").assertIsDisplayed()
-        }
-    }
-
-    @Test
-    fun `queries are named as what is holding the week`() {
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    PayrollScreen(state = state(TimecardStatus.Queried), onEvent = {})
-                }
-            }
-            onNodeWithText("1 timecard(s) are queried. They are answered on the timecard, not here.")
-                .assertIsDisplayed()
-        }
-    }
-
-    @Test
-    fun `an open line shows the payslip and refuses an allocation that does not add up`() {
-        val slip = Payslip(
-            crewId = "crew-tc-1",
-            crewName = "Ada Lovelace",
-            currency = "GBP",
-            lines = listOf(
-                PayslipLine("Basic", 1_400.0),
-                PayslipLine("Kit advance", 100.0, isDeduction = true),
+        basicPay = 700.0,
+        totalDays = 2,
+        days = listOf(
+            TimecardDay(
+                date = week,
+                dayType = "SWD",
+                basicHours = 10.0,
+                callTime = week + 7 * 3_600_000,
+                rates = listOf(PayLine(identifier = "basic", label = "Basic", rateAmount = 350.0)),
             ),
-            gross = 1_685.0,
-            deductions = 100.0,
-            net = 1_585.0,
-        )
+        ),
+        claims = listOf(ClaimLine("c1", "Taxi", 20.0, "GBP", null, "b1")),
+        deductions = listOf(DeductionLine("d1", "Advance", "flat", 50.0, 50.0, null)),
+        history = listOf(AuditEvent(week, "u-a", "paid", "locked", "paid", null, null)),
+    )
+
+    private fun state(viewer: PayrollViewer = controller, destination: PayrollDestination) = PayrollUiState(
+        viewer = viewer,
+        destination = destination,
+        metadata = PayrollMetadata(),
+        metadataLoaded = true,
+        now = now,
+        people = listOf("a", "b", "l").associate { id ->
+            "u-$id" to PayrollPerson("u-$id", "Crew $id", "department_camera", "designation_gaffer")
+        },
+    )
+
+    @Test
+    fun `the landing offers the accountant grid with the web's tiles`() {
         runComposeUiTest {
+            var opened: PayrollEvent? = null
             setContent {
                 ZillitTheme(darkTheme = false) {
-                    PayrollScreen(
-                        state = state(TimecardStatus.Approved).copy(
-                            openCrewId = "crew-tc-1",
-                            payslip = slip,
-                            nominalSplit = listOf(
-                                NominalAllocation(
-                                    id = null,
-                                    nominalCode = "7000",
-                                    description = "Camera crew",
-                                    // Short of the line's 1,685 gross.
-                                    amount = 1_000.0,
+                    PayrollScreen(state(destination = PayrollDestination.Landing), onEvent = { opened = it })
+                }
+            }
+            onNodeWithText("Payroll Management", substring = true, ignoreCase = true).assertExists()
+            PayrollTile.entries.forEach { onNodeWithText(it.title).assertExists() }
+            onNodeWithText("Payroll History").performClick()
+            assertEquals(PayrollEvent.OpenTile(PayrollTile.History), opened)
+        }
+    }
+
+    @Test
+    fun `a producer is told the producer views are not here rather than shown an empty grid`() {
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = true) {
+                    PayrollScreen(state(viewer = producer, destination = PayrollDestination.Landing), onEvent = {})
+                }
+            }
+            onNodeWithText("No payroll views here").assertIsDisplayed()
+            onAllNodesWithText("Payroll Run").assertCountEquals(0)
+        }
+    }
+
+    @Test
+    fun `history composes every tab for a paid week, with the post dialog over it`() {
+        HistoryTab.entries.forEach { tab ->
+            runComposeUiTest {
+                val base = state(destination = PayrollDestination.History)
+                val paid = card("a", TimecardStatus.Paid)
+                setContent {
+                    ZillitTheme(darkTheme = false) {
+                        PayrollScreen(
+                            base.copy(
+                                history = HistoryState(
+                                    weekStarting = week,
+                                    rows = listOf(paid, card("b", TimecardStatus.Posted)),
+                                    selectedId = "a",
+                                    detail = paid,
+                                    tab = tab,
+                                    post = HistoryPost(
+                                        ids = listOf("a"),
+                                        fromSelection = false,
+                                        effectiveDate = "2026-08-10",
+                                    ),
                                 ),
                             ),
-                        ),
-                        onEvent = {},
-                    )
+                            onEvent = {},
+                        )
+                    }
                 }
+                onNodeWithText("Pay Code Breakdown").assertExists()
+                onNodeWithText("Post All Ready — W/E 09 Aug 2026").assertExists()
             }
-            onNodeWithText("Payslip").assertExists()
-            onNodeWithText("Does not add up").assertExists()
         }
     }
 
     @Test
-    fun `a posted line's coding is readable but not editable`() {
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    PayrollScreen(
-                        state = state(TimecardStatus.Approved).copy(openCrewId = "crew-tc-2"),
-                        onEvent = {},
-                    )
-                }
-            }
-            // The dialog still opens — the figures are readable — but the
-            // controls that would change them are not offered.
-            onNodeWithText("Where this is charged").assertExists()
-        }
-    }
-
-    @Test
-    fun `paying is offered to an accountant and nothing is offered to a producer`() {
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    PayrollScreen(state = state(TimecardStatus.Approved), onEvent = {})
-                }
-            }
-            onNodeWithText("Select 1 approved").assertIsDisplayed()
-        }
-
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    PayrollScreen(state = state(TimecardStatus.Approved, producer), onEvent = {})
-                }
-            }
-            // A producer reads the board; they do not operate it.
-            onNodeWithText("Payroll Runs").assertIsDisplayed()
-        }
-    }
-
-    @Test
-    fun `a post with no account chosen cannot be confirmed and says why`() {
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    PayrollScreen(
-                        state = state(TimecardStatus.Paid).copy(
-                            prompt = PayrollPrompt.Post(ids = listOf("tc-1"), effectiveDate = WEEK),
-                        ),
-                        onEvent = {},
-                    )
-                }
-            }
-            onNodeWithText("Choose the settling account").assertExists()
-            onNodeWithText(
-                "This project has no bank accounts set up, so nothing can be posted. " +
-                    "Add one in Production Setup → Accounting.",
-            ).assertExists()
-        }
-    }
-
-    @Test
-    fun `a post with an account offers the account and the effective date`() {
-        runComposeUiTest {
-            setContent {
-                ZillitTheme(darkTheme = false) {
-                    PayrollScreen(
-                        state = state(TimecardStatus.Paid).copy(
-                            bankAccounts = listOf(BankAccount("b1", "Barclays Current", "20887714471", "GBP")),
-                            prompt = PayrollPrompt.Post(
-                                ids = listOf("tc-1"),
-                                bankId = "b1",
-                                effectiveDate = WEEK,
+    fun `the run composes its grid, toolbar and journal`() {
+        listOf(false, true).forEach { journal ->
+            runComposeUiTest {
+                val base = state(destination = PayrollDestination.Run)
+                setContent {
+                    ZillitTheme(darkTheme = journal) {
+                        PayrollScreen(
+                            base.copy(
+                                run = RunState(
+                                    weekStarting = week,
+                                    timecards = listOf(
+                                        card("a", TimecardStatus.Approved),
+                                        card("l", TimecardStatus.Locked),
+                                        card("b", TimecardStatus.Paid),
+                                    ),
+                                    selected = setOf("a", "l"),
+                                    journalOpen = journal,
+                                ),
                             ),
-                        ),
+                            onEvent = {},
+                        )
+                    }
+                }
+                if (journal) {
+                    onNodeWithText("Balanced", substring = true).assertExists()
+                } else {
+                    onNodeWithText("Final Approve & Lock · 1").assertExists()
+                    onNodeWithText("Mark Locked → Paid · 1").assertExists()
+                    onNodeWithText("Crew a").assertExists()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `processing composes all four views`() {
+        ProcessingView.entries.forEach { view ->
+            runComposeUiTest {
+                val base = state(destination = PayrollDestination.Processing)
+                setContent {
+                    ZillitTheme(darkTheme = false) {
+                        PayrollScreen(
+                            base.copy(
+                                processing = ProcessingState(
+                                    weekStarting = week,
+                                    timecards = listOf(
+                                        card("l", TimecardStatus.Locked),
+                                        card("b", TimecardStatus.Paid),
+                                    ),
+                                    outstanding = listOf(card("a", TimecardStatus.Approved)),
+                                    outstandingLoaded = true,
+                                    view = view,
+                                ),
+                            ),
+                            onEvent = {},
+                        )
+                    }
+                }
+                onNodeWithText("All Time Cards").assertExists()
+            }
+        }
+    }
+
+    @Test
+    fun `the claims dialog composes over any screen`() {
+        runComposeUiTest {
+            val base = state(destination = PayrollDestination.Processing)
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    PayrollScreen(
+                        base.copy(adjustment = AdjustmentDialog(
+                            AdjustmentKind.Claims,
+                            card("l", TimecardStatus.Locked),
+                        )),
                         onEvent = {},
                     )
                 }
             }
-            onNodeWithText("Barclays Current ••••4471").assertExists()
-            onNodeWithText("Post to Ledger").assertExists()
+            onNodeWithText("This timecard is locked", substring = true).assertExists()
+            onNodeWithText("Taxi").assertExists()
         }
     }
 }

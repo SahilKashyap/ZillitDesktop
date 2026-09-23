@@ -1,163 +1,70 @@
 package com.zillit.desktop.feature.payroll.domain
 
-import com.zillit.desktop.core.common.ZillitResult
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
 /**
- * One pay-period week's timecards, as payroll works them.
+ * A timecard's own status, in the web's vocabulary (`lib/timecardStatus.js`).
  *
- * ## Why a week and not a "run"
+ * ## The payroll half of the lifecycle
  *
- * There is no run object on the server. Payroll is worked a week at a time:
- * the timecards for a week are listed, the approved ones are marked paid, and
- * the paid ones are posted to the ledger in a batch. Every figure below is
- * derived from [lines] rather than fetched, because the server publishes no
- * week-level aggregate and one computed here can never disagree with the rows
- * underneath it.
- */
-data class PayrollWeek(
-    /** Epoch millis at the start of the pay-period week. */
-    val weekStarting: Long,
-    val currency: String?,
-    val lines: List<PayrollLine>,
-) {
-    val crewCount: Int get() = lines.size
-
-    val grossTotal: Double get() = lines.sumOf { it.gross }
-
-    val deductionsTotal: Double get() = lines.sumOf { it.deductions }
-
-    val netTotal: Double get() = lines.sumOf { it.net }
-
-    val queriedCount: Int get() = lines.count { it.status == TimecardStatus.Queried }
-
-    /** Approved and not yet paid — what a "mark paid" batch would move. */
-    val payableLines: List<PayrollLine> get() = lines.filter { it.status.isPayable }
-
-    /** Paid and not yet posted — what a "post to ledger" batch would move. */
-    val postableLines: List<PayrollLine> get() = lines.filter { it.status.isPostable }
-
-    val paidCount: Int get() = lines.count { it.status == TimecardStatus.Paid }
-
-    val postedCount: Int get() = lines.count { it.status == TimecardStatus.Posted }
-
-    /**
-     * Where the week is, read off its rows.
-     *
-     * Deliberately ordered worst-first: a single queried timecard makes the
-     * week queried however many others are posted, because the queried one is
-     * the thing somebody has to act on.
-     */
-    val status: WeekStatus
-        get() = when {
-            lines.isEmpty() -> WeekStatus.Empty
-            queriedCount > 0 -> WeekStatus.Queried
-            postedCount == crewCount -> WeekStatus.Posted
-            postableLines.isNotEmpty() -> WeekStatus.ReadyToPost
-            payableLines.isNotEmpty() -> WeekStatus.ReadyToPay
-            else -> WeekStatus.InProgress
-        }
-
-    /**
-     * What proportion of the week has reached the ledger, 0..1.
-     *
-     * Zero-safe: a week with nobody in it reads as no progress rather than as
-     * complete, because an empty week is not finished, it is empty.
-     */
-    val postedFraction: Float
-        get() = if (crewCount <= 0) 0f else (postedCount.toFloat() / crewCount).coerceIn(0f, 1f)
-}
-
-/**
- * One crew member's timecard as payroll sees it.
- *
- * [id] is the timecard id — the handle every action takes — while [crewId]
- * addresses the person, which is what the payslip and nominal routes are keyed
- * by. They are different identifiers and the two are not interchangeable.
- */
-data class PayrollLine(
-    val id: String,
-    val crewId: String,
-    val crewName: String,
-    val departmentId: String?,
-    val departmentName: String?,
-    val designation: String?,
-    val status: TimecardStatus,
-    val currency: String?,
-    val basicPay: Double,
-    val overtimePay: Double,
-    val allowances: Double,
-    val deductions: Double,
-    val gross: Double,
-    val net: Double,
-    val nominalCode: String?,
-    val queryNote: String?,
-) {
-    /**
-     * Whether the line's own figures add up.
-     *
-     * Shown rather than corrected. A line whose parts do not reach its gross
-     * usually means an allowance was added after the total was computed, and
-     * paying either figure without someone deciding which is right is how a
-     * payroll goes out wrong.
-     */
-    val figuresDisagree: Boolean
-        get() = kotlin.math.abs((basicPay + overtimePay + allowances) - gross) > PENNY
-
-    private companion object {
-        const val PENNY = 0.005
-    }
-}
-
-/** Where a week is, derived from its timecards. */
-enum class WeekStatus(private val labelKey: String) {
-    Empty(S.desktop_payroll_no_timecards),
-    InProgress(S.in_progress),
-    Queried(S.ah_queried),
-    ReadyToPay(S.desktop_timecard_ready_to_pay),
-    ReadyToPost(S.ah_ready_to_post),
-    Posted(S.ah_step_posted),
-    ;
-
-    val label: String get() = str(labelKey)
-}
-
-/**
- * A timecard's own status.
- *
- * The two that matter to payroll are [Approved] — which may be marked paid —
- * and [Paid], which may be posted to the ledger. The server silently skips
- * anything else in a batch, so the transitions are gated here too: sending
- * rows that will be ignored makes a batch report fewer moved than selected
- * with nothing to explain the gap.
+ * After the approval chain a timecard is `approved`; the accountant approver
+ * moves it to `final_approved` ("ACCT Approved"); the payroll accountant locks
+ * it (`locked`, sealed for the run); it is marked `paid`, which can be reversed
+ * to `unpaid` and paid again; and a paid one is `posted` to the ledger. Every
+ * transition below is the web's, and the server silently skips a row in the
+ * wrong state rather than failing the batch — so the gates are kept here too,
+ * or a batch reports fewer moved than selected with nothing to say why.
  */
 enum class TimecardStatus(val wire: String, private val labelKey: String) {
     Draft("draft", S.draft),
-    Submitted("submitted", S.txt_submitted),
     AwaitingApproval("awaiting_approval", S.dm_filter_status_pending),
-    Approved("approved", S.approved),
+    Submitted("submitted", S.txt_submitted),
+    Pending("pending", S.pending),
     Queried("queried", S.ah_queried),
-    Rejected("rejected", S.rejected),
+    Approved("approved", S.approved),
+    FinalApproved("final_approved", S.desktop_payroll_acct_approved),
     Locked("locked", S.docusign_prop_locked),
+    Rejected("rejected", S.rejected),
     Paid("paid", S.desktop_paid),
+    Unpaid("unpaid", S.desktop_unpaid),
     Posted("posted", S.ah_step_posted),
+
+    /** The web's legacy spelling of posted; labelled the same. */
+    Processed("processed", S.ah_step_posted),
+    Received("received", S.received_text),
     Unknown("", S.desktop_unknown),
     ;
 
     val label: String get() = str(labelKey)
 
-    /** Approved work may be paid. */
-    val isPayable: Boolean get() = this == Approved
+    /**
+     * Ready to be marked paid: `locked` after the run, or `unpaid` after a
+     * reversal. The web's `paidEligibleIds` (`PayrollRunModule.jsx` 6428-6432)
+     * and Processing's `canMarkPaid` (`PayrollGridModule.jsx` 1973).
+     */
+    val isPayable: Boolean get() = this == Locked || this == Unpaid
 
-    /** Only a paid timecard reaches the ledger. */
+    /** A paid row can be reversed to unpaid. */
+    val isUnpayable: Boolean get() = this == Paid
+
+    /** Only a paid timecard is posted to the ledger from the history queue. */
     val isPostable: Boolean get() = this == Paid
 
-    /** Still moving: somebody may yet change it. */
-    val isOpen: Boolean
-        get() = this == Draft || this == Submitted || this == AwaitingApproval || this == Queried
+    /** In the approval chain, before payroll has it: what Override Approval skips. */
+    val isAwaitingApproval: Boolean
+        get() = this == AwaitingApproval || this == Submitted || this == Pending
+
+    /**
+     * The statuses whose timecard the server refuses to change — claims,
+     * deductions and edits alike. The web's `TIMECARD_WRITES_REFUSED`
+     * (`payrollData.js` 24-29).
+     */
+    val refusesWrites: Boolean
+        get() = this == Locked || this == Paid || this == Posted || this == Rejected
+
+    /** Already in the ledger. */
+    val isPosted: Boolean get() = this == Posted || this == Processed
 
     companion object {
         fun from(wire: String?): TimecardStatus {
@@ -167,52 +74,19 @@ enum class TimecardStatus(val wire: String, private val labelKey: String) {
     }
 }
 
-/** A department's share of a week, for the totals board. */
-data class DepartmentTotal(
-    val departmentId: String?,
-    val departmentName: String,
-    val crewCount: Int,
-    val gross: Double,
-    val net: Double,
-) {
-    companion object {
-        /**
-         * Rolls a week's lines up by department.
-         *
-         * Computed rather than fetched: there is no department-totals endpoint,
-         * and the alternative — a second read that could disagree with the grid
-         * beside it — is worse than the arithmetic.
-         */
-        fun from(lines: List<PayrollLine>): List<DepartmentTotal> =
-            lines.groupBy { it.departmentId }
-                .map { (departmentId, group) ->
-                    DepartmentTotal(
-                        departmentId = departmentId,
-                        // The first row that names the department wins; rows
-                        // often carry the id without the name.
-                        departmentName = group.firstNotNullOfOrNull { it.departmentName }
-                            ?: str(S.unassigned),
-                        crewCount = group.size,
-                        gross = group.sumOf { it.gross },
-                        net = group.sumOf { it.net },
-                    )
-                }
-                .sortedByDescending { it.gross }
-    }
-}
-
 /**
  * A bank account the production settles from.
  *
- * Posting a batch to the ledger requires one. The server rejects a post with
- * no bank account, so this is not an optional refinement of the post dialog —
- * it is the reason the dialog exists.
+ * Posting a batch from the history queue requires one: the server rejects a
+ * post with no `bank_id`, so this is not an optional refinement of the post
+ * dialog — it is the reason the dialog has a picker.
  */
 data class BankAccount(
     val id: String,
     val name: String,
     val accountNumber: String?,
     val currency: String?,
+    val holderName: String? = null,
 ) {
     /** "Barclays Current ••••4471", or just the name where there is no number. */
     val display: String
@@ -234,157 +108,100 @@ data class BankAccount(
  */
 data class PostOutcome(val marked: Int, val skipped: Int)
 
-/** Who is looking at the payroll tool. */
+/**
+ * The production's payroll settings as the payroll screens read them — the
+ * web's `usePayrollMetadata`, which merges `/payroll/metadata` with the
+ * account hub's `/payroll-settings`.
+ */
+data class PayrollMetadata(
+    /** Whether the production's payroll-approvers list names this user. */
+    val isFinalApprover: Boolean = false,
+    /** ISO day the pay period starts on: 1 = Monday … 7 = Sunday. */
+    val payPeriodStartDay: Int = PayPeriod.MONDAY,
+    /** The balance-sheet accounts the journal's credit side posts to. */
+    val payrollAccounts: List<PayrollAccount> = emptyList(),
+    /** One journal line per pay category rather than per pay code. */
+    val journalGroupByCategory: Boolean = false,
+    /** `title` rather than `uppercase` — how a journal line's description is cased. */
+    val journalTitleCase: Boolean = false,
+)
+
+/**
+ * A payroll control account: a code from Payroll Entry Setup, named by the
+ * chart of accounts — or by its own code when the chart does not know it.
+ */
+data class PayrollAccount(val code: String, val name: String)
+
+/** A crew member as the production's crew list names them. */
+data class PayrollPerson(
+    val userId: String,
+    val fullName: String,
+    /** A label key (`department_camera`), translated at the edge. */
+    val department: String?,
+    /** A label key (`designation_gaffer_electrical`), translated at the edge. */
+    val designation: String?,
+)
+
+/**
+ * Who is looking at payroll, resolved the way the web resolves it.
+ *
+ * Department and designation come from the crew list; the final-approver
+ * flag from `/payroll/metadata`; the tool rights from the production's
+ * permission grid. Every gate the screens draw is a property here, and the
+ * view model checks the same property before it acts.
+ */
 data class PayrollViewer(
     val userId: String,
     val departmentIdentifier: String?,
     val designationIdentifier: String?,
     /**
-     * Whether the production's payroll-approvers list names this user.
-     *
-     * From `/api/v2/payroll/metadata`, and the only authority on it — the
-     * seniority guess below is a shape, not a permission.
+     * The production's payroll-approvers list names this user — from
+     * `/api/v2/payroll/metadata`. On its own; see [isFinalApprover].
      */
-    val isFinalApprover: Boolean = false,
-    val enteredAsTool: Boolean = false,
+    val onApproverList: Boolean = false,
+    /** `view_access` or `posting_access` on `payroll_tool`. */
+    val canView: Boolean = false,
+    /** False until the permission grid has answered. */
+    val rightsLoaded: Boolean = false,
 ) {
+    /** The web's `currentUser.isAccountant`: the profile department names accounts. */
     val isAccountant: Boolean
-        get() = !enteredAsTool && departmentIdentifier?.contains(ACCOUNTS, ignoreCase = true) == true
+        get() = departmentIdentifier?.contains(ACCOUNTS, ignoreCase = true) == true
 
     /**
-     * Paying and posting are senior actions.
-     *
-     * Production Accountant and Financial Controller by role; matched on the
-     * normalised value so the identifier and the translated name both work.
+     * Production Accountant or Financial Controller — the web's
+     * `isSeniorAccountant`. Matched on the normalised value so the
+     * identifier and the translated name both work.
      */
     val isSenior: Boolean
-        get() = designationIdentifier.orEmpty().lowercase()
-            .map { if (it.isLetterOrDigit()) it else ' ' }
-            .joinToString("")
-            .let { value -> SENIOR.any { value.contains(it) } }
-
-    /** Producers read the board; they do not operate it. */
-    val canOperate: Boolean get() = isAccountant
+        get() = designationIdentifier.normalised().let { value -> SENIOR.any { value.contains(it) } }
 
     /**
-     * Posting to the ledger is irreversible, so it takes the server's word.
-     *
-     * Not a rights-grid grant, unlike every other `canPost` in this app: it is
-     * read off the designation, so there is no row an admin can switch on and
-     * nothing to request. That is why this button is still hidden rather than
-     * shown-and-prompting like the rest — see `core.permissions.gatedClick`.
+     * The accountant approver: named on the approvers list, or senior. The
+     * web's `usePayrollMetadata().isFinalApprover`.
      */
-    val canPost: Boolean get() = isAccountant && (isFinalApprover || isSenior)
+    val isFinalApprover: Boolean get() = onApproverList || isSenior
+
+    /**
+     * Allowed to lock and unlock a run — the web's `isPayrollAccountant`: a
+     * payroll-accounts or office-assistant designation, or senior.
+     */
+    val isPayrollAccountant: Boolean
+        get() = isSenior || designationIdentifier?.trim() in PAYROLL_ACCOUNTANT_DESIGNATIONS
+
+    /** The accountant surfaces — Processing, Run and History — are theirs. */
+    val seesAccountantViews: Boolean get() = isAccountant
 
     private companion object {
         const val ACCOUNTS = "accounts"
         val SENIOR = setOf("production accountant", "financial controller")
+        val PAYROLL_ACCOUNTANT_DESIGNATIONS = setOf(
+            "designation_office_production_assistant_additional_crew",
+            "designation_payroll_accounts",
+        )
+
+        fun String?.normalised(): String = orEmpty().lowercase()
+            .map { if (it.isLetterOrDigit()) it else ' ' }
+            .joinToString("")
     }
 }
-
-/** Everything the payroll tool asks the server for. */
-interface PayrollRepository {
-
-    /**
-     * Socket announcements that the week's rows changed somewhere — a final
-     * approval unlocking a timecard for payroll, or another client's lock,
-     * paid, unpaid or post landing — answered with a reload of the week on
-     * screen rather than an in-place patch (the web's `ah:payroll:list`
-     * refetch pattern). Defaulted empty for tests and hosts without a socket.
-     */
-    val refreshes: Flow<Unit> get() = emptyFlow()
-
-    /**
-     * Every timecard for one week, full documents.
-     *
-     * Full rather than the slim projection because the grid shows the pay
-     * breakdown, and the slim shape carries only a status and a gross.
-     */
-    suspend fun week(weekStarting: Long): ZillitResult<PayrollWeek>
-
-    /**
-     * The current processing week, as the server reckons it.
-     *
-     * Used on open. The response names the week it answered with, so the
-     * caller never has to compute one — which matters because the production's
-     * pay period need not start on a Monday, and a week we guessed would show
-     * an empty grid with nothing to say why.
-     */
-    suspend fun currentWeek(): ZillitResult<PayrollWeek>
-
-    /** Whether this user is on the production's payroll-approvers list. */
-    suspend fun isFinalApprover(): ZillitResult<Boolean>
-
-    /** The accounts the production can settle from. */
-    suspend fun bankAccounts(): ZillitResult<List<BankAccount>>
-
-    /** Moves approved timecards to paid. Anything else is skipped server-side. */
-    suspend fun markPaid(timecardIds: List<String>): ZillitResult<Unit>
-
-    /** Puts one paid timecard back to approved. */
-    suspend fun markUnpaid(timecardId: String): ZillitResult<Unit>
-
-    /**
-     * Posts paid timecards to the nominal ledger.
-     *
-     * [bankId] and [effectiveDate] are both required by the server — a post
-     * without either is rejected, and the effective date is additionally
-     * checked against the cost-report lock.
-     */
-    suspend fun markPosted(
-        timecardIds: List<String>,
-        bankId: String,
-        effectiveDate: Long,
-    ): ZillitResult<PostOutcome>
-
-    /**
-     * The nominal split behind one crew member's week.
-     *
-     * Read separately from the line because it is only ever looked at when
-     * someone questions a figure — fetching it for every row would be a
-     * request per person per week.
-     */
-    suspend fun nominalSplit(weekStarting: Long, crewId: String): ZillitResult<List<NominalAllocation>>
-
-    /** Rewrites that split. The whole set goes; the server replaces it. */
-    suspend fun saveNominalSplit(
-        weekStarting: Long,
-        crewId: String,
-        allocations: List<NominalAllocation>,
-    ): ZillitResult<Unit>
-
-    /** The payslip breakdown for one crew member, as payroll would issue it. */
-    suspend fun payslip(weekStarting: Long, crewId: String): ZillitResult<Payslip?>
-}
-
-/** Where one crew member's cost is charged. */
-data class NominalAllocation(
-    val id: String?,
-    val nominalCode: String,
-    val description: String,
-    val amount: Double,
-    val departmentId: String? = null,
-)
-
-/**
- * What one crew member is paid this week, itemised.
- *
- * Read-only: the payslip is derived from the timecard and the deal, and
- * correcting it means correcting one of those rather than the slip.
- */
-data class Payslip(
-    val crewId: String,
-    val crewName: String,
-    val currency: String?,
-    val lines: List<PayslipLine>,
-    val gross: Double,
-    val deductions: Double,
-    val net: Double,
-)
-
-data class PayslipLine(
-    val label: String,
-    val amount: Double,
-    /** True for anything taken off rather than added. */
-    val isDeduction: Boolean = false,
-)

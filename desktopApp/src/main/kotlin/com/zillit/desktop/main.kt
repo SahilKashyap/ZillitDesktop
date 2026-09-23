@@ -274,7 +274,6 @@ import com.zillit.desktop.feature.drive.domain.DriveViewer
 import com.zillit.desktop.feature.drive.ui.DriveHostSeams
 import com.zillit.desktop.feature.drive.ui.DriveToolProvider
 import com.zillit.desktop.feature.drive.ui.DriveViewModel
-import com.zillit.desktop.feature.payroll.domain.PayrollViewer
 import com.zillit.desktop.feature.payroll.ui.PayrollToolProvider
 import com.zillit.desktop.feature.payroll.ui.PayrollViewModel
 import com.zillit.desktop.feature.purchaseorder.domain.PoViewer
@@ -2333,16 +2332,6 @@ private fun AppGraph.Ready.timecardViewer(): TimecardViewer {
     )
 }
 
-private fun AppGraph.Ready.payrollViewer(): PayrollViewer {
-    val context = projectContext?.context?.value
-    val me = context?.user(context.profile?.userId)
-    return PayrollViewer(
-        userId = context?.profile?.userId.orEmpty(),
-        departmentIdentifier = me?.department,
-        designationIdentifier = me?.designation,
-    )
-}
-
 /** `Unknown` and `UpToDate` both mean "render nothing". */
 private fun UpdateStatus.toNotice(installed: String): UpdateNotice? = when (this) {
     is UpdateStatus.Available ->
@@ -2826,13 +2815,7 @@ private fun rememberAppViewModels(
                     badges = graph.tabBadges("unit") { TabBadgeScope(tool = "timecard_label") },
                 )
             },
-            payroll = ready?.let { graph ->
-                PayrollViewModel(
-                    repository = graph.payrollRepository,
-                    viewer = { graph.payrollViewer() },
-                    now = { System.currentTimeMillis() },
-                )
-            },
+            payroll = ready?.buildPayroll(permissions),
             dealMemos = ready?.buildDealMemos(permissions),
             accountHub = ready?.let { graph ->
                 AccountHubViewModel(

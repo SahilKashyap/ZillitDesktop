@@ -1,202 +1,135 @@
 package com.zillit.desktop.feature.payroll.ui
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.dp
-import com.zillit.desktop.core.localization.localised
-import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.common.ZillitResult
-import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
-import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
+import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.mvvm.ZillitViewModel
-import com.zillit.desktop.core.workspace.OpenMode
-import com.zillit.desktop.core.workspace.ToolProvider
-import com.zillit.desktop.core.workspace.WindowNavigator
-import com.zillit.desktop.core.workspace.WorkspaceRoute
-import com.zillit.desktop.feature.payroll.domain.BankAccount
-import com.zillit.desktop.feature.payroll.domain.DepartmentTotal
-import com.zillit.desktop.feature.payroll.domain.NominalAllocation
-import com.zillit.desktop.feature.payroll.domain.PayrollLine
+import com.zillit.desktop.feature.payroll.domain.PayrollDocuments
+import com.zillit.desktop.feature.payroll.domain.PayrollFiles
+import com.zillit.desktop.feature.payroll.domain.PayrollPerson
 import com.zillit.desktop.feature.payroll.domain.PayrollRepository
 import com.zillit.desktop.feature.payroll.domain.PayrollViewer
-import com.zillit.desktop.feature.payroll.domain.PayrollWeek
-import com.zillit.desktop.feature.payroll.domain.Payslip
-import com.zillit.desktop.feature.payroll.domain.TimecardStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import com.zillit.desktop.core.strings.S
-import com.zillit.desktop.core.strings.str
-
-/** Everything the payroll tool is showing. */
-data class PayrollUiState(
-    val viewer: PayrollViewer,
-    val loading: Boolean = false,
-    val busy: Boolean = false,
-    val error: ZillitError? = null,
-    val notice: String? = null,
-    /** The week on screen. Null until the server's current week has landed. */
-    val weekStarting: Long? = null,
-    /** Recent weeks, newest first — the picker down the left. */
-    val weekOptions: List<Long> = emptyList(),
-    val lines: List<PayrollLine> = emptyList(),
-    val search: String = "",
-    /** Timecard ids ticked for a batch action. */
-    val selection: Set<String> = emptySet(),
-    val bankAccounts: List<BankAccount> = emptyList(),
-    val prompt: PayrollPrompt? = null,
-    /** The crew member whose detail is open, with what has loaded for them. */
-    val openCrewId: String? = null,
-    val nominalSplit: List<NominalAllocation> = emptyList(),
-    val payslip: Payslip? = null,
-) {
-    val week: PayrollWeek
-        get() = PayrollWeek(
-            weekStarting = weekStarting ?: 0L,
-            currency = lines.firstNotNullOfOrNull { it.currency },
-            lines = lines,
-        )
-
-    val departmentTotals: List<DepartmentTotal> get() = DepartmentTotal.from(lines)
-
-    val openLine: PayrollLine? get() = lines.firstOrNull { it.crewId == openCrewId }
-
-    /**
-     * Whether the open line's coding can still be changed.
-     *
-     * A posted timecard's is fixed — it is already in the ledger, and moving it
-     * there means a journal correction rather than an edit here.
-     */
-    val codingEditable: Boolean
-        get() = viewer.canOperate && openLine?.status != TimecardStatus.Posted
-
-    /** What the nominal split comes to, which has to reach the line's gross. */
-    val splitTotal: Double get() = nominalSplit.sumOf { it.amount }
-
-    val splitBalances: Boolean
-        get() = openLine?.let { kotlin.math.abs(splitTotal - it.gross) < PENNY } ?: true
-
-    val visibleLines: List<PayrollLine>
-        get() = lines.filter { line ->
-            search.isBlank() || line.crewName.lowercase().contains(search.trim().lowercase())
-        }
-
-    /** Ticked rows that "mark paid" would actually move. */
-    val selectedPayable: List<PayrollLine>
-        get() = lines.filter { it.id in selection && it.status.isPayable }
-
-    /** Ticked rows that a ledger post would actually move. */
-    val selectedPostable: List<PayrollLine>
-        get() = lines.filter { it.id in selection && it.status.isPostable }
-
-    val selectedTotal: Double get() = lines.filter { it.id in selection }.sumOf { it.net }
-
-    private companion object {
-        const val PENNY = 0.005
-    }
-}
-
-sealed interface PayrollPrompt {
-    data class Confirm(
-        val action: PayrollConfirmAction,
-        val ids: List<String>,
-        val title: String,
-        val message: String,
-    ) : PayrollPrompt
-
-    /**
-     * Posting to the ledger, which needs a settling account and a date.
-     *
-     * Both are the server's requirements rather than this screen's taste: a
-     * post without either is refused, and the date is checked against the
-     * cost-report lock.
-     */
-    data class Post(
-        val ids: List<String>,
-        val bankId: String? = null,
-        val effectiveDate: Long,
-    ) : PayrollPrompt
-}
-
-enum class PayrollConfirmAction { MarkPaid, MarkUnpaid }
-
-sealed interface PayrollEvent {
-    data object Refresh : PayrollEvent
-    data class SelectWeek(val weekStarting: Long) : PayrollEvent
-    data class Search(val query: String) : PayrollEvent
-    data object ClearNotice : PayrollEvent
-    data class Ask(val prompt: PayrollPrompt) : PayrollEvent
-    data class UpdatePrompt(val prompt: PayrollPrompt) : PayrollEvent
-    data object DismissPrompt : PayrollEvent
-    data object ConfirmPrompt : PayrollEvent
-
-    // -- selection ---------------------------------------------------------
-
-    data class ToggleSelection(val timecardId: String) : PayrollEvent
-
-    /** Ticks every row the pending action could move, or clears the lot. */
-    data object SelectAllPayable : PayrollEvent
-    data object SelectAllPostable : PayrollEvent
-
-    // -- one crew member ---------------------------------------------------
-
-    /** Opens a crew member's nominal split and payslip. */
-    data class OpenLine(val crewId: String?) : PayrollEvent
-
-    data class EditAllocation(val index: Int, val allocation: NominalAllocation) : PayrollEvent
-
-    data object AddAllocation : PayrollEvent
-
-    data class RemoveAllocation(val index: Int) : PayrollEvent
-
-    data object SaveAllocations : PayrollEvent
-}
-
-sealed interface PayrollEffect {
-    data class Failed(val message: String) : PayrollEffect
-}
 
 /**
- * The payroll tool's view model.
+ * The payroll tool's view model: the landing and the three screens behind it.
  *
- * ## Opening on the server's week, not ours
+ * ## One tool, four screens, one view model
  *
- * The first load asks for the current processing week without naming it, and
- * takes the week back from whatever comes. A production whose pay period is
- * not a Monday week would otherwise open on an empty grid — the week we
- * computed — with nothing to say why.
+ * The web routes `/payroll/:tile` to four modules; here the route picks a
+ * [PayrollDestination] and each screen's behaviour lives in its own
+ * collaborator — [HistoryActions], [RunActions] (with [JournalActions]),
+ * [ProcessingActions] and the dialogs any of them can open, [SharedActions].
+ * What they share is resolved once: who the viewer is, the production's pay
+ * period, its approvers, its lock date and its settling accounts.
+ *
+ * ## Every write is gated here, not only on screen
+ *
+ * Each collaborator re-checks the rule the button was drawn by before it
+ * sends anything, so an event that reaches the handler without the button —
+ * a stale screen, a test, a future caller — cannot do what the button would
+ * not have offered.
  */
-@Suppress("TooManyFunctions") // One per user action; the alternative is one big handler.
 class PayrollViewModel(
-    private val repository: PayrollRepository,
+    internal val repository: PayrollRepository,
     private val viewer: () -> PayrollViewer,
     private val now: () -> Long,
+    /** The production's crew, for names — the rows carry only user ids. */
+    private val people: () -> Map<String, PayrollPerson> = { emptyMap() },
+    private val projectName: () -> String = { "" },
+    /** The payslip and export files; null hides the downloads. */
+    internal val documents: PayrollDocuments? = null,
+    internal val files: PayrollFiles? = null,
 ) : ZillitViewModel<PayrollUiState, PayrollEvent, PayrollEffect>(PayrollUiState(viewer = viewer())) {
 
-    private var loadJob: Job? = null
-    private var started = false
+    internal fun update(reducer: PayrollUiState.() -> PayrollUiState) = setState(reducer)
+    internal fun launchWork(block: suspend () -> Unit): Job = launch { block() }
+    internal fun emit(effect: PayrollEffect) = sendEffect(effect)
+    internal fun fail(message: String) = sendEffect(PayrollEffect.Failed(message))
+    internal fun notify(message: String?) = message?.takeIf { it.isNotBlank() }?.let { setState { copy(notice = it) } }
 
+    /** The current state, for the collaborators. Named `ui` because `state` is the base class's flow. */
+    internal val ui: PayrollUiState get() = currentState
+
+    private val history = HistoryActions(this)
+    private val run = RunActions(this)
+    private val journal = JournalActions(this, run)
+    private val processing = ProcessingActions(this)
+    private val shared = SharedActions(this)
+
+    private var started = false
+    private var listening = false
+    private var syncJob: Job? = null
+
+    /** Resolves the viewer and the production's payroll settings. Idempotent. */
     fun start() {
         if (started) return
         started = true
-        setState { copy(viewer = viewer()) }
+        // Resolved outside the state lambdas: inside them `viewer`, `people`
+        // and `projectName` are the state's own properties, not the suppliers.
+        val resolved = viewer()
+        val crew = people()
+        val production = projectName()
+        val clock = now()
+        setState { copy(viewer = resolved, people = crew, projectName = production, now = clock) }
         listenOnce()
-        loadCurrentWeek()
-        loadPermissions()
+        loadSettings()
+    }
+
+    fun onProjectChanged() {
+        started = false
+        val resolved = viewer()
+        setState { PayrollUiState(viewer = resolved, destination = destination, enteredAsTool = enteredAsTool) }
+        start()
+    }
+
+    /** The rights and the crew land after the production opens; only those change here. */
+    fun onRightsChanged() {
+        val resolved = viewer()
+        val crew = people()
+        setState {
+            copy(viewer = resolved.copy(onApproverList = viewer.onApproverList), people = crew)
+        }
+        // A viewer who has just become able to see the screen they were routed to gets it.
+        ensureLoaded()
     }
 
     /**
-     * Folds the socket's announcements into the grid: a final approval, lock,
-     * payment or post landing on another client reloads the week on screen —
-     * the web's `ah:payroll:list` refetch pattern. Guarded so a project
-     * switch restarting the tool does not stack collectors, and debounced
-     * because a batch action emits one frame per timecard (the web coalesces
-     * at `accountHubListeners.js` `DEBOUNCE_MS = 500`).
+     * The production's payroll settings. The metadata decides the week
+     * boundary, so the screens wait for it before their first read — the
+     * web's `metaLoading` gate, without which a Wednesday-start production
+     * asks for a Monday week and gets an empty queue.
+     */
+    private fun loadSettings() {
+        val settings = repository.settings
+        launch {
+            val metadata = settings.metadata()
+            setState {
+                copy(
+                    metadata = (metadata as? ZillitResult.Success)?.data ?: this.metadata,
+                    metadataLoaded = true,
+                    viewer = viewer.copy(
+                        onApproverList = (metadata as? ZillitResult.Success)?.data?.isFinalApprover == true,
+                    ),
+                )
+            }
+            if (metadata is ZillitResult.Failure) fail(metadata.error.localised())
+            ensureLoaded()
+        }
+        launch {
+            // Fails closed: no flags, no Override.
+            val flags = settings.overrideFlags().getOrNull()
+            setState { copy(overrideFlags = flags) }
+        }
+        launch { settings.lockedDate().getOrNull().let { setState { copy(lockedDate = it) } } }
+        launch { settings.bankAccounts().getOrNull()?.let { setState { copy(bankAccounts = it) } } }
+        launch { settings.companies().getOrNull()?.let { setState { copy(companies = it) } } }
+    }
+
+    /**
+     * Folds the socket's announcements into whichever screen is open — the
+     * web's `ah:payroll:list` refetch, debounced as the web debounces it,
+     * because a batch emits one frame per timecard.
      */
     private fun listenOnce() {
         if (listening) return
@@ -206,371 +139,76 @@ class PayrollViewModel(
                 syncJob?.cancel()
                 syncJob = launch {
                     delay(SYNC_DEBOUNCE_MILLIS)
-                    currentState.weekStarting?.let(::loadWeek) ?: loadCurrentWeek()
+                    reloadOpen(silent = true)
                 }
             }
         }
     }
 
-    private var listening = false
-    private var syncJob: Job? = null
-
-    fun onProjectChanged() {
-        started = false
-        setState {
-            copy(
-                weekStarting = null,
-                weekOptions = emptyList(),
-                lines = emptyList(),
-                selection = emptySet(),
-                bankAccounts = emptyList(),
-                openCrewId = null,
-            )
+    internal fun reloadOpen(silent: Boolean) {
+        when (currentState.destination) {
+            PayrollDestination.History -> history.reload(silent)
+            PayrollDestination.Run -> run.reload(silent)
+            PayrollDestination.Processing -> processing.reload(silent)
+            PayrollDestination.Landing -> Unit
         }
-        start()
     }
 
-    /**
-     * Swaps in the real rights once the tool grid has answered.
-     *
-     * `projectId` flips the moment a production is chosen, but the rights that
-     * gate this screen arrive with the Home load a beat later — so the viewer
-     * resolved at open is the "not yet known" one, and nothing used to replace
-     * it. Seen live 2026-08-27: Document Distribution offered no publish
-     * destination at all on a production with 42 tools switched on. Only the
-     * viewer changes here; the open page and its data are already right.
-     */
-    fun onRightsChanged() {
-        // Read outside the state lambda: inside it, `viewer` is the
-        // state's own viewer property rather than the supplier.
-        val resolved = viewer()
-        setState { copy(viewer = resolved) }
+    /** Loads the open screen's first page once the week boundary is known. */
+    private fun ensureLoaded() {
+        if (!currentState.metadataLoaded) return
+        when (currentState.destination) {
+            PayrollDestination.History -> history.ensureLoaded()
+            PayrollDestination.Run -> run.ensureLoaded()
+            PayrollDestination.Processing -> processing.ensureLoaded()
+            PayrollDestination.Landing -> Unit
+        }
     }
 
-    @Suppress("CyclomaticComplexMethod") // One branch per user action.
     override fun onEvent(event: PayrollEvent) {
         when (event) {
-            PayrollEvent.Refresh -> currentState.weekStarting?.let(::loadWeek) ?: loadCurrentWeek()
+            is HistoryEvent -> history.onEvent(event)
+            is RunEvent -> run.onEvent(event)
+            is JournalEvent -> journal.onEvent(event)
+            is ProcessingEvent -> processing.onEvent(event)
+            else -> onShellEvent(event)
+        }
+    }
 
-            is PayrollEvent.SelectWeek -> {
-                setState {
-                    copy(
-                        weekStarting = event.weekStarting,
-                        lines = emptyList(),
-                        search = "",
-                        selection = emptySet(),
-                        openCrewId = null,
-                        nominalSplit = emptyList(),
-                        payslip = null,
-                    )
-                }
-                loadWeek(event.weekStarting)
-            }
-
-            is PayrollEvent.Search -> setState { copy(search = event.query) }
+    private fun onShellEvent(event: PayrollEvent) {
+        when (event) {
+            is PayrollEvent.Route -> route(event.path)
+            is PayrollEvent.OpenTile -> openTile(event.tile)
+            PayrollEvent.BackToLanding -> emit(PayrollEffect.Navigate(PayrollDestination.Landing.path))
             PayrollEvent.ClearNotice -> setState { copy(notice = null) }
-            is PayrollEvent.Ask -> setState { copy(prompt = event.prompt) }
-            is PayrollEvent.UpdatePrompt -> setState { copy(prompt = event.prompt) }
-            PayrollEvent.DismissPrompt -> setState { copy(prompt = null) }
-            PayrollEvent.ConfirmPrompt -> resolvePrompt()
-
-            is PayrollEvent.ToggleSelection -> setState {
-                copy(
-                    selection = if (event.timecardId in selection) {
-                        selection - event.timecardId
-                    } else {
-                        selection + event.timecardId
-                    },
-                )
-            }
-
-            PayrollEvent.SelectAllPayable -> setState { toggleAll(week.payableLines) }
-            PayrollEvent.SelectAllPostable -> setState { toggleAll(week.postableLines) }
-
-            is PayrollEvent.OpenLine -> openLine(event.crewId)
-
-            is PayrollEvent.EditAllocation -> setState {
-                copy(
-                    nominalSplit = nominalSplit.mapIndexed { index, allocation ->
-                        if (index == event.index) event.allocation else allocation
-                    },
-                )
-            }
-
-            PayrollEvent.AddAllocation -> setState {
-                val short = openLine?.let { it.gross - splitTotal }?.coerceAtLeast(0.0) ?: 0.0
-                copy(
-                    nominalSplit = nominalSplit + NominalAllocation(
-                        id = null,
-                        nominalCode = "",
-                        description = "",
-                        // Starts at what is unallocated, which is what someone
-                        // adding a line almost always means to charge.
-                        amount = short,
-                    ),
-                )
-            }
-
-            is PayrollEvent.RemoveAllocation -> setState {
-                copy(nominalSplit = nominalSplit.filterIndexed { index, _ -> index != event.index })
-            }
-
-            PayrollEvent.SaveAllocations -> saveAllocations()
-        }
-    }
-
-    private fun PayrollUiState.toggleAll(candidates: List<PayrollLine>): PayrollUiState {
-        val ids = candidates.map { it.id }.toSet()
-        return copy(selection = if (selection.containsAll(ids) && ids.isNotEmpty()) emptySet() else ids)
-    }
-
-    /**
-     * Opens one crew member.
-     *
-     * The split and the payslip load together but fail independently: a week
-     * with no slip yet is ordinary before it is paid, and letting that hide the
-     * split would make the coding unreachable exactly when it is being
-     * questioned.
-     */
-    private fun openLine(crewId: String?) {
-        setState { copy(openCrewId = crewId, nominalSplit = emptyList(), payslip = null) }
-        val weekStarting = currentState.weekStarting ?: return
-        if (crewId == null) return
-        launch {
-            val split = repository.nominalSplit(weekStarting, crewId).getOrNull().orEmpty()
-            val slip = repository.payslip(weekStarting, crewId).getOrNull()
-            if (currentState.openCrewId == crewId) {
-                setState { copy(nominalSplit = split, payslip = slip) }
-            }
+            else -> shared.onEvent(event)
         }
     }
 
     /**
-     * Saves the nominal split, refusing one that does not reach the line.
-     *
-     * An under-allocated line posts the difference nowhere, which surfaces as
-     * a ledger that does not balance a month later.
+     * Shows the screen a route names. A screen the viewer is not offered falls
+     * back to the landing rather than drawing a page they have no tile for.
      */
-    private fun saveAllocations() {
-        val weekStarting = currentState.weekStarting ?: return
-        val crewId = currentState.openCrewId ?: return
-        if (!currentState.splitBalances) {
-            sendEffect(
-                PayrollEffect.Failed(
-                    str(S.desktop_payroll_split_mismatch),
-                ),
-            )
-            return
-        }
-        if (currentState.nominalSplit.any { it.nominalCode.isBlank() }) {
-            sendEffect(PayrollEffect.Failed(str(S.desktop_payroll_allocation_needs_code)))
-            return
-        }
-        act(str(S.desktop_payroll_split_saved)) {
-            repository.saveNominalSplit(weekStarting, crewId, currentState.nominalSplit)
-        }
+    private fun route(path: String) {
+        val asked = PayrollDestination.forRoute(path)
+        val shown = asked.takeIf { it.visibleTo(currentState.viewer) } ?: PayrollDestination.Landing
+        setState { copy(destination = shown, enteredAsTool = PayrollDestination.enteredAsTool(path)) }
+        ensureLoaded()
     }
 
     /**
-     * Eight weeks back from the one the server landed on, plus that one.
-     *
-     * Stepped back from the server's week rather than from a locally computed
-     * Monday: a production whose pay period runs Friday to Thursday would
-     * otherwise get a picker whose every row is two days out from the weeks
-     * that actually exist.
+     * A tile is navigation, not a local switch: the route goes to the window
+     * so the hub embedding this tool, the back stack and a torn-off window all
+     * agree on where the viewer is. Entry Setup is the Account Hub's.
      */
-    private fun recentWeeks(landed: Long): List<Long> =
-        (0 until WEEKS_SHOWN).map { landed - it * WEEK_MILLIS }
-
-    /**
-     * Opens on whatever week the server calls current.
-     *
-     * The week is read off the response rather than computed, so the picker,
-     * the header and the grid all name the same week even when the pay period
-     * does not start on a Monday.
-     */
-    private fun loadCurrentWeek() {
-        loadJob?.cancel()
-        setState { copy(loading = true, error = null) }
-        loadJob = launch {
-            when (val result = repository.currentWeek()) {
-                is ZillitResult.Success -> setState {
-                    val landed = result.data.weekStarting
-                    copy(
-                        loading = false,
-                        lines = result.data.lines,
-                        weekStarting = landed,
-                        weekOptions = recentWeeks(landed),
-                    )
-                }
-
-                // No week to show and none to guess: the picker stays empty
-                // rather than offering weeks that may not line up with the
-                // production's pay period at all.
-                is ZillitResult.Failure -> setState { copy(loading = false, error = result.error) }
-            }
-        }
-    }
-
-    private fun loadWeek(weekStarting: Long) {
-        loadJob?.cancel()
-        setState { copy(loading = true, error = null) }
-        loadJob = launch {
-            when (val result = repository.week(weekStarting)) {
-                is ZillitResult.Success -> setState {
-                    copy(loading = false, lines = result.data.lines)
-                }
-
-                is ZillitResult.Failure -> setState { copy(loading = false, error = result.error) }
-            }
-        }
-    }
-
-    /**
-     * Loads what this user may do, and what they would post from.
-     *
-     * Both are advisory reads: a failure leaves the operator with the
-     * conservative default — no posting — rather than an error over a grid they
-     * can still legitimately look at.
-     */
-    private fun loadPermissions() = launch {
-        val finalApprover = repository.isFinalApprover().getOrNull() == true
-        val accounts = repository.bankAccounts().getOrNull().orEmpty()
-        setState {
-            copy(viewer = viewer.copy(isFinalApprover = finalApprover), bankAccounts = accounts)
-        }
-    }
-
-    private fun resolvePrompt() {
-        val prompt = currentState.prompt ?: return
-        setState { copy(prompt = null) }
-
-        // Marking a week paid, unpaid or posting it to the ledger is a
-        // payroll operator's act — the screen offers each only where
-        // `canOperate` holds (`PayrollScreen`), and this handler took
-        // whatever prompt reached it.
-        if (!currentState.viewer.canOperate) {
-            sendEffect(PayrollEffect.Failed(str(S.desktop_payroll_no_rights)))
-            return
-        }
-        when (prompt) {
-            is PayrollPrompt.Confirm -> when (prompt.action) {
-                PayrollConfirmAction.MarkPaid ->
-                    act(str(S.desktop_payroll_marked_paid, prompt.ids.size)) {
-                        repository.markPaid(prompt.ids)
-                    }
-
-                PayrollConfirmAction.MarkUnpaid ->
-                    act(str(S.desktop_payroll_returned_to_approved)) {
-                        repository.markUnpaid(prompt.ids.first())
-                    }
-            }
-
-            is PayrollPrompt.Post -> post(prompt)
-        }
-    }
-
-    /**
-     * Posts the batch, reporting what the server actually moved.
-     *
-     * It skips rows in the wrong state rather than failing, so a post can
-     * succeed having moved nothing — which is worth saying out loud, because
-     * silence there reads as success.
-     */
-    private fun post(prompt: PayrollPrompt.Post) {
-        val bankId = prompt.bankId
-        if (bankId.isNullOrBlank()) {
-            sendEffect(PayrollEffect.Failed(str(S.desktop_payroll_choose_account)))
-            setState { copy(prompt = prompt) }
-            return
-        }
-        launch {
-            setState { copy(busy = true) }
-            when (val result = repository.markPosted(prompt.ids, bankId, prompt.effectiveDate)) {
-                is ZillitResult.Success -> {
-                    val outcome = result.data
-                    setState {
-                        copy(
-                            busy = false,
-                            selection = emptySet(),
-                            notice = when {
-                                outcome.marked == 0 ->
-                                    str(S.desktop_payroll_nothing_posted, outcome.skipped)
-
-                                outcome.skipped > 0 ->
-                                    str(S.desktop_payroll_posted_skipped, outcome.marked, outcome.skipped)
-
-                                else -> str(S.desktop_payroll_posted_count, outcome.marked)
-                            },
-                        )
-                    }
-                    currentState.weekStarting?.let(::loadWeek)
-                }
-
-                is ZillitResult.Failure -> {
-                    setState { copy(busy = false) }
-                    sendEffect(PayrollEffect.Failed(result.error.localised()))
-                }
-            }
-        }
-    }
-
-    /** A post defaults to today, which is what an accountant means nine times in ten. */
-    fun today(): Long = now()
-
-    private fun act(success: String, block: suspend () -> ZillitResult<Unit>) = launch {
-        setState { copy(busy = true) }
-        when (val result = block()) {
-            is ZillitResult.Success -> {
-                setState { copy(busy = false, notice = success, selection = emptySet()) }
-                currentState.weekStarting?.let(::loadWeek)
-            }
-
-            is ZillitResult.Failure -> {
-                setState { copy(busy = false) }
-                sendEffect(PayrollEffect.Failed(result.error.localised()))
-            }
-        }
+    private fun openTile(tile: PayrollTile) {
+        if (tile !in PayrollTile.visibleTo(currentState.viewer, currentState.enteredAsTool)) return
+        val target = tile.destination?.path ?: PAYROLL_ENTRY_SETUP_ROUTE
+        emit(PayrollEffect.Navigate(target))
     }
 
     companion object {
-        private const val WEEKS_SHOWN = 9
-        private const val WEEK_MILLIS = 7L * 24 * 60 * 60 * 1000
-
         /** The web's refetch coalescing window — accountHubListeners.js `DEBOUNCE_MS`. */
         const val SYNC_DEBOUNCE_MILLIS = 500L
     }
 }
-
-/** Payroll as a workspace window. */
-class PayrollToolProvider(
-    private val viewModel: PayrollViewModel,
-) : ToolProvider {
-
-    override val path: String = PAYROLL_PATH
-    override val title: String get() = str(S.dm_section_payroll)
-    override val icon = ZillitToolIcons.Payroll
-    override val openMode: OpenMode = OpenMode.Maximized
-    override val hostsOwnRoutes: Boolean = true
-    override val defaultSize: DpSize = DpSize(1440.dp, 880.dp)
-
-    @Composable
-    override fun Content(route: WorkspaceRoute, navigator: WindowNavigator) {
-        val state by viewModel.state.collectAsState()
-        var failure by remember { mutableStateOf<String?>(null) }
-
-        LaunchedEffect(viewModel) { viewModel.start() }
-        LaunchedEffect(viewModel) {
-            viewModel.effects.collect { effect ->
-                when (effect) {
-                    is PayrollEffect.Failed -> failure = effect.message
-                }
-            }
-        }
-
-        PayrollScreen(state = state, onEvent = viewModel::onEvent, today = viewModel::today)
-        ZillitErrorToast(message = failure, onDismiss = { failure = null })
-    }
-}
-
-const val PAYROLL_PATH = "/film-tools/payroll"
