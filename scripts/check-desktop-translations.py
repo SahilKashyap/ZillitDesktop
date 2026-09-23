@@ -49,10 +49,19 @@ def main(codes):
             if k in english and v.strip() == english[k].strip() and re.search(r"[A-Za-z]{4,}", v)
         )
         empty = sorted(k for k, v in translated.items() if not v.strip())
+        # A value with a positional placeholder goes through String.format, where a
+        # bare `%` throws and the app shows the raw template. Write it `%%`.
+        stray = sorted(
+            k for k, v in translated.items()
+            if PLACEHOLDER.search(v) and "%" in re.sub(r"%%|%(?:\d+\$)?[sdf]", "", v)
+        )
         coverage = sum(1 for k in english if k in translated)
         print(f"{code}: {coverage}/{len(english)} keys, unknown={len(unknown)}, "
-              f"placeholders={len(bad_placeholders)}, identical={len(untranslated)}, empty={len(empty)}")
-        for label, keys in (("unknown", unknown), ("placeholders", bad_placeholders), ("empty", empty)):
+              f"placeholders={len(bad_placeholders)}, identical={len(untranslated)}, empty={len(empty)}, "
+              f"stray%={len(stray)}")
+        for label, keys in (
+            ("unknown", unknown), ("placeholders", bad_placeholders), ("empty", empty), ("stray %", stray),
+        ):
             if keys:
                 failed = True
                 print(f"  {label}: {' '.join(keys[:15])}{' …' if len(keys) > 15 else ''}")

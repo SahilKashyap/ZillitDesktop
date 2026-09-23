@@ -5599,8 +5599,8 @@
     <string name="desktop_dm_add_custom_day_plus">+ Adicionar dia personalizado</string>
     <string name="desktop_dm_applies_to_placeholder">— aplica-se a —</string>
     <string name="desktop_dm_deactivated_on">Desativado · %1$s</string>
-    <string name="desktop_dm_hp_element_pct">Componente HP (%1$s%)</string>
-    <string name="desktop_dm_hp_element_pct_on_top">Componente HP (%1$s%, acrescido)</string>
+    <string name="desktop_dm_hp_element_pct">Componente HP (%1$s%%)</string>
+    <string name="desktop_dm_hp_element_pct_on_top">Componente HP (%1$s%%, acrescido)</string>
     <string name="desktop_dm_hp_exclusive_on_top">Exclusivo (acrescido)</string>
     <string name="desktop_dm_kind_is_incomplete">%1$s está incompleto</string>
     <string name="desktop_dm_n_more">+%1$s mais</string>
@@ -5611,8 +5611,8 @@
     <string name="desktop_dm_select_placeholder">— Selecionar —</string>
     <string name="desktop_dm_select_territory_placeholder">— Selecionar território —</string>
     <string name="desktop_dm_select_unit_placeholder">— Selecionar unidade —</string>
-    <string name="desktop_dm_weekly_hp_element_pct">Componente HP semanal (%1$s%)</string>
-    <string name="desktop_dm_weekly_hp_element_pct_on_top">Componente HP semanal (%1$s%, acrescido)</string>
+    <string name="desktop_dm_weekly_hp_element_pct">Componente HP semanal (%1$s%%)</string>
+    <string name="desktop_dm_weekly_hp_element_pct_on_top">Componente HP semanal (%1$s%%, acrescido)</string>
     <string name="desktop_docdist_add_to_list">Adicionar à lista…</string>
     <string name="desktop_docdist_address_book_title">Livro de endereços</string>
     <string name="desktop_docdist_addresses_remembered_here">Os endereços usados numa distribuição ficam guardados aqui.</string>
@@ -5655,7 +5655,7 @@
     <string name="desktop_hub_parent_must_be_a_x_code_is_a_y">O elemento superior tem de ser do tipo %1$s; \"%2$s\" é do tipo %3$s.</string>
     <string name="desktop_hub_period_closed_x">Período fechado. %1$s</string>
     <string name="desktop_hub_starts_before_production_start_date">Começa antes da data de início da produção</string>
-    <string name="desktop_hub_tax_rate_must_be_between_x_and_y_percent">A taxa de imposto tem de estar entre %1$s% e %2$s%.</string>
+    <string name="desktop_hub_tax_rate_must_be_between_x_and_y_percent">A taxa de imposto tem de estar entre %1$s%% e %2$s%%.</string>
     <string name="desktop_hub_tour_bank_body">Adicione as contas bancárias do projeto, juntamente com o código de custo e o código de compensação de contas a pagar.</string>
     <string name="desktop_hub_tour_company_body">Adicione as empresas do projeto.</string>
     <string name="desktop_hub_tour_conditions_body">Adicione as cláusulas predefinidas inseridas no passo \'Termos &amp; Condições\' de cada novo Deal Memo.</string>

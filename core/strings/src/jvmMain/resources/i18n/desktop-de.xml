@@ -5599,8 +5599,8 @@
     <string name="desktop_dm_add_custom_day_plus">+ Eigenen Tag hinzufügen</string>
     <string name="desktop_dm_applies_to_placeholder">— gilt für —</string>
     <string name="desktop_dm_deactivated_on">Deaktiviert · %1$s</string>
-    <string name="desktop_dm_hp_element_pct">HP-Anteil (%1$s%)</string>
-    <string name="desktop_dm_hp_element_pct_on_top">HP-Anteil (%1$s%, obendrauf)</string>
+    <string name="desktop_dm_hp_element_pct">HP-Anteil (%1$s%%)</string>
+    <string name="desktop_dm_hp_element_pct_on_top">HP-Anteil (%1$s%%, obendrauf)</string>
     <string name="desktop_dm_hp_exclusive_on_top">Exklusive (obendrauf)</string>
     <string name="desktop_dm_kind_is_incomplete">%1$s ist unvollständig</string>
     <string name="desktop_dm_n_more">+%1$s weitere</string>
@@ -5611,8 +5611,8 @@
     <string name="desktop_dm_select_placeholder">— Auswählen —</string>
     <string name="desktop_dm_select_territory_placeholder">— Gebiet wählen —</string>
     <string name="desktop_dm_select_unit_placeholder">— Unit wählen —</string>
-    <string name="desktop_dm_weekly_hp_element_pct">Wöchentlicher HP-Anteil (%1$s%)</string>
-    <string name="desktop_dm_weekly_hp_element_pct_on_top">Wöchentlicher HP-Anteil (%1$s%, obendrauf)</string>
+    <string name="desktop_dm_weekly_hp_element_pct">Wöchentlicher HP-Anteil (%1$s%%)</string>
+    <string name="desktop_dm_weekly_hp_element_pct_on_top">Wöchentlicher HP-Anteil (%1$s%%, obendrauf)</string>
     <string name="desktop_docdist_add_to_list">Zur Liste hinzufügen…</string>
     <string name="desktop_docdist_address_book_title">Adressbuch</string>
     <string name="desktop_docdist_addresses_remembered_here">In einer Verteilung verwendete Adressen werden hier gemerkt.</string>
@@ -5655,7 +5655,7 @@
     <string name="desktop_hub_parent_must_be_a_x_code_is_a_y">Das übergeordnete Element muss ein %1$s sein; \"%2$s\" ist ein %3$s.</string>
     <string name="desktop_hub_period_closed_x">Periode geschlossen. %1$s</string>
     <string name="desktop_hub_starts_before_production_start_date">Beginnt vor dem Startdatum der Produktion</string>
-    <string name="desktop_hub_tax_rate_must_be_between_x_and_y_percent">Der Steuersatz muss zwischen %1$s% und %2$s% liegen.</string>
+    <string name="desktop_hub_tax_rate_must_be_between_x_and_y_percent">Der Steuersatz muss zwischen %1$s%% und %2$s%% liegen.</string>
     <string name="desktop_hub_tour_bank_body">Fügen Sie die Bankkonten für das Projekt hinzu, zusammen mit dem Sachkonto und dem Code für den Kreditoren-Ausgleich.</string>
     <string name="desktop_hub_tour_company_body">Fügen Sie die Unternehmen für das Projekt hinzu.</string>
     <string name="desktop_hub_tour_conditions_body">Fügen Sie die Standardklauseln hinzu, die in den Schritt \'Allgemeine Geschäftsbedingungen\' jedes neuen Deal Memos eingefügt werden.</string>

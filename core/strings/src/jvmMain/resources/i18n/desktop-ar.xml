@@ -5599,8 +5599,8 @@
     <string name="desktop_dm_add_custom_day_plus">+ إضافة يوم مخصص</string>
     <string name="desktop_dm_applies_to_placeholder">— ينطبق على —</string>
     <string name="desktop_dm_deactivated_on">تم التعطيل · %1$s</string>
-    <string name="desktop_dm_hp_element_pct">عنصر بدل الإجازة (%1$s%)</string>
-    <string name="desktop_dm_hp_element_pct_on_top">عنصر بدل الإجازة (%1$s%، فوق الأجر)</string>
+    <string name="desktop_dm_hp_element_pct">عنصر بدل الإجازة (%1$s%%)</string>
+    <string name="desktop_dm_hp_element_pct_on_top">عنصر بدل الإجازة (%1$s%%، فوق الأجر)</string>
     <string name="desktop_dm_hp_exclusive_on_top">حصري (فوق الأجر)</string>
     <string name="desktop_dm_kind_is_incomplete">%1$s غير مكتمل</string>
     <string name="desktop_dm_n_more">+%1$s أخرى</string>
@@ -5611,8 +5611,8 @@
     <string name="desktop_dm_select_placeholder">— اختر —</string>
     <string name="desktop_dm_select_territory_placeholder">— اختر إقليمًا —</string>
     <string name="desktop_dm_select_unit_placeholder">— اختر وحدة —</string>
-    <string name="desktop_dm_weekly_hp_element_pct">عنصر بدل الإجازة الأسبوعي (%1$s%)</string>
-    <string name="desktop_dm_weekly_hp_element_pct_on_top">عنصر بدل الإجازة الأسبوعي (%1$s%، فوق الأجر)</string>
+    <string name="desktop_dm_weekly_hp_element_pct">عنصر بدل الإجازة الأسبوعي (%1$s%%)</string>
+    <string name="desktop_dm_weekly_hp_element_pct_on_top">عنصر بدل الإجازة الأسبوعي (%1$s%%، فوق الأجر)</string>
     <string name="desktop_docdist_add_to_list">إضافة إلى قائمة…</string>
     <string name="desktop_docdist_address_book_title">دفتر العناوين</string>
     <string name="desktop_docdist_addresses_remembered_here">تُحفظ هنا العناوين المستخدمة في أي توزيع.</string>
@@ -5655,7 +5655,7 @@
     <string name="desktop_hub_parent_must_be_a_x_code_is_a_y">يجب أن يكون الصف الأب من نوع %1$s؛ أما \"%2$s\" فهو %3$s.</string>
     <string name="desktop_hub_period_closed_x">تم إقفال الفترة. %1$s</string>
     <string name="desktop_hub_starts_before_production_start_date">يبدأ قبل تاريخ بداية الإنتاج</string>
-    <string name="desktop_hub_tax_rate_must_be_between_x_and_y_percent">يجب أن تكون نسبة الضريبة بين %1$s% و%2$s%.</string>
+    <string name="desktop_hub_tax_rate_must_be_between_x_and_y_percent">يجب أن تكون نسبة الضريبة بين %1$s%% و%2$s%%.</string>
     <string name="desktop_hub_tour_bank_body">أضف الحسابات البنكية للمشروع، مع الرمز الاسمي ورمز تسوية الذمم الدائنة.</string>
     <string name="desktop_hub_tour_company_body">أضف شركات المشروع.</string>
     <string name="desktop_hub_tour_conditions_body">أضف البنود الافتراضية التي تُدرج في خطوة ‘الشروط &amp; الأحكام’ في كل مذكرة اتفاق جديدة.</string>

@@ -119,11 +119,39 @@ class AndroidStringsXmlTest {
         assertEquals(" · %1\u0024d line", english["desktop_cr_lines_one"])
     }
 
+    @Test
+    fun `every desktop value with a placeholder formats in every language`() {
+        // str(S.key, args) runs the value through String.format. A bare `%` next to
+        // a placeholder throws, and the app then shows the raw template instead of
+        // the sentence — "Tax rate must be between %1$s% and %2$s%." did exactly that.
+        val placeholder = Regex("""%(\d+\$)?[sdf]""")
+        val broken = AppLanguage.all.flatMap { language ->
+            val stream = BundledCatalogSource::class.java.classLoader
+                .getResourceAsStream("i18n/desktop-${language.code}.xml") ?: return@flatMap emptyList()
+            val catalog = stream.use { AndroidStringsXml.parse(language, it) }
+            desktopKeysOf(language).mapNotNull { key ->
+                val value = catalog[key] ?: return@mapNotNull null
+                if (!placeholder.containsMatchIn(value)) return@mapNotNull null
+                val args = Array<Any?>(ARG_SLOTS) { "x" }
+                // Every dummy argument is a string, so read integer conversions as %s.
+                val template = value.replace(Regex("%(\\d+\\$)?d"), "%$1s")
+                runCatching { String.format(java.util.Locale.ROOT, template, *args) }
+                    .exceptionOrNull()?.let { "${language.code}:$key" }
+            }
+        }
+        assertTrue(broken.isEmpty(), "values that fail to format: ${broken.take(20)}")
+    }
+
     private fun desktopKeysOf(language: AppLanguage): List<String> {
         val stream = BundledCatalogSource::class.java.classLoader
             .getResourceAsStream("i18n/desktop-${language.code}.xml") ?: return emptyList()
         val document = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(stream)
         val nodes = document.documentElement.getElementsByTagName("string")
         return (0 until nodes.length).map { (nodes.item(it) as org.w3c.dom.Element).getAttribute("name") }
+    }
+
+    private companion object {
+        /** Enough arguments for any value in the catalogue; unused ones are ignored. */
+        const val ARG_SLOTS = 6
     }
 }

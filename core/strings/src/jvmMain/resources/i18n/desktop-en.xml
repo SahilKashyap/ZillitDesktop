@@ -5603,8 +5603,8 @@
     <string name="desktop_dm_add_custom_day_plus">+ Add custom day</string>
     <string name="desktop_dm_applies_to_placeholder">— applies to —</string>
     <string name="desktop_dm_deactivated_on">Deactivated · %1$s</string>
-    <string name="desktop_dm_hp_element_pct">HP Element (%1$s%)</string>
-    <string name="desktop_dm_hp_element_pct_on_top">HP Element (%1$s%, on top)</string>
+    <string name="desktop_dm_hp_element_pct">HP Element (%1$s%%)</string>
+    <string name="desktop_dm_hp_element_pct_on_top">HP Element (%1$s%%, on top)</string>
     <string name="desktop_dm_hp_exclusive_on_top">Exclusive (on top)</string>
     <string name="desktop_dm_kind_is_incomplete">%1$s is incomplete</string>
     <string name="desktop_dm_n_more">+%1$s more</string>
@@ -5615,8 +5615,8 @@
     <string name="desktop_dm_select_placeholder">— Select —</string>
     <string name="desktop_dm_select_territory_placeholder">— Select Territory —</string>
     <string name="desktop_dm_select_unit_placeholder">— Select Unit —</string>
-    <string name="desktop_dm_weekly_hp_element_pct">Weekly HP Element (%1$s%)</string>
-    <string name="desktop_dm_weekly_hp_element_pct_on_top">Weekly HP Element (%1$s%, on top)</string>
+    <string name="desktop_dm_weekly_hp_element_pct">Weekly HP Element (%1$s%%)</string>
+    <string name="desktop_dm_weekly_hp_element_pct_on_top">Weekly HP Element (%1$s%%, on top)</string>
     <string name="desktop_docdist_add_to_list">Add to list…</string>
     <string name="desktop_docdist_address_book_title">Address book</string>
     <string name="desktop_docdist_addresses_remembered_here">Addresses used in a distribution are remembered here.</string>
@@ -5659,7 +5659,7 @@
     <string name="desktop_hub_parent_must_be_a_x_code_is_a_y">Parent must be a %1$s; \"%2$s\" is a %3$s.</string>
     <string name="desktop_hub_period_closed_x">Period closed. %1$s</string>
     <string name="desktop_hub_starts_before_production_start_date">Starts before production start date</string>
-    <string name="desktop_hub_tax_rate_must_be_between_x_and_y_percent">Tax rate must be between %1$s% and %2$s%.</string>
+    <string name="desktop_hub_tax_rate_must_be_between_x_and_y_percent">Tax rate must be between %1$s%% and %2$s%%.</string>
     <string name="desktop_hub_tour_bank_body">Add the bank accounts for the project, along with the nominal and AP clearance code.</string>
     <string name="desktop_hub_tour_company_body">Add the companies for the project.</string>
     <string name="desktop_hub_tour_conditions_body">Add the default clauses inserted into the \'Terms &amp; Conditions\' step of every new deal memo.</string>
