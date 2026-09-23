@@ -41,7 +41,8 @@ internal class CardRegisterActions(private val vm: CardExpensesViewModel) {
             )
         }
         vm.run {
-            val receipts = vm.repo.cardReceipts(cardId).getOrNull().orEmpty()
+            val read = vm.repo.cardReceipts(cardId).getOrNull()
+            val receipts = read.orEmpty()
             val topUps = vm.repo.cardTopUps(cardId).getOrNull().orEmpty()
             val history = vm.repo.cardHistory(cardId).getOrNull().orEmpty()
             // Guarded: the reader may have moved to another card while these
@@ -53,6 +54,7 @@ internal class CardRegisterActions(private val vm: CardExpensesViewModel) {
                     cardDetail = cardDetail?.copy(
                         loading = false,
                         receipts = receipts,
+                        receiptsRead = read != null,
                         topUps = topUps,
                         history = history,
                     ),
@@ -82,7 +84,10 @@ internal class CardRegisterActions(private val vm: CardExpensesViewModel) {
                     holderId = seed.orEmpty(),
                     currency = cards.firstOrNull { it.currency != null }?.currency.orEmpty(),
                     providerId = provider?.id.orEmpty(),
-                    issuer = provider?.name.orEmpty(),
+                    // The bank the provider binds, not its name: `card_issuer`
+                    // is read as a bank id everywhere downstream.
+                    issuer = provider?.bankId.orEmpty(),
+                    companyId = provider?.companyId.orEmpty(),
                 ),
             )
         }
@@ -184,6 +189,11 @@ internal class CardRegisterActions(private val vm: CardExpensesViewModel) {
 
     /** The narrow correction. See the repository for why it is not the wide one. */
     fun saveBsCode(cardId: String) {
+        val card = vm.current.cards.firstOrNull { it.id == cardId }
+        if (card == null || !vm.current.canCorrectBsCode(card)) {
+            vm.fail(str(S.desktop_po_no_rights_on_project))
+            return
+        }
         val code = vm.current.cardDetail?.bsControlCode?.trim().orEmpty()
         if (code.isEmpty()) {
             vm.fail(str(S.desktop_card_control_code_required))
@@ -194,6 +204,11 @@ internal class CardRegisterActions(private val vm: CardExpensesViewModel) {
 
     /** Deleting a card closes the drilldown, which is about to point at nothing. */
     fun delete(cardId: String) {
+        val card = vm.current.cards.firstOrNull { it.id == cardId }
+        if (card == null || !CardRules.canDeleteRequest(card, vm.current.viewer.userId)) {
+            vm.fail(str(S.desktop_po_no_rights_on_project))
+            return
+        }
         vm.act(str(S.desktop_card_request_deleted)) { vm.repo.deleteCard(cardId) }
         vm.update { copy(selectedCardId = null, cardDetail = null, cardEdit = null) }
     }

@@ -39,14 +39,21 @@ interface CardRepository {
     /** Removes a card request that should never have been raised. */
     suspend fun deleteCard(cardId: String): ZillitResult<Unit>
 
-    suspend fun approveCard(cardId: String, note: String?): ZillitResult<Unit>
+    /**
+     * Signs one step of a card request's chain.
+     *
+     * The step goes with it — `tier_number` of `total_tiers` — because the
+     * server records which tier was signed, not merely that somebody signed.
+     */
+    suspend fun approveCard(cardId: String, step: TierVisibility, userId: String): ZillitResult<Unit>
 
-    suspend fun rejectCard(cardId: String, reason: String): ZillitResult<Unit>
+    suspend fun rejectCard(cardId: String, reason: String, userId: String): ZillitResult<Unit>
 
-    suspend fun overrideCard(cardId: String): ZillitResult<Unit>
+    /** Approves a request over its chain; [reason] is on the record. */
+    suspend fun overrideCard(cardId: String, userId: String, reason: String): ZillitResult<Unit>
 
-    /** Brings an approved card into use, optionally with its full number. */
-    suspend fun activateCard(cardId: String, fullCardNumber: String?): ZillitResult<Unit>
+    /** Brings an approved card into use with its type, its number and — if it has none — a provider. */
+    suspend fun activateCard(cardId: String, activation: CardActivation): ZillitResult<Unit>
 
     suspend fun suspendCard(cardId: String): ZillitResult<Unit>
 
@@ -101,7 +108,8 @@ interface CardRepository {
 
     // -- transactions ------------------------------------------------------
 
-    suspend fun transactions(): ZillitResult<List<CardTransaction>>
+    /** The statement lines, narrowed server-side by [filters]; none set reads them all. */
+    suspend fun transactions(filters: TransactionFilters = TransactionFilters()): ZillitResult<List<CardTransaction>>
 
     suspend fun codeTransaction(
         transactionId: String,
@@ -163,6 +171,21 @@ interface CardRepository {
 
     suspend fun postReceipt(receiptId: String): ZillitResult<Unit>
 
+    /** One receipt with everything the process editor needs: lines, flags, card figures. */
+    suspend fun receiptDetail(receiptId: String): ZillitResult<CardReceipt>
+
+    /**
+     * The accountant's save, post, submit-for-review and escalate — one route,
+     * `save-process`, told apart by [ProcessSubmission.status].
+     *
+     * The desktop used to post through `/post` with an empty body, which
+     * carried no lines, no ledger date and no top-up decision.
+     */
+    suspend fun saveProcessReceipt(receiptId: String, submission: ProcessSubmission): ZillitResult<Unit>
+
+    /** Hands a receipt to an accountant; [reassign] when it already had one. */
+    suspend fun assignReceipt(receiptId: String, assignment: ReceiptAssignment, reassign: Boolean): ZillitResult<Unit>
+
     suspend fun flagReceiptPersonal(receiptId: String): ZillitResult<Unit>
 
     suspend fun dismissDuplicate(receiptId: String): ZillitResult<Unit>
@@ -172,17 +195,6 @@ interface CardRepository {
     suspend fun deleteReceipt(receiptId: String): ZillitResult<Unit>
 
     suspend fun receiptHistory(receiptId: String): ZillitResult<List<CardHistoryEntry>>
-
-    /**
-     * Replaces a receipt's coded splits.
-     *
-     * The whole set goes every time — the server owns the rows and reconciles
-     * against what it is given, so a partial send deletes the rest.
-     */
-    suspend fun saveReceiptLines(receiptId: String, lines: List<ReceiptLine>): ZillitResult<Unit>
-
-    /** Re-posts a receipt after its coding changed, so the ledger agrees. */
-    suspend fun repostReceipt(receiptId: String): ZillitResult<Unit>
 
     // -- bulk processing ---------------------------------------------------
 
@@ -197,12 +209,6 @@ interface CardRepository {
      */
     suspend fun bulkProcess(receiptIds: List<String>, coding: BulkCoding): ZillitResult<BulkOutcome>
 
-    /** Sends a set of receipts for approval together. */
-    suspend fun batchSubmit(receiptIds: List<String>): ZillitResult<Unit>
-
-    /** Posts a set of already-approved receipts together. */
-    suspend fun batchPost(receiptIds: List<String>): ZillitResult<Unit>
-
     // -- approvals ---------------------------------------------------------
 
     suspend fun approvalQueue(): ZillitResult<List<CardReceipt>>
@@ -211,7 +217,7 @@ interface CardRepository {
 
     suspend fun rejectReceipt(receiptId: String, reason: String): ZillitResult<Unit>
 
-    suspend fun overrideReceipt(receiptId: String): ZillitResult<Unit>
+    suspend fun overrideReceipt(receiptId: String, userId: String, reason: String): ZillitResult<Unit>
 
     /** Approves or rejects several receipts in one call. */
     suspend fun bulkApproval(action: BulkAction, receiptIds: List<String>): ZillitResult<Unit>
@@ -229,11 +235,44 @@ interface CardRepository {
 
     suspend fun completeTopUp(topUpId: String): ZillitResult<Unit>
 
-    suspend fun partialTopUp(topUpId: String, amount: Double): ZillitResult<Unit>
+    /**
+     * Records a part-payment. The [note] is required and sent — it is what the
+     * trail shows for why a row is half funded — and [amount] is optional, as
+     * on the web (`TopUpToDoPage.jsx:208-225`).
+     */
+    suspend fun partialTopUp(topUpId: String, amount: Double?, note: String): ZillitResult<Unit>
 
     suspend fun skipTopUp(topUpId: String): ZillitResult<Unit>
 
     // -- alerts and settings -----------------------------------------------
+
+    // -- queries and fund requests -----------------------------------------
+
+    /** The thread on one entity; an empty thread with no id when nobody has asked yet. */
+    suspend fun queryThread(entityType: String, entityId: String): ZillitResult<QueryThread>
+
+    /** Adds [text] to [thread], or opens the thread with it when it has no id yet. */
+    suspend fun sendQuery(
+        thread: QueryThread,
+        entityType: String,
+        entityId: String,
+        text: String,
+    ): ZillitResult<QueryThread>
+
+    suspend fun fundRequests(): ZillitResult<List<FundRequest>>
+
+    suspend fun createFundRequest(draft: FundRequestDraft): ZillitResult<Unit>
+
+    suspend fun receiveFundRequest(id: String): ZillitResult<Unit>
+
+    suspend fun cancelFundRequest(id: String): ZillitResult<Unit>
+
+    // -- exports -----------------------------------------------------------
+
+    /** The register as a file; the server prints the [rows] it is handed, names already resolved. */
+    suspend fun exportCards(format: ExportFormat, rows: List<CardExportRow>): ZillitResult<ByteArray>
+
+    suspend fun exportTransactions(format: ExportFormat): ZillitResult<ByteArray>
 
     suspend fun alerts(): ZillitResult<List<CardAlert>>
 
@@ -275,4 +314,4 @@ enum class ReceiptScope(val path: String) {
     ProcessQueue("/receipts/process-queue"),
 }
 
-enum class BulkAction(val wire: String) { Approve("approve"), Reject("reject") }
+enum class BulkAction(val wire: String) { Approve("approve"), Reject("reject"), Override("override") }

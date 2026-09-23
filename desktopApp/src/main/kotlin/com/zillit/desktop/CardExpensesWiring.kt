@@ -17,6 +17,12 @@ import com.zillit.desktop.feature.email.data.S3AttachmentUploader
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import java.util.UUID
+import com.zillit.desktop.feature.cardexpenses.data.CardBinaryPost
+import com.zillit.desktop.feature.cardexpenses.data.CardRepositoryImpl
+import com.zillit.desktop.feature.cardexpenses.domain.CardBank
+import com.zillit.desktop.feature.cardexpenses.domain.CardFiles
+import com.zillit.desktop.feature.cardexpenses.domain.CardRepository
+import com.zillit.desktop.feature.email.data.DownloadsAttachmentStore
 
 /**
  * The crew, for the card module's holder picker.
@@ -35,7 +41,39 @@ internal suspend fun AppGraph.Ready.cardPeople(): List<CardPerson> =
             designation = user.designation.localised(),
             department = user.department.localised(),
             departmentId = user.departmentId,
+            // The assign and team pickers list the accounts team only, as the
+            // web's; the module decides that from the identifier.
+            departmentIdentifier = user.departmentIdentifier,
         )
+    }
+
+/**
+ * The card register's exports — the web's Card Register and All Transactions
+ * (PDF / XLSX). The service answers with the file's bytes, which the module's
+ * JSON client cannot read, so the byte POST comes from the host, as Bank
+ * Reconciliation's does; built here because [postForBytes] needs the ready graph.
+ */
+internal fun AppGraph.Ready.cardRepositoryWithExports(): CardRepository =
+    CardRepositoryImpl(apiClient, config, CardBinaryPost { url, body -> postForBytes(url, body) })
+
+/** Exports land in Downloads and open, as every other export in this application does. */
+internal fun cardFiles() = CardFiles { fileName, bytes ->
+    when (val saved = DownloadsAttachmentStore().save(fileName, bytes)) {
+        is ZillitResult.Failure -> saved
+        is ZillitResult.Success -> {
+            openSavedFile(saved.data)
+            ZillitResult.Success(Unit)
+        }
+    }
+}
+
+/**
+ * The production's bank accounts, for a fund request's "pay into" — the hub's
+ * Production Setup banks, which the card service does not list itself.
+ */
+internal suspend fun AppGraph.Ready.cardBanks(): List<CardBank> =
+    accountHubRepository.bankAccounts().getOrNull().orEmpty().map { bank ->
+        CardBank(id = bank.id, name = bank.name, currency = bank.currencyCode.takeIf { it.isNotBlank() })
     }
 
 /**

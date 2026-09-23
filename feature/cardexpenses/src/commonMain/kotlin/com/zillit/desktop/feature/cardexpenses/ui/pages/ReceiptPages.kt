@@ -53,7 +53,14 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardTransaction
 import com.zillit.desktop.feature.cardexpenses.domain.CardWorkflowStatus
 import com.zillit.desktop.feature.cardexpenses.domain.DraftCardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.MatchStatus
+import com.zillit.desktop.feature.cardexpenses.domain.ProcessRules
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptCategory
+import com.zillit.desktop.feature.cardexpenses.domain.canDelete
+import com.zillit.desktop.feature.cardexpenses.domain.InboxSection
+import com.zillit.desktop.core.designsystem.component.ZillitTab
+import com.zillit.desktop.core.designsystem.component.ZillitTabStrip
+import com.zillit.desktop.feature.cardexpenses.ui.ProcessMode
+import com.zillit.desktop.feature.cardexpenses.ui.ProcessTab
 import com.zillit.desktop.feature.cardexpenses.ui.ALL_STATUSES
 import com.zillit.desktop.feature.cardexpenses.ui.CardConfirmAction
 import com.zillit.desktop.feature.cardexpenses.ui.CardDestination
@@ -91,13 +98,22 @@ fun ReceiptQueuePage(
     banner: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val rows = state.receipts
+        .filter { state.destination != CardDestination.ProcessQueue || it.inTab(state.processTab) }
+        .filter {
+            state.destination != CardDestination.ReceiptInbox || state.inboxSection == null ||
+                it.inboxSection == state.inboxSection
+        }
         .filter { state.statusFilter == ALL_STATUSES || it.status.wire == state.statusFilter }
         .filter { it.matches(state.search) }
     val selected = rows.firstOrNull { it.id == state.selectedReceiptId }
-    val bulkable = state.destination == CardDestination.ApprovalQueue && state.viewer.isApprover
+    // Approvers tick to approve or reject, override-holders to override —
+    // independently of one another, as the web's floating bar does.
+    val bulkable = state.destination == CardDestination.ApprovalQueue &&
+        (state.viewer.isApprover || state.viewer.canOverrideReceipt)
 
     FixedPage {
         banner?.invoke(this)
+        if (state.destination == CardDestination.ProcessQueue) ProcessTabs(state, onEvent)
         QueueHeader(state, rows.size, bulkable, onEvent)
 
         if (state.destination == CardDestination.MyTransactions) {
@@ -106,6 +122,7 @@ fun ReceiptQueuePage(
 
         if (state.destination == CardDestination.ReceiptInbox) {
             InboxTools(state, onEvent)
+            InboxSections(state, onEvent)
         }
 
         Row(
@@ -160,6 +177,56 @@ fun ReceiptQueuePage(
     }
 }
 
+/**
+ * The Process page's two queues (`ProcessPage.jsx:505-510`): what is ready to
+ * post, and — for a senior only — what a colleague handed up for review.
+ */
+@Composable
+private fun ProcessTabs(state: CardUiState, onEvent: (CardEvent) -> Unit) {
+    val senior = state.viewer.isSenior
+    val tabs = buildList {
+        add(ProcessTab.Processing.tab(str(S.desktop_card_processing_queue), state))
+        if (senior) {
+            add(ProcessTab.Review.tab(str(S.desktop_card_posting_review_queue), state))
+        }
+    }
+    ZillitTabStrip(
+        tabs = tabs,
+        activeId = state.processTab.name,
+        onSelect = { id ->
+            ProcessTab.entries.firstOrNull { it.name == id }?.let { onEvent(CardEvent.ShowProcessTab(it)) }
+        },
+    )
+}
+
+private fun ProcessTab.tab(label: String, state: CardUiState) =
+    ZillitTab(name, label, count = state.receipts.count { it.inTab(this) })
+
+/**
+ * The inbox's four sections — system matched, no match, duplicate, personal —
+ * as a switch over one table, each with its count (`ReceiptInboxPage.jsx:642-727`).
+ */
+@Composable
+private fun InboxSections(state: CardUiState, onEvent: (CardEvent) -> Unit) {
+    val options = listOf(ZillitTab(ALL_SECTIONS, str(S.all), state.receipts.size)) +
+        InboxSection.entries.map { section ->
+            ZillitTab(section.name, section.label, state.receipts.count { it.inboxSection == section })
+        }
+    ZillitTabStrip(
+        tabs = options,
+        activeId = state.inboxSection?.name ?: ALL_SECTIONS,
+        onSelect = { id ->
+            onEvent(CardEvent.FilterInboxSection(InboxSection.entries.firstOrNull { it.name == id }))
+        },
+    )
+}
+
+/** Which Process tab a receipt belongs on: approved ones to post, handed-up ones to review. */
+private fun CardReceipt.inTab(tab: ProcessTab): Boolean = when (tab) {
+    ProcessTab.Processing -> status == CardWorkflowStatus.Approved
+    ProcessTab.Review -> status == CardWorkflowStatus.UnderReview || status == CardWorkflowStatus.Escalated
+}
+
 @Suppress("LongMethod") // Search, filter and the bulk bar, which only exist together.
 @Composable
 private fun QueueHeader(
@@ -206,41 +273,66 @@ private fun QueueHeader(
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
             )
-            ZillitButton(
-                text = str(S.desktop_approve_selected),
-                onClick = {
-                    onEvent(
-                        CardEvent.Ask(
-                            CardPrompt.Confirm(
-                                CardConfirmAction.BulkApprove,
-                                "",
-                                str(S.desktop_card_approve_receipts_count, state.selection.size),
-                                str(S.desktop_card_approve_bulk_note),
+            if (state.viewer.isApprover) {
+                ZillitButton(
+                    text = str(S.desktop_approve_selected),
+                    onClick = {
+                        onEvent(
+                            CardEvent.Ask(
+                                CardPrompt.Confirm(
+                                    CardConfirmAction.BulkApprove,
+                                    "",
+                                    str(S.desktop_card_approve_receipts_count, state.selection.size),
+                                    str(S.desktop_card_approve_bulk_note),
+                                ),
                             ),
-                        ),
-                    )
-                },
-                size = ButtonSize.Small,
-                enabled = !state.busy,
-            )
-            ZillitButton(
-                text = str(S.desktop_card_reject_selected),
-                onClick = {
-                    onEvent(
-                        CardEvent.Ask(
-                            CardPrompt.Confirm(
-                                CardConfirmAction.BulkReject,
-                                "",
-                                str(S.desktop_card_reject_receipts_count, state.selection.size),
-                                str(S.desktop_card_reject_bulk_note),
+                        )
+                    },
+                    size = ButtonSize.Small,
+                    enabled = !state.busy,
+                )
+                ZillitButton(
+                    text = str(S.desktop_card_reject_selected),
+                    onClick = {
+                        onEvent(
+                            CardEvent.Ask(
+                                CardPrompt.Confirm(
+                                    CardConfirmAction.BulkReject,
+                                    "",
+                                    str(S.desktop_card_reject_receipts_count, state.selection.size),
+                                    str(S.desktop_card_reject_bulk_note),
+                                ),
                             ),
-                        ),
-                    )
-                },
-                variant = ButtonVariant.Danger,
-                size = ButtonSize.Small,
-                enabled = !state.busy,
-            )
+                        )
+                    },
+                    variant = ButtonVariant.Danger,
+                    size = ButtonSize.Small,
+                    enabled = !state.busy,
+                )
+            }
+            // Overriding skips everybody still due to approve, which is why it
+            // is its own button and asks first (ApprovalQueuePage.jsx:589-611).
+            if (state.viewer.canOverrideReceipt) {
+                ZillitButton(
+                    text = str(S.desktop_card_override_count, state.selection.size),
+                    onClick = {
+                        onEvent(
+                            CardEvent.Ask(
+                                CardPrompt.Confirm(
+                                    CardConfirmAction.BulkOverride,
+                                    "",
+                                    str(S.desktop_card_override_count, state.selection.size),
+                                    str(S.desktop_card_override_receipt_note),
+                                ),
+                            ),
+                        )
+                    },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Shield,
+                    enabled = !state.busy,
+                )
+            }
             ZillitButton(
                 text = str(S.ah_clear),
                 onClick = { onEvent(CardEvent.ClearSelection) },
@@ -594,20 +686,37 @@ private fun ReceiptDetail(state: CardUiState, receipt: CardReceipt, onEvent: (Ca
             WorkflowStatusPill(receipt.status)
         }
 
-        receipt.attachmentKey?.takeIf { it.isNotBlank() }?.let { key ->
-            ZillitButton(
-                // The document is what the figures are being checked against,
-                // so it sits with them rather than among the decide actions.
-                text = if (key.endsWith(".pdf", ignoreCase = true)) {
-                    str(S.desktop_card_open_receipt_pdf)
-                } else {
-                    str(S.desktop_card_view_receipt)
-                },
-                onClick = { onEvent(CardEvent.ViewReceipt(key)) },
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.Eye,
-            )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        ) {
+            receipt.attachmentKey?.takeIf { it.isNotBlank() }?.let { key ->
+                ZillitButton(
+                    // The document is what the figures are being checked against,
+                    // so it sits with them rather than among the decide actions.
+                    text = if (key.endsWith(".pdf", ignoreCase = true)) {
+                        str(S.desktop_card_open_receipt_pdf)
+                    } else {
+                        str(S.desktop_card_view_receipt)
+                    },
+                    onClick = { onEvent(CardEvent.ViewReceipt(key)) },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Eye,
+                )
+            }
+            // The receipt's query thread: the accounts team asking, the
+            // holder answering (ReceiptDetailModal.jsx:406-415).
+            if (state.viewer.isAccountant || receipt.holderId == state.viewer.userId) {
+                ZillitButton(
+                    text = str(S.ah_query_label),
+                    onClick = { onEvent(CardEvent.OpenQuery(receipt.id)) },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Info,
+                )
+            }
         }
 
         Row(verticalAlignment = Alignment.Bottom) {
@@ -779,28 +888,9 @@ private fun MatchSection(state: CardUiState, receipt: CardReceipt, onEvent: (Car
                         size = ButtonSize.Small,
                         enabled = !state.busy,
                     )
-                    // The statement side of flag-personal, which releases the
-                    // holder's committed headroom as well as flagging the row.
-                    // Only reachable here: the accountant is looking at the
-                    // line the charge actually landed on.
-                    ZillitButton(
-                        text = str(S.desktop_card_flag_charge_personal),
-                        onClick = {
-                            onEvent(
-                                CardEvent.Ask(
-                                    CardPrompt.Confirm(
-                                        CardConfirmAction.FlagTransactionPersonal,
-                                        receipt.transactionId,
-                                        str(S.desktop_card_flag_line_personal),
-                                        str(S.desktop_card_flag_line_personal_note),
-                                    ),
-                                ),
-                            )
-                        },
-                        variant = ButtonVariant.Tertiary,
-                        size = ButtonSize.Small,
-                        enabled = !state.busy,
-                    )
+                    // No separate "flag the charge" here: the receipt's own
+                    // Flag Personal goes to the statement line whenever the
+                    // receipt is linked to one, as the web's row menu does.
                 }
             }
         } else if (state.matchCandidates.isEmpty()) {
@@ -985,7 +1075,7 @@ private fun ReceiptActions(state: CardUiState, receipt: CardReceipt, onEvent: (C
                         },
                     )
                 }
-                if (state.viewer.isAccountant && state.viewer.metadata.canOverride) {
+                if (state.viewer.canOverrideReceipt) {
                     add(
                         Action(str(S.dm_nom_table_override), ButtonVariant.Secondary) {
                             CardEvent.Ask(
@@ -1001,31 +1091,40 @@ private fun ReceiptActions(state: CardUiState, receipt: CardReceipt, onEvent: (C
                 }
             }
 
-            CardDestination.ProcessQueue, CardDestination.ReceiptInbox -> {
+            // Straight to the editor: processing is a task, not a decision,
+            // and a confirmation in front of it would ask a question with only
+            // one sensible answer. A row assigned to somebody else is theirs
+            // unless this viewer is a senior (ProcessPage.jsx:436-438).
+            CardDestination.ProcessQueue -> {
+                if (ProcessRules.canOpen(state.viewer, receipt)) {
+                    add(
+                        Action(str(S.ah_process_btn), ButtonVariant.Primary) {
+                            CardEvent.OpenProcess(receipt.id, ProcessMode.Process)
+                        },
+                    )
+                }
+            }
+
+            // History corrects a posted receipt — save only, no top-up and no
+            // second post (HistoryPage.jsx:52-58).
+            CardDestination.History -> {
                 if (state.viewer.isAccountant) {
                     add(
-                        // Straight to the editor: splitting is a task, not a
-                        // decision, and a confirmation in front of it would ask
-                        // a question with only one sensible answer.
-                        Action(str(S.desktop_card_split_across_codes), ButtonVariant.Secondary) {
-                            CardEvent.OpenSplits(receipt.id)
+                        Action(str(S.edit), ButtonVariant.Secondary) {
+                            CardEvent.OpenProcess(receipt.id, ProcessMode.History)
                         },
                     )
-                    add(
-                        Action(str(S.txt_post), ButtonVariant.Primary) {
-                            CardEvent.Ask(
-                                CardPrompt.Confirm(
-                                    CardConfirmAction.PostReceipt,
-                                    receipt.id,
-                                    str(S.desktop_card_post_this_receipt),
-                                    str(
-                                        S.desktop_card_goes_to_ledger_undone,
-                                        money(receipt.amount, receipt.currency),
-                                    ),
-                                ),
-                            )
-                        },
-                    )
+                }
+            }
+
+            // The inbox reconciles; it does not post. Attach and Manual Match
+            // live with the match above, and Flag Personal is the one row
+            // action left (ReceiptInboxPage.jsx:569-631) — for receipts not
+            // already set aside as personal or duplicate.
+            CardDestination.ReceiptInbox -> {
+                val open = receipt.inboxSection == InboxSection.SystemMatched ||
+                    receipt.inboxSection == InboxSection.NoMatch
+                if (state.viewer.isAccountant && open) {
                     add(
                         Action(str(S.ah_flag_personal), ButtonVariant.Tertiary) {
                             CardEvent.Ask(
@@ -1079,11 +1178,15 @@ private fun ReceiptActions(state: CardUiState, receipt: CardReceipt, onEvent: (C
     }
 
     if (actions.isEmpty()) {
+        val assignee = receipt.assignedTo?.takeIf { it.isNotBlank() }
         ZillitText(
-            text = if (state.destination == CardDestination.History) {
-                str(S.desktop_card_receipt_posted_trail)
-            } else {
-                str(S.desktop_card_nothing_to_do_receipt)
+            text = when {
+                state.destination == CardDestination.History -> str(S.desktop_card_receipt_posted_trail)
+                state.destination == CardDestination.ProcessQueue && assignee != null ->
+                    str(S.desktop_card_assigned_to_other, state.personName(assignee))
+
+                state.destination == CardDestination.ProcessQueue -> str(S.desktop_card_unassigned_senior)
+                else -> str(S.desktop_card_nothing_to_do_receipt)
             },
             style = ZillitTheme.typography.bodySmall,
             color = ZillitTheme.colors.textMuted,
@@ -1170,6 +1273,15 @@ private fun receiptColumns(
     if (state.destination == CardDestination.History) {
         add(textColumn(str(S.code), ColumnWidth.Weight(0.8f), muted = true) { it.nominalCode ?: "—" })
     }
+    // Who the row is with: the web's Assigned column, the lock a
+    // non-senior reads before clicking a row they cannot open.
+    if (state.destination == CardDestination.ProcessQueue) {
+        add(
+            textColumn(str(S.assigned), ColumnWidth.Weight(1f), muted = true) { row ->
+                row.assignedTo?.takeIf { it.isNotBlank() }?.let { state.personName(it) } ?: str(S.unassigned)
+            },
+        )
+    }
     add(
         TableColumn(
             header = str(S.status),
@@ -1210,6 +1322,8 @@ fun TransactionsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     val selected = state.selectedTransaction
 
     FixedPage {
+        TransactionTiles(state)
+        TransactionFilterBar(state, onEvent)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -1243,16 +1357,26 @@ fun TransactionsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 color = ZillitTheme.colors.textSecondary,
                 modifier = Modifier.weight(1f),
             )
-            if (state.viewer.isAccountant && state.selection.isNotEmpty()) {
+            if (state.viewer.isAccountant) {
+                ExportButtons(
+                    busy = state.exporting,
+                    onExport = { format -> onEvent(CardEvent.ExportTransactions(format)) },
+                )
+            }
+            // Only what is on screen and still deletable counts: a stored
+            // selection can outlive a filter, and a destructive action must
+            // never reach a row nobody can see (transactionQuery.js:93-104).
+            val deletable = rows.filter { it.id in state.selection && it.status.canDelete }.size
+            if (state.viewer.isAccountant && deletable > 0) {
                 ZillitButton(
-                    text = str(S.desktop_card_delete_selected_count, state.selection.size),
+                    text = str(S.desktop_card_delete_selected_count, deletable),
                     onClick = {
                         onEvent(
                             CardEvent.Ask(
                                 CardPrompt.Confirm(
                                     CardConfirmAction.BulkDeleteTransactions,
                                     "",
-                                    str(S.desktop_card_delete_lines_count, state.selection.size),
+                                    str(S.desktop_card_delete_lines_count, deletable),
                                     str(S.desktop_card_delete_lines_note),
                                 ),
                             ),
@@ -1442,25 +1566,29 @@ private fun TransactionDetail(
                     enabled = !state.busy,
                 )
             }
-            ZillitButton(
-                text = str(S.delete),
-                onClick = {
-                    onEvent(
-                        CardEvent.Ask(
-                            CardPrompt.Confirm(
-                                CardConfirmAction.DeleteTransaction,
-                                transaction.id,
-                                str(S.desktop_card_delete_this_line),
-                                str(S.desktop_card_delete_line_note),
+            // Approved and posted lines are bookkeeping, not clutter: removing
+            // either is a ledger event, so neither is offered.
+            if (transaction.status.canDelete) {
+                ZillitButton(
+                    text = str(S.delete),
+                    onClick = {
+                        onEvent(
+                            CardEvent.Ask(
+                                CardPrompt.Confirm(
+                                    CardConfirmAction.DeleteTransaction,
+                                    transaction.id,
+                                    str(S.desktop_card_delete_this_line),
+                                    str(S.desktop_card_delete_line_note),
+                                ),
                             ),
-                        ),
-                    )
-                },
-                variant = ButtonVariant.Danger,
-                size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.Trash,
-                enabled = !state.busy,
-            )
+                        )
+                    },
+                    variant = ButtonVariant.Danger,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Trash,
+                    enabled = !state.busy,
+                )
+            }
         }
     }
 }
@@ -1476,10 +1604,15 @@ private fun transactionColumns(
                 header = "",
                 width = ColumnWidth.Fixed(CHECK_COLUMN),
                 cell = { row ->
-                    ZillitCheckbox(
-                        checked = row.id in state.selection,
-                        onCheckedChange = { onEvent(CardEvent.ToggleSelection(row.id)) },
-                    )
+                    // Selectable is the same question as deletable: a tick on a
+                    // posted row refused at the confirm step is a worse answer
+                    // than no tick at all.
+                    if (row.status.canDelete) {
+                        ZillitCheckbox(
+                            checked = row.id in state.selection,
+                            onCheckedChange = { onEvent(CardEvent.ToggleSelection(row.id)) },
+                        )
+                    }
                 },
             ),
         )
@@ -1563,7 +1696,15 @@ private fun CardUiState.emptyMessage(): String? = when {
     else -> null
 }
 
-private val CODING_DESTINATIONS = setOf(CardDestination.PendingCoding, CardDestination.CodingQueue)
+/**
+ * Where coding is edited: the coordinator's queue only. Pending Coding is the
+ * accountant's view of what crew have still to code, and the web shows it
+ * read-only (`PendingCodingPage.jsx`) — the coding is theirs to do.
+ */
+private val CODING_DESTINATIONS = setOf(CardDestination.CodingQueue)
+
+/** The inbox switch's "every section" option. */
+private const val ALL_SECTIONS = "all"
 
 private const val QUEUE_WEIGHT = 1.85f
 private const val DETAIL_WEIGHT = 1f

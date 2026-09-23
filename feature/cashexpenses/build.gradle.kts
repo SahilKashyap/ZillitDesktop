@@ -22,6 +22,8 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlinx.coroutines.test)
+            // The wire tests drive the real repository over a mock engine.
+            implementation(libs.ktor.client.mock)
         }
         jvmTest.dependencies {
             implementation(compose.desktop.currentOs)

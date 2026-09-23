@@ -1,13 +1,29 @@
 package com.zillit.desktop.feature.cashexpenses.ui
 
+import com.zillit.desktop.feature.cashexpenses.domain.CashAssignmentRule
+import com.zillit.desktop.feature.cashexpenses.domain.CashSettings
 import com.zillit.desktop.feature.cashexpenses.domain.DraftReceipt
 import com.zillit.desktop.feature.cashexpenses.domain.EditorLine
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
+import com.zillit.desktop.feature.cashexpenses.domain.ExportFormat
+import com.zillit.desktop.feature.cashexpenses.domain.ReconDraft
+import com.zillit.desktop.feature.cashexpenses.domain.RequestCap
 
 /** Everything the user can do in the cash tool. */
 sealed interface CashEvent {
 
     data object Refresh : CashEvent
+
+    /**
+     * Which way this composition opened the tool: on its own ([asTool]) or
+     * inside the Account Hub.
+     *
+     * Sent by the tool's composition from `LocalHostedBy`. An accountant who
+     * opened the tool on its own gets the crew view — the web's
+     * `?entry=tool` — and the rights every handler checks follow the same
+     * viewer, so nothing the crew view hides can be reached through an event.
+     */
+    data class Enter(val asTool: Boolean) : CashEvent
 
     /** Opens a claim's stored receipt through the host's file layer. */
     data class ViewReceipt(val receiptUrl: String) : CashEvent
@@ -86,10 +102,75 @@ sealed interface CashEvent {
 
     // -- settings ----------------------------------------------------------
 
-    data class EditSettings(val settings: com.zillit.desktop.feature.cashexpenses.domain.CashSettings) : CashEvent
+    data class EditSettings(val settings: CashSettings) : CashEvent
 
     data object SaveSettings : CashEvent
+
+    /** Opens the member editor; null closes it. */
+    data class EditTeamMember(val draft: TeamMemberDraft?) : CashEvent
+
+    data object SaveTeamMember : CashEvent
+
+    data class RemoveTeamMember(val index: Int) : CashEvent
+
+    data class EditRequestCap(val cap: RequestCap?) : CashEvent
+
+    data object SaveRequestCap : CashEvent
+
+    data class EditAssignmentRules(val rules: List<CashAssignmentRule>?) : CashEvent
+
+    data object SaveAssignmentRules : CashEvent
+
+    // -- the open batch ------------------------------------------------------
+
+    data class EditEffectiveDate(val ymd: String) : CashEvent
+
+    data class EditSeniorNotes(val text: String) : CashEvent
+
+    /** Ticks a receipt in or out of a partial approval. */
+    data class ToggleClaim(val claimId: String) : CashEvent
+
+    data class SelectAllClaims(val selected: Boolean) : CashEvent
+
+    /** The auditor's per-receipt Verify. */
+    data class ToggleVerify(val claimId: String) : CashEvent
+
+    data class ShowHistory(val open: Boolean) : CashEvent
+
+    data class ShowQuery(val open: Boolean) : CashEvent
+
+    data class EditQuery(val text: String) : CashEvent
+
+    data object SendQuery : CashEvent
+
+    // -- reconciliation --------------------------------------------------------
+
+    data class OpenReconciliation(val id: String) : CashEvent
+
+    data class EditReconciliation(val draft: ReconDraft) : CashEvent
+
+    data object CloseReconciliation : CashEvent
+
+    data object SaveReconciliation : CashEvent
+
+    // -- floats and funds --------------------------------------------------------
+
+    /** Opens the float request as an accountant raising one for crew. */
+    data object RaiseFloatForCrew : CashEvent
+
+    data class ShowFunds(val open: Boolean) : CashEvent
+
+    data class EditFunds(val state: FundsState) : CashEvent
+
+    data object SubmitFunds : CashEvent
+
+    // -- exports -----------------------------------------------------------------
+
+    data class Export(val register: ExportRegister, val format: ExportFormat) : CashEvent
 }
+
+/** What an export writes out. */
+enum class ExportRegister { Floats, PettyCashReceipts, OutOfPocketReceipts, History }
 
 /** One-shot things the screen must do that state cannot express. */
 sealed interface CashEffect {

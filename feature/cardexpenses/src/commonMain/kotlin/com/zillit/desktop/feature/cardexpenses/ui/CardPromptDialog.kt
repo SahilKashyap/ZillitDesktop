@@ -61,10 +61,17 @@ fun CardPromptDialog(prompt: CardPrompt?, onEvent: (CardEvent) -> Unit) {
                     keyboardType = KeyboardType.Decimal,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // A part-payment's note is the only record of why the row is
+                // half funded, so there it is required; elsewhere optional.
                 ZillitTextField(
                     value = shown.note,
                     onValueChange = { onEvent(CardEvent.UpdatePrompt(shown.copy(note = it))) },
-                    label = str(S.notes_optional),
+                    label = if (shown.action == CardAmountAction.PartialTopUp) {
+                        str(S.desktop_card_partial_note_label)
+                    } else {
+                        str(S.notes_optional)
+                    },
+                    singleLine = shown.action != CardAmountAction.PartialTopUp,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -139,8 +146,8 @@ private fun CardPrompt?.isDestructive(): Boolean = when (this) {
  * keeps meaning something.
  */
 private val DESTRUCTIVE = setOf(
-    CardConfirmAction.PostReceipt,
     CardConfirmAction.PostTransaction,
+    CardConfirmAction.BulkOverride,
     CardConfirmAction.SuspendCard,
     CardConfirmAction.DeleteReceipt,
     CardConfirmAction.OverrideCard,

@@ -16,6 +16,8 @@ import com.zillit.desktop.feature.cardexpenses.domain.DraftCardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.NewCardRequest
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptCategory
 import com.zillit.desktop.feature.cardexpenses.domain.ReceiptCoding
+import com.zillit.desktop.feature.cardexpenses.domain.RequestCap
+import com.zillit.desktop.feature.cardexpenses.domain.RequestCapBasis
 import com.zillit.desktop.feature.cardexpenses.domain.SettingsSection
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.HttpClientEngineFactory
@@ -358,14 +360,55 @@ class CardWriteWireTest {
         assertEquals("true", member["can_override"]?.jsonPrimitive?.content)
     }
 
-    /** Clearing the request ceiling sends null rather than dropping the key. */
+    /**
+     * The request ceiling goes as the web's four-key object, never a bare
+     * figure — a figure is a shape the web does not read back.
+     */
     @Test
-    fun `a cleared request cap is sent as null`() = runTest {
+    fun `the request cap is sent as the four-key object`() = runTest {
         val (repo, sent) = repository()
 
-        repo.updateSettings(SettingsSection.RequestCap, settings().copy(requestCap = null))
+        repo.updateSettings(
+            SettingsSection.RequestCap,
+            settings().copy(
+                requestCap = RequestCap(
+                    enabled = true,
+                    basis = RequestCapBasis.WeeklySalary,
+                    maxAmount = 750.0,
+                    salaryMultiplier = 1.5,
+                ),
+            ),
+        )
 
-        assertEquals(JsonNull, sent.single()["request_cap"])
+        val cap = sent.single().getValue("request_cap").jsonObject
+        assertEquals("true", cap["enabled"]?.jsonPrimitive?.content)
+        assertEquals("weekly_salary", cap["basis"]?.jsonPrimitive?.content)
+        assertEquals(750.0, cap["max_amount"]?.jsonPrimitive?.content?.toDouble())
+        assertEquals(1.5, cap["salary_multiplier"]?.jsonPrimitive?.content?.toDouble())
+    }
+
+    /** A provider row keeps its bank binding and accounts on save, not only its name. */
+    @Test
+    fun `a provider is saved with its bank binding`() = runTest {
+        val (repo, sent) = repository()
+        val bound = CardProvider(
+            id = "prov_1",
+            name = "Barclaycard",
+            bankId = "bank-1",
+            companyId = "company-1",
+            custodianAccount = "2100",
+            floatMin = "",
+            floatMax = "2199",
+        )
+
+        repo.updateSettings(SettingsSection.Providers, settings().copy(providers = listOf(bound)))
+
+        val row = (sent.single()["card_providers"] as JsonArray).single().jsonObject
+        assertEquals("bank-1", row["bank_id"]?.jsonPrimitive?.content)
+        assertEquals("company-1", row["company_id"]?.jsonPrimitive?.content)
+        assertEquals("2100", row["custodian_account"]?.jsonPrimitive?.content)
+        assertEquals(JsonNull, row["float_min"])
+        assertEquals("2199", row["float_max"]?.jsonPrimitive?.content)
     }
 
     /** A provider with no name is dropped rather than saved blank. */
@@ -426,7 +469,7 @@ class CardWriteWireTest {
         coordinators = listOf(DepartmentCoordinator("dept-art", listOf("u2"), codingRequired = true)),
         overrides = ApprovalOverrides(overrideReceipts = true),
         providers = listOf(CardProvider("provider-1", "Barclaycard")),
-        requestCap = 5_000.0,
+        requestCap = RequestCap(enabled = true, maxAmount = 5_000.0),
     )
 
     private fun card() = com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard(

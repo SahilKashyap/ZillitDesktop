@@ -145,7 +145,7 @@ class CashScreenRenderTest {
                 }
                 // The header is constant across pages, so its presence proves
                 // the frame and the page under it both composed.
-                onNodeWithText("Cash Expenses").assertIsDisplayed()
+                onNodeWithText("Petty Cash Expenses").assertIsDisplayed()
             }
         }
     }
@@ -159,7 +159,7 @@ class CashScreenRenderTest {
                         CashExpensesScreen(state = state(destination, crew), onEvent = {})
                     }
                 }
-                onNodeWithText("Cash Expenses").assertIsDisplayed()
+                onNodeWithText("Petty Cash Expenses").assertIsDisplayed()
             }
         }
     }
@@ -175,7 +175,7 @@ class CashScreenRenderTest {
                         CashExpensesScreen(state = state(destination), onEvent = {})
                     }
                 }
-                onNodeWithText("Cash Expenses").assertIsDisplayed()
+                onNodeWithText("Petty Cash Expenses").assertIsDisplayed()
             }
         }
     }
@@ -291,9 +291,34 @@ class CashScreenRenderTest {
         }
     }
 
+    /**
+     * Assign lives on Post & Ledger, as on the web (`PCPostLedgerPage.jsx:1059`);
+     * the senior's sign-off offers Return to Accounts and Approve & Post only.
+     */
     @Test
-    fun `the assign action is offered on the sign-off queue`() {
-        val signOff = state(CashDestination.PettyCashSignOff)
+    fun `the assign action is offered on post and ledger`() {
+        val post = state(CashDestination.PostLedger).copy(
+            queueBatches = listOf(sampleBatch(BatchStatus.ReadyToPost)),
+        )
+
+        runComposeUiTest {
+            setContent {
+                ZillitTheme(darkTheme = false) {
+                    CashExpensesScreen(state = post, onEvent = {})
+                }
+            }
+            // Unassigned, so it reads "Assign" rather than "Reassign".
+            onNodeWithText("Assign").assertExists()
+            onNodeWithText("Post to Ledger").assertExists()
+        }
+    }
+
+    /** An escalated batch on the senior's sign-off can go back to accounts. */
+    @Test
+    fun `sign-off offers return to accounts on an escalated batch`() {
+        val signOff = state(CashDestination.PettyCashSignOff).copy(
+            queueBatches = listOf(sampleBatch(BatchStatus.Escalated)),
+        )
 
         runComposeUiTest {
             setContent {
@@ -301,8 +326,8 @@ class CashScreenRenderTest {
                     CashExpensesScreen(state = signOff, onEvent = {})
                 }
             }
-            // Unassigned, so it reads "Assign" rather than "Reassign".
-            onNodeWithText("Assign").assertExists()
+            onNodeWithText("Return to Accounts").assertExists()
+            onAllNodesWithText("Assign").assertCountEquals(0)
         }
     }
 

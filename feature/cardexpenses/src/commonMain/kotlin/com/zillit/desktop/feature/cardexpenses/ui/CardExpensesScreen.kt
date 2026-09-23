@@ -37,13 +37,17 @@ import com.zillit.desktop.feature.cardexpenses.ui.pages.CardEditDialog
 import com.zillit.desktop.feature.cardexpenses.ui.pages.CardSettingsPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.HistoryPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.NewCardDialog
+import com.zillit.desktop.feature.cardexpenses.ui.pages.ActivationDialog
 import com.zillit.desktop.feature.cardexpenses.ui.pages.BulkProcessPage
-import com.zillit.desktop.feature.cardexpenses.ui.pages.SplitEditorDialog
+import com.zillit.desktop.feature.cardexpenses.ui.pages.FundsDialog
+import com.zillit.desktop.feature.cardexpenses.ui.pages.ProcessEditorDialog
+import com.zillit.desktop.feature.cardexpenses.ui.pages.QueryDialog
 import com.zillit.desktop.feature.cardexpenses.ui.pages.StatementReviewPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.MyCardPage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.ReceiptQueuePage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.TopUpQueuePage
 import com.zillit.desktop.feature.cardexpenses.ui.pages.TransactionsPage
+import com.zillit.desktop.feature.cardexpenses.ui.components.CardNavHeader
 
 /**
  * The Card Expenses tool.
@@ -60,6 +64,8 @@ fun CardExpensesScreen(
     state: CardUiState,
     onEvent: (CardEvent) -> Unit,
     modifier: Modifier = Modifier,
+    /** The title card's back chip; null draws no title card. */
+    onBack: (() -> Unit)? = null,
 ) {
     Box(modifier = modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
         if (state.viewer.isAccountant) {
@@ -70,9 +76,24 @@ fun CardExpensesScreen(
                     onSelect = { slug ->
                         CardDestination.fromSlug(slug)?.let { onEvent(CardEvent.Open(it)) }
                     },
+                    // The hub renders this tool full-bleed for an accountant,
+                    // without its own sidebar, so the tool's sidebar carries
+                    // the title and the way back — the web's `Sidebar.jsx`.
+                    header = onBack?.let { back ->
+                        {
+                            CardNavHeader(
+                                title = str(S.ah_card_expenses),
+                                backLabel = str(S.desktop_card_back_to_hub),
+                                onBack = back,
+                            )
+                        }
+                    },
                 )
                 Column(modifier = Modifier.fillMaxSize()) {
-                    CardBody(state, onEvent)
+                    AccountantPageHeader(state.destination)
+                    Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                        CardBody(state, onEvent)
+                    }
                 }
             }
         } else {
@@ -83,15 +104,18 @@ fun CardExpensesScreen(
             }
         }
 
-        CardPromptDialog(state.prompt, onEvent)
-
-        // Over the page: splitting is a focused task and the queue behind
-        // stays where it was, so the next receipt is one click away. The two
-        // card forms are over the page for the same reason — the register
-        // behind them is the context for what is being filled in.
-        SplitEditorDialog(state, onEvent)
+        // Over the page: processing is a focused task and the queue behind
+        // stays where it was, so the next receipt is one click away. The card
+        // forms are over the page for the same reason — the register behind
+        // them is the context for what is being filled in. The confirmation
+        // comes last so it sits on top of whichever of these raised it.
+        ProcessEditorDialog(state, onEvent)
         NewCardDialog(state, onEvent)
         CardEditDialog(state, onEvent)
+        ActivationDialog(state, onEvent)
+        FundsDialog(state, onEvent)
+        QueryDialog(state, onEvent)
+        CardPromptDialog(state.prompt, onEvent)
 
         ZillitToast(
             message = state.notice,
@@ -133,6 +157,28 @@ private fun CardholderHeader(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     }
 }
 
+/**
+ * The page's own heading — eyebrow, title and the web's one-line account of it.
+ *
+ * Every web page opens with one (`PageHeader`, e.g. `OverviewPage.jsx:224`);
+ * the desktop's accountant pages started straight on their tiles, which read
+ * as fourteen screens with no names.
+ */
+@Composable
+private fun AccountantPageHeader(destination: CardDestination) {
+    val heading = destination.heading() ?: return
+    ZillitPageHeader(
+        eyebrow = heading.eyebrow,
+        title = heading.title,
+        description = heading.blurb,
+        modifier = Modifier.padding(
+            start = ZillitTheme.spacing.xl,
+            end = ZillitTheme.spacing.xl,
+            top = ZillitTheme.spacing.xl,
+        ),
+    )
+}
+
 @Suppress("CyclomaticComplexMethod") // A dispatch table; splitting it hides the mapping.
 @Composable
 private fun CardBody(state: CardUiState, onEvent: (CardEvent) -> Unit) {
@@ -162,7 +208,14 @@ private fun CardBody(state: CardUiState, onEvent: (CardEvent) -> Unit) {
     }
 }
 
-/** The sidebar, grouped and filtered to what this viewer may open. */
+/**
+ * The sidebar, grouped and filtered to what this viewer may open.
+ *
+ * Chips are the web's and only the web's (`Sidebar.jsx:18-26`): the red unread
+ * count on the seven rows the spec gives one. The amber work counts this
+ * sidebar used to add read from the overview's figures, which the web shows on
+ * the dashboard and not beside the navigation.
+ */
 private fun CardUiState.navSections(): List<SideNavSection> =
     destinations
         .groupBy { it.group }
@@ -174,30 +227,22 @@ private fun CardUiState.navSections(): List<SideNavSection> =
                         id = destination.slug,
                         label = destination.label,
                         icon = destination.icon,
-                        count = badgeFor(destination),
-                        unread = unreadFor(destination),
+                        unread = if (destination in SIDEBAR_CHIPS) unreadFor(destination) else 0,
                     )
                 },
             )
         }
 
-/**
- * The count shown against a sidebar row.
- *
- * Read from the overview's own counts rather than a separate badge feed: the
- * dashboard and the sidebar disagreeing about how much work is waiting is
- * worse than either being slightly stale.
- */
 /** Unread notifications filed under a page — the web's sidebar `Badge` (`card-expenses-badge-helpers.js`). */
 private fun CardUiState.unreadFor(destination: CardDestination): Int = destination.badgeKeys.sumOf { unread[it] ?: 0 }
 
-private fun CardUiState.badgeFor(destination: CardDestination): Int = when (destination) {
-    CardDestination.ReceiptInbox -> overview?.inbox ?: 0
-    CardDestination.PendingCoding -> overview?.pendingCoding ?: 0
-    CardDestination.BulkProcess -> bulkItems.size
-    CardDestination.ApprovalQueue -> overview?.inApproval ?: 0
-    CardDestination.CardRegister -> overview?.requestedCards ?: 0
-    CardDestination.TopUpQueue -> overview?.pendingTopUps?.size ?: 0
-    CardDestination.Alerts -> alerts.count { it.status == "open" }
-    else -> 0
-}
+/** The rows the web's sidebar puts a chip on (`BADGE_LEVEL1_BY_KEY`). */
+private val SIDEBAR_CHIPS = setOf(
+    CardDestination.MyTransactions,
+    CardDestination.CardRegister,
+    CardDestination.ReceiptInbox,
+    CardDestination.ApprovalQueue,
+    CardDestination.ProcessQueue,
+    CardDestination.TopUpQueue,
+    CardDestination.Alerts,
+)

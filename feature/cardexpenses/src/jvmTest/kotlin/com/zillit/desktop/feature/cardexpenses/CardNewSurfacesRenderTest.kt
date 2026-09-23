@@ -12,6 +12,7 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.feature.cardexpenses.domain.ApprovalOverrides
 import com.zillit.desktop.feature.cardexpenses.domain.CardHistoryEntry
 import com.zillit.desktop.feature.cardexpenses.domain.CardMetadata
+import com.zillit.desktop.feature.cardexpenses.domain.RequestCap
 import com.zillit.desktop.feature.cardexpenses.domain.CardPerson
 import com.zillit.desktop.feature.cardexpenses.domain.CardProvider
 import com.zillit.desktop.feature.cardexpenses.domain.CardReceipt
@@ -80,7 +81,9 @@ class CardNewSurfacesRenderTest {
     fun `a live card offers the control code and not the full edit`() = screen(
         state(CardDestination.CardRegister).copy(
             selectedCardId = "card-1",
-            cardDetail = CardDetail(cardId = "card-1", bsControlCode = "2100"),
+            // A completed read that found no receipts: the only licence to
+            // re-point the card's balance-sheet account (CardDetailModal.jsx).
+            cardDetail = CardDetail(cardId = "card-1", bsControlCode = "2100", receiptsRead = true),
         ),
     ) {
         onNodeWithText("Balance-sheet control code").assertIsDisplayed()
@@ -88,8 +91,37 @@ class CardNewSurfacesRenderTest {
         onNodeWithText("Save code").assertIsNotEnabled()
     }
 
+    /** Spend already points at the code, so it is shown and not offered for change. */
+    @Test
+    fun `a card with receipts does not offer the control code for change`() = screen(
+        state(CardDestination.CardRegister).copy(
+            selectedCardId = "card-1",
+            cardDetail = CardDetail(
+                cardId = "card-1",
+                bsControlCode = "2100",
+                receiptsRead = true,
+                receipts = listOf(receipt()),
+            ),
+        ),
+    ) {
+        onAllNodesWithText("Save code").assertCountEquals(0)
+    }
+
+    /** The request's own author may bin it (CardDetailModal.jsx:250); an accountant may still edit. */
     @Test
     fun `a card request offers the full edit and the delete`() = screen(
+        state(CardDestination.CardRegister).copy(
+            cards = listOf(card().copy(status = CardStatus.Requested, requestedBy = "user-1")),
+            selectedCardId = "card-1",
+            cardDetail = CardDetail(cardId = "card-1"),
+        ),
+    ) {
+        onNodeWithText("Edit Details").assertIsDisplayed()
+        onNodeWithText("Delete request").assertIsDisplayed()
+    }
+
+    @Test
+    fun `somebody else's card request is not the accountant's to delete`() = screen(
         state(CardDestination.CardRegister).copy(
             cards = listOf(card().copy(status = CardStatus.Requested)),
             selectedCardId = "card-1",
@@ -97,7 +129,7 @@ class CardNewSurfacesRenderTest {
         ),
     ) {
         onNodeWithText("Edit Details").assertIsDisplayed()
-        onNodeWithText("Delete request").assertIsDisplayed()
+        onAllNodesWithText("Delete request").assertCountEquals(0)
     }
 
     // -- the card forms -------------------------------------------------------
@@ -131,7 +163,7 @@ class CardNewSurfacesRenderTest {
 
     @Test
     fun `the coding queue offers all three commits to a coordinator who approves`() = screen(
-        state(CardDestination.PendingCoding).copy(
+        state(CardDestination.CodingQueue, crew).copy(
             selectedReceiptId = "receipt-1",
             coding = CodingDraft("receipt-1", nominalCode = "4100"),
         ),
@@ -144,13 +176,25 @@ class CardNewSurfacesRenderTest {
     /** Nothing moves on without a code; the draft save still works. */
     @Test
     fun `an uncoded receipt cannot be sent on`() = screen(
-        state(CardDestination.PendingCoding).copy(
+        state(CardDestination.CodingQueue, crew).copy(
             selectedReceiptId = "receipt-1",
             coding = CodingDraft("receipt-1", nominalCode = ""),
         ),
     ) {
         onNodeWithText("Save and send").assertIsNotEnabled()
         onNodeWithText("Code and approve").assertIsNotEnabled()
+    }
+
+    /** Pending Coding is the accountant's read-only view; coding is the crew's to do. */
+    @Test
+    fun `pending coding shows the coding without the commits`() = screen(
+        state(CardDestination.PendingCoding).copy(
+            selectedReceiptId = "receipt-1",
+            coding = CodingDraft("receipt-1", nominalCode = "4100"),
+        ),
+    ) {
+        onAllNodesWithText("Save and send").assertCountEquals(0)
+        onAllNodesWithText("Code and approve").assertCountEquals(0)
     }
 
     // -- uploading ------------------------------------------------------------
@@ -231,7 +275,7 @@ class CardNewSurfacesRenderTest {
                     title = "Two receipts look identical",
                     description = "Same merchant, same amount, one minute apart",
                     severity = com.zillit.desktop.feature.cardexpenses.domain.AlertSeverity.High,
-                    status = "open",
+                    status = "active",
                     type = "duplicate",
                     savings = 84.20,
                     at = 1_754_000_000_000,
@@ -402,6 +446,6 @@ class CardNewSurfacesRenderTest {
         coordinators = listOf(DepartmentCoordinator("dept-1", listOf("user-2"), codingRequired = true)),
         overrides = ApprovalOverrides(overrideReceipts = true),
         providers = listOf(CardProvider("provider-1", "Visa")),
-        requestCap = 10_000.0,
+        requestCap = RequestCap(enabled = true, maxAmount = 10_000.0),
     )
 }

@@ -30,6 +30,8 @@ import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cashexpenses.domain.CashPeople
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 import com.zillit.desktop.feature.cashexpenses.ui.pages.ActiveFloatsPage
+import com.zillit.desktop.feature.cashexpenses.ui.pages.ExportButton
+import com.zillit.desktop.feature.cashexpenses.ui.pages.TeamMemberDialog
 import com.zillit.desktop.feature.cashexpenses.ui.pages.CashExtensionPage
 import com.zillit.desktop.feature.cashexpenses.ui.pages.CashSettingsPage
 import com.zillit.desktop.feature.cashexpenses.ui.pages.CodingEditorDialog
@@ -95,7 +97,12 @@ fun CashExpensesScreen(
                 state.queueBatches.firstOrNull { it.id == open.batchId }
             },
             onEvent = onEvent,
+            state = state,
         )
+
+        // At the root, not inside Settings' scrolling column, where a dialog
+        // shell draws inline at the foot of the section.
+        TeamMemberDialog(state, onEvent)
 
         // Over the page rather than inside it: coding is a focused task, and
         // the queue behind stays where it was so the next row is one click away.
@@ -142,7 +149,8 @@ private fun CashHeader(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     ) {
         ZillitPageHeader(
             eyebrow = str(S.desktop_finance),
-            title = str(S.desktop_ce_tool_title),
+            // The web's page title (`CashExpensesModule.jsx:635`).
+            title = str(S.ah_cash_expenses),
             description = if (state.viewer.isAccountant) {
                 str(S.desktop_ce_accountant_subtitle)
             } else {
@@ -177,19 +185,39 @@ private fun CashHeader(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             trailing = { SharedQueueTabs(state, onEvent) },
         )
 
-        if (!state.onSharedPage) {
-            val pages = state.sectionDestinations
-            if (pages.isNotEmpty()) {
-                ZillitTabStrip(
-                    tabs = pages.map { ZillitTab(it.slug, it.label, count = state.unreadFor(it)) },
-                    activeId = state.destination.slug,
-                    onSelect = { slug ->
-                        CashDestination.fromSlug(slug)?.let { onEvent(CashEvent.Open(it)) }
+        if (!state.onSharedPage) SectionTabs(state, onEvent)
+    }
+}
+
+/** The open pipeline's pages, with the registers' Export at the end for an accountant. */
+@Composable
+private fun SectionTabs(state: CashUiState, onEvent: (CashEvent) -> Unit) {
+    val pages = state.sectionDestinations
+    if (pages.isEmpty()) return
+    ZillitTabStrip(
+        tabs = pages.map { ZillitTab(it.slug, it.label, count = state.unreadFor(it)) },
+        activeId = state.destination.slug,
+        onSelect = { slug ->
+            CashDestination.fromSlug(slug)?.let { onEvent(CashEvent.Open(it)) }
+        },
+        // The registers' exports — an accountant's, never the crew's
+        // (`CashExpensesModule.jsx:687-713`).
+        trailing = if (state.viewer.isAccountant) {
+            {
+                ExportButton(
+                    registers = if (state.pipeline == ExpenseType.OutOfPocket) {
+                        listOf(ExportRegister.OutOfPocketReceipts)
+                    } else {
+                        listOf(ExportRegister.Floats, ExportRegister.PettyCashReceipts)
                     },
+                    busy = state.exporting,
+                    onEvent = onEvent,
                 )
             }
-        }
-    }
+        } else {
+            null
+        },
+    )
 }
 
 /**

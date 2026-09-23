@@ -69,34 +69,53 @@ fun AnalyticsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
 
         AnalyticsTotals(analytics, currency, period)
 
+        // The service breaks spend down by department and by holder, naming
+        // both by id (AnalyticsPage.jsx:99-125); the names come from the crew.
+        // An older service's by-category and by-month lists still draw.
+        val byDepartment = analytics?.byDepartment.orEmpty()
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         ) {
             BreakdownCard(
-                title = str(S.desktop_card_by_category),
-                slices = analytics?.byCategory.orEmpty(),
+                title = str(if (byDepartment.isNotEmpty()) S.desktop_by_department else S.desktop_card_by_category),
+                slices = byDepartment.map { it.copy(label = state.departmentName(it)) }
+                    .ifEmpty { analytics?.byCategory.orEmpty() },
                 currency = currency,
                 tone = StatusTone.Progress,
                 modifier = Modifier.weight(1f),
             )
             BreakdownCard(
                 title = str(S.desktop_card_by_cardholder),
-                slices = analytics?.byHolder.orEmpty(),
+                slices = analytics?.byHolder.orEmpty().map { it.copy(label = state.holderLabel(it)) },
                 currency = currency,
                 tone = StatusTone.Done,
                 modifier = Modifier.weight(1f),
             )
         }
 
-        BreakdownCard(
-            title = str(S.desktop_card_by_month),
-            slices = analytics?.byMonth.orEmpty(),
-            currency = currency,
-            tone = StatusTone.Escalated,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        analytics?.byMonth?.takeIf { it.isNotEmpty() }?.let { months ->
+            BreakdownCard(
+                title = str(S.desktop_card_by_month),
+                slices = months,
+                currency = currency,
+                tone = StatusTone.Escalated,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
+}
+
+/** A department slice's name: the server's own label, else the crew's name for the id. */
+private fun CardUiState.departmentName(slice: AnalyticsSlice): String =
+    slice.label.takeIf { it.isNotBlank() }
+        ?: slice.departmentId?.let { id -> people.firstOrNull { it.departmentId == id }?.department }
+        ?: str(S.unassigned)
+
+/** A holder slice's name, with the card it was spent on. */
+private fun CardUiState.holderLabel(slice: AnalyticsSlice): String {
+    val name = slice.label.takeIf { it.isNotBlank() } ?: personName(slice.userId)
+    return listOfNotNull(name, slice.cardLastFour?.let { "•••• $it" }).joinToString(" · ")
 }
 
 /** What the period came to, before it is broken down three ways. */
@@ -232,12 +251,15 @@ private fun BreakdownCard(
  * Smart alerts — the exception engine's findings.
  *
  * Sorted by severity because the page exists to surface the one thing that
- * matters, and a chronological list buries it under routine noise.
+ * matters, and a chronological list buries it under routine noise. An alert is
+ * open while it is `active` or `investigating` (`SmartAlertsPage.jsx:28-32,
+ * 124`); the desktop looked for an `open` status the service never sends, so
+ * no alert ever offered an action.
  */
 @Composable
 fun AlertsPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
-    val rows = state.alerts.sortedBy { it.severity.ordinal }
-    val open = rows.count { it.status == OPEN }
+    val rows = state.alerts.sortedWith(compareBy<CardAlert> { !it.isOpen }.thenBy { it.severity.ordinal })
+    val open = rows.count { it.isOpen }
 
     FixedPage {
         if (open > 0) {
@@ -273,8 +295,15 @@ private fun alertColumns(
     onEvent: (CardEvent) -> Unit,
 ): List<TableColumn<CardAlert>> = listOf(
     textColumn(str(S.alert), ColumnWidth.Weight(2f)) { it.title.ifBlank { it.type ?: str(S.alert) } },
-    textColumn(str(S.desktop_detail), ColumnWidth.Weight(2f), muted = true) { it.description ?: "—" },
-    textColumn(str(S.desktop_card_at_stake), ColumnWidth.Weight(1f), numeric = true) { money(it.savings, null) },
+    textColumn(str(S.desktop_detail), ColumnWidth.Weight(2f), muted = true) { alert ->
+        // A resolved alert says what was found; an open one what it saw.
+        alert.resolution?.takeIf { alert.status == RESOLVED }
+            ?.let { str(S.desktop_card_resolution_value, it) }
+            ?: alert.description ?: "—"
+    },
+    textColumn(str(S.desktop_card_at_stake), ColumnWidth.Weight(1f), numeric = true) {
+        money(it.savings, state.currency)
+    },
     textColumn(str(S.desktop_card_raised), ColumnWidth.Weight(1f), muted = true) { date(it.at) },
     TableColumn(
         header = str(S.desktop_card_severity),
@@ -285,76 +314,106 @@ private fun alertColumns(
         header = "",
         width = ColumnWidth.Fixed(ALERT_ACTION_COLUMN),
         cell = { row ->
-            if (row.status == OPEN) {
-                Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
-                    // Between resolving and dismissing: the alert stays open,
-                    // but everyone else can see it has been picked up. Without
-                    // it two accountants investigate the same alert and the
-                    // second one finds out when they compare notes.
-                    ZillitButton(
-                        text = str(S.desktop_card_investigate),
-                        onClick = {
-                            onEvent(
-                                CardEvent.Ask(
-                                    CardPrompt.Confirm(
-                                        CardConfirmAction.InvestigateAlert,
-                                        row.id,
-                                        str(S.desktop_card_mark_investigating),
-                                        str(S.desktop_card_investigate_note),
-                                    ),
-                                ),
-                            )
-                        },
-                        variant = ButtonVariant.Secondary,
-                        size = ButtonSize.Small,
-                        enabled = !state.busy,
-                    )
-                    ZillitButton(
-                        text = str(S.desktop_resolve),
-                        onClick = {
-                            onEvent(
-                                CardEvent.Ask(
-                                    CardPrompt.WithReason(
-                                        CardReasonAction.ResolveAlert,
-                                        row.id,
-                                        str(S.desktop_card_resolve_this_alert),
-                                        str(S.desktop_card_what_was_found),
-                                    ),
-                                ),
-                            )
-                        },
-                        size = ButtonSize.Small,
-                        enabled = !state.busy,
-                    )
-                    ZillitButton(
-                        text = str(S.sync_action_dismiss),
-                        onClick = {
-                            onEvent(
-                                CardEvent.Ask(
-                                    CardPrompt.Confirm(
-                                        CardConfirmAction.DismissAlert,
-                                        row.id,
-                                        str(S.desktop_card_dismiss_this_alert),
-                                        str(S.desktop_card_dismiss_alert_note),
-                                    ),
-                                ),
-                            )
-                        },
-                        variant = ButtonVariant.Tertiary,
-                        size = ButtonSize.Small,
-                        enabled = !state.busy,
-                    )
-                }
+            if (row.isOpen && state.viewer.isAccountant) {
+                AlertActions(state, row, onEvent)
             } else {
-                ZillitStatusPill(
-                    label = row.status.replaceFirstChar { it.uppercase() }.ifBlank { str(S.ah_status_closed) },
-                    tone = StatusTone.Neutral,
-                )
+                ZillitStatusPill(label = row.statusLabel(), tone = row.statusTone(), dot = row.isOpen)
             }
         },
     ),
 )
 
-private const val OPEN = "open"
+/**
+ * What an open alert offers: Investigate while it is new — after which it
+ * reads "Under investigation" so a second accountant does not pick it up —
+ * then Resolve or Dismiss either way.
+ */
+@Suppress("LongMethod") // Three buttons, each with its own confirmation.
+@Composable
+private fun AlertActions(state: CardUiState, row: CardAlert, onEvent: (CardEvent) -> Unit) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (row.isInvestigating) {
+            ZillitStatusPill(label = str(S.ah_under_investigation_toast), tone = StatusTone.Pending, dot = true)
+        } else {
+            ZillitButton(
+                text = str(S.desktop_card_investigate),
+                onClick = {
+                    onEvent(
+                        CardEvent.Ask(
+                            CardPrompt.Confirm(
+                                CardConfirmAction.InvestigateAlert,
+                                row.id,
+                                str(S.desktop_card_mark_investigating),
+                                str(S.desktop_card_investigate_note),
+                            ),
+                        ),
+                    )
+                },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                enabled = !state.busy,
+            )
+        }
+        ZillitButton(
+            text = str(S.desktop_resolve),
+            onClick = {
+                onEvent(
+                    CardEvent.Ask(
+                        CardPrompt.WithReason(
+                            CardReasonAction.ResolveAlert,
+                            row.id,
+                            str(S.desktop_card_resolve_this_alert),
+                            str(S.desktop_card_what_was_found),
+                        ),
+                    ),
+                )
+            },
+            size = ButtonSize.Small,
+            enabled = !state.busy,
+        )
+        ZillitButton(
+            text = str(S.sync_action_dismiss),
+            onClick = {
+                onEvent(
+                    CardEvent.Ask(
+                        CardPrompt.Confirm(
+                            CardConfirmAction.DismissAlert,
+                            row.id,
+                            str(S.desktop_card_dismiss_this_alert),
+                            str(S.desktop_card_dismiss_alert_note),
+                        ),
+                    ),
+                )
+            },
+            variant = ButtonVariant.Tertiary,
+            size = ButtonSize.Small,
+            enabled = !state.busy,
+        )
+    }
+}
+
+/** The web's status badges (`SmartAlertsPage.jsx:27-33`). */
+private fun CardAlert.statusLabel(): String = when (status) {
+    CardAlert.ACTIVE -> str(S.active)
+    CardAlert.INVESTIGATING -> str(S.desktop_investigating)
+    RESOLVED -> str(S.ah_alert_filter_resolved)
+    DISMISSED -> str(S.ah_dismissed_toast)
+    AUTO_CLOSED -> str(S.desktop_card_auto_closed)
+    else -> status.replace('_', ' ').replaceFirstChar { it.uppercase() }.ifBlank { str(S.ah_status_closed) }
+}
+
+private fun CardAlert.statusTone(): StatusTone = when (status) {
+    CardAlert.ACTIVE -> StatusTone.Rejected
+    CardAlert.INVESTIGATING -> StatusTone.Pending
+    RESOLVED -> StatusTone.Done
+    else -> StatusTone.Neutral
+}
+
+private const val RESOLVED = "resolved"
+private const val DISMISSED = "dismissed"
+private const val AUTO_CLOSED = "auto_closed"
 private val SEVERITY_COLUMN = 110.dp
-private val ALERT_ACTION_COLUMN = 290.dp
+private val ALERT_ACTION_COLUMN = 320.dp

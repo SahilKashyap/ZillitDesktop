@@ -29,6 +29,9 @@ import com.zillit.desktop.feature.cashexpenses.domain.PaymentRouting
 import com.zillit.desktop.feature.cashexpenses.domain.PettyCashOverview
 import com.zillit.desktop.feature.cashexpenses.domain.QuickCode
 import com.zillit.desktop.feature.cashexpenses.domain.Reconciliation
+import com.zillit.desktop.feature.cashexpenses.domain.RoutingSplit
+import com.zillit.desktop.feature.cashexpenses.domain.Denomination
+import com.zillit.desktop.feature.cashexpenses.domain.ReconItem
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -36,6 +39,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -81,6 +85,8 @@ internal data class FloatDto(
     @SerialName("duration_type") val durationType: String? = null,
     @SerialName("purpose") val purpose: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
+    /** An array, or a string holding one — see [readApprovals]. */
+    @SerialName("approvals") val approvals: JsonElement? = null,
 ) {
     fun toDomain(): CashFloat? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -104,6 +110,7 @@ internal data class FloatDto(
             durationType = durationType,
             purpose = purpose,
             createdAt = createdAt.toEpochMillisOrNull(),
+            approvals = approvals.readApprovals(),
         )
     }
 }
@@ -133,6 +140,10 @@ internal data class BatchDto(
     @SerialName("assignment_reason") val assignmentReason: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("claims") val claims: List<ClaimDto>? = null,
+    @SerialName("effective_date") val effectiveDate: String? = null,
+    @SerialName("escalation_reason") val escalationReason: String? = null,
+    @SerialName("escalated_by") val escalatedBy: String? = null,
+    @SerialName("approvals") val approvals: JsonElement? = null,
 ) {
     fun toDomain(): ClaimBatch? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -159,6 +170,10 @@ internal data class BatchDto(
             assignmentReason = assignmentReason,
             createdAt = createdAt.toEpochMillisOrNull(),
             claims = claims.orEmpty().mapNotNull { it.toDomain() },
+            effectiveDate = effectiveDate.toEpochMillisOrNull(),
+            escalationReason = escalationReason?.takeIf { it.isNotBlank() },
+            escalatedBy = escalatedBy?.takeIf { it.isNotBlank() },
+            approvals = approvals.readApprovals(),
         )
     }
 }
@@ -184,6 +199,9 @@ internal data class ClaimDto(
     @SerialName("batch_status") val batchStatus: String? = null,
     @SerialName("receipt_url") val receiptUrl: String? = null,
     @SerialName("line_items") val lineItems: JsonElement? = null,
+    @SerialName("is_verified") val isVerified: JsonElement? = null,
+    /** Strings or `{flag}` objects, in an array or a string holding one. */
+    @SerialName("processing_flags") val processingFlags: JsonElement? = null,
 ) {
     fun toDomain(): Claim? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -206,6 +224,9 @@ internal data class ClaimDto(
             status = BatchStatus.from(status ?: batchStatus),
             receiptUrl = receiptUrl,
             lineItems = lineItems.readLineItems(),
+            isVerified = isVerified.isTrue(),
+            processingFlags = processingFlags.readFlags(),
+            rawLines = lineItems.readRawLines(),
         )
     }
 }
@@ -264,7 +285,9 @@ internal data class MetadataDto(
     @SerialName("can_override") val canOverride: Boolean? = null,
     @SerialName("override_float_req") val overrideFloatRequest: Boolean? = null,
     @SerialName("override_receipt_batch") val overrideReceiptBatch: Boolean? = null,
-    @SerialName("posting_limit") val postingLimit: String? = null,
+    /** A number, `null` (unlimited), or absent (no grant) — three answers, so read raw. */
+    @SerialName("posting_limit") val postingLimit: JsonElement? = null,
+    @SerialName("approval_tier_configs") val approvalTierConfigs: JsonElement? = null,
 ) {
     // Every flag defaults to false: a right the server did not mention is one
     // this person does not have.
@@ -279,7 +302,10 @@ internal data class MetadataDto(
         canOverride = canOverride == true,
         overrideFloatRequest = overrideFloatRequest == true,
         overrideReceiptBatch = overrideReceiptBatch == true,
-        postingLimit = postingLimit.toAmountOrNull(),
+        postingLimit = (postingLimit as? JsonPrimitive)?.contentOrNull().toAmountOrNull(),
+        // Whether the limit was stated as null is read off the raw body — see
+        // CashRepositoryImpl.metadata; a nullable field cannot say.
+        approvalTierConfigs = approvalTierConfigs.readTierConfigs(),
     )
 }
 
@@ -404,11 +430,10 @@ internal data class OopOverviewDto(
             totalClaimed = stats?.totalClaimed.toAmount(),
             bacsReady = stats?.bacsReady.toAmount(),
             payrollAuto = stats?.payrollAuto.toAmount(),
-            routing = PaymentRouting(
+            routing = RoutingSplit(
                 bacs = routing?.bacs.toAmount(),
                 payroll = routing?.payroll.toAmount(),
                 total = routing?.total.toAmount(),
-                batches = rows,
             ),
             spendByCategory = spendByCategory.orEmpty().map {
                 CategorySpend(it.category.orEmpty(), it.amount.toAmount())
@@ -426,20 +451,43 @@ internal data class OopStatsDto(
     @SerialName("payroll_auto") val payrollAuto: String? = null,
 )
 
+/** The out-of-pocket dashboard's `routing` split. */
 @Serializable
 internal data class RoutingDto(
     @SerialName("bacs") val bacs: String? = null,
     @SerialName("payroll") val payroll: String? = null,
     @SerialName("total") val total: String? = null,
-    @SerialName("batches") val batches: List<BatchDto>? = null,
+)
+
+/**
+ * `GET /claims/overview/payment-routing` — `stats` and the two batch lists.
+ *
+ * Read as `bacs`/`payroll`/`total` until now, none of which the route sends:
+ * every tile on Payment Routing said zero (`OOPPaymentPage.jsx:191-195`).
+ */
+@Serializable
+internal data class PaymentRoutingDto(
+    @SerialName("stats") val stats: PaymentRoutingStatsDto? = null,
+    @SerialName("bacs_batches") val bacsBatches: List<BatchDto>? = null,
+    @SerialName("payroll_batches") val payrollBatches: List<BatchDto>? = null,
 ) {
     fun toDomain() = PaymentRouting(
-        bacs = bacs.toAmount(),
-        payroll = payroll.toAmount(),
-        total = total.toAmount(),
-        batches = batches.orEmpty().mapNotNull { it.toDomain() },
+        bacsReady = stats?.bacsReady.toAmount(),
+        bacsCount = stats?.bacsCount ?: 0,
+        payrollTotal = stats?.payrollTotal.toAmount(),
+        payrollCount = stats?.payrollCount ?: 0,
+        bacsBatches = bacsBatches.orEmpty().mapNotNull { it.toDomain() },
+        payrollBatches = payrollBatches.orEmpty().mapNotNull { it.toDomain() },
     )
 }
+
+@Serializable
+internal data class PaymentRoutingStatsDto(
+    @SerialName("bacs_ready") val bacsReady: String? = null,
+    @SerialName("bacs_count") val bacsCount: Int? = null,
+    @SerialName("payroll_total") val payrollTotal: String? = null,
+    @SerialName("payroll_count") val payrollCount: Int? = null,
+)
 
 @Serializable
 internal data class CategorySpendDto(
@@ -477,6 +525,14 @@ internal data class DepartmentOverviewDto(
     )
 }
 
+/**
+ * One reconciliation, as the web writes it.
+ *
+ * `opening_safe_balance`, `physical_cash`, `variance`, `denominations` and
+ * `reconciling_items`. The desktop read `counted_balance` and `note`, which
+ * nothing writes, so every count came back as zero; both are kept as
+ * fallbacks for any row that carries them.
+ */
 @Serializable
 internal data class ReconciliationDto(
     @SerialName("id") val id: String? = null,
@@ -485,10 +541,16 @@ internal data class ReconciliationDto(
     @SerialName("period_start") val periodStart: String? = null,
     @SerialName("period_end") val periodEnd: String? = null,
     @SerialName("book_balance") val bookBalance: String? = null,
-    @SerialName("counted_balance") val countedBalance: String? = null,
+    @SerialName("opening_safe_balance") val openingBalance: String? = null,
+    @SerialName("physical_cash") val physicalCash: String? = null,
+    @SerialName("counted_balance") val legacyCounted: String? = null,
+    @SerialName("variance") val variance: String? = null,
     @Serializable(with = CurrencyCodeSerializer::class)
     @SerialName("currency") val currency: String? = null,
-    @SerialName("note") val note: String? = null,
+    @SerialName("notes") val notes: String? = null,
+    @SerialName("note") val legacyNote: String? = null,
+    @SerialName("denominations") val denominations: JsonElement? = null,
+    @SerialName("reconciling_items") val reconcilingItems: JsonElement? = null,
     @SerialName("created_at") val createdAt: String? = null,
 ) {
     fun toDomain(): Reconciliation? {
@@ -500,12 +562,46 @@ internal data class ReconciliationDto(
             periodStart = periodStart.toEpochMillisOrNull(),
             periodEnd = periodEnd.toEpochMillisOrNull(),
             bookBalance = bookBalance.toAmount(),
-            countedBalance = countedBalance.toAmount(),
+            countedBalance = (physicalCash ?: legacyCounted).toAmount(),
             currency = currency,
-            note = note,
+            note = notes ?: legacyNote,
             createdAt = createdAt.toEpochMillisOrNull(),
+            openingBalance = openingBalance.toAmount(),
+            storedVariance = variance.toAmountOrNull(),
+            denominations = denominations.readList(DenominationDto.serializer()).map { it.toDomain() },
+            reconcilingItems = reconcilingItems.readList(ReconItemDto.serializer()).map { it.toDomain() },
         )
     }
+}
+
+@Serializable
+internal data class DenominationDto(
+    @SerialName("id") val id: String? = null,
+    @SerialName("type") val type: String? = null,
+    @SerialName("value") val value: String? = null,
+    @SerialName("count") val count: String? = null,
+) {
+    fun toDomain() = Denomination(
+        id = id.orEmpty().ifBlank { "${type.orEmpty()}_${value.orEmpty()}" },
+        type = type.orEmpty(),
+        value = value.orEmpty(),
+        count = count.orEmpty(),
+    )
+}
+
+@Serializable
+internal data class ReconItemDto(
+    @SerialName("desc") val description: String? = null,
+    @SerialName("ref") val reference: String? = null,
+    @SerialName("type") val type: String? = null,
+    @SerialName("amount") val amount: String? = null,
+) {
+    fun toDomain() = ReconItem(
+        description = description.orEmpty(),
+        reference = reference.orEmpty(),
+        type = type?.takeIf { it.isNotBlank() } ?: ReconItem.OUT,
+        amount = amount.orEmpty(),
+    )
 }
 
 @Serializable
@@ -525,6 +621,8 @@ internal data class SettingsDto(
     @SerialName("quick_codes") val quickCodes: JsonElement? = null,
     @SerialName("reimburse_to_payroll") val reimburseToPayroll: Boolean? = null,
     @SerialName("deduction_rules") val deductionRules: JsonElement? = null,
+    @SerialName("request_cap") val requestCap: JsonElement? = null,
+    @SerialName("assignment_rules") val assignmentRules: JsonElement? = null,
 ) {
     fun toDomain(): CashSettings {
         val overrides = approvalOverride.readObject()
@@ -540,6 +638,8 @@ internal data class SettingsDto(
             quickCodes = quickCodes.readList(QuickCodeDto.serializer()).map { it.toDomain() },
             reimburseToPayroll = reimburseToPayroll == true,
             deductionRules = deductionRules.readList(DeductionRuleDto.serializer()).map { it.toDomain() },
+            requestCap = requestCap.readObject().toRequestCap(),
+            assignmentRules = assignmentRules.readList(CashRuleDto.serializer()).mapNotNull { it.toDomain() },
         )
     }
 }
@@ -560,6 +660,16 @@ internal data class TeamMemberDto(
         canOverride = canOverride == true,
         postingLimit = postingLimit.toAmountOrNull(),
     )
+
+    companion object {
+        /** `{user_id, posting_limit, can_override, is_senior}` — a null limit is unlimited. */
+        fun of(member: CashTeamMember): JsonObject = buildJsonObject {
+            put("user_id", JsonPrimitive(member.userId))
+            put("posting_limit", member.postingLimit?.let(::JsonPrimitive) ?: JsonNull)
+            put("can_override", JsonPrimitive(member.canOverride))
+            put("is_senior", JsonPrimitive(member.isSenior))
+        }
+    }
 }
 
 /**

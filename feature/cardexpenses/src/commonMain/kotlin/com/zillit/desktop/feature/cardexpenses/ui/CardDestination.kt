@@ -94,6 +94,39 @@ enum class CardDestination(
             else -> emptyList()
         }
 
+    /**
+     * The web's `PageHeader` over an accountant page — eyebrow, title and its
+     * one-line account, each page's own wording. Null for the cardholder
+     * pages, whose tab strip sits under one heading of its own.
+     */
+    @Suppress("CyclomaticComplexMethod") // One heading per page; a table reads better than a lookup.
+    fun heading(): PageHeading? = when (this) {
+        Overview -> PageHeading(str(S.ah_card_expenses), str(S.ah_overview), str(S.desktop_card_page_overview_blurb))
+        CardRegister -> PageHeading(str(S.ah_cards), label, str(S.desktop_card_page_register_blurb))
+        ImportStatement ->
+            PageHeading(str(S.desktop_card_nav_workflow), label, str(S.desktop_card_page_import_blurb))
+
+        ReceiptInbox -> PageHeading(str(S.ah_card_expenses), label, str(S.desktop_card_page_inbox_blurb))
+        AllTransactions ->
+            PageHeading(str(S.desktop_transactions), label, str(S.desktop_card_page_transactions_blurb))
+
+        PendingCoding -> PageHeading(str(S.ah_card_expenses), label, str(S.desktop_card_page_pending_blurb))
+        ApprovalQueue -> PageHeading(str(S.cs_approvals), label, str(S.desktop_card_page_approval_blurb))
+        ProcessQueue -> PageHeading(
+            str(S.ah_process),
+            str(S.desktop_card_page_process_title),
+            str(S.desktop_card_page_process_blurb),
+        )
+
+        BulkProcess -> PageHeading(label, label, str(S.desktop_card_page_bulk_blurb))
+        TopUpQueue -> PageHeading(label, label, str(S.desktop_card_page_topups_blurb))
+        History -> PageHeading(label, label, str(S.desktop_card_page_history_blurb))
+        Analytics -> PageHeading(label, label, str(S.desktop_card_page_analytics_blurb))
+        Alerts -> PageHeading(str(S.ah_card_expenses), label, str(S.desktop_card_page_alerts_blurb))
+        Settings -> PageHeading(str(S.desktop_management), label, str(S.desktop_card_page_settings_blurb))
+        MyTransactions, MyCards, CardExtension, CardsForApproval, CodingQueue -> null
+    }
+
     companion object {
         fun fromSlug(slug: String?): CardDestination? = entries.firstOrNull { it.slug == slug }
 
@@ -102,6 +135,9 @@ enum class CardDestination(
             if (viewer.isAccountant) Overview else MyTransactions
     }
 }
+
+/** A page's heading: the eyebrow over it, its title, and what it is for. */
+data class PageHeading(val eyebrow: String, val title: String, val blurb: String)
 
 /** The heading a destination sits under in the sidebar. */
 enum class CardNavGroup(private val titleKey: String?) {

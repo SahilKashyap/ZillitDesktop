@@ -178,7 +178,7 @@ private fun EmptyLine(text: String) {
  */
 @Composable
 private fun BsCodeField(state: CardUiState, card: ExpenseCard, onEvent: (CardEvent) -> Unit) {
-    if (!state.viewer.isAccountant) {
+    if (!state.canCorrectBsCode(card)) {
         DetailLine(str(S.desktop_card_control_code), card.bsControlCode?.takeIf { it.isNotBlank() } ?: "—")
         return
     }
@@ -223,11 +223,13 @@ private fun CardLifecycleActions(
     editable: Boolean,
     onEvent: (CardEvent) -> Unit,
 ) {
-    val canOverride = state.viewer.metadata.canOverride && card.status in OVERRIDABLE
+    // Override now rides with the primary action, where the web shows it: in
+    // place of Approve, for whoever the chain does not name.
+    val deletable = CardRules.canDeleteRequest(card, state.viewer.userId)
 
-    // Wraps: a requested card offers approve, reject, edit, override and
-    // delete, which is more than fits across a detail pane at any width the
-    // Account Hub leaves for one.
+    // Wraps: a pending card offers approve, reject, edit and delete, which is
+    // more than fits across a detail pane at any width the Account Hub leaves
+    // for one.
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
@@ -249,28 +251,7 @@ private fun CardLifecycleActions(
                 enabled = !state.busy,
             )
         }
-        if (canOverride) {
-            ZillitButton(
-                text = str(S.dm_nom_table_override),
-                onClick = {
-                    onEvent(
-                        CardEvent.Ask(
-                            CardPrompt.Confirm(
-                                CardConfirmAction.OverrideCard,
-                                card.id,
-                                str(S.desktop_card_override_chain),
-                                str(S.desktop_card_override_card_note),
-                            ),
-                        ),
-                    )
-                },
-                variant = ButtonVariant.Secondary,
-                size = ButtonSize.Small,
-                leadingIcon = ZillitIcons.Shield,
-                enabled = !state.busy,
-            )
-        }
-        if (editable) DeleteRequestButton(state, card, onEvent)
+        if (deletable) DeleteRequestButton(state, card, onEvent)
     }
 }
 
@@ -375,5 +356,4 @@ fun CardDetailPlaceholder() {
     )
 }
 
-private val OVERRIDABLE = setOf(CardStatus.Requested, CardStatus.Pending)
 private const val MAX_ROWS = 8

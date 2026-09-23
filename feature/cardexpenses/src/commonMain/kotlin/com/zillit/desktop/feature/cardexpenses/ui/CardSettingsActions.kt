@@ -26,6 +26,11 @@ internal class CardSettingsActions(private val vm: CardExpensesViewModel) {
      * later and finds their work gone.
      */
     fun save(section: SettingsSection) {
+        // A senior accountant's page; the handler says so too, not only the sidebar.
+        if (!vm.current.viewer.canOpenSettings) {
+            vm.fail(str(S.desktop_po_no_rights_on_project))
+            return
+        }
         val draft = vm.current.settingsDraft ?: return
         val invalid = section.validate(draft)
         if (invalid != null) {
@@ -71,9 +76,11 @@ internal class CardSettingsActions(private val vm: CardExpensesViewModel) {
             str(S.desktop_card_coordinator_row_incomplete)
                 .takeIf { draft.coordinators.any { row -> !row.complete } }
 
+        // A row with nothing in it is dropped, as the web drops it; one with
+        // codes but no name cannot be picked from any card form.
         SettingsSection.Providers ->
             str(S.desktop_card_provider_needs_name)
-                .takeIf { draft.providers.any { provider -> provider.name.isBlank() } }
+                .takeIf { draft.providers.any { provider -> !provider.blank && provider.name.isBlank() } }
 
         SettingsSection.Overrides, SettingsSection.RequestCap -> null
     }
@@ -89,8 +96,11 @@ internal class CardSettingsActions(private val vm: CardExpensesViewModel) {
         SettingsSection.Team -> stored.teamMembers == sent.teamMembers.map { it.normalised() }
         SettingsSection.Coordinators -> stored.coordinators == sent.coordinators
         SettingsSection.Overrides -> stored.overrides == sent.overrides
-        SettingsSection.Providers ->
-            stored.providers.map { it.name } == sent.providers.filter { it.name.isNotBlank() }.map { it.name.trim() }
+        SettingsSection.Providers -> {
+            val kept = sent.providers.filter { it.name.isNotBlank() }
+            stored.providers.map { it.name } == kept.map { it.name.trim() } &&
+                stored.providers.map { it.custodianAccount } == kept.map { it.custodianAccount.trim() }
+        }
 
         SettingsSection.RequestCap -> stored.requestCap == sent.requestCap
     }

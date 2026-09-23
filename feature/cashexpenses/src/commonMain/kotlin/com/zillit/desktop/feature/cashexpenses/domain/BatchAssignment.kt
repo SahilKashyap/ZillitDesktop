@@ -4,7 +4,18 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 
 /** Someone a batch can be handed to, as the host resolves them from the crew. */
-data class AssigneeOption(val userId: String, val fullName: String, val designation: String = "")
+data class AssigneeOption(
+    val userId: String,
+    val fullName: String,
+    val designation: String = "",
+    /**
+     * The department identifier, when the host supplies it.
+     *
+     * The assign and team pickers list the accounts team only, as the web's
+     * `ACCOUNTS_TEAM_USERS` does — see [BatchAssignment.accountsTeam].
+     */
+    val department: String = "",
+)
 
 /**
  * Assigning and reassigning a claim batch on Post & Ledger.
@@ -30,7 +41,21 @@ object BatchAssignment {
         if (isUnassigned(batch)) str(S.assign) else str(S.desktop_po_reassign)
 
     fun eligible(people: List<AssigneeOption>, batch: ClaimBatch?): List<AssigneeOption> =
-        people.filterNot { it.userId == batch?.assignedTo }
+        accountsTeam(people).filterNot { it.userId == batch?.assignedTo }
+
+    /**
+     * The accounts team out of the crew — the web's `ACCOUNTS_TEAM_USERS`.
+     *
+     * Matched as the viewer is: a department containing `accounts`. A host that
+     * sends no departments at all gets the whole crew rather than nobody, so
+     * the picker keeps working until the wiring passes them.
+     */
+    fun accountsTeam(people: List<AssigneeOption>): List<AssigneeOption> {
+        if (people.none { it.department.isNotBlank() }) return people
+        return people.filter { it.department.contains(ACCOUNTS, ignoreCase = true) }
+    }
+
+    private const val ACCOUNTS = "accounts"
 
     fun canSubmit(batch: ClaimBatch?, selectedUserId: String, reason: String): Boolean {
         if (selectedUserId.isBlank()) return false

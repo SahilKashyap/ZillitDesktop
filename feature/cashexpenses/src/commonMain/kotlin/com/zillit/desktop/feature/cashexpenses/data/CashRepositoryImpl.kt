@@ -9,28 +9,44 @@ import com.zillit.desktop.core.config.AppConfig
 import com.zillit.desktop.core.config.ZillitService
 import com.zillit.desktop.core.forms.CustomFieldGroup
 import com.zillit.desktop.core.network.ApiClient
+import com.zillit.desktop.core.network.ApiEnvelope
 import com.zillit.desktop.core.network.HttpVerb
 import com.zillit.desktop.core.network.RequestModule
+import com.zillit.desktop.feature.cashexpenses.domain.CashAssignmentRule
+import com.zillit.desktop.feature.cashexpenses.domain.CashCompany
+import com.zillit.desktop.feature.cashexpenses.domain.CashDates
 import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashHistoryEntry
 import com.zillit.desktop.feature.cashexpenses.domain.CashMetadata
 import com.zillit.desktop.feature.cashexpenses.domain.CashQueue
 import com.zillit.desktop.feature.cashexpenses.domain.CashRepository
+import com.zillit.desktop.feature.cashexpenses.domain.CashReturn
 import com.zillit.desktop.feature.cashexpenses.domain.CashSettings
+import com.zillit.desktop.feature.cashexpenses.domain.CashTeamMember
 import com.zillit.desktop.feature.cashexpenses.domain.CashTopUp
+import com.zillit.desktop.feature.cashexpenses.domain.Claim
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.ClaimLineItem
 import com.zillit.desktop.feature.cashexpenses.domain.DepartmentOverview
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
+import com.zillit.desktop.feature.cashexpenses.domain.ExportFormat
+import com.zillit.desktop.feature.cashexpenses.domain.FundRequest
 import com.zillit.desktop.feature.cashexpenses.domain.MyCashOverview
 import com.zillit.desktop.feature.cashexpenses.domain.NewClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.NewFloatRequest
 import com.zillit.desktop.feature.cashexpenses.domain.OutOfPocketOverview
 import com.zillit.desktop.feature.cashexpenses.domain.PaymentRouting
 import com.zillit.desktop.feature.cashexpenses.domain.PettyCashOverview
+import com.zillit.desktop.feature.cashexpenses.domain.PostBatchRequest
+import com.zillit.desktop.feature.cashexpenses.domain.QueryThread
 import com.zillit.desktop.feature.cashexpenses.domain.Reconciliation
+import com.zillit.desktop.feature.cashexpenses.domain.ReconDraft
+import com.zillit.desktop.feature.cashexpenses.domain.RequestCap
+import com.zillit.desktop.feature.cashexpenses.domain.TierStep
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -45,19 +61,46 @@ import kotlinx.serialization.json.buildJsonObject
  * to a crew member, a queue is filtered by what the caller may see. The lighter
  * `Device` header omits the project and user, and the cash service answers 406
  * to it rather than falling back, so this is not a preference.
+ *
+ * ## Writes read the envelope's `status`
+ *
+ * A refusal arrives as HTTP 200 with `status: 0`, and `ApiClient` passes that
+ * through as a success. Posting money and reading "Posted" over a refusal is
+ * the worst outcome this module has, so every write checks it — see [write].
  */
 @Suppress("TooManyFunctions") // Mirrors the server's operation surface; see the interface.
 class CashRepositoryImpl(
     private val apiClient: ApiClient,
     config: AppConfig,
+    /** The register exports' byte POST; see [CashBinaryPost]. */
+    binaryPost: CashBinaryPost? = null,
 ) : CashRepository {
 
     private val base = "${config.baseUrl(ZillitService.CashExpenses)}/api/v2/cash-expenses"
 
+    /** The account hub and cost-report routes, and the exports — see [CashHubSource]. */
+    private val hub = CashHubSource(apiClient, config, binaryPost, base)
+
     // -- who am I ----------------------------------------------------------
 
+    /**
+     * Read raw first: `posting_limit: null` (unlimited) and no `posting_limit`
+     * at all (no grant) decode to the same null, and the posting rule needs
+     * to tell them apart.
+     */
     override suspend fun metadata(): ZillitResult<CashMetadata> =
-        get("$base/metadata", MetadataDto.serializer()).map { it.toDomain() }
+        get("$base/metadata", JsonElement.serializer()).flatMap { raw ->
+            val body = raw as? JsonObject ?: JsonObject(emptyMap())
+            val limit = body["posting_limit"]
+            val decoded = runCatching { cashLenient.decodeFromJsonElement(MetadataDto.serializer(), body) }
+                .getOrNull()
+                ?: return@flatMap ZillitResult.Failure(ZillitError.Serialization("metadata did not decode"))
+            ZillitResult.Success(
+                decoded.toDomain().copy(
+                    postingLimitUnlimited = limit is JsonNull || (limit as? JsonPrimitive)?.content == UNLIMITED,
+                ),
+            )
+        }
 
     // -- floats ------------------------------------------------------------
 
@@ -85,6 +128,9 @@ class CashRepositoryImpl(
                 putIfPresent("duration_type", request.durationType)
                 putIfPresent("bs_code", request.bsCode)
                 putIfPresent("company_id", request.companyId)
+                // An accountant raising the float for a crew member — the
+                // server makes it theirs (`PCFloatRequestPage.jsx:541`).
+                putIfPresent("target_user_id", request.targetUserId)
                 // Only when the production configured some. This service keeps
                 // more of each field than purchase orders do — the key, the
                 // type and a select's source — so a saved answer can be shown
@@ -95,8 +141,9 @@ class CashRepositoryImpl(
             },
         )
 
-    override suspend fun approveFloat(floatId: String, note: String?): ZillitResult<Unit> =
-        post("$base/float-requests/$floatId/approve", noteBody(note))
+    /** `{tier_number, total_tiers}` — the level signed, as the web's approve sends it. */
+    override suspend fun approveFloat(floatId: String, tier: TierStep?): ZillitResult<Unit> =
+        post("$base/float-requests/$floatId/approve", tier?.let { tierBody(it) })
 
     override suspend fun rejectFloat(floatId: String, reason: String): ZillitResult<Unit> =
         post("$base/float-requests/$floatId/reject", buildJsonObject { put("reason", JsonPrimitive(reason)) })
@@ -107,13 +154,16 @@ class CashRepositoryImpl(
     override suspend fun markFloatReadyToCollect(
         floatId: String,
         companyId: String?,
-    ): ZillitResult<Unit> = post(
-        "$base/float-requests/$floatId/ready-to-collect",
-        // Omitted entirely rather than sent as null: the legacy route takes no
-        // body at all, and a float that already carries a company must not have
-        // it overwritten with nothing.
-        companyId?.let { buildJsonObject { put("company_id", JsonPrimitive(it)) } },
-    )
+        bsCode: String?,
+    ): ZillitResult<Unit> {
+        // Each key only when there is something in it — never `""` — and no
+        // body at all when neither is, which is the legacy route's call.
+        val body = buildJsonObject {
+            putIfPresent("company_id", companyId)
+            putIfPresent("bs_code", bsCode)
+        }
+        return post("$base/float-requests/$floatId/ready-to-collect", body.takeIf { it.isNotEmpty() })
+    }
 
     override suspend fun issueFloat(floatId: String): ZillitResult<Unit> =
         post("$base/float-requests/$floatId/issue", null)
@@ -124,15 +174,19 @@ class CashRepositoryImpl(
     override suspend fun closeFloat(floatId: String): ZillitResult<Unit> =
         post("$base/float-requests/$floatId/mark-closed", null)
 
-    override suspend fun recordCashReturn(
-        floatId: String,
-        amount: Double,
-        note: String?,
-    ): ZillitResult<Unit> = post(
+    /**
+     * The web's `RecordCashReturnModal` body. It was `{amount, note}`, and the
+     * route reads `return_amount`: every return recorded from here was zero.
+     */
+    override suspend fun recordCashReturn(floatId: String, cashReturn: CashReturn): ZillitResult<Unit> = post(
         "$base/float-requests/$floatId/record-return",
         buildJsonObject {
-            put("amount", JsonPrimitive(amount))
-            putIfPresent("note", note)
+            put("return_amount", JsonPrimitive(cashReturn.amount))
+            put("received_date", JsonPrimitive(cashReturn.receivedDate))
+            put("return_reason", JsonPrimitive(cashReturn.reason))
+            val notes = cashReturn.notes?.trim()?.ifBlank { null }
+            put("reason_notes", notes?.let(::JsonPrimitive) ?: JsonNull)
+            put("notes", notes?.let(::JsonPrimitive) ?: JsonNull)
         },
     )
 
@@ -163,8 +217,15 @@ class CashRepositoryImpl(
     override suspend fun completeTopUp(topUpId: String): ZillitResult<Unit> =
         patch("$base/top-ups/$topUpId/complete", null)
 
-    override suspend fun partialTopUp(topUpId: String, amount: Double): ZillitResult<Unit> =
-        patch("$base/top-ups/$topUpId/partial", buildJsonObject { put("amount", JsonPrimitive(amount)) })
+    /** `{amount, note}` — the note is the reason for the shortfall and the web requires it. */
+    override suspend fun partialTopUp(topUpId: String, amount: Double, note: String): ZillitResult<Unit> =
+        patch(
+            "$base/top-ups/$topUpId/partial",
+            buildJsonObject {
+                put("amount", JsonPrimitive(amount))
+                put("note", JsonPrimitive(note.trim()))
+            },
+        )
 
     override suspend fun skipTopUp(topUpId: String): ZillitResult<Unit> =
         patch("$base/top-ups/$topUpId/skip", null)
@@ -279,36 +340,58 @@ class CashRepositoryImpl(
         },
     )
 
-    override suspend fun saveAndSubmitCoded(batchId: String): ZillitResult<Unit> =
-        post("$base/claims/$batchId/save-and-submit", null)
+    override suspend fun saveClaims(
+        batchId: String,
+        claims: List<Claim>,
+        verified: Map<String, Boolean>,
+    ): ZillitResult<Unit> =
+        post("$base/claims/$batchId/save-claims", buildJsonObject { put("claims", claims.toClaimsPayload(verified)) })
 
-    override suspend fun saveAndVerify(batchId: String): ZillitResult<Unit> =
-        post("$base/claims/$batchId/save-and-verify", null)
+    override suspend fun saveAndSubmitCoded(batchId: String, claims: List<Claim>?): ZillitResult<Unit> =
+        post("$base/claims/$batchId/save-and-submit", claims?.let(::claimsBody))
 
-    override suspend fun approveBatch(batchId: String, note: String?): ZillitResult<Unit> = post(
+    override suspend fun saveAndVerify(batchId: String, claims: List<Claim>?): ZillitResult<Unit> =
+        post("$base/claims/$batchId/save-and-verify", claims?.let(::claimsBody))
+
+    /**
+     * `{action, claim_ids, tier_number, total_tiers}` — `claim_ids` null for
+     * the whole batch, the chosen receipts for a partial approval.
+     */
+    override suspend fun approveBatch(
+        batchId: String,
+        tier: TierStep?,
+        claimIds: List<String>?,
+    ): ZillitResult<Unit> = post(
         "$base/claims/$batchId/batch-approval",
         buildJsonObject {
             put("action", JsonPrimitive(APPROVE))
-            putIfPresent("note", note)
+            put("claim_ids", claimIds.toIdArray())
+            tier?.let {
+                put("tier_number", JsonPrimitive(it.tierNumber))
+                put("total_tiers", JsonPrimitive(it.totalTiers))
+            }
         },
     )
 
-    override suspend fun rejectBatch(batchId: String, reason: String): ZillitResult<Unit> = post(
-        "$base/claims/$batchId/batch-approval",
-        buildJsonObject {
-            put("action", JsonPrimitive(REJECT))
-            put("reason", JsonPrimitive(reason))
-        },
-    )
+    override suspend fun rejectBatch(batchId: String, reason: String, claimIds: List<String>?): ZillitResult<Unit> =
+        post(
+            "$base/claims/$batchId/batch-approval",
+            buildJsonObject {
+                put("action", JsonPrimitive(REJECT))
+                put("claim_ids", claimIds.toIdArray())
+                put("reason", JsonPrimitive(reason))
+            },
+        )
 
     override suspend fun overrideBatch(batchId: String): ZillitResult<Unit> =
         post("$base/claims/$batchId/override", null)
 
-    override suspend fun queryBatch(batchId: String, reason: String): ZillitResult<Unit> =
-        post("$base/claims/$batchId/query", buildJsonObject { put("reason", JsonPrimitive(reason)) })
+    /** `{escalation_reason}` — this sent `{note}`, which the route does not read. */
+    override suspend fun escalateBatch(batchId: String, reason: String): ZillitResult<Unit> =
+        post("$base/claims/$batchId/escalate", buildJsonObject { put("escalation_reason", JsonPrimitive(reason)) })
 
-    override suspend fun escalateBatch(batchId: String, reason: String?): ZillitResult<Unit> =
-        post("$base/claims/$batchId/escalate", noteBody(reason))
+    override suspend fun deescalateBatch(batchId: String): ZillitResult<Unit> =
+        post("$base/claims/$batchId/deescalate", null)
 
     override suspend fun submitBatchForReview(batchId: String): ZillitResult<Unit> =
         post("$base/claims/$batchId/submit-for-review", null)
@@ -325,8 +408,21 @@ class CashRepositoryImpl(
         },
     )
 
-    override suspend fun postBatch(batchId: String, note: String?): ZillitResult<Unit> =
-        post("$base/claims/$batchId/post", noteBody(note))
+    /**
+     * Post & Ledger sends `{claims, effective_date}`; the senior sign-off
+     * sends `{senior_notes, effective_date}`. The date is what the server
+     * refuses a post without.
+     */
+    override suspend fun postBatch(batchId: String, request: PostBatchRequest): ZillitResult<Unit> = post(
+        "$base/claims/$batchId/post",
+        buildJsonObject {
+            request.claims?.let { put("claims", it.toClaimsPayload()) }
+            if (request.claims == null) {
+                put("senior_notes", request.seniorNotes?.trim()?.ifBlank { null }?.let(::JsonPrimitive) ?: JsonNull)
+            }
+            put("effective_date", JsonPrimitive(request.effectiveDate))
+        },
+    )
 
     // -- dashboards --------------------------------------------------------
 
@@ -347,41 +443,60 @@ class CashRepositoryImpl(
         ).map { it.toDomain() }
 
     override suspend fun paymentRouting(): ZillitResult<PaymentRouting> =
-        get("$base/claims/overview/payment-routing", RoutingDto.serializer()).map { it.toDomain() }
+        get("$base/claims/overview/payment-routing", PaymentRoutingDto.serializer()).map { it.toDomain() }
 
     // -- reconciliation ----------------------------------------------------
 
     override suspend fun reconciliations(): ZillitResult<List<Reconciliation>> =
-        get("$base/reconciliations", ListSerializer(ReconciliationDto.serializer()))
-            .map { rows -> rows.mapNotNull { it.toDomain() } }
+        get(
+            "$base/reconciliations",
+            ListSerializer(ReconciliationDto.serializer()),
+            mapOf("sort" to "created_at", "order" to "desc"),
+        ).map { rows -> rows.mapNotNull { it.toDomain() } }
 
-    override suspend fun computeBookBalance(): ZillitResult<Double> =
-        get("$base/reconciliations/compute-book", BookBalanceDto.serializer()).map {
+    override suspend fun reconciliation(id: String): ZillitResult<Reconciliation> =
+        get("$base/reconciliations/$id", ReconciliationDto.serializer()).flatMap { it.reconciliation() }
+
+    /** The page's figure asks with nothing; a draft asks for its own opening balance and month. */
+    override suspend fun computeBookBalance(draft: ReconDraft?): ZillitResult<Double> {
+        val query = draft?.let {
+            val (start, end) = CashDates.monthBounds(it.year, it.month)
+            mapOf("initial_amount" to it.opening, "period_start" to start, "period_end" to end)
+        }.orEmpty()
+        return get("$base/reconciliations/compute-book", BookBalanceDto.serializer(), query).map {
             (it.bookBalance ?: it.balance).toAmount()
         }
-
-    override suspend fun createReconciliation(
-        countedBalance: Double,
-        note: String?,
-    ): ZillitResult<Reconciliation> = apiClient.request(
-        verb = HttpVerb.Post,
-        url = "$base/reconciliations",
-        serializer = ReconciliationDto.serializer(),
-        module = RequestModule.ProjectUser,
-        body = buildJsonObject {
-            put("counted_balance", JsonPrimitive(countedBalance))
-            putIfPresent("note", note)
-        },
-    ).flatMap { dto ->
-        dto.toDomain()?.let { ZillitResult.Success(it) }
-            ?: ZillitResult.Failure(ZillitError.Serialization("reconciliation came back without an id"))
     }
 
-    override suspend fun submitReconciliationForReview(id: String): ZillitResult<Unit> =
-        post("$base/reconciliations/$id/submit-for-review", null)
+    /**
+     * Opens a period — `{opening_safe_balance, currency, period_start,
+     * period_end, book_balance, denominations}`, as the web's create sends it.
+     * This used to send `{counted_balance, note}`.
+     */
+    override suspend fun createReconciliation(draft: ReconDraft): ZillitResult<Reconciliation> {
+        val (start, end) = CashDates.monthBounds(draft.year, draft.month)
+        return writeRecon(
+            HttpVerb.Post,
+            "$base/reconciliations",
+            buildJsonObject {
+                put("opening_safe_balance", JsonPrimitive(draft.opening))
+                putIfPresent("currency", draft.currency)
+                put("period_start", JsonPrimitive(start))
+                put("period_end", JsonPrimitive(end))
+                put("book_balance", JsonPrimitive(draft.opening))
+                put("denominations", draft.denominations.toJson())
+            },
+        )
+    }
 
-    override suspend fun signOffReconciliation(id: String, note: String?): ZillitResult<Unit> =
-        post("$base/reconciliations/$id/sign-off", noteBody(note))
+    override suspend fun updateReconciliation(draft: ReconDraft): ZillitResult<Reconciliation> =
+        writeRecon(HttpVerb.Patch, "$base/reconciliations/${draft.id}", draft.payload())
+
+    override suspend fun submitReconciliationForReview(draft: ReconDraft): ZillitResult<Unit> =
+        post("$base/reconciliations/${draft.id}/submit-for-review", draft.payload())
+
+    override suspend fun signOffReconciliation(draft: ReconDraft): ZillitResult<Unit> =
+        post("$base/reconciliations/${draft.id}/sign-off", draft.payload())
 
     // -- settings ----------------------------------------------------------
 
@@ -389,12 +504,8 @@ class CashRepositoryImpl(
         get("$base/settings", SettingsDto.serializer()).map { it.toDomain() }
 
     override suspend fun updateSettings(settings: CashSettings): ZillitResult<CashSettings> =
-        apiClient.request(
-            verb = HttpVerb.Patch,
-            url = "$base/settings",
-            serializer = SettingsDto.serializer(),
-            module = RequestModule.ProjectUser,
-            body = buildJsonObject {
+        patchSettings(
+            buildJsonObject {
                 put("float_custodian_account", JsonPrimitive(settings.custodianAccount))
                 put("bs_code_from", JsonPrimitive(settings.bsCodeFrom))
                 put("bs_code_to", JsonPrimitive(settings.bsCodeTo))
@@ -420,7 +531,61 @@ class CashRepositoryImpl(
                     buildJsonArray { settings.quickCodes.forEach { add(QuickCodeDto.of(it)) } },
                 )
             },
-        ).map { it.toDomain() }
+        )
+
+    /** `{team_members}` on its own, as the web's `persistTeam` sends it. */
+    override suspend fun updateTeamMembers(members: List<CashTeamMember>): ZillitResult<CashSettings> =
+        patchSettings(
+            buildJsonObject { put("team_members", buildJsonArray { members.forEach { add(TeamMemberDto.of(it)) } }) },
+        )
+
+    override suspend fun updateRequestCap(cap: RequestCap): ZillitResult<CashSettings> =
+        patchSettings(buildJsonObject { put("request_cap", cap.toJson()) })
+
+    override suspend fun saveAssignmentRule(rule: CashAssignmentRule): ZillitResult<CashAssignmentRule> =
+        hub.saveAssignmentRule(rule)
+
+    override suspend fun deleteAssignmentRule(id: String): ZillitResult<Unit> = hub.deleteAssignmentRule(id)
+
+    // -- the rest of the account hub ------------------------------------------
+
+    override suspend fun lockedThrough(): ZillitResult<String?> = hub.lockedThrough()
+
+    override suspend fun companies(): ZillitResult<List<CashCompany>> = hub.companies()
+
+    override suspend fun fundRequests(): ZillitResult<List<FundRequest>> =
+        get("$base/fund-requests", JsonElement.serializer()).map { data ->
+            data.readList(FundRequestDto.serializer()).mapNotNull { it.toDomain() }
+        }
+
+    override suspend fun createFundRequest(fundAccount: String, currency: String?, amount: Double): ZillitResult<Unit> =
+        post(
+            "$base/fund-requests",
+            buildJsonObject {
+                put("fund_account", JsonPrimitive(fundAccount.trim()))
+                putIfPresent("currency", currency)
+                put("amount", JsonPrimitive(amount))
+            },
+        )
+
+    override suspend fun receiveFundRequest(id: String): ZillitResult<Unit> =
+        patch("$base/fund-requests/$id/receive", JsonObject(emptyMap()))
+
+    override suspend fun cancelFundRequest(id: String): ZillitResult<Unit> =
+        patch("$base/fund-requests/$id/cancel", JsonObject(emptyMap()))
+
+    override suspend fun queryThread(batchId: String): ZillitResult<QueryThread> = hub.queryThread(batchId)
+
+    override suspend fun sendQuery(batchId: String, threadId: String?, text: String): ZillitResult<QueryThread> =
+        hub.sendQuery(batchId, threadId, text)
+
+    override suspend fun exportFloats(format: ExportFormat): ZillitResult<ByteArray> = hub.exportFloats(format)
+
+    override suspend fun exportReceipts(
+        format: ExportFormat,
+        expenseType: ExpenseType?,
+        historyOnly: Boolean,
+    ): ZillitResult<ByteArray> = hub.exportReceipts(format, expenseType, historyOnly)
 
     // -- plumbing ----------------------------------------------------------
 
@@ -458,29 +623,77 @@ class CashRepositoryImpl(
      * body nobody reads is a parse failure waiting to be reported as a failed
      * approval that in fact succeeded.
      */
-    private suspend fun post(url: String, body: JsonObject?): ZillitResult<Unit> =
-        apiClient.envelope(
-            verb = HttpVerb.Post,
-            url = url,
-            module = RequestModule.ProjectUser,
-            body = body,
-        ).map { }
+    private suspend fun post(url: String, body: JsonObject?): ZillitResult<Unit> = write(HttpVerb.Post, url, body)
 
-    private suspend fun patch(url: String, body: JsonObject?): ZillitResult<Unit> =
+    private suspend fun patch(url: String, body: JsonObject?): ZillitResult<Unit> = write(HttpVerb.Patch, url, body)
+
+    /** A write, with a stated `status: 0` read as the refusal it is. */
+    private suspend fun write(verb: HttpVerb, url: String, body: JsonObject?): ZillitResult<Unit> =
+        apiClient.envelope(verb = verb, url = url, module = RequestModule.ProjectUser, body = body)
+            .flatMap { it.confirmed() }
+
+    private suspend fun patchSettings(body: JsonObject): ZillitResult<CashSettings> =
         apiClient.envelope(
             verb = HttpVerb.Patch,
-            url = url,
+            url = "$base/settings",
             module = RequestModule.ProjectUser,
             body = body,
-        ).map { }
+        ).flatMap { envelope ->
+            envelope.confirmed().flatMap {
+                // The saved document when it came back, else a fresh read.
+                val data = envelope.data as? JsonObject ?: return@flatMap settings()
+                ZillitResult.Success(cashLenient.decodeFromJsonElement(SettingsDto.serializer(), data).toDomain())
+            }
+        }
+
+    private suspend fun writeRecon(verb: HttpVerb, url: String, body: JsonObject): ZillitResult<Reconciliation> =
+        apiClient.envelope(verb = verb, url = url, module = RequestModule.ProjectUser, body = body)
+            .flatMap { envelope ->
+                envelope.confirmed().flatMap {
+                    val data = envelope.data as? JsonObject
+                        ?: return@flatMap ZillitResult.Failure(
+                            ZillitError.Serialization("reconciliation came back without a body"),
+                        )
+                    cashLenient.decodeFromJsonElement(ReconciliationDto.serializer(), data).reconciliation()
+                }
+            }
+
+    private fun ReconciliationDto.reconciliation(): ZillitResult<Reconciliation> =
+        toDomain()?.let { ZillitResult.Success(it) }
+            ?: ZillitResult.Failure(ZillitError.Serialization("reconciliation came back without an id"))
+
+    private fun ReconDraft.payload(): JsonObject {
+        val (start, end) = CashDates.monthBounds(year, month)
+        return toPayload(start, end)
+    }
+
+    private fun claimsBody(claims: List<Claim>): JsonObject =
+        buildJsonObject { put("claims", claims.toClaimsPayload()) }
+
+    private fun tierBody(tier: TierStep): JsonObject = buildJsonObject {
+        put("tier_number", JsonPrimitive(tier.tierNumber))
+        put("total_tiers", JsonPrimitive(tier.totalTiers))
+    }
 
     private fun noteBody(note: String?): JsonObject? =
         note?.takeIf { it.isNotBlank() }?.let { buildJsonObject { put("note", JsonPrimitive(it)) } }
 
+    private fun List<String>?.toIdArray(): JsonElement =
+        this?.let { ids -> JsonArray(ids.map(::JsonPrimitive)) } ?: JsonNull
+
     private companion object {
         const val APPROVE = "approve"
         const val REJECT = "reject"
+        const val UNLIMITED = "unlimited"
+        const val HTTP_OK = 200
     }
+
+    private fun ApiEnvelope.confirmed(): ZillitResult<Unit> =
+        if (status == 0) {
+            ZillitResult.Failure(ZillitError.Http(status = HTTP_OK, serverMessage = message))
+        } else {
+            ZillitResult.Success(Unit)
+        }
 }
 
 /**
@@ -494,7 +707,6 @@ internal fun kotlinx.serialization.json.JsonObjectBuilder.putIfPresent(key: Stri
     val trimmed = value?.trim()
     if (!trimmed.isNullOrEmpty()) put(key, JsonPrimitive(trimmed))
 }
-
 
 /** The float request's custom answers, in the shape this service stores. */
 private fun List<CustomFieldGroup>.toFloatJson(): JsonArray = buildJsonArray {

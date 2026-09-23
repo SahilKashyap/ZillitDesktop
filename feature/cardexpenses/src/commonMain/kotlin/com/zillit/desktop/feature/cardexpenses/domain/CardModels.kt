@@ -43,6 +43,8 @@ data class ExpenseCard(
     val rejectedBy: String?,
     val rejectionReason: String?,
     val createdAt: Long?,
+    /** The chain's sign-offs so far; see [ApprovalTiers]. */
+    val approvals: List<CardApproval> = emptyList(),
 ) {
     /** Spend so far, as the holder experiences it. */
     val spent: Double get() = (limit - (balance ?: limit)).coerceAtLeast(0.0)
@@ -103,6 +105,16 @@ data class CardReceipt(
     val personalScore: Int?,
     val personalDismissed: Boolean,
     val createdAt: Long?,
+    /** What the process editor works on; filled by the detail read. See [ReceiptProcessing]. */
+    val processing: ReceiptProcessing = ReceiptProcessing(),
+    /** The accountant the receipt is assigned to process, if any. */
+    val assignedTo: String? = null,
+    val departmentId: String? = null,
+    val cardLastFour: String? = null,
+    /** The chain's sign-offs so far — the approval queue's "next approver" test. */
+    val approvals: List<CardApproval> = emptyList(),
+    /** Which of the inbox's four sections the receipt sits in; null for none of them. */
+    val inboxSection: InboxSection? = null,
 ) {
     /**
      * What the Receipt Inbox shows in its status column.
@@ -121,6 +133,44 @@ data class CardReceipt(
     }
 }
 
+/**
+ * The Receipt Inbox's four sections (`ReceiptInboxPage.jsx:642-727`).
+ *
+ * One section per receipt, personal and duplicate first — a flagged-personal
+ * row keeps its old match status, and independent filters listed it twice
+ * (`receiptReconciliation.js inboxSection`).
+ */
+enum class InboxSection(private val labelKey: String) {
+    SystemMatched(S.desktop_card_inbox_system_matched),
+    NoMatch(S.desktop_no_match),
+    Duplicate(S.dd_csv_status_duplicate),
+    Personal(S.personal),
+    ;
+
+    val label: String get() = str(labelKey)
+
+    companion object {
+        /** The web's classifier, over the raw wire values. */
+        fun of(matchStatus: String?, status: String?, transactionId: String?): InboxSection? {
+            val match = matchStatus?.trim()?.lowercase()
+            val workflow = status?.trim()?.lowercase()
+            return when {
+                match == PERSONAL || workflow == PERSONAL -> Personal
+                match == DUPLICATE || workflow == DUPLICATE -> Duplicate
+                match == SUGGESTED || match == MATCHED -> SystemMatched
+                transactionId.isNullOrBlank() && (match == UNMATCHED || match.isNullOrEmpty()) -> NoMatch
+                else -> null
+            }
+        }
+
+        private const val PERSONAL = "personal"
+        private const val DUPLICATE = "duplicate"
+        private const val SUGGESTED = "suggested_match"
+        private const val MATCHED = "matched"
+        private const val UNMATCHED = "unmatched"
+    }
+}
+
 /** A request to add funds to a card. */
 data class CardTopUp(
     val id: String,
@@ -133,7 +183,22 @@ data class CardTopUp(
     val method: String?,
     val status: String,
     val createdAt: Long?,
-)
+    /** The card's limit and balance, as the funding queue row carries them. */
+    val cardLimit: Double? = null,
+    val cardBalance: Double? = null,
+) {
+    /**
+     * Whether adding [amount] would carry the card past its limit.
+     *
+     * The web's funding guard (`TopUpToDoPage.jsx:171, 212`). A row without
+     * both figures cannot be judged, so it does not block.
+     */
+    fun overfills(amount: Double): Boolean {
+        val limit = cardLimit ?: return false
+        val balance = cardBalance ?: return false
+        return balance + amount > limit
+    }
+}
 
 /** Something the fraud/exception engine wants an accountant to look at. */
 data class CardAlert(
@@ -141,12 +206,25 @@ data class CardAlert(
     val title: String,
     val description: String?,
     val severity: AlertSeverity,
+    /** `active`, `investigating`, `resolved`, `dismissed` or `auto_closed`; blank reads as active. */
     val status: String,
     val type: String?,
     /** Money the alert reckons is at stake. Null when it does not know. */
     val savings: Double?,
     val at: Long?,
-)
+    /** What the accountant who resolved it found. */
+    val resolution: String? = null,
+) {
+    /** Still somebody's to act on — the web's open set (`SmartAlertsPage.jsx:124`). */
+    val isOpen: Boolean get() = status == ACTIVE || status == INVESTIGATING
+
+    val isInvestigating: Boolean get() = status == INVESTIGATING
+
+    companion object {
+        const val ACTIVE = "active"
+        const val INVESTIGATING = "investigating"
+    }
+}
 
 enum class AlertSeverity(val wire: String, private val labelKey: String) {
     High("high", S.desktop_weather_uv_high),
@@ -285,10 +363,35 @@ data class CardMetadata(
     val canOverride: Boolean = false,
     val postingLimit: Double? = null,
     val cardProviders: List<CardProvider> = emptyList(),
+    /** The production's approval chains, per department; see [ApprovalTiers]. */
+    val tierConfigs: List<TierConfig> = emptyList(),
+    /** The production's own switches for overriding a chain — separate from the person's grant. */
+    val cardOverride: Boolean = false,
+    val receiptOverride: Boolean = false,
 )
 
-/** A card issuer configured for the production. */
-data class CardProvider(val id: String, val name: String)
+/**
+ * A card issuer configured for the production.
+ *
+ * Each provider binds one bank to one company and carries its own custodian
+ * account and float nominal codes (`CardProvidersEditor.jsx`). The desktop
+ * used to read only the id and the name, and saving the list sent only those —
+ * which wiped every bank binding somebody had set up on the web. The other
+ * five fields round-trip whether or not this client edits them.
+ */
+data class CardProvider(
+    val id: String,
+    val name: String,
+    val bankId: String = "",
+    val companyId: String = "",
+    val custodianAccount: String = "",
+    val floatMin: String = "",
+    val floatMax: String = "",
+) {
+    /** Nothing typed at all: the web drops such rows rather than saving them. */
+    val blank: Boolean
+        get() = listOf(name, bankId, custodianAccount, floatMin, floatMax).all { it.isBlank() }
+}
 
 /**
  * The production's card configuration.
@@ -310,9 +413,38 @@ data class CardSettings(
     val coordinators: List<DepartmentCoordinator> = emptyList(),
     val overrides: ApprovalOverrides = ApprovalOverrides(),
     val providers: List<CardProvider> = emptyList(),
-    /** The most anyone may ask for on a card request. Null means no ceiling. */
-    val requestCap: Double? = null,
+    /** The most anyone may ask for on a card request; see [RequestCap]. */
+    val requestCap: RequestCap = RequestCap(),
 )
+
+/**
+ * The request ceiling, as the wire holds it: an **object**, not a figure.
+ *
+ * `{ enabled, basis, max_amount, salary_multiplier }` (`requestCap.js`). The
+ * desktop typed it as a string, so a production whose web settings had saved
+ * the object failed to decode the whole `/settings` document — and with it the
+ * team, the coordinators and the providers. An older row holding a bare number
+ * reads as an enabled flat cap of that amount.
+ */
+data class RequestCap(
+    val enabled: Boolean = false,
+    val basis: RequestCapBasis = RequestCapBasis.MaxAmount,
+    /** The flat ceiling; under a salary basis, the fallback for someone with no weekly rate. */
+    val maxAmount: Double = 0.0,
+    val salaryMultiplier: Double = 1.0,
+)
+
+enum class RequestCapBasis(val wire: String, private val labelKey: String) {
+    MaxAmount("max_amount", S.desktop_card_cap_max_amount),
+    WeeklySalary("weekly_salary", S.desktop_card_cap_weekly_salary),
+    ;
+
+    val label: String get() = str(labelKey)
+
+    companion object {
+        fun from(wire: String?): RequestCapBasis = if (wire == WeeklySalary.wire) WeeklySalary else MaxAmount
+    }
+}
 
 /**
  * One member of the accounts team, and what they may do.
@@ -398,9 +530,26 @@ data class CardAnalytics(
     val byCategory: List<AnalyticsSlice> = emptyList(),
     val byHolder: List<AnalyticsSlice> = emptyList(),
     val byMonth: List<AnalyticsSlice> = emptyList(),
+    val byDepartment: List<AnalyticsSlice> = emptyList(),
+    val activeCards: Int = 0,
+    val postedTotal: Double = 0.0,
 )
 
-data class AnalyticsSlice(val label: String, val amount: Double, val count: Int = 0)
+/**
+ * One bar of a breakdown.
+ *
+ * [label] is what the server named it; [userId] and [departmentId] are what
+ * the current `/analytics/overview` sends instead (`by_holder`,
+ * `by_department`), and the screen names those through the crew.
+ */
+data class AnalyticsSlice(
+    val label: String,
+    val amount: Double,
+    val count: Int = 0,
+    val userId: String? = null,
+    val departmentId: String? = null,
+    val cardLastFour: String? = null,
+)
 
 /** One line of a card's or receipt's audit trail. */
 data class CardHistoryEntry(
@@ -409,24 +558,6 @@ data class CardHistoryEntry(
     val note: String?,
     val at: Long?,
 )
-
-/**
- * One coded split of a card receipt.
- *
- * The card service stores net and tax separately rather than deriving one from
- * the other, which is why this carries both rather than a rate — unlike the
- * cash module's line, where the wire keeps gross.
- */
-data class ReceiptLine(
-    val id: String?,
-    val description: String,
-    val nominalCode: String,
-    val net: Double,
-    val taxAmount: Double,
-    val episode: String? = null,
-) {
-    val gross: Double get() = net + taxAmount
-}
 
 /**
  * A new card request, as the form filled it in.
@@ -537,7 +668,23 @@ data class CardPerson(
     val designation: String = "",
     val department: String = "",
     val departmentId: String = "",
+    /** `department_accounts` marks the accounts team; blank where the host does not say. */
+    val departmentIdentifier: String = "",
 ) {
+    /**
+     * In the accounts team — who the web's assign and team pickers offer
+     * (`ACCOUNTS_TEAM_USERS`). The display-name fallback is the hub's own, for
+     * a host that does not pass the identifier.
+     */
+    val isAccountsTeam: Boolean
+        get() = departmentIdentifier.equals(ACCOUNTS_DEPARTMENT, ignoreCase = true) ||
+            department.contains(ACCOUNT, ignoreCase = true)
+
+    private companion object {
+        const val ACCOUNTS_DEPARTMENT = "department_accounts"
+        const val ACCOUNT = "account"
+    }
+
     /** "Name · Role", the way every picker in the hub prints a person. */
     val pickerLabel: String
         get() = listOf(name.ifBlank { id }, designation).filter { it.isNotBlank() }.joinToString(" · ")

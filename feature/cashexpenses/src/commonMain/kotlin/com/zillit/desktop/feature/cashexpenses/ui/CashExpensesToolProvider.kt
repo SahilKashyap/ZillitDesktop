@@ -14,6 +14,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitErrorToast
 import com.zillit.desktop.core.designsystem.icon.ZillitToolIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.core.workspace.LocalHostedBy
 import com.zillit.desktop.core.workspace.OpenMode
 import com.zillit.desktop.core.workspace.ToolProvider
 import com.zillit.desktop.core.workspace.WindowNavigator
@@ -52,6 +53,15 @@ class CashExpensesToolProvider(
         // been read does not reappear when the window is switched away from and
         // back — the effect fires once, the toast times out, and that is that.
         var failure by remember { mutableStateOf<String?>(null) }
+
+        // Standing on its own — a Film Tools tile — or inside the Account
+        // Hub, which provides its own path here. An accountant who opened the
+        // tile gets the crew view, as the web's `?entry=tool` does. Declared
+        // before start so the first viewer resolved is already the right one;
+        // the view model may be shared with the hub, so each composition says
+        // which way it came in when it appears.
+        val asTool = LocalHostedBy.current == null
+        LaunchedEffect(viewModel, asTool) { viewModel.onEvent(CashEvent.Enter(asTool)) }
 
         // The first time this tool is shown: the view model is built with the
         // app, before a production is open, so it resolves who the viewer is

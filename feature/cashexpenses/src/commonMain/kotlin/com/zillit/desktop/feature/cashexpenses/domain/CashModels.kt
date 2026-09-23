@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.cashexpenses.domain
 
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import kotlinx.serialization.json.JsonObject
 
 /**
  * A petty-cash float: an amount of cash issued to one crew member, spent
@@ -44,6 +45,8 @@ data class CashFloat(
     val durationType: String?,
     val purpose: String?,
     val createdAt: Long?,
+    /** Who has signed at which level of the approval chain — see [ApprovalTiers]. */
+    val approvals: List<TierApproval> = emptyList(),
 ) {
     /** Cash spent so far, as the difference the crew member actually sees. */
     val spent: Double get() = (issuedAmount - balance).coerceAtLeast(0.0)
@@ -83,6 +86,17 @@ data class ClaimBatch(
     val assignmentReason: String?,
     val createdAt: Long?,
     val claims: List<Claim> = emptyList(),
+    /**
+     * The ledger date the batch posts on, UTC midnight epoch millis.
+     *
+     * Null until someone saves or posts it. A stored date on or before the
+     * cost-report lock freezes the batch — see [CashRules.periodLocked].
+     */
+    val effectiveDate: Long? = null,
+    val escalationReason: String? = null,
+    val escalatedBy: String? = null,
+    /** Who has signed at which level of the approval chain — see [ApprovalTiers]. */
+    val approvals: List<TierApproval> = emptyList(),
 ) {
     val lifecycle: Lifecycle get() = Lifecycle.of(status)
 }
@@ -108,6 +122,19 @@ data class Claim(
     /** The stored receipt image or PDF. A key, not a URL, on some productions. */
     val receiptUrl: String?,
     val lineItems: List<ClaimLineItem> = emptyList(),
+    /** Ticked by the auditor, receipt by receipt; Send for Approval needs them all. */
+    val isVerified: Boolean = false,
+    /** `review` / `query` marks the processing rules left on this receipt. */
+    val processingFlags: List<String> = emptyList(),
+    /**
+     * The stored lines exactly as the server sent them, engine rows removed.
+     *
+     * A save that sends the batch's claims back — posting, verifying — must not
+     * rewrite what it did not edit: a tax line keeps its `is_tax`, a coded
+     * line its layers and tags. [lineItems] is the editor's reading and loses
+     * those.
+     */
+    val rawLines: List<JsonObject> = emptyList(),
 ) {
     /** Whether the attachment should be shown as a document rather than an image. */
     val receiptIsPdf: Boolean get() = receiptUrl?.endsWith(".pdf", ignoreCase = true) == true
@@ -174,6 +201,17 @@ data class CashMetadata(
     val overrideReceiptBatch: Boolean = false,
     /** The most this person may post in one go. Null means no ceiling. */
     val postingLimit: Double? = null,
+    /**
+     * Whether the server said `posting_limit: null` — unlimited — rather than
+     * leaving the key out.
+     *
+     * The two differ on the web: an absent limit is no grant at all
+     * (`hasUnlimitedPostingLimit` is `limit === null`), so a senior's
+     * designation, not the missing key, is what lets them post.
+     */
+    val postingLimitUnlimited: Boolean = false,
+    /** The production's approval chains, as `/metadata` hands them over. */
+    val approvalTierConfigs: List<ApprovalTierConfig> = emptyList(),
 )
 
 /**
@@ -197,6 +235,10 @@ data class CashSettings(
     /** Out-of-pocket claims settled through payroll rather than a BACS run. */
     val reimburseToPayroll: Boolean = false,
     val deductionRules: List<DeductionRule> = emptyList(),
+    /** The ceiling on a float request — its own section, saved on its own. */
+    val requestCap: RequestCap = RequestCap(),
+    /** Who a batch lands with automatically; written through the account hub's own route. */
+    val assignmentRules: List<CashAssignmentRule> = emptyList(),
 )
 
 /** Someone on the cash team, with the rights the accountant granted them. */
@@ -313,17 +355,32 @@ data class OutOfPocketOverview(
     val totalClaimed: Double = 0.0,
     val bacsReady: Double = 0.0,
     val payrollAuto: Double = 0.0,
-    val routing: PaymentRouting = PaymentRouting(),
+    val routing: RoutingSplit = RoutingSplit(),
     val spendByCategory: List<CategorySpend> = emptyList(),
     val batches: List<ClaimBatch> = emptyList(),
 )
 
-/** How reimbursements are split between the two payment rails. */
-data class PaymentRouting(
+/** The out-of-pocket dashboard's split of reimbursements across the two rails. */
+data class RoutingSplit(
     val bacs: Double = 0.0,
     val payroll: Double = 0.0,
     val total: Double = 0.0,
-    val batches: List<ClaimBatch> = emptyList(),
+)
+
+/**
+ * Payment Routing — `GET /claims/overview/payment-routing`.
+ *
+ * The server sends `stats` plus the two batch lists (`bacs_batches`,
+ * `payroll_batches`). This used to be read as `bacs`/`payroll`/`total`, which
+ * the route never sends, so every tile said zero.
+ */
+data class PaymentRouting(
+    val bacsReady: Double = 0.0,
+    val bacsCount: Int = 0,
+    val payrollTotal: Double = 0.0,
+    val payrollCount: Int = 0,
+    val bacsBatches: List<ClaimBatch> = emptyList(),
+    val payrollBatches: List<ClaimBatch> = emptyList(),
 )
 
 data class CategorySpend(val category: String, val amount: Double)
@@ -352,13 +409,22 @@ data class Reconciliation(
     val periodStart: Long?,
     val periodEnd: Long?,
     val bookBalance: Double,
+    /** What was physically counted — `physical_cash` on the wire. */
     val countedBalance: Double,
     val currency: String?,
     val note: String?,
     val createdAt: Long?,
+    /** The safe's opening balance for the period — `opening_safe_balance`. */
+    val openingBalance: Double = 0.0,
+    /** The variance the server stored, when it stored one. */
+    val storedVariance: Double? = null,
+    val denominations: List<Denomination> = emptyList(),
+    val reconcilingItems: List<ReconItem> = emptyList(),
 ) {
-    /** Counted minus book. Non-zero is the whole reason the screen exists. */
-    val variance: Double get() = countedBalance - bookBalance
+    /** Counted minus book, unless the server already worked it out with the reconciling items. */
+    val variance: Double get() = storedVariance ?: (countedBalance - bookBalance)
+
+    val isSignedOff: Boolean get() = status == ReconDraft.SIGNED_OFF
 }
 
 /** One line of a float's or batch's audit trail. */

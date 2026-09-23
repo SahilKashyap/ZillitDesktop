@@ -137,12 +137,8 @@ internal class CardReceiptActions(
         val state = vm.current
         val draft = state.coding ?: return
         val receipt = state.receipts.firstOrNull { it.id == draft.receiptId } ?: return
-        if (commit != CodingCommit.Draft && !draft.coded) {
-            vm.fail(str(S.desktop_card_nominal_code_needed))
-            return
-        }
-        if (commit == CodingCommit.ApproveAndSubmit && !state.viewer.isApprover) {
-            vm.fail(str(S.desktop_card_not_an_approver))
+        refusal(state, commit, draft)?.let { reason ->
+            vm.fail(reason)
             return
         }
         val coding = draft.wire(receipt)
@@ -163,6 +159,28 @@ internal class CardReceiptActions(
             // coding, because a holder has nothing further to add to it.
             CodingCommit.Own ->
                 vm.act(str(S.desktop_card_coding_saved)) { vm.repo.codeReceipt(draft.receiptId, coding) }
+        }
+    }
+
+    /**
+     * Why this commit may not go, or null.
+     *
+     * Where coding may be committed at all comes first: a holder on their own
+     * list, a coordinator on theirs. Pending Coding is the accountant's
+     * read-only view of the same rows, and the handler holds to that as the
+     * screen does.
+     */
+    private fun refusal(state: CardUiState, commit: CodingCommit, draft: CodingDraft): String? {
+        val allowed = when (commit) {
+            CodingCommit.Own -> state.destination == CardDestination.MyTransactions
+            else -> state.destination == CardDestination.CodingQueue && state.viewer.isCoordinator &&
+                !state.viewer.isAccountant
+        }
+        return when {
+            !allowed -> str(S.desktop_po_no_rights_on_project)
+            commit != CodingCommit.Draft && !draft.coded -> str(S.desktop_card_nominal_code_needed)
+            commit == CodingCommit.ApproveAndSubmit && !state.viewer.isApprover -> str(S.desktop_card_not_an_approver)
+            else -> null
         }
     }
 

@@ -22,9 +22,10 @@ import com.zillit.desktop.feature.cardexpenses.ui.money
  * history is read to answer "how much has gone through this card programme",
  * and making somebody add up a table to find out is the difference between a
  * record and a report. They ride above the standard receipt queue —
- * which already knows how to read History: no actions, because a posted
- * receipt is a fact rather than a decision, the nominal code in place of the
- * match column, and each receipt's full trail in the pane beside it.
+ * which already knows how to read History: an accountant's Edit that opens
+ * the process editor in save-only mode (no second post, no top-up), the
+ * nominal code in place of the match column, and each receipt's full trail in
+ * the pane beside it.
  */
 @Composable
 fun HistoryPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {

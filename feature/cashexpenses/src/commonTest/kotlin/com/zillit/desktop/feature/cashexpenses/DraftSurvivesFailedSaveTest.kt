@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.cashexpenses
 
 import com.zillit.desktop.feature.cashexpenses.ui.ConfirmAction
 import com.zillit.desktop.feature.cashexpenses.ui.CashPrompt
+import com.zillit.desktop.feature.cashexpenses.domain.CashMetadata
 import com.zillit.desktop.feature.cashexpenses.domain.CashRepository
 import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.ui.CashDestination
@@ -70,7 +71,10 @@ class DraftSurvivesFailedSaveTest {
 
     @Test
     fun `coding that fails to save stays open for a retry`() = runTest(dispatcher) {
-        val repository = FakeCash(writesSucceed = false)
+        // A coordinator on a production that codes — the coding queue's own.
+        val repository = FakeCash(writesSucceed = false).apply {
+            metadata = CashMetadata(isCoordinator = true, codingRequired = true)
+        }
         val vm = viewModel(repository)
 
         vm.onEvent(CashEvent.Open(CashDestination.CodingQueue))

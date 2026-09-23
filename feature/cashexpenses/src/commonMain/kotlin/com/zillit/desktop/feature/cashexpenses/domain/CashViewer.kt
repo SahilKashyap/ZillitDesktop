@@ -26,13 +26,14 @@ data class CashViewer(
     val designationIdentifier: String?,
     val metadata: CashMetadata = CashMetadata(),
     /**
-     * True when the module was opened from the Film Tools grid rather than from
-     * Account Hub.
+     * True when the module was opened on its own — from the Film Tools grid —
+     * rather than inside the Account Hub.
      *
      * An accountant arriving that way gets the **crew** view, because they are
      * there to submit their own receipts, not to process everyone else's. The
-     * web calls this `enteredAsTool` and it is the only reason an accountant
-     * ever sees the crew screens.
+     * web calls this `enteredAsTool` (`AccountHubShell.jsx`) and it is the only
+     * reason an accountant ever sees the crew screens. Set per composition
+     * from `LocalHostedBy` — see `CashEvent.Enter`.
      */
     val enteredAsTool: Boolean = false,
 ) {
@@ -65,7 +66,7 @@ data class CashViewer(
      * production served the translated form.
      */
     val isSeniorAccountant: Boolean
-        get() = designationIdentifier.normalised().let { value ->
+        get() = !enteredAsTool && designationIdentifier.normalised().let { value ->
             value.isNotEmpty() && SENIOR_DESIGNATIONS.any { value.contains(it) }
         }
 
@@ -96,18 +97,6 @@ data class CashViewer(
 
     fun canOverrideBatch(): Boolean =
         isAccountant && metadata.canOverride && metadata.overrideReceiptBatch
-
-    /**
-     * Whether [amount] is within this person's posting ceiling.
-     *
-     * A null limit is no limit — that is what the server means by omitting it,
-     * and treating it as zero would lock out every accountant on a production
-     * that never configured one.
-     */
-    fun canPost(amount: Double): Boolean {
-        val limit = metadata.postingLimit ?: return true
-        return amount <= limit
-    }
 
     private companion object {
         const val ACCOUNTS = "accounts"

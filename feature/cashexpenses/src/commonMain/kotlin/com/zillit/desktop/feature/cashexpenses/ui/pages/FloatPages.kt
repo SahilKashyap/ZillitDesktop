@@ -35,6 +35,7 @@ import com.zillit.desktop.feature.cashexpenses.domain.CashFloat
 import com.zillit.desktop.feature.cashexpenses.domain.CashPeople
 import com.zillit.desktop.feature.cashexpenses.domain.CashTopUp
 import com.zillit.desktop.feature.cashexpenses.domain.FloatStatus
+import com.zillit.desktop.feature.cashexpenses.domain.CashDates
 import com.zillit.desktop.feature.cashexpenses.ui.AmountAction
 import com.zillit.desktop.feature.cashexpenses.domain.CashFormFields
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
@@ -55,8 +56,14 @@ import com.zillit.desktop.feature.cashexpenses.ui.money
  * row offers exactly the transition that is next. Showing every action on every
  * row was how the web let an accountant mark an uncollected float closed.
  */
+@Suppress("LongMethod") // The register and its three accountant actions.
 @Composable
 fun ActiveFloatsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
+    // Fund requests take the page over, as they do on the web's register.
+    state.funds?.let {
+        FundsPage(state, it, onEvent)
+        return
+    }
     val people = LocalCashPeople.current
     val rows = state.activeFloats.filter { it.matches(state.search, people) }
 
@@ -80,7 +87,35 @@ fun ActiveFloatsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
                 },
                 style = ZillitTheme.typography.bodySmall,
                 color = ZillitTheme.colors.textSecondary,
+                modifier = Modifier.weight(1f),
             )
+            // Accountant-only, as the web's seamless bar is: a coordinator
+            // viewing department floats sees them read-only.
+            if (state.viewer.isAccountant) {
+                ZillitButton(
+                    text = str(S.desktop_ce_funds),
+                    onClick = { onEvent(CashEvent.ShowFunds(true)) },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Bank,
+                )
+                ZillitButton(
+                    text = str(S.desktop_ce_record_cash_return),
+                    onClick = {
+                        val prompt = CashPrompt.RecordReturn(floatId = null, receivedDate = CashDates.today())
+                        onEvent(CashEvent.Ask(prompt))
+                    },
+                    variant = ButtonVariant.Secondary,
+                    size = ButtonSize.Small,
+                    enabled = !state.busy,
+                )
+                ZillitButton(
+                    text = str(S.ah_new_float),
+                    onClick = { onEvent(CashEvent.RaiseFloatForCrew) },
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Add,
+                )
+            }
         }
 
         ZillitSectionCard(
@@ -124,8 +159,7 @@ private fun floatActionColumn(
     header = "",
     width = ColumnWidth.Fixed(ACTION_COLUMN),
     cell = { row ->
-        val holder = LocalCashPeople.current.nameOrNull(row.userId, row.holderName) ?: str(S.desktop_ce_the_holder)
-        val action = row.nextAction(holder)
+        val action = row.nextAction()
         if (action == null || !state.viewer.isAccountant) {
             ZillitText(
                 text = "—",
@@ -134,19 +168,8 @@ private fun floatActionColumn(
             )
         } else {
             ZillitButton(
-                text = action.label,
-                onClick = {
-                    onEvent(
-                        CashEvent.Ask(
-                            CashPrompt.Confirm(
-                                action = action.action,
-                                targetId = row.id,
-                                title = action.label,
-                                message = action.message,
-                            ),
-                        ),
-                    )
-                },
+                text = action.first,
+                onClick = { onEvent(CashEvent.Ask(action.second)) },
                 variant = ButtonVariant.Secondary,
                 size = ButtonSize.Small,
                 enabled = !state.busy,
@@ -155,40 +178,42 @@ private fun floatActionColumn(
     },
 )
 
-private data class FloatAction(
-    val label: String,
-    val action: ConfirmAction,
-    val message: String,
-)
+/**
+ * The one transition a float's status offers — the web's four
+ * (`PCFloatsPage.jsx:748-785`).
+ *
+ * Ready to Collect always asks for the company and BS code; a pending return
+ * is recorded, never closed; Close is for a spent float. An awaiting-approval
+ * float offers nothing: "Issue" skipped its approval chain, and the web never
+ * draws it.
+ */
+private fun CashFloat.nextAction(): Pair<String, CashPrompt>? = when (status) {
+    FloatStatus.Approved, FloatStatus.AcctOverride -> str(S.desktop_ce_ready_to_collect) to
+        CashPrompt.ReadyToCollect(floatId = id, companyId = companyId.orEmpty(), bsCode = bsCode.orEmpty())
 
-/** [holder] is the name the confirmation addresses, already looked up. */
-private fun CashFloat.nextAction(holder: String): FloatAction? = when (status) {
-    FloatStatus.Approved, FloatStatus.AcctOverride -> FloatAction(
-        label = str(S.desktop_ce_ready_to_collect),
-        action = ConfirmAction.ReadyToCollect,
-        message = str(S.desktop_ce_tell_holder_ready, holder),
-    )
-
-    FloatStatus.ReadyToCollect -> FloatAction(
-        label = str(S.desktop_ce_mark_collected),
+    FloatStatus.ReadyToCollect -> str(S.desktop_ce_mark_collected) to CashPrompt.Confirm(
         action = ConfirmAction.CollectFloat,
+        targetId = id,
+        title = str(S.desktop_ce_mark_collected),
         message = str(S.desktop_ce_record_handover, money(requestedAmount, currency)),
     )
 
-    FloatStatus.Spent, FloatStatus.PendingReturn -> FloatAction(
-        label = str(S.desktop_ce_close_float),
-        action = ConfirmAction.CloseFloat,
-        message = str(S.desktop_ce_close_float_note),
-    )
+    FloatStatus.PendingReturn -> str(S.desktop_ce_record_return) to
+        CashPrompt.RecordReturn(floatId = id, amount = plainAmount(balance), receivedDate = CashDates.today())
 
-    FloatStatus.AwaitingApproval -> FloatAction(
-        label = str(S.desktop_ce_issue),
-        action = ConfirmAction.IssueFloat,
-        message = str(S.desktop_ce_issue_float_note),
+    FloatStatus.Spent -> str(S.desktop_ce_close_float) to CashPrompt.Confirm(
+        action = ConfirmAction.CloseFloat,
+        targetId = id,
+        title = str(S.desktop_ce_close_float),
+        message = str(S.desktop_ce_close_float_note),
     )
 
     else -> null
 }
+
+/** `40`, `40.5` — an amount as it would be typed. */
+private fun plainAmount(value: Double): String =
+    if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
 
 /**
  * The crew member's float request form.
@@ -201,7 +226,10 @@ private fun CashFloat.nextAction(holder: String): FloatAction? = when (status) {
 @Composable
 fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
     val draft = state.floatDraft
-    val existing = state.myFloats.filter { it.status.isOutstanding }
+    // An accountant here is raising a float for crew: their own floats are
+    // not the point, and the form names who it is for.
+    val onBehalf = state.viewer.isAccountant
+    val existing = if (onBehalf) emptyList() else state.myFloats.filter { it.status.isOutstanding }
     // What this production configured the form to be. An unread template shows
     // every field, which is this form as it was before templates existed.
     val form = state.floatForm
@@ -218,6 +246,7 @@ fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         }
 
         ZillitSectionCard(title = str(S.ah_request_a_float), icon = ZillitIcons.Wallet) {
+            if (onBehalf) CrewPicker(state, onEvent)
             // The amount and the purpose are what a float *is*; the form
             // template can require them but never take them away, because a
             // request without either is not a request.
@@ -298,17 +327,49 @@ fun FloatRequestPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
             }
         }
 
-        ZillitSectionCard(title = str(S.desktop_ce_your_floats), icon = ZillitIcons.Ledger, padded = false) {
-            ZillitDataTable(
-                rows = state.myFloats,
-                columns = crewFloatColumns(),
-                key = { it.id },
-                loading = state.loading,
-                emptyTitle = str(S.desktop_ce_no_floats_yet),
-                emptyMessage = str(S.desktop_ce_your_floats_empty),
-                virtualised = false,
-            )
+        if (!onBehalf) {
+            ZillitSectionCard(title = str(S.desktop_ce_your_floats), icon = ZillitIcons.Ledger, padded = false) {
+                ZillitDataTable(
+                    rows = state.myFloats,
+                    columns = crewFloatColumns(),
+                    key = { it.id },
+                    loading = state.loading,
+                    emptyTitle = str(S.desktop_ce_no_floats_yet),
+                    emptyMessage = str(S.desktop_ce_your_floats_empty),
+                    virtualised = false,
+                )
+            }
         }
+    }
+}
+
+/** Who the float is for — an accountant raises one on a crew member's behalf (`target_user_id`). */
+@Composable
+private fun CrewPicker(state: CashUiState, onEvent: (CashEvent) -> Unit) {
+    val draft = state.floatDraft
+    val crew = state.assignees.filter { it.userId.isNotBlank() }.sortedBy { it.fullName.lowercase() }
+    Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs)) {
+        ZillitText(
+            text = str(S.desktop_ce_float_for),
+            style = ZillitTheme.typography.label,
+            color = ZillitTheme.colors.textSecondary,
+        )
+        ZillitSelect(
+            value = draft.targetUserId,
+            options = listOf("") + crew.map { it.userId },
+            onSelect = { onEvent(CashEvent.EditFloatRequest(draft.copy(targetUserId = it))) },
+            label = { id ->
+                if (id.isBlank()) {
+                    str(S.desktop_ce_choose_crew_member_option)
+                } else {
+                    crew.firstOrNull { it.userId == id }
+                        ?.let { person -> listOf(person.fullName, person.designation).filter(String::isNotBlank) }
+                        ?.joinToString(" — ")
+                        ?: id
+                }
+            },
+            modifier = Modifier.width(PICKER_WIDTH),
+        )
     }
 }
 
@@ -565,6 +626,7 @@ private val ACTION_COLUMN = 150.dp
 private val TOPUP_ACTION_COLUMN = 190.dp
 private val TOPUP_STATUS_COLUMN = 120.dp
 private val FLOAT_STATUS_COLUMN = 150.dp
+private val PICKER_WIDTH = 360.dp
 
 
 /**

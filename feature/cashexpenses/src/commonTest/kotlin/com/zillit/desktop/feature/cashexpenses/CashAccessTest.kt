@@ -2,6 +2,9 @@ package com.zillit.desktop.feature.cashexpenses
 
 import com.zillit.desktop.feature.cashexpenses.domain.BatchStatus
 import com.zillit.desktop.feature.cashexpenses.domain.CashMetadata
+import com.zillit.desktop.feature.cashexpenses.domain.CashRules
+import com.zillit.desktop.feature.cashexpenses.domain.Claim
+import com.zillit.desktop.feature.cashexpenses.domain.ClaimBatch
 import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.domain.ExpenseType
 import com.zillit.desktop.feature.cashexpenses.domain.FloatStatus
@@ -114,12 +117,112 @@ class CashAccessTest {
         assertFalse(viewer(metadata = full).canOverrideFloat())
     }
 
+    /**
+     * The web's `canPostBatch`: a senior posts by role; anyone else needs to be
+     * on the team with an unlimited or non-zero limit. The amount is not
+     * compared with the limit — the old rule was — and an absent limit is no
+     * grant at all, where `null` is unlimited.
+     */
     @Test
-    fun `an absent posting limit means no ceiling`() {
-        assertTrue(viewer().canPost(1_000_000.0))
-        assertTrue(viewer(metadata = CashMetadata(postingLimit = 500.0)).canPost(500.0))
-        assertFalse(viewer(metadata = CashMetadata(postingLimit = 500.0)).canPost(500.01))
+    fun `posting follows seniority and the team grant, not the amount`() {
+        assertTrue(CashRules.canPost(viewer(designation = "designation_financial_controller_accounts"), emptyList()))
+        assertFalse(CashRules.canPost(viewer(), emptyList()), "not on the team, not senior")
+        assertTrue(
+            CashRules.canPost(viewer(metadata = CashMetadata(isTeamMember = true, postingLimit = 500.0)), emptyList()),
+        )
+        assertTrue(
+            CashRules.canPost(
+                viewer(metadata = CashMetadata(isTeamMember = true, postingLimitUnlimited = true)),
+                emptyList(),
+            ),
+        )
+        assertFalse(
+            CashRules.canPost(viewer(metadata = CashMetadata(isTeamMember = true, postingLimit = 0.0)), emptyList()),
+        )
+        assertFalse(CashRules.canPost(viewer(metadata = CashMetadata(isTeamMember = true)), emptyList()))
     }
+
+    /** A review or query flag stops a non-senior — only where there is a sign-off flow to route into. */
+    @Test
+    fun `a flagged receipt blocks a non-senior post only under sign-off`() {
+        val flagged = listOf(claim(flags = listOf("review")))
+        val member = CashMetadata(isTeamMember = true, postingLimitUnlimited = true)
+        assertTrue(CashRules.canPost(viewer(metadata = member), flagged))
+        assertFalse(CashRules.canPost(viewer(metadata = member.copy(requireSeniorSignOff = true)), flagged))
+        assertTrue(
+            CashRules.canPost(
+                viewer(designation = "Production Accountant", metadata = member.copy(requireSeniorSignOff = true)),
+                flagged,
+            ),
+        )
+    }
+
+    /** Escalate and Submit for Review exist only where a senior signs off, and never for a senior. */
+    @Test
+    fun `the senior routes are offered by the web's own predicates`() {
+        val signOff = CashMetadata(requireSeniorSignOff = true)
+        val batch = batch(BatchStatus.ReadyToPost)
+        assertTrue(CashRules.canEscalate(viewer(metadata = signOff), batch))
+        assertFalse(CashRules.canEscalate(viewer(), batch), "no sign-off, nowhere to escalate to")
+        assertFalse(CashRules.canEscalate(viewer(metadata = signOff), batch(BatchStatus.UnderReview)))
+        assertFalse(CashRules.canEscalate(viewer(designation = "Financial Controller", metadata = signOff), batch))
+
+        assertTrue(CashRules.canSubmitForReview(viewer(metadata = signOff), batch, emptyList()))
+        val canPost = signOff.copy(isTeamMember = true, postingLimit = 100.0)
+        assertFalse(CashRules.canSubmitForReview(viewer(metadata = canPost), batch, emptyList()))
+    }
+
+    /** Post & Ledger rows: unassigned is a senior's, assigned is the assignee's and a senior's. */
+    @Test
+    fun `a post and ledger row is locked to its assignee and the seniors`() {
+        val mine = batch(BatchStatus.ReadyToPost).copy(assignedTo = "user-1")
+        val theirs = batch(BatchStatus.ReadyToPost).copy(assignedTo = "user-9")
+        val nobody = batch(BatchStatus.ReadyToPost)
+        assertTrue(CashRules.canOpenPostRow(viewer(), mine))
+        assertFalse(CashRules.canOpenPostRow(viewer(), theirs))
+        assertFalse(CashRules.canOpenPostRow(viewer(), nobody))
+        val senior = viewer(designation = "Production Accountant")
+        assertTrue(CashRules.canOpenPostRow(senior, theirs))
+        assertTrue(CashRules.canOpenPostRow(senior, nobody))
+    }
+
+    /** The web never draws Claim Review — approvers work the shared Approval Queue. */
+    @Test
+    fun `claim review is never offered`() {
+        val approver = viewer(department = "department_art", metadata = CashMetadata(isApprover = true))
+        assertFalse(CashDestination.ClaimReview.visibleTo(approver))
+        assertFalse(CashDestination.ClaimReview.visibleTo(viewer()))
+    }
+
+    /** New Float opens the float request for an accountant, whose tabs never list it. */
+    @Test
+    fun `an accountant can open the float request without a tab for it`() {
+        assertFalse(CashDestination.FloatRequest.visibleTo(viewer()))
+        assertTrue(CashDestination.FloatRequest.openableBy(viewer()))
+        assertFalse(CashDestination.Settings.openableBy(viewer(department = "department_art")))
+    }
+
+    /** Tool entry takes seniority with it: a PA opening the tile gets no Settings or Sign-off. */
+    @Test
+    fun `a senior who entered from the grid is crew here`() {
+        val fromGrid = viewer(designation = "Production Accountant", enteredAsTool = true)
+        assertFalse(fromGrid.isSeniorAccountant)
+        assertFalse(CashDestination.Settings.visibleTo(fromGrid))
+    }
+
+    private fun batch(status: BatchStatus) = ClaimBatch(
+        id = "b1", reference = "PC-1", userId = "u2", holderName = "", departmentId = null, status = status,
+        expenseType = ExpenseType.PettyCash, claimCount = 0, totalGross = 10.0, reimbursementAmount = 0.0,
+        currency = "GBP", settlementType = null, paymentMethod = null, notes = null, assignedTo = null,
+        assignedBy = null, assignmentReason = null, createdAt = null,
+    )
+
+    private fun claim(flags: List<String> = emptyList()) = Claim(
+        id = "c1", batchId = "b1", description = "Tape", supplier = null, category = null, costCode = "5010",
+        codedDescription = null, episode = null, receiptDate = null, grossAmount = 10.0, netAmount = 10.0,
+        vatAmount = 0.0, taxRate = null, taxType = null, settlementType = null, status = BatchStatus.ReadyToPost,
+        receiptUrl = null, processingFlags = flags,
+    )
 
     @Test
     fun `an accountant lands on the dashboard and crew land on the form`() {

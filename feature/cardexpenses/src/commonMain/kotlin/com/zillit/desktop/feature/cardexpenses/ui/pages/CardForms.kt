@@ -22,6 +22,7 @@ import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.cardexpenses.domain.CardPerson
 import com.zillit.desktop.feature.cardexpenses.domain.CardProvider
+import com.zillit.desktop.feature.cardexpenses.domain.CardType
 import com.zillit.desktop.feature.cardexpenses.ui.CardEditDraft
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
@@ -116,10 +117,17 @@ fun NewCardDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         ProviderPicker(
             providers = providers,
             selectedId = draft.providerId,
+            // The provider binds a bank and a company: `card_issuer` is the
+            // bank's id and the company rides along (CardRegisterPage.jsx:217-222).
+            // The desktop sent the provider's *name* as the issuer.
             onSelect = { provider ->
                 onEvent(
                     CardEvent.EditNewCard(
-                        draft.copy(providerId = provider?.id.orEmpty(), issuer = provider?.name.orEmpty()),
+                        draft.copy(
+                            providerId = provider?.id.orEmpty(),
+                            issuer = provider?.bankId.orEmpty(),
+                            companyId = provider?.companyId.orEmpty(),
+                        ),
                     ),
                 )
             },
@@ -234,10 +242,15 @@ fun CardEditDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
         ProviderPicker(
             providers = providers,
             selectedId = draft.providerId,
+            // A provider pick rewrites the bank and the company from its binding.
             onSelect = { provider ->
                 onEvent(
                     CardEvent.EditCardDraft(
-                        draft.copy(providerId = provider?.id.orEmpty(), issuer = provider?.name.orEmpty()),
+                        draft.copy(
+                            providerId = provider?.id.orEmpty(),
+                            issuer = provider?.bankId.orEmpty(),
+                            companyId = provider?.companyId.orEmpty(),
+                        ),
                     ),
                 )
             },
@@ -258,6 +271,83 @@ fun CardEditDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
             modifier = Modifier.fillMaxWidth(),
         )
 
+        if (blocked != null) {
+            ZillitText(
+                text = blocked,
+                style = ZillitTheme.typography.bodySmall,
+                color = ZillitTheme.colors.textMuted,
+            )
+        }
+    }
+}
+
+/**
+ * Activating an approved card (`CardRegisterPage.jsx:460-506`).
+ *
+ * Digital or physical, its sixteen digits, and — for a request raised without
+ * one, which is every crew self-service request — the provider it is held
+ * with; the provider's bank and company ride along. The desktop activated on a
+ * bare "yes" with an empty body, so no card ever received its number.
+ */
+@Suppress("LongMethod") // One form; see NewCardDialog.
+@Composable
+fun ActivationDialog(state: CardUiState, onEvent: (CardEvent) -> Unit) {
+    val draft = state.activation ?: return
+    val card = state.cards.firstOrNull { it.id == draft.cardId }
+    val providers = state.providers
+    val blocked = draft.validationError(providers.isNotEmpty())
+
+    ZillitDialogShell(
+        title = str(S.desktop_card_activate_card),
+        subtitle = card?.let { str(S.desktop_card_holder_card_suffix, state.holderName(it), it.lastFour ?: "—") },
+        icon = ZillitIcons.CreditCard,
+        visible = true,
+        onDismiss = { onEvent(CardEvent.CloseActivation) },
+        width = FORM_WIDTH,
+        actions = {
+            ZillitButton(
+                text = str(S.cancel),
+                onClick = { onEvent(CardEvent.CloseActivation) },
+                variant = ButtonVariant.Tertiary,
+            )
+            ZillitButton(
+                text = str(S.desktop_card_activate_assign_number),
+                onClick = { onEvent(CardEvent.SubmitActivation) },
+                enabled = blocked == null && !state.busy,
+                loading = state.busy,
+            )
+        },
+    ) {
+        FieldGroupLabel(str(S.desktop_card_card_type))
+        Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
+            CardType.entries.forEach { type ->
+                ZillitButton(
+                    text = type.label,
+                    onClick = { onEvent(CardEvent.EditActivation(draft.copy(type = type))) },
+                    variant = if (draft.type == type) ButtonVariant.Primary else ButtonVariant.Secondary,
+                )
+            }
+        }
+        ZillitTextField(
+            value = draft.number,
+            onValueChange = { typed ->
+                onEvent(CardEvent.EditActivation(draft.copy(number = typed.filter { it.isDigit() || it == ' ' })))
+            },
+            label = str(S.desktop_card_number),
+            placeholder = "4000 0000 0000 0000",
+            keyboardType = KeyboardType.Number,
+            helperText = str(S.desktop_card_last_four_note),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (draft.needsProvider) {
+            ProviderPicker(
+                providers = providers,
+                selectedId = draft.providerId,
+                onSelect = { provider ->
+                    onEvent(CardEvent.EditActivation(draft.copy(providerId = provider?.id.orEmpty())))
+                },
+            )
+        }
         if (blocked != null) {
             ZillitText(
                 text = blocked,

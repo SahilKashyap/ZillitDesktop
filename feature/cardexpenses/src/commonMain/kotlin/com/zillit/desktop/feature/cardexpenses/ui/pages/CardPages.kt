@@ -48,6 +48,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
 import com.zillit.desktop.feature.cardexpenses.domain.CardTopUp
 import com.zillit.desktop.feature.cardexpenses.domain.CardType
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
+import com.zillit.desktop.feature.cardexpenses.domain.ExportFormat
 import com.zillit.desktop.feature.cardexpenses.ui.ALL_STATUSES
 import com.zillit.desktop.feature.cardexpenses.ui.CardAmountAction
 import com.zillit.desktop.feature.cardexpenses.ui.CardConfirmAction
@@ -84,155 +85,6 @@ fun FixedPage(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
         modifier = modifier.fillMaxSize().padding(ZillitTheme.spacing.xl),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
         content = content,
-    )
-}
-
-/**
- * The accountant's dashboard.
- *
- * Every tile is a link into the queue it counts, for the reason the cash
- * overview gives: figures nobody can act on are figures nobody returns to.
- */
-@Suppress("LongMethod") // A dashboard: tiles, notices and a table, each read in place.
-@Composable
-fun CardOverviewPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
-    val overview = state.overview
-    val currency = overview?.cards?.firstOrNull()?.currency
-
-    ScrollingPage {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
-        ) {
-            ZillitStatTile(
-                label = str(S.ah_active_cards),
-                value = overview?.activeCards?.toString() ?: "—",
-                sub = str(S.desktop_card_awaiting_approval_count, overview?.requestedCards ?: 0),
-                tone = StatusTone.Done,
-                icon = ZillitIcons.CreditCard,
-                onClick = { onEvent(CardEvent.Open(CardDestination.CardRegister)) },
-                modifier = Modifier.weight(1f),
-            )
-            ZillitStatTile(
-                label = str(S.ah_receipt_inbox),
-                value = overview?.inbox?.toString() ?: "—",
-                sub = str(S.desktop_card_uploaded_not_processed),
-                tone = StatusTone.Pending,
-                icon = ZillitIcons.Receipt,
-                onClick = { onEvent(CardEvent.Open(CardDestination.ReceiptInbox)) },
-                modifier = Modifier.weight(1f),
-            )
-            ZillitStatTile(
-                label = str(S.desktop_in_approval),
-                value = overview?.inApproval?.toString() ?: "—",
-                sub = str(S.desktop_card_still_to_code_count, overview?.pendingCoding ?: 0),
-                tone = StatusTone.Progress,
-                icon = ZillitIcons.Shield,
-                onClick = { onEvent(CardEvent.Open(CardDestination.ApprovalQueue)) },
-                modifier = Modifier.weight(1f),
-            )
-            ZillitStatTile(
-                label = str(S.ah_total_spend),
-                value = money(overview?.totalSpend, currency),
-                sub = str(S.desktop_card_transactions_count, overview?.transactionCount ?: 0),
-                icon = ZillitIcons.BarChart,
-                onClick = { onEvent(CardEvent.Open(CardDestination.Analytics)) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        if (!overview?.pendingTopUps.isNullOrEmpty()) {
-            ZillitNotice(
-                text = str(S.desktop_card_topups_waiting_note, overview.pendingTopUps.size),
-                tone = StatusTone.Pending,
-                icon = ZillitIcons.Wallet,
-                action = {
-                    ZillitButton(
-                        text = str(S.desktop_card_open_topups),
-                        onClick = { onEvent(CardEvent.Open(CardDestination.TopUpQueue)) },
-                        variant = ButtonVariant.Secondary,
-                        size = ButtonSize.Small,
-                    )
-                },
-            )
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.lg),
-        ) {
-            ZillitSectionCard(
-                title = str(S.desktop_card_ledger),
-                icon = ZillitIcons.Ledger,
-                modifier = Modifier.weight(1f),
-            ) {
-                LedgerLine(str(S.desktop_card_posted_to_date), money(overview?.postedTotal, currency))
-                LedgerLine(str(S.desktop_card_estimated_vat), money(overview?.vatEstimate, currency))
-                LedgerLine(str(S.desktop_card_approved_unposted), (overview?.approved ?: 0).toString())
-                LedgerLine(str(S.desktop_card_posted_items), (overview?.posted ?: 0).toString())
-            }
-
-            ZillitSectionCard(
-                title = str(S.desktop_card_limits),
-                icon = ZillitIcons.CreditCard,
-                meta = str(S.desktop_card_cards_count, overview?.cards?.size ?: 0),
-                modifier = Modifier.weight(1f),
-            ) {
-                CardLimitsTotal(overview?.cards.orEmpty())
-            }
-        }
-
-        ZillitSectionCard(title = str(S.ah_cards), icon = ZillitIcons.CreditCard, padded = false) {
-            ZillitDataTable(
-                rows = overview?.cards.orEmpty(),
-                columns = cardColumns(holderName = state::holderShortName),
-                key = { it.id },
-                loading = state.loading,
-                emptyTitle = str(S.desktop_card_no_cards_issued),
-                emptyMessage = str(S.desktop_card_requests_appear_here),
-                onRowClick = { onEvent(CardEvent.Open(CardDestination.CardRegister)) },
-                virtualised = false,
-            )
-        }
-    }
-}
-
-/**
- * What the production has granted, and how much of it is gone.
- *
- * **Only where the cards agree on a currency.** A production can hold cards in
- * yen and in pounds, and adding those gives a number that is not money — the
- * dashboard was printing "¥41.56 of ¥66,959.62" over a mixed set, which is
- * both wrong and confidently wrong. Converting needs the project's exchange
- * rates, which this tool does not carry; naming the mix is honest and costs
- * the reader nothing they had.
- */
-@Composable
-private fun CardLimitsTotal(cards: List<ExpenseCard>) {
-    val currencies = cards.mapNotNull { it.currency?.takeIf(String::isNotBlank) }.distinct()
-    if (currencies.size > 1) {
-        ZillitText(
-            text = str(S.desktop_card_cards_in_currencies, cards.size, currencies.sorted().joinToString(", ")),
-            style = ZillitTheme.typography.titleMedium,
-        )
-        ZillitText(
-            text = str(S.desktop_card_multi_currency_note),
-            style = ZillitTheme.typography.bodySmall,
-            color = ZillitTheme.colors.textSecondary,
-        )
-        return
-    }
-
-    val currency = currencies.firstOrNull()
-    val totalLimit = cards.sumOf { it.limit }
-    val totalSpent = cards.sumOf { it.spent }
-    ZillitText(
-        text = str(S.desktop_card_spent_of_limit, money(totalSpent, currency), money(totalLimit, currency)),
-        style = ZillitTheme.typography.titleMedium,
-    )
-    ZillitMeter(
-        fraction = if (totalLimit > 0) (totalSpent / totalLimit).toFloat() else 0f,
-        tone = StatusTone.Progress,
     )
 }
 
@@ -298,6 +150,19 @@ fun CardRegisterPage(state: CardUiState, onEvent: (CardEvent) -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             if (state.viewer.isAccountant && !approvalOnly) {
+                // The accountant asks for money into a production bank
+                // account — recording only until it is marked received.
+                ZillitButton(
+                    text = str(S.desktop_ce_funds),
+                    onClick = { onEvent(CardEvent.OpenFunds) },
+                    variant = ButtonVariant.Tertiary,
+                    size = ButtonSize.Small,
+                    leadingIcon = ZillitIcons.Wallet,
+                )
+                ExportButtons(
+                    busy = state.exporting,
+                    onExport = { format -> onEvent(CardEvent.ExportCards(format)) },
+                )
                 ZillitButton(
                     text = str(S.desktop_card_issue_a_card),
                     onClick = { onEvent(CardEvent.OpenNewCard(null)) },
@@ -375,22 +240,72 @@ private fun StatusFilter(
 }
 
 /**
+ * The export pair — the web's Export menu (PDF, Excel) as two small buttons.
+ *
+ * Two buttons rather than a menu because a menu here is one more click in
+ * front of the one thing the control does.
+ */
+@Composable
+internal fun ExportButtons(busy: Boolean, onExport: (ExportFormat) -> Unit) {
+    ZillitButton(
+        text = str(S.recce_export_pdf),
+        onClick = { onExport(ExportFormat.Pdf) },
+        variant = ButtonVariant.Tertiary,
+        size = ButtonSize.Small,
+        leadingIcon = ZillitIcons.Download,
+        enabled = !busy,
+        loading = busy,
+    )
+    ZillitButton(
+        text = str(S.desktop_dm_export_excel),
+        onClick = { onExport(ExportFormat.Excel) },
+        variant = ButtonVariant.Tertiary,
+        size = ButtonSize.Small,
+        enabled = !busy,
+    )
+}
+
+/**
  * The single action a card's status permits.
  *
- * A card lifecycle is linear — requested, approved, active, suspended — so one
- * button per card is not a simplification, it is the shape of the thing.
+ * A card lifecycle is linear — requested, pending, approved, active,
+ * suspended — so one step per card is not a simplification, it is the shape
+ * of the thing. A pending card's step belongs to whoever its chain's next tier
+ * names (`adminUi.jsx:297-313`); anyone else sees Override, and only if they
+ * hold the grant and the production allows it.
  *
  * Drawn in two places on purpose: the register's row, and the detail pane. In
  * the Account Hub the register is narrow enough that its action column scrolls
  * off the end, and a card that cannot be approved from the only place it is
  * visible is a card that cannot be approved.
  */
-@Suppress("LongMethod") // The card lifecycle table: one branch per status.
+@Suppress("LongMethod", "CyclomaticComplexMethod") // The card lifecycle table: one branch per status.
 @Composable
 fun CardPrimaryAction(state: CardUiState, card: ExpenseCard, onEvent: (CardEvent) -> Unit) {
+    val step = state.cardApproval(card)
     Row(horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         when {
-            card.status in APPROVABLE && (state.viewer.isApprover || state.viewer.isAccountant) -> {
+            card.status == CardStatus.Pending && !step.canApprove && state.viewer.canOverrideCard -> ZillitButton(
+                text = str(S.dm_nom_table_override),
+                onClick = {
+                    onEvent(
+                        CardEvent.Ask(
+                            CardPrompt.Confirm(
+                                CardConfirmAction.OverrideCard,
+                                card.id,
+                                str(S.desktop_card_override_chain),
+                                str(S.desktop_card_override_card_note),
+                            ),
+                        ),
+                    )
+                },
+                variant = ButtonVariant.Secondary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Shield,
+                enabled = !state.busy,
+            )
+
+            card.status == CardStatus.Pending && step.canApprove -> {
                 ZillitButton(
                     text = str(S.approve),
                     onClick = {
@@ -433,20 +348,10 @@ fun CardPrimaryAction(state: CardUiState, card: ExpenseCard, onEvent: (CardEvent
                 )
             }
 
-            card.status == CardStatus.Approved && state.viewer.isAccountant -> ZillitButton(
+            (card.status == CardStatus.Approved || card.status == CardStatus.Override) &&
+                state.viewer.isAccountant -> ZillitButton(
                 text = str(S.dm_action_activate),
-                onClick = {
-                    onEvent(
-                        CardEvent.Ask(
-                            CardPrompt.Confirm(
-                                CardConfirmAction.ActivateCard,
-                                card.id,
-                                str(S.desktop_card_activate_this_card),
-                                str(S.desktop_card_activate_note),
-                            ),
-                        ),
-                    )
-                },
+                onClick = { onEvent(CardEvent.OpenActivation(card.id)) },
                 size = ButtonSize.Small,
                 enabled = !state.busy,
             )
@@ -981,8 +886,11 @@ private fun ExpenseCard.matches(query: String): Boolean {
         issuer?.lowercase()?.contains(needle) == true
 }
 
-/** Statuses a card request can be approved or rejected from. */
-private val APPROVABLE = setOf(CardStatus.Requested, CardStatus.Pending)
+/**
+ * Statuses a card request can be approved or rejected from — `pending` only:
+ * a `requested` card is still with the accounts team to review and submit.
+ */
+private val APPROVABLE = setOf(CardStatus.Pending)
 
 private const val PENDING = "pending"
 private const val COMPLETED = "completed"

@@ -3,15 +3,32 @@ package com.zillit.desktop.feature.cardexpenses.ui
 import com.zillit.desktop.feature.cardexpenses.domain.BulkCoding
 import com.zillit.desktop.feature.cardexpenses.domain.CardSettings
 import com.zillit.desktop.feature.cardexpenses.domain.DraftCardReceipt
-import com.zillit.desktop.feature.cardexpenses.domain.ReceiptLine
+import com.zillit.desktop.feature.cardexpenses.domain.ExportFormat
+import com.zillit.desktop.feature.cardexpenses.domain.FundRequestDraft
+import com.zillit.desktop.feature.cardexpenses.domain.InboxSection
+import com.zillit.desktop.feature.cardexpenses.domain.ProcessLine
 import com.zillit.desktop.feature.cardexpenses.domain.SettingsSection
+import com.zillit.desktop.feature.cardexpenses.domain.TransactionFilters
 
 /** Everything the user can do in the card tool. */
 sealed interface CardEvent {
+    /**
+     * Which door the next events come through: the Film Tools tile ([asTool])
+     * or the Account Hub. Sent ahead of every event by the composition that
+     * raises it; a no-op when nothing changes. See `CardExpensesToolProvider`.
+     */
+    data class Enter(val asTool: Boolean) : CardEvent
+
     data object Refresh : CardEvent
     data class Open(val destination: CardDestination) : CardEvent
     data class Search(val query: String) : CardEvent
     data class FilterStatus(val status: String) : CardEvent
+
+    /** Shows one of the inbox's four sections; null shows them all. */
+    data class FilterInboxSection(val section: InboxSection?) : CardEvent
+
+    /** Applies All Transactions' server-side filters and reads again. */
+    data class SetTransactionFilters(val filters: TransactionFilters) : CardEvent
     data class SelectReceipt(val receiptId: String?) : CardEvent
     data class SelectCard(val cardId: String?) : CardEvent
     data class SelectTransaction(val transactionId: String?) : CardEvent
@@ -95,14 +112,51 @@ sealed interface CardEvent {
     data object ProcessImportRows : CardEvent
     data object SubmitRowsToHolders : CardEvent
 
-    // -- receipt splits ------------------------------------------------------
+    // -- processing (the accountant's editor) --------------------------------
 
-    data class OpenSplits(val receiptId: String) : CardEvent
-    data object CloseSplits : CardEvent
-    data class EditSplit(val index: Int, val line: ReceiptLine) : CardEvent
-    data object AddSplit : CardEvent
-    data class RemoveSplit(val index: Int) : CardEvent
-    data object SaveSplits : CardEvent
+    /** Opens the process editor over a receipt, reading its full detail. */
+    data class OpenProcess(val receiptId: String, val mode: ProcessMode = ProcessMode.Process) : CardEvent
+    data object CloseProcess : CardEvent
+    data class EditProcess(val draft: ProcessDraft) : CardEvent
+    data class EditProcessLine(val index: Int, val line: ProcessLine) : CardEvent
+    data object AddProcessLine : CardEvent
+    data class RemoveProcessLine(val index: Int) : CardEvent
+    data object SaveProcess : CardEvent
+    data object PostProcess : CardEvent
+    data object SubmitProcessForReview : CardEvent
+
+    /** Sends the escalation typed into the open editor's dialog. */
+    data object ConfirmEscalation : CardEvent
+
+    /** Sends the assignment chosen in the open editor's dialog. */
+    data object ConfirmAssign : CardEvent
+    data class ShowProcessTab(val tab: ProcessTab) : CardEvent
+
+    // -- card activation -----------------------------------------------------
+
+    data class OpenActivation(val cardId: String) : CardEvent
+    data class EditActivation(val draft: ActivationDraft) : CardEvent
+    data object CloseActivation : CardEvent
+    data object SubmitActivation : CardEvent
+
+    // -- query threads and fund requests ---------------------------------------
+
+    data class OpenQuery(val receiptId: String) : CardEvent
+    data class EditQuery(val text: String) : CardEvent
+    data object SendQuery : CardEvent
+    data object CloseQuery : CardEvent
+
+    data object OpenFunds : CardEvent
+    data object CloseFunds : CardEvent
+    data class EditFundDraft(val draft: FundRequestDraft) : CardEvent
+    data object SubmitFundRequest : CardEvent
+    data class ReceiveFundRequest(val requestId: String) : CardEvent
+    data class CancelFundRequest(val requestId: String) : CardEvent
+
+    // -- exports -------------------------------------------------------------
+
+    data class ExportCards(val format: ExportFormat) : CardEvent
+    data class ExportTransactions(val format: ExportFormat) : CardEvent
 }
 
 sealed interface CardEffect {

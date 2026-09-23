@@ -159,8 +159,9 @@ class CardScreenRenderTest {
                         CardExpensesScreen(state = state(destination), onEvent = {})
                     }
                 }
-                // The sidebar is the accountant frame; Overview is always in it.
-                onNodeWithText("Overview").assertIsDisplayed()
+                // The sidebar is the accountant frame; Overview is always in it —
+                // and on the Overview page its own heading says so too.
+                onAllNodesWithText("Overview")[0].assertIsDisplayed()
             }
         }
     }
@@ -188,7 +189,7 @@ class CardScreenRenderTest {
                         CardExpensesScreen(state = state(destination), onEvent = {})
                     }
                 }
-                onNodeWithText("Overview").assertIsDisplayed()
+                onAllNodesWithText("Overview")[0].assertIsDisplayed()
             }
         }
     }
@@ -307,33 +308,46 @@ class CardScreenRenderTest {
         }
     }
 
+    /**
+     * The process editor says when the coded lines do not reach the receipt,
+     * and a senior who owns the row is offered Post alongside Save.
+     */
     @Test
-    fun `the split editor shows what is left and refuses a save that does not add up`() {
-        val open = com.zillit.desktop.feature.cardexpenses.ui.SplitDraft(
-            receiptId = "receipt-1",
-            receiptGross = 120.0,
-            currency = "GBP",
-            lines = listOf(
-                com.zillit.desktop.feature.cardexpenses.domain.ReceiptLine(
-                    id = null,
-                    description = "Batteries",
-                    nominalCode = "4100",
-                    net = 50.0,
-                    taxAmount = 10.0,
+    fun `the process editor shows a shortfall and offers a senior the post`() {
+        val detail = receipt().copy(
+            status = CardWorkflowStatus.Approved,
+            amount = 120.0,
+            assignedTo = "user-1",
+            processing = com.zillit.desktop.feature.cardexpenses.domain.ReceiptProcessing(
+                loaded = true,
+                lines = listOf(
+                    com.zillit.desktop.feature.cardexpenses.domain.ProcessLine(
+                        description = "Batteries",
+                        account = "4100",
+                        net = 50.0,
+                        taxRate = 20.0,
+                    ),
                 ),
             ),
+        )
+        val open = com.zillit.desktop.feature.cardexpenses.ui.ProcessDraft.of(
+            detail,
+            com.zillit.desktop.feature.cardexpenses.ui.ProcessMode.Process,
+            loading = false,
+            today = 1_754_000_000_000,
         )
         runComposeUiTest {
             setContent {
                 ZillitTheme(darkTheme = false) {
                     CardExpensesScreen(
-                        state = state(CardDestination.ProcessQueue).copy(splits = open),
+                        state = state(CardDestination.ProcessQueue).copy(receipts = listOf(detail), process = open),
                         onEvent = {},
                     )
                 }
             }
-            onNodeWithText("LEFT TO SPLIT").assertExists()
-            onNodeWithText("Does not add up").assertExists()
+            onNodeWithText("Line Items", ignoreCase = true).assertExists()
+            onNodeWithText("Post to Ledger").assertExists()
+            onNodeWithText("is lower than the receipt amount", substring = true).assertExists()
         }
     }
 

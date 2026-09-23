@@ -30,7 +30,10 @@ enum class CashDestination(
     CashReconciliation("petty-cash/cash-recon", S.desktop_ce_cash_recon, CashSection.PettyCashAccounts),
 
     // -- petty cash, senior ------------------------------------------------
-    PettyCashSignOff("petty-cash/sign-off", S.ah_step_approval_desc, CashSection.PettyCashSenior),
+    // Its own "Sign off" key: the tab used to borrow the lifecycle step's
+    // description (`ah_step_approval_desc`), whose translations say something
+    // else in most languages.
+    PettyCashSignOff("petty-cash/sign-off", S.desktop_br_sign_off, CashSection.PettyCashSenior),
 
     // -- petty cash, crew --------------------------------------------------
     FloatRequest("petty-cash/float-request", S.ah_float_request, CashSection.PettyCashCrew),
@@ -42,7 +45,7 @@ enum class CashDestination(
     OutOfPocketOverview("out-of-pocket/overview", S.ah_overview, CashSection.OutOfPocketAccounts),
     OutOfPocketPost("out-of-pocket/post", S.desktop_ce_post_and_ledger, CashSection.OutOfPocketAccounts),
     PaymentRouting("out-of-pocket/payment", S.desktop_ce_payment_routing, CashSection.OutOfPocketAccounts),
-    OutOfPocketSignOff("out-of-pocket/sign-off", S.ah_step_approval_desc, CashSection.OutOfPocketSenior),
+    OutOfPocketSignOff("out-of-pocket/sign-off", S.desktop_br_sign_off, CashSection.OutOfPocketSenior),
     ClaimReview("out-of-pocket/review", S.desktop_ce_claim_review, CashSection.OutOfPocketApprover),
     OutOfPocketSubmit("out-of-pocket/submit", S.desktop_ce_submit_receipts, CashSection.OutOfPocketCrew),
     OutOfPocketHistory("out-of-pocket/history", S.desktop_ce_receipts_history, CashSection.OutOfPocketCrew),
@@ -113,7 +116,12 @@ enum class CashDestination(
         AuditQueue, History -> viewer.isAccountant
         // Every accountant sees the approval queue — read-only unless they hold
         // override rights — plus any non-accountant sitting in an approval tier.
-        ApprovalQueue, ClaimReview -> viewer.isApprover || viewer.isAccountant
+        ApprovalQueue -> viewer.isApprover || viewer.isAccountant
+        // The web declares Claim Review in its Approver group and never draws
+        // it: `filterGroups` has no branch for that group
+        // (`CashExpensesModule.jsx:397-416`), and a deep link to it bounces.
+        // Approvers work the shared Approval Queue.
+        ClaimReview -> false
         DepartmentOverview -> viewer.isCoordinator
         MyOverview -> !viewer.isAccountant
         ActiveFloats -> viewer.isAccountant || (viewer.isCoordinator && viewer.metadata.viewDepartmentFloats)
@@ -125,6 +133,16 @@ enum class CashDestination(
             CashSection.Shared -> true
         }
     }
+
+    /**
+     * Whether [viewer] may be on this page at all — which is wider than the tabs.
+     *
+     * Float Request sits in the crew group, so an accountant is never offered
+     * the tab, but New Float on Active Floats opens it to raise a float for a
+     * crew member (`CashExpensesModule.jsx:551-558`).
+     */
+    fun openableBy(viewer: CashViewer): Boolean =
+        visibleTo(viewer) || (this == FloatRequest && viewer.isAccountant)
 
     companion object {
         fun fromSlug(slug: String?): CashDestination? =

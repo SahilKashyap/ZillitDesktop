@@ -2285,6 +2285,9 @@ private fun AppGraph.Ready.cashAssignees(): List<AssigneeOption> {
             userId = user.userId,
             fullName = user.fullName,
             designation = user.designationText().orEmpty(),
+            // The pickers list the accounts team only, as the web's
+            // `ACCOUNTS_TEAM_USERS`; the module filters on this.
+            department = user.department.orEmpty(),
         )
     }
 }
@@ -2737,8 +2740,13 @@ private fun rememberAppViewModels(
                 )
             },
             cashExpenses = ready?.let { graph ->
+                // The badge scope follows the view the tool is showing: an
+                // accountant who opened it from the tools grid sees the crew
+                // view (as on the web) and reads the cash tool's badges.
+                var cashModel: CashExpensesViewModel? = null
                 CashExpensesViewModel(
-                    repository = graph.cashRepository,
+                    repository = graph.cashRepositoryWithExports(),
+                    files = cashFiles(),
                     viewer = { graph.cashViewer() },
                     assignees = { graph.cashAssignees() },
                     events = graph.socketEvents,
@@ -2748,16 +2756,23 @@ private fun rememberAppViewModels(
                     // An accountant's rows file under the account hub, everyone
                     // else's under the cash tool (`constants.js:229-246`).
                     badges = graph.tabBadges("level_1") {
+                        val accountant = cashModel?.state?.value?.viewer?.isAccountant
+                            ?: graph.cashViewer().isAccountant
                         TabBadgeScope(
-                            tool = if (graph.cashViewer().isAccountant) "account_hub_label" else "cash_expenses_label",
+                            tool = if (accountant) "account_hub_label" else "cash_expenses_label",
                             unit = "cash_expenses_label",
                         )
                     },
-                )
+                ).also { cashModel = it }
             },
             cardExpenses = ready?.let { graph ->
+                // The badge scope follows the view the tool is showing — see
+                // the cash tool's note above.
+                var cardModel: CardExpensesViewModel? = null
                 CardExpensesViewModel(
-                    repository = graph.cardRepository,
+                    repository = graph.cardRepositoryWithExports(),
+                    files = cardFiles(),
+                    banks = { graph.cardBanks() },
                     events = graph.socketEvents,
                     // Both host seams: the crew belongs to the production and
                     // the picker to this machine, and the card service offers
@@ -2767,13 +2782,15 @@ private fun rememberAppViewModels(
                     // An accountant's rows file under the account hub, a
                     // cardholder's under the card tool (`constants.js:189-193`).
                     badges = graph.tabBadges("level_1") {
+                        val accountant = cardModel?.state?.value?.viewer?.isAccountant
+                            ?: graph.cardViewer().isAccountant
                         TabBadgeScope(
-                            tool = if (graph.cardViewer().isAccountant) "account_hub_label" else "card_expenses_label",
+                            tool = if (accountant) "account_hub_label" else "card_expenses_label",
                             unit = "card_expenses_label",
                         )
                     },
                     viewer = { graph.cardViewer() },
-                )
+                ).also { cardModel = it }
             },
             purchaseOrders = ready?.let { graph ->
                 PurchaseOrderViewModel(

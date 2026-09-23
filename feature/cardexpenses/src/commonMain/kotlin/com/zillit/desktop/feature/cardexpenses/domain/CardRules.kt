@@ -8,6 +8,13 @@ enum class CardStatus(val wire: String, private val labelKey: String) {
     Requested("requested", S.av_chip_requested),
     Pending("pending", S.pending),
     Approved("approved", S.approved),
+
+    /**
+     * Approved by an accountant's override rather than the chain — the web's
+     * register filter and card tile both treat it like `approved`: ready to
+     * be activated (`CardRegisterPage.jsx:94`, `adminUi.jsx`).
+     */
+    Override("override", S.dm_nom_table_override),
     Rejected("rejected", S.rejected),
     Active("active", S.active),
     DigitalActive("digital_active", S.desktop_card_digital_active),
@@ -44,6 +51,12 @@ enum class CardType(val wire: String, private val labelKey: String) {
 /** Where a transaction or receipt is in the coding/approval workflow. */
 enum class CardWorkflowStatus(val wire: String, private val labelKey: String) {
     Imported("imported", S.desktop_imported),
+
+    /** A statement line nobody has touched — All Transactions' "New" tile. */
+    New("new", S.ah_txn_filter_new),
+
+    /** A statement line in its approval chain — All Transactions' "In Approval" tile. */
+    InApproval("in_approval", S.desktop_in_approval),
     PendingReceipt("pending_receipt", S.ah_txn_filter_pending_receipt),
     PendingCode("pending_code", S.ah_pending_coding),
     Submitted("submitted", S.txt_submitted),
@@ -56,6 +69,12 @@ enum class CardWorkflowStatus(val wire: String, private val labelKey: String) {
     Personal("personal", S.personal),
     Overridden("overridden", S.desktop_overridden),
     Processing("processing", S.desktop_card_processing),
+
+    /** Handed up by a non-senior with Submit for Review; a senior's Posting Review queue. */
+    UnderReview("under_review", S.ah_under_review),
+
+    /** Handed up with a reason; also on the senior's Posting Review queue. */
+    Escalated("escalated", S.ah_escalated),
     Unknown("", S.desktop_unknown),
     ;
 
@@ -70,6 +89,17 @@ enum class CardWorkflowStatus(val wire: String, private val labelKey: String) {
         }
     }
 }
+
+/**
+ * Whether a statement line may still be removed.
+ *
+ * Approved means someone signed it off and posted means it reached the ledger —
+ * removing either is a bookkeeping event, not a tidy-up. Everything short of
+ * approval stays deletable, including what came back from the chain
+ * (`transactionQuery.js:55-58`).
+ */
+val CardWorkflowStatus.canDelete: Boolean
+    get() = this != CardWorkflowStatus.Approved && this != CardWorkflowStatus.Posted
 
 /** Whether a receipt has been tied to a statement line. */
 enum class MatchStatus(val wire: String, private val labelKey: String) {
@@ -157,6 +187,29 @@ object CardRules {
         if (isAccountant) return true
         return !card.requestedBy.isNullOrBlank() && card.requestedBy == viewerId
     }
+
+    /**
+     * Whether this viewer may delete a card request: only the person who
+     * raised it, and only before it is a card (`CardDetailModal.jsx:250`) —
+     * being an accountant does not make someone else's request theirs to bin.
+     */
+    fun canDeleteRequest(card: ExpenseCard, viewerId: String?): Boolean =
+        card.status in EDITABLE_STATUSES && !card.requestedBy.isNullOrBlank() && card.requestedBy == viewerId
+
+    /** Statuses that will never post anything, so there is no control code to correct. */
+    private val BS_CODE_DEAD = setOf(CardStatus.Rejected, CardStatus.Suspended, CardStatus.Cancelled, CardStatus.Closed)
+
+    /**
+     * Whether an accountant may still correct the card's control code.
+     *
+     * Until the first receipt exists against it — after that, a new code would
+     * re-point spend already posted or on its way (`CardDetailModal.jsx:219-243`).
+     * [receiptsProvenEmpty] must be a completed, successful read that found
+     * none; "not loaded yet" is not "none", and failing open is the one
+     * mistake this guard exists to prevent.
+     */
+    fun canCorrectBsCode(card: ExpenseCard, receiptsProvenEmpty: Boolean, isAccountant: Boolean): Boolean =
+        isAccountant && card.status !in BS_CODE_DEAD && receiptsProvenEmpty
 }
 
 /**
@@ -217,10 +270,25 @@ data class CardViewer(
     val departmentIdentifier: String?,
     val designationIdentifier: String?,
     val metadata: CardMetadata = CardMetadata(),
+    /**
+     * Whether the tool was opened on its own — from the Film Tools grid —
+     * rather than inside the Account Hub.
+     *
+     * The web's `?entry=tool` (`useIsCardAccountant.js`): an accountant who
+     * opens the tile is a crew member for this module, filing their own
+     * receipts, and the same accountant arriving through the hub gets the
+     * console. Set per composition from `LocalHostedBy`; see
+     * `CardExpensesToolProvider`.
+     */
     val enteredAsTool: Boolean = false,
 ) {
+    /** In the accounts department, whichever door they came in by. */
+    val isAccountsRole: Boolean
+        get() = departmentIdentifier?.contains(ACCOUNTS, ignoreCase = true) == true
+
+    /** THE accountant gate for this module: the role, entered through the hub. */
     val isAccountant: Boolean
-        get() = !enteredAsTool && departmentIdentifier?.contains(ACCOUNTS, ignoreCase = true) == true
+        get() = !enteredAsTool && isAccountsRole
 
     /** See the cash module's `CashViewer.isSeniorAccountant` for the matching. */
     val isSeniorAccountant: Boolean
@@ -236,6 +304,20 @@ data class CardViewer(
 
     /** Settings rewrites everyone's rights, so it is a senior accountant's page. */
     val canOpenSettings: Boolean get() = isAccountant && isSenior
+
+    /**
+     * Whether this accountant may override a card request's chain.
+     *
+     * Two halves, both the web's (`CardRegisterPage.jsx:187`): the person — a
+     * senior, or granted `can_override` — and the production's own switch,
+     * `card_override`. Seniority replaces the person half only.
+     */
+    val canOverrideCard: Boolean
+        get() = isAccountant && (isSenior || metadata.canOverride) && metadata.cardOverride
+
+    /** The receipt twin of [canOverrideCard] (`ApprovalQueuePage.jsx:90`). */
+    val canOverrideReceipt: Boolean
+        get() = isAccountant && (isSenior || metadata.canOverride) && metadata.receiptOverride
 
     fun canPost(amount: Double): Boolean {
         val limit = metadata.postingLimit ?: return true

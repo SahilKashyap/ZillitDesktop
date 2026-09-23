@@ -35,7 +35,8 @@ interface CashRepository {
 
     suspend fun requestFloat(request: NewFloatRequest): ZillitResult<Unit>
 
-    suspend fun approveFloat(floatId: String, note: String?): ZillitResult<Unit>
+    /** [tier] is the level being signed; null only where no chain is configured. */
+    suspend fun approveFloat(floatId: String, tier: TierStep?): ZillitResult<Unit>
 
     suspend fun rejectFloat(floatId: String, reason: String): ZillitResult<Unit>
 
@@ -49,7 +50,7 @@ interface CashRepository {
      * transition on a float with no company, and the accountant can either set
      * it earlier or supply it here.
      */
-    suspend fun markFloatReadyToCollect(floatId: String, companyId: String?): ZillitResult<Unit>
+    suspend fun markFloatReadyToCollect(floatId: String, companyId: String?, bsCode: String?): ZillitResult<Unit>
 
     suspend fun issueFloat(floatId: String): ZillitResult<Unit>
 
@@ -57,7 +58,7 @@ interface CashRepository {
 
     suspend fun closeFloat(floatId: String): ZillitResult<Unit>
 
-    suspend fun recordCashReturn(floatId: String, amount: Double, note: String?): ZillitResult<Unit>
+    suspend fun recordCashReturn(floatId: String, cashReturn: CashReturn): ZillitResult<Unit>
 
     // -- float top-ups (the crew's Cash Extension) --------------------------
 
@@ -75,7 +76,7 @@ interface CashRepository {
 
     suspend fun completeTopUp(topUpId: String): ZillitResult<Unit>
 
-    suspend fun partialTopUp(topUpId: String, amount: Double): ZillitResult<Unit>
+    suspend fun partialTopUp(topUpId: String, amount: Double, note: String): ZillitResult<Unit>
 
     suspend fun skipTopUp(topUpId: String): ZillitResult<Unit>
 
@@ -114,27 +115,39 @@ interface CashRepository {
         lines: List<ClaimLineItem>,
     ): ZillitResult<Unit>
 
+    /**
+     * Saves the batch's claims as they stand — the audit's per-receipt Verify
+     * rides on this, with the one receipt's `is_verified` flipped.
+     */
+    suspend fun saveClaims(
+        batchId: String,
+        claims: List<Claim>,
+        verified: Map<String, Boolean> = emptyMap(),
+    ): ZillitResult<Unit>
+
     /** Coordinator: saves the coding and sends the batch on to accounts. */
-    suspend fun saveAndSubmitCoded(batchId: String): ZillitResult<Unit>
+    suspend fun saveAndSubmitCoded(batchId: String, claims: List<Claim>?): ZillitResult<Unit>
 
     /** Accounts: saves the audit and sends the batch on to approval. */
-    suspend fun saveAndVerify(batchId: String): ZillitResult<Unit>
+    suspend fun saveAndVerify(batchId: String, claims: List<Claim>?): ZillitResult<Unit>
 
-    suspend fun approveBatch(batchId: String, note: String?): ZillitResult<Unit>
+    /** [claimIds] null approves every receipt; a subset is a partial approval. */
+    suspend fun approveBatch(batchId: String, tier: TierStep?, claimIds: List<String>?): ZillitResult<Unit>
 
-    suspend fun rejectBatch(batchId: String, reason: String): ZillitResult<Unit>
+    suspend fun rejectBatch(batchId: String, reason: String, claimIds: List<String>? = null): ZillitResult<Unit>
 
     suspend fun overrideBatch(batchId: String): ZillitResult<Unit>
 
-    suspend fun queryBatch(batchId: String, reason: String): ZillitResult<Unit>
+    suspend fun escalateBatch(batchId: String, reason: String): ZillitResult<Unit>
 
-    suspend fun escalateBatch(batchId: String, reason: String?): ZillitResult<Unit>
+    /** Sign-off's "Return to Accounts": an escalated batch goes back for amendment. */
+    suspend fun deescalateBatch(batchId: String): ZillitResult<Unit>
 
     suspend fun submitBatchForReview(batchId: String): ZillitResult<Unit>
 
     suspend fun assignBatch(batchId: String, userId: String, reason: String?): ZillitResult<Unit>
 
-    suspend fun postBatch(batchId: String, note: String?): ZillitResult<Unit>
+    suspend fun postBatch(batchId: String, request: PostBatchRequest): ZillitResult<Unit>
 
     // -- dashboards --------------------------------------------------------
 
@@ -152,22 +165,64 @@ interface CashRepository {
 
     suspend fun reconciliations(): ZillitResult<List<Reconciliation>>
 
-    suspend fun computeBookBalance(): ZillitResult<Double>
+    suspend fun reconciliation(id: String): ZillitResult<Reconciliation>
 
-    suspend fun createReconciliation(
-        countedBalance: Double,
-        note: String?,
-    ): ZillitResult<Reconciliation>
+    /** The ledger's balance for [draft]'s opening balance and month; null for the page-level figure. */
+    suspend fun computeBookBalance(draft: ReconDraft? = null): ZillitResult<Double>
 
-    suspend fun submitReconciliationForReview(id: String): ZillitResult<Unit>
+    /** Opens a period: opening balance, currency, month and a blank count. */
+    suspend fun createReconciliation(draft: ReconDraft): ZillitResult<Reconciliation>
 
-    suspend fun signOffReconciliation(id: String, note: String?): ZillitResult<Unit>
+    suspend fun updateReconciliation(draft: ReconDraft): ZillitResult<Reconciliation>
+
+    suspend fun submitReconciliationForReview(draft: ReconDraft): ZillitResult<Unit>
+
+    suspend fun signOffReconciliation(draft: ReconDraft): ZillitResult<Unit>
 
     // -- settings ----------------------------------------------------------
 
     suspend fun settings(): ZillitResult<CashSettings>
 
     suspend fun updateSettings(settings: CashSettings): ZillitResult<CashSettings>
+
+    /** The team saves on its own, the moment a member is added, edited or removed. */
+    suspend fun updateTeamMembers(members: List<CashTeamMember>): ZillitResult<CashSettings>
+
+    suspend fun updateRequestCap(cap: RequestCap): ZillitResult<CashSettings>
+
+    suspend fun saveAssignmentRule(rule: CashAssignmentRule): ZillitResult<CashAssignmentRule>
+
+    suspend fun deleteAssignmentRule(id: String): ZillitResult<Unit>
+
+    // -- the rest of the account hub this module leans on -------------------
+
+    /** The cost-report lock, `YYYY-MM-DD`; null when the production has none. */
+    suspend fun lockedThrough(): ZillitResult<String?>
+
+    suspend fun companies(): ZillitResult<List<CashCompany>>
+
+    suspend fun fundRequests(): ZillitResult<List<FundRequest>>
+
+    suspend fun createFundRequest(fundAccount: String, currency: String?, amount: Double): ZillitResult<Unit>
+
+    suspend fun receiveFundRequest(id: String): ZillitResult<Unit>
+
+    suspend fun cancelFundRequest(id: String): ZillitResult<Unit>
+
+    suspend fun queryThread(batchId: String): ZillitResult<QueryThread>
+
+    /** Adds to the thread, or opens it with this message when there is none yet. */
+    suspend fun sendQuery(batchId: String, threadId: String?, text: String): ZillitResult<QueryThread>
+
+    /** The float register as a file. */
+    suspend fun exportFloats(format: ExportFormat): ZillitResult<ByteArray>
+
+    /** The receipts register: one pipeline, or [historyOnly] for posted batches across both. */
+    suspend fun exportReceipts(
+        format: ExportFormat,
+        expenseType: ExpenseType?,
+        historyOnly: Boolean,
+    ): ZillitResult<ByteArray>
 }
 
 /**
@@ -195,6 +250,8 @@ data class NewFloatRequest(
     val durationType: String?,
     val bsCode: String? = null,
     val companyId: String? = null,
+    /** An accountant raising the float for someone else. */
+    val targetUserId: String? = null,
     /** The extra fields this production added to the float request form. */
     val customFields: List<CustomFieldGroup> = emptyList(),
 )

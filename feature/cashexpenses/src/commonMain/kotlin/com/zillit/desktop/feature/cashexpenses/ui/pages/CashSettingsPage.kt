@@ -142,20 +142,11 @@ fun CashSettingsPage(state: CashUiState, onEvent: (CashEvent) -> Unit) {
         DeductionRulesCard(draft, onEvent)
         QuickCodesCard(draft, onEvent)
 
-        ZillitSectionCard(
-            title = str(S.ah_settings_team_posting),
-            icon = ZillitIcons.Users,
-            meta = str(S.desktop_ce_member_count, draft.teamMembers.size),
-            padded = false,
-        ) {
-            ZillitDataTable(
-                rows = draft.teamMembers,
-                columns = teamColumns(),
-                key = { it.userId },
-                emptyTitle = str(S.desktop_ce_no_team_configured),
-                emptyMessage = str(S.desktop_ce_team_empty_note),
-            )
-        }
+        // These three save on their own, as on the web: the team the moment a
+        // member changes, the cap and the rules with their own Save.
+        TeamCard(state, onEvent)
+        RequestCapCard(state, onEvent)
+        AssignmentRulesCard(state, onEvent)
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -207,36 +198,6 @@ private fun SettingSwitch(
         }
     }
 }
-
-@Suppress("MagicNumber") // Column proportions; naming each would not clarify them.
-private fun teamColumns(): List<TableColumn<CashTeamMember>> = listOf(
-    personColumn(str(S.name), ColumnWidth.Weight(1.8f), userId = { it.userId }) { it.name },
-    TableColumn(
-        header = str(S.desktop_ce_seniority),
-        width = ColumnWidth.Weight(1f),
-        cell = { row ->
-            ZillitStatusPill(
-                label = if (row.isSenior) str(S.desktop_senior) else str(S.desktop_ce_team),
-                tone = if (row.isSenior) StatusTone.Done else StatusTone.Neutral,
-            )
-        },
-    ),
-    TableColumn(
-        header = str(S.dm_nom_table_override),
-        width = ColumnWidth.Weight(1f),
-        cell = { row ->
-            ZillitStatusPill(
-                label = if (row.canOverride) str(S.desktop_ce_allowed) else str(S.no),
-                tone = if (row.canOverride) StatusTone.Pending else StatusTone.Neutral,
-            )
-        },
-    ),
-    textColumn(str(S.desktop_posting_limit), ColumnWidth.Weight(1f), numeric = true) {
-        // No limit is a real answer, and printing it as "0.00" would read as
-        // "may post nothing" — the opposite of what it means.
-        it.postingLimit?.let { limit -> Money.format(limit, null) } ?: str(S.desktop_ce_no_limit)
-    },
-)
 
 
 /**

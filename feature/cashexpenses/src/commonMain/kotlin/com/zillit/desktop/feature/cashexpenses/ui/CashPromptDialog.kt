@@ -51,6 +51,8 @@ fun CashPromptDialog(
     assignees: List<AssigneeOption>,
     batch: ClaimBatch?,
     onEvent: (CashEvent) -> Unit,
+    /** Where the float dialogs find their companies and floats; empty in the older shapes' tests. */
+    state: CashUiState? = null,
 ) {
     // The last non-null prompt, so the content stays drawn while the dialog
     // animates out instead of vanishing a frame early.
@@ -91,12 +93,25 @@ fun CashPromptDialog(
                 ZillitTextField(
                     value = shown.note,
                     onValueChange = { onEvent(CashEvent.UpdatePrompt(shown.copy(note = it))) },
-                    label = str(S.notes_optional),
+                    // A partial top-up says why it is short; the web will not
+                    // record one without (`PCTopUpsPage.jsx:280`).
+                    label = if (shown.action == AmountAction.PartialTopUp) {
+                        str(S.desktop_ce_reason_for_partial)
+                    } else {
+                        str(S.notes_optional)
+                    },
+                    singleLine = shown.action != AmountAction.PartialTopUp,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
 
             is CashPrompt.Assign -> AssignFields(shown, assignees, batch, onEvent)
+
+            is CashPrompt.ReadyToCollect -> ReadyToCollectFields(shown, state?.companies.orEmpty(), onEvent)
+
+            is CashPrompt.RecordReturn -> RecordReturnFields(shown, state, onEvent)
+
+            is CashPrompt.NewReconciliation -> NewReconciliationFields(shown, onEvent)
 
             null -> Unit
         }
@@ -211,23 +226,30 @@ private fun CashPrompt?.title(): String = when (this) {
     is CashPrompt.Assign -> title
     is CashPrompt.WithReason -> title
     is CashPrompt.WithAmount -> title
+    is CashPrompt.ReadyToCollect -> str(S.desktop_ce_set_company_bs_code)
+    is CashPrompt.RecordReturn -> str(S.desktop_ce_record_manual_return)
+    is CashPrompt.NewReconciliation -> str(S.desktop_ce_new_reconciliation)
     null -> ""
 }
 
 private fun CashPrompt?.subtitle(): String? = when (this) {
     is CashPrompt.WithReason -> str(S.desktop_ce_reason_shown_to_submitter)
+    is CashPrompt.ReadyToCollect -> str(S.desktop_ce_ready_to_collect_note)
+    is CashPrompt.RecordReturn -> str(S.desktop_ce_record_return_note)
     else -> null
 }
 
 private fun CashPrompt?.confirmLabel(): String = when (this) {
     is CashPrompt.WithReason -> when (action) {
         ReasonedAction.RejectFloat, ReasonedAction.RejectBatch -> str(S.reject)
-        ReasonedAction.QueryBatch -> str(S.desktop_ce_send_query)
         ReasonedAction.EscalateBatch -> str(S.desktop_ce_escalate)
     }
 
     is CashPrompt.WithAmount -> str(S.save)
     is CashPrompt.Assign -> label
+    is CashPrompt.ReadyToCollect -> str(S.desktop_ce_confirm_ready_to_collect)
+    is CashPrompt.RecordReturn -> str(S.desktop_ce_record_cash_return)
+    is CashPrompt.NewReconciliation -> str(S.desktop_ce_start_reconciliation)
     else -> str(S.confirm)
 }
 

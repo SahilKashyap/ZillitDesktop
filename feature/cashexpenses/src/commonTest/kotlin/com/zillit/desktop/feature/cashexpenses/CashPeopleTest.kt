@@ -2,6 +2,7 @@ package com.zillit.desktop.feature.cashexpenses
 
 import com.zillit.desktop.feature.cashexpenses.domain.AssigneeOption
 import com.zillit.desktop.feature.cashexpenses.domain.CashPeople
+import com.zillit.desktop.feature.cashexpenses.domain.CashMetadata
 import com.zillit.desktop.feature.cashexpenses.domain.CashViewer
 import com.zillit.desktop.feature.cashexpenses.ui.CashDestination
 import com.zillit.desktop.feature.cashexpenses.ui.CashEvent
@@ -99,8 +100,13 @@ class CashPeopleTest {
     @Test
     fun `a crew list that arrives after the tool opened still names people`() = runTest(dispatcher) {
         var crew = emptyList<AssigneeOption>()
+        // A coordinator on a production that codes: the coding queue is theirs
+        // to open, where a deep link to it would bounce anyone else.
+        val repository = FakeCash(writesSucceed = true).apply {
+            metadata = CashMetadata(isCoordinator = true, codingRequired = true)
+        }
         val vm = CashExpensesViewModel(
-            repository = FakeCash(writesSucceed = true),
+            repository = repository,
             viewer = { CashViewer(userId = ada, departmentIdentifier = "camera", designationIdentifier = null) },
             assignees = { crew },
         )

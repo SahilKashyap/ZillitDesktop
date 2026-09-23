@@ -33,6 +33,8 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardProvider
 import com.zillit.desktop.feature.cardexpenses.domain.CardSettings
 import com.zillit.desktop.feature.cardexpenses.domain.CardTeamMember
 import com.zillit.desktop.feature.cardexpenses.domain.DepartmentCoordinator
+import com.zillit.desktop.feature.cardexpenses.domain.RequestCap
+import com.zillit.desktop.feature.cardexpenses.domain.RequestCapBasis
 import com.zillit.desktop.feature.cardexpenses.domain.SettingsSection
 import com.zillit.desktop.feature.cardexpenses.ui.CardEvent
 import com.zillit.desktop.feature.cardexpenses.ui.CardUiState
@@ -120,7 +122,13 @@ private fun TeamSection(state: CardUiState, draft: CardSettings, onEvent: (CardE
             if (index > 0) ZillitDivider()
             TeamMemberRow(
                 member = member,
-                people = state.people,
+                // The accounts team only, and nobody already on the list twice
+                // (SettingsPage.jsx:649 — ACCOUNTS_TEAM_USERS). The row's own
+                // person always stays, so a saved member still reads by name.
+                people = state.people.filter { person ->
+                    person.id == member.userId ||
+                        (person.isAccountsTeam && members.none { it.userId == person.id })
+                },
                 currency = state.currency,
                 onChange = { updated ->
                     onEvent(
@@ -444,10 +452,11 @@ private fun ProvidersSection(state: CardUiState, draft: CardSettings, onEvent: (
             return@SettingsSectionCard
         }
         providers.forEachIndexed { index, provider ->
+            if (index > 0) ZillitDivider()
             ProviderRow(
                 provider = provider,
-                onRename = { name ->
-                    val next = providers.mapIndexed { at, row -> if (at == index) row.copy(name = name) else row }
+                onChange = { updated ->
+                    val next = providers.mapIndexed { at, row -> if (at == index) updated else row }
                     onEvent(CardEvent.EditSettings(draft.copy(providers = next)))
                 },
                 onRemove = {
@@ -459,26 +468,63 @@ private fun ProvidersSection(state: CardUiState, draft: CardSettings, onEvent: (
     }
 }
 
+/**
+ * One provider: its name, its custodian account and its float codes.
+ *
+ * The bank and company it binds are set where the banks are — Production
+ * Setup — and are carried through this row untouched: the list is saved
+ * whole, and a row sent back without them loses them.
+ */
 @Composable
-private fun ProviderRow(provider: CardProvider, onRename: (String) -> Unit, onRemove: () -> Unit) {
-    Row(
+private fun ProviderRow(provider: CardProvider, onChange: (CardProvider) -> Unit, onRemove: () -> Unit) {
+    Column(
         modifier = Modifier.fillMaxWidth().padding(vertical = ZillitTheme.spacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
-        ZillitTextField(
-            value = provider.name,
-            onValueChange = onRename,
-            placeholder = str(S.desktop_card_provider_placeholder),
-            modifier = Modifier.weight(1f),
-        )
-        ZillitButton(
-            text = "",
-            onClick = onRemove,
-            variant = ButtonVariant.Tertiary,
-            size = ButtonSize.Small,
-            leadingIcon = ZillitIcons.Trash,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ZillitTextField(
+                value = provider.name,
+                onValueChange = { onChange(provider.copy(name = it)) },
+                label = str(S.desktop_card_provider_name),
+                placeholder = str(S.desktop_card_provider_placeholder),
+                modifier = Modifier.weight(1f),
+            )
+            ZillitButton(
+                text = "",
+                onClick = onRemove,
+                variant = ButtonVariant.Tertiary,
+                size = ButtonSize.Small,
+                leadingIcon = ZillitIcons.Trash,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+        ) {
+            ZillitTextField(
+                value = provider.custodianAccount,
+                onValueChange = { onChange(provider.copy(custodianAccount = it)) },
+                label = str(S.desktop_ce_custodian_account),
+                placeholder = "2100",
+                modifier = Modifier.weight(1f),
+            )
+            ZillitTextField(
+                value = provider.floatMin,
+                onValueChange = { onChange(provider.copy(floatMin = it)) },
+                label = str(S.desktop_card_float_from),
+                modifier = Modifier.weight(1f),
+            )
+            ZillitTextField(
+                value = provider.floatMax,
+                onValueChange = { onChange(provider.copy(floatMax = it)) },
+                label = str(S.desktop_card_float_to),
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -489,9 +535,13 @@ private fun ProviderRow(provider: CardProvider, onRename: (String) -> Unit, onRe
  * authorised limit when they approve, and this stops a request arriving for a
  * figure nobody was ever going to agree to.
  */
+@Suppress("LongMethod") // One section: the switch, the basis and the two figures.
 @Composable
 private fun RequestCapSection(state: CardUiState, draft: CardSettings, onEvent: (CardEvent) -> Unit) {
-    val dirty = draft.requestCap != state.settings?.requestCap
+    val cap = draft.requestCap
+    val dirty = cap != state.settings?.requestCap
+    val weekly = cap.basis == RequestCapBasis.WeeklySalary
+    val edit: (RequestCap) -> Unit = { onEvent(CardEvent.EditSettings(draft.copy(requestCap = it))) }
 
     SettingsSectionCard(
         section = SettingsSection.RequestCap,
@@ -501,16 +551,46 @@ private fun RequestCapSection(state: CardUiState, draft: CardSettings, onEvent: 
         state = state,
         onEvent = onEvent,
     ) {
-        ZillitTextField(
-            value = draft.requestCap.asAmountField(),
-            onValueChange = { text ->
-                onEvent(CardEvent.EditSettings(draft.copy(requestCap = text.trim().toDoubleOrNull())))
-            },
-            label = str(S.desktop_card_maximum_request),
-            placeholder = str(S.desktop_card_no_ceiling),
-            keyboardType = KeyboardType.Decimal,
-            modifier = Modifier.width(LIMIT_FIELD),
+        ZillitSwitch(
+            checked = cap.enabled,
+            onCheckedChange = { edit(cap.copy(enabled = it)) },
+            label = str(S.dm_allow_enabled),
         )
+        if (!cap.enabled) return@SettingsSectionCard
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            // Fixed width: a select beside fields fills whatever it is offered.
+            ZillitSelect(
+                value = cap.basis,
+                options = RequestCapBasis.entries,
+                onSelect = { edit(cap.copy(basis = it)) },
+                label = { it.label },
+                modifier = Modifier.width(LIMIT_FIELD),
+            )
+            if (weekly) {
+                ZillitTextField(
+                    value = cap.salaryMultiplier.asAmountField(),
+                    onValueChange = { text ->
+                        text.trim().toDoubleOrNull()?.let { edit(cap.copy(salaryMultiplier = it)) }
+                    },
+                    label = str(S.desktop_card_cap_multiplier),
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.width(LIMIT_FIELD),
+                )
+            }
+            // Under a salary basis the figure is the fallback for somebody
+            // with no weekly rate on file, not a second ceiling.
+            ZillitTextField(
+                value = cap.maxAmount.asAmountField(),
+                onValueChange = { text -> edit(cap.copy(maxAmount = text.trim().toDoubleOrNull() ?: 0.0)) },
+                label = if (weekly) str(S.desktop_card_cap_fallback) else str(S.desktop_ce_max_amount),
+                keyboardType = KeyboardType.Decimal,
+                modifier = Modifier.width(LIMIT_FIELD),
+            )
+        }
     }
 }
 

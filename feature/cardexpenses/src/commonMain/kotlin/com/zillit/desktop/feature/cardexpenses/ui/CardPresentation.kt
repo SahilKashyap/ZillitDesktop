@@ -37,7 +37,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.MatchStatus
 val CardStatus.tone: StatusTone
     get() = when (this) {
         CardStatus.Active, CardStatus.DigitalActive -> StatusTone.Done
-        CardStatus.Approved -> StatusTone.Ready
+        CardStatus.Approved, CardStatus.Override -> StatusTone.Ready
         CardStatus.Requested, CardStatus.Pending -> StatusTone.Pending
         CardStatus.InTransit -> StatusTone.InTransit
         CardStatus.Rejected -> StatusTone.Rejected
@@ -55,9 +55,11 @@ val CardWorkflowStatus.tone: StatusTone
         CardWorkflowStatus.Processing,
         -> StatusTone.Progress
 
-        CardWorkflowStatus.Imported, CardWorkflowStatus.PendingReceipt -> StatusTone.Pending
+        CardWorkflowStatus.Imported, CardWorkflowStatus.PendingReceipt, CardWorkflowStatus.New -> StatusTone.Pending
+        CardWorkflowStatus.InApproval -> StatusTone.Progress
         CardWorkflowStatus.Queried, CardWorkflowStatus.Rejected, CardWorkflowStatus.Personal -> StatusTone.Rejected
-        CardWorkflowStatus.Overridden -> StatusTone.Escalated
+        CardWorkflowStatus.Overridden, CardWorkflowStatus.Escalated -> StatusTone.Escalated
+        CardWorkflowStatus.UnderReview -> StatusTone.Progress
         CardWorkflowStatus.Unknown -> StatusTone.Neutral
     }
 

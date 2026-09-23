@@ -3,8 +3,13 @@ package com.zillit.desktop.feature.cardexpenses.ui
 import com.zillit.desktop.core.common.ZillitError
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.cardexpenses.domain.ApprovalTiers
 import com.zillit.desktop.feature.cardexpenses.domain.BulkCoding
+import com.zillit.desktop.feature.cardexpenses.domain.CardStatus
+import com.zillit.desktop.feature.cardexpenses.domain.TierVisibility
+import com.zillit.desktop.feature.cardexpenses.domain.TransactionFilters
 import com.zillit.desktop.feature.cardexpenses.domain.BulkItem
+import com.zillit.desktop.feature.cardexpenses.domain.CardBank
 import com.zillit.desktop.feature.cardexpenses.domain.CardAlert
 import com.zillit.desktop.feature.cardexpenses.domain.CardAnalytics
 import com.zillit.desktop.feature.cardexpenses.domain.CardHistoryEntry
@@ -19,7 +24,7 @@ import com.zillit.desktop.feature.cardexpenses.domain.CardTransaction
 import com.zillit.desktop.feature.cardexpenses.domain.CardViewer
 import com.zillit.desktop.feature.cardexpenses.domain.DraftCardReceipt
 import com.zillit.desktop.feature.cardexpenses.domain.ExpenseCard
-import com.zillit.desktop.feature.cardexpenses.domain.ReceiptLine
+import com.zillit.desktop.feature.cardexpenses.domain.InboxSection
 import com.zillit.desktop.feature.cardexpenses.domain.StatementImport
 import com.zillit.desktop.feature.cardexpenses.domain.StatementRow
 import com.zillit.desktop.feature.cardexpenses.domain.UploadHeadroom
@@ -70,8 +75,20 @@ data class CardUiState(
     /** What the statement being imported is denominated in; blank = project default. */
     val statementCurrency: String = "",
 
-    /** The receipt whose splits are open, if any. */
-    val splits: SplitDraft? = null,
+    /** The accountant's process editor, open over one receipt. */
+    val process: ProcessDraft? = null,
+    /** Which of the Process page's two queues is showing. */
+    val processTab: ProcessTab = ProcessTab.Processing,
+    /** The activation form, open over one approved card. */
+    val activation: ActivationDraft? = null,
+    /** An export is being fetched and saved. */
+    val exporting: Boolean = false,
+    /** The query thread open over one receipt. */
+    val query: QueryDraft? = null,
+    /** The Fund Requests surface, when open. */
+    val funds: FundsState? = null,
+    /** The production's bank accounts, for fund requests; the host supplies them. */
+    val banks: List<CardBank> = emptyList(),
     /** The audit trail of the receipt in the detail pane. */
     val receiptHistory: List<CardHistoryEntry> = emptyList(),
     /** The coding editor over the selected receipt, on the coding queues. */
@@ -89,6 +106,10 @@ data class CardUiState(
 
     val search: String = "",
     val statusFilter: String = ALL_STATUSES,
+    /** The inbox section on show; null is all four. */
+    val inboxSection: InboxSection? = null,
+    /** All Transactions' server-side filters, as applied. */
+    val transactionFilters: TransactionFilters = TransactionFilters(),
     val selectedReceiptId: String? = null,
     val selectedCardId: String? = null,
     val selectedTransactionId: String? = null,
@@ -193,6 +214,31 @@ data class CardUiState(
      */
     val eligibleHolders: List<CardPerson>
         get() = people.filter { CardRules.canRequestCard(cards, it.id) }
+
+    /**
+     * Where a card request stands in its chain for this viewer.
+     *
+     * Only a `pending` card has a step to sign (`adminUi.jsx:297`); the chain is
+     * the card department's, narrowed by the card's limit where a rule has a
+     * threshold — the web's `getCardVisibility`.
+     */
+    fun cardApproval(card: ExpenseCard): TierVisibility {
+        if (card.status != CardStatus.Pending) {
+            return TierVisibility(canApprove = false, nextTier = null, totalTiers = 0)
+        }
+        val chain = ApprovalTiers.resolve(viewer.metadata.tierConfigs, card.departmentId, card.monthlyLimit)
+        return ApprovalTiers.visibility(chain, card.approvals, viewer.userId)
+    }
+
+    /** Whether the open card's control code may still be corrected; see [CardRules.canCorrectBsCode]. */
+    fun canCorrectBsCode(card: ExpenseCard): Boolean {
+        val unspent = cardDetail?.takeIf { it.cardId == card.id }?.provenUnspent == true
+        return CardRules.canCorrectBsCode(card, unspent, viewer.isAccountant)
+    }
+
+    fun cardApproval(cardId: String): TierVisibility =
+        cards.firstOrNull { it.id == cardId }?.let(::cardApproval)
+            ?: TierVisibility(canApprove = false, nextTier = null, totalTiers = 0)
 }
 
 /** The window Analytics is reporting on. Blank ends mean "all time". */
@@ -218,7 +264,12 @@ data class CardDetail(
     val history: List<CardHistoryEntry> = emptyList(),
     /** The control-code field, editable in place on a live card. */
     val bsControlCode: String = "",
+    /** The receipts read answered; an empty list without it proves nothing. */
+    val receiptsRead: Boolean = false,
 ) {
+    /** A completed read that found no receipts — the control code's only licence to change. */
+    val provenUnspent: Boolean get() = !loading && receiptsRead && receipts.isEmpty()
+
     val spend: Double get() = receipts.sumOf { it.amount }
     val funded: Double get() = topUps.filter { it.status == COMPLETED }.sumOf { it.amount }
 
@@ -340,30 +391,6 @@ data class CodingDraft(
     }
 }
 
-/**
- * A receipt's splits, open for editing.
- *
- * Card splits are simpler than the cash module's: no parent/child tree, just
- * a flat set of coded portions that has to add up to the receipt. The
- * constraint is the same, and so is the reason for showing it live.
- */
-data class SplitDraft(
-    val receiptId: String,
-    val receiptGross: Double,
-    val currency: String?,
-    val lines: List<ReceiptLine>,
-) {
-    val total: Double get() = lines.sumOf { it.gross }
-
-    val remaining: Double get() = receiptGross - total
-
-    val balances: Boolean get() = kotlin.math.abs(remaining) < PENNY
-
-    private companion object {
-        const val PENNY = 0.005
-    }
-}
-
 /** A question asked before something irreversible. */
 sealed interface CardPrompt {
     data class Confirm(
@@ -401,13 +428,12 @@ sealed interface CardPrompt {
 enum class CardConfirmAction {
     ApproveCard,
     OverrideCard,
-    ActivateCard,
     SuspendCard,
     ReactivateCard,
     DeleteCard,
     ApproveReceipt,
     OverrideReceipt,
-    PostReceipt,
+    BulkOverride,
     SubmitReceiptForApproval,
     ConfirmMatch,
     UnmatchReceipt,

@@ -20,6 +20,12 @@ import com.zillit.desktop.feature.cashexpenses.domain.OutOfPocketOverview
 import com.zillit.desktop.feature.cashexpenses.domain.PaymentRouting
 import com.zillit.desktop.feature.cashexpenses.domain.PettyCashOverview
 import com.zillit.desktop.feature.cashexpenses.domain.Reconciliation
+import com.zillit.desktop.feature.cashexpenses.domain.CashAssignmentRule
+import com.zillit.desktop.feature.cashexpenses.domain.CashCompany
+import com.zillit.desktop.feature.cashexpenses.domain.CashDates
+import com.zillit.desktop.feature.cashexpenses.domain.Claim
+import com.zillit.desktop.feature.cashexpenses.domain.ReconDraft
+import com.zillit.desktop.feature.cashexpenses.domain.RequestCap
 
 /**
  * Everything the cash tool is showing right now.
@@ -84,6 +90,26 @@ data class CashUiState(
     val prompt: CashPrompt? = null,
     /** The receipt whose coding is open, if any. */
     val coding: CodingDraft? = null,
+
+    // -- the web's full-page views and their inputs ------------------------
+    /** The cost-report lock, `YYYY-MM-DD`; a post may not be dated on or before it. */
+    val lockedThrough: String? = null,
+    /** Production Setup's companies — what a float is pinned to before collection. */
+    val companies: List<CashCompany> = emptyList(),
+    /** The open batch's receipts, fetched rather than trusted from the queue row. */
+    val panel: BatchPanel? = null,
+    /** The reconciliation open for counting, if any. */
+    val recon: ReconDraft? = null,
+    /** The Fund Requests surface, when it is open. */
+    val funds: FundsState? = null,
+    /** The team member being added or edited in Settings. */
+    val teamEditor: TeamMemberDraft? = null,
+    /** Settings' Request Cap section, while it is being edited. */
+    val capDraft: RequestCap? = null,
+    /** Settings' auto-assignment rules, while they are being edited. */
+    val rulesDraft: List<CashAssignmentRule>? = null,
+    /** An export is on its way down. */
+    val exporting: Boolean = false,
 ) {
     /** The float request form's own rules — which fields show, which are required. */
     val floatForm: FormLayout get() = FormLayout(formTemplate)
@@ -106,6 +132,32 @@ data class CashUiState(
 
     val selectedBatch: ClaimBatch?
         get() = (queueBatches + myBatches).firstOrNull { it.id == selectedBatchId }
+
+    /**
+     * The open batch's receipts: fetched when there are some, the row's own
+     * otherwise. Every web view fetches them (`getExpenseClaimBatch`); a queue
+     * row may carry none, and a batch detail with no receipts is a batch nobody
+     * can check.
+     */
+    val panelClaims: List<Claim>
+        get() = panel?.claims ?: selectedBatch?.claims.orEmpty()
+
+    /**
+     * Whether this viewer may code receipts on this page: a coordinator in the
+     * coding queue, an accountant correcting one in audit or before posting —
+     * never inside the locked period. The screen and the handler both ask.
+     */
+    val canCode: Boolean
+        get() = when {
+            selectedLocked -> false
+            destination == CashDestination.CodingQueue -> viewer.isCoordinator
+            destination == CashDestination.AuditQueue || destination.isPostLedger -> viewer.isAccountant
+            else -> false
+        }
+
+    /** Whether the open batch's stored ledger date sits inside the locked period. */
+    val selectedLocked: Boolean
+        get() = selectedBatch?.let { CashDates.isLocked(it.effectiveDate, lockedThrough) } == true
 
     /** The float receipts may currently be submitted against, if any. */
     val submittableFloat: CashFloat?
@@ -163,6 +215,8 @@ data class SubmitDraft(
 
 /** The Float Request form. */
 data class FloatRequestDraft(
+    /** An accountant raising the float for this crew member; blank for one's own. */
+    val targetUserId: String = "",
     val amount: String = "",
     val purpose: String = "",
     val duration: String = "",
@@ -223,17 +277,124 @@ sealed interface CashPrompt {
         val title: String,
         val message: String,
     ) : CashPrompt
+
+    /**
+     * Ready to Collect: the company the float spends under, and its BS code.
+     *
+     * Always asked, even when the float already has a company — this is the
+     * one point in a float's life where the BS code can be set (the web's
+     * "Set Company & BS Code", `PCFloatsPage.jsx:455-487`).
+     */
+    data class ReadyToCollect(
+        val floatId: String,
+        val companyId: String = "",
+        val bsCode: String = "",
+    ) : CashPrompt
+
+    /** A manual cash return — [floatId] null asks which float first. */
+    data class RecordReturn(
+        val floatId: String?,
+        val amount: String = "",
+        val receivedDate: String = "",
+        val reason: String = ReturnReasons.CLOSE_FULL,
+        /** "Other" splits into close or continue. */
+        val otherCloses: Boolean = true,
+        val notes: String = "",
+    ) : CashPrompt
+
+    /** Opens a reconciliation period: the safe's opening balance, the month and the currency. */
+    data class NewReconciliation(
+        val openingBalance: String = "",
+        val year: Int,
+        val month: Int,
+        val currency: String = "",
+    ) : CashPrompt
 }
 
-enum class ReasonedAction { RejectFloat, RejectBatch, QueryBatch, EscalateBatch }
+/** The web's `RETURN_REASONS`, as wire keys. */
+object ReturnReasons {
+    const val CLOSE_FULL = "close_full_return"
+    const val CONTINUE_PARTIAL = "continue_partial_return"
+    const val OVERSPEND = "overspend_settlement"
+    const val CANCEL = "cancel_float_return"
+    const val OTHER = "other"
+    val ALL = listOf(CLOSE_FULL, CONTINUE_PARTIAL, OVERSPEND, CANCEL, OTHER)
 
-enum class AmountAction { PartialTopUp, RecordCashReturn, RequestFloatTopUp, CreateReconciliation }
+    /** The key sent: "Other" becomes `close_other` or `continue_other`. */
+    fun wire(reason: String, otherCloses: Boolean): String = when {
+        reason != OTHER -> reason
+        otherCloses -> "close_other"
+        else -> "continue_other"
+    }
+
+    /** Reasons that close the float, so the whole balance has to come back. */
+    fun closes(wire: String): Boolean = wire in setOf(CLOSE_FULL, CANCEL, OVERSPEND, "close_other")
+
+    /** Reasons that keep the float going, so some balance has to stay. */
+    fun continues(wire: String): Boolean = wire == CONTINUE_PARTIAL || wire == "continue_other"
+}
+
+/**
+ * One batch open in the detail pane — its receipts and the inputs its actions take.
+ *
+ * Fetched on open, as every web view does (`getExpenseClaimBatch`), rather
+ * than trusted from the queue row, which may carry no receipts at all.
+ */
+data class BatchPanel(
+    val batchId: String,
+    /** Null while the receipts load. */
+    val claims: List<Claim>? = null,
+    val failed: Boolean = false,
+    /** `YYYY-MM-DD`; seeded from the batch, else the first day the lock allows. */
+    val effectiveDate: String = "",
+    /** Sign-off's notes, attached to the journal entry. */
+    val seniorNotes: String = "",
+    /** Receipts ticked for approval; null until the receipts arrive. */
+    val selectedClaimIds: Set<String>? = null,
+    /** The audit trail, once asked for. */
+    val history: List<com.zillit.desktop.feature.cashexpenses.domain.CashHistoryEntry>? = null,
+    val historyOpen: Boolean = false,
+    /** The query thread, while it is open. */
+    val query: QueryPanel? = null,
+    /** The receipt whose Verify is saving. */
+    val verifying: String? = null,
+)
+
+/** A batch's query thread, open beside it. */
+data class QueryPanel(
+    val thread: com.zillit.desktop.feature.cashexpenses.domain.QueryThread? = null,
+    val loading: Boolean = true,
+    val draft: String = "",
+    val sending: Boolean = false,
+)
+
+/** The Fund Requests surface: the list, and the new-request form beside it. */
+data class FundsState(
+    val requests: List<com.zillit.desktop.feature.cashexpenses.domain.FundRequest> = emptyList(),
+    val loading: Boolean = true,
+    val fundAccount: String = "",
+    val currency: String = "",
+    val amount: String = "",
+)
+
+/** A team member being added or edited — the web's Team Member modal. */
+data class TeamMemberDraft(
+    val userId: String = "",
+    /** Null is unlimited, which a senior always is. */
+    val postingLimit: String? = "0",
+    val canOverride: Boolean = false,
+    val isSenior: Boolean = false,
+    /** The member's place in the list when editing; null adds. */
+    val index: Int? = null,
+)
+
+enum class ReasonedAction { RejectFloat, RejectBatch, EscalateBatch }
+
+enum class AmountAction { PartialTopUp, RequestFloatTopUp }
 
 enum class ConfirmAction {
     ApproveFloat,
     OverrideFloat,
-    IssueFloat,
-    ReadyToCollect,
     CollectFloat,
     CloseFloat,
     ApproveBatch,
@@ -245,4 +406,8 @@ enum class ConfirmAction {
     CompleteTopUp,
     SkipTopUp,
     SignOffReconciliation,
+    SubmitReconciliation,
+    ReturnToAccounts,
+    ReceiveFunds,
+    CancelFunds,
 }
