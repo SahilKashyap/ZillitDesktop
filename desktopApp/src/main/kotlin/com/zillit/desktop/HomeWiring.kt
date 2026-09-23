@@ -97,6 +97,15 @@ internal fun UserSnapshot.hasJoined(): Boolean =
     status != "pending" && status != "rejected"
 
 /**
+ * On the crew now: joined, and neither left nor removed — who the Contacts
+ * tab lists (Android's Contacts drops `left` and `removed`, `MembersVM.kt:473`).
+ * Anywhere a person is offered to be reached, rather than read about, this is
+ * the rule; history keeps the others.
+ */
+internal fun UserSnapshot.isActiveMember(): Boolean =
+    hasJoined() && status != "left" && status != "removed"
+
+/**
  * The map image for a shared location — Google Static Maps with the
  * production's own key from remote config. Null without a key or on any
  * failure; the location still sends, and the receivers' pin fallback

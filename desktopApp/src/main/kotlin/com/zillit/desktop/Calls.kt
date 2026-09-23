@@ -417,11 +417,20 @@ internal fun AppGraph.Ready.callNameDirectory(): Flow<Map<String, String>> =
  * can actually reach (a registered device), honouring keep-name-private the
  * way the chat directory does, and never ourselves.
  */
-internal fun AppGraph.Ready.callableCrew(): List<CallCrewEntry> {
-    val context = projectContext?.context?.value ?: return emptyList()
-    val self = context.profile?.userId
-    return context.users
+internal fun AppGraph.Ready.callableCrew(): List<CallCrewEntry> =
+    projectContext?.context?.value?.callableCrew().orEmpty()
+
+/**
+ * [callableCrew], from the production's context — the same people the
+ * Contacts tab lists. It used to take everyone with a device, so the call's
+ * Users section offered crew who had left, been removed, or never accepted
+ * their invite, and nameless rows besides.
+ */
+internal fun ProjectContext.callableCrew(): List<CallCrewEntry> {
+    val self = profile?.userId
+    return users
         .filter { !it.keepNamePrivate && it.userId != self }
+        .filter { it.fullName.isNotBlank() && it.isActiveMember() }
         .mapNotNull { user ->
             val device = user.deviceId ?: return@mapNotNull null
             CallCrewEntry(
