@@ -56,7 +56,28 @@
             width: 100%;
             height: 100%;
             box-sizing: border-box;
+            position: relative;
         }
+
+        /* Two people, or someone presenting: everyone but the big tile floats
+           bottom-right, as the web's `.duoSelf` does (`styles.css:449-459`).
+           Click one to swap it into the big slot. */
+        .strip {
+            position: absolute;
+            right: 22px;
+            bottom: 22px;
+            display: flex;
+            flex-direction: row;
+            gap: var(--gap);
+            z-index: 3;
+        }
+
+        .tile.mini {
+            cursor: pointer;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, .55);
+        }
+
+        .tile.mini:hover { outline: 2px solid rgba(255, 255, 255, .35); }
 
         /* Reactions live here rather than on the Compose side: this page is a
            heavyweight native surface, and anything the app draws over it is

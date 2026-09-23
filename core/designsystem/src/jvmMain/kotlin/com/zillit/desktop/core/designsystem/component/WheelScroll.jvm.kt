@@ -20,19 +20,24 @@ import kotlin.math.abs
 /** See the `expect` declaration for why this exists and what it deliberately leaves alone. */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-actual fun rememberWheelScroll(state: ScrollableState, orientation: Orientation): Modifier {
+actual fun rememberWheelScroll(state: ScrollableState, orientation: Orientation, reverseDirection: Boolean): Modifier {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val linePx = with(density) { WHEEL_LINE.toPx() }
 
-    return remember(state, orientation, linePx, scope) {
+    return remember(state, orientation, linePx, scope, reverseDirection) {
+        // Far enough in the past that the first event is judged on its own.
+        var lastPreciseAt = Long.MIN_VALUE / 2
         Modifier.onPointerEvent(PointerEventType.Scroll, PointerEventPass.Initial) { event ->
             val wheel = event.awtEventOrNull as? MouseWheelEvent ?: return@onPointerEvent
 
             // A precise rotation is a trackpad or a free-spinning wheel, which
             // the platform already accelerates properly. Left untouched — and
-            // unconsumed, so it reaches the default calculation intact.
-            if (wheel.isPreciseRotation) return@onPointerEvent
+            // unconsumed, so it reaches the default calculation intact — and so
+            // is the rest of that stream; see isTrackpadStream.
+            val precise = wheel.isPreciseRotation
+            if (precise) lastPreciseAt = wheel.`when`
+            if (isTrackpadStream(precise, wheel.`when`, lastPreciseAt)) return@onPointerEvent
 
             // Only this scrollable's own axis. A plain wheel over a horizontal
             // strip reads zero here and falls through, exactly as before.
@@ -52,6 +57,7 @@ actual fun rememberWheelScroll(state: ScrollableState, orientation: Orientation)
                 notches = notches,
                 linesPerNotch = wheel.scrollAmount,
                 linePx = linePx,
+                reverseDirection = reverseDirection,
             )
             // Not animated: the OS already sends a stream of events for a flick,
             // and animating each one cancels the last, which loses distance and

@@ -142,7 +142,7 @@ private fun BoxScope.FloatingReaction(reaction: CallReaction, onExpired: () -> U
  * whatever is sent, and this is the set the phones and the web client share.
  */
 @Composable
-fun CallReactionBar(onPick: (String) -> Unit, modifier: Modifier = Modifier) {
+fun CallReactionBar(onPick: (String) -> Unit, modifier: Modifier = Modifier, onClose: (() -> Unit)? = null) {
     val colors = ZillitTheme.colors
     Row(
         modifier = modifier
@@ -171,6 +171,9 @@ fun CallReactionBar(onPick: (String) -> Unit, modifier: Modifier = Modifier) {
                 )
             }
         }
+        // Its own way out, like every other call panel — closing used to
+        // mean finding the smiley that opened it again.
+        if (onClose != null) PanelCloseButton(onClose = onClose, tint = colors.textMuted)
     }
 }
 

@@ -97,6 +97,9 @@ fun recentRows(
     newest: Map<String, Long>,
 ): List<RecentRow> =
     (groups.map(RecentRow::Group) + contacts.map(RecentRow::Direct))
+        // The list is keyed by row id: a room or person listed twice would
+        // stop the app on "Key … was already used", not just show twice.
+        .distinctBy(RecentRow::id)
         .sortedByDescending { it.newestStamp(newest) }
 
 /**

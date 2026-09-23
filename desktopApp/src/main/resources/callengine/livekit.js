@@ -32,6 +32,14 @@
     var desiredCam = false;
     var chosenMic = '';
     var screenPub = null;
+    /**
+     * A share on its way up. `screenPub` is only set once the publish
+     * resolves, so without this a second press during the capture/publish
+     * (a double-click on Share, the picker's confirm) published a second
+     * screen next to the first — five `published screen_share` lines for one
+     * share in the 2026-09-23 log, and never a matching stop.
+     */
+    var shareStarting = false;
     /** People muted for me alone (bare user ids) — kept across a hold so resume does not unmute them. */
     var deafened = {};
     var hidden = {};
@@ -47,6 +55,11 @@
     function warn(where, error) {
         var text = error && error.message ? error.message : String(error);
         send({ type: 'warning', where: 'livekit:' + where, message: text });
+    }
+
+    /** A breadcrumb in the app log (`livekit:trace`), for media steps that leave no other mark. */
+    function trace(message) {
+        send({ type: 'warning', where: 'livekit:trace', message: message });
     }
 
     /**
@@ -88,7 +101,11 @@
             // Line 1 passes here too. The numeric uid never matched (a number
             // against the tile's string), so a remote camera on Line 3 was
             // received and never shown.
-            window.zillitCall.attachRemote(key, user, kindOf(track), stream);
+            // The last argument says "this is a shared screen": the page shows
+            // it in the presenter's tile in place of their camera, uncropped,
+            // rather than the two tracks taking turns in one cell.
+            window.zillitCall.attachRemote(
+                key, user, kindOf(track), stream, publication.source === LK.Track.Source.ScreenShare);
         }
         if (publication.source === LK.Track.Source.ScreenShare) {
             send({ type: 'peer-screen-share', uid: uid, sharing: true });
@@ -396,9 +413,10 @@
         },
 
         async startScreenShare(sourceId) {
-            if (!room || screenPub) { return; }
+            if (!room || screenPub || shareStarting) { return; }
+            shareStarting = true;
+            var track = null;
             try {
-                var track;
                 if (sourceId) {
                     var stream = await navigator.mediaDevices.getUserMedia({
                         video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId, maxWidth: 1920, maxHeight: 1080 } },
@@ -409,13 +427,38 @@
                     track = display.getVideoTracks()[0];
                 }
                 if (!track) { throw new Error('the chosen source produced no video'); }
-                screenPub = await room.localParticipant.publishTrack(track, { source: LK.Track.Source.ScreenShare });
-                track.addEventListener('ended', function () { window.zillitLk.stopScreenShare(); });
+                // Listened for before the publish, not after: a window closed
+                // while the publish was in flight used to end the capture
+                // unheard, leaving a share that said it was live and sent nothing.
+                var captured = track;
+                captured.addEventListener('ended', function () {
+                    trace('screen capture ended by its source');
+                    if (screenPub && screenPub.track && screenPub.track.mediaStreamTrack === captured) {
+                        window.zillitLk.stopScreenShare();
+                    }
+                });
+                screenPub = await room.localParticipant.publishTrack(track, {
+                    source: LK.Track.Source.ScreenShare,
+                    name: 'screen',
+                });
+                if (track.readyState === 'ended') {
+                    trace('screen capture ended while publishing');
+                    await window.zillitLk.stopScreenShare();
+                    return;
+                }
+                var settings = track.getSettings ? track.getSettings() : {};
+                trace('sharing screen ' + (settings.width || 0) + 'x' + (settings.height || 0));
                 send({ type: 'screen-share', sharing: true });
             } catch (e) {
                 warn('startScreenShare', e);
+                // The capture is released too: a publish the SFU refused
+                // otherwise leaves macOS's recording indicator lit on a share
+                // the UI has just said stopped.
+                if (track) { try { track.stop(); } catch (e2) { /* already stopped */ } }
                 screenPub = null;
                 send({ type: 'screen-share', sharing: false });
+            } finally {
+                shareStarting = false;
             }
         },
 
@@ -423,6 +466,7 @@
             var pub = screenPub;
             screenPub = null;
             if (!room || !pub) { return; }
+            trace('stopping the screen share');
             try {
                 await room.localParticipant.unpublishTrack(pub.track, true);
             } catch (e) { warn('stopScreenShare', e); }

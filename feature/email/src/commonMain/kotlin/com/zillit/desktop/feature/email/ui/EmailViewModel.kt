@@ -118,12 +118,39 @@ class EmailViewModel(
     /**
      * Opens the mailbox: which mailboxes exist and which is active, then the
      * cached folders and rows at once, then the full sync behind them.
+     *
+     * Asked again every time the window comes back — a workspace tab switch
+     * disposes the mailbox's composition, not this view model — and then it
+     * resumes where the user was (see [loadFolders]), unless the mailbox that
+     * opens is no longer the one whose mail was on screen.
      */
     private fun load() {
         launch {
+            val before = currentState.mailboxes
             resolveMailboxes()
+            if (movedMailbox(before, currentState.mailboxes)) {
+                // Accounts membership lost while the user was in another tool,
+                // say: nothing on screen belongs to the mailbox that opens, so
+                // it starts over, as a flip of the switcher does.
+                syncJob?.cancel()
+                autoOpenedFolder = null
+                setState {
+                    EmailUiState(mailboxes = mailboxes, conversationView = conversationView, tourOpen = tourOpen)
+                }
+            }
             loadFolders()
         }
+    }
+
+    /**
+     * Whether [after] opens another mailbox than the one [before] showed — by
+     * kind, or by address once both are known (a failed ask leaves it blank).
+     */
+    private fun movedMailbox(before: MailboxSwitch, after: MailboxSwitch): Boolean {
+        if (before.active != after.active) return true
+        val was = before.activeAddress
+        val now = after.activeAddress
+        return was.isNotBlank() && now.isNotBlank() && !was.equals(now, ignoreCase = true)
     }
 
     /**
@@ -157,6 +184,11 @@ class EmailViewModel(
 
     private fun loadFolders() {
         val cached = mailbox.cachedFolders()
+        // A folder still open means the window is coming back to a mailbox it
+        // was showing; a first open, a new production and a switched mailbox
+        // all arrive here with none.
+        val reopened = currentState.selectedFolderName
+        val resuming = reopened != null && cached.any { it.name == reopened }
         setState {
             copy(
                 isLoadingFolders = cached.isEmpty(),
@@ -169,7 +201,7 @@ class EmailViewModel(
         // Open whatever is cached straight away; a mail client that shows an
         // empty pane while it talks to the server makes the user wait to see
         // mail this machine already has.
-        currentState.selectedFolder?.let { showFolder(it.name) }
+        if (resuming) resumeFolder() else currentState.selectedFolder?.let { showFolder(it.name) }
 
         refreshFolderBadges()
         launchResult(
@@ -229,6 +261,26 @@ class EmailViewModel(
         } else {
             openFirstIfNone()
         }
+    }
+
+    /**
+     * Puts the open folder back as the user left it — the message in the
+     * pane, the ticks, the search — with its rows re-read from the cache the
+     * syncs kept current meanwhile.
+     *
+     * Not [showFolder]: that is a folder being *chosen*, and closes all of it.
+     * Coming back to the mailbox from another tab is not choosing a folder,
+     * and the web keeps its open email across a remount too
+     * (`currentEmailData`, whose auto-open stands down while it is listed).
+     */
+    private fun resumeFolder() {
+        if (currentState.isViewingDrafts) {
+            loadDrafts()
+            return
+        }
+        val folder = currentState.selectedFolderName ?: return
+        setState { copy(messages = mailbox.cachedMessages(folder)).regrouped() }
+        openFirstIfNone()
     }
 
     /**

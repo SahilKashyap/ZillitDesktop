@@ -181,6 +181,8 @@ class KcefCallEngine(
     val surface: StateFlow<Component?> = _surface.asStateFlow()
 
     init {
+        // Before anyone can grant it mid-run — see MediaAccess.screenAccess.
+        scope.launch { MediaAccess.noteScreenAtLaunch() }
         scope.launch {
             // Staggered past the startup burst: CefApp initialisation has a
             // known intermittent native crash when it races other spawning
@@ -651,6 +653,21 @@ class KcefCallEngine(
      */
     override suspend fun startScreenShare(sourceId: String?): Boolean {
         val target = browser ?: return false
+        // Asked first: without Screen Recording, Chromium's capture fails
+        // with "Could not start video source", which read to the user as the
+        // window having closed (prod, 2026-09-23, three tries in a row).
+        when (MediaAccess.screenAccess()) {
+            ScreenAccess.NeedsGrant -> {
+                MediaAccess.openScreenRecordingSettings()
+                _events.tryEmit(CallEngineEvent.Degraded(str(S.desktop_screen_share_needs_permission)))
+                return false
+            }
+            ScreenAccess.NeedsRestart -> {
+                _events.tryEmit(CallEngineEvent.Degraded(str(S.desktop_screen_share_restart_needed)))
+                return false
+            }
+            ScreenAccess.Ready, ScreenAccess.Unknown -> Unit
+        }
         run(
             target,
             when {
@@ -934,12 +951,14 @@ private fun buildBrowser(cefClient: CefClient, page: File, onMessage: (String) -
  * nothing about — a device label arriving late, a codec preference declined —
  * and a banner for each would train people to ignore the banner.
  */
-private val SHARE_WARNINGS = setOf("produce-screen", "startScreenShare")
+private val SHARE_WARNINGS = setOf("produce-screen", "startScreenShare", "livekit:startScreenShare")
 
 /*
- * Exactly the two spellings the pages actually send, checked against them
+ * Exactly the spellings the pages actually send, checked against them
  * rather than guessed: `produce-screen` is mediasoup.js's, `startScreenShare`
- * is call.js's own function name, which is what its warn() now reports. An
+ * is call.js's own function name, which is what its warn() now reports, and
+ * livekit.js prefixes its steps with `livekit:` — so a failed Line 3 share
+ * matched nothing here and was never shown. An
  * earlier version of this set listed two steps that no page has ever emitted,
  * so on the Agora line — the default — a failed share matched nothing and the
  * user was told nothing.

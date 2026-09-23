@@ -363,7 +363,8 @@
                 consumers[consumer.id] = consumer;
 
                 var stream = new MediaStream([consumer.track]);
-                attach(consumer.id, params.peerId, consumer.kind, stream);
+                var shared = !!(params.appData && (params.appData.share || params.appData.screenShare));
+                attach(consumer.id, params.peerId, consumer.kind, stream, shared);
 
                 emit('ms-consumer', {
                     consumerId: consumer.id,
@@ -371,7 +372,7 @@
                     kind: consumer.kind,
                     // The SFU marks a screen share in appData; without it a
                     // shared screen is indistinguishable from a camera.
-                    share: !!(params.appData && (params.appData.share || params.appData.screenShare)),
+                    share: shared,
                 });
             } catch (e) {
                 fail('consume', e);
@@ -470,12 +471,12 @@
      * remote track was dropped here with nothing in any log — a call that was
      * silent and looked healthy.
      */
-    function attach(consumerId, peerId, kind, stream) {
+    function attach(consumerId, peerId, kind, stream, share) {
         if (!(window.zillitCall && window.zillitCall.attachRemote)) {
             fail('attach', 'the page has no attachRemote; remote media cannot be heard');
             return;
         }
-        window.zillitCall.attachRemote(consumerId, peerId, kind, stream);
+        window.zillitCall.attachRemote(consumerId, peerId, kind, stream, !!share);
     }
 
     function detach(consumerId) {

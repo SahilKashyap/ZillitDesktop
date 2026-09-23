@@ -66,6 +66,9 @@ import com.zillit.desktop.core.designsystem.component.ZillitAvatar
 import com.zillit.desktop.core.designsystem.component.ZillitActionMenu
 import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
+import com.zillit.desktop.core.designsystem.component.DroppedFile
+import com.zillit.desktop.core.designsystem.component.ZillitDropOverlay
+import com.zillit.desktop.core.designsystem.component.externalFileDrop
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -403,41 +406,16 @@ private fun droppedEvent(files: List<DroppedFile>): HomeFeedEvent? =
         )
     }
 
-/** "Drop to attach" — the whole board answers an OS drag. */
+/**
+ * "Drop to attach" — the whole board answers an OS drag. The look is the
+ * shared one a chat thread wears too; the words are the board's.
+ */
 @Composable
 private fun DropOverlay() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(ZillitTheme.colors.accent.copy(alpha = DROP_SCRIM_ALPHA)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier
-                .clip(ZillitTheme.shapes.large)
-                .background(ZillitTheme.colors.surface)
-                .border(DROP_RING, ZillitTheme.colors.accent, ZillitTheme.shapes.large)
-                .padding(ZillitTheme.spacing.lg),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        ) {
-            ZillitIcon(
-                icon = ZillitIcons.Add,
-                tint = ZillitTheme.colors.accent,
-                size = DROP_ICON,
-            )
-            ZillitText(
-                text = str(S.desktop_board_drop_to_attach),
-                style = ZillitTheme.typography.titleSmall,
-                color = ZillitTheme.colors.textPrimary,
-            )
-            ZillitText(
-                text = str(S.desktop_board_drop_hint),
-                style = ZillitTheme.typography.labelSmall,
-                color = ZillitTheme.colors.textMuted,
-            )
-        }
-    }
+    ZillitDropOverlay(
+        title = str(S.desktop_board_drop_to_attach),
+        hint = str(S.desktop_board_drop_hint),
+    )
 }
 
 /**
@@ -2967,9 +2945,6 @@ private const val PINNED_RING_ALPHA = 0.55f
 private val TAB_TRACK_INSET = 3.dp
 private val TAB_ELEVATION = 1.dp
 private val PINNED_WELL = 28.dp
-private val DROP_RING = 2.dp
-private val DROP_ICON = 32.dp
-private const val DROP_SCRIM_ALPHA = 0.12f
 private val CHIP_THUMBNAIL = 40.dp
 private val PICKED_CHIP_ICON = 14.dp
 /**

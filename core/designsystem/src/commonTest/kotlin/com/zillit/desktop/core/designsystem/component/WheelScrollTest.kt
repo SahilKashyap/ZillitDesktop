@@ -2,6 +2,7 @@ package com.zillit.desktop.core.designsystem.component
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -39,6 +40,31 @@ class WheelScrollTest {
         // of the content. An inverted wheel is the obvious way to get this wrong.
         assertTrue(wheelScrollDistance(notches = 1f, linesPerNotch = 3, linePx = line) > 0f)
         assertTrue(wheelScrollDistance(notches = -1f, linesPerNotch = 3, linePx = line) < 0f)
+    }
+
+    @Test
+    fun `a reversed list scrolls the other way, as its own scrollable does`() {
+        // The chat thread is reverseLayout: its content runs from the bottom.
+        // A notch towards the user's "down" must still move the eye down.
+        assertEquals(-60f, wheelScrollDistance(1f, linesPerNotch = 3, linePx = line, reverseDirection = true))
+        assertEquals(60f, wheelScrollDistance(-1f, linesPerNotch = 3, linePx = line, reverseDirection = true))
+    }
+
+    @Test
+    fun `a trackpad's whole-number event is still the trackpad's`() {
+        // The 2026-09-23 jump: one integer-valued event in a fractional stream
+        // was stepped as a notch. Within the grace after a fractional event,
+        // it stays with the platform.
+        assertTrue(isTrackpadStream(isPrecise = false, atMillis = 5_016, lastPreciseMillis = 5_000))
+        assertTrue(isTrackpadStream(isPrecise = true, atMillis = 5_000, lastPreciseMillis = 0))
+    }
+
+    @Test
+    fun `a stepped wheel that never sent a fractional event is still stepped`() {
+        assertFalse(isTrackpadStream(isPrecise = false, atMillis = 5_000, lastPreciseMillis = Long.MIN_VALUE / 2))
+        assertFalse(
+            isTrackpadStream(isPrecise = false, atMillis = 9_000, lastPreciseMillis = 9_000 - TRACKPAD_GRACE_MILLIS),
+        )
     }
 
     @Test

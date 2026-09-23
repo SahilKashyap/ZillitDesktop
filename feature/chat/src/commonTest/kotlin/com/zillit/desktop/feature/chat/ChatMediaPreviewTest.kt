@@ -1,7 +1,9 @@
 package com.zillit.desktop.feature.chat
 
+import com.zillit.desktop.core.designsystem.component.DroppedFile
 import com.zillit.desktop.core.media.PreviewResult
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
+import com.zillit.desktop.feature.chat.domain.ChatComposerRules
 import com.zillit.desktop.feature.chat.domain.ChatSendState
 import com.zillit.desktop.feature.chat.domain.CrewContact
 import com.zillit.desktop.feature.chat.domain.PendingChatUpload
@@ -168,6 +170,96 @@ class ChatMediaPreviewTest {
         assertContentEquals(byteArrayOf(7, 7), pasted.single(), "the paste rode the uploadMedia seam")
         assertEquals(1, repository.sent.size)
         assertEquals(ChatSendState.Sent, model.currentState.messages.single().sendState)
+    }
+
+    /** A model whose uploader notes which file each upload was named for. */
+    private fun dropModel(repository: FakeChatRepository, uploaded: MutableList<String>): ChatViewModel {
+        var next = 0
+        return ChatViewModel(
+            repository = repository,
+            nowMillis = { NOW },
+            // A drop puts several bubbles up before any send lands, so the ids
+            // cannot lean on the send count the other tests use.
+            newUniqueId = { "unique-${next++}" },
+            uploadMedia = { name, type, _, _ ->
+                uploaded += name
+                ChatAttachment(media = "s3/$name", name = name, contentType = type)
+            },
+        )
+    }
+
+    private val picture = DroppedFile("set.jpg", "image/jpeg", byteArrayOf(1))
+    private val pages = DroppedFile("sides.pdf", "application/pdf", byteArrayOf(2))
+
+    @Test
+    fun `dropped files share one preview and send a message each, the caption on the first`() = runTest(dispatcher) {
+        val repository = FakeChatRepository()
+        val uploaded = mutableListOf<String>()
+        val model = dropModel(repository, uploaded)
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        advanceUntilIdle()
+
+        model.onEvent(ChatEvent.FilesDropped(listOf(picture, pages)))
+        advanceUntilIdle()
+        assertEquals("set.jpg", model.currentState.pendingPreview?.name)
+        assertEquals(listOf("sides.pdf"), model.currentState.droppedAlong.map { it.name })
+        assertTrue(uploaded.isEmpty(), "nothing uploads before Send")
+
+        model.onEvent(
+            ChatEvent.PreviewSend(
+                PreviewResult("set.jpg", "image/jpeg", byteArrayOf(1)),
+                caption = "Today's pages",
+                more = listOf(PreviewResult("sides.pdf", "application/pdf", byteArrayOf(2))),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(setOf("set.jpg", "sides.pdf"), uploaded.toSet())
+        assertEquals(2, repository.sent.size, "one message per file")
+        assertEquals(listOf("Today's pages", ""), model.currentState.messages.map { it.body })
+        assertNull(model.currentState.pendingPreview)
+        assertTrue(model.currentState.droppedAlong.isEmpty())
+    }
+
+    @Test
+    fun `a dropped file kept alone in the preview uploads under its own name`() = runTest(dispatcher) {
+        val repository = FakeChatRepository()
+        val uploaded = mutableListOf<String>()
+        val model = dropModel(repository, uploaded)
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        advanceUntilIdle()
+        model.onEvent(ChatEvent.FilesDropped(listOf(picture, pages)))
+        advanceUntilIdle()
+
+        // The picture was removed in the preview; only the PDF comes back.
+        model.onEvent(ChatEvent.PreviewSend(PreviewResult("sides.pdf", "application/pdf", byteArrayOf(2)), ""))
+        advanceUntilIdle()
+
+        assertEquals(listOf("sides.pdf"), uploaded)
+        assertEquals("sides.pdf", model.currentState.messages.single().attachment?.name)
+    }
+
+    @Test
+    fun `a dropped file over the ceiling is refused by its size and the rest still preview`() = runTest(dispatcher) {
+        val repository = FakeChatRepository()
+        val model = dropModel(repository, mutableListOf())
+        model.onEvent(ChatEvent.OpenThread(aisha))
+        advanceUntilIdle()
+
+        // Past the ceiling the drop hands the file over unread, with its size.
+        val rushes = DroppedFile(
+            name = "rushes.mov",
+            contentType = "video/quicktime",
+            bytes = ByteArray(0),
+            sizeBytes = ChatComposerRules.MAX_ATTACHMENT_BYTES + 1,
+        )
+        model.onEvent(ChatEvent.FilesDropped(listOf(rushes, picture)))
+        advanceUntilIdle()
+
+        assertEquals(ChatComposerRules.ATTACHMENT_TOO_LARGE, model.currentState.error)
+        assertEquals("set.jpg", model.currentState.pendingPreview?.name)
+        assertTrue(model.currentState.droppedAlong.isEmpty())
+        assertTrue(repository.sent.isEmpty())
     }
 }
 

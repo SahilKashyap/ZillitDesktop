@@ -762,7 +762,7 @@ private fun ApplicationScope.ZillitWindows(
     // The popped-out video call: its own always-on-top OS window, for the
     // same reason — it must outlive being behind the main frame.
     (graph as? AppGraph.Ready)?.let { ready ->
-        CallWindow(ready = ready, calls = viewModels.calls, darkTheme = isDark)
+        CallWindow(ready = ready, calls = viewModels.calls, darkTheme = isDark, showMain = showMain)
         IncomingCallWidget(
             ready = ready,
             calls = viewModels.calls,
@@ -1911,7 +1911,7 @@ private fun mailProvider(
         loadAvatar = { address ->
             ready.projectContext?.context?.value?.users
                 ?.firstOrNull { it.email?.equals(address, ignoreCase = true) == true }
-                ?.let { user -> fetchAvatar(ready, user.userId)?.let(::decodeImageBitmap) }
+                ?.let { user -> fetchAvatar(ready, user.userId)?.let(::decodeAvatar) }
         },
         // The same fetch the download path uses, decoded into a bitmap rather
         // than written to Downloads.
@@ -3272,7 +3272,7 @@ private fun buildRegistry(
                     loadAvatar = { address ->
                         ready.projectContext?.context?.value?.users
                             ?.firstOrNull { it.email?.equals(address, ignoreCase = true) == true }
-                            ?.let { user -> fetchAvatar(ready, user.userId)?.let(::decodeImageBitmap) }
+                            ?.let { user -> fetchAvatar(ready, user.userId)?.let(::decodeAvatar) }
                     },
                     onOpenLink = ::openInBrowser,
                     onPrint = ::printMailPage,

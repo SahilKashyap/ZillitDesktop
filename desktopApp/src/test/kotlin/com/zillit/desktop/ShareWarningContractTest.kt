@@ -45,6 +45,21 @@ class ShareWarningContractTest {
     }
 
     @Test
+    fun `the Line 3 page reports its share failures under a step Kotlin acts on`() {
+        val source = page("livekit.js")
+        // livekit.js prefixes every step with `livekit:`, so the engine has to
+        // list the prefixed spelling — the bare one matched nothing, and a
+        // refused Line 3 share was never shown to the person who asked for it.
+        assertTrue(source.contains("where: 'livekit:' + where"), "livekit.js warn() no longer prefixes its step")
+        assertTrue(source.contains("warn('startScreenShare'"), "livekit.js no longer reports a failed share")
+        assertTrue(
+            File("src/main/kotlin/com/zillit/desktop/KcefCallEngine.kt").readText()
+                .contains("\"livekit:startScreenShare\""),
+            "KcefCallEngine no longer turns a failed Line 3 share into a banner",
+        )
+    }
+
+    @Test
     fun `a failed share restores the camera it unpublished`() {
         val source = page("call.js")
         val start = source.substringAfter("async startScreenShare(sourceId)")

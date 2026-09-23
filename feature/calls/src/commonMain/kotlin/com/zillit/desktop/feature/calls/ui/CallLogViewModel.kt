@@ -247,9 +247,11 @@ class CallLogViewModel(
             callerUserId = callerUserId,
         ).onSuccess { page ->
             setState {
-                val merged = if (reset) page else (entries + page).distinctBy(CallLogEntry::callUuid)
+                // The first page is folded by call too, not only the later
+                // ones: it was taken verbatim, and a call listed twice in it
+                // stopped the whole app on "Key … was already used".
                 copy(
-                    entries = merged.sortedByDescending(CallLogEntry::startedAtMillis),
+                    entries = (if (reset) page else entries + page).oneRowPerCall(),
                     isLoading = false,
                     // A short page is the end of the history; asking again
                     // would re-fetch the same rows forever.
@@ -433,3 +435,19 @@ private val MONTHS = listOf(
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 )
+
+/**
+ * One row per call, newest first.
+ *
+ * The history list is keyed by call id, so a repeated id is not a cosmetic
+ * duplicate: Compose throws "Key … was already used" and the app stops on an
+ * error dialog (the Calls tab, 2026-09-23). The server's page can list one
+ * call more than once; when the copies disagree about whether it was missed,
+ * the answered one stands — the call did connect somewhere.
+ */
+internal fun List<CallLogEntry>.oneRowPerCall(): List<CallLogEntry> =
+    sortedByDescending(CallLogEntry::startedAtMillis)
+        .groupBy(CallLogEntry::callUuid)
+        .values
+        .map { copies -> copies.firstOrNull { !it.missed } ?: copies.first() }
+        .sortedByDescending(CallLogEntry::startedAtMillis)

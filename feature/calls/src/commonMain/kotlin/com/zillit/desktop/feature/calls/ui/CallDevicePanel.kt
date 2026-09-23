@@ -42,6 +42,7 @@ fun CallDevicePanel(
     onChooseMicrophone: (String) -> Unit,
     onChooseSpeaker: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onClose: () -> Unit = {},
 ) {
     val colors = ZillitTheme.colors
     Column(
@@ -52,11 +53,7 @@ fun CallDevicePanel(
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitText(
-            text = str(S.audio),
-            style = ZillitTheme.typography.titleSmall,
-            color = colors.textPrimary,
-        )
+        CallPanelHeader(title = str(S.audio), onClose = onClose, tint = colors.textPrimary)
         val listState = rememberLazyListState()
         ZillitLazyColumn(
             state = listState,

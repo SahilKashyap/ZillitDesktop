@@ -7,19 +7,25 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.Dp
@@ -92,6 +98,66 @@ fun AvatarGrid(
         }
     }
 }
+
+/**
+ * Two people: the other one fills the stage and you float in the corner —
+ * the web's two-person layout (`CallRoom.tsx:1673-1697`, `styles.css:414-459`),
+ * which is also what every phone does.
+ *
+ * The grid drew two postcard-sized tiles side by side and left most of the
+ * window empty. Here the big tile is the largest 16:9 box the stage holds, and
+ * the small one is 128 dp tall at most, bottom-right. Clicking the small tile
+ * swaps the two, as the web's pin on it does; the choice is this view's own,
+ * so it lasts as long as the two-person layout does.
+ */
+@Composable
+fun DuoStage(
+    tiles: List<CallTile>,
+    modifier: Modifier = Modifier,
+    loadAvatar: suspend (String) -> ImageBitmap? = { null },
+) {
+    val self = tiles.firstOrNull { it.isSelf } ?: return
+    val other = tiles.firstOrNull { !it.isSelf } ?: return
+    var selfBig by remember { mutableStateOf(false) }
+    val big = if (selfBig) self else other
+    val small = if (selfBig) other else self
+    val pulse by rememberInfiniteTransition(label = "duo-pulse").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(PULSE_MS, easing = LinearEasing), RepeatMode.Restart),
+        label = "duo-pulse-value",
+    )
+    BoxWithConstraints(modifier = modifier) {
+        val bigWidth = minOf(maxWidth - DUO_INSET * 2, (maxHeight - DUO_INSET * 2) * TILE_ASPECT).coerceAtLeast(1.dp)
+        val bigHeight = bigWidth / TILE_ASPECT
+        CallTileView(
+            tile = big,
+            avatarSize = (bigHeight * DUO_AVATAR_RATIO).coerceIn(AVATAR_MIN, DUO_AVATAR_MAX),
+            showChip = true,
+            pulse = pulse,
+            modifier = Modifier.align(Alignment.Center).size(bigWidth, bigHeight),
+            image = rememberTileFace(big.userId, loadAvatar),
+        )
+        val smallHeight = (maxHeight * DUO_SMALL_SHARE).coerceIn(DUO_SMALL_MIN, DUO_SMALL_MAX)
+        val smallWidth = smallHeight * TILE_ASPECT
+        CallTileView(
+            tile = small,
+            avatarSize = (smallHeight * AVATAR_RATIO).coerceIn(DUO_SMALL_AVATAR_MIN, AVATAR_MAX),
+            showChip = smallWidth >= NAME_MIN_WIDTH,
+            pulse = pulse,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(DUO_CORNER_GAP)
+                .shadow(DUO_ELEVATION, RoundedCornerShape(CELL_CORNER))
+                .clickable { selfBig = !selfBig }
+                .size(smallWidth, smallHeight),
+            image = rememberTileFace(small.userId, loadAvatar),
+        )
+    }
+}
+
+/** Exactly us and one other person: the call the two-person layout is for. */
+fun isDuo(tiles: List<CallTile>): Boolean = tiles.size == 2 && tiles.count { it.isSelf } == 1
 
 /** Where every tile goes, and how big it is. */
 data class GridLayout(
@@ -179,6 +245,15 @@ private fun rememberTileFace(
 }.value
 
 private val GAP = 8.dp
+private val DUO_INSET = 8.dp
+private val DUO_CORNER_GAP = 22.dp
+private val DUO_SMALL_MIN = 72.dp
+private val DUO_SMALL_MAX = 128.dp
+private val DUO_SMALL_AVATAR_MIN = 28.dp
+private val DUO_AVATAR_MAX = 150.dp
+private val DUO_ELEVATION = 12.dp
+private const val DUO_SMALL_SHARE = 0.22f
+private const val DUO_AVATAR_RATIO = 0.3f
 private val TILE_MAX_WIDTH = 560.dp
 private val AVATAR_MIN = 40.dp
 private val AVATAR_MAX = 96.dp

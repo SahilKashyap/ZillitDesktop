@@ -2,7 +2,6 @@ package com.zillit.desktop.feature.calls.ui
 
 import com.zillit.desktop.feature.calls.domain.CallMedia
 import com.zillit.desktop.feature.calls.domain.CallSession
-import com.zillit.desktop.feature.calls.domain.MediaPeer
 
 /**
  * The whole UI projection as one function.
@@ -27,8 +26,12 @@ fun projectCallUi(
     // Latched, never unlatched mid-call: the stage swapping between a Compose
     // grid and a browser surface every time somebody toggled a camera would
     // move a native window between parents on each toggle.
+    //
+    // A peer presenting counts as video too. A shared screen is a picture
+    // with no camera behind it, and on an audio call the stage stayed on the
+    // Compose avatars — the share arrived and was never mounted anywhere.
     val seen = previous.videoSeen || session?.hasVideo == true || cameraOn ||
-        media.peers.values.any(MediaPeer::videoOn)
+        media.peers.values.any { it.videoOn || it.sharing }
     return previous.copy(
         session = session,
         media = media,

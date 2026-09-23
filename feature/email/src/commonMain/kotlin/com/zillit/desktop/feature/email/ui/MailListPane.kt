@@ -16,13 +16,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -614,15 +617,7 @@ private fun MailList(
     // recompose every row for nothing.
     val nowMillis = remember { kotlin.time.Clock.System.now().toEpochMilliseconds() }
     val listState = rememberLazyListState()
-
-    // New mail lands at the top; keep a reader who IS at the top pinned
-    // there, and never move one who scrolled down into last week.
-    com.zillit.desktop.core.designsystem.component.FollowLatest(
-        listState = listState,
-        itemCount = state.rows.size,
-        edge = com.zillit.desktop.core.designsystem.component.LatestEdge.Top,
-        contentKey = state.selectedFolderName,
-    )
+    FollowNewestMail(listState, itemCount = state.rows.size, folder = state.selectedFolderName)
 
     ZillitLazyColumn(
         state = listState,
@@ -659,6 +654,32 @@ private fun MailList(
                 )
             }
         }
+    }
+}
+
+/**
+ * New mail lands at the top: a reader who IS at the top stays pinned there,
+ * one who scrolled down into last week is never moved, and a folder just
+ * chosen starts on its newest row — `FollowLatest`'s rules for a top-edge
+ * list, with the folder it anchored on kept in `rememberSaveable`.
+ *
+ * Not `FollowLatest` itself: its anchor is a plain `remember`. A workspace tab
+ * switch disposes this list, the saved [listState] brings the reader back to
+ * the row they were on, and a fresh anchor then took that for a first fill
+ * and threw them back to the top of the folder.
+ */
+@Composable
+private fun FollowNewestMail(listState: LazyListState, itemCount: Int, folder: String?) {
+    // The folder the list last anchored on; null until it has.
+    var anchoredTo by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(itemCount, folder) {
+        if (itemCount == 0) return@LaunchedEffect
+        // The index, not the layout: a restored state knows its row before
+        // the list is laid out again.
+        val atTop = listState.firstVisibleItemIndex < AT_TOP_SLACK
+        if (anchoredTo == folder && !atTop) return@LaunchedEffect
+        listState.scrollToItem(0)
+        anchoredTo = folder
     }
 }
 
@@ -724,3 +745,6 @@ private val FILTER_DOT = 6.dp
 private val MOVE_WIDTH = 300.dp
 private val FILTERS_WIDTH = 320.dp
 private val EMPTY_ICON = 40.dp
+
+/** Rows of slack in "at the top" — `FollowLatest`'s own two. */
+private const val AT_TOP_SLACK = 2

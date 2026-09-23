@@ -83,7 +83,9 @@ class ProjectContextLoader(
         val cached = ProjectContext(
             profile = cache?.profile(projectId),
             project = cache?.project(projectId),
-            users = cache?.users(projectId).orEmpty(),
+            // Folded on the way out too: a cache written before the fold
+            // still holds whatever the server repeated.
+            users = cache?.users(projectId).orEmpty().onePerUser(),
             isFromCache = true,
         )
         state.value = cached
@@ -170,7 +172,7 @@ class ProjectContextLoader(
             serializer = ListSerializer(ProjectUserDto.serializer()),
             module = RequestModule.ProjectUser,
             options = CallOptions(projectId = projectId, userId = userId),
-        ).map { rows -> rows.mapNotNull { it.toSnapshot() } }
+        ).map { rows -> rows.mapNotNull { it.toSnapshot() }.onePerUser() }
 
     private suspend fun refreshUsers(projectId: String) {
         val result = apiClient.request(
@@ -181,7 +183,7 @@ class ProjectContextLoader(
         )
         when (result) {
             is ZillitResult.Success -> {
-                val users = result.data.mapNotNull { it.toSnapshot() }
+                val users = result.data.mapNotNull { it.toSnapshot() }.onePerUser()
                 cache?.saveUsers(projectId, users)
                 publishIfCurrent(projectId) { it.copy(users = users, isFromCache = false) }
             }
@@ -439,3 +441,24 @@ private val IMAGE_KEYS = listOf("thumbnail", "media", "url", "path", "file_name"
 internal data class MailBoxDetailDto(
     @SerialName("email_address") val emailAddress: String? = null,
 )
+
+/**
+ * One snapshot per person.
+ *
+ * `project/users` can list someone more than once — an old membership beside
+ * the current one — and the lists drawn from this one (Contacts, the forward
+ * and group pickers, a call's Add list) are keyed by user id, where a repeat
+ * is not a duplicate row but a crash: the Contacts tab stopped the app on
+ * "Key … was already used" (2026-09-23). The row that still counts wins —
+ * an active membership over a left or removed one, and either over one that
+ * is pending or was rejected — and ties keep the server's first.
+ */
+internal fun List<UserSnapshot>.onePerUser(): List<UserSnapshot> =
+    groupBy(UserSnapshot::userId).values.map { rows -> rows.minBy(UserSnapshot::membershipRank) }
+
+private fun UserSnapshot.membershipRank(): Int = when (status) {
+    "left", "removed" -> 1
+    "pending", "rejected" -> 2
+    // approved, accepted, or no status at all — presumed present.
+    else -> 0
+}

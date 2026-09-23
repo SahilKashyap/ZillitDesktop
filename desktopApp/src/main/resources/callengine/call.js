@@ -119,6 +119,14 @@
 
         const list = stage.tiles || [];
         if (!list.length) { return; }
+        const focus = focusUid(list);
+        if (focus !== null) {
+            renderFocus(root, list, focus);
+            playingIn.clear();
+            mountTracks();
+            paint();
+            return;
+        }
         const cols = Math.max(1, stage.cols || 1);
         const rows = Math.ceil(list.length / cols);
 
@@ -145,6 +153,69 @@
         playingIn.clear();
         mountTracks();
         paint();
+    }
+
+    /*
+     * One big tile and the rest small — the web's two-person layout
+     * (`CallRoom.tsx:1673-1697`, `styles.css:414-459`) and its presenting
+     * stage. Two people in a grid were two postcards side by side with most
+     * of the window empty; the web puts the other person in the middle of the
+     * stage and floats you in the corner, and a shared screen gets the same
+     * treatment so it is big enough to read.
+     *
+     * `focusPick` is the tile the user clicked in the corner to swap in. The
+     * page's own state, not Kotlin's: it is a viewing choice with no meaning
+     * to anyone else, and it lapses on its own when that tile leaves.
+     */
+    let focusPick = null;
+
+    /** The uid that takes the big slot, or null for the plain grid. */
+    function focusUid(list) {
+        if (compact || list.length < 2) { return null; }
+        const present = (uid) => list.some((t) => t.uid === uid);
+        const presenter = presentingUid(list);
+        const duo = list.length === 2 && list.filter((t) => t.self).length === 1;
+        if (presenter === null && !duo) { focusPick = null; return null; }
+        if (focusPick !== null && present(focusPick)) { return focusPick; }
+        if (presenter !== null) { return presenter; }
+        return list.find((t) => !t.self).uid;
+    }
+
+    /** Whose tile is showing a shared screen, or null when nobody is presenting. */
+    function presentingUid(list) {
+        let found = null;
+        line1Media.forEach((entry) => {
+            if (found !== null || !entry.share || entry.kind !== 'video') { return; }
+            const identity = String(entry.peerId || '').split(':')[0];
+            const model = list.find((t) => t.peerId === identity || String(t.uid) === String(entry.peerId));
+            if (model) { found = model.uid; }
+        });
+        return found;
+    }
+
+    function renderFocus(root, list, focus) {
+        const width = root.clientWidth || 0;
+        const height = root.clientHeight || 0;
+        const inset = 8;
+        const mainW = Math.max(1, Math.min(width - inset * 2, (height - inset * 2) * (16 / 9)));
+        const mainH = mainW / (16 / 9);
+        const main = list.find((t) => t.uid === focus);
+        root.appendChild(buildCell(main, mainW, mainH, Math.max(40, Math.min(mainH * 0.3, 150))));
+
+        // The others float bottom-right, 128 px tall at most, as `.duoSelf` does.
+        const smallH = Math.max(72, Math.min(128, height * 0.22));
+        const smallW = smallH * (16 / 9);
+        const fits = Math.max(1, Math.floor((width * 0.9) / (smallW + 8)));
+        const strip = document.createElement('div');
+        strip.className = 'strip';
+        list.filter((t) => t.uid !== focus).slice(0, fits).forEach((model) => {
+            const tile = buildCell(model, smallW, smallH, Math.max(28, Math.min(smallH * 0.42, 56)));
+            tile.classList.add('mini');
+            // Click to swap into the big slot; the grid tile it leaves takes its place here.
+            tile.addEventListener('click', () => { focusPick = model.uid; render(); });
+            strip.appendChild(tile);
+        });
+        root.appendChild(strip);
     }
 
     function buildCell(model, tileW, tileH, disc) {
@@ -648,7 +719,7 @@
         return null;
     }
 
-    function line1VideoElement(stream) {
+    function line1VideoElement(stream, share) {
         const video = document.createElement('video');
         video.autoplay = true;
         video.playsInline = true;
@@ -656,7 +727,9 @@
         video.muted = true;          // the audio arrives on its own consumer
         video.style.width = '100%';
         video.style.height = '100%';
-        video.style.objectFit = 'cover';
+        // A shared screen is shown whole: cropped to the tile like a face, the
+        // edges of a document or a spreadsheet's columns were simply cut off.
+        video.style.objectFit = share ? 'contain' : 'cover';
         video.srcObject = stream;
         // Asked explicitly, not left to `autoplay`: an element that stays
         // paused is a black tile with a live track behind it, and the
@@ -689,15 +762,24 @@
     /** Puts every Line 1 video into its (possibly rebuilt) cell. */
     function line1Mount() {
         const report = [];
+        // One video per cell, and a shared screen beats the same person's
+        // camera. Both used to be mounted in turn into the one cell on every
+        // pass — each emptying it for the other, restarting playback each
+        // time — so a presenter's tile flickered between face and screen.
+        const chosen = new Map(); // cell -> entry
         line1Media.forEach((entry) => {
             if (entry.kind !== 'video') { return; }
             const cell = line1Tile(entry.peerId);
             if (!cell) { report.push('no tile for ' + entry.peerId); return; }
+            const held = chosen.get(cell);
+            if (!held || (entry.share && !held.share)) { chosen.set(cell, entry); }
+        });
+        chosen.forEach((entry, cell) => {
             if (entry.element && entry.element.parentNode === cell.mount) { report.push(videoState(entry.peerId, entry.element)); return; }
-            if (!entry.element) { entry.element = line1VideoElement(entry.stream); }
+            if (!entry.element) { entry.element = line1VideoElement(entry.stream, entry.share); }
             cell.mount.innerHTML = '';
             cell.mount.appendChild(entry.element);
-            report.push('mounted ' + entry.peerId);
+            report.push('mounted ' + entry.peerId + (entry.share ? ' (screen)' : ''));
         });
         if (line1Local) {
             const cell = selfCell();
@@ -728,7 +810,7 @@
     window.zillitCall = {
 
         /** Binds one consumed remote track so it is actually heard or seen. */
-        attachRemote(consumerId, peerId, kind, stream) {
+        attachRemote(consumerId, peerId, kind, stream, share) {
             try {
                 this.detachRemote(consumerId);
                 if (kind === 'audio') {
@@ -744,8 +826,10 @@
                     recorderAdd(stream);
                     return;
                 }
-                line1Media.set(consumerId, { peerId: peerId, kind: kind, stream: stream, element: null });
-                line1Mount();
+                line1Media.set(consumerId, { peerId: peerId, kind: kind, stream: stream, element: null, share: !!share });
+                // A share arriving or leaving changes the layout, not just one
+                // cell: the presenter takes the big slot, then gives it back.
+                if (share) { render(); } else { line1Mount(); }
             } catch (e) {
                 warn('attachRemote', e);
             }
@@ -764,6 +848,9 @@
             } catch (e) {
                 warn('detachRemote', e);
             }
+            // A share ending hands the big slot back and puts the presenter's
+            // camera back in their tile; nothing else re-mounts it.
+            if (entry.share) { render(); } else if (entry.kind === 'video') { line1Mount(); }
         },
 
         /** Starts recording the call's mixed audio. No-op while one runs. */

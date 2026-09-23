@@ -56,6 +56,7 @@ fun CallChatPanel(
      * `ChatPanel` does the same: reading stays, sending goes.
      */
     lockedReason: String? = null,
+    onClose: () -> Unit = {},
 ) {
     val colors = ZillitTheme.colors
     var draft by remember { mutableStateOf("") }
@@ -76,11 +77,7 @@ fun CallChatPanel(
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitText(
-            text = str(S.desktop_call_chat),
-            style = ZillitTheme.typography.titleSmall,
-            color = colors.textPrimary,
-        )
+        CallPanelHeader(title = str(S.desktop_call_chat), onClose = onClose, tint = colors.textPrimary)
         ZillitText(
             text = str(S.desktop_call_chat_not_saved),
             style = ZillitTheme.typography.labelSmall,

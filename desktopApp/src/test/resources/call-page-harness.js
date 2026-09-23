@@ -43,6 +43,10 @@ function element(tag) {
         removeEventListener() {},
         setAttribute() {},
         getBoundingClientRect: () => ({ width: 1280, height: 720, top: 0, left: 0 }),
+        clientWidth: 1280,
+        clientHeight: 720,
+        // A <video> is asked to play() the moment it is built.
+        play: () => Promise.resolve(),
         querySelector: () => null,
         querySelectorAll: () => [],
     };
@@ -107,5 +111,19 @@ api.setCam(true);
 api.setMic(true);
 api.showReaction(JSON.stringify({ key: 'r1', emoji: '🎉', name: 'Vivek' }));
 api.setStage(model);
+
+// A peer's camera, then their shared screen into the same tile, then both
+// leaving: the share re-lays the stage out (the presenter takes the big
+// slot) and its end hands the tile back to the camera.
+api.attachRemote('lk:PA:camera', 'them', 'video', {}, false);
+api.attachRemote('lk:PA:screen_share', 'them', 'video', {}, true);
+api.setStage(model);
+api.detachRemote('lk:PA:screen_share');
+api.detachRemote('lk:PA:camera');
+
+// attachRemote and detachRemote swallow their own errors into a warning, so
+// a throw inside them would otherwise pass this run silently.
+const swallowed = context.sent.filter((m) => /"where":"(attachRemote|detachRemote)"/.test(m));
+if (swallowed.length) { throw new Error('the page warned while mounting media: ' + swallowed.join('\n')); }
 
 process.stdout.write('call.js drove ' + context.sent.length + ' messages without throwing\n');

@@ -45,11 +45,11 @@ fun CallMorePanel(state: CallUiState, onEvent: (CallEvent) -> Unit, modifier: Mo
             .padding(vertical = ZillitTheme.spacing.sm),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        ZillitText(
-            text = str(S.dd_cd_more),
-            style = ZillitTheme.typography.titleSmall,
-            color = CallPalette.text,
-            modifier = Modifier.padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
+        CallPanelHeader(
+            title = str(S.dd_cd_more),
+            onClose = { onEvent(CallEvent.ToggleMore) },
+            tint = CallPalette.text,
+            modifier = Modifier.padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.xs),
         )
         val line3 = state.session?.provider == CallProvider.LiveKit
         // Hold first, and always offered on Line 3: the one row here you may

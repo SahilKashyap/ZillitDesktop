@@ -166,20 +166,29 @@ fun ackComplaint(ack: JsonElement): String? {
 data class ReadReceipt(val peerId: String, val state: ChatSendState)
 
 /**
- * A typing event's conversation and whether it started.
+ * Somebody typing, or stopping: which conversation, who, and which way.
+ *
+ * [typistId] is what lets a room say whose keystrokes they are — the event
+ * always named the sender, and the thread said "Someone is typing…" only
+ * because this was dropped on the way in.
+ */
+data class TypingSignal(val conversationId: String, val typistId: String, val started: Boolean)
+
+/**
+ * A typing event's conversation, its typist, and whether it started.
  *
  * The conversation is what the screen matches on, and the two flavours name
  * it in different fields: a DM's is the person who typed, a group's is the
  * room they typed into. A group also broadcasts back to its own author, so
  * our own keystrokes are dropped here rather than shown as somebody else's.
  */
-fun typingFrom(payload: JsonElement, isGroup: Boolean = false, myUserId: String? = null): Pair<String, Boolean>? {
+fun typingFrom(payload: JsonElement, isGroup: Boolean = false, myUserId: String? = null): TypingSignal? {
     val detail = ((payload as? JsonObject)?.get("detail") as? JsonObject) ?: payload as? JsonObject
     val sender = detail?.str("sender")
     // Our own keystrokes come back from the room we sent them to.
     if (sender == null || (isGroup && sender == myUserId)) return null
     val conversation = if (isGroup) detail.str("receiver") else sender
-    return conversation?.let { it to (detail.str("status") == "start") }
+    return conversation?.let { TypingSignal(it, sender, started = detail.str("status") == "start") }
 }
 
 /**

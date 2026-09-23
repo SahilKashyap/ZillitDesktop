@@ -3,7 +3,6 @@ package com.zillit.desktop.feature.calls.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,29 +49,13 @@ fun CallHostControlsPanel(
             .background(CallPalette.menu)
             .padding(vertical = ZillitTheme.spacing.sm),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
-        ) {
-            ZillitIcon(icon = ZillitIcons.Shield, contentDescription = null, tint = CallPalette.text, size = ROW_ICON)
-            ZillitText(
-                text = str(S.desktop_call_host_controls),
-                style = ZillitTheme.typography.titleSmall,
-                color = CallPalette.text,
-                modifier = Modifier.weight(1f),
-            )
-            Box(modifier = Modifier.clickable(onClick = onClose)) {
-                ZillitIcon(
-                    icon = ZillitIcons.Close,
-                    contentDescription = str(S.close),
-                    tint = CallPalette.muted,
-                    size = ROW_ICON,
-                )
-            }
-        }
+        CallPanelHeader(
+            title = str(S.desktop_call_host_controls),
+            onClose = onClose,
+            tint = CallPalette.text,
+            icon = ZillitIcons.Shield,
+            modifier = Modifier.padding(horizontal = ZillitTheme.spacing.lg, vertical = ZillitTheme.spacing.xs),
+        )
         Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             PolicySwitches(policy, onPolicy)
             ZillitText(

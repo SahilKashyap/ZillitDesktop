@@ -36,7 +36,6 @@ import com.zillit.desktop.feature.calls.domain.CallCrewEntry
 import com.zillit.desktop.feature.calls.ui.CallViewModel
 import com.zillit.desktop.feature.calls.ui.reactionJson
 import com.zillit.desktop.feature.calls.ui.themeJson
-import com.zillit.desktop.feature.home.ui.decodeImageBitmap
 
 /**
  * The calling surface, floating over the whole workspace: a ring must
@@ -219,7 +218,19 @@ internal fun EndCallOnSignOut(ready: AppGraph.Ready, signedIn: Boolean) {
 internal fun crewFaceLoader(
     ready: AppGraph.Ready,
 ): suspend (String) -> ImageBitmap? =
-    { userId -> fetchAvatar(ready, userId)?.let(::decodeImageBitmap) }
+    // Shrunk at decode: the photo is the phone's original upload, and every
+    // avatar list scaled the whole thing on every frame it was on screen.
+    { userId -> fetchAvatar(ready, userId)?.let { bytes -> decodeAvatar(bytes) } }
+
+/**
+ * A profile photo at a size an avatar can use. The largest face the app
+ * draws is the two-person call tile's (150dp — 300px on a Retina screen), so
+ * [AVATAR_MAX_SIDE] keeps every avatar sharp at a sliver of the memory.
+ */
+internal fun decodeAvatar(bytes: ByteArray): ImageBitmap? =
+    com.zillit.desktop.core.media.decodeImageBitmap(bytes, AVATAR_MAX_SIDE)
+
+private const val AVATAR_MAX_SIDE = 384
 
 /**
  * The Calls tab inside Chat & Calls.

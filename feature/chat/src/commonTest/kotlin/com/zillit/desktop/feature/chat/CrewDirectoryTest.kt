@@ -60,6 +60,17 @@ class CrewDirectoryTest {
     }
 
     @Test
+    fun `a room or person listed twice is one row, since the list is keyed by id`() {
+        val groups = listOf(GroupRoom("g1", "General"), GroupRoom("g1", "General"))
+        val contacts = listOf(crew[0], crew[0])
+
+        val ids = recentRows(groups, contacts, emptyMap()).map { it.id }
+
+        assertEquals(ids.distinct(), ids)
+        assertEquals(2, ids.size)
+    }
+
+    @Test
     fun `rooms without a stamp sink behind stamped threads`() {
         val groups = listOf(GroupRoom("g1", "General"), GroupRoom("g2", "Camera Dept"))
         val contacts = listOf(crew[0])

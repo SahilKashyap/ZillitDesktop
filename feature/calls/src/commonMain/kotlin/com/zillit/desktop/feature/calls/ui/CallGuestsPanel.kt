@@ -1,9 +1,7 @@
 package com.zillit.desktop.feature.calls.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,10 +18,8 @@ import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ButtonSize
 import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitButton
-import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
 import com.zillit.desktop.feature.calls.data.livekit.LiveKitGuest
@@ -48,22 +44,11 @@ fun CallGuestsPanel(
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ZillitText(
-                text = str(S.desktop_call_guests_requesting_to_join),
-                style = ZillitTheme.typography.titleSmall,
-                color = CallPalette.text,
-                modifier = Modifier.weight(1f),
-            )
-            Box(modifier = Modifier.clickable(onClick = onClose)) {
-                ZillitIcon(
-                    icon = ZillitIcons.Close,
-                    contentDescription = str(S.close),
-                    tint = CallPalette.muted,
-                    size = ROW_ICON,
-                )
-            }
-        }
+        CallPanelHeader(
+            title = str(S.desktop_call_guests_requesting_to_join),
+            onClose = onClose,
+            tint = CallPalette.text,
+        )
         if (guests.isEmpty()) NobodyWaiting()
         val listState = rememberLazyListState()
         ZillitLazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
@@ -98,7 +83,6 @@ fun CallGuestsPanel(
 }
 
 private val PANEL_CORNER = 12.dp
-private val ROW_ICON = 18.dp
 
 @Composable
 private fun NobodyWaiting() {

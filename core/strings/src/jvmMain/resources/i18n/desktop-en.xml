@@ -8310,4 +8310,15 @@
     <string name="desktop_sides_one_scene_selected">%1$d scene selected</string>
     <string name="desktop_sides_n_scenes_selected">%1$d scenes selected</string>
     <string name="desktop_choose_a_department_prompt">Choose a department...</string>
+    <string name="desktop_call_section_in_call">In call (%1$d)</string>
+    <string name="desktop_call_section_ringing">Ringing (%1$d)</string>
+    <string name="desktop_call_section_left_declined">Left / Declined (%1$d)</string>
+    <string name="desktop_call_section_users">Users (%1$d)</string>
+    <string name="desktop_call_you_are_presenting">You are presenting to everyone</string>
+    <string name="desktop_call_sharing_screen_title">You\'re sharing your screen</string>
+    <string name="desktop_call_sharing_screen_body">Everyone on the call can see what you share.</string>
+    <string name="desktop_call_name_is_presenting">%1$s is presenting</string>
+    <string name="desktop_call_back_to_call">Back to call</string>
+    <string name="desktop_chat_drop_hint">Each file opens in a preview before it is sent.</string>
+    <string name="desktop_screen_share_restart_needed">Screen Recording is now allowed for Zillit. Quit and reopen Zillit to share your screen — macOS applies it only after a restart.</string>
 </resources>

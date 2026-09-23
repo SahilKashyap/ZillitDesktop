@@ -82,6 +82,10 @@ object EngineBridge {
             "token-expiring" -> CallEngineEvent.TokenExpiring
             "token-expired" -> CallEngineEvent.TokenExpired
             "screen-share" -> CallEngineEvent.ScreenShare(obj.bool("sharing"))
+            // Line 3 says who is presenting off the track itself; the other
+            // lines read it from the roster row. livekit.js always sent this,
+            // and nothing here read it, so a Line 3 presenter was never known.
+            "peer-screen-share" -> CallEngineEvent.PeerScreenShare(obj.int("uid"), obj.bool("sharing"))
             "devices" -> CallEngineEvent.Devices(
                 microphones = obj.devices("microphones"),
                 speakers = obj.devices("speakers"),

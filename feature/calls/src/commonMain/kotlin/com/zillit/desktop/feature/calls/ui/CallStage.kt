@@ -29,7 +29,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -71,6 +70,7 @@ fun CallStage(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             CallTopBar(state, onEvent, videoAvailable)
+            PresentingBanner(state, onEvent)
             NoticeBanner(state, onEvent)
             // A second ring, in the column with the banners: outside the
             // video rectangle, or it would never be drawn.
@@ -147,11 +147,15 @@ private fun StageBody(
                 .onGloballyPositioned(onSlot),
         ) {
             if (!showsVideo) {
-                AvatarGrid(
-                    tiles = state.tiles,
-                    modifier = Modifier.fillMaxSize(),
-                    loadAvatar = loadAvatar,
-                )
+                if (isDuo(state.tiles)) {
+                    DuoStage(tiles = state.tiles, modifier = Modifier.fillMaxSize(), loadAvatar = loadAvatar)
+                } else {
+                    AvatarGrid(
+                        tiles = state.tiles,
+                        modifier = Modifier.fillMaxSize(),
+                        loadAvatar = loadAvatar,
+                    )
+                }
                 if (state.tiles.size <= 1) WaitingForOthers()
             }
         }
@@ -168,12 +172,7 @@ private fun StageBody(
 private fun SidePanels(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val panel = Modifier.width(ROSTER_WIDTH).fillMaxSize()
     if (state.rosterOpen) {
-        CallRosterPanel(
-            tiles = state.tiles,
-            modifier = panel,
-            state = state,
-            onEvent = onEvent,
-        )
+        CallUsersPanel(state = state, onEvent = onEvent, modifier = panel)
     }
     if (state.hostControlsOpen && state.isHost) {
         CallHostControlsPanel(
@@ -193,13 +192,6 @@ private fun SidePanels(state: CallUiState, onEvent: (CallEvent) -> Unit) {
             modifier = panel,
         )
     }
-    if (state.addPeopleOpen) {
-        CallAddPeoplePanel(
-            crew = state.addableCrew,
-            onPick = { onEvent(CallEvent.AddPerson(it)) },
-            modifier = panel,
-        )
-    }
     ToolPanels(state, onEvent, panel)
 }
 
@@ -211,6 +203,7 @@ private fun ToolPanels(state: CallUiState, onEvent: (CallEvent) -> Unit, panel: 
             devices = state.devices,
             onChooseMicrophone = { onEvent(CallEvent.ChooseMicrophone(it)) },
             onChooseSpeaker = { onEvent(CallEvent.ChooseSpeaker(it)) },
+            onClose = { onEvent(CallEvent.ToggleAudioPicker) },
             modifier = panel,
         )
     }
@@ -225,6 +218,7 @@ private fun ToolPanels(state: CallUiState, onEvent: (CallEvent) -> Unit, panel: 
         CallChatPanel(
             lines = state.chat,
             onSend = { onEvent(CallEvent.SendChat(it)) },
+            onClose = { onEvent(CallEvent.ToggleChat) },
             modifier = panel,
             lockedReason = when {
                 state.chatLocked -> str(S.desktop_call_host_turned_chat_off)
@@ -258,6 +252,7 @@ private fun CallTopBar(state: CallUiState, onEvent: (CallEvent) -> Unit, videoAv
         ConnectionPill(state, videoAvailable)
         HoldPill(state, onEvent)
         RecordingPill(state)
+        PresenterPill(state)
         HandPill(state, onEvent)
         Box(modifier = Modifier.weight(1f))
         NetworkPip(quality = state.media.selfQuality, showLabel = false)
@@ -321,30 +316,30 @@ private fun TitlePill(state: CallUiState) {
 @Composable
 private fun PeopleButton(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val count = state.connected
-    val tip = if (state.session?.is247Call == true) str(S.desktop_call_users) else str(S.desktop_call_users_add_users)
-    ZillitTooltip(tip) {
-        Box(contentAlignment = Alignment.TopEnd) {
-            RoundAction(
-                icon = ZillitIcons.Users,
-                label = str(S.desktop_call_users),
-                background = if (state.rosterOpen) CallPalette.accent else CallPalette.control,
-                tint = if (state.rosterOpen) CallPalette.onAccent else CallPalette.text,
-                size = HEADER_BUTTON,
-                onClick = { onEvent(CallEvent.ToggleRoster) },
-            )
-            if (count > 0) {
-                Box(
-                    modifier = Modifier.size(COUNT_BADGE).clip(CircleShape).background(CallPalette.accent),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    ZillitText(
-                        text = count.toString(),
-                        style = ZillitTheme.typography.labelSmall
-                            .copy(fontSize = BADGE_FONT, fontWeight = FontWeight.Bold),
-                        color = CallPalette.onAccent,
-                        maxLines = 1,
-                    )
-                }
+    // No hover tooltip on call controls: the popup opened under the pointer
+    // and took the press meant for the button beneath it.
+    val label = if (state.session?.is247Call == true) str(S.desktop_call_users) else str(S.desktop_call_users_add_users)
+    Box(contentAlignment = Alignment.TopEnd) {
+        RoundAction(
+            icon = ZillitIcons.Users,
+            label = label,
+            background = if (state.rosterOpen) CallPalette.accent else CallPalette.control,
+            tint = if (state.rosterOpen) CallPalette.onAccent else CallPalette.text,
+            size = HEADER_BUTTON,
+            onClick = { onEvent(CallEvent.ToggleRoster) },
+        )
+        if (count > 0) {
+            Box(
+                modifier = Modifier.size(COUNT_BADGE).clip(CircleShape).background(CallPalette.accent),
+                contentAlignment = Alignment.Center,
+            ) {
+                ZillitText(
+                    text = count.toString(),
+                    style = ZillitTheme.typography.labelSmall
+                        .copy(fontSize = BADGE_FONT, fontWeight = FontWeight.Bold),
+                    color = CallPalette.onAccent,
+                    maxLines = 1,
+                )
             }
         }
     }
@@ -505,7 +500,10 @@ private fun StageControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
         // Above the dock rather than inside it: the bar is wider than any
         // control, and opening it should not resize the dock.
         if (state.reactionBarOpen) {
-            CallReactionBar(onPick = { onEvent(CallEvent.SendReaction(it)) })
+            CallReactionBar(
+                onPick = { onEvent(CallEvent.SendReaction(it)) },
+                onClose = { onEvent(CallEvent.ToggleReactionBar) },
+            )
         }
         CallDock(state = state, onEvent = onEvent)
     }
@@ -561,6 +559,60 @@ private fun WindowControls(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     }
 }
 
+
+/**
+ * "You are presenting to everyone", with Stop beside it — the web's
+ * presenting card (`CallRoom.tsx:948-967`).
+ *
+ * Without it nothing on the call surface said a share was live: the Present
+ * button turned blue, and on Line 3 the sharer's own tile keeps their face,
+ * so people shared, saw no change, and pressed Present again. In the column
+ * with the other banners — inside the video rectangle it would not be drawn.
+ */
+@Composable
+private fun PresentingBanner(state: CallUiState, onEvent: (CallEvent) -> Unit) {
+    if (!state.media.selfSharing) return
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(BANNER_CORNER))
+            .background(CallPalette.menu)
+            .padding(start = ZillitTheme.spacing.md, end = ZillitTheme.spacing.xs)
+            .padding(vertical = ZillitTheme.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitIcon(icon = ZillitIcons.Monitor, contentDescription = null, tint = CallPalette.accent, size = PILL_ICON)
+        ZillitText(
+            text = str(S.desktop_call_you_are_presenting),
+            style = ZillitTheme.typography.bodySmall,
+            color = CallPalette.text,
+            maxLines = 1,
+        )
+        ZillitText(
+            text = str(S.desktop_call_stop_presenting),
+            style = ZillitTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = Color.White,
+            maxLines = 1,
+            modifier = Modifier
+                .clip(RoundedCornerShape(PILL_CORNER))
+                .background(CallPalette.danger)
+                .clickable { onEvent(CallEvent.ToggleScreenShare) }
+                .padding(horizontal = ZillitTheme.spacing.md, vertical = ZillitTheme.spacing.xs),
+        )
+    }
+}
+
+/** Who else is presenting, named — the web's "<name> is presenting" (`CallRoom.tsx:975`). */
+@Composable
+private fun PresenterPill(state: CallUiState) {
+    val presenter = state.tiles.firstOrNull { !it.isSelf && it.media?.sharing == true } ?: return
+    StatusPill(
+        text = str(S.desktop_call_name_is_presenting, presenter.name),
+        background = CallPalette.accent,
+        foreground = CallPalette.onAccent,
+        icon = ZillitIcons.Monitor,
+    )
+}
 
 /**
  * One line about something that did not work, with a way to dismiss it.

@@ -20,6 +20,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ThemeMode
@@ -34,7 +36,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitChoiceChip
 import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitTag
-import com.zillit.desktop.core.designsystem.component.ZillitCheckbox
+import com.zillit.desktop.core.designsystem.component.ZillitSwitch
 import com.zillit.desktop.core.designsystem.component.ZillitSelect
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
@@ -412,6 +414,13 @@ private fun UpdateCheckResult(check: UpdateCheck, onEvent: (SettingsEvent) -> Un
     }
 }
 
+/**
+ * One on/off preference, as a switch.
+ *
+ * It was a checkbox with its state spelled beside it — "on" in Android's
+ * lower case, "Off" in ours — so a column of them read as a ticked list
+ * with a word of noise after each. A switch says "this is on" by itself.
+ */
 @Composable
 private fun NotifyToggle(
     title: String,
@@ -420,23 +429,22 @@ private fun NotifyToggle(
     onChange: (Boolean) -> Unit,
 ) {
     SettingRow(title = title, detail = detail) {
-        ZillitCheckbox(checked = on, onCheckedChange = onChange, label = if (on) str(S.on) else str(S.desktop_off))
+        ZillitSwitch(checked = on, onCheckedChange = onChange)
     }
 }
 
 @Composable
 private fun NotificationsSection(state: SettingsUiState, onEvent: (SettingsEvent) -> Unit) {
-    Section(str(S.notifications), ZillitIcons.Calendar) {
+    Section(str(S.notifications), ZillitIcons.Bell) {
         SettingRow(
             title = str(S.desktop_event_reminders),
             // Says what silence costs. "Mute notifications" alone leaves the
             // user guessing whether the reminders they set are still recorded.
             detail = str(S.desktop_event_reminders_detail),
         ) {
-            ZillitCheckbox(
+            ZillitSwitch(
                 checked = !state.muteNotifications,
                 onCheckedChange = { onEvent(SettingsEvent.MuteNotificationsChanged(!it)) },
-                label = if (state.muteNotifications) str(S.desktop_muted) else str(S.on),
             )
         }
 
@@ -527,7 +535,14 @@ private fun SignOutDialog(visible: Boolean, unsent: Int, onEvent: (SettingsEvent
     }
 }
 
-/** A titled group of rows, the title carrying the section's icon. */
+/**
+ * A titled group of rows, the title carrying the section's icon.
+ *
+ * The rows are divided by a hairline, inset to the text, as the destination
+ * rows above already are: without one a card of seven switches read as one
+ * block of prose with the controls hanging off its edge. Each row draws its
+ * own, at its top (see [SettingRow]).
+ */
 @Composable
 private fun Section(title: String, icon: ImageVector, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm)) {
@@ -571,8 +586,19 @@ private fun SettingRow(
     detail: String,
     trailing: @Composable () -> Unit,
 ) {
+    val divider = ZillitTheme.colors.border
+    val inset = ZillitTheme.spacing.md
     Row(
-        modifier = Modifier.fillMaxWidth().padding(ZillitTheme.spacing.md),
+        modifier = Modifier
+            .fillMaxWidth()
+            // A hairline above every row, inset to the text. The first row's
+            // lands on the card's own top border, in the same colour, and
+            // vanishes into it — so no row needs to know it is the first.
+            .drawBehind {
+                val x = inset.toPx()
+                drawLine(divider, Offset(x, 0f), Offset(size.width - x, 0f), HAIRLINE.toPx())
+            }
+            .padding(ZillitTheme.spacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.md),
     ) {
@@ -589,9 +615,15 @@ private fun SettingRow(
                 )
             }
         }
-        trailing()
+        // Capped, so no control can take the row from its words. The language
+        // select had no width of its own and filled the row, leaving
+        // "Language" and its explanation one letter wide, a page tall.
+        Box(modifier = Modifier.widthIn(max = TRAILING_MAX_WIDTH), contentAlignment = Alignment.CenterEnd) {
+            trailing()
+        }
     }
 }
+
 
 private val ThemeMode.label: String
     get() = when (this) {
@@ -625,6 +657,9 @@ private fun LanguageSelect(selected: String, onSelect: (String) -> Unit) {
         value = value,
         options = options,
         onSelect = onSelect,
+        // Fixed, like the unit select below: a select sized by its content
+        // fills the row and crushes the title column.
+        modifier = Modifier.width(LANGUAGE_SELECT_WIDTH),
         label = { code ->
             if (code.isBlank()) {
                 str(S.desktop_language_system_short) + " · " + Strings.language.nativeName
@@ -643,6 +678,8 @@ private val TITLE_ACCENT_HEIGHT = 40.dp
 private val ACCOUNT_AVATAR = 48.dp
 private val SECTION_ICON = 14.dp
 private val UNIT_SELECT_WIDTH = 240.dp
+private val LANGUAGE_SELECT_WIDTH = 240.dp
+private val TRAILING_MAX_WIDTH = 320.dp
 
 /** The About row's answer line — so a test can read what the check said. */
 internal const val UPDATE_RESULT_TAG = "settings-update-result"

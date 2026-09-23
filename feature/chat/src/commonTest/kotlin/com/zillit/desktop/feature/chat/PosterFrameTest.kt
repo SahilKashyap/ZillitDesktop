@@ -2,9 +2,12 @@ package com.zillit.desktop.feature.chat
 
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import com.zillit.desktop.feature.chat.ui.PosterMemory
+import com.zillit.desktop.feature.chat.ui.PosterState
 import com.zillit.desktop.feature.chat.ui.posterFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -26,6 +29,21 @@ class PosterFrameTest {
         val frame = posterFrame(4000, 400, portraitDefault = false)
         assertEquals(240.dp, frame.width)
         assertTrue(frame.height >= 96.dp, "short edge was ${frame.height}")
+    }
+
+    @Test
+    fun `a poster miss outlives the row that learned it`() {
+        // A row scrolled away and back used to start at Loading — a full tile
+        // that collapsed to the chip one fetch later, which at the end of the
+        // thread moved every row. The thread's memory answers at once.
+        val memory = PosterMemory()
+        assertNull(memory.known("s3/clip.mp4"), "never fetched: the tile waits")
+
+        memory.keep("s3/clip.mp4", image = null)
+
+        assertEquals(PosterState.Done(null), memory.known("s3/clip.mp4"))
+        memory.keep("", image = null)
+        assertNull(memory.known(""), "a file not yet in storage is never settled")
     }
 
     @Test

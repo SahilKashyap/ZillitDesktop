@@ -60,9 +60,21 @@ internal fun ApplicationScope.CallWindow(
     ready: AppGraph.Ready,
     calls: CallViewModel?,
     darkTheme: Boolean,
+    showMain: () -> Unit = {},
 ) {
     calls ?: return
     val state by calls.state.collectAsState()
+    // Whenever a share is live, wherever the call is drawn.
+    ScreenShareIndicator(state = state, calls = calls, darkTheme = darkTheme) {
+        // Back to the call: its own window when it has one (raised, full
+        // size), otherwise the main window with the stage expanded.
+        if (state.pipOpen) {
+            calls.onEvent(CallEvent.ToggleStage)
+        } else {
+            if (!state.expanded) calls.onEvent(CallEvent.ToggleStage)
+            showMain()
+        }
+    }
     // No video gate: an audio call gets a window too. The surface draws
     // avatars when there is no picture, and a call the user cannot see is
     // exactly the thing this window exists to prevent.
@@ -80,6 +92,18 @@ internal fun ApplicationScope.CallWindow(
         alwaysOnTop = compact,
         resizable = true,
     ) {
+        // The pill's expand button, pressed in the main window while the call
+        // lives here: this window is the call, so it comes forward — out of
+        // the Dock if it was minimised there, and full size (the view model
+        // has already dropped the thumbnail). Zero is "never asked", so a
+        // window opening for the first time does not jump the queue.
+        LaunchedEffect(state.windowRaise) {
+            if (state.windowRaise == 0) return@LaunchedEffect
+            windowState.isMinimized = false
+            window.toFront()
+            window.requestFocus()
+            com.zillit.desktop.core.common.ZillitLog.i("CallWindowing") { "raised the call window" }
+        }
         ZillitTheme(darkTheme = darkTheme) {
             val colors = ZillitTheme.colors
             AvatarFaces(ready) {

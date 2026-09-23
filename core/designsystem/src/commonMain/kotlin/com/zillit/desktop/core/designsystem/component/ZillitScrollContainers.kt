@@ -48,7 +48,7 @@ fun ZillitLazyColumn(
     Box(modifier) {
         LazyColumn(
             state = state,
-            modifier = Modifier.fillMaxWidth().then(rememberWheelScroll(state)),
+            modifier = Modifier.fillMaxWidth().then(rememberWheelScroll(state, reverseDirection = reverseLayout)),
             contentPadding = contentPadding,
             reverseLayout = reverseLayout,
             verticalArrangement = verticalArrangement,

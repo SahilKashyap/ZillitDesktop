@@ -515,7 +515,7 @@ private class StubChatRepository : ChatRepository {
     override val incoming: Flow<ChatMessage> = emptyFlow()
     override val deletions: Flow<List<String>> = emptyFlow()
     override val connections: Flow<Unit> = emptyFlow()
-    override val typing: Flow<Pair<String, Boolean>> = emptyFlow()
+    override val typing: Flow<com.zillit.desktop.feature.chat.data.TypingSignal> = emptyFlow()
     override val receipts: Flow<ReadReceipt> = emptyFlow()
     override val edits: Flow<ChatMessage> = emptyFlow()
     override val selfReads: Flow<String> = emptyFlow()

@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.sp
 import com.zillit.desktop.core.designsystem.ZillitTheme
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitText
-import com.zillit.desktop.core.designsystem.component.ZillitTooltip
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
@@ -48,8 +47,8 @@ import com.zillit.desktop.feature.calls.domain.CallPhase
  * out of the centred run so a count never shifts the other controls.
  *
  * [connected] false is the ring: every control is drawn so the bar never
- * reflows, but the ones that need a room are inert at 40% with a tooltip
- * saying why (`CallRoom.tsx:754-759`).
+ * reflows, but the ones that need a room are inert at 40%
+ * (`CallRoom.tsx:754-759`).
  */
 @Composable
 fun CallDock(
@@ -185,18 +184,16 @@ private fun OverflowMenu(state: CallUiState, onEvent: (CallEvent) -> Unit, conne
 @Composable
 private fun HangUp(state: CallUiState, onEvent: (CallEvent) -> Unit) {
     val label = if (state.phase == CallPhase.Ending) str(S.close) else str(S.desktop_call_leave_call)
-    ZillitTooltip(label) {
-        Box(
-            modifier = Modifier
-                .padding(start = ZillitTheme.spacing.sm)
-                .size(width = HANGUP_WIDTH, height = DOCK_BUTTON)
-                .clip(RoundedCornerShape(PILL_CORNER))
-                .background(CallPalette.danger)
-                .clickable { onEvent(CallEvent.HangUp) },
-            contentAlignment = Alignment.Center,
-        ) {
-            ZillitIcon(icon = ZillitIcons.PhoneDown, contentDescription = label, tint = Color.White, size = DOCK_ICON)
-        }
+    Box(
+        modifier = Modifier
+            .padding(start = ZillitTheme.spacing.sm)
+            .size(width = HANGUP_WIDTH, height = DOCK_BUTTON)
+            .clip(RoundedCornerShape(PILL_CORNER))
+            .background(CallPalette.danger)
+            .clickable { onEvent(CallEvent.HangUp) },
+        contentAlignment = Alignment.Center,
+    ) {
+        ZillitIcon(icon = ZillitIcons.PhoneDown, contentDescription = label, tint = Color.White, size = DOCK_ICON)
     }
 }
 
@@ -261,37 +258,41 @@ private fun SplitPill(
             .background(group),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ZillitTooltip(caretLabel) {
-            Box(
-                modifier = Modifier
-                    .width(CARET_WIDTH)
-                    .height(DOCK_BUTTON)
-                    .background(caret)
-                    .clickable(onClick = onCaret),
-                contentAlignment = Alignment.Center,
-            ) {
-                ZillitIcon(
-                    icon = ZillitIcons.ChevronUp,
-                    contentDescription = caretLabel,
-                    tint = caretGlyph,
-                    size = CARET_ICON,
-                )
-            }
+        Box(
+            modifier = Modifier
+                .width(CARET_WIDTH)
+                .height(DOCK_BUTTON)
+                .background(caret)
+                .clickable(onClick = onCaret),
+            contentAlignment = Alignment.Center,
+        ) {
+            ZillitIcon(
+                icon = ZillitIcons.ChevronUp,
+                contentDescription = caretLabel,
+                tint = caretGlyph,
+                size = CARET_ICON,
+            )
         }
-        ZillitTooltip(label) {
-            Box(
-                modifier = Modifier
-                    .size(DOCK_BUTTON)
-                    .clickable(enabled = enabled, onClick = onClick),
-                contentAlignment = Alignment.Center,
-            ) {
-                ZillitIcon(icon = icon, contentDescription = label, tint = glyph, size = DOCK_ICON)
-            }
+        Box(
+            modifier = Modifier
+                .size(DOCK_BUTTON)
+                .clickable(enabled = enabled, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            ZillitIcon(icon = icon, contentDescription = label, tint = glyph, size = DOCK_ICON)
         }
     }
 }
 
-/** A 44dp circle: grey at rest, the web's light blue when its state is on. */
+/**
+ * A 44dp circle: grey at rest, the web's light blue when its state is on.
+ *
+ * No hover tooltip, on this or any call control. `TooltipArea` opened its
+ * popup under the pointer a moment after it came to rest, and the popup —
+ * not the button — took the next press: a slow click on Mute or Present
+ * landed on the tooltip and did nothing. The label still names the button
+ * for accessibility.
+ */
 @Composable
 private fun DockButton(
     icon: ImageVector,
@@ -300,18 +301,15 @@ private fun DockButton(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    val tip = if (enabled) label else str(S.desktop_call_available_once_connected)
-    ZillitTooltip(tip) {
-        RoundAction(
-            icon = icon,
-            label = label,
-            background = if (active) CallPalette.accent else CallPalette.control,
-            tint = if (active) CallPalette.onAccent else CallPalette.text,
-            size = DOCK_BUTTON,
-            modifier = Modifier.alpha(if (enabled) 1f else INERT_ALPHA),
-            onClick = { if (enabled) onClick() },
-        )
-    }
+    RoundAction(
+        icon = icon,
+        label = label,
+        background = if (active) CallPalette.accent else CallPalette.control,
+        tint = if (active) CallPalette.onAccent else CallPalette.text,
+        size = DOCK_BUTTON,
+        modifier = Modifier.alpha(if (enabled) 1f else INERT_ALPHA),
+        onClick = { if (enabled) onClick() },
+    )
 }
 
 @Composable

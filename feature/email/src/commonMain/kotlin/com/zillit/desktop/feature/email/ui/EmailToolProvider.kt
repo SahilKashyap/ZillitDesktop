@@ -174,7 +174,10 @@ class EmailToolProvider(
     @Composable
     private fun MailboxEffects(navigator: WindowNavigator) {
         // Loaded when the window opens, not at startup: the mailbox calls carry
-        // project and user in their headers.
+        // project and user in their headers. Asked again whenever the window
+        // comes back from another tab (the switch disposed this composition);
+        // the view model then resumes the open folder and message, not a
+        // fresh open, and syncs behind them.
         LaunchedEffect(viewModel) {
             viewModel.onEvent(EmailEvent.Load)
             host.claimPendingCompose()?.let { (address, subject) ->

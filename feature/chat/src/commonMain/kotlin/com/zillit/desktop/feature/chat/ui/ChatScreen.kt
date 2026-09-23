@@ -56,6 +56,7 @@ import com.zillit.desktop.core.designsystem.component.ZillitDialogShell
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitIconButton
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
+import com.zillit.desktop.core.designsystem.component.LocalAvatarLoader
 import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.component.ZillitText
@@ -840,7 +841,9 @@ private fun CrewList(
         state = crewState,
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xxs),
     ) {
-        items(crew.sortedBy { it.fullName.lowercase() }, key = CrewContact::userId) { contact ->
+        // One row per person: the key is the user id, and a duplicate one throws.
+        val people = crew.distinctBy(CrewContact::userId).sortedBy { it.fullName.lowercase() }
+        items(people, key = CrewContact::userId) { contact ->
             CrewRow(
                 contact = contact,
                 isSelected = contact.userId == selectedId,
@@ -906,7 +909,7 @@ private fun CrewRow(
     ) {
         ZillitAvatar(
             name = contact.fullName,
-            image = rememberAvatar(contact.userId, loadAvatar),
+            image = rememberChatFace(contact.userId, loadAvatar),
             size = ROW_AVATAR,
         )
         CrewIdentity(contact, unread, subtitle, meta, stamp, Modifier.weight(1f))
@@ -1193,7 +1196,7 @@ private fun CardBody(
 private fun CardIdentity(contact: CrewContact, loadAvatar: suspend (String) -> ImageBitmap?) {
     ZillitAvatar(
         name = contact.fullName,
-        image = rememberAvatar(contact.userId, loadAvatar),
+        image = rememberChatFace(contact.userId, loadAvatar),
         size = CARD_AVATAR,
     )
     Row(
@@ -1216,13 +1219,28 @@ private fun CardIdentity(contact: CrewContact, loadAvatar: suspend (String) -> I
     }
 }
 
+/**
+ * A person's face for a chat row or header: the app's shared face loader
+ * where the host installed one ([LocalAvatarLoader] — cached per production,
+ * fetched and decoded off the UI thread), the screen's own [load] seam
+ * otherwise (tests, previews).
+ *
+ * The seam alone fetched the full-size photo and decoded it on the UI thread
+ * every time a row came into view, and a lazy list recycles its rows: a
+ * scroll through the listing paid that for every row it passed, the decodes
+ * landed as the list came to rest — a hitch at the end of the scroll — and
+ * every face flashed from initials to photo again on its way back in.
+ */
 @Composable
-private fun rememberAvatar(
+internal fun rememberChatFace(
     userId: String,
     load: suspend (String) -> ImageBitmap?,
-): ImageBitmap? = produceState<ImageBitmap?>(initialValue = null, userId) {
-    value = load(userId)
-}.value
+): ImageBitmap? {
+    val shared = LocalAvatarLoader.current
+    return produceState<ImageBitmap?>(initialValue = null, userId, shared) {
+        value = if (shared != null) shared.load(userId) else load(userId)
+    }.value
+}
 
 @Composable
 private fun PaneMessage(

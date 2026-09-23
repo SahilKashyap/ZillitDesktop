@@ -58,6 +58,13 @@ import androidx.compose.ui.unit.dp
 expect fun rememberWheelScroll(
     state: ScrollableState,
     orientation: Orientation = Orientation.Vertical,
+    /**
+     * The scrollable's own `reverseLayout`. A reversed list — the chat thread,
+     * newest at the bottom — runs its content backwards, and the platform's
+     * scrollable flips the wheel for it; a `scrollBy` from here does not, so
+     * without this a notch scrolled a reversed list the wrong way.
+     */
+    reverseDirection: Boolean = false,
 ): Modifier
 
 /**
@@ -102,7 +109,36 @@ val WHEEL_LINE: Dp = 14.dp
  * scaling can be tested without a mouse. Positive is towards the end of the
  * content, matching `ScrollableState.scrollBy`.
  */
-internal fun wheelScrollDistance(notches: Float, linesPerNotch: Int, linePx: Float): Float =
+internal fun wheelScrollDistance(
+    notches: Float,
+    linesPerNotch: Int,
+    linePx: Float,
+    reverseDirection: Boolean = false,
+): Float {
     // At least one line: a system configured with zero lines per notch would
     // otherwise consume the event and scroll nothing, which is a dead wheel.
-    notches * linePx * linesPerNotch.coerceAtLeast(1)
+    val distance = notches * linePx * linesPerNotch.coerceAtLeast(1)
+    return if (reverseDirection) -distance else distance
+}
+
+/**
+ * Whether an event belongs to a trackpad's stream and must be left alone.
+ *
+ * A trackpad reports fractional rotation — but not always: now and then one
+ * of its events lands on a whole number and reads exactly like a notch of a
+ * stepped wheel. Judged one event at a time, that event was stepped a full
+ * notch (42dp) and, in the reversed chat thread, the wrong way — the thread
+ * jumped and snapped back at the start of every hard swipe (reproduced live
+ * 2026-09-23, three swipes, three identical 42pt jumps). So a fractional
+ * event claims the stream for [TRACKPAD_GRACE_MILLIS], whole numbers included;
+ * a stepped wheel never sends a fractional one and is unaffected.
+ */
+internal fun isTrackpadStream(isPrecise: Boolean, atMillis: Long, lastPreciseMillis: Long): Boolean =
+    isPrecise || atMillis - lastPreciseMillis < TRACKPAD_GRACE_MILLIS
+
+/**
+ * How long a trackpad keeps the stream after its last fractional event. Its
+ * events arrive every few milliseconds through a swipe and its momentum, so a
+ * second covers the gaps without holding a mouse wheel picked up afterwards.
+ */
+internal const val TRACKPAD_GRACE_MILLIS = 1_000L

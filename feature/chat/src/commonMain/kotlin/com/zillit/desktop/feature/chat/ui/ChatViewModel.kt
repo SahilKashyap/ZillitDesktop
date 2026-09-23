@@ -4,6 +4,7 @@ import com.zillit.desktop.core.common.ZillitLog
 import com.zillit.desktop.core.common.ZillitResult
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.common.ZillitError
+import com.zillit.desktop.core.designsystem.component.DroppedFile
 import com.zillit.desktop.core.media.PreviewKind
 import com.zillit.desktop.core.mvvm.ZillitViewModel
 import com.zillit.desktop.core.strings.S
@@ -61,6 +62,11 @@ data class ChatUiState(
     /** The open peer is writing right now. */
     val peerTyping: Boolean = false,
     /**
+     * Who is typing, by user id — in a room, the person the line names. Kept
+     * after they stop so the line fading out still says who it was.
+     */
+    val typistId: String = "",
+    /**
      * The open 1:1 peer's device is online right now — the header's green dot.
      * Read from the same Firebase node iOS and web watch; always false for
      * groups and for crew with no registered device.
@@ -99,6 +105,12 @@ data class ChatUiState(
      * preview dialog shows. Nothing uploads until the dialog says Send.
      */
     val pendingPreview: PendingChatUpload? = null,
+    /**
+     * The rest of a drop that brought several files, previewed beside
+     * [pendingPreview] and sent after it — one message each, as the Home
+     * board posts a multi-file drop. Empty for a pick or a paste.
+     */
+    val droppedAlong: List<PendingChatUpload> = emptyList(),
     /** The message the composer is quoting; null writes a plain line. */
     val replyTo: ChatMessage? = null,
     /** The server may hold messages older than the loaded window. */
@@ -176,7 +188,8 @@ sealed interface ChatEvent {
     data object ProjectChanged : ChatEvent
 
     /** Delivered by the socket: the open peer started or stopped writing. */
-    data class PeerTyping(val peerId: String, val started: Boolean) : ChatEvent
+    /** [typistId] is who, which in a room is not [peerId] — the room is. Blank when unknown. */
+    data class PeerTyping(val peerId: String, val started: Boolean, val typistId: String = "") : ChatEvent
 
     /** The other end reports how far our messages to them have got. */
     data class Receipt(val peerId: String, val state: ChatSendState) : ChatEvent
@@ -209,8 +222,22 @@ sealed interface ChatEvent {
     /** Cmd+V with a picture on the clipboard: preview it like a picked file. */
     class ImagePasted(val name: String, val contentType: String, val bytes: ByteArray) : ChatEvent
 
-    /** The preview dialog's Send: the (possibly edited) file plus its caption. */
-    data class PreviewSend(val result: PreviewResult, val caption: String) : ChatEvent
+    /**
+     * Files dragged in from the OS and dropped on the open thread — the Home
+     * board's drop, through the same seam. They take the paste's road: each
+     * weighed by the composer's rules, the rest into one preview.
+     */
+    class FilesDropped(val files: List<DroppedFile>) : ChatEvent
+
+    /**
+     * The preview dialog's Send: the (possibly edited) file plus its caption,
+     * and [more] when a drop brought several — each its own message.
+     */
+    data class PreviewSend(
+        val result: PreviewResult,
+        val caption: String,
+        val more: List<PreviewResult> = emptyList(),
+    ) : ChatEvent
 
     /** The preview dialog dismissed — the pick is dropped, nothing uploads. */
     data object PreviewCancelled : ChatEvent
@@ -444,8 +471,8 @@ class ChatViewModel(
         // again, or a badge that landed after the listing loaded never shows.
         launch { repository.backlogChanges.collect { reloadBacklog() } }
         launch {
-            repository.typing.collect { (peer, started) ->
-                onEvent(ChatEvent.PeerTyping(peer, started))
+            repository.typing.collect { signal ->
+                onEvent(ChatEvent.PeerTyping(signal.conversationId, signal.started, signal.typistId))
             }
         }
         launch { repository.deletions.collect { onEvent(ChatEvent.Deleted(it)) } }
@@ -502,8 +529,9 @@ class ChatViewModel(
             is ChatEvent.AttachKind -> launch { pickForPreview(event.kind) }
             is ChatEvent.ShareLocation -> shareLocation(event.place)
             is ChatEvent.ImagePasted -> imagePasted(event)
-            is ChatEvent.PreviewSend -> sendMedia(event.result, event.caption)
-            ChatEvent.PreviewCancelled -> setState { copy(pendingPreview = null) }
+            is ChatEvent.FilesDropped -> filesDropped(event.files)
+            is ChatEvent.PreviewSend -> sendMedia(event.result, event.caption, event.more)
+            ChatEvent.PreviewCancelled -> setState { copy(pendingPreview = null, droppedAlong = emptyList()) }
             is ChatEvent.StartReply -> setState {
                 copy(replyTo = messages.firstOrNull { it.id == event.messageId })
             }
@@ -537,7 +565,9 @@ class ChatViewModel(
             is ChatEvent.Receipt -> applyReceipt(event.peerId, event.state)
             is ChatEvent.PeerTyping ->
                 if (currentState.peer?.userId == event.peerId) {
-                    setState { copy(peerTyping = event.started) }
+                    setState {
+                        copy(peerTyping = event.started, typistId = if (event.started) event.typistId else typistId)
+                    }
                 }
             ChatEvent.ProjectChanged -> startFreshProject()
             ChatEvent.RefreshRecents -> {
@@ -709,6 +739,7 @@ class ChatViewModel(
                 peerOnline = false,
                 replyTo = null,
                 pendingPreview = null,
+                droppedAlong = emptyList(),
                 hasOlder = false,
                 loadingOlder = false,
                 error = null,
@@ -1090,12 +1121,39 @@ class ChatViewModel(
     }
 
     /**
+     * Files dropped from the OS take the paste's road, several at once. The
+     * drop never passed the picker's scales, so each is weighed here — an
+     * oversized one arrives unread with its size — and the first refusal is
+     * said; whatever passes opens in one preview, first file first.
+     */
+    private fun filesDropped(files: List<DroppedFile>) {
+        if (currentState.peer == null) return
+        val (fits, refused) = files.partition { ChatComposerRules.refuse(it.name, it.sizeBytes) == null }
+        refused.firstOrNull()?.let { file ->
+            setState { copy(error = ChatComposerRules.refuse(file.name, file.sizeBytes)) }
+        }
+        val uploads = fits.map { file ->
+            PendingChatUpload(file.name, file.contentType, file.bytes) { bytes, onProgress ->
+                uploadMedia(file.name, file.contentType, bytes, onProgress)
+            }
+        }
+        val first = uploads.firstOrNull() ?: return
+        ZillitLog.d(TAG) { "dropped ${uploads.size} file(s) for preview" }
+        setState { copy(pendingPreview = first, droppedAlong = uploads.drop(1)) }
+    }
+
+    /**
      * The preview's Send: bubble first, then bytes — the message rides the
      * socket only once the file is in storage, since sent earlier it would
      * name an object that does not exist yet. The caption is the message
      * body, as the phones' gallery viewer sends it.
+     *
+     * A drop's other files follow as a message each, the caption on the
+     * first alone — the Home board's rule for a multi-file preview. Each
+     * result finds the upload it came from by name: the preview can remove
+     * files, so position is no guide.
      */
-    private fun sendMedia(result: PreviewResult, caption: String) {
+    private fun sendMedia(result: PreviewResult, caption: String, more: List<PreviewResult> = emptyList()) {
         val peer = currentState.peer ?: return
         val pending = currentState.pendingPreview ?: return
         // A caption is a body like any other; refuse it before the optimistic
@@ -1104,15 +1162,28 @@ class ChatViewModel(
             setState { copy(error = ChatComposerRules.BODY_TOO_LONG) }
             return
         }
-        setState { copy(pendingPreview = null) }
+        val sources = listOf(pending) + currentState.droppedAlong
+        val uploadOf = { sent: PreviewResult -> (sources.firstOrNull { it.name == sent.name } ?: pending).upload }
+        setState { copy(pendingPreview = null, droppedAlong = emptyList()) }
+        queueMedia(peer, result, caption.trim(), uploadOf(result))
+        more.forEach { next -> queueMedia(peer, next, body = "", upload = uploadOf(next)) }
+    }
+
+    /** One media line: its bubble now, its upload and send behind it. */
+    private fun queueMedia(
+        peer: CrewContact,
+        result: PreviewResult,
+        body: String,
+        upload: suspend (ByteArray, (Int) -> Unit) -> ChatAttachment?,
+    ) {
         val placeholder = ChatAttachment(media = "", name = result.name, contentType = result.contentType)
-        val optimistic = appendOptimistic(peer, body = caption.trim(), attachment = placeholder)
+        val optimistic = appendOptimistic(peer, body = body, attachment = placeholder)
         unsentMedia[optimistic.uniqueId] = UnsentMedia(
             peerId = peer.userId,
             isGroup = currentState.peerIsGroup,
             message = optimistic,
             bytes = result.bytes,
-            upload = pending.upload,
+            upload = upload,
         )
         launch { runMediaSend(optimistic.uniqueId) }
     }

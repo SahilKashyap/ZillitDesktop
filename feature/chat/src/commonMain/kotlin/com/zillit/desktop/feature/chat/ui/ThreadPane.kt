@@ -77,12 +77,15 @@ import com.zillit.desktop.core.designsystem.component.ZillitMenuTone
 import com.zillit.desktop.core.designsystem.component.ZillitNotice
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.ZillitTextField
+import com.zillit.desktop.core.designsystem.component.ZillitDropOverlay
+import com.zillit.desktop.core.designsystem.component.externalFileDrop
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import androidx.compose.animation.core.animateFloat
 import com.zillit.desktop.core.localization.localised
 import com.zillit.desktop.core.media.MediaPreviewDialog
 import com.zillit.desktop.core.media.PreviewItem
 import com.zillit.desktop.feature.chat.domain.ChatAttachment
+import com.zillit.desktop.feature.chat.domain.ChatComposerRules
 import com.zillit.desktop.feature.chat.domain.ChatMessage
 import com.zillit.desktop.feature.chat.domain.ChatReplyRef
 import com.zillit.desktop.feature.chat.domain.ChatSendState
@@ -148,11 +151,32 @@ internal fun ThreadPane(
     var imageReply by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf<ChatMessage?>(null)
     }
+    // Posters this thread has already fetched, so a row scrolling back into
+    // view is drawn at its final size — see PosterMemory. One per thread.
+    val posters = remember(peer.userId) { PosterMemory() }
+    // Files from Finder attach as a picked file does — the Home board's drop,
+    // through the same seam — wherever the paperclip would work: a composer
+    // on screen, nothing already waiting in the preview, no microphone open.
+    var dropHover by remember { mutableStateOf(false) }
+    val hasComposer = state.hasComposer(peer)
+    val canDrop = state.acceptsDroppedFiles(peer)
 
     // Painted here, not left to the host: the pane is also embedded inside
     // other tools, and a thread with no ground of its own showed whatever
     // was behind it.
-    Box(Modifier.fillMaxSize().background(ZillitTheme.colors.canvas)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(ZillitTheme.colors.canvas)
+            .externalFileDrop(
+                enabled = canDrop,
+                onHover = { dropHover = it },
+                onFiles = { files -> onEvent(ChatEvent.FilesDropped(files)) },
+                // Past the ceiling a file is not read at all; the view model
+                // refuses it by size, as the picker would have.
+                maxBytes = ChatComposerRules.MAX_ATTACHMENT_BYTES,
+            ),
+    ) {
         Column(Modifier.fillMaxSize()) {
             ThreadHeader(state, peer, loadAvatar, onCall, lines, onEvent)
             Box(Modifier.fillMaxWidth().height(HAIRLINE).background(ZillitTheme.colors.border))
@@ -164,6 +188,7 @@ internal fun ThreadPane(
                 loadAudio = loadAudio,
                 // Pictures open in-app; downloading stays a separate, gated act.
                 onView = { viewing = it },
+                posters = posters,
             )
             // Passed beside the react handler rather than through it: deletion is
             // keyed by the server's id, and only rows that have one can offer it.
@@ -180,8 +205,7 @@ internal fun ThreadPane(
                 enter = fadeIn() + slideInVertically { it / 2 },
                 exit = fadeOut() + slideOutVertically { it / 2 },
             ) {
-                // A room's typing signal names nobody, so neither does the line.
-                TypingIndicator(if (state.peerIsGroup) str(S.history_someone) else peer.fullName.substringBefore(' '))
+                TypingIndicator(state.typingLabel(peer, resolveName))
             }
 
             if (refused) {
@@ -202,9 +226,17 @@ internal fun ThreadPane(
 
             // No composer for someone who left — there is nobody to deliver
             // to, and Android hides its whole action row (userActive).
-            if (state.peerIsGroup || !peer.hasLeft) {
+            if (hasComposer) {
                 Composer(state, peer.fullName, onEvent)
             }
+        }
+
+        // Over the whole thread while an OS drag hovers it, as on the board.
+        if (dropHover && canDrop) {
+            ZillitDropOverlay(
+                title = str(S.desktop_board_drop_to_attach),
+                hint = str(S.desktop_chat_drop_hint),
+            )
         }
 
         viewing?.let { file ->
@@ -254,20 +286,24 @@ internal fun ThreadPane(
 }
 
 /**
- * The picked (or pasted) file, before it joins the thread — the phones'
- * gallery viewer: caption, and a picture's edit tools. One item at a time:
- * the chat wire takes one file per message.
+ * The picked (or pasted, or dropped) file, before it joins the thread — the
+ * phones' gallery viewer: caption, and a picture's edit tools. A pick is one
+ * item; a drop may bring several, previewed together and still sent one
+ * message each — the chat wire takes one file per message.
  */
 @Composable
 private fun ChatPreviewHost(state: ChatUiState, onEvent: (ChatEvent) -> Unit) {
     val pending = state.pendingPreview
+    val along = state.droppedAlong
     MediaPreviewDialog(
-        items = androidx.compose.runtime.remember(pending) {
-            pending?.let { listOf(PreviewItem(it.name, it.contentType, it.bytes)) }.orEmpty()
+        items = androidx.compose.runtime.remember(pending, along) {
+            pending?.let { first ->
+                (listOf(first) + along).map { PreviewItem(it.name, it.contentType, it.bytes) }
+            }.orEmpty()
         },
         initialCaption = "",
         onSend = { results, caption ->
-            results.firstOrNull()?.let { onEvent(ChatEvent.PreviewSend(it, caption)) }
+            results.firstOrNull()?.let { onEvent(ChatEvent.PreviewSend(it, caption, more = results.drop(1))) }
         },
         onCancel = { onEvent(ChatEvent.PreviewCancelled) },
     )
@@ -452,10 +488,7 @@ private fun ThreadHeader(
     lines: List<CallLine>,
     onEvent: (ChatEvent) -> Unit,
 ) {
-    val face = androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(
-        initialValue = null,
-        peer.userId,
-    ) { value = loadAvatar(peer.userId) }.value
+    val face = rememberChatFace(peer.userId, loadAvatar)
 
     Row(
         modifier = Modifier
@@ -1030,10 +1063,9 @@ private fun IncomingAware(
         horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
     ) {
         if (run.last) {
-            val face = androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(
-                initialValue = null,
-                message.senderId,
-            ) { value = loadAvatar(message.senderId) }.value
+            // Through the shared face cache: a busy room's rows come and go
+            // as it scrolls, and each used to fetch and decode its face anew.
+            val face = rememberChatFace(message.senderId, loadAvatar)
             ZillitAvatar(name = senderName, image = face, size = ROW_AVATAR)
         } else {
             Spacer(Modifier.width(ROW_AVATAR))
@@ -1214,6 +1246,8 @@ internal class BubbleMedia(
     val loadAudio: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> ByteArray?,
     /** Opens the in-app lightbox — looking, which no right governs. */
     val onView: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit = onOpen,
+    /** What this thread's poster fetches already answered — see [PosterMemory]. */
+    val posters: PosterMemory = PosterMemory(),
 )
 
 /**
@@ -1479,7 +1513,7 @@ private fun AttachmentBody(
         file.kind == "audio" -> VoiceBubble(file, media)
         // A picture opens the in-app viewer; saving stays gated behind its
         // Download (QA #11).
-        file.kind == "image" -> MediaThumb(file, media.loadThumbnail, media.onView)
+        file.kind == "image" -> MediaThumb(file, media, media.onView)
         // A PDF is asked for its poster whether or not the row names one —
         // the host draws page one itself when the server has nothing (a
         // Box production, a Drive share, the phones' placeholder key). The
@@ -1487,7 +1521,7 @@ private fun AttachmentBody(
         file.thumbnail.isNotBlank() || file.isPdf ->
             MediaThumb(
                 file,
-                media.loadThumbnail,
+                media,
                 media.onOpen,
                 playBadge = file.kind == "video",
                 namePlate = file.kind == "document",
@@ -1867,7 +1901,7 @@ private fun LocationCard(
         // `handleImageClickListener` (HoldersViewhandler.kt:306-318) does the
         // same, and a screenshot is not something to look at closely.
         if (file != null && file.media.isNotBlank() && open != null) {
-            MediaThumb(file, media.loadThumbnail, onOpen = { open(location.mapsUrl) })
+            MediaThumb(file, media, onOpen = { open(location.mapsUrl) })
         }
         Row(
             verticalAlignment = Alignment.Top,
@@ -1980,8 +2014,7 @@ private fun VoiceBubble(
 @Composable
 private fun MediaThumb(
     file: com.zillit.desktop.feature.chat.domain.ChatAttachment,
-    loadThumbnail: suspend (com.zillit.desktop.feature.chat.domain.ChatAttachment) ->
-    androidx.compose.ui.graphics.ImageBitmap?,
+    media: BubbleMedia,
     onOpen: (com.zillit.desktop.feature.chat.domain.ChatAttachment) -> Unit,
     playBadge: Boolean = false,
     /** The file's chip under the picture — a document's name and open verb. */
@@ -1993,10 +2026,18 @@ private fun MediaThumb(
     // picture the moment the bytes landed — which, in a reversed list, is a
     // visible jump of everything above it, timed (S3 round trip) to land
     // right as a trackpad fling dies.
-    val poster by androidx.compose.runtime.produceState<PosterState>(
-        initialValue = PosterState.Loading,
-        file.media,
-    ) { value = PosterState.Done(loadThumbnail(file)) }
+    //
+    // And it starts from what the thread already learned: this state dies
+    // with the row when it scrolls away, and a row that came back used to
+    // start again at Loading — see PosterMemory for what that cost.
+    val settled = remember(file.media) { media.posters.known(file.media) ?: PosterState.Loading }
+    val poster by androidx.compose.runtime.produceState(initialValue = settled, file.media) {
+        if (value == PosterState.Loading) {
+            val image = media.loadThumbnail(file)
+            media.posters.keep(file.media, image)
+            value = PosterState.Done(image)
+        }
+    }
 
     val image = (poster as? PosterState.Done)?.image
     if (poster is PosterState.Done && image == null) {
@@ -2009,11 +2050,55 @@ private fun MediaThumb(
     }
 }
 
-private sealed interface PosterState {
+internal sealed interface PosterState {
     data object Loading : PosterState
 
     /** Fetched; a null [image] is a miss the chip stands in for. */
     data class Done(val image: androidx.compose.ui.graphics.ImageBitmap?) : PosterState
+}
+
+/**
+ * What the open thread's poster fetches came back with, kept past the rows
+ * that asked.
+ *
+ * A row's own fetch state dies when the row scrolls out of view — a lazy
+ * list recycles it — so a row scrolling back in started again at
+ * [PosterState.Loading]: a blank tile until the bytes were fetched and
+ * decoded again (pictures flickering at the list's edge), and for a file the
+ * server has no poster for — a video without a frame, the phones' placeholder
+ * key — the full tile collapsing to the chip one round trip later. At the
+ * end of the thread that collapse leaves a gap the list closes by moving
+ * every row, and the rows' `animateItem()` animates the move: the thread
+ * shook as the scroll landed, every time the row came back. Kept here, a
+ * returning row is drawn at its final size on its first frame.
+ *
+ * Touched only from composition and its effects — the UI thread — so plain
+ * collections. Misses are ids; pictures are capped at [POSTER_MEMORY], the
+ * least recently shown dropped first.
+ */
+internal class PosterMemory {
+    private val pictures = LinkedHashMap<String, androidx.compose.ui.graphics.ImageBitmap>()
+    private val misses = HashSet<String>()
+
+    /** The settled answer for [media], or null when it has not been fetched yet. */
+    fun known(media: String): PosterState? {
+        if (media in misses) return PosterState.Done(null)
+        val image = pictures.remove(media) ?: return null
+        pictures[media] = image
+        return PosterState.Done(image)
+    }
+
+    /** Records a fetch's answer; a null [image] is a miss. */
+    fun keep(media: String, image: androidx.compose.ui.graphics.ImageBitmap?) {
+        if (media.isBlank()) return
+        if (image == null) {
+            misses += media
+            return
+        }
+        pictures.remove(media)
+        pictures[media] = image
+        if (pictures.size > POSTER_MEMORY) pictures.remove(pictures.keys.first())
+    }
 }
 
 /**
@@ -2238,6 +2323,9 @@ private val THUMB_MIN = 96.dp
 
 /** A page-shaped tile's short edge as a share of its long one — near A4. */
 private const val PAGE_RATIO = 0.72f
+
+/** Posters one thread keeps decoded — a few screens of media, not the whole history. */
+private const val POSTER_MEMORY = 48
 private val PLAY_BADGE = 40.dp
 private val VOICE_MIN_WIDTH = 220.dp
 private val REACT_BUTTON = 24.dp
@@ -2262,3 +2350,29 @@ private val QUICK_REACTIONS = listOf(
 private val COMPOSER_RADIUS = 22.dp
 private val COMPOSER_MIN_HEIGHT = 44.dp
 private val SEND_BUTTON = 40.dp
+
+/** No composer for someone who left — there is nobody to deliver to (Android hides its action row). */
+private fun ChatUiState.hasComposer(peer: com.zillit.desktop.feature.chat.domain.CrewContact): Boolean =
+    peerIsGroup || !peer.hasLeft
+
+/**
+ * Files from Finder are taken wherever the paperclip would work: a composer
+ * on screen, nothing already waiting in the preview, no microphone open.
+ * Out of [ThreadPane] so its complexity stays the thread's own.
+ */
+private fun ChatUiState.acceptsDroppedFiles(peer: com.zillit.desktop.feature.chat.domain.CrewContact): Boolean =
+    hasComposer(peer) && pendingPreview == null && recordingSeconds == null
+
+/**
+ * Who the typing line names. A room names its typist in full — first names
+ * repeat across a crew — and says "Someone" only for a person the crew list
+ * cannot name; a DM's is the peer, by first name.
+ */
+private fun ChatUiState.typingLabel(
+    peer: com.zillit.desktop.feature.chat.domain.CrewContact,
+    resolveName: (String) -> String?,
+): String = if (peerIsGroup) {
+    resolveName(typistId)?.takeIf(String::isNotBlank) ?: str(S.history_someone)
+} else {
+    peer.fullName.substringBefore(' ')
+}

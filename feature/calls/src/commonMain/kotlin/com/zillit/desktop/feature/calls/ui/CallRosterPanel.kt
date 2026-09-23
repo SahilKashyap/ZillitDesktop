@@ -16,46 +16,64 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.zillit.desktop.core.designsystem.ZillitTheme
+import com.zillit.desktop.core.designsystem.component.ButtonSize
+import com.zillit.desktop.core.designsystem.component.ButtonVariant
 import com.zillit.desktop.core.designsystem.component.ZillitAvatar
+import com.zillit.desktop.core.designsystem.component.ZillitButton
 import com.zillit.desktop.core.designsystem.component.ZillitIcon
 import com.zillit.desktop.core.designsystem.component.ZillitLazyColumn
+import com.zillit.desktop.core.designsystem.component.ZillitSearchField
 import com.zillit.desktop.core.designsystem.component.ZillitText
 import com.zillit.desktop.core.designsystem.component.TagTone
 import com.zillit.desktop.core.designsystem.component.ZillitTag
 import com.zillit.desktop.core.designsystem.icon.ZillitIcons
 import com.zillit.desktop.core.strings.S
 import com.zillit.desktop.core.strings.str
+import com.zillit.desktop.feature.calls.domain.CallCrewEntry
+import com.zillit.desktop.feature.calls.domain.CallParticipant
 import com.zillit.desktop.feature.calls.domain.CallProvider
 import com.zillit.desktop.feature.calls.domain.CallStatus
 
 /**
- * Who is on the call, one row each.
+ * Everyone the call is about, in one panel — the web's `CallUsersPanel`
+ * (`CallOverlays.tsx:166-384`): who is in the call, who is being rung, who
+ * left or declined, and everyone else who could be added, under one search.
  *
- * This is the surface that carries live per-person state during a *video*
- * call. The video rectangle belongs to the embedded browser and nothing drawn
- * on this side survives inside it, so speaking dots, mute badges and link
- * quality have to live somewhere outside it — which is also why the button
- * that opens this sits in the header rather than behind a menu.
+ * It used to be two panels — the roster behind People and an add-people
+ * picker behind ⋮ — so adding someone meant closing the list of who was
+ * here to open a list of who was not. One panel, the way every other
+ * client draws it.
  *
- * On Line 3 each row also carries the web's `CallUsersPanel` verbs
+ * This is also the surface that carries live per-person state during a
+ * *video* call. The video rectangle belongs to the embedded browser and
+ * nothing drawn on this side survives inside it, so speaking dots, mute
+ * badges and link quality have to live somewhere outside it.
+ *
+ * On Line 3 each in-call row also carries the web's verbs
  * (`CallOverlays.tsx:262-280`): the ⋮ with mute-for-myself, don't-watch,
  * mute-for-everyone, and — for the host — block chat and remove; a Cancel
  * on a still-ringing invite; the Guest chip and the "On hold" line.
  */
 @Composable
-fun CallRosterPanel(
-    tiles: List<CallTile>,
+fun CallUsersPanel(
+    state: CallUiState,
+    onEvent: (CallEvent) -> Unit,
     modifier: Modifier = Modifier,
-    state: CallUiState? = null,
-    onEvent: (CallEvent) -> Unit = {},
 ) {
     val colors = ZillitTheme.colors
-    val connected = tiles.count { it.presence == CallStatus.InCall }
+    var query by remember { mutableStateOf("") }
+    val sections = remember(state.tiles, state.session, state.addableCrew, query) {
+        callUserSections(state, query)
+    }
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(PANEL_CORNER))
@@ -64,24 +82,123 @@ fun CallRosterPanel(
             .padding(ZillitTheme.spacing.md),
         verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
     ) {
-        ZillitText(
-            text = str(S.desktop_call_in_call_count, connected),
-            style = ZillitTheme.typography.titleSmall,
-            color = colors.textPrimary,
+        CallPanelHeader(
+            title = str(S.desktop_call_users),
+            onClose = { onEvent(CallEvent.ToggleRoster) },
+            tint = colors.textPrimary,
+            icon = ZillitIcons.Users,
         )
-        val rosterState = rememberLazyListState()
-        ZillitLazyColumn(
-            state = rosterState,
-            verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
-        ) {
-            items(tiles, key = CallTile::key) { tile ->
-                Column {
-                    RosterRow(tile, state, onEvent)
-                    if (state != null && state.rosterMenuFor == tile.userId && tile.userId.isNotBlank()) {
-                        RosterMenu(tile, state, onEvent)
-                    }
-                }
+        ZillitSearchField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = str(S.desktop_transport_search_name_or_designation),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        UserSectionsList(sections, state, onEvent)
+    }
+}
+
+/** The four sections, each headed with its count and left out when it is empty (bar "In call"). */
+@Composable
+private fun UserSectionsList(sections: CallUserSections, state: CallUiState, onEvent: (CallEvent) -> Unit) {
+    val listState = rememberLazyListState()
+    ZillitLazyColumn(
+        state = listState,
+        verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
+    ) {
+        item(key = "h-in-call") { SectionHeading(str(S.desktop_call_section_in_call, sections.inCall.size)) }
+        items(sections.inCall, key = { "in-" + it.key }) { tile -> TileRow(tile, state, onEvent) }
+        if (sections.ringing.isNotEmpty()) {
+            item(key = "h-ringing") { SectionHeading(str(S.desktop_call_section_ringing, sections.ringing.size)) }
+            items(sections.ringing, key = { "ring-" + it.key }) { tile -> TileRow(tile, state, onEvent) }
+        }
+        if (sections.dropped.isNotEmpty()) {
+            item(key = "h-dropped") {
+                SectionHeading(str(S.desktop_call_section_left_declined, sections.dropped.size))
             }
+            items(sections.dropped, key = { "gone-" + it.userId }) { row ->
+                PersonRow(
+                    name = row.name,
+                    userId = row.userId,
+                    detail = row.status.droppedWord,
+                    onAdd = if (sections.canAdd) {
+                        { onEvent(CallEvent.AddPerson(row.asCrewEntry(state))) }
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
+        if (sections.addable.isNotEmpty()) {
+            item(key = "h-users") { SectionHeading(str(S.desktop_call_section_users, sections.addable.size)) }
+            items(sections.addable, key = { "add-" + it.userId }) { entry ->
+                PersonRow(
+                    name = entry.name,
+                    userId = entry.userId,
+                    detail = entry.designation,
+                    onAdd = { onEvent(CallEvent.AddPerson(entry)) },
+                )
+            }
+        }
+    }
+}
+
+/** A roster tile's row, with its ⋮ menu opened under it. */
+@Composable
+private fun TileRow(tile: CallTile, state: CallUiState, onEvent: (CallEvent) -> Unit) {
+    Column {
+        RosterRow(tile, state, onEvent)
+        if (state.rosterMenuFor == tile.userId && tile.userId.isNotBlank()) {
+            RosterMenu(tile, state, onEvent)
+        }
+    }
+}
+
+@Composable
+private fun SectionHeading(text: String) {
+    ZillitText(
+        text = text,
+        style = ZillitTheme.typography.labelSmall,
+        color = ZillitTheme.colors.textMuted,
+        maxLines = 1,
+        modifier = Modifier.padding(top = ZillitTheme.spacing.sm, bottom = ZillitTheme.spacing.xxs),
+    )
+}
+
+/** Someone not in the call: a face, a line about them, and Add when they may be rung. */
+@Composable
+private fun PersonRow(name: String, userId: String, detail: String, onAdd: (() -> Unit)?) {
+    val colors = ZillitTheme.colors
+    Row(
+        modifier = Modifier.fillMaxWidth().height(ROW_HEIGHT),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.sm),
+    ) {
+        ZillitAvatar(name = name, userId = userId, size = ROW_AVATAR)
+        Column(modifier = Modifier.weight(1f)) {
+            ZillitText(
+                text = name,
+                style = ZillitTheme.typography.bodySmall,
+                color = colors.textPrimary,
+                maxLines = 1,
+            )
+            if (detail.isNotBlank()) {
+                ZillitText(
+                    text = detail,
+                    style = ZillitTheme.typography.labelSmall,
+                    color = colors.textMuted,
+                    maxLines = 1,
+                )
+            }
+        }
+        if (onAdd != null) {
+            ZillitButton(
+                text = str(S.add),
+                onClick = onAdd,
+                size = ButtonSize.Small,
+                variant = ButtonVariant.Secondary,
+                leadingIcon = ZillitIcons.Phone,
+            )
         }
     }
 }
@@ -102,7 +219,7 @@ private fun RosterRow(tile: CallTile, state: CallUiState?, onEvent: (CallEvent) 
                 horizontalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs),
             ) {
                 ZillitText(
-                    text = if (tile.isSelf) str(S.you) else tile.name,
+                    text = if (tile.isSelf) tile.selfLabel else tile.name,
                     style = ZillitTheme.typography.bodySmall,
                     color = colors.textPrimary,
                     maxLines = 1,
@@ -199,12 +316,11 @@ private fun RosterActions(tile: CallTile, onEvent: (CallEvent) -> Unit) {
 /** The web's row menu, verbatim: local first, then what the host may do to them. */
 @Composable
 private fun RosterMenu(tile: CallTile, state: CallUiState, onEvent: (CallEvent) -> Unit) {
-    val id = tile.userId
     val pick: (CallEvent) -> Unit = { event ->
         onEvent(CallEvent.ToggleRosterMenu(""))
         onEvent(event)
     }
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = ROW_AVATAR + ZillitTheme.spacing.sm)
@@ -212,6 +328,20 @@ private fun RosterMenu(tile: CallTile, state: CallUiState, onEvent: (CallEvent) 
             .background(ZillitTheme.colors.surface)
             .border(PANEL_BORDER, ZillitTheme.colors.border, RoundedCornerShape(MENU_CORNER)),
     ) {
+        RosterMenuItems(tile, state, pick)
+        PanelCloseButton(
+            onClose = { onEvent(CallEvent.ToggleRosterMenu("")) },
+            tint = ZillitTheme.colors.textMuted,
+            modifier = Modifier.align(Alignment.TopEnd),
+        )
+    }
+}
+
+/** The menu's rows: my own mutes first, then what anyone may do to them, then the host's. */
+@Composable
+private fun RosterMenuItems(tile: CallTile, state: CallUiState, pick: (CallEvent) -> Unit) {
+    val id = tile.userId
+    Column(modifier = Modifier.fillMaxWidth()) {
         val hidden = id in state.line3.hidden
         val deafened = id in state.line3.deafened
         MenuRow(if (hidden) str(S.desktop_call_watch) else str(S.desktop_call_dont_watch)) {
@@ -251,6 +381,29 @@ private fun MenuRow(label: String, danger: Boolean = false, onClick: () -> Unit)
     )
 }
 
+/** "Sahil (you)" — the web's own-row label — or plain "You" when we have no name for ourselves. */
+private val CallTile.selfLabel: String
+    get() = if (name.isBlank()) str(S.you) else str(S.desktop_name_you_suffix, name)
+
+/** Why a dropped-out person is in the Left / Declined section, as the web's chips word it. */
+private val CallStatus.droppedWord: String
+    get() = when (this) {
+        CallStatus.Declined -> str(S.declined_events)
+        CallStatus.NotAnswered -> str(S.desktop_no_answer)
+        else -> str(S.left)
+    }
+
+/** A dropped-out participant as the invite the Add button sends; the crew knows their device best. */
+private fun CallParticipant.asCrewEntry(state: CallUiState): CallCrewEntry {
+    val crew = state.addableCrew.firstOrNull { it.userId == userId }
+    return CallCrewEntry(
+        userId = userId,
+        deviceId = crew?.deviceId?.takeIf(String::isNotBlank) ?: deviceId,
+        name = name.ifBlank { crew?.name.orEmpty() },
+        designation = designation.ifBlank { crew?.designation.orEmpty() },
+    )
+}
+
 private val CallTile.presenceWord: String
     get() = when (presence) {
         CallStatus.Ringing -> str(S.txt_ringing)
@@ -262,7 +415,7 @@ private val CallTile.presenceWord: String
         CallStatus.Ended -> str(S.desktop_call_ended_status)
     }
 
-val ROSTER_WIDTH = 280.dp
+val ROSTER_WIDTH = 300.dp
 private val PANEL_CORNER = 16.dp
 private val PANEL_BORDER = 1.dp
 private val ROW_HEIGHT = 40.dp

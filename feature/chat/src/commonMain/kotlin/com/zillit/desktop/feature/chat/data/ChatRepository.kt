@@ -78,7 +78,7 @@ interface ChatRepository {
      * A DM's conversation is the person, a group's is the room — the same id
      * the open thread is keyed by either way.
      */
-    val typing: Flow<Pair<String, Boolean>>
+    val typing: Flow<TypingSignal>
 
     /** How far our own messages have got, as the other end reports it. */
     val receipts: Flow<ReadReceipt>
@@ -398,7 +398,7 @@ class ChatRepositoryImpl(
     override val roomChanges: Flow<Unit> =
         bus.onAny(roomEvents).hereOnly().map { }
 
-    override val typing: Flow<Pair<String, Boolean>> = merge(
+    override val typing: Flow<TypingSignal> = merge(
         bus.on(typingEvent).hereOnly().mapNotNull { it.payload?.let { p -> typingFrom(p) } },
         bus.on(groupTypingEvent).hereOnly().mapNotNull {
             it.payload?.let { p -> typingFrom(p, isGroup = true, myUserId = myUserId()) }

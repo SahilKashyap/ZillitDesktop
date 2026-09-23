@@ -1346,10 +1346,7 @@ sealed interface AppGraph {
                     sockets = OkHttpLiveKitSocket(),
                     socketUrl = { callSocketUrl },
                     handshake = {
-                        val deviceId = headerContext.value.deviceId.takeIf { it.isNotBlank() }
-                        if (deviceId == null) {
-                            null
-                        } else {
+                        headerContext.value.deviceId.takeIf { it.isNotBlank() }?.let { deviceId ->
                             // Both ids as the phones and the web send them.
                             // `device_id` is the REST device id — Android's
                             // `SharedPref.getDeviceID()` (`LiveKitIdentityBridge`),
@@ -1480,6 +1477,19 @@ sealed interface AppGraph {
                     // Without this a QR-linked machine is asked to scan again on
                     // every launch — the id exists but is never written down.
                     authRepository.rememberDevice(identity)
+                    // The Line 3 socket is still the one opened before the link,
+                    // under whatever this machine was then — on a fresh scan, a
+                    // device the server does not know or another environment's.
+                    // The "device changed" redial in onDeviceIdentified never
+                    // fires here: the new id went into the headers (above, in
+                    // onDeviceIdGenerated) before the link completed, so it
+                    // compares equal. Every call placed after a scan was refused
+                    // `not_your_identity` until the app restarted (prod,
+                    // 2026-09-23). So a link always redials, and the handshake
+                    // reads the new device record.
+                    handshakeRecord = null
+                    primaryDeviceForHandshake = identity.primaryDeviceId
+                    liveKitLine?.disconnect("device linked")
                 },
             )
 

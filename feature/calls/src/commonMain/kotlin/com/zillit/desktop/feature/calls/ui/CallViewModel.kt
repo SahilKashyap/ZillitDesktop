@@ -141,10 +141,19 @@ data class CallUiState(
      */
     val pillOffsetX: Float = 0f,
     val pillOffsetY: Float = 0f,
+    /**
+     * The "Call users" panel — who is here, who is ringing, who left, and
+     * everyone who could be added — with the addable crew snapshotted at open.
+     */
     val rosterOpen: Boolean = false,
-    /** The add-people picker, with the addable crew snapshotted at open. */
-    val addPeopleOpen: Boolean = false,
     val addableCrew: List<com.zillit.desktop.feature.calls.domain.CallCrewEntry> = emptyList(),
+    /**
+     * Bumped to ask the call's own window to come to the front, restored
+     * and full size. The pill's expand button, pressed while the call has a
+     * window of its own: that window is the call, and it was simply behind
+     * the main one — flipping `expanded` there changed nothing anyone reads.
+     */
+    val windowRaise: Int = 0,
     /** This user's hand is up. */
     val handRaised: Boolean = false,
     /** This machine is recording the call. */
@@ -499,29 +508,31 @@ class CallViewModel(
 
     /** The four coordinator flows, typed, so `combine` needs no array casts. */
     /**
-     * Snapshots the addable crew at open: everyone with a device, minus the
-     * roster. Snapshot rather than live — people joining mid-scroll reordering
-     * the list under the pointer is how the wrong person gets rung.
+     * Opens or closes the users panel, snapshotting the addable crew as it
+     * opens: everyone this line can ring. Snapshot rather than live — people
+     * joining mid-scroll reordering the list under the pointer is how the
+     * wrong person gets rung. Who is already on the call is filtered out as
+     * the panel draws, so someone just added moves to Ringing at once.
      */
-    private fun toggleAddPeople() {
+    private fun toggleUsers(openOnly: Boolean = false) {
         setState {
-            if (addPeopleOpen) {
-                copy(addPeopleOpen = false)
+            if (rosterOpen) {
+                if (openOnly) this else copy(rosterOpen = false, rosterMenuFor = "")
             } else {
-                val onCall = session?.participants?.map { it.userId }?.toSet().orEmpty()
                 copy(
-                    addPeopleOpen = true,
+                    rosterOpen = true,
                     addableCrew = crew()
-                        // A device id is Line 2's addressing. On Line 1 a
-                        // person with no registered device is still reachable,
-                        // so filtering them out hides a valid invitee.
+                        // A device id is Line 2's addressing. Lines 1 and 3
+                        // ring a person, so someone with no registered device
+                        // is still reachable and filtering them out hides a
+                        // valid invitee.
                         .filter { entry ->
-                            val addressable = if (session?.provider == CallProvider.Mediasoup) {
+                            val provider = session?.provider
+                            if (provider == CallProvider.Mediasoup || provider == CallProvider.LiveKit) {
                                 entry.userId.isNotBlank()
                             } else {
                                 entry.deviceId.isNotBlank()
                             }
-                            addressable && entry.userId !in onCall
                         }
                         .sortedBy { it.name.lowercase() },
                 )
@@ -564,22 +575,7 @@ class CallViewModel(
      */
     private fun onWindowGesture(event: CallEvent) {
         logWindowEvent(event::class.simpleName.orEmpty())
-        when (event) {
-            // Leaving PiP restores the stage: the user asked to see the
-            // video, and the pill is where it was hiding, not where it goes.
-            CallEvent.TogglePip -> setState {
-                if (pipOpen) {
-                    // Deliberate: remembered so the auto-open rule does not
-                    // immediately drag it back out.
-                    copy(pipOpen = false, expanded = true, windowDismissed = true, pipCompact = false)
-                } else {
-                    copy(pipOpen = true, expanded = false, windowDismissed = false)
-                }
-            }
-            CallEvent.ToggleCallCompact -> setState { copy(pipCompact = !pipCompact) }
-            CallEvent.ToggleStage -> setState { if (pipOpen) this else copy(expanded = !expanded) }
-            else -> Unit
-        }
+        setState { afterWindowGesture(event) }
     }
 
     /**
@@ -706,7 +702,7 @@ class CallViewModel(
             is CallEvent.DragPill -> setState {
                 copy(pillOffsetX = pillOffsetX + event.dx, pillOffsetY = pillOffsetY + event.dy)
             }
-            CallEvent.ToggleRoster -> setState { copy(rosterOpen = !rosterOpen) }
+            CallEvent.ToggleRoster -> toggleUsers()
             CallEvent.ToggleScreenShare -> onToggleScreenShare()
             is CallEvent.ChooseShareSource -> setState {
                 copy(sharePicker = sharePicker?.copy(chosenId = event.id))
@@ -733,11 +729,11 @@ class CallViewModel(
                 coordinator.chooseSpeaker(event.deviceId)
                 setState { copy(audioPickerOpen = false) }
             }
-            CallEvent.ToggleAddPeople -> toggleAddPeople()
-            is CallEvent.AddPerson -> {
-                coordinator.addUser(event.entry.userId, event.entry.deviceId, event.entry.name)
-                setState { copy(addPeopleOpen = false) }
-            }
+            // "Add people" opens the same panel: the addable crew is its last section.
+            CallEvent.ToggleAddPeople -> toggleUsers(openOnly = true)
+            // The panel stays open — the row moves to Ringing, and adding a
+            // second person should not mean opening it again.
+            is CallEvent.AddPerson -> coordinator.addUser(event.entry.userId, event.entry.deviceId, event.entry.name)
             CallEvent.ToggleReactionBar -> setState { copy(reactionBarOpen = !reactionBarOpen) }
             is CallEvent.SendReaction -> coordinator.sendReaction(event.emoji)
             CallEvent.ToggleChat -> setState {
@@ -930,4 +926,34 @@ object CallReactions {
      * no second timer that could disagree with what is on screen.
      */
     const val FLIGHT_MILLIS = 3_200L
+}
+
+/**
+ * Where the call is drawn after one of the three window gestures: full
+ * window, thumbnail, or back inside Zillit.
+ *
+ * Pure, so the rule is pinned by a test rather than by pressing buttons on a
+ * live call — the pill's expand button was ignored for weeks while the call
+ * had a window of its own, and nothing but a user noticed.
+ */
+internal fun CallUiState.afterWindowGesture(event: CallEvent): CallUiState = when (event) {
+    // Leaving PiP restores the stage: the user asked to see the video, and
+    // the pill is where it was hiding, not where it goes.
+    CallEvent.TogglePip ->
+        if (pipOpen) {
+            // Deliberate: remembered so the auto-open rule does not
+            // immediately drag it back out.
+            copy(pipOpen = false, expanded = true, windowDismissed = true, pipCompact = false)
+        } else {
+            copy(pipOpen = true, expanded = false, windowDismissed = false)
+        }
+    CallEvent.ToggleCallCompact -> copy(pipCompact = !pipCompact)
+    // With the call in its own window the pill's expand button means "show
+    // me the call": bring that window up, full size. It used to be ignored
+    // here, and the window sat behind the main one while the button did
+    // nothing however often it was pressed (a dozen presses in two minutes in the
+    // 2026-09-23 log).
+    CallEvent.ToggleStage ->
+        if (pipOpen) copy(pipCompact = false, windowRaise = windowRaise + 1) else copy(expanded = !expanded)
+    else -> this
 }

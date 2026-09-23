@@ -19,6 +19,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
@@ -183,7 +185,10 @@ private fun DrawSurface(
     onClear: () -> Unit,
 ) {
     val colors = ZillitTheme.colors
-    val current = remember { mutableListOf<Pair<Float, Float>>() }
+    // Snapshot state, and drawn below: the line follows the pen. It was a plain
+    // list the canvas never read, so a stroke only appeared once the mouse
+    // button came up and it was committed to [strokes].
+    val current = remember { mutableStateListOf<Pair<Float, Float>>() }
     val padSize = remember { intArrayOf(0, 0) }
     Column(verticalArrangement = Arrangement.spacedBy(ZillitTheme.spacing.xs)) {
         Box {
@@ -194,6 +199,7 @@ private fun DrawSurface(
                     .clip(ZillitTheme.shapes.medium)
                     .background(Color.White)
                     .border(1.dp, colors.border, ZillitTheme.shapes.medium)
+                    .testTag(DRAW_PAD_TAG)
                     .onSizeChanged {
                         padSize[0] = it.width
                         padSize[1] = it.height
@@ -212,6 +218,10 @@ private fun DrawSurface(
                                 if (current.size > 1) onStroke(current.toList())
                                 current.clear()
                             },
+                            // A drag the system takes away mid-stroke drops the
+                            // half-drawn line rather than leaving it on the pad
+                            // uncommitted.
+                            onDragCancel = { current.clear() },
                         )
                     },
             ) {
@@ -224,7 +234,7 @@ private fun DrawSurface(
                     end = Offset(size.width * 0.92f, size.height * 0.78f),
                     strokeWidth = 1f,
                 )
-                strokes.forEach { stroke ->
+                (strokes + listOf(current.toList())).forEach { stroke ->
                     if (stroke.size < 2) return@forEach
                     val path = Path()
                     path.moveTo(stroke.first().first * scaleX, stroke.first().second * scaleY)
@@ -370,6 +380,9 @@ private fun fontScale(font: SignatureFont): Float = when (font) {
     SignatureFont.Bold -> 0.9f
     SignatureFont.Natural -> 0.72f
 }
+
+/** The drawing surface — so a test can press on it and look at what it shows. */
+internal const val DRAW_PAD_TAG = "esign-draw-pad"
 
 private val SAVED_LIST_MAX_HEIGHT = 300.dp
 private const val PAD_ASPECT = 800f / 300f

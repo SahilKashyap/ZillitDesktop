@@ -834,16 +834,14 @@ class CallCoordinator(
         val current = _session.value ?: return
         if (_phase.value != CallPhase.InCall || current.is247Call) return
         if (!current.canInvite(userId, deviceId)) return
-        if (current.participants.any { it.userId == userId }) return
+        // Someone who left, declined or never answered is rung again — the
+        // web's "Left / Declined" rows carry Add for exactly that. Anyone
+        // still here, or still ringing, is not: a second invite would only
+        // ring a phone that is already ringing.
+        val existing = current.participants.firstOrNull { it.userId == userId }
+        if (existing != null && existing.status !in RE_RINGABLE) return
 
-        _session.value = current.copy(
-            participants = current.participants + CallParticipant(
-                userId = userId,
-                deviceId = deviceId,
-                name = name,
-                status = CallStatus.Ringing,
-            ),
-        )
+        _session.value = current.withRinging(userId, deviceId, name)
         scope.launch {
             if (current.provider == CallProvider.LiveKit) {
                 // Line 3 invites over its own socket; the roster row above is the seed.
@@ -2253,4 +2251,31 @@ class CallCoordinator(
 
 
     }
+}
+
+/** Who may be rung again from the users panel: gone from the call, never ringing or in it. */
+internal val RE_RINGABLE = setOf(CallStatus.Declined, CallStatus.Left, CallStatus.NotAnswered)
+
+/**
+ * [userId] as a Ringing row — appended when they were never on the call,
+ * flipped back to Ringing when they had dropped out, so a re-ring keeps one
+ * row per person rather than a second, duplicate one.
+ */
+internal fun CallSession.withRinging(userId: String, deviceId: String, name: String): CallSession {
+    if (participants.none { it.userId == userId }) {
+        return copy(
+            participants = participants + CallParticipant(
+                userId = userId,
+                deviceId = deviceId,
+                name = name,
+                status = CallStatus.Ringing,
+            ),
+        )
+    }
+    return copy(
+        participants = participants.map { row ->
+            if (row.userId != userId) row
+            else row.copy(status = CallStatus.Ringing, deviceId = deviceId.ifBlank { row.deviceId })
+        },
+    )
 }

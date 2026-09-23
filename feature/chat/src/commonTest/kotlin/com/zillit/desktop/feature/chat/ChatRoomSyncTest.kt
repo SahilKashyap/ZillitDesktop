@@ -3,6 +3,7 @@ package com.zillit.desktop.feature.chat
 import com.zillit.desktop.feature.chat.data.CHAT_ROOM_SYNC_EVENTS
 import com.zillit.desktop.feature.chat.data.GROUP_TYPING
 import com.zillit.desktop.feature.chat.data.TYPING
+import com.zillit.desktop.feature.chat.data.TypingSignal
 import com.zillit.desktop.feature.chat.data.typingFrom
 import com.zillit.desktop.feature.chat.domain.ChatScope
 import kotlinx.serialization.json.Json
@@ -60,14 +61,18 @@ class ChatTypingSplitTest {
     fun `a dm reports the person who typed`() {
         val payload = Json.parseToJsonElement("""{"detail":{"sender":"u1","receiver":"me","status":"start"}}""")
 
-        assertEquals("u1" to true, typingFrom(payload))
+        assertEquals(TypingSignal("u1", typistId = "u1", started = true), typingFrom(payload))
     }
 
     @Test
-    fun `a group reports the room, not the person`() {
+    fun `a group reports the room, and who in it is typing`() {
         val payload = Json.parseToJsonElement("""{"detail":{"sender":"u1","receiver":"room-9","status":"start"}}""")
 
-        assertEquals("room-9" to true, typingFrom(payload, isGroup = true, myUserId = "me"))
+        // The typist travels too: the thread names them instead of "Someone".
+        assertEquals(
+            TypingSignal("room-9", typistId = "u1", started = true),
+            typingFrom(payload, isGroup = true, myUserId = "me"),
+        )
     }
 
     /** The room broadcasts back to its author, so our own typing is dropped. */
@@ -82,7 +87,10 @@ class ChatTypingSplitTest {
     fun `stopping is reported as stopped`() {
         val payload = Json.parseToJsonElement("""{"sender":"u1","receiver":"room-9","status":"end"}""")
 
-        assertEquals("room-9" to false, typingFrom(payload, isGroup = true, myUserId = "me"))
+        assertEquals(
+            TypingSignal("room-9", typistId = "u1", started = false),
+            typingFrom(payload, isGroup = true, myUserId = "me"),
+        )
     }
 
     /** The two names are separate, and a budget group scopes both. */
