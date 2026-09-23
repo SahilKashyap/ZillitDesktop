@@ -5599,8 +5599,8 @@
     <string name="desktop_dm_add_custom_day_plus">+ カスタム日を追加</string>
     <string name="desktop_dm_applies_to_placeholder">— 対象 —</string>
     <string name="desktop_dm_deactivated_on">無効化済み · %1$s</string>
-    <string name="desktop_dm_hp_element_pct">HP 相当額（%1$s%）</string>
-    <string name="desktop_dm_hp_element_pct_on_top">HP 相当額（%1$s%、上乗せ）</string>
+    <string name="desktop_dm_hp_element_pct">HP 相当額（%1$s%%）</string>
+    <string name="desktop_dm_hp_element_pct_on_top">HP 相当額（%1$s%%、上乗せ）</string>
     <string name="desktop_dm_hp_exclusive_on_top">別計上（上乗せ）</string>
     <string name="desktop_dm_kind_is_incomplete">%1$s が未完了です</string>
     <string name="desktop_dm_n_more">+%1$s 件</string>
@@ -5611,8 +5611,8 @@
     <string name="desktop_dm_select_placeholder">— 選択 —</string>
     <string name="desktop_dm_select_territory_placeholder">— 地域を選択 —</string>
     <string name="desktop_dm_select_unit_placeholder">— ユニットを選択 —</string>
-    <string name="desktop_dm_weekly_hp_element_pct">週額の HP 相当額（%1$s%）</string>
-    <string name="desktop_dm_weekly_hp_element_pct_on_top">週額の HP 相当額（%1$s%、上乗せ）</string>
+    <string name="desktop_dm_weekly_hp_element_pct">週額の HP 相当額（%1$s%%）</string>
+    <string name="desktop_dm_weekly_hp_element_pct_on_top">週額の HP 相当額（%1$s%%、上乗せ）</string>
     <string name="desktop_docdist_add_to_list">リストに追加…</string>
     <string name="desktop_docdist_address_book_title">アドレス帳</string>
     <string name="desktop_docdist_addresses_remembered_here">配布で使用したアドレスがここに記録されます。</string>
@@ -5655,7 +5655,7 @@
     <string name="desktop_hub_parent_must_be_a_x_code_is_a_y">親は %1$s である必要があります。「%2$s」は %3$s です。</string>
     <string name="desktop_hub_period_closed_x">期間を締めました。%1$s</string>
     <string name="desktop_hub_starts_before_production_start_date">制作の開始日より前に始まります</string>
-    <string name="desktop_hub_tax_rate_must_be_between_x_and_y_percent">税率は %1$s%〜%2$s% の範囲にしてください。</string>
+    <string name="desktop_hub_tax_rate_must_be_between_x_and_y_percent">税率は %1$s%%〜%2$s%% の範囲にしてください。</string>
     <string name="desktop_hub_tour_bank_body">プロジェクトの銀行口座を、勘定科目コードと買掛金クリアランスコードとあわせて追加します。</string>
     <string name="desktop_hub_tour_company_body">プロジェクトの会社を追加します。</string>
     <string name="desktop_hub_tour_conditions_body">新しいディールメモの「契約条件」ステップに挿入されるデフォルトの条項を追加します。</string>
@@ -5725,7 +5725,7 @@
     <string name="desktop_dm_n_without_coverage_yet">%1$s 件はまだ未対応</string>
     <string name="desktop_dm_regions_territories_count">%1$s リージョン、%2$s 地域</string>
     <string name="desktop_dm_n_rows">%1$s 行</string>
-    <string name="desktop_dm_days_unscheduled">%1$s 日が未スケジュール</string>
+    <string name="desktop_dm_days_unscheduled">未割り当て %1$s 日</string>
     <string name="desktop_hub_tour_used_on">使用箇所</string>
     <string name="desktop_hub_tour_company_used_on">すべての発注書、請求書、カード経費と現金経費の領収書、ディールメモ。</string>
     <string name="desktop_hub_tour_company_note">各会社には複数の銀行口座を紐付けられるため、銀行口座より先に会社を追加してください。</string>
@@ -5733,7 +5733,7 @@
     <string name="desktop_hub_tour_bank_used_for">発注書、請求書、カード、前渡金、カード経費と現金経費の領収書、給与の元帳エントリ。</string>
     <string name="desktop_hub_tour_currency_body">プロジェクトで扱う通貨を追加します。1 つの通貨をプロジェクトの既定に設定し、選択したほかのすべての通貨の為替レートを追加してください。</string>
     <string name="desktop_hub_tour_tags_used_on">発注書、請求書、カード経費と現金経費の領収書の明細。</string>
-    <string name="desktop_hub_tour_also">その他</string>
+    <string name="desktop_hub_tour_also">その他の用途</string>
     <string name="desktop_hub_tour_tags_also">試算表やバイブルレポートなどのレポートを生成するときのフィルターとして。</string>
     <string name="desktop_hub_tour_tax_used_on">発注書、請求書、カード経費と現金経費の領収書の明細で直接使用。</string>
     <string name="desktop_hub_tour_coa_body">3 つのサブタブがあります: 勘定科目表、貸借対照表コード、レイヤー。予算の勘定コードがここに表示されます — 予算をアップロードすると、その明細から勘定科目表が作成されます。</string>
@@ -5923,7 +5923,7 @@
     <string name="desktop_order_closed">発注を完了しました</string>
     <string name="desktop_card_nav_workflow">ワークフロー</string>
     <string name="desktop_po_queued_offline">このコンピューターに保存しました — オンラインに戻ると起票されます。</string>
-    <string name="desktop_card_digital_active">デジタル有効</string>
+    <string name="desktop_card_digital_active">デジタルカード有効</string>
     <string name="desktop_po_queued_offline_row">このコンピューターに保存済み — オンラインに戻ると起票されます。</string>
     <string name="desktop_card_in_transit">配送中</string>
     <string name="desktop_po_amend_title">この発注書を修正しますか？</string>
@@ -5931,7 +5931,7 @@
     <string name="desktop_po_amend_message">この発注はすでに最終承認されています。編集すると承認済みのバージョンが置き換えられ、承認フローに再度回されます。</string>
     <string name="desktop_card_physical">物理カード</string>
     <string name="desktop_po_period_split_needs_rent">期間分割には、支出種別「レンタル」と開始日・終了日が必要です。</string>
-    <string name="desktop_card_digital">デジタル</string>
+    <string name="desktop_card_digital">デジタルカード</string>
     <string name="desktop_po_rental_window_too_short">このレンタル期間は 1 %1$s 未満です。</string>
     <string name="desktop_imported">インポート済み</string>
     <string name="desktop_po_attachments_unavailable">ここでは添付ファイルを利用できません。</string>
@@ -7253,7 +7253,7 @@
     <string name="desktop_ds_reminder_sent">リマインダーを送信しました ✓</string>
     <string name="desktop_ds_notified_once_the_signer_before_them_completes">前の署名者が完了すると通知されます。</string>
     <string name="desktop_ds_download_signed_pdf">署名済みの PDF をダウンロード</string>
-    <string name="desktop_ds_sequential">順番に</string>
+    <string name="desktop_ds_sequential">順次</string>
     <string name="desktop_ds_all_at_once">全員同時</string>
     <string name="desktop_ds_on_every_page">すべてのページ</string>
     <string name="desktop_ds_every_action_on_this_envelope_newest_first_the">このエンベロープに対するすべての操作（新しい順）— 完了証明書です。</string>
@@ -7298,7 +7298,7 @@
     <string name="desktop_ds_envelope_sent_for_signing">エンベロープを署名に送信しました</string>
     <string name="desktop_ds_fill_in_every_option_label_before_saving_a">テンプレートを保存する前に、すべての選択肢のラベルを入力してください。</string>
     <string name="desktop_ds_please_add_a_document_first">先に書類を追加してください</string>
-    <string name="desktop_ds_voided">無効</string>
+    <string name="desktop_ds_voided">取り消し済み</string>
     <string name="desktop_ds_checkbox">チェックボックス</string>
     <string name="desktop_ds_numeric_only">数値のみ</string>
     <string name="desktop_ds_field">フィールド</string>
@@ -7975,7 +7975,7 @@
     <string name="desktop_tax_vrn_disconnects">（VRN %1$s）は HMRC との接続が解除され、</string>
     <string name="desktop_tax_not_filed_here">です。ここから申告されたものではないため、ボックスの数値はローカルに保存されていません。</string>
     <string name="desktop_tax_receipt_processed">" · %1$s"</string>
-    <string name="desktop_bs_view_mode_label">%1$s 表示</string>
+    <string name="desktop_bs_view_mode_label">%1$s表示</string>
     <string name="desktop_bs_n_schedules_removed">%1$d 件のスケジュールを削除しました</string>
     <string name="desktop_bs_n_days_deleted">%1$d 日を削除しました</string>
     <string name="desktop_bs_version_n">バージョン: %1$d</string>
@@ -8045,12 +8045,12 @@
     <string name="desktop_cr_period_end_after_start">期間の終了日は開始日以降にしてください</string>
     <string name="desktop_cr_etc_negative">%1$s の ETC は負の値にできません。%2$s0 に補正しました。</string>
     <string name="desktop_cr_efc_below_floor">%1$s の EFC は、実績 + コミット額（%2$s）を下回ることはできません。補正しました。</string>
-    <string name="desktop_cr_week_label">第 %1$d 週 · 週末 %2$s</string>
+    <string name="desktop_cr_week_label">第 %1$d 週 · 週末締め %2$s</string>
     <string name="desktop_cr_view_actuals_detail">実績の詳細を表示</string>
     <string name="desktop_cr_view_commit_detail">%1$s のコミットメントの詳細を表示</string>
-    <string name="desktop_cr_wk">週</string>
+    <string name="desktop_cr_wk">週次</string>
     <string name="desktop_on_call_short">オンコール</string>
-    <string name="desktop_cr_week_short">%1$d週</string>
+    <string name="desktop_cr_week_short">第%1$d週</string>
     <string name="desktop_cs_cell_shape_summary">%1$s • %2$d 列 • %3$d 行</string>
     <string name="desktop_cs_published_suffix">" • 公開日 %1$s"</string>
     <string name="desktop_unknown_lower">不明</string>
@@ -8178,7 +8178,7 @@
     <string name="desktop_cr_snapshot_posted">スナップショットを確定し、履歴に追加しました</string>
     <string name="desktop_cr_snapshot_post_failed">スナップショットの確定に失敗しました: %1$s</string>
     <string name="desktop_cr_actual">実績</string>
-    <string name="desktop_cr_today_week">今日 · %1$d週</string>
+    <string name="desktop_cr_today_week">今日 · 第%1$d週</string>
     <string name="desktop_cr_efc_value">EFC %1$s</string>
     <string name="desktop_cr_turnaround">処理期間 %1$s</string>
     <string name="desktop_cr_needs_attention">要対応</string>
